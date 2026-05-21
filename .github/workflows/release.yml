@@ -1,42 +1,33 @@
 name: Build and Release
 
 on:
-  # 只在推送 tag 时触发构建和发布
   push:
     tags:
       - 'v*'
-  
-  # 手动触发（用于测试或特殊情况）
+
   workflow_dispatch:
     inputs:
       build_type:
-        description: '构建类型'
+        description: 'Build type'
         required: true
         default: 'debug'
         type: choice
         options:
           - debug
           - release
-      trigger_opensource:
-        description: '是否触发开源仓库发布（仅 release 构建有效）'
-        required: false
-        default: 'false'
-        type: boolean
+
+permissions:
+  contents: write
 
 env:
   VERSION: ${{ github.ref_type == 'tag' && github.ref_name || format('dev-{0}', github.sha) }}
+  TS_CLI_BUILD_FROM_SOURCE: 'false'
+  GRADLE_OPTS: "-Xmx4g -XX:MaxMetaspaceSize=1g -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8 -XX:+UseParallelGC"
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    outputs:
-      signed_release_available: ${{ steps.release-signing.outputs.available }}
-    env:
-      TS_CLI_BUILD_FROM_SOURCE: 'false'
-      # GitHub Actions 标准 runner 只有 7GB RAM；覆盖本地 gradle.properties 的 -Xmx6g 设置
-      # 避免 OOM Killer 杀死 Gradle daemon
-      GRADLE_OPTS: "-Xmx4g -XX:MaxMetaspaceSize=1g -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8 -XX:+UseParallelGC"
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -44,47 +35,41 @@ jobs:
           lfs: true
           submodules: recursive
           fetch-depth: 0
-      
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
           cache: gradle
-      
+
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
-      
+
       - name: Install CMake
         run: |
           sdkmanager --install "cmake;3.22.1"
 
-      - name: Install tree-sitter CLI (npm)
+      - name: Install tree-sitter CLI
         run: npm install -g tree-sitter-cli@0.22.1
-      
+
       - name: Setup tree-sitter grammar dependencies
         run: |
-          # tree-sitter-cpp requires tree-sitter-c via require('tree-sitter-c/grammar')
-          # Create node_modules symlink in cpp directory to resolve the dependency
+          set -euo pipefail
+
           cd external/tina-android-tree-sitter/grammars/cpp
           mkdir -p node_modules
           ln -sf ../../c node_modules/tree-sitter-c
-          echo "Created symlink for tree-sitter-cpp:"
-          ls -la node_modules/
+          echo "Created tree-sitter-c symlink for tree-sitter-cpp."
 
-          # tree-sitter-toml requires regexp-util npm package
           cd ../toml
           npm install --ignore-scripts regexp-util
-          echo "Installed regexp-util for tree-sitter-toml"
-      
+          echo "Installed regexp-util for tree-sitter-toml."
+
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      # 释放构建所需的签名与运行时配置：
-      # - 本地开发可继续使用忽略掉的 keystore.properties / keystore/release.jks
-      # - GitHub Actions release 构建优先从仓库 secrets 还原，避免把明文密钥放进仓库
       - name: Prepare release signing assets
-        id: release-signing
         if: ${{ github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_type == 'release') }}
         env:
           TINAIDE_RELEASE_KEYSTORE_B64: ${{ secrets.TINAIDE_RELEASE_KEYSTORE_B64 }}
@@ -98,37 +83,23 @@ jobs:
             || [ -z "${TINAIDE_RELEASE_KEYSTORE_PASSWORD:-}" ] \
             || [ -z "${TINAIDE_RELEASE_KEY_ALIAS:-}" ] \
             || [ -z "${TINAIDE_RELEASE_KEY_PASSWORD:-}" ]; then
-            echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "Release signing secrets are incomplete; skipping signed release APK build."
-            exit 0
+            echo "ERROR: release signing secrets are incomplete."
+            exit 1
           fi
-
-          echo "available=true" >> "$GITHUB_OUTPUT"
 
           mkdir -p keystore
+          printf '%s' "$TINAIDE_RELEASE_KEYSTORE_B64" | base64 -d > keystore/release.jks
+          chmod 600 keystore/release.jks
 
-          if [ ! -f "keystore/release.jks" ]; then
-            printf '%s' "$TINAIDE_RELEASE_KEYSTORE_B64" | base64 -d > keystore/release.jks
-            chmod 600 keystore/release.jks
-            echo "Reconstructed keystore/release.jks from GitHub Secrets."
-          else
-            echo "Found existing keystore/release.jks in checkout."
-          fi
+          {
+            printf 'storeFile=keystore/release.jks\n'
+            printf 'storePassword=%s\n' "$TINAIDE_RELEASE_KEYSTORE_PASSWORD"
+            printf 'keyAlias=%s\n' "$TINAIDE_RELEASE_KEY_ALIAS"
+            printf 'keyPassword=%s\n' "$TINAIDE_RELEASE_KEY_PASSWORD"
+          } > keystore.properties
 
-          if [ ! -f "keystore.properties" ]; then
-            {
-              printf 'storeFile=keystore/release.jks\n'
-              printf 'storePassword=%s\n' "$TINAIDE_RELEASE_KEYSTORE_PASSWORD"
-              printf 'keyAlias=%s\n' "$TINAIDE_RELEASE_KEY_ALIAS"
-              printf 'keyPassword=%s\n' "$TINAIDE_RELEASE_KEY_PASSWORD"
-            } > keystore.properties
+          echo "Release signing assets are ready."
 
-            echo "Generated keystore.properties from GitHub Secrets."
-          else
-            echo "Found existing keystore.properties in checkout."
-          fi
-      
-      # 防止 tag 名与 version.properties 错位，避免同名 APK 覆盖发布
       - name: Validate release tag version
         if: ${{ github.ref_type == 'tag' }}
         run: |
@@ -144,140 +115,119 @@ jobs:
 
           echo "Release tag matches version.properties: $VERSION_NAME"
 
-      # 根据触发方式决定构建类型
-      # - tag 推送：始终构建 release
-      # - 手动触发：根据 build_type 输入决定
-      # 注意：本地默认仅启用单 ABI 变体；正式 release 需显式使用 AllAbi 任务输出 arm64 + x86_64。
       - name: Build Debug APK
-        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.build_type == 'debug' || github.ref_type == 'tag' && steps.release-signing.outputs.available != 'true' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.build_type == 'debug' }}
         run: |
-          ./gradlew :app:assembleArm64Debug --no-daemon \
+          ./gradlew :app:assembleArm64Debug --no-daemon -Ptina.devAbi=arm64 \
             -Dorg.gradle.internal.http.connectionTimeout=120000 \
             -Dorg.gradle.internal.http.socketTimeout=120000 \
             -Dorg.gradle.internal.repository.max.retries=4
 
-      - name: Build Release APK
-        if: ${{ (github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_type == 'release')) && steps.release-signing.outputs.available == 'true' }}
+      - name: Build Release APKs
+        if: ${{ github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_type == 'release') }}
         run: |
-          ./gradlew :app:assembleReleaseAllAbi --no-daemon \
+          ./gradlew :app:assembleReleaseAllAbi --no-daemon -Ptina.allAbi=true \
             -Dorg.gradle.internal.http.connectionTimeout=120000 \
             -Dorg.gradle.internal.http.socketTimeout=120000 \
             -Dorg.gradle.internal.repository.max.retries=4
-      
-      # 列出生成的 APK 文件（用于调试）
+
       - name: List generated APKs
         run: |
+          set -euo pipefail
+
           echo "Generated APK files:"
           if [ -d "app/build/outputs/apk" ]; then
-            find app/build/outputs/apk -name "*.apk" -type f | while read apk; do
+            find app/build/outputs/apk -name "*.apk" -type f -print0 | while IFS= read -r -d '' apk; do
               size=$(du -h "$apk" | cut -f1)
               echo "  - $apk ($size)"
             done
           else
             echo "  (no APK output dir: app/build/outputs/apk)"
           fi
-      
-      # 获取版本信息
+
       - name: Get version info
         id: version
         run: |
-          VERSION_NAME=$(grep "versionName=" version.properties | cut -d'=' -f2)
-          VERSION_CODE=$(grep "versionCode=" version.properties | cut -d'=' -f2)
-          echo "name=$VERSION_NAME" >> $GITHUB_OUTPUT
-          echo "code=$VERSION_CODE" >> $GITHUB_OUTPUT
+          set -euo pipefail
+
+          VERSION_NAME="$(grep '^versionName=' version.properties | cut -d'=' -f2 | tr -d '\r')"
+          VERSION_CODE="$(grep '^versionCode=' version.properties | cut -d'=' -f2 | tr -d '\r')"
+          echo "name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
           echo "Version: $VERSION_NAME ($VERSION_CODE)"
-      
-      # 从 CHANGELOG.md 提取当前版本的更新内容
+
       - name: Extract changelog for current version
-        id: changelog
+        if: ${{ github.ref_type == 'tag' }}
         run: |
-          VERSION_NAME=$(grep "versionName=" version.properties | cut -d'=' -f2)
-          echo "Extracting changelog for version $VERSION_NAME"
-          
-          # 提取当前版本的更新内容（从 ## [版本号] 到下一个 ## 或文件末尾）
-          # 使用 awk 提取指定版本的内容
-          CHANGELOG_CONTENT=$(awk -v ver="$VERSION_NAME" '
+          set -euo pipefail
+
+          VERSION_NAME="${{ steps.version.outputs.name }}"
+          CHANGELOG_CONTENT="$(awk -v ver="$VERSION_NAME" '
             BEGIN { found=0; content="" }
             /^## \[/ {
               if (found) exit
-              if (index($0, "[" ver "]") > 0) found=1
+              if (index($0, "[" ver "]") > 0) { found=1; next }
             }
-            found && !/^## \[/ { content = content $0 "\n" }
+            /^---$/ { if (found) exit }
+            found { content = content $0 "\n" }
             END { print content }
-          ' CHANGELOG.md)
-          
-          # 如果没有找到对应版本，使用默认内容
-          if [ -z "$CHANGELOG_CONTENT" ]; then
-            CHANGELOG_CONTENT="暂无更新说明"
+          ' CHANGELOG.md)"
+
+          if [ -z "$CHANGELOG_CONTENT" ] || [ "$CHANGELOG_CONTENT" = $'\n' ]; then
+            CHANGELOG_CONTENT="No changelog entry found for this version."
           fi
-          
-          # 将内容保存到文件（避免多行字符串问题）
-          echo "$CHANGELOG_CONTENT" > changelog_content.txt
-          
-          # 使用 base64 编码传递多行内容
-          CHANGELOG_BASE64=$(echo "$CHANGELOG_CONTENT" | base64 -w 0)
-          echo "content_base64=$CHANGELOG_BASE64" >> $GITHUB_OUTPUT
-          
-          echo "Changelog content extracted:"
-          echo "$CHANGELOG_CONTENT"
-      
-      # 重命名 APK（仅 release 构建）
-      # ABI splits 会生成多个 APK：app-arm64-v8a-release.apk, app-x86_64-release.apk
-      - name: Rename APKs
-        if: ${{ (github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_type == 'release')) && steps.release-signing.outputs.available == 'true' }}
+
+          printf '%s\n' "$CHANGELOG_CONTENT" > release_notes.md
+
+      - name: Prepare release APK names
+        if: ${{ github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_type == 'release') }}
         run: |
+          set -euo pipefail
+          shopt -s nullglob
+
           VERSION="${{ steps.version.outputs.name }}"
           APK_ROOT="app/build/outputs/apk"
           OUT_DIR="${APK_ROOT}/release"
-
-          if [ ! -d "$APK_ROOT" ]; then
-            echo "ERROR: APK output directory not found: $APK_ROOT"
-            exit 1
-          fi
-
           mkdir -p "$OUT_DIR"
+          rm -f "${OUT_DIR}"/TinaIDE-*.apk
 
-          pick_apk() {
-            local arch="$1"
-            find "$APK_ROOT" -type f -name "*.apk" \
-              ! -path "${OUT_DIR}/*" \
-              ! -name "TinaIDE-*.apk" \
-              | grep -m 1 "$arch" || true
+          find_one_apk() {
+            local abi="$1"
+            mapfile -t matches < <(
+              find "$APK_ROOT" -type f -name "*${abi}*release*.apk" \
+                ! -path "${OUT_DIR}/*" \
+                ! -name "TinaIDE-*.apk" \
+                | sort
+            )
+
+            if [ "${#matches[@]}" -ne 1 ]; then
+              echo "ERROR: expected exactly one release APK for ${abi}, found ${#matches[@]}."
+              printf '  %s\n' "${matches[@]:-}"
+              exit 1
+            fi
+
+            printf '%s' "${matches[0]}"
           }
-          
-          # 重命名 arm64-v8a APK
-          ARM64_APK=$(pick_apk "arm64-v8a")
-          if [ -n "$ARM64_APK" ]; then
-            mv "$ARM64_APK" "${OUT_DIR}/TinaIDE-${VERSION}-arm64-v8a.apk"
-            echo "Renamed arm64-v8a APK"
-          else
-            echo "ERROR: arm64-v8a APK not found under $APK_ROOT"
+
+          ARM64_APK="$(find_one_apk "arm64-v8a")"
+          X86_APK="$(find_one_apk "x86_64")"
+
+          cp "$ARM64_APK" "${OUT_DIR}/TinaIDE-${VERSION}-arm64-v8a.apk"
+          cp "$X86_APK" "${OUT_DIR}/TinaIDE-${VERSION}-x86_64.apk"
+
+          APKS=("${OUT_DIR}"/TinaIDE-"${VERSION}"-*.apk)
+          if [ "${#APKS[@]}" -ne 2 ]; then
+            echo "ERROR: expected exactly two renamed release APKs, found ${#APKS[@]}."
+            printf '  %s\n' "${APKS[@]:-}"
             exit 1
           fi
-          
-          # 重命名 x86_64 APK
-          X86_APK=$(pick_apk "x86_64")
-          if [ -n "$X86_APK" ]; then
-            mv "$X86_APK" "${OUT_DIR}/TinaIDE-${VERSION}-x86_64.apk"
-            echo "Renamed x86_64 APK"
-          else
-            echo "ERROR: x86_64 APK not found under $APK_ROOT"
-            exit 1
-          fi
-          
-          # 如果有通用 APK（不应该有，因为 isUniversalApk = false）
-          UNIVERSAL_APK=$(pick_apk "universal")
-          if [ -n "$UNIVERSAL_APK" ]; then
-            mv "$UNIVERSAL_APK" "${OUT_DIR}/TinaIDE-${VERSION}-universal.apk"
-            echo "Renamed universal APK"
-          fi
-          
-          echo "Final APK files:"
-          find "$OUT_DIR" -maxdepth 1 -type f -name "*.apk" -print -exec ls -la {} \;
-      
-      # 校验最终发布 APK 内确实包含安装/分享所需 FileProvider 元数据
-      - name: Validate release APK manifest
-        if: ${{ (github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_type == 'release')) && steps.release-signing.outputs.available == 'true' }}
+
+          echo "Final release APK files:"
+          ls -lh "${APKS[@]}"
+          sha256sum "${APKS[@]}"
+
+      - name: Validate release APK manifests
+        if: ${{ github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_type == 'release') }}
         run: |
           set -euo pipefail
           shopt -s nullglob
@@ -291,27 +241,40 @@ jobs:
             echo "ERROR: aapt not found under ANDROID_HOME=$ANDROID_HOME"
             exit 1
           fi
-          if [ ${#APKS[@]} -eq 0 ]; then
-            echo "ERROR: no renamed release APKs found under $APK_ROOT"
+
+          if [ "${#APKS[@]}" -ne 2 ]; then
+            echo "ERROR: expected exactly two release APKs, found ${#APKS[@]}."
+            printf '  %s\n' "${APKS[@]:-}"
             exit 1
           fi
 
+          require_text() {
+            local label="$1"
+            local pattern="$2"
+            local text="$3"
+            if ! grep -Fq -- "$pattern" <<< "$text"; then
+              echo "ERROR: missing ${label}: ${pattern}"
+              exit 1
+            fi
+          }
+
           for apk in "${APKS[@]}"; do
-            echo "Validating $(basename "$apk")"
+            filename="$(basename "$apk")"
+            case "$filename" in
+              *arm64-v8a.apk) expected_abi="arm64-v8a" ;;
+              *x86_64.apk) expected_abi="x86_64" ;;
+              *)
+                echo "ERROR: release APK filename does not include a supported ABI: $filename"
+                exit 1
+                ;;
+            esac
+
+            echo "Validating $filename"
             BADGING="$("$AAPT" dump badging "$apk")"
             MANIFEST="$("$AAPT" dump xmltree "$apk" AndroidManifest.xml)"
 
-            require_text() {
-              local label="$1"
-              local pattern="$2"
-              local text="$3"
-              if ! grep -Fq -- "$pattern" <<< "$text"; then
-                echo "ERROR: missing ${label}: ${pattern}"
-                exit 1
-              fi
-            }
-
             require_text "versionName" "versionName='$VERSION'" "$BADGING"
+            require_text "native-code ABI" "native-code: '$expected_abi'" "$BADGING"
 
             if grep -Fq 'com.wuxianggujun.tinaide.storage.TinaFileProvider' <<< "$MANIFEST"; then
               echo "Found TinaFileProvider"
@@ -326,139 +289,74 @@ jobs:
             require_text "FILE_PROVIDER_PATHS meta-data" 'android.support.FILE_PROVIDER_PATHS' "$MANIFEST"
           done
 
-      # 上传所有 APK（供后续 job / 开源仓库下载使用）
-      - name: Upload all APK artifacts
-        if: ${{ (github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_type == 'release')) && steps.release-signing.outputs.available == 'true' }}
+      - name: Upload arm64 release APK artifact
+        if: ${{ github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_type == 'release') }}
         uses: actions/upload-artifact@v4
         with:
-          name: release-apk
-          path: app/build/outputs/apk/release/TinaIDE-*.apk
-          # 私有仓库 Actions 的 artifacts 有存储配额；保留期越长越容易堆满配额
-          retention-days: 3
+          name: TinaIDE-${{ steps.version.outputs.name }}-arm64-v8a-apk
+          path: app/build/outputs/apk/release/TinaIDE-${{ steps.version.outputs.name }}-arm64-v8a.apk
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Upload x86_64 release APK artifact
+        if: ${{ github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_type == 'release') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: TinaIDE-${{ steps.version.outputs.name }}-x86_64-apk
+          path: app/build/outputs/apk/release/TinaIDE-${{ steps.version.outputs.name }}-x86_64.apk
+          retention-days: 7
           if-no-files-found: error
 
       - name: Upload debug APK artifact
-        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.build_type == 'debug' || github.ref_type == 'tag' && steps.release-signing.outputs.available != 'true' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.build_type == 'debug' }}
         uses: actions/upload-artifact@v4
         with:
-          name: debug-apk
+          name: TinaIDE-${{ steps.version.outputs.name }}-arm64-v8a-debug-apk
           path: app/build/outputs/apk/arm64/debug/*.apk
           retention-days: 3
           if-no-files-found: error
-      
-      # 输出构建信息
+
+      - name: Create GitHub Release
+        if: ${{ github.ref_type == 'tag' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: TinaIDE ${{ github.ref_name }}
+          body_path: release_notes.md
+          draft: false
+          prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') || contains(github.ref_name, 'dev') }}
+          make_latest: true
+          files: |
+            app/build/outputs/apk/release/TinaIDE-${{ steps.version.outputs.name }}-arm64-v8a.apk
+            app/build/outputs/apk/release/TinaIDE-${{ steps.version.outputs.name }}-x86_64.apk
+          fail_on_unmatched_files: true
+
       - name: Build Summary
         run: |
-          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
-          echo "- **Version**: ${{ steps.version.outputs.name }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Version Code**: ${{ steps.version.outputs.code }}" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ github.ref_type }}" == "tag" ]; then
-            if [ "${{ steps.release-signing.outputs.available }}" == "true" ]; then
-              echo "- **Build Type**: signed release (tag trigger)" >> $GITHUB_STEP_SUMMARY
-            else
-              echo "- **Build Type**: debug validation (tag trigger, release signing secrets unavailable)" >> $GITHUB_STEP_SUMMARY
-            fi
-          elif [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "- **Build Type**: ${{ github.event.inputs.build_type }} (manual trigger)" >> $GITHUB_STEP_SUMMARY
-          fi
-          echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Branch/Tag**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Generated APKs" >> $GITHUB_STEP_SUMMARY
-          echo "| Architecture | File | Size |" >> $GITHUB_STEP_SUMMARY
-          echo "|--------------|------|------|" >> $GITHUB_STEP_SUMMARY
-          find app/build/outputs/apk -type f -name "*.apk" | while read -r apk; do
-            if [ -f "$apk" ]; then
-              filename=$(basename "$apk")
-              size=$(du -h "$apk" | cut -f1)
-              if [[ "$filename" == *"arm64"* ]]; then
-                arch="arm64-v8a"
-              elif [[ "$filename" == *"x86_64"* ]]; then
-                arch="x86_64"
-              else
-                arch="universal"
-              fi
-              echo "| $arch | $filename | $size |" >> $GITHUB_STEP_SUMMARY
-            fi
-          done
+          set -euo pipefail
+          shopt -s nullglob
 
-  # 触发开源仓库的 release workflow
-  trigger-opensource-release:
-    needs: build
-    runs-on: ubuntu-latest
-    # 只在 tag 推送时，或手动触发 release 构建且选择触发开源发布时执行
-    if: needs.build.outputs.signed_release_available == 'true' && (github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_type == 'release' && github.event.inputs.trigger_opensource == 'true'))
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Get version info
-        id: version
-        run: |
-          VERSION_NAME=$(grep "versionName=" version.properties | cut -d'=' -f2)
-          echo "name=$VERSION_NAME" >> $GITHUB_OUTPUT
-      
-      - name: Download APK artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: release-apk
-          path: ./release
-      
-      - name: List release files
-        run: ls -la ./release/
-      
-      # 从 CHANGELOG.md 提取当前版本的更新内容
-      - name: Extract changelog for current version
-        id: changelog
-        run: |
-          VERSION_NAME=$(grep "versionName=" version.properties | cut -d'=' -f2)
-          echo "Extracting changelog for version $VERSION_NAME"
-          
-          # 提取当前版本的更新内容（从 ## [版本号] 到下一个 ## [或 --- 分隔线）
-          CHANGELOG_CONTENT=$(awk -v ver="$VERSION_NAME" '
-            BEGIN { found=0; content="" }
-            /^## \[/ {
-              if (found) exit
-              if (index($0, "[" ver "]") > 0) { found=1; next }
-            }
-            /^---$/ { if (found) exit }
-            found { content = content $0 "\n" }
-            END { print content }
-          ' CHANGELOG.md)
-          
-          # 如果没有找到对应版本，使用默认内容
-          if [ -z "$CHANGELOG_CONTENT" ] || [ "$CHANGELOG_CONTENT" = $'\n' ]; then
-            CHANGELOG_CONTENT="暂无更新说明"
-          fi
-          
-          # 使用 base64 编码传递多行内容（避免 JSON 转义问题）
-          CHANGELOG_BASE64=$(echo "$CHANGELOG_CONTENT" | base64 -w 0)
-          echo "content_base64=$CHANGELOG_BASE64" >> $GITHUB_OUTPUT
-          
-          echo "Changelog content extracted:"
-          echo "$CHANGELOG_CONTENT"
-      
-      # 触发开源仓库的 workflow
-      - name: Trigger opensource repository release
-        uses: peter-evans/repository-dispatch@v3
-        with:
-          token: ${{ secrets.TINAIDE_REPO_TOKEN }}
-          repository: ${{ secrets.TINAIDE_REPO }}
-          event-type: pro-release
-          client-payload: |
-            {
-              "version": "${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', steps.version.outputs.name) }}",
-              "version_name": "${{ steps.version.outputs.name }}",
-              "run_id": "${{ github.run_id }}",
-              "pro_repo": "${{ github.repository }}",
-              "sha": "${{ github.sha }}",
-              "changelog_base64": "${{ steps.changelog.outputs.content_base64 }}"
-            }
-      
-      - name: Trigger Summary
-        run: |
-          echo "## Opensource Release Triggered" >> $GITHUB_STEP_SUMMARY
-          echo "- **Target Repo**: ${{ secrets.TINAIDE_REPO }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Version**: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', steps.version.outputs.name) }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Run ID**: ${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "## Build Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Version**: ${{ steps.version.outputs.name }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Version Code**: ${{ steps.version.outputs.code }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Build Type**: ${{ github.ref_type == 'tag' && 'release' || github.event.inputs.build_type }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Commit**: ${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Branch/Tag**: ${{ github.ref_name }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Generated APKs" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Architecture | File | Size |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|--------------|------|------|" >> "$GITHUB_STEP_SUMMARY"
+
+          for apk in app/build/outputs/apk/release/TinaIDE-${{ steps.version.outputs.name }}-*.apk app/build/outputs/apk/arm64/debug/*.apk; do
+            [ -f "$apk" ] || continue
+            filename="$(basename "$apk")"
+            size="$(du -h "$apk" | cut -f1)"
+            if [[ "$filename" == *"arm64-v8a"* || "$apk" == *"/arm64/"* ]]; then
+              arch="arm64-v8a"
+            elif [[ "$filename" == *"x86_64"* || "$apk" == *"/x86_64/"* ]]; then
+              arch="x86_64"
+            else
+              arch="unknown"
+            fi
+            echo "| $arch | $filename | $size |" >> "$GITHUB_STEP_SUMMARY"
+          done
