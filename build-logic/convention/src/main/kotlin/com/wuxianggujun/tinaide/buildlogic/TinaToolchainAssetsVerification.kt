@@ -38,12 +38,15 @@ internal object TinaToolchainAssetsVerification {
 
     /**
      * Resolve whether the current invocation needs to cover all ABI
-     * flavors. Mirrors the legacy heuristics: explicit `-Ptina.allAbi`,
-     * running under CI, or any requested task that includes `AllAbi`.
+     * flavors. An explicit `-Ptina.allAbi=true/false` wins first so CI
+     * release matrix jobs can intentionally build one ABI per runner.
+     * Without an explicit value, CI and `AllAbi` tasks still enable all
+     * supported ABI flavors.
      */
     fun resolveBuildAllAbiRequested(project: Project): Boolean {
-        val explicit = project.resolveBooleanGradleProperty("tina.allAbi", default = false)
-        if (explicit) return true
+        project.providers.gradleProperty("tina.allAbi").orNull?.let {
+            return project.resolveBooleanGradleProperty("tina.allAbi", default = false)
+        }
         if (System.getenv("CI")?.equals("true", ignoreCase = true) == true) return true
         return project.gradle.startParameter.taskNames.any { it.contains("AllAbi", ignoreCase = true) }
     }

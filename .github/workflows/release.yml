@@ -25,7 +25,8 @@ env:
   GRADLE_OPTS: "-Xmx4g -XX:MaxMetaspaceSize=1g -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8 -XX:+UseParallelGC"
 
 jobs:
-  build:
+  build-debug:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.build_type == 'debug' }}
     runs-on: ubuntu-latest
 
     steps:
@@ -69,8 +70,134 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      - name: Build Debug APK
+        timeout-minutes: 20
+        run: |
+          ./gradlew :app:assembleArm64Debug --no-daemon -Ptina.devAbi=arm64 \
+            -Ptina.buildProotFromSource=false \
+            -Dorg.gradle.internal.http.connectionTimeout=120000 \
+            -Dorg.gradle.internal.http.socketTimeout=120000 \
+            -Dorg.gradle.internal.repository.max.retries=4
+
+      - name: List generated APKs
+        run: |
+          set -euo pipefail
+
+          echo "Generated APK files:"
+          if [ -d "app/build/outputs/apk" ]; then
+            find app/build/outputs/apk -name "*.apk" -type f -print0 | while IFS= read -r -d '' apk; do
+              size=$(du -h "$apk" | cut -f1)
+              echo "  - $apk ($size)"
+            done
+          else
+            echo "  (no APK output dir: app/build/outputs/apk)"
+          fi
+
+      - name: Get version info
+        id: version
+        run: |
+          set -euo pipefail
+
+          VERSION_NAME="$(grep '^versionName=' version.properties | cut -d'=' -f2 | tr -d '\r')"
+          VERSION_CODE="$(grep '^versionCode=' version.properties | cut -d'=' -f2 | tr -d '\r')"
+          echo "name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+          echo "Version: $VERSION_NAME ($VERSION_CODE)"
+
+      - name: Upload debug APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TinaIDE-${{ steps.version.outputs.name }}-arm64-v8a-debug-apk
+          path: app/build/outputs/apk/arm64/debug/*.apk
+          retention-days: 3
+          if-no-files-found: error
+
+      - name: Build Summary
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          echo "## Build Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Version**: ${{ steps.version.outputs.name }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Version Code**: ${{ steps.version.outputs.code }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Build Type**: debug" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Commit**: ${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Branch/Tag**: ${{ github.ref_name }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Generated APKs" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Architecture | File | Size |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|--------------|------|------|" >> "$GITHUB_STEP_SUMMARY"
+
+          for apk in app/build/outputs/apk/arm64/debug/*.apk; do
+            [ -f "$apk" ] || continue
+            filename="$(basename "$apk")"
+            size="$(du -h "$apk" | cut -f1)"
+            echo "| arm64-v8a | $filename | $size |" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      - name: Cleanup Gradle processes
+        if: ${{ always() }}
+        run: |
+          set +e
+          ./gradlew --stop || true
+          pgrep -af 'GradleDaemon|org.gradle.launcher.daemon' || true
+
+  build-release:
+    if: ${{ github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_type == 'release') }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - flavor: arm64
+            abi: arm64-v8a
+            task: :app:assembleArm64Release
+          - flavor: x86_64
+            abi: x86_64
+            task: :app:assembleX86_64Release
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install CMake
+        run: |
+          sdkmanager --install "cmake;3.22.1"
+
+      - name: Install tree-sitter CLI
+        run: npm install -g tree-sitter-cli@0.22.1
+
+      - name: Setup tree-sitter grammar dependencies
+        run: |
+          set -euo pipefail
+
+          cd external/tina-android-tree-sitter/grammars/cpp
+          mkdir -p node_modules
+          ln -sf ../../c node_modules/tree-sitter-c
+          echo "Created tree-sitter-c symlink for tree-sitter-cpp."
+
+          cd ../toml
+          npm install --ignore-scripts regexp-util
+          echo "Installed regexp-util for tree-sitter-toml."
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
       - name: Prepare release signing assets
-        if: ${{ github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_type == 'release') }}
         env:
           TINAIDE_RELEASE_KEYSTORE_B64: ${{ secrets.TINAIDE_RELEASE_KEYSTORE_B64 }}
           TINAIDE_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.TINAIDE_RELEASE_KEYSTORE_PASSWORD }}
@@ -115,21 +242,11 @@ jobs:
 
           echo "Release tag matches version.properties: $VERSION_NAME"
 
-      - name: Build Debug APK
-        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.build_type == 'debug' }}
-        timeout-minutes: 20
+      - name: Build ${{ matrix.abi }} Release APK
+        timeout-minutes: 35
         run: |
-          ./gradlew :app:assembleArm64Debug --no-daemon -Ptina.devAbi=arm64 \
-            -Ptina.buildProotFromSource=false \
-            -Dorg.gradle.internal.http.connectionTimeout=120000 \
-            -Dorg.gradle.internal.http.socketTimeout=120000 \
-            -Dorg.gradle.internal.repository.max.retries=4
-
-      - name: Build Release APKs
-        if: ${{ github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_type == 'release') }}
-        timeout-minutes: 45
-        run: |
-          ./gradlew :app:assembleReleaseAllAbi --no-daemon -Ptina.allAbi=true \
+          ./gradlew ${{ matrix.task }} --no-daemon -Ptina.devAbi=${{ matrix.flavor }} \
+            -Ptina.allAbi=false \
             -Ptina.buildProotFromSource=false \
             -Dorg.gradle.internal.http.connectionTimeout=120000 \
             -Dorg.gradle.internal.http.socketTimeout=120000 \
@@ -160,8 +277,143 @@ jobs:
           echo "code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
           echo "Version: $VERSION_NAME ($VERSION_CODE)"
 
+      - name: Prepare release APK name
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          VERSION="${{ steps.version.outputs.name }}"
+          ABI="${{ matrix.abi }}"
+          APK_ROOT="app/build/outputs/apk"
+          OUT_DIR="${APK_ROOT}/release"
+          mkdir -p "$OUT_DIR"
+          rm -f "${OUT_DIR}"/TinaIDE-"${VERSION}"-"${ABI}".apk
+
+          mapfile -t matches < <(
+            find "$APK_ROOT" -type f -name "*${ABI}*release*.apk" \
+              ! -path "${OUT_DIR}/*" \
+              ! -name "TinaIDE-*.apk" \
+              | sort
+          )
+
+          if [ "${#matches[@]}" -ne 1 ]; then
+            echo "ERROR: expected exactly one release APK for ${ABI}, found ${#matches[@]}."
+            printf '  %s\n' "${matches[@]:-}"
+            exit 1
+          fi
+
+          cp "${matches[0]}" "${OUT_DIR}/TinaIDE-${VERSION}-${ABI}.apk"
+
+          echo "Final release APK file:"
+          ls -lh "${OUT_DIR}/TinaIDE-${VERSION}-${ABI}.apk"
+          sha256sum "${OUT_DIR}/TinaIDE-${VERSION}-${ABI}.apk"
+
+      - name: Validate release APK manifest
+        run: |
+          set -euo pipefail
+
+          VERSION="${{ steps.version.outputs.name }}"
+          ABI="${{ matrix.abi }}"
+          APK="app/build/outputs/apk/release/TinaIDE-${VERSION}-${ABI}.apk"
+          AAPT="$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -type f -name aapt | sort -V | tail -n 1)"
+
+          if [ -z "$AAPT" ]; then
+            echo "ERROR: aapt not found under ANDROID_HOME=$ANDROID_HOME"
+            exit 1
+          fi
+
+          if [ ! -f "$APK" ]; then
+            echo "ERROR: release APK not found: $APK"
+            exit 1
+          fi
+
+          require_text() {
+            local label="$1"
+            local pattern="$2"
+            local text="$3"
+            if ! grep -Fq -- "$pattern" <<< "$text"; then
+              echo "ERROR: missing ${label}: ${pattern}"
+              exit 1
+            fi
+          }
+
+          echo "Validating $(basename "$APK")"
+          BADGING="$("$AAPT" dump badging "$APK")"
+          MANIFEST="$("$AAPT" dump xmltree "$APK" AndroidManifest.xml)"
+
+          require_text "versionName" "versionName='$VERSION'" "$BADGING"
+          require_text "native-code ABI" "native-code: '$ABI'" "$BADGING"
+
+          if grep -Fq 'com.wuxianggujun.tinaide.storage.TinaFileProvider' <<< "$MANIFEST"; then
+            echo "Found TinaFileProvider"
+          elif grep -Fq 'androidx.core.content.FileProvider' <<< "$MANIFEST"; then
+            echo "Found AndroidX FileProvider"
+          else
+            echo "ERROR: missing FileProvider implementation"
+            exit 1
+          fi
+
+          require_text "fileprovider authority" 'fileprovider' "$MANIFEST"
+          require_text "FILE_PROVIDER_PATHS meta-data" 'android.support.FILE_PROVIDER_PATHS' "$MANIFEST"
+
+      - name: Upload release APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TinaIDE-${{ steps.version.outputs.name }}-${{ matrix.abi }}-apk
+          path: app/build/outputs/apk/release/TinaIDE-${{ steps.version.outputs.name }}-${{ matrix.abi }}.apk
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Build Summary
+        run: |
+          set -euo pipefail
+
+          APK="app/build/outputs/apk/release/TinaIDE-${{ steps.version.outputs.name }}-${{ matrix.abi }}.apk"
+          size="$(du -h "$APK" | cut -f1)"
+
+          echo "## Release Build Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Version**: ${{ steps.version.outputs.name }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Version Code**: ${{ steps.version.outputs.code }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Architecture**: ${{ matrix.abi }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Build Type**: release" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Commit**: ${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Branch/Tag**: ${{ github.ref_name }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Generated APK" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Architecture | File | Size |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|--------------|------|------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| ${{ matrix.abi }} | $(basename "$APK") | $size |" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup Gradle processes
+        if: ${{ always() }}
+        run: |
+          set +e
+          ./gradlew --stop || true
+          pgrep -af 'GradleDaemon|org.gradle.launcher.daemon' || true
+
+  publish-release:
+    if: ${{ github.ref_type == 'tag' }}
+    needs: build-release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get version info
+        id: version
+        run: |
+          set -euo pipefail
+
+          VERSION_NAME="$(grep '^versionName=' version.properties | cut -d'=' -f2 | tr -d '\r')"
+          VERSION_CODE="$(grep '^versionCode=' version.properties | cut -d'=' -f2 | tr -d '\r')"
+          echo "name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+          echo "Version: $VERSION_NAME ($VERSION_CODE)"
+
       - name: Extract changelog for current version
-        if: ${{ github.ref_type == 'tag' }}
         run: |
           set -euo pipefail
 
@@ -183,145 +435,40 @@ jobs:
 
           printf '%s\n' "$CHANGELOG_CONTENT" > release_notes.md
 
-      - name: Prepare release APK names
-        if: ${{ github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_type == 'release') }}
+      - name: Download arm64 release APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: TinaIDE-${{ steps.version.outputs.name }}-arm64-v8a-apk
+          path: release-artifacts
+
+      - name: Download x86_64 release APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: TinaIDE-${{ steps.version.outputs.name }}-x86_64-apk
+          path: release-artifacts
+
+      - name: Validate release artifacts
         run: |
           set -euo pipefail
           shopt -s nullglob
 
           VERSION="${{ steps.version.outputs.name }}"
-          APK_ROOT="app/build/outputs/apk"
-          OUT_DIR="${APK_ROOT}/release"
-          mkdir -p "$OUT_DIR"
-          rm -f "${OUT_DIR}"/TinaIDE-*.apk
+          APKS=(release-artifacts/TinaIDE-"${VERSION}"-*.apk)
 
-          find_one_apk() {
-            local abi="$1"
-            mapfile -t matches < <(
-              find "$APK_ROOT" -type f -name "*${abi}*release*.apk" \
-                ! -path "${OUT_DIR}/*" \
-                ! -name "TinaIDE-*.apk" \
-                | sort
-            )
-
-            if [ "${#matches[@]}" -ne 1 ]; then
-              echo "ERROR: expected exactly one release APK for ${abi}, found ${#matches[@]}."
-              printf '  %s\n' "${matches[@]:-}"
-              exit 1
-            fi
-
-            printf '%s' "${matches[0]}"
-          }
-
-          ARM64_APK="$(find_one_apk "arm64-v8a")"
-          X86_APK="$(find_one_apk "x86_64")"
-
-          cp "$ARM64_APK" "${OUT_DIR}/TinaIDE-${VERSION}-arm64-v8a.apk"
-          cp "$X86_APK" "${OUT_DIR}/TinaIDE-${VERSION}-x86_64.apk"
-
-          APKS=("${OUT_DIR}"/TinaIDE-"${VERSION}"-*.apk)
           if [ "${#APKS[@]}" -ne 2 ]; then
-            echo "ERROR: expected exactly two renamed release APKs, found ${#APKS[@]}."
+            echo "ERROR: expected exactly two release APK artifacts, found ${#APKS[@]}."
             printf '  %s\n' "${APKS[@]:-}"
             exit 1
           fi
 
-          echo "Final release APK files:"
+          test -f "release-artifacts/TinaIDE-${VERSION}-arm64-v8a.apk"
+          test -f "release-artifacts/TinaIDE-${VERSION}-x86_64.apk"
+
+          echo "Release artifacts:"
           ls -lh "${APKS[@]}"
           sha256sum "${APKS[@]}"
 
-      - name: Validate release APK manifests
-        if: ${{ github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_type == 'release') }}
-        run: |
-          set -euo pipefail
-          shopt -s nullglob
-
-          VERSION="${{ steps.version.outputs.name }}"
-          APK_ROOT="app/build/outputs/apk/release"
-          AAPT="$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -type f -name aapt | sort -V | tail -n 1)"
-          APKS=("${APK_ROOT}"/TinaIDE-"${VERSION}"-*.apk)
-
-          if [ -z "$AAPT" ]; then
-            echo "ERROR: aapt not found under ANDROID_HOME=$ANDROID_HOME"
-            exit 1
-          fi
-
-          if [ "${#APKS[@]}" -ne 2 ]; then
-            echo "ERROR: expected exactly two release APKs, found ${#APKS[@]}."
-            printf '  %s\n' "${APKS[@]:-}"
-            exit 1
-          fi
-
-          require_text() {
-            local label="$1"
-            local pattern="$2"
-            local text="$3"
-            if ! grep -Fq -- "$pattern" <<< "$text"; then
-              echo "ERROR: missing ${label}: ${pattern}"
-              exit 1
-            fi
-          }
-
-          for apk in "${APKS[@]}"; do
-            filename="$(basename "$apk")"
-            case "$filename" in
-              *arm64-v8a.apk) expected_abi="arm64-v8a" ;;
-              *x86_64.apk) expected_abi="x86_64" ;;
-              *)
-                echo "ERROR: release APK filename does not include a supported ABI: $filename"
-                exit 1
-                ;;
-            esac
-
-            echo "Validating $filename"
-            BADGING="$("$AAPT" dump badging "$apk")"
-            MANIFEST="$("$AAPT" dump xmltree "$apk" AndroidManifest.xml)"
-
-            require_text "versionName" "versionName='$VERSION'" "$BADGING"
-            require_text "native-code ABI" "native-code: '$expected_abi'" "$BADGING"
-
-            if grep -Fq 'com.wuxianggujun.tinaide.storage.TinaFileProvider' <<< "$MANIFEST"; then
-              echo "Found TinaFileProvider"
-            elif grep -Fq 'androidx.core.content.FileProvider' <<< "$MANIFEST"; then
-              echo "Found AndroidX FileProvider"
-            else
-              echo "ERROR: missing FileProvider implementation"
-              exit 1
-            fi
-
-            require_text "fileprovider authority" 'fileprovider' "$MANIFEST"
-            require_text "FILE_PROVIDER_PATHS meta-data" 'android.support.FILE_PROVIDER_PATHS' "$MANIFEST"
-          done
-
-      - name: Upload arm64 release APK artifact
-        if: ${{ github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_type == 'release') }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: TinaIDE-${{ steps.version.outputs.name }}-arm64-v8a-apk
-          path: app/build/outputs/apk/release/TinaIDE-${{ steps.version.outputs.name }}-arm64-v8a.apk
-          retention-days: 7
-          if-no-files-found: error
-
-      - name: Upload x86_64 release APK artifact
-        if: ${{ github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_type == 'release') }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: TinaIDE-${{ steps.version.outputs.name }}-x86_64-apk
-          path: app/build/outputs/apk/release/TinaIDE-${{ steps.version.outputs.name }}-x86_64.apk
-          retention-days: 7
-          if-no-files-found: error
-
-      - name: Upload debug APK artifact
-        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.build_type == 'debug' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: TinaIDE-${{ steps.version.outputs.name }}-arm64-v8a-debug-apk
-          path: app/build/outputs/apk/arm64/debug/*.apk
-          retention-days: 3
-          if-no-files-found: error
-
       - name: Create GitHub Release
-        if: ${{ github.ref_type == 'tag' }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
@@ -331,8 +478,8 @@ jobs:
           prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') || contains(github.ref_name, 'dev') }}
           make_latest: true
           files: |
-            app/build/outputs/apk/release/TinaIDE-${{ steps.version.outputs.name }}-arm64-v8a.apk
-            app/build/outputs/apk/release/TinaIDE-${{ steps.version.outputs.name }}-x86_64.apk
+            release-artifacts/TinaIDE-${{ steps.version.outputs.name }}-arm64-v8a.apk
+            release-artifacts/TinaIDE-${{ steps.version.outputs.name }}-x86_64.apk
           fail_on_unmatched_files: true
 
       - name: Build Summary
@@ -340,34 +487,27 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
 
-          echo "## Build Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Release Summary" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Version**: ${{ steps.version.outputs.name }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Version Code**: ${{ steps.version.outputs.code }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Build Type**: ${{ github.ref_type == 'tag' && 'release' || github.event.inputs.build_type }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Build Type**: release" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Commit**: ${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Branch/Tag**: ${{ github.ref_name }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Tag**: ${{ github.ref_name }}" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "### Generated APKs" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Release APKs" >> "$GITHUB_STEP_SUMMARY"
           echo "| Architecture | File | Size |" >> "$GITHUB_STEP_SUMMARY"
           echo "|--------------|------|------|" >> "$GITHUB_STEP_SUMMARY"
 
-          for apk in app/build/outputs/apk/release/TinaIDE-${{ steps.version.outputs.name }}-*.apk app/build/outputs/apk/arm64/debug/*.apk; do
+          for apk in release-artifacts/TinaIDE-${{ steps.version.outputs.name }}-*.apk; do
             [ -f "$apk" ] || continue
             filename="$(basename "$apk")"
             size="$(du -h "$apk" | cut -f1)"
-            if [[ "$filename" == *"arm64-v8a"* || "$apk" == *"/arm64/"* ]]; then
+            if [[ "$filename" == *"arm64-v8a"* ]]; then
               arch="arm64-v8a"
-            elif [[ "$filename" == *"x86_64"* || "$apk" == *"/x86_64/"* ]]; then
+            elif [[ "$filename" == *"x86_64"* ]]; then
               arch="x86_64"
             else
               arch="unknown"
             fi
             echo "| $arch | $filename | $size |" >> "$GITHUB_STEP_SUMMARY"
           done
-
-      - name: Cleanup Gradle processes
-        if: ${{ always() }}
-        run: |
-          set +e
-          ./gradlew --stop || true
-          pgrep -af 'GradleDaemon|org.gradle.launcher.daemon' || true

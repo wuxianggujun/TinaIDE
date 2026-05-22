@@ -62,11 +62,6 @@ class TinaAndroidAppAbiAggregationPlugin : Plugin<Project> {
             }
 
             afterEvaluate {
-                val arm64ReleaseTasks = tasks.matching { it.name.contains("Arm64Release") }
-                tasks.matching { it.name.contains("X86_64Release") }.configureEach {
-                    mustRunAfter(arm64ReleaseTasks)
-                }
-
                 val arm64Task = tasks.findByName("buildCMakeDebug[arm64-v8a]")
                 val x86Task = tasks.findByName("buildCMakeDebug[x86_64]")
                 val mergeNativeTask = tasks.findByName("mergeDebugNativeLibs")
