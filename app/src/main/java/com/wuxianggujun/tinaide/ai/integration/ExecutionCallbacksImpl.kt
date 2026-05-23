@@ -18,6 +18,7 @@ import com.wuxianggujun.tinaide.ui.compose.components.BottomPanelTab
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -50,6 +51,7 @@ class ExecutionCallbacksImpl(
     private val executionResults = ConcurrentHashMap<String, ExecutionResult>()
     private val executionOutputModes = ConcurrentHashMap<String, ExecutionOutputMode>()
     private val executionCompletedAt = ConcurrentHashMap<String, Long>()
+    private val activeProcessExecutionId = AtomicReference<String?>(null)
 
     override fun runProject(request: RunRequest): ExecutionResult {
         val executionId = UUID.randomUUID().toString()
@@ -57,8 +59,7 @@ class ExecutionCallbacksImpl(
 
         return try {
             // 标记为运行中
-            executionStates[executionId] = ExecutionStatus.RUNNING
-            executionOutputModes[executionId] = ExecutionOutputMode.RUN
+            beginExecution(executionId, ExecutionOutputMode.RUN)
             resetOutputForExecution(ExecutionOutputMode.RUN)
             outputManager.appendOutput("Project execution started\n", IOutputManager.OutputChannel.RUN)
 
@@ -115,37 +116,30 @@ class ExecutionCallbacksImpl(
 
                     val duration = System.currentTimeMillis() - startTime
                     val executionResult = when (result) {
-                        is CompileProjectUseCase.Result.Success -> {
-                            executionStates[executionId] = ExecutionStatus.SUCCESS
-                            ExecutionResult(
-                                executionId = executionId,
-                                success = true,
-                                exitCode = 0,
-                                output = result.report.summary,
-                                errorOutput = "",
-                                duration = duration,
-                                status = ExecutionStatus.SUCCESS
-                            )
-                        }
-                        is CompileProjectUseCase.Result.Error -> {
-                            executionStates[executionId] = ExecutionStatus.FAILED
-                            ExecutionResult(
-                                executionId = executionId,
-                                success = false,
-                                exitCode = 1,
-                                output = "",
-                                errorOutput = result.userMessage,
-                                duration = duration,
-                                status = ExecutionStatus.FAILED
-                            )
-                        }
+                        is CompileProjectUseCase.Result.Success -> ExecutionResult(
+                            executionId = executionId,
+                            success = true,
+                            exitCode = 0,
+                            output = result.report.summary,
+                            errorOutput = "",
+                            duration = duration,
+                            status = ExecutionStatus.SUCCESS
+                        )
+                        is CompileProjectUseCase.Result.Error -> ExecutionResult(
+                            executionId = executionId,
+                            success = false,
+                            exitCode = 1,
+                            output = "",
+                            errorOutput = result.userMessage,
+                            duration = duration,
+                            status = ExecutionStatus.FAILED
+                        )
                     }
-                    storeExecutionResult(executionResult)
+                    completeExecutionIfActive(executionResult)
                 } catch (e: Exception) {
                     Timber.tag(TAG).e(e, "Failed to run project")
-                    executionStates[executionId] = ExecutionStatus.FAILED
                     val duration = System.currentTimeMillis() - startTime
-                    storeExecutionResult(
+                    completeExecutionIfActive(
                         ExecutionResult(
                             executionId = executionId,
                             success = false,
@@ -163,8 +157,7 @@ class ExecutionCallbacksImpl(
             started
         } catch (e: Exception) {
             Timber.tag(TAG).e(e, "Failed to start project execution")
-            executionStates[executionId] = ExecutionStatus.FAILED
-            ExecutionResult(
+            val result = ExecutionResult(
                 executionId = executionId,
                 success = false,
                 exitCode = -1,
@@ -173,6 +166,8 @@ class ExecutionCallbacksImpl(
                 duration = 0,
                 status = ExecutionStatus.FAILED
             )
+            completeExecutionIfActive(result)
+            result
         }
     }
 
@@ -181,8 +176,7 @@ class ExecutionCallbacksImpl(
         val startTime = System.currentTimeMillis()
 
         return try {
-            executionStates[executionId] = ExecutionStatus.RUNNING
-            executionOutputModes[executionId] = ExecutionOutputMode.RUN
+            beginExecution(executionId, ExecutionOutputMode.RUN)
             resetOutputForExecution(ExecutionOutputMode.RUN)
 
             scope.launch(Dispatchers.Main) {
@@ -232,47 +226,43 @@ class ExecutionCallbacksImpl(
 
                     val duration = System.currentTimeMillis() - startTime
                     val executionResult = when (result) {
-                        is CompileProjectUseCase.Result.Success -> {
-                            executionStates[executionId] = ExecutionStatus.SUCCESS
-                            outputManager.appendOutput(
-                                "Test execution finished\n${result.report.summary}\n",
+                        is CompileProjectUseCase.Result.Success -> ExecutionResult(
+                            executionId = executionId,
+                            success = true,
+                            exitCode = 0,
+                            output = result.report.summary,
+                            errorOutput = "",
+                            duration = duration,
+                            status = ExecutionStatus.SUCCESS
+                        )
+                        is CompileProjectUseCase.Result.Error -> ExecutionResult(
+                            executionId = executionId,
+                            success = false,
+                            exitCode = 1,
+                            output = "",
+                            errorOutput = result.userMessage,
+                            duration = duration,
+                            status = ExecutionStatus.FAILED
+                        )
+                    }
+                    if (completeExecutionIfActive(executionResult)) {
+                        when (executionResult.status) {
+                            ExecutionStatus.SUCCESS -> outputManager.appendOutput(
+                                "Test execution finished\n${executionResult.output}\n",
                                 IOutputManager.OutputChannel.RUN
                             )
-                            ExecutionResult(
-                                executionId = executionId,
-                                success = true,
-                                exitCode = 0,
-                                output = result.report.summary,
-                                errorOutput = "",
-                                duration = duration,
-                                status = ExecutionStatus.SUCCESS
-                            )
-                        }
-                        is CompileProjectUseCase.Result.Error -> {
-                            executionStates[executionId] = ExecutionStatus.FAILED
-                            outputManager.appendOutput(
-                                "Test execution failed: ${result.userMessage}\n",
+                            ExecutionStatus.FAILED -> outputManager.appendOutput(
+                                "Test execution failed: ${executionResult.errorOutput}\n",
                                 IOutputManager.OutputChannel.RUN
                             )
-                            ExecutionResult(
-                                executionId = executionId,
-                                success = false,
-                                exitCode = 1,
-                                output = "",
-                                errorOutput = result.userMessage,
-                                duration = duration,
-                                status = ExecutionStatus.FAILED
-                            )
+                            else -> Unit
                         }
                     }
-                    storeExecutionResult(executionResult)
                 } catch (e: Exception) {
                     Timber.tag(TAG).e(e, "Failed to run tests")
-                    executionStates[executionId] = ExecutionStatus.FAILED
                     val duration = System.currentTimeMillis() - startTime
                     val message = "Failed to run tests: ${e.message}"
-                    outputManager.appendOutput("$message\n", IOutputManager.OutputChannel.RUN)
-                    storeExecutionResult(
+                    if (completeExecutionIfActive(
                         ExecutionResult(
                             executionId = executionId,
                             success = false,
@@ -282,15 +272,16 @@ class ExecutionCallbacksImpl(
                             duration = duration,
                             status = ExecutionStatus.FAILED
                         )
-                    )
+                    )) {
+                        outputManager.appendOutput("$message\n", IOutputManager.OutputChannel.RUN)
+                    }
                 }
             }
 
             started
         } catch (e: Exception) {
             Timber.tag(TAG).e(e, "Failed to start tests")
-            executionStates[executionId] = ExecutionStatus.FAILED
-            ExecutionResult(
+            val result = ExecutionResult(
                 executionId = executionId,
                 success = false,
                 exitCode = -1,
@@ -299,6 +290,8 @@ class ExecutionCallbacksImpl(
                 duration = 0,
                 status = ExecutionStatus.FAILED
             )
+            completeExecutionIfActive(result)
+            result
         }
     }
 
@@ -307,8 +300,7 @@ class ExecutionCallbacksImpl(
         val startTime = System.currentTimeMillis()
 
         return try {
-            executionStates[executionId] = ExecutionStatus.RUNNING
-            executionOutputModes[executionId] = ExecutionOutputMode.BUILD
+            beginExecution(executionId, ExecutionOutputMode.BUILD)
             resetOutputForExecution(ExecutionOutputMode.BUILD)
             outputManager.appendOutput("Build started\n", IOutputManager.OutputChannel.BUILD)
 
@@ -361,9 +353,8 @@ class ExecutionCallbacksImpl(
                     if (request.clean) {
                         val cleanResult = runRequestedCleanBuild(buildSystem)
                         if (cleanResult is CompileProjectUseCase.Result.Error) {
-                            executionStates[executionId] = ExecutionStatus.FAILED
                             val duration = System.currentTimeMillis() - startTime
-                            storeExecutionResult(
+                            completeExecutionIfActive(
                                 ExecutionResult(
                                     executionId = executionId,
                                     success = false,
@@ -390,37 +381,30 @@ class ExecutionCallbacksImpl(
 
                     val duration = System.currentTimeMillis() - startTime
                     val executionResult = when (result) {
-                        is CompileProjectUseCase.Result.Success -> {
-                            executionStates[executionId] = ExecutionStatus.SUCCESS
-                            ExecutionResult(
-                                executionId = executionId,
-                                success = true,
-                                exitCode = 0,
-                                output = result.report.summary,
-                                errorOutput = "",
-                                duration = duration,
-                                status = ExecutionStatus.SUCCESS
-                            )
-                        }
-                        is CompileProjectUseCase.Result.Error -> {
-                            executionStates[executionId] = ExecutionStatus.FAILED
-                            ExecutionResult(
-                                executionId = executionId,
-                                success = false,
-                                exitCode = 1,
-                                output = "",
-                                errorOutput = result.userMessage,
-                                duration = duration,
-                                status = ExecutionStatus.FAILED
-                            )
-                        }
+                        is CompileProjectUseCase.Result.Success -> ExecutionResult(
+                            executionId = executionId,
+                            success = true,
+                            exitCode = 0,
+                            output = result.report.summary,
+                            errorOutput = "",
+                            duration = duration,
+                            status = ExecutionStatus.SUCCESS
+                        )
+                        is CompileProjectUseCase.Result.Error -> ExecutionResult(
+                            executionId = executionId,
+                            success = false,
+                            exitCode = 1,
+                            output = "",
+                            errorOutput = result.userMessage,
+                            duration = duration,
+                            status = ExecutionStatus.FAILED
+                        )
                     }
-                    storeExecutionResult(executionResult)
+                    completeExecutionIfActive(executionResult)
                 } catch (e: Exception) {
                     Timber.tag(TAG).e(e, "Failed to build project")
-                    executionStates[executionId] = ExecutionStatus.FAILED
                     val duration = System.currentTimeMillis() - startTime
-                    storeExecutionResult(
+                    completeExecutionIfActive(
                         ExecutionResult(
                             executionId = executionId,
                             success = false,
@@ -438,8 +422,7 @@ class ExecutionCallbacksImpl(
             started
         } catch (e: Exception) {
             Timber.tag(TAG).e(e, "Failed to start build")
-            executionStates[executionId] = ExecutionStatus.FAILED
-            ExecutionResult(
+            val result = ExecutionResult(
                 executionId = executionId,
                 success = false,
                 exitCode = -1,
@@ -448,6 +431,8 @@ class ExecutionCallbacksImpl(
                 duration = 0,
                 status = ExecutionStatus.FAILED
             )
+            completeExecutionIfActive(result)
+            result
         }
     }
 
@@ -506,9 +491,24 @@ class ExecutionCallbacksImpl(
         )
     }
 
-    override fun stopExecution(executionId: String): Boolean = try {
+    override fun stopExecution(executionId: String): Boolean {
+        return try {
         // 停止当前进程
-        processManager.stopCurrentProcess()
+        val status = executionStates[executionId] ?: return false
+        if (status != ExecutionStatus.RUNNING && status != ExecutionStatus.PENDING) {
+            return false
+        }
+
+        if (!activeProcessExecutionId.compareAndSet(executionId, null)) {
+            Timber.tag(TAG).w("Skip stopping non-active execution: $executionId")
+            return false
+        }
+
+        if (!processManager.stopCurrentProcess()) {
+            activeProcessExecutionId.compareAndSet(null, executionId)
+            Timber.tag(TAG).w("No active process stopped for execution: $executionId")
+            return false
+        }
         executionStates[executionId] = ExecutionStatus.CANCELLED
 
         // 更新结果
@@ -520,38 +520,17 @@ class ExecutionCallbacksImpl(
                 )
             )
         }
-
         Timber.tag(TAG).i("Stopped execution: $executionId")
         true
     } catch (e: Exception) {
+        activeProcessExecutionId.compareAndSet(null, executionId)
         Timber.tag(TAG).e(e, "Failed to stop execution: $executionId")
         false
     }
+    }
 
     override fun getExecutionStatus(executionId: String): ExecutionStatus? {
-        // 先检查存储的状态
-        val storedStatus = executionStates[executionId]
-        if (storedStatus != null) {
-            return storedStatus
-        }
-
-        // 如果没有存储的状态，检查进程管理器
-        val processInfo = processManager.processState.value
-        return when (processInfo.state) {
-            ProcessManager.ProcessState.IDLE -> null
-            ProcessManager.ProcessState.STARTING -> ExecutionStatus.PENDING
-            ProcessManager.ProcessState.RUNNING -> ExecutionStatus.RUNNING
-            ProcessManager.ProcessState.STOPPING -> ExecutionStatus.RUNNING
-            ProcessManager.ProcessState.STOPPED -> {
-                if (processInfo.wasTerminated) {
-                    ExecutionStatus.CANCELLED
-                } else if (processInfo.exitCode == 0) {
-                    ExecutionStatus.SUCCESS
-                } else {
-                    ExecutionStatus.FAILED
-                }
-            }
-        }
+        return executionStates[executionId]
     }
 
     override fun getExecutionOutput(executionId: String): ExecutionOutputResult? {
@@ -568,6 +547,12 @@ class ExecutionCallbacksImpl(
     private enum class ExecutionOutputMode {
         BUILD,
         RUN
+    }
+
+    private fun beginExecution(executionId: String, mode: ExecutionOutputMode) {
+        executionStates[executionId] = ExecutionStatus.RUNNING
+        executionOutputModes[executionId] = mode
+        activeProcessExecutionId.set(executionId)
     }
 
     private fun resetOutputForExecution(mode: ExecutionOutputMode) {
@@ -599,6 +584,29 @@ class ExecutionCallbacksImpl(
             }
         }.trimEnd()
         return liveOutput.ifBlank { result.output }
+    }
+
+    private fun completeExecutionIfActive(result: ExecutionResult): Boolean {
+        var completed = false
+        executionStates.compute(result.executionId) { _, currentStatus ->
+            if (currentStatus == ExecutionStatus.CANCELLED) {
+                currentStatus
+            } else {
+                completed = true
+                result.status
+            }
+        }
+        if (!completed) {
+            Timber.tag(TAG).i("Skip terminal result for cancelled execution: ${result.executionId}")
+            return false
+        }
+        storeExecutionResult(result)
+        clearActiveProcessExecution(result.executionId)
+        return true
+    }
+
+    private fun clearActiveProcessExecution(executionId: String) {
+        activeProcessExecutionId.compareAndSet(executionId, null)
     }
 
     private fun storeExecutionResult(result: ExecutionResult) {

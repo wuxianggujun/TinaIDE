@@ -51,6 +51,10 @@ internal object NewProjectWizardSupport {
         return option?.spec?.buildSystem == ProjectBuildSystem.PLUGIN
     }
 
+    fun isUserTemplate(option: ProjectTemplateOption?): Boolean {
+        return option?.id?.startsWith(UserProjectTemplates.TEMPLATE_ID_PREFIX) == true
+    }
+
     fun shouldShowCppStandard(option: ProjectTemplateOption?): Boolean {
         val language = option?.spec?.primaryLanguage ?: return true
         return language == ProjectLanguage.C || language == ProjectLanguage.CPP
@@ -58,12 +62,20 @@ internal object NewProjectWizardSupport {
 
     @StringRes
     fun resolveTemplateBadgeRes(option: ProjectTemplateOption?): Int? {
-        return if (isPluginTemplate(option)) Strings.wizard_plugin_template_badge else null
+        return when {
+            isPluginTemplate(option) -> Strings.wizard_plugin_template_badge
+            isUserTemplate(option) -> Strings.wizard_user_template_badge
+            else -> null
+        }
     }
 
     @StringRes
     fun resolveTemplateCardGuideRes(option: ProjectTemplateOption?): Int? {
-        return if (isPluginTemplate(option)) Strings.wizard_plugin_template_card_hint else null
+        return when {
+            isPluginTemplate(option) -> Strings.wizard_plugin_template_card_hint
+            isUserTemplate(option) -> Strings.wizard_user_template_card_hint
+            else -> null
+        }
     }
 
     @StringRes

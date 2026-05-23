@@ -52,6 +52,27 @@ class NewProjectWizardSupportTest {
     }
 
     @Test
+    fun userTemplateHelpers_shouldResolveCustomBadgeAndGuide() {
+        val userTemplate = template(
+            id = "${UserProjectTemplates.TEMPLATE_ID_PREFIX}cmake-demo",
+            buildSystem = ProjectBuildSystem.CMAKE,
+            primaryLanguage = ProjectLanguage.CPP,
+        )
+
+        assertThat(NewProjectWizardSupport.isUserTemplate(userTemplate)).isTrue()
+        assertThat(NewProjectWizardSupport.isPluginTemplate(userTemplate)).isFalse()
+        assertThat(NewProjectWizardSupport.shouldShowCppStandard(userTemplate)).isTrue()
+        assertThat(NewProjectWizardSupport.resolveTemplateBadgeRes(userTemplate))
+            .isEqualTo(Strings.wizard_user_template_badge)
+        assertThat(NewProjectWizardSupport.resolveTemplateCardGuideRes(userTemplate))
+            .isEqualTo(Strings.wizard_user_template_card_hint)
+        assertThat(NewProjectWizardSupport.resolveConfigurationGuideTitleRes(userTemplate)).isNull()
+        assertThat(NewProjectWizardSupport.resolveConfigurationGuideBodyRes(userTemplate)).isNull()
+        assertThat(NewProjectWizardSupport.resolveProjectCreatedMessageRes(userTemplate))
+            .isEqualTo(Strings.success_project_created)
+    }
+
+    @Test
     fun resolveSelectedTemplate_shouldFallbackToFirstOption() {
         val first = template(
             id = "builtin:first",

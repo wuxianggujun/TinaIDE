@@ -7,6 +7,7 @@ import com.wuxianggujun.tinaide.core.config.ConfigChangeListener
 import com.wuxianggujun.tinaide.core.config.ConfigKey
 import com.wuxianggujun.tinaide.core.config.IConfigManager
 import com.wuxianggujun.tinaide.core.config.Prefs
+import com.wuxianggujun.tinaide.editor.bookmark.db.BookmarkDatabase
 import com.wuxianggujun.tinaide.editor.theme.PluginEditorThemeRegistry
 import com.wuxianggujun.tinaide.plugin.PluginManager
 import com.wuxianggujun.tinaide.plugin.PluginSnippetManager
@@ -186,6 +187,7 @@ class DevEditorHostBootstrapTest {
     @After
     fun tearDown() {
         runCatching { stopKoin() }
+        runCatching { BookmarkDatabase.closeInstance() }
     }
 
     @Test

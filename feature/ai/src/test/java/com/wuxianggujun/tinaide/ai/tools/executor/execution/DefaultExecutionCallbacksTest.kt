@@ -17,7 +17,7 @@ class DefaultExecutionCallbacksTest {
             assertThat(result.executionId).isNotEmpty()
             assertThat(result.success).isFalse()
             assertThat(result.status).isEqualTo(ExecutionStatus.FAILED)
-            assertThat(callbacks.getExecutionStatus(result.executionId)).isEqualTo(ExecutionStatus.RUNNING)
+            assertThat(callbacks.getExecutionStatus(result.executionId)).isEqualTo(ExecutionStatus.FAILED)
             assertThat(callbacks.getExecutionOutput(result.executionId)?.exitCode).isEqualTo(-1)
         }
     }
@@ -25,16 +25,32 @@ class DefaultExecutionCallbacksTest {
     @Test
     fun `stop and clear execution status update lifecycle maps`() {
         val callbacks = DefaultExecutionCallbacks()
-        val result = callbacks.runProject(RunRequest())
+        val executionId = "running-execution"
+        callbacks.updateExecutionStatus(executionId, ExecutionStatus.RUNNING)
 
-        assertThat(callbacks.stopExecution(result.executionId)).isTrue()
-        assertThat(callbacks.getExecutionStatus(result.executionId)).isEqualTo(ExecutionStatus.CANCELLED)
+        assertThat(callbacks.stopExecution(executionId)).isTrue()
+        assertThat(callbacks.getExecutionStatus(executionId)).isEqualTo(ExecutionStatus.CANCELLED)
 
-        callbacks.clearExecutionStatus(result.executionId)
+        callbacks.clearExecutionStatus(executionId)
 
-        assertThat(callbacks.getExecutionStatus(result.executionId)).isNull()
-        assertThat(callbacks.getExecutionOutput(result.executionId)).isNull()
-        assertThat(callbacks.stopExecution(result.executionId)).isFalse()
+        assertThat(callbacks.getExecutionStatus(executionId)).isNull()
+        assertThat(callbacks.getExecutionOutput(executionId)).isNull()
+        assertThat(callbacks.stopExecution(executionId)).isFalse()
+    }
+
+    @Test
+    fun `default failed executions cannot be stopped as running work`() {
+        val callbacks = DefaultExecutionCallbacks()
+        val results = listOf(
+            callbacks.runProject(RunRequest()),
+            callbacks.runTests(TestRequest()),
+            callbacks.buildProject(BuildRequest())
+        )
+
+        results.forEach { result ->
+            assertThat(callbacks.stopExecution(result.executionId)).isFalse()
+            assertThat(callbacks.getExecutionStatus(result.executionId)).isEqualTo(ExecutionStatus.FAILED)
+        }
     }
 
     @Test

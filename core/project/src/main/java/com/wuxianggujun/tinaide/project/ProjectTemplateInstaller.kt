@@ -2,6 +2,7 @@ package com.wuxianggujun.tinaide.project
 
 import android.content.Context
 import java.io.File
+import java.io.IOException
 import java.io.InputStream
 import java.util.zip.ZipInputStream
 import timber.log.Timber
@@ -22,6 +23,35 @@ object ProjectTemplateInstaller {
     private const val CPP_STANDARD_PLACEHOLDER = "{{CPP_STANDARD}}"
     private const val CPP_STANDARD_FLAG_PLACEHOLDER = "{{CPP_STANDARD_FLAG}}"
     private const val NDK_API_LEVEL_PLACEHOLDER = "{{NDK_API_LEVEL}}"
+
+    private fun createStagingDirectory(destDir: File): File {
+        val parentDir = destDir.canonicalFile.parentFile
+            ?: throw IOException("Project destination has no parent: ${destDir.absolutePath}")
+        if (!parentDir.exists() && !parentDir.mkdirs()) {
+            throw IOException("Failed to create template staging parent: ${parentDir.absolutePath}")
+        }
+        val stagingDir = File.createTempFile("template-install-", ".tmp", parentDir)
+        if (!stagingDir.delete() || !stagingDir.mkdirs()) {
+            throw IOException("Failed to create template staging directory: ${stagingDir.absolutePath}")
+        }
+        return stagingDir.canonicalFile
+    }
+
+    private fun copyStagedTemplate(stagingDir: File, destDir: File) {
+        if (!destDir.exists() && !destDir.mkdirs()) {
+            throw IOException("Failed to create project directory: ${destDir.absolutePath}")
+        }
+
+        stagingDir.listFiles().orEmpty().forEach { entry ->
+            val copied = entry.copyRecursively(
+                target = File(destDir, entry.name),
+                overwrite = true
+            )
+            if (!copied) {
+                throw IOException("Failed to copy template entry: ${entry.name}")
+            }
+        }
+    }
 
     /**
      * 项目模板类型
@@ -78,6 +108,7 @@ object ProjectTemplateInstaller {
         ndkApiLevel: AndroidApiLevel? = null,
         assetStreamProvider: ((String) -> InputStream)? = null
     ): Boolean {
+        var stagingDir: File? = null
         return try {
             val effectiveNdkApiLevel = if (templateSpec.isNdkTemplate) {
                 ndkApiLevel ?: AndroidApiLevel.DEFAULT
@@ -89,13 +120,14 @@ object ProjectTemplateInstaller {
             } else {
                 null
             }
+            val staging = createStagingDirectory(destDir).also { stagingDir = it }
             when (templateSpec) {
                 is ProjectTemplateSpec.Asset -> {
                     val provider = requireNotNull(assetStreamProvider) {
                         "Asset template requires assetStreamProvider"
                     }
                     extractAssetTemplate(
-                        destDir = destDir,
+                        destDir = staging,
                         projectName = projectName,
                         type = templateSpec.type,
                         cppStandard = cppStandard,
@@ -105,7 +137,7 @@ object ProjectTemplateInstaller {
                 }
                 is ProjectTemplateSpec.Zip -> {
                     extractZipTemplate(
-                        destDir = destDir,
+                        destDir = staging,
                         projectName = projectName,
                         zipFile = templateSpec.zipFile,
                         cppStandard = cppStandard,
@@ -113,6 +145,7 @@ object ProjectTemplateInstaller {
                     )
                 }
             }
+            copyStagedTemplate(staging, destDir)
             ProjectMetadataStore.ensure(
                 projectRoot = destDir,
                 displayNameFallback = projectName,
@@ -129,6 +162,8 @@ object ProjectTemplateInstaller {
         } catch (e: Exception) {
             Timber.tag(TAG).e(e, "Install template failed: $templateSpec")
             false
+        } finally {
+            stagingDir?.deleteRecursively()
         }
     }
 
@@ -180,14 +215,13 @@ object ProjectTemplateInstaller {
         cppStandard: CppStandard,
         ndkApiLevel: AndroidApiLevel?
     ) {
+        val safeRoot = destDir.canonicalFile
         ZipInputStream(inputStream).use { zipStream ->
             var entry = zipStream.nextEntry
             while (entry != null) {
-                // 规范化路径分隔符（统一使用 /）
                 val entryName = entry.name.replace('\\', '/')
-                // 替换文件名中的占位符
                 val destFileName = replaceText(entryName, projectName, cppStandard, ndkApiLevel)
-                val destFile = File(destDir, destFileName)
+                val destFile = resolveTemplateDestination(safeRoot, destFileName)
 
                 if (entry.isDirectory) {
                     destFile.mkdirs()
@@ -206,6 +240,16 @@ object ProjectTemplateInstaller {
                 entry = zipStream.nextEntry
             }
         }
+    }
+
+    private fun resolveTemplateDestination(destRoot: File, entryName: String): File {
+        val destFile = File(destRoot, entryName).canonicalFile
+        val rootPath = destRoot.path
+        val destPath = destFile.path
+        if (destFile != destRoot && !destPath.startsWith(rootPath + File.separator)) {
+            throw IllegalArgumentException("Unsafe template entry path: $entryName")
+        }
+        return destFile
     }
 
     private fun shouldReplaceTextContent(entryName: String, entryBytes: ByteArray): Boolean {

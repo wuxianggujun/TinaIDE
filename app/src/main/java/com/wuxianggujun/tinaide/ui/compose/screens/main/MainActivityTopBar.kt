@@ -78,6 +78,8 @@ internal class TopBarCallbacks(
     val onCodeActions: () -> Unit = {},
     val onRenameSymbol: () -> Unit = {},
     val onSwitchHeaderSource: () -> Unit = {},
+    val onToggleSplitEditor: () -> Unit = {},
+    val onMoveTabToSecondaryPane: () -> Unit = {},
     val onOpenExplorer: () -> Unit,
     val onOpenGlobalSearch: () -> Unit,
     val onOpenBookmarks: () -> Unit,
@@ -110,6 +112,8 @@ internal fun MainActivityTopBar(
     isHeaderSourceSwitchAvailable: Boolean,
     canNavigateBack: Boolean,
     canNavigateForward: Boolean,
+    isSplitEditorEnabled: Boolean,
+    canMoveTabToSecondaryPane: Boolean,
     currentBuildSystem: BuildSystem,
     availableTargets: List<TargetInfo>,
     runConfigManager: RunConfigurationManager,
@@ -386,6 +390,33 @@ internal fun MainActivityTopBar(
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
+
+                TinaDropdownMenuItem(
+                    text = {
+                        Text(
+                            stringResource(
+                                if (isSplitEditorEnabled) {
+                                    Strings.menu_disable_split_editor
+                                } else {
+                                    Strings.menu_enable_split_editor
+                                }
+                            )
+                        )
+                    },
+                    onClick = {
+                        showMenu = false
+                        callbacks.onToggleSplitEditor()
+                    }
+                )
+
+                TinaDropdownMenuItem(
+                    text = { Text(stringResource(Strings.menu_move_tab_to_secondary_pane)) },
+                    enabled = canMoveTabToSecondaryPane,
+                    onClick = {
+                        showMenu = false
+                        callbacks.onMoveTabToSecondaryPane()
+                    }
+                )
 
                 TinaDropdownMenuItem(
                     text = { Text(stringResource(Strings.menu_explorer)) },

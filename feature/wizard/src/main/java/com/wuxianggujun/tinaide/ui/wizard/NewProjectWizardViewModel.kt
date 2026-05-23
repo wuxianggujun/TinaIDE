@@ -15,6 +15,7 @@ import com.wuxianggujun.tinaide.project.ProjectCreationResult
 import com.wuxianggujun.tinaide.project.ProjectCreationService
 import com.wuxianggujun.tinaide.project.ProjectTemplateOption
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -35,9 +36,12 @@ data class NewProjectWizardState(
     val isCreating: Boolean = false,
     val isNdkTemplate: Boolean = false,
     val showsCppStandard: Boolean = true,
+    val userTemplateOptions: List<ProjectTemplateOption> = emptyList(),
 )
 
-class NewProjectWizardViewModel : ViewModel() {
+class NewProjectWizardViewModel(
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+) : ViewModel() {
     private companion object {
         private const val TAG = "NewProjectWizardViewModel"
     }
@@ -53,12 +57,25 @@ class NewProjectWizardViewModel : ViewModel() {
         _state.update { it.copy(sourceLocation = defaultSourceLocation) }
     }
 
+    fun loadUserProjectTemplates(context: Context) {
+        val appContext = context.applicationContext
+        viewModelScope.launch {
+            val options = withContext(ioDispatcher) {
+                UserProjectTemplates.listOptions(appContext)
+            }
+            _state.update { it.copy(userTemplateOptions = options) }
+        }
+    }
+
     fun initializeTemplateSelection(
         initialTemplateId: String?,
         preferPluginTemplate: Boolean,
         templateOptions: List<ProjectTemplateOption>,
     ) {
-        if (initialTemplateSelectionApplied) return
+        if (initialTemplateSelectionApplied) {
+            syncTemplateSelection(templateOptions)
+            return
+        }
 
         val initialTemplate = NewProjectWizardSupport.resolveInitialTemplateSelection(
             initialTemplateId = initialTemplateId,
@@ -68,6 +85,15 @@ class NewProjectWizardViewModel : ViewModel() {
 
         initialTemplateSelectionApplied = true
         setTemplate(initialTemplate)
+    }
+
+    fun syncTemplateSelection(templateOptions: List<ProjectTemplateOption>) {
+        val selectedTemplate = NewProjectWizardSupport.resolveSelectedTemplate(
+            selectedTemplateId = _state.value.selectedTemplateId,
+            templateOptions = templateOptions,
+        ) ?: return
+
+        setTemplate(selectedTemplate)
     }
 
     fun setTemplate(template: ProjectTemplateOption) {
@@ -154,7 +180,7 @@ class NewProjectWizardViewModel : ViewModel() {
         _state.update { it.copy(isCreating = true) }
 
         viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) {
+            val result = withContext(ioDispatcher) {
                 ProjectCreationService.createProject(
                     context = context,
                     projectRoot = File(projectPath),
@@ -169,7 +195,7 @@ class NewProjectWizardViewModel : ViewModel() {
 
             when (result) {
                 is ProjectCreationResult.Success -> {
-                    withContext(Dispatchers.IO) {
+                    withContext(ioDispatcher) {
                         runCatching {
                             ProjectRunConfigBootstrapper.initializeIfMissing(result.projectDir)
                         }.onFailure { throwable ->
@@ -185,6 +211,7 @@ class NewProjectWizardViewModel : ViewModel() {
                 is ProjectCreationResult.Failure -> {
                     val message = when (result.reason) {
                         ProjectCreationFailure.EMPTY_NAME -> Strings.error_project_name_empty.strOr(context)
+                        ProjectCreationFailure.INVALID_NAME -> Strings.error_project_name_invalid_chars.strOr(context)
                         ProjectCreationFailure.ALREADY_EXISTS -> Strings.error_project_exists.strOr(context)
                         ProjectCreationFailure.PROJECT_ROOT_UNAVAILABLE,
                         ProjectCreationFailure.CREATE_DIRECTORY_FAILED -> Strings.error_create_project_dir.strOr(context)

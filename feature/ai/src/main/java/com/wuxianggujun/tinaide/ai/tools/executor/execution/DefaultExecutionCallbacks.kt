@@ -14,10 +14,7 @@ class DefaultExecutionCallbacks : ExecutionCallbacks {
 
     override fun runProject(request: RunRequest): ExecutionResult {
         val executionId = UUID.randomUUID().toString()
-        executionStatusMap[executionId] = ExecutionStatus.RUNNING
 
-        // TODO: Implement actual project execution
-        // This is a placeholder implementation
         val result = ExecutionResult(
             executionId = executionId,
             success = false,
@@ -27,15 +24,14 @@ class DefaultExecutionCallbacks : ExecutionCallbacks {
             duration = 0,
             status = ExecutionStatus.FAILED
         )
+        executionStatusMap[executionId] = result.status
         executionResultMap[executionId] = result
         return result
     }
 
     override fun runTests(request: TestRequest): ExecutionResult {
         val executionId = UUID.randomUUID().toString()
-        executionStatusMap[executionId] = ExecutionStatus.RUNNING
 
-        // TODO: Implement actual test execution
         val result = ExecutionResult(
             executionId = executionId,
             success = false,
@@ -45,15 +41,14 @@ class DefaultExecutionCallbacks : ExecutionCallbacks {
             duration = 0,
             status = ExecutionStatus.FAILED
         )
+        executionStatusMap[executionId] = result.status
         executionResultMap[executionId] = result
         return result
     }
 
     override fun buildProject(request: BuildRequest): ExecutionResult {
         val executionId = UUID.randomUUID().toString()
-        executionStatusMap[executionId] = ExecutionStatus.RUNNING
 
-        // TODO: Implement actual build execution
         val result = ExecutionResult(
             executionId = executionId,
             success = false,
@@ -63,6 +58,7 @@ class DefaultExecutionCallbacks : ExecutionCallbacks {
             duration = 0,
             status = ExecutionStatus.FAILED
         )
+        executionStatusMap[executionId] = result.status
         executionResultMap[executionId] = result
         return result
     }

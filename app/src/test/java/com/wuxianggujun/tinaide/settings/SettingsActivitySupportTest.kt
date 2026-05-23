@@ -82,12 +82,12 @@ class SettingsActivitySupportTest {
     fun resolveInitialRoute_shouldHandleAllSupportedRoutesAndFallbackToRoot() {
         val supportedRoutes = listOf(
             SettingsRoute.Root,
-            SettingsRoute.ProfileEdit,
             SettingsRoute.Editor,
             SettingsRoute.Lsp,
             SettingsRoute.Compiler,
             SettingsRoute.Project,
             SettingsRoute.Storage,
+            SettingsRoute.StorageCleanup,
             SettingsRoute.Terminal,
             SettingsRoute.Ai,
             SettingsRoute.Git,

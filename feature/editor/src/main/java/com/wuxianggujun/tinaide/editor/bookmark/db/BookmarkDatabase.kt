@@ -41,5 +41,11 @@ abstract class BookmarkDatabase : RoomDatabase() {
                 instance
             }
         }
+
+        @Synchronized
+        fun closeInstance() {
+            INSTANCE?.close()
+            INSTANCE = null
+        }
     }
 }

@@ -990,6 +990,30 @@ class EditorContainerStateTest {
     }
 
     @Test
+    fun confirmSaveAndClose_shouldNormalizePaneStateAfterClosingDirtySecondaryTab() {
+        setTabs(
+            managerTabs = listOf(
+                EditorTab(id = "tab-1", file = File(context.cacheDir, "First.kt")),
+                EditorTab(id = "tab-2", file = File(context.cacheDir, "Second.kt"))
+            ),
+            activeTabId = "tab-2"
+        )
+        state.moveActiveTabToSecondaryPane()
+        state.updateTabState(tabId = "tab-2", isDirty = true, canUndo = false, canRedo = false)
+
+        state.requestCloseActiveTab()
+
+        assertThat(state.pendingCloseTab?.id).isEqualTo("tab-2")
+        assertThat(state.confirmSaveAndClose()).isTrue()
+        assertThat(state.pendingCloseTab).isNull()
+        assertThat(state.focusedPane).isEqualTo(EditorContainerState.EditorPaneId.PRIMARY)
+        assertThat(state.getTabsForPane(EditorContainerState.EditorPaneId.PRIMARY).map { it.id })
+            .containsExactly("tab-1")
+        assertThat(state.getTabsForPane(EditorContainerState.EditorPaneId.SECONDARY)).isEmpty()
+        assertThat(state.snapshotActivePluginEditorContextOrNull()?.tabId).isEqualTo("tab-1")
+    }
+
+    @Test
     fun resolveSuccessfulSaveAllNotificationTargets_shouldKeepOnlySuccessfulDirtyTabs() {
         setTabs(
             managerTabs = listOf(
@@ -1056,6 +1080,169 @@ class EditorContainerStateTest {
         assertThat(state.closeOtherTabsForActiveTab()).isTrue()
         assertThat(state.tabs.map { it.id }).containsExactly("tab-2")
         assertThat(state.snapshotActivePluginEditorContextOrNull()?.file?.name).isEqualTo("Second.kt")
+    }
+
+    @Test
+    fun toggleSplitEditor_shouldCollapseTabsBackToPrimaryPane() {
+        setTabs(
+            managerTabs = listOf(
+                EditorTab(id = "tab-1", file = File(context.cacheDir, "First.kt")),
+                EditorTab(id = "tab-2", file = File(context.cacheDir, "Second.kt"))
+            ),
+            activeTabId = "tab-2"
+        )
+
+        state.toggleSplitEditor()
+
+        assertThat(state.isSplitEditorEnabled).isTrue()
+        assertThat(state.focusedPane).isEqualTo(EditorContainerState.EditorPaneId.PRIMARY)
+        assertThat(state.getTabsForPane(EditorContainerState.EditorPaneId.PRIMARY).map { it.id })
+            .containsExactly("tab-1", "tab-2")
+        assertThat(state.getTabsForPane(EditorContainerState.EditorPaneId.SECONDARY)).isEmpty()
+
+        state.toggleSplitEditor()
+
+        assertThat(state.isSplitEditorEnabled).isFalse()
+        assertThat(state.focusedPane).isEqualTo(EditorContainerState.EditorPaneId.PRIMARY)
+        assertThat(state.getTabsForPane(EditorContainerState.EditorPaneId.PRIMARY).map { it.id })
+            .containsExactly("tab-1", "tab-2")
+        assertThat(state.getTabsForPane(EditorContainerState.EditorPaneId.SECONDARY)).isEmpty()
+    }
+
+    @Test
+    fun toggleSplitEditor_shouldCollapseSecondaryTabsBackToPrimaryPane() {
+        setTabs(
+            managerTabs = listOf(
+                EditorTab(id = "tab-1", file = File(context.cacheDir, "First.kt")),
+                EditorTab(id = "tab-2", file = File(context.cacheDir, "Second.kt"))
+            ),
+            activeTabId = "tab-2"
+        )
+        state.moveActiveTabToSecondaryPane()
+
+        state.toggleSplitEditor()
+
+        assertThat(state.isSplitEditorEnabled).isFalse()
+        assertThat(state.focusedPane).isEqualTo(EditorContainerState.EditorPaneId.PRIMARY)
+        assertThat(state.getTabsForPane(EditorContainerState.EditorPaneId.PRIMARY).map { it.id })
+            .containsExactly("tab-1", "tab-2")
+        assertThat(state.getTabsForPane(EditorContainerState.EditorPaneId.SECONDARY)).isEmpty()
+        assertThat(state.snapshotActivePluginEditorContextOrNull()?.tabId).isEqualTo("tab-2")
+    }
+
+    @Test
+    fun moveActiveTabToSecondaryPane_shouldEnableSplitAndPreservePrimaryTabs() {
+        setTabs(
+            managerTabs = listOf(
+                EditorTab(id = "tab-1", file = File(context.cacheDir, "First.kt")),
+                EditorTab(id = "tab-2", file = File(context.cacheDir, "Second.kt"))
+            ),
+            activeTabId = "tab-2"
+        )
+
+        assertThat(state.moveActiveTabToSecondaryPane()).isTrue()
+
+        assertThat(state.isSplitEditorEnabled).isTrue()
+        assertThat(state.focusedPane).isEqualTo(EditorContainerState.EditorPaneId.SECONDARY)
+        assertThat(state.getTabsForPane(EditorContainerState.EditorPaneId.PRIMARY).map { it.id })
+            .containsExactly("tab-1")
+        assertThat(state.getTabsForPane(EditorContainerState.EditorPaneId.SECONDARY).map { it.id })
+            .containsExactly("tab-2")
+        assertThat(state.getActiveIndexForPane(EditorContainerState.EditorPaneId.SECONDARY)).isEqualTo(1)
+        assertThat(state.canMoveActiveTabToSecondaryPane()).isFalse()
+    }
+
+    @Test
+    fun selectTabInPane_shouldMakePaneActiveForToolbarAndPluginContext() {
+        setTabs(
+            managerTabs = listOf(
+                EditorTab(id = "tab-1", file = File(context.cacheDir, "First.kt")),
+                EditorTab(id = "tab-2", file = File(context.cacheDir, "Second.kt"))
+            ),
+            activeTabId = "tab-2"
+        )
+        state.moveActiveTabToSecondaryPane()
+        state.selectTabInPane(EditorContainerState.EditorPaneId.PRIMARY, 0)
+
+        assertThat(state.focusedPane).isEqualTo(EditorContainerState.EditorPaneId.PRIMARY)
+        assertThat(state.snapshotActivePluginEditorContextOrNull()?.tabId).isEqualTo("tab-1")
+
+        state.selectTabInPane(EditorContainerState.EditorPaneId.SECONDARY, 1)
+
+        assertThat(state.focusedPane).isEqualTo(EditorContainerState.EditorPaneId.SECONDARY)
+        assertThat(state.snapshotActivePluginEditorContextOrNull()?.tabId).isEqualTo("tab-2")
+    }
+
+    @Test
+    fun selectTabInPane_shouldNotMoveTabFromAnotherPane() {
+        setTabs(
+            managerTabs = listOf(
+                EditorTab(id = "tab-1", file = File(context.cacheDir, "First.kt")),
+                EditorTab(id = "tab-2", file = File(context.cacheDir, "Second.kt"))
+            ),
+            activeTabId = "tab-2"
+        )
+        state.moveActiveTabToSecondaryPane()
+
+        state.selectTabInPane(EditorContainerState.EditorPaneId.PRIMARY, 1)
+
+        assertThat(state.focusedPane).isEqualTo(EditorContainerState.EditorPaneId.SECONDARY)
+        assertThat(state.getTabsForPane(EditorContainerState.EditorPaneId.PRIMARY).map { it.id })
+            .containsExactly("tab-1")
+        assertThat(state.getTabsForPane(EditorContainerState.EditorPaneId.SECONDARY).map { it.id })
+            .containsExactly("tab-2")
+        assertThat(state.snapshotActivePluginEditorContextOrNull()?.tabId).isEqualTo("tab-2")
+    }
+
+    @Test
+    fun requestCloseActiveTab_shouldMoveFocusWhenSecondaryPaneBecomesEmpty() {
+        setTabs(
+            managerTabs = listOf(
+                EditorTab(id = "tab-1", file = File(context.cacheDir, "First.kt")),
+                EditorTab(id = "tab-2", file = File(context.cacheDir, "Second.kt"))
+            ),
+            activeTabId = "tab-2"
+        )
+        state.moveActiveTabToSecondaryPane()
+
+        assertThat(state.requestCloseActiveTab()).isTrue()
+
+        assertThat(state.isSplitEditorEnabled).isTrue()
+        assertThat(state.focusedPane).isEqualTo(EditorContainerState.EditorPaneId.PRIMARY)
+        assertThat(state.getTabsForPane(EditorContainerState.EditorPaneId.PRIMARY).map { it.id })
+            .containsExactly("tab-1")
+        assertThat(state.getTabsForPane(EditorContainerState.EditorPaneId.SECONDARY)).isEmpty()
+        assertThat(state.snapshotActivePluginEditorContextOrNull()?.tabId).isEqualTo("tab-1")
+    }
+
+    @Test
+    fun openFileWithType_shouldAssignNewTabToFocusedPane() {
+        setTabs(
+            managerTabs = listOf(
+                EditorTab(id = "tab-1", file = File(context.cacheDir, "First.kt")),
+                EditorTab(id = "tab-2", file = File(context.cacheDir, "Second.kt"))
+            ),
+            activeTabId = "tab-2"
+        )
+        state.moveActiveTabToSecondaryPane()
+
+        val primaryPreview = File(context.cacheDir, "PrimaryPreview.png")
+        state.focusEditorPane(EditorContainerState.EditorPaneId.PRIMARY)
+        state.openFileWithType(primaryPreview, ContentType.IMAGE)
+
+        assertThat(state.focusedPane).isEqualTo(EditorContainerState.EditorPaneId.PRIMARY)
+        assertThat(state.getTabsForPane(EditorContainerState.EditorPaneId.PRIMARY).map { it.file.name })
+            .containsExactly("First.kt", "PrimaryPreview.png")
+        assertThat(state.getTabsForPane(EditorContainerState.EditorPaneId.SECONDARY).map { it.id })
+            .containsExactly("tab-2")
+
+        val secondaryPreview = File(context.cacheDir, "SecondaryPreview.png")
+        state.focusEditorPane(EditorContainerState.EditorPaneId.SECONDARY)
+        state.openFileWithType(secondaryPreview, ContentType.IMAGE)
+
+        assertThat(state.focusedPane).isEqualTo(EditorContainerState.EditorPaneId.SECONDARY)
+        assertThat(state.getTabsForPane(EditorContainerState.EditorPaneId.SECONDARY).map { it.file.name })
+            .containsExactly("Second.kt", "SecondaryPreview.png")
     }
 
     @Test

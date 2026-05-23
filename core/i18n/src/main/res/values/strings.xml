@@ -902,6 +902,7 @@
   <string name="template_desc_make_exe">经典 Makefile 项目结构</string>
   <string name="template_ndk_shared_lib">NDK 共享库</string>
   <string name="template_desc_ndk_shared_lib">Android NDK 共享库项目，可自定义 API 版本</string>
+  <string name="template_desc_user_zip">用户模板：%1$s</string>
 
   <!-- C++ Standard -->
   <string name="cpp_standard_11">C++11</string>
@@ -926,6 +927,8 @@
   <string name="wizard_template_recommended">推荐</string>
   <string name="wizard_plugin_template_badge">插件</string>
   <string name="wizard_plugin_template_card_hint">创建后可直接运行：IDE 会先校验 manifest，再热安装插件。</string>
+  <string name="wizard_user_template_badge">自定义</string>
+  <string name="wizard_user_template_card_hint">来自用户模板目录，创建时会自动替换项目名称占位符。</string>
   <string name="wizard_plugin_template_config_guide_title">插件项目下一步</string>
   <string name="wizard_plugin_template_config_guide_body">创建完成后，打开项目点击运行会执行校验 + 打包 + 热安装；点击打包会生成 .tinaplug，用于分享或从文件安装。</string>
   <string name="wizard_templates_empty_title">暂无可用模板</string>
@@ -2663,6 +2666,9 @@
   <string name="menu_format_code">格式化代码</string>
   <string name="menu_goto_line">跳转到行</string>
   <string name="menu_section_view">视图</string>
+  <string name="menu_enable_split_editor">开启分屏编辑</string>
+  <string name="menu_disable_split_editor">关闭分屏编辑</string>
+  <string name="menu_move_tab_to_secondary_pane">移动到右侧编辑区</string>
   <string name="menu_explorer">资源管理器</string>
   <string name="menu_global_search">全局搜索</string>
   <string name="menu_bookmarks">书签</string>

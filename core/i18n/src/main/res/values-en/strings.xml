@@ -583,6 +583,7 @@
   <string name="template_desc_make_exe">Classic Makefile project structure</string>
   <string name="template_ndk_shared_lib">NDK Shared Library</string>
   <string name="template_desc_ndk_shared_lib">Android NDK shared library project with custom API level</string>
+  <string name="template_desc_user_zip">User template: %1$s</string>
 
   <!-- C++ Standard -->
   <string name="cpp_standard_11">C++11</string>
@@ -607,6 +608,8 @@
   <string name="wizard_template_recommended">Recommended</string>
   <string name="wizard_plugin_template_badge">Plugin</string>
   <string name="wizard_plugin_template_card_hint">After creation, Run validates manifest first, then hot-installs the plugin.</string>
+  <string name="wizard_user_template_badge">Custom</string>
+  <string name="wizard_user_template_card_hint">Loaded from the user template folder; project name placeholders are replaced during creation.</string>
   <string name="wizard_plugin_template_config_guide_title">Plugin project next steps</string>
   <string name="wizard_plugin_template_config_guide_body">After creation, open the project and tap Run to validate, package, and hot-install it. Tap Package to create a .tinaplug for sharing or install-from-file.</string>
   <string name="wizard_templates_empty_title">No templates available</string>
@@ -1792,6 +1795,9 @@
   <string name="menu_format_code">Format Code</string>
   <string name="menu_goto_line">Go to Line</string>
   <string name="menu_section_view">View</string>
+  <string name="menu_enable_split_editor">Enable Split Editor</string>
+  <string name="menu_disable_split_editor">Disable Split Editor</string>
+  <string name="menu_move_tab_to_secondary_pane">Move to Right Editor Pane</string>
   <string name="menu_explorer">Explorer</string>
   <string name="menu_global_search">Global Search</string>
   <string name="menu_bookmarks">Bookmarks</string>

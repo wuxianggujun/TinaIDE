@@ -45,6 +45,7 @@ internal fun MainActivityTopBarHost(
     val isHeaderSourceSwitchAvailable = activeFile?.let(editorContainerState::supportsHeaderSourceSwitch) == true
     val canNavigateBack = editorContainerState.canNavigateBack()
     val canNavigateForward = editorContainerState.canNavigateForward()
+    val canMoveTabToSecondaryPane = editorContainerState.canMoveActiveTabToSecondaryPane()
 
     val topBarCallbacks = rememberMainActivityTopBarCallbacks(
         drawerState = drawerState,
@@ -70,6 +71,8 @@ internal fun MainActivityTopBarHost(
         isHeaderSourceSwitchAvailable = isHeaderSourceSwitchAvailable,
         canNavigateBack = canNavigateBack,
         canNavigateForward = canNavigateForward,
+        isSplitEditorEnabled = editorContainerState.isSplitEditorEnabled,
+        canMoveTabToSecondaryPane = canMoveTabToSecondaryPane,
         currentBuildSystem = buildUiState.currentBuildSystem,
         availableTargets = buildUiState.availableTargets,
         runConfigManager = buildUiState.runConfigManager,
@@ -125,6 +128,8 @@ private fun rememberMainActivityTopBarCallbacks(
         onCodeActions = { editorContainerState.requestActiveLspCodeActions() },
         onRenameSymbol = { editorContainerState.requestActiveLspRename() },
         onSwitchHeaderSource = { editorContainerState.requestActiveLspNavigation("switchHeaderSource") },
+        onToggleSplitEditor = { editorContainerState.toggleSplitEditor() },
+        onMoveTabToSecondaryPane = { editorContainerState.moveActiveTabToSecondaryPane() },
         onGotoLine = {
             when (editorContainerState.getActiveEditableEditorCommandAvailability()) {
                 EditorContainerState.ActiveEditorCommandResult.SUCCESS -> {

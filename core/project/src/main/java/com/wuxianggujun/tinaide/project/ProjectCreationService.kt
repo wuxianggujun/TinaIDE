@@ -12,6 +12,7 @@ import timber.log.Timber
  */
 object ProjectCreationService {
     private const val TAG = "ProjectCreation"
+    private val SAFE_PROJECT_NAME_REGEX = Regex("^[A-Za-z0-9_-]+$")
 
     fun createProject(
         context: Context,
@@ -44,6 +45,13 @@ object ProjectCreationService {
             return ProjectCreationResult.Failure(ProjectCreationFailure.EMPTY_NAME)
         }
 
+        if (!isSafeProjectName(normalizedName)) {
+            return ProjectCreationResult.Failure(
+                reason = ProjectCreationFailure.INVALID_NAME,
+                detail = normalizedName
+            )
+        }
+
         if (projectRoot.path.isBlank()) {
             return ProjectCreationResult.Failure(
                 reason = ProjectCreationFailure.PROJECT_ROOT_UNAVAILABLE,
@@ -65,7 +73,25 @@ object ProjectCreationService {
             )
         }
 
-        val projectDir = File(projectRoot, normalizedName)
+        val safeRoot = runCatching { projectRoot.canonicalFile }.getOrElse {
+            return ProjectCreationResult.Failure(
+                reason = ProjectCreationFailure.PROJECT_ROOT_UNAVAILABLE,
+                detail = projectRoot.absolutePath
+            )
+        }
+        val projectDir = runCatching { File(safeRoot, normalizedName).canonicalFile }.getOrElse {
+            return ProjectCreationResult.Failure(
+                reason = ProjectCreationFailure.INVALID_NAME,
+                detail = normalizedName
+            )
+        }
+        if (!projectDir.isDirectChildOf(safeRoot)) {
+            return ProjectCreationResult.Failure(
+                reason = ProjectCreationFailure.INVALID_NAME,
+                detail = normalizedName
+            )
+        }
+
         if (projectDir.exists()) {
             return ProjectCreationResult.Failure(
                 reason = ProjectCreationFailure.ALREADY_EXISTS,
@@ -103,7 +129,7 @@ object ProjectCreationService {
         }.getOrDefault(false)
 
         if (!templateInstalled) {
-            cleanupFailedProject(projectDir)
+            cleanupFailedProject(projectDir, safeRoot)
             return ProjectCreationResult.Failure(
                 reason = ProjectCreationFailure.TEMPLATE_INSTALL_FAILED,
                 detail = projectDir.absolutePath
@@ -113,9 +139,20 @@ object ProjectCreationService {
         return ProjectCreationResult.Success(projectDir)
     }
 
-    private fun cleanupFailedProject(projectDir: File) {
+    private fun isSafeProjectName(projectName: String): Boolean {
+        if (File(projectName).isAbsolute) return false
+        return SAFE_PROJECT_NAME_REGEX.matches(projectName)
+    }
+
+    private fun File.isDirectChildOf(parentDir: File): Boolean {
+        val parentPath = parentDir.canonicalFile.toPath()
+        val childPath = canonicalFile.toPath()
+        return childPath.parent == parentPath
+    }
+
+    private fun cleanupFailedProject(projectDir: File, safeRoot: File) {
         runCatching {
-            if (projectDir.exists()) {
+            if (projectDir.isDirectChildOf(safeRoot) && projectDir.exists()) {
                 projectDir.deleteRecursively()
             }
         }.onFailure { throwable ->
@@ -134,6 +171,7 @@ sealed interface ProjectCreationResult {
 
 enum class ProjectCreationFailure {
     EMPTY_NAME,
+    INVALID_NAME,
     PROJECT_ROOT_UNAVAILABLE,
     ALREADY_EXISTS,
     CREATE_DIRECTORY_FAILED,

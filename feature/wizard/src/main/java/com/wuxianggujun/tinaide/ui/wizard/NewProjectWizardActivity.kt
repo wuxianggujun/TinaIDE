@@ -52,8 +52,9 @@ class NewProjectWizardActivity : ComponentActivity() {
                 val preferPluginTemplate = remember {
                     intent.getBooleanExtra(EXTRA_PREFER_PLUGIN_TEMPLATE, false)
                 }
-                val allTemplateOptions = remember(enabledPlugins) {
+                val allTemplateOptions = remember(enabledPlugins, state.userTemplateOptions) {
                     BuiltInProjectTemplates.createOptions(this@NewProjectWizardActivity) +
+                        state.userTemplateOptions +
                         pluginManager.listProjectTemplateOptions()
                 }
                 val templateOptions = remember(allTemplateOptions, preferPluginTemplate) {
@@ -69,6 +70,8 @@ class NewProjectWizardActivity : ComponentActivity() {
                             preferPluginTemplate = preferPluginTemplate,
                             templateOptions = templateOptions,
                         )
+                    } else {
+                        viewModel.syncTemplateSelection(templateOptions)
                     }
                 }
                 val selectedTemplate = remember(state.selectedTemplateId, templateOptions) {
@@ -122,6 +125,11 @@ class NewProjectWizardActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        viewModel.loadUserProjectTemplates(applicationContext)
     }
 
     private fun resolveInitialSourceLocation(): NewProjectSourceLocation {

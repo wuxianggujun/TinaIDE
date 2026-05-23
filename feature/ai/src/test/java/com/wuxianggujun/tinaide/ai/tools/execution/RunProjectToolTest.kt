@@ -5,6 +5,7 @@ import com.wuxianggujun.tinaide.ai.api.ToolCall
 import com.wuxianggujun.tinaide.ai.api.ToolFunction
 import com.wuxianggujun.tinaide.ai.tools.ToolExecutionContext
 import com.wuxianggujun.tinaide.ai.tools.ToolExecutionResult
+import com.wuxianggujun.tinaide.ai.tools.executor.execution.DefaultExecutionCallbacks
 import com.wuxianggujun.tinaide.ai.tools.executor.execution.ExecutionResult
 import com.wuxianggujun.tinaide.ai.tools.executor.execution.ExecutionStatus
 import com.wuxianggujun.tinaide.ai.tools.executor.execution.RunRequest
@@ -127,6 +128,20 @@ class RunProjectToolTest {
 
         assertThat(result).isInstanceOf(ToolExecutionResult.Error::class.java)
         assertThat((result as ToolExecutionResult.Error).message).contains("Execution callbacks not available")
+    }
+
+    @Test
+    fun `execute returns error when default run callback is not implemented`(): Unit = runBlocking {
+        val result = RunProjectTool.execute(
+            runToolCall(),
+            ToolExecutionContext(additionalData = mapOf("executionCallbacks" to DefaultExecutionCallbacks()))
+        )
+
+        assertThat(result).isInstanceOf(ToolExecutionResult.Error::class.java)
+        val message = (result as ToolExecutionResult.Error).message
+        assertThat(message).contains("Execution failed")
+        assertThat(message).contains("Project execution not implemented yet")
+        assertThat(message).doesNotContain("Project execution started")
     }
 
     private fun runToolCall(arguments: String = "{}"): ToolCall = ToolCall(

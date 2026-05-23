@@ -1,12 +1,16 @@
 package com.wuxianggujun.tinaide.ui.compose.components
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
@@ -22,7 +26,10 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import com.wuxianggujun.tinaide.BuildConfig
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.str
@@ -34,6 +41,7 @@ import com.wuxianggujun.tinaide.ui.compose.components.editor.EditorTabState
 import com.wuxianggujun.tinaide.ui.compose.components.editor.EmptyEditorView
 import com.wuxianggujun.tinaide.ui.compose.components.editor.TinaCodeEditorPage
 import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState
+import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState.EditorPaneId
 import com.wuxianggujun.tinaide.ui.compose.viewer.HexViewerScreen
 import com.wuxianggujun.tinaide.ui.compose.viewer.ImagePreviewScreen
 import com.wuxianggujun.tinaide.ui.compose.viewer.LargeTextViewerScreen
@@ -176,6 +184,66 @@ fun EditorContainer(
     }
 
     // Pager 状态
+    if (state.isSplitEditorEnabled) {
+        EditorToolBarStateEffect(
+            state = state,
+            onEditorStateChanged = onEditorStateChanged
+        )
+
+        val tabLoadingMap = remember { mutableStateMapOf<String, Boolean>() }
+        val showFilePath: (String) -> Unit = { path ->
+            scope.launch {
+                snackbarHostState.showSnackbar(
+                    message = path,
+                    withDismissAction = true
+                )
+            }
+        }
+
+        Box(modifier = modifier.fillMaxSize()) {
+            Row(modifier = Modifier.fillMaxSize()) {
+                EditorPane(
+                    pane = EditorPaneId.PRIMARY,
+                    state = state,
+                    pluginManager = pluginManager,
+                    hostCommandExecutor = hostCommandExecutor,
+                    tabLoadingMap = tabLoadingMap,
+                    onOpenFileTree = onOpenFileTree,
+                    onShowFilePath = showFilePath,
+                    onCursorPositionChanged = onCursorPositionChanged,
+                    onFileEncodingChanged = onFileEncodingChanged,
+                    modifier = Modifier.weight(1f)
+                )
+
+                Box(
+                    modifier = Modifier
+                        .width(1.dp)
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.outlineVariant)
+                )
+
+                EditorPane(
+                    pane = EditorPaneId.SECONDARY,
+                    state = state,
+                    pluginManager = pluginManager,
+                    hostCommandExecutor = hostCommandExecutor,
+                    tabLoadingMap = tabLoadingMap,
+                    onOpenFileTree = onOpenFileTree,
+                    onShowFilePath = showFilePath,
+                    onCursorPositionChanged = onCursorPositionChanged,
+                    onFileEncodingChanged = onFileEncodingChanged,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier.align(androidx.compose.ui.Alignment.BottomCenter)
+            )
+        }
+        return
+    }
+
     val pagerState = rememberPagerState(
         initialPage = activeTabIndex.coerceAtLeast(0),
         pageCount = { tabs.size }
@@ -314,6 +382,168 @@ fun EditorContainer(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun EditorPane(
+    pane: EditorPaneId,
+    state: EditorContainerState,
+    pluginManager: com.wuxianggujun.tinaide.plugin.PluginManager,
+    hostCommandExecutor: com.wuxianggujun.tinaide.core.commands.HostCommandExecutor?,
+    tabLoadingMap: MutableMap<String, Boolean>,
+    onOpenFileTree: () -> Unit,
+    onShowFilePath: (String) -> Unit,
+    onCursorPositionChanged: (line: Int, column: Int) -> Unit = { _, _ -> },
+    onFileEncodingChanged: (encoding: String) -> Unit = { _ -> },
+    modifier: Modifier = Modifier
+) {
+    val allTabs = state.tabs
+    val paneTabs = state.getTabsForPane(pane)
+    val activeGlobalIndex = state.getActiveIndexForPane(pane)
+    val activeTabId = allTabs.getOrNull(activeGlobalIndex)?.id
+    val selectedLocalIndex = paneTabs.indexOfFirst { it.id == activeTabId }
+    val pagerState = rememberPagerState(
+        initialPage = selectedLocalIndex.coerceAtLeast(0),
+        pageCount = { paneTabs.size }
+    )
+
+    var showTabMenu by remember { mutableStateOf(false) }
+    var menuTargetLocalIndex by remember { mutableIntStateOf(-1) }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+    ) {
+        if (paneTabs.isEmpty()) {
+            EmptyEditorView(
+                onOpenFileTree = {
+                    state.focusEditorPane(pane)
+                    onOpenFileTree()
+                },
+                modifier = Modifier.fillMaxSize()
+            )
+            return@Column
+        }
+
+        val safeSelectedLocalIndex = selectedLocalIndex.coerceIn(0, paneTabs.lastIndex)
+        val activeTabLoading = paneTabs.getOrNull(safeSelectedLocalIndex)
+            ?.id
+            ?.let { tabLoadingMap[it] } == true
+
+        EditorTabBar(
+            tabs = paneTabs,
+            selectedIndex = safeSelectedLocalIndex,
+            showMenuForIndex = if (showTabMenu) menuTargetLocalIndex else -1,
+            pluginManager = pluginManager,
+            hostCommandExecutor = hostCommandExecutor,
+            isLoading = activeTabLoading,
+            onTabClick = tabClick@ { localIndex ->
+                val tab = paneTabs.getOrNull(localIndex) ?: return@tabClick
+                val globalIndex = allTabs.indexOfFirst { it.id == tab.id }
+                if (localIndex == safeSelectedLocalIndex) {
+                    state.focusEditorPane(pane)
+                    menuTargetLocalIndex = localIndex
+                    showTabMenu = true
+                } else if (globalIndex >= 0) {
+                    state.selectTabInPane(pane, globalIndex)
+                }
+            },
+            onTabDoubleClick = tabDoubleClick@ { localIndex ->
+                val tab = paneTabs.getOrNull(localIndex) ?: return@tabDoubleClick
+                val globalIndex = allTabs.indexOfFirst { it.id == tab.id }
+                if (globalIndex >= 0) {
+                    state.requestCloseTab(globalIndex)
+                }
+            },
+            onTabLongPress = { localIndex ->
+                paneTabs.getOrNull(localIndex)?.let { tab ->
+                    onShowFilePath(tab.file.absolutePath)
+                }
+            },
+            onMenuDismiss = { showTabMenu = false },
+            onCloseCurrent = closeCurrent@ { localIndex ->
+                showTabMenu = false
+                val tab = paneTabs.getOrNull(localIndex) ?: return@closeCurrent
+                val globalIndex = allTabs.indexOfFirst { it.id == tab.id }
+                if (globalIndex >= 0) {
+                    state.requestCloseTab(globalIndex)
+                }
+            },
+            onCloseOthers = closeOthers@ { localIndex ->
+                showTabMenu = false
+                val tab = paneTabs.getOrNull(localIndex) ?: return@closeOthers
+                val globalIndex = allTabs.indexOfFirst { it.id == tab.id }
+                if (globalIndex >= 0) {
+                    state.closeOtherTabs(globalIndex)
+                }
+            },
+            onCloseAll = {
+                showTabMenu = false
+                state.closeAllTabs()
+            }
+        )
+
+        LaunchedEffect(paneTabs.map { it.id }, safeSelectedLocalIndex) {
+            if (pagerState.currentPage != safeSelectedLocalIndex) {
+                pagerState.animateScrollToPage(safeSelectedLocalIndex)
+            }
+        }
+
+        LaunchedEffect(pagerState, paneTabs.map { it.id }) {
+            snapshotFlow { pagerState.settledPage }
+                .distinctUntilChanged()
+                .collect { settledPage ->
+                    val tab = paneTabs.getOrNull(settledPage) ?: return@collect
+                    val globalIndex = allTabs.indexOfFirst { it.id == tab.id }
+                    if (globalIndex >= 0 && globalIndex != state.activeTabIndex) {
+                        state.selectTabInPane(pane, globalIndex)
+                    }
+                }
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+        ) {
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize(),
+                userScrollEnabled = false
+            ) { page ->
+                val tab = paneTabs.getOrNull(page)
+                if (tab != null) {
+                    key(tab.id) {
+                        EditorPage(
+                            state = state,
+                            tab = tab,
+                            onActivate = {
+                                val globalIndex = allTabs.indexOfFirst { it.id == tab.id }
+                                if (
+                                    globalIndex >= 0 &&
+                                    (state.focusedPane != pane || state.activeTabIndex != globalIndex)
+                                ) {
+                                    state.selectTabInPane(pane, globalIndex)
+                                }
+                            },
+                            onCursorPositionChanged = onCursorPositionChanged,
+                            onFileEncodingChanged = onFileEncodingChanged,
+                            onLoadingStateChanged = { loading -> tabLoadingMap[tab.id] = loading },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                }
+            }
+
+            if (state.focusedPane == pane) {
+                EditorSearchOverlay(
+                    state = state,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun EditorToolBarStateEffect(
     state: EditorContainerState,
@@ -369,21 +599,37 @@ private fun EditorSearchOverlay(
 private fun EditorPage(
     state: EditorContainerState,
     tab: EditorTabState,
+    onActivate: () -> Unit = {},
     onCursorPositionChanged: (line: Int, column: Int) -> Unit = { _, _ -> },
     onFileEncodingChanged: (encoding: String) -> Unit = { _ -> },
     onLoadingStateChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val latestOnActivate by rememberUpdatedState(onActivate)
+    val activatingModifier = modifier.pointerInput(tab.id) {
+        awaitPointerEventScope {
+            while (true) {
+                val event = awaitPointerEvent(PointerEventPass.Initial)
+                if (event.changes.any { change -> change.pressed && !change.previousPressed }) {
+                    latestOnActivate()
+                }
+            }
+        }
+    }
+
     when (tab.contentType) {
         ContentType.CODE,
         ContentType.JSON -> {
             TinaCodeEditorPage(
                 state = state,
                 tab = tab,
-                onCursorPositionChanged = onCursorPositionChanged,
+                onCursorPositionChanged = { line, column ->
+                    latestOnActivate()
+                    onCursorPositionChanged(line, column)
+                },
                 onFileEncodingChanged = onFileEncodingChanged,
                 onLoadingStateChanged = onLoadingStateChanged,
-                modifier = modifier
+                modifier = activatingModifier
             )
         }
         ContentType.LARGE_TEXT -> {
@@ -394,7 +640,7 @@ private fun EditorPage(
                 filePath = tab.file.absolutePath,
                 onOpenAsEditor = { state.openFileWithType(tab.file, ContentType.CODE) },
                 onOpenAsHex = { state.openFileWithType(tab.file, ContentType.HEX) },
-                modifier = modifier
+                modifier = activatingModifier
             )
         }
         ContentType.IMAGE -> {
@@ -404,7 +650,7 @@ private fun EditorPage(
             }
             ImagePreviewScreen(
                 filePath = tab.file.absolutePath,
-                modifier = modifier
+                modifier = activatingModifier
             )
         }
         ContentType.HEX -> {
@@ -425,7 +671,7 @@ private fun EditorPage(
                 onUnregisterSearch = {
                     state.unbindHexViewerSearchCallback(tab.id)
                 },
-                modifier = modifier
+                modifier = activatingModifier
             )
         }
     }

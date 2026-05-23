@@ -424,6 +424,7 @@ private fun iconForTemplate(option: ProjectTemplateOption): ImageVector {
             ProjectTemplateInstaller.TemplateType.NDK_SHARED_LIBRARY -> Icons.Default.PhoneAndroid
         }
         is ProjectTemplateSpec.Zip -> when {
+            NewProjectWizardSupport.isUserTemplate(option) -> Icons.Default.Folder
             option.displayName.contains("sdl", ignoreCase = true) -> Icons.Default.Code
             spec.isNdkTemplate -> Icons.Default.PhoneAndroid
             spec.buildSystem == ProjectBuildSystem.PLUGIN -> Icons.Default.Extension

@@ -279,6 +279,17 @@ object ProjectPaths {
         return File(base, "terminal_fonts")
     }
 
+    /**
+     * 用户自定义项目模板目录。
+     *
+     * 典型路径：/sdcard/Android/data/<package>/files/project_templates
+     * 用途：用户放入的 .zip 项目模板，供新建项目向导扫描。
+     */
+    fun getUserProjectTemplatesRoot(context: Context): File {
+        val base = context.getExternalFilesDir(null) ?: context.filesDir
+        return File(base, "project_templates")
+    }
+
     // ============ 10. PRoot 相关目录 ============
 
     /**
