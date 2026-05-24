@@ -20,4 +20,5 @@ dependencies {
     implementation(libs.compose.material.icons.extended)
     implementation(libs.compose.ui)
     implementation(libs.jetbrains.markdown)
+    implementation(libs.timber)
 }

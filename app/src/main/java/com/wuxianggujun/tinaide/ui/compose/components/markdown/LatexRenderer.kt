@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.takeOrElse
 import ru.noties.jlatexmath.JLatexMathDrawable
+import timber.log.Timber
 
 /**
  * 预估 LaTeX 公式渲染尺寸（用于 InlineTextContent placeholder 计算）
@@ -64,7 +65,9 @@ fun LatexText(
                     .align(JLatexMathDrawable.ALIGN_LEFT)
                     .build()
             }
-        }.onFailure { it.printStackTrace() }.getOrNull()
+        }.onFailure {
+            Timber.tag("LatexRenderer").w(it, "Failed to render LaTeX")
+        }.getOrNull()
     }
 
     if (drawable != null) {

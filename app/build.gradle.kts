@@ -148,10 +148,23 @@ android {
         resources {
             // JGit 和 JGit SSH Apache 都包含同名 OSGI 元数据文件，Android 运行时不使用
             pickFirsts += "OSGI-INF/l10n/plugin.properties"
-            // Apache SSHD 的多个模块里会携带同名的 maven 元数据文件，运行时不需要
-            excludes += "META-INF/DEPENDENCIES"
-            // apksig / BouncyCastle 的多版本 jar 会带入重复的 OSGI 元数据，Android 运行时不需要
-            excludes += "META-INF/versions/9/OSGI-INF/MANIFEST.MF"
+            excludes += listOf(
+                "META-INF/DEPENDENCIES",
+                "META-INF/versions/9/OSGI-INF/MANIFEST.MF",
+                // zstd-jni 桌面平台 native（commons-compress 传递依赖,Android 上不可用）
+                "win/**",
+                "darwin/**",
+                "linux/amd64/**",
+                "linux/i386/**",
+                "linux/aarch64/**",
+                "linux/ppc64/**",
+                "linux/mips64/**",
+                "linux/s390x/**",
+                // BouncyCastle Picnic 后量子签名查找表（JGit SSH 不使用）
+                "org/bouncycastle/pqc/crypto/picnic/**",
+                // Apache SSHD DH moduli（仅 SSH server 模式需要,本 app 是 client）
+                "org/apache/sshd/moduli",
+            )
         }
     }
 
@@ -336,7 +349,9 @@ dependencies {
     implementation(project(":termux-terminal:terminal-view"))
 
     // Apache Commons Compress for tar.gz/tar.xz extraction (PRoot rootfs, NDK sysroot)
-    implementation(libs.commons.compress)
+    implementation(libs.commons.compress) {
+        exclude(group = "com.github.luben", module = "zstd-jni")
+    }
     // XZ compression support (required by commons-compress for .tar.xz files)
     implementation(libs.tukaani.xz)
 

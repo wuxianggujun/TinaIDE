@@ -647,7 +647,7 @@ class AiChatViewModelTest {
             .first { it.id == "assistant-manual-execute" }
             .toolCalls!!
             .single()
-        assertThat(updatedCall.executionError).contains("Tool execution context not initialized")
+        assertThat(updatedCall.executionError).contains("tool context not initialized")
 
         coVerify(exactly = 1) {
             repository.updateMessage(
@@ -662,7 +662,7 @@ class AiChatViewModelTest {
                 match {
                     it.role == ChatRole.TOOL &&
                         it.toolCallId == "manual-tool" &&
-                        it.content.contains("Tool execution context not initialized")
+                        it.content.contains("tool context not initialized")
                 }
             )
         }
@@ -1161,6 +1161,7 @@ class AiChatViewModelTest {
         every { context.getString(R.string.ai_error_suggestion_prefix) } returns "hint: "
         every { context.getString(R.string.ai_generation_stopped) } returns "stopped"
         every { context.getString(R.string.ai_tool_execution_cancelled) } returns "tool execution cancelled"
+        every { context.getString(R.string.ai_tool_error_context_not_initialized) } returns "tool context not initialized"
         every { context.getString(R.string.ai_tool_cancelled_previous_incomplete) } returns "previous incomplete"
         every { context.getString(R.string.ai_tool_cancelled_previous_failed) } returns "Cancelled: previous tool failed"
         every { context.getString(R.string.ai_tool_cancelled_previous_cancelled) } returns "Cancelled: previous tool was cancelled"

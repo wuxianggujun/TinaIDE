@@ -562,9 +562,10 @@ class AiChatViewModel(
     private suspend fun executeToolCallInternal(toolCall: ToolCall): ToolExecutionResult {
         val context = toolExecutionContext
             ?: run {
-                Timber.tag(TAG).e("Tool execution context not initialized")
+                val message = context.getString(R.string.ai_tool_error_context_not_initialized)
+                Timber.tag(TAG).e(message)
                 return ToolExecutionResult.Error(
-                    "Tool execution context not initialized. Please initialize project context first.",
+                    message,
                 )
             }
         return toolExecutionCoordinator.execute(toolCall, context)

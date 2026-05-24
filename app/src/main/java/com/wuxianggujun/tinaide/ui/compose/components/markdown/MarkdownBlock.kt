@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.withContext
 import org.intellij.markdown.flavours.gfm.GFMFlavourDescriptor
 import org.intellij.markdown.parser.MarkdownParser
+import timber.log.Timber
 
 /** GFM 解析器全局单例，避免重复创建 */
 private val flavour by lazy { GFMFlavourDescriptor(useSafeLinks = true) }
@@ -87,7 +88,7 @@ fun MarkdownBlock(
     LaunchedEffect(Unit) {
         snapshotFlow { updatedContent }
             .distinctUntilChanged()
-            .catch { it.printStackTrace() }
+            .catch { Timber.tag("MarkdownBlock").w(it, "Failed to parse markdown block") }
             .collectLatest { text ->
                 val parsed = withContext(Dispatchers.Default) {
                     val preprocessed = preProcess(text)

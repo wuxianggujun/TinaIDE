@@ -63,6 +63,7 @@ import org.intellij.markdown.flavours.gfm.GFMElementTypes
 import org.intellij.markdown.flavours.gfm.GFMFlavourDescriptor
 import org.intellij.markdown.flavours.gfm.GFMTokenTypes
 import org.intellij.markdown.parser.MarkdownParser
+import timber.log.Timber
 
 private val flavour by lazy { GFMFlavourDescriptor(useSafeLinks = true) }
 private val parser by lazy { MarkdownParser(flavour) }
@@ -93,7 +94,7 @@ fun MarkdownViewer(
     LaunchedEffect(Unit) {
         snapshotFlow { updatedContent }
             .distinctUntilChanged()
-            .catch { it.printStackTrace() }
+            .catch { Timber.tag("MarkdownViewer").w(it, "Failed to parse markdown content") }
             .collectLatest { text ->
                 val parsed = withContext(Dispatchers.Default) {
                     text to parser.buildMarkdownTreeFromString(text)
