@@ -65,6 +65,10 @@ import org.eclipse.lsp4j.WorkspaceEdit
 import org.koin.core.context.GlobalContext
 import timber.log.Timber
 
+private const val DEFAULT_SPLIT_EDITOR_PRIMARY_RATIO = 0.5f
+private const val MIN_SPLIT_EDITOR_PRIMARY_RATIO = 0.25f
+private const val MAX_SPLIT_EDITOR_PRIMARY_RATIO = 0.75f
+
 /**
  * 编辑器容器状态管理
  *
@@ -329,6 +333,9 @@ class EditorContainerState(
         private set
 
     var focusedPane by mutableStateOf(EditorPaneId.PRIMARY)
+        private set
+
+    var splitEditorPrimaryRatio by mutableStateOf(DEFAULT_SPLIT_EDITOR_PRIMARY_RATIO)
         private set
 
     internal var peekDefinitionPanelState by mutableStateOf<PeekDefinitionPanelState?>(null)
@@ -1298,6 +1305,19 @@ class EditorContainerState(
         activeTabIdByPane[targetPane] = tab.id
         tabManager.selectTab(index)
         normalizeEditorPaneState(preferredActiveTabId = tab.id)
+    }
+
+    fun updateSplitEditorPrimaryRatio(ratio: Float) {
+        if (!ratio.isFinite()) return
+        splitEditorPrimaryRatio = ratio.coerceIn(
+            MIN_SPLIT_EDITOR_PRIMARY_RATIO,
+            MAX_SPLIT_EDITOR_PRIMARY_RATIO
+        )
+    }
+
+    fun resizeSplitEditorBy(deltaPx: Float, containerWidthPx: Float) {
+        if (!deltaPx.isFinite() || !containerWidthPx.isFinite() || containerWidthPx <= 0f) return
+        updateSplitEditorPrimaryRatio(splitEditorPrimaryRatio + deltaPx / containerWidthPx)
     }
 
     fun toggleSplitEditor() {

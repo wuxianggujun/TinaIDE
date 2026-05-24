@@ -1153,6 +1153,36 @@ class EditorContainerStateTest {
     }
 
     @Test
+    fun splitEditorPrimaryRatio_shouldDefaultToEvenPanes() {
+        assertThat(state.splitEditorPrimaryRatio).isEqualTo(0.5f)
+    }
+
+    @Test
+    fun resizeSplitEditorBy_shouldUpdateRatioFromContainerWidth() {
+        state.resizeSplitEditorBy(deltaPx = 120f, containerWidthPx = 1000f)
+
+        assertThat(state.splitEditorPrimaryRatio).isWithin(0.0001f).of(0.62f)
+    }
+
+    @Test
+    fun updateSplitEditorPrimaryRatio_shouldClampToUsableRange() {
+        state.updateSplitEditorPrimaryRatio(0.1f)
+        assertThat(state.splitEditorPrimaryRatio).isEqualTo(0.25f)
+
+        state.updateSplitEditorPrimaryRatio(0.9f)
+        assertThat(state.splitEditorPrimaryRatio).isEqualTo(0.75f)
+    }
+
+    @Test
+    fun resizeSplitEditorBy_shouldIgnoreInvalidInput() {
+        state.resizeSplitEditorBy(deltaPx = 100f, containerWidthPx = 0f)
+        state.updateSplitEditorPrimaryRatio(Float.NaN)
+        state.resizeSplitEditorBy(deltaPx = Float.POSITIVE_INFINITY, containerWidthPx = 1000f)
+
+        assertThat(state.splitEditorPrimaryRatio).isEqualTo(0.5f)
+    }
+
+    @Test
     fun selectTabInPane_shouldMakePaneActiveForToolbarAndPluginContext() {
         setTabs(
             managerTabs = listOf(

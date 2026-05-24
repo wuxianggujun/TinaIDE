@@ -2,12 +2,17 @@ package com.wuxianggujun.tinaide.ui.compose.components
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.MaterialTheme
@@ -26,8 +31,11 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.wuxianggujun.tinaide.BuildConfig
@@ -200,8 +208,16 @@ fun EditorContainer(
             }
         }
 
+        var splitContainerWidthPx by remember { mutableIntStateOf(0) }
+        val primaryRatio = state.splitEditorPrimaryRatio
+        val secondaryRatio = 1f - primaryRatio
+
         Box(modifier = modifier.fillMaxSize()) {
-            Row(modifier = Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .onSizeChanged { splitContainerWidthPx = it.width }
+            ) {
                 EditorPane(
                     pane = EditorPaneId.PRIMARY,
                     state = state,
@@ -212,14 +228,12 @@ fun EditorContainer(
                     onShowFilePath = showFilePath,
                     onCursorPositionChanged = onCursorPositionChanged,
                     onFileEncodingChanged = onFileEncodingChanged,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(primaryRatio)
                 )
 
-                Box(
-                    modifier = Modifier
-                        .width(1.dp)
-                        .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.outlineVariant)
+                SplitEditorResizeHandle(
+                    state = state,
+                    containerWidthPx = splitContainerWidthPx
                 )
 
                 EditorPane(
@@ -232,7 +246,7 @@ fun EditorContainer(
                     onShowFilePath = showFilePath,
                     onCursorPositionChanged = onCursorPositionChanged,
                     onFileEncodingChanged = onFileEncodingChanged,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(secondaryRatio)
                 )
             }
 
@@ -541,6 +555,46 @@ private fun EditorPane(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun SplitEditorResizeHandle(
+    state: EditorContainerState,
+    containerWidthPx: Int,
+    modifier: Modifier = Modifier
+) {
+    val handleColor = MaterialTheme.colorScheme.outlineVariant
+    val gripColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+
+    Box(
+        modifier = modifier
+            .width(16.dp)
+            .fillMaxHeight()
+            .pointerInput(state, containerWidthPx) {
+                detectHorizontalDragGestures { change, dragAmount ->
+                    change.consume()
+                    state.resizeSplitEditorBy(
+                        deltaPx = dragAmount,
+                        containerWidthPx = containerWidthPx.toFloat()
+                    )
+                }
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .width(1.dp)
+                .fillMaxHeight()
+                .background(handleColor)
+        )
+        Box(
+            modifier = Modifier
+                .width(3.dp)
+                .height(32.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(gripColor)
+        )
     }
 }
 
