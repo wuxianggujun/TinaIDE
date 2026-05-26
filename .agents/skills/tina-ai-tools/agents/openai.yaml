@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tina AI 工具"
+  short_description: "开发 TinaIDE AI 工具、渠道、BYOK、streaming 和 callbacks"
+  default_prompt: "使用 Tina AI 工具设计或检查这个 AI 工具/渠道改动。"

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tina 构建发布"
+  short_description: "处理 TinaIDE Gradle、ABI、CI、签名、Release 和 R8 问题"
+  default_prompt: "使用 Tina 构建发布检查当前构建或发布问题，并给出最小验证命令。"

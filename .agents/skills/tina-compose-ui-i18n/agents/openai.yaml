@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tina UI 国际化"
+  short_description: "开发 TinaIDE Compose UI、设置路由、主题和多语言文案"
+  default_prompt: "使用 Tina UI 国际化检查这个界面改动的组件复用、文案资源和验证步骤。"

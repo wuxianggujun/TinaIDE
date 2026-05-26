@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tina 插件系统"
+  short_description: "开发 TinaIDE 插件 API、.tinaplug、权限、Lua/LSP 插件和 starter"
+  default_prompt: "使用 Tina 插件系统检查这个插件或 starter 改动的契约、权限和测试。"

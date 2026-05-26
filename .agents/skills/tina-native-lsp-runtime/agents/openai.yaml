@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tina Native LSP"
+  short_description: "处理 TinaIDE native toolchain、sysroot、clangd/LSP、Tree-sitter 和 PRoot"
+  default_prompt: "使用 Tina Native LSP 分析这个编译、语言服务或 toolchain 问题。"

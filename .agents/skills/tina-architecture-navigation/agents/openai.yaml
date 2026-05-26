@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tina 架构导航"
+  short_description: "定位 TinaIDE 模块边界、入口、多进程初始化和代码归属"
+  default_prompt: "使用 Tina 架构导航梳理这个改动应放在哪个模块，并列出先读文件和风险点。"

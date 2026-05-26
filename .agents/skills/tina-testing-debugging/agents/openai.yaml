@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tina 测试排障"
+  short_description: "选择 TinaIDE 测试命令、定位失败原因并做质量验证"
+  default_prompt: "使用 Tina 测试排障为这个改动选择最小测试集和排障路径。"
