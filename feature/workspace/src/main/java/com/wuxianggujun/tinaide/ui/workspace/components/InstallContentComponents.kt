@@ -378,6 +378,7 @@ fun InstallCompletedContent(
     onBack: () -> Unit,
     onRefreshRootfsHealth: (() -> Unit)? = null,
     onOpenLog: (() -> Unit)? = null,
+    onOpenTerminal: (() -> Unit)? = null,
 ) {
     val hasLinuxRuntime = installedComponents.any { it.iconRes == Drawables.ic_linux_default }
     val runtimeEnvValue = if (hasLinuxRuntime) {
@@ -655,14 +656,31 @@ fun InstallCompletedContent(
                 Spacer(modifier = Modifier.height(12.dp))
             }
 
-            if (onOpenLog != null) {
-                TinaOutlinedButton(
-                    text = stringResource(Strings.link_view_full_log),
-                    onClick = onOpenLog,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp),
-                )
+            if (onOpenLog != null || onOpenTerminal != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    if (onOpenLog != null) {
+                        TinaOutlinedButton(
+                            text = stringResource(Strings.link_view_full_log),
+                            onClick = onOpenLog,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp),
+                        )
+                    }
+
+                    if (onOpenTerminal != null) {
+                        TinaOutlinedButton(
+                            text = stringResource(Strings.btn_open_terminal),
+                            onClick = onOpenTerminal,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp),
+                        )
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(12.dp))
             }

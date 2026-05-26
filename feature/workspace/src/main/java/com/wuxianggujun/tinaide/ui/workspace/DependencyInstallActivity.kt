@@ -270,6 +270,7 @@ fun DependencyInstallScreen(
                         onBack = onBack,
                         onRefreshRootfsHealth = viewModel::refreshRootfsHealth,
                         onOpenLog = onOpenInstallLog,
+                        onOpenTerminal = onOpenTerminal,
                     )
                 }
                 InstallPhase.FAILED -> {
