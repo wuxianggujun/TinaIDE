@@ -269,6 +269,7 @@ fun DependencyInstallScreen(
                         onEnterWorkspace = { viewModel.onInstallComplete() },
                         onBack = onBack,
                         onRefreshRootfsHealth = viewModel::refreshRootfsHealth,
+                        onOpenLog = onOpenInstallLog,
                     )
                 }
                 InstallPhase.FAILED -> {

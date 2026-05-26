@@ -377,6 +377,7 @@ fun InstallCompletedContent(
     onEnterWorkspace: () -> Unit,
     onBack: () -> Unit,
     onRefreshRootfsHealth: (() -> Unit)? = null,
+    onOpenLog: (() -> Unit)? = null,
 ) {
     val hasLinuxRuntime = installedComponents.any { it.iconRes == Drawables.ic_linux_default }
     val runtimeEnvValue = if (hasLinuxRuntime) {
@@ -649,6 +650,18 @@ fun InstallCompletedContent(
                         .height(48.dp),
                     enabled = !isRootfsHealthChecking,
                     icon = rememberWorkspacePainter(Drawables.ic_sync),
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
+            if (onOpenLog != null) {
+                TinaOutlinedButton(
+                    text = stringResource(Strings.link_view_full_log),
+                    onClick = onOpenLog,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
                 )
 
                 Spacer(modifier = Modifier.height(12.dp))
