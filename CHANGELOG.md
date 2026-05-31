@@ -37,6 +37,33 @@
 - 本项目不使用 `Unreleased` / `未发布` 区块。
 - 所有变更必须归档到明确的版本号区块（版本号来源：`version.properties` 的 `versionName`）。
 
+## [0.17.6] - 2026-05-31
+
+### Fixed
+- 修复 0.17.5 启动即崩溃的 `StackOverflowError`：`OkHttpClientProvider.probe` 在 builder 中绑定 `SmartDns`，而 `SmartDns` 的 lazy initializer 通过 `DohDnsResolver` 又回引 `probe`，同线程递归触发 `SynchronizedLazyImpl` 重入直至 8 MB 主线程栈耗尽。任何走 `probe` 的入口（更新检查、插件市场索引、包索引）都会在启动早期复现。
+- `DohDnsResolver` 改用独立的 `OkHttpClient.Builder() + Dns.SYSTEM`，DoH 客户端从此不再依赖 `OkHttpClientProvider`。
+- `SmartDns` 由 `val by lazy` 重写为 `object : Dns`，内部 `delegate` 在首次 `lookup()` 时才以双检锁构造；`OkHttpClient` builder 引用 `SmartDns` 不会再触发任何懒加载链。注释中显式声明 `delegate` 构造路径禁止回引 `OkHttpClientProvider.probe`，便于后续维护。
+
+### Changed
+- 让本地 `tina.abi` flavor 跟随 Android Studio 注入的目标设备 ABI，避免开发期反复手动切换 flavor。
+- 大规模模块化整理与残留清理：移除 `app/src/main/assets/help/*.md` 帮助文档（已迁至各 feature 模块自有资源），同步清理 `MainActivity` / `TinaApplication` / `AndroidManifest` / `lint-baseline` / `app/src/main/cpp` 内的旧引用。
+- Linux 环境与 PRoot 一致性继续打磨：发行版安装与 PRoot 启动失败时具备恢复路径；要求复用发行版时元数据完全匹配，避免错位；新增环境健康刷新动作；安装完成提示提供"查看日志/打开终端"快捷入口；记录 Linux 健康检查结果便于排障。
+
+### Verification
+- `.\gradlew.bat :core:network:compileDebugKotlin --console=plain`
+- `.\gradlew.bat :app:compileArm64DebugKotlin --console=plain`
+
+## [0.17.5] - 2026-05-27
+
+### Added
+- 编辑器与"安装帮助"导航优化：在编辑器内可直接跳转到与当前任务相关的安装帮助章节，降低首次配置 Linux 工具链的成本。
+
+### Changed
+- 项目级 `.agents/skills/` 知识库新增："tina-ai-tools"、"tina-editor"、"tina-build" 等 skill 文档，便于贡献者快速掌握各模块约定。
+
+### Known Issues
+- ⚠️ 启动即 `StackOverflowError`（`SmartDns` ↔ `OkHttpClientProvider.probe` 循环初始化）。已在 0.17.6 修复，受影响的 0.17.5 用户请直接升级 0.17.6。
+
 ## [0.17.4] - 2026-05-25
 
 ### Changed
