@@ -59,9 +59,15 @@ internal class DohDnsResolver {
         ),
     )
 
-    private val client: OkHttpClient = OkHttpClientProvider.custom(OkHttpClientProvider.probe) {
-        dns(Dns.SYSTEM)
-    }
+    // 使用独立的 OkHttpClient，避免通过 OkHttpClientProvider.probe 间接引用 SmartDns 导致循环初始化
+    private val client: OkHttpClient = OkHttpClient.Builder()
+        .dns(Dns.SYSTEM)
+        .connectTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+        .writeTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+        .followRedirects(true)
+        .followSslRedirects(true)
+        .build()
 
     data class Result(
         val addresses: List<InetAddress>,
