@@ -551,6 +551,9 @@
   <string name="wizard_btn_previous">上一步</string>
   <string name="wizard_btn_create">创建项目</string>
   <string name="wizard_template_recommended">推荐</string>
+  <string name="wizard_category_native_projects">C/C++ 项目</string>
+  <string name="wizard_category_plugin_projects">插件项目</string>
+  <string name="wizard_category_user_templates">自定义模板</string>
   <string name="wizard_plugin_template_badge">插件</string>
   <string name="wizard_plugin_template_card_hint">创建后可直接运行：IDE 会先校验 manifest，再热安装插件。</string>
   <string name="wizard_user_template_badge">自定义</string>

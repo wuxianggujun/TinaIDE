@@ -493,6 +493,9 @@
   <string name="wizard_btn_previous">Previous</string>
   <string name="wizard_btn_create">Create Project</string>
   <string name="wizard_template_recommended">Recommended</string>
+  <string name="wizard_category_native_projects">C/C++ Projects</string>
+  <string name="wizard_category_plugin_projects">Plugin Projects</string>
+  <string name="wizard_category_user_templates">Custom Templates</string>
   <string name="wizard_plugin_template_badge">Plugin</string>
   <string name="wizard_plugin_template_card_hint">After creation, Run validates manifest first, then hot-installs the plugin.</string>
   <string name="wizard_user_template_badge">Custom</string>

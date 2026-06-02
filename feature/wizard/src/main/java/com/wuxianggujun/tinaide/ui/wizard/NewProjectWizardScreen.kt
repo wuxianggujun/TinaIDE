@@ -28,6 +28,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.SubcomposeLayout
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -329,7 +331,15 @@ private fun StepIndicator(
 }
 
 /**
- * 步骤 1: 模板选择
+ * 模板子菜单分类
+ */
+private enum class TemplateTab(@StringRes val labelRes: Int) {
+    NATIVE_PROJECTS(Strings.wizard_category_native_projects),
+    PLUGIN_PROJECTS(Strings.wizard_category_plugin_projects),
+}
+
+/**
+ * 步骤 1: 模板选择（带子菜单切换）
  */
 @Composable
 private fun TemplateSelectionStep(
@@ -341,27 +351,200 @@ private fun TemplateSelectionStep(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = TinaSpacing.xxxl),
-        verticalArrangement = Arrangement.spacedBy(TinaSpacing.lg)
+            .padding(horizontal = TinaSpacing.xxxl)
     ) {
         if (templateOptions.isEmpty()) {
-            TemplateEmptyState(isPluginProjectMode = isPluginProjectMode)
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(TinaSpacing.lg)
+            ) {
+                TemplateEmptyState(isPluginProjectMode = isPluginProjectMode)
+            }
             return@Column
         }
 
-        templateOptions.forEach { option ->
-            TemplateCard(
-                icon = iconForTemplate(option),
-                title = option.displayName,
-                description = option.description,
-                badgeRes = NewProjectWizardSupport.resolveTemplateBadgeRes(option),
-                guideRes = NewProjectWizardSupport.resolveTemplateCardGuideRes(option),
-                isSelected = selectedTemplateId == option.id,
-                isRecommended = option.isRecommended,
-                onClick = { onTemplateSelected(option) }
+        val nativeTemplates = remember(templateOptions) {
+            templateOptions.filter { !NewProjectWizardSupport.isPluginTemplate(it) }
+        }
+        val pluginTemplates = remember(templateOptions) {
+            templateOptions.filter { NewProjectWizardSupport.isPluginTemplate(it) }
+        }
+        val hasBothCategories = nativeTemplates.isNotEmpty() && pluginTemplates.isNotEmpty()
+
+        if (hasBothCategories) {
+            // 子菜单 Tab：根据已选模板推导初始 Tab，避免返回时重置
+            var selectedTab by remember(selectedTemplateId) {
+                val initialTab = when {
+                    isPluginProjectMode -> TemplateTab.PLUGIN_PROJECTS
+                    pluginTemplates.any { it.id == selectedTemplateId } -> TemplateTab.PLUGIN_PROJECTS
+                    else -> TemplateTab.NATIVE_PROJECTS
+                }
+                mutableStateOf(initialTab)
+            }
+            val tabTitles = TemplateTab.entries.map { stringResource(it.labelRes) }
+
+            TemplateSubMenu(
+                titles = tabTitles,
+                selectedIndex = selectedTab.ordinal,
+                onSelected = { selectedTab = TemplateTab.entries[it] }
+            )
+
+            Spacer(modifier = Modifier.height(TinaSpacing.lg))
+
+            // 根据选中 Tab 过滤模板
+            val filteredOptions = when (selectedTab) {
+                TemplateTab.NATIVE_PROJECTS -> nativeTemplates
+                TemplateTab.PLUGIN_PROJECTS -> pluginTemplates
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(TinaSpacing.lg)
+            ) {
+                filteredOptions.forEach { option ->
+                    TemplateCard(
+                        icon = iconForTemplate(option),
+                        title = option.displayName,
+                        description = option.description,
+                        badgeRes = NewProjectWizardSupport.resolveTemplateBadgeRes(option),
+                        guideRes = NewProjectWizardSupport.resolveTemplateCardGuideRes(option),
+                        isSelected = selectedTemplateId == option.id,
+                        isRecommended = option.isRecommended,
+                        onClick = { onTemplateSelected(option) }
+                    )
+                }
+            }
+        } else {
+            // 只有一种分类，不需要子菜单
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(TinaSpacing.lg)
+            ) {
+                templateOptions.forEach { option ->
+                    TemplateCard(
+                        icon = iconForTemplate(option),
+                        title = option.displayName,
+                        description = option.description,
+                        badgeRes = NewProjectWizardSupport.resolveTemplateBadgeRes(option),
+                        guideRes = NewProjectWizardSupport.resolveTemplateCardGuideRes(option),
+                        isSelected = selectedTemplateId == option.id,
+                        isRecommended = option.isRecommended,
+                        onClick = { onTemplateSelected(option) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 模板子菜单（带滑动指示条）
+ *
+ * 样式：居中紧凑的 Tab 按钮，圆角波纹，下方指示条精确对齐选中项
+ */
+@Composable
+private fun TemplateSubMenu(
+    titles: List<String>,
+    selectedIndex: Int,
+    onSelected: (Int) -> Unit
+) {
+    val pillShape = RoundedCornerShape(50)
+    val indicatorWidth = 32.dp
+    val tabGap = TinaSpacing.md
+
+    SubcomposeLayout { constraints ->
+        val gapPx = tabGap.roundToPx()
+        val indicatorHeightPx = 3.dp.roundToPx()
+
+        // 单次测量：一次性 subcompose 所有 Tab，避免 key 重复
+        val tabMeasurables = subcompose("all_tabs") {
+            titles.forEachIndexed { index, title ->
+                // 缓存点击回调，避免每次重组创建新 lambda
+                val onClick = remember(index) { { onSelected(index) } }
+                TabButton(
+                    title = title,
+                    isSelected = index == selectedIndex,
+                    shape = pillShape,
+                    onClick = onClick
+                )
+            }
+        }
+
+        val tabPlaceables = tabMeasurables.map { it.measure(constraints) }
+        val tabWidths = tabPlaceables.map { it.width }
+        val tabRowHeight = tabPlaceables.maxOf { it.height }
+
+        val totalTabsWidth = tabWidths.sum() + gapPx * (titles.size - 1)
+        val totalHeight = tabRowHeight + TinaSpacing.xs.roundToPx() + indicatorHeightPx
+
+        // 每个 Tab 中心相对于 Tab 行左边缘的 x 坐标
+        val tabCenters = mutableListOf<Int>()
+        var cx = 0
+        for (i in tabWidths.indices) {
+            tabCenters.add(cx + tabWidths[i] / 2)
+            cx += tabWidths[i] + gapPx
+        }
+
+        // 指示条
+        val indicatorPlaceable = subcompose("indicator") {
+            Box(
+                modifier = Modifier
+                    .width(indicatorWidth)
+                    .height(3.dp)
+                    .clip(RoundedCornerShape(1.5.dp))
+                    .background(MaterialTheme.colorScheme.primary)
+            )
+        }.first().measure(constraints)
+
+        // 指示条中心对齐选中 Tab 中心
+        val selectedCenter = tabCenters[selectedIndex]
+        val indicatorX = selectedCenter - indicatorPlaceable.width / 2
+
+        layout(constraints.maxWidth, totalHeight) {
+            val rowOffset = (constraints.maxWidth - totalTabsWidth) / 2
+            var tabX = rowOffset
+            tabPlaceables.forEach { placeable ->
+                placeable.placeRelative(tabX, 0)
+                tabX += placeable.width + gapPx
+            }
+            indicatorPlaceable.placeRelative(
+                rowOffset + indicatorX,
+                tabRowHeight + TinaSpacing.xs.roundToPx()
             )
         }
+    }
+}
+
+@Composable
+private fun TabButton(
+    title: String,
+    isSelected: Boolean,
+    shape: RoundedCornerShape,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .clip(shape)
+            .clickable(onClick = onClick)
+            .padding(horizontal = TinaSpacing.xl, vertical = TinaSpacing.sm),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
+            color = if (isSelected) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            }
+        )
     }
 }
 

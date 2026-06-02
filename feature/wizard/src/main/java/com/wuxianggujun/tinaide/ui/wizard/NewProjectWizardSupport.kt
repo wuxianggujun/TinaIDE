@@ -20,11 +20,9 @@ internal object NewProjectWizardSupport {
         preferPluginTemplate: Boolean,
         templateOptions: List<ProjectTemplateOption>,
     ): List<ProjectTemplateOption> {
-        return if (preferPluginTemplate) {
-            templateOptions.filter { option -> isPluginTemplate(option) }
-        } else {
-            templateOptions
-        }
+        // 不再过滤：子菜单 Tab 已在 UI 层处理分类切换，
+        // 始终返回全部模板以便 Tab 能展示所有分类。
+        return templateOptions
     }
 
     fun resolveInitialTemplateSelection(

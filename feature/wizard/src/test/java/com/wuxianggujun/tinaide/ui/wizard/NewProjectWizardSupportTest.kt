@@ -121,7 +121,7 @@ class NewProjectWizardSupportTest {
     }
 
     @Test
-    fun resolveVisibleTemplateOptions_shouldOnlyShowPluginTemplatesForPluginEntry() {
+    fun resolveVisibleTemplateOptions_shouldKeepAllTemplatesForPluginEntry() {
         val builtinTemplate = template(
             id = "builtin:first",
             buildSystem = ProjectBuildSystem.CMAKE,
@@ -133,16 +133,17 @@ class NewProjectWizardSupportTest {
             primaryLanguage = ProjectLanguage.MIXED,
         )
 
+        // 子菜单 Tab 在 UI 层处理分类，此处始终返回全部模板
         assertThat(
             NewProjectWizardSupport.resolveVisibleTemplateOptions(
                 preferPluginTemplate = true,
                 templateOptions = listOf(builtinTemplate, pluginTemplate),
             )
-        ).containsExactly(pluginTemplate)
+        ).containsExactly(builtinTemplate, pluginTemplate).inOrder()
     }
 
     @Test
-    fun resolveVisibleTemplateOptions_shouldReturnEmptyWhenPluginEntryHasNoPluginTemplates() {
+    fun resolveVisibleTemplateOptions_shouldReturnAllWhenOnlyNativeTemplatesExist() {
         val builtinTemplate = template(
             id = "builtin:first",
             buildSystem = ProjectBuildSystem.CMAKE,
@@ -154,7 +155,7 @@ class NewProjectWizardSupportTest {
                 preferPluginTemplate = true,
                 templateOptions = listOf(builtinTemplate),
             )
-        ).isEmpty()
+        ).containsExactly(builtinTemplate)
     }
 
     @Test
