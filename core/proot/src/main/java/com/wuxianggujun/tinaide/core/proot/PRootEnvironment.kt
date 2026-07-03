@@ -215,14 +215,7 @@ class PRootEnvironment(
     )
 
     suspend fun isCommandAvailable(command: String): Boolean {
-        val normalized = command.trim()
-        if (normalized.isEmpty()) return false
-
-        val probeCommand = if (normalized.contains('/')) {
-            listOf("/bin/test", "-x", normalized)
-        } else {
-            listOf("/bin/sh", "-lc", "command -v ${shellEscape(normalized)} >/dev/null 2>&1")
-        }
+        val probeCommand = buildCommandAvailabilityProbe(command) ?: return false
 
         return getPRootManager().execute(
             command = probeCommand,
@@ -256,6 +249,17 @@ class PRootEnvironment(
     }
 
     private fun shellEscape(value: String): String = "'" + value.replace("'", "'\\''") + "'"
+}
+
+internal fun buildCommandAvailabilityProbe(command: String): List<String>? {
+    val normalized = command.trim()
+    if (normalized.isEmpty()) return null
+
+    return if (normalized.contains('/')) {
+        listOf("/bin/sh", "-lc", "[ -x ${"'" + normalized.replace("'", "'\\''") + "'"} ]")
+    } else {
+        listOf("/bin/sh", "-lc", "command -v ${"'" + normalized.replace("'", "'\\''") + "'"} >/dev/null 2>&1")
+    }
 }
 
 internal class PRootInteractiveAdapter(

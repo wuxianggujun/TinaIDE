@@ -164,8 +164,9 @@ class TerminalShellResolver(
                 TerminalBackend.PROOT -> {
                     val prootManager = resolvePRootEnvironment()?.getPRootManager() ?: return false
                     for (path in guestShellCandidates(shellType)) {
+                        val probeCommand = buildGuestCommandAvailabilityProbe(path) ?: continue
                         val result = prootManager.execute(
-                            command = listOf("/bin/test", "-x", path),
+                            command = probeCommand,
                             workDir = "/",
                             timeout = 8_000
                         )
@@ -197,8 +198,9 @@ class TerminalShellResolver(
 
         val guestShellPath = run {
             for (candidate in guestShellCandidates(resolvedType)) {
+                val probeCommand = buildGuestCommandAvailabilityProbe(candidate) ?: continue
                 val result = prootManager.execute(
-                    command = listOf("/bin/test", "-x", candidate),
+                    command = probeCommand,
                     workDir = "/",
                     timeout = 8_000
                 )
@@ -360,3 +362,15 @@ class TerminalShellResolver(
         return Strings.shell_error_format.strOr(context, prefix, configured.value, hint)
     }
 }
+
+internal fun buildGuestCommandAvailabilityProbe(command: String): List<String>? {
+    val normalized = command.trim()
+    if (normalized.isEmpty()) return null
+    return if (normalized.contains('/')) {
+        listOf("/bin/sh", "-lc", "[ -x ${shellEscape(normalized)} ]")
+    } else {
+        listOf("/bin/sh", "-lc", "command -v ${shellEscape(normalized)} >/dev/null 2>&1")
+    }
+}
+
+private fun shellEscape(value: String): String = "'" + value.replace("'", "'\\''") + "'"

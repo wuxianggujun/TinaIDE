@@ -74,10 +74,10 @@ android {
         }
     }
 
-    // Define signing config before buildTypes so it can be referenced below
+    // Define shared signing config before buildTypes so it can be referenced below
     if (keystoreProps.isNotEmpty()) {
         signingConfigs {
-            create("release") {
+            create("shared") {
                 val storeFileProp = keystoreProps.getProperty("storeFile")
                 val storePasswordProp = keystoreProps.getProperty("storePassword")
                 val keyAliasProp = keystoreProps.getProperty("keyAlias")
@@ -94,6 +94,9 @@ android {
     buildTypes {
         debug {
             buildConfigField("boolean", "SERVER_CONFIG_SIGNATURE_REQUIRED", "false")
+            if (keystoreProps.isNotEmpty()) {
+                signingConfig = signingConfigs.getByName("shared")
+            }
         }
         release {
             buildConfigField("boolean", "SERVER_CONFIG_SIGNATURE_REQUIRED", "true")
@@ -105,9 +108,8 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // Attach signing config when keystore.properties is available
             if (keystoreProps.isNotEmpty()) {
-                signingConfig = signingConfigs.getByName("release")
+                signingConfig = signingConfigs.getByName("shared")
             }
 
             // 发布版本：仅排除"工具链整包 rootfs"

@@ -224,9 +224,9 @@ class LinuxDistroRootfsHealthCheckerTest {
     }
 }
 
-private fun List<String>.isExecutablePathProbe(): Boolean = size >= 3 && this[0] == "/bin/test" && this[1] == "-x"
+private fun List<String>.isExecutablePathProbe(): Boolean = size >= 3 && this[0] == "/bin/sh" && this[1] == "-lc" && this[2].startsWith("[ -x '")
 
-private fun List<String>.extractExecutablePathProbeName(): String = getOrNull(2).orEmpty()
+private fun List<String>.extractExecutablePathProbeName(): String = Regex("\\[ -x '([^']+)' ]").find(this[2])?.groupValues?.get(1).orEmpty()
 
 private fun List<String>.isCommandProbe(): Boolean = size >= 3 && this[0] == "/bin/sh" && this[1] == "-lc" && this[2].contains("command -v")
 

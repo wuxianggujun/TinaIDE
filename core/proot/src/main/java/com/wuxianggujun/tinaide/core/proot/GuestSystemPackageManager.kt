@@ -382,14 +382,7 @@ object GuestSystemPackageManager {
         command: String,
         timeoutMs: Long,
     ): Boolean {
-        val normalized = command.trim()
-        if (normalized.isEmpty()) return false
-
-        val probeCommand = if (normalized.contains('/')) {
-            listOf("/bin/test", "-x", normalized)
-        } else {
-            listOf("/bin/sh", "-lc", "command -v ${shellEscape(normalized)} >/dev/null 2>&1")
-        }
+        val probeCommand = buildCommandAvailabilityProbe(command) ?: return false
 
         return linuxEnvironment.execute(
             command = probeCommand,

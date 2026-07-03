@@ -159,3 +159,9 @@ app/mappings/**/*.txt
 # Gradle user home cache (AI mode)
 .gradle-user-home-ai/
 org/
+
+# mcp
+.mcp.json
+
+# 项目文档
+CLOAI.md
