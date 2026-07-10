@@ -27,13 +27,12 @@ object SdlRuntimeResolver {
     private val sdl2NamePattern = Regex("""^libSDL2\.so(?:\..+)?$""")
     private val sdl3NamePattern = Regex("""^libSDL3\.so(?:\..+)?$""")
 
-    // OS 提供的 NDK 系统库统一走 AndroidSystemLibraries.ndkProvided，
-    // 额外加上 libc++_shared.so：RUN 时由 sysroot 经 LD_LIBRARY_PATH 注入，无需预加载。
-    private val systemLibraryNames = AndroidSystemLibraries.ndkProvided + "libc++_shared.so"
+    private val systemLibraryNames = AndroidSystemLibraries.ndkProvided
 
     data class SdlRuntimeSpec(
         val requiredSdlMajor: Int,
         val sdlLibraryPath: String,
+        val preSdlLibraryPaths: List<String>,
         val preloadLibraryPaths: List<String>,
         val sdlPackageId: String? = null,
         val sdlPackageVersion: String? = null,
@@ -133,12 +132,18 @@ object SdlRuntimeResolver {
         }.toList()
 
         val runtimeIndex = buildRuntimeLibraryIndex(runtimeDirs)
+        val preSdlLibraries = resolveSdlDependencyLibraries(
+            runtimeIndex = runtimeIndex,
+            mainLibrary = mainLibrary,
+            sdlLibrary = selectedSdlLibrary.libraryFile
+        )
+        val preSdlLibrarySet = preSdlLibraries.toSet()
         val preloadLibraries = resolvePreloadLibraries(
             runtimeIndex = runtimeIndex,
             neededLibraries = neededLibraries,
             mainLibrary = mainLibrary,
             sdlLibrary = selectedSdlLibrary.libraryFile
-        )
+        ).filterNot(preSdlLibrarySet::contains)
 
         val packageTag = if (selectedSdlLibrary.packageId.isNullOrBlank()) {
             "external-runtime-scan"
@@ -146,17 +151,19 @@ object SdlRuntimeResolver {
             "${selectedSdlLibrary.packageId}@${selectedSdlLibrary.packageVersion.orEmpty()}"
         }
         Timber.tag(TAG).i(
-            "Detected SDL%d runtime: main=%s, sdl=%s, package=%s, preload=%d",
+            "Detected SDL%d runtime: main=%s, sdl=%s, package=%s, preSdl=%d, preload=%d",
             requiredSdlMajor,
             mainLibrary.name,
             selectedSdlLibrary.libraryFile.name,
             packageTag,
+            preSdlLibraries.size,
             preloadLibraries.size
         )
         return ResolveResult.Sdl(
             SdlRuntimeSpec(
                 requiredSdlMajor = requiredSdlMajor,
                 sdlLibraryPath = selectedSdlLibrary.libraryFile.absolutePath,
+                preSdlLibraryPaths = preSdlLibraries,
                 preloadLibraryPaths = preloadLibraries,
                 sdlPackageId = selectedSdlLibrary.packageId,
                 sdlPackageVersion = selectedSdlLibrary.packageVersion
@@ -492,6 +499,30 @@ object SdlRuntimeResolver {
 
         neededLibraries.sorted().forEach(::visit)
         return resolved.toList()
+    }
+
+    internal fun resolveSdlDependencyLibraries(
+        runtimeIndex: Map<String, File>,
+        mainLibrary: File,
+        sdlLibrary: File,
+        dependencyReader: (File) -> Set<String> = NativeLibraryDependencyReader::readNeededLibraryNames,
+    ): List<String> {
+        val neededLibraries = runCatching { dependencyReader(sdlLibrary) }
+            .onFailure { error ->
+                Timber.tag(TAG).w(
+                    error,
+                    "Failed to inspect selected SDL dependencies: %s",
+                    sdlLibrary.absolutePath,
+                )
+            }
+            .getOrDefault(emptySet())
+        return resolvePreloadLibraries(
+            runtimeIndex = runtimeIndex,
+            neededLibraries = neededLibraries,
+            mainLibrary = mainLibrary,
+            sdlLibrary = sdlLibrary,
+            dependencyReader = dependencyReader,
+        )
     }
 
     @Throws(IOException::class)

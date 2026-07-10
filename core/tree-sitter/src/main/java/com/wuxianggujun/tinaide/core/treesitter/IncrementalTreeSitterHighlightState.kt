@@ -121,7 +121,7 @@ internal class IncrementalTreeSitterHighlightState(
 
     fun openDocument(text: String) {
         if (text.isEmpty()) {
-            clearState()
+            resetToEmptyDocument()
             return
         }
         var shouldSchedule = false
@@ -269,7 +269,7 @@ internal class IncrementalTreeSitterHighlightState(
         enqueueWorkerTreeCleanup(tree, shutdownWorker = true)
     }
 
-    private fun clearState() {
+    private fun resetToEmptyDocument() {
         val snapshot: SafeTsTree?
         val tree: TSTree?
         synchronized(lock) {
@@ -282,8 +282,8 @@ internal class IncrementalTreeSitterHighlightState(
             workerTree = null
             pending = null
             pendingDirtyLineRanges = emptyList()
-            currentText = null
-            currentLineCount = 0
+            currentText = StringBuilder()
+            currentLineCount = 1
             renderSnapshotStale = false
         }
         snapshot?.close()
@@ -342,7 +342,7 @@ internal class IncrementalTreeSitterHighlightState(
             }
         }
         if (shouldClear) {
-            clearState()
+            resetToEmptyDocument()
             return
         }
         if (shouldSchedule) {

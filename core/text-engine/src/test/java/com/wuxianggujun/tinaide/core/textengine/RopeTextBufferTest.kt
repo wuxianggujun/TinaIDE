@@ -20,6 +20,17 @@ class RopeTextBufferTest {
     }
 
     @Test
+    fun replace_invalidRangeShouldFailWithoutChangingContent() {
+        val buffer = RopeTextBuffer("abc")
+
+        val failure = runCatching { buffer.replace(0, 5, "x") }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(IllegalArgumentException::class.java)
+        assertThat(buffer.toString()).isEqualTo("abc")
+        assertThat(buffer.version).isEqualTo(0L)
+    }
+
+    @Test
     fun undoRedoShouldWork() {
         val buffer = RopeTextBuffer()
         buffer.insert(0, "abc")

@@ -4,9 +4,10 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.android.application)
+    id("tina.kotlin.quality")
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.kotlin.serialization)
-    id("kotlin-parcelize")
+    alias(libs.plugins.kotlin.parcelize)
     id("tina.android.app.versioning")
     id("tina.android.app.abi-aggregation")
     id("tina.android.app.guardrails")

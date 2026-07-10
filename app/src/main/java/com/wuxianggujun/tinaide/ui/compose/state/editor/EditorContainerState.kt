@@ -49,6 +49,7 @@ import com.wuxianggujun.tinaide.editor.session.EditorViewState
 import com.wuxianggujun.tinaide.editor.session.SaveResult
 import com.wuxianggujun.tinaide.editor.symbol.ProjectSymbolIndexService
 import com.wuxianggujun.tinaide.editor.theme.PluginEditorThemeRegistry
+import com.wuxianggujun.tinaide.file.IFileWatchService
 import com.wuxianggujun.tinaide.plugin.PluginSnippetManager
 import com.wuxianggujun.tinaide.plugin.lsp.LspPluginManager
 import com.wuxianggujun.tinaide.plugin.script.api.EditorSelectionPayload
@@ -285,6 +286,8 @@ class EditorContainerState(
         val replaceSelection: (replacement: String) -> Boolean,
         val replaceWholeText: (newText: String) -> Boolean,
         val applyTextEdits: (edits: List<TextEditOperation>) -> Boolean,
+        val validateTextEdits: (edits: List<TextEditOperation>) -> Boolean = { true },
+        val documentVersion: () -> Long? = { null },
         val toggleLineComment: (commentToken: String) -> Boolean,
         val replaceAll: (
             findText: String,
@@ -322,10 +325,8 @@ class EditorContainerState(
         val buffer: RopeTextBuffer,
         val editorState: EditorState,
         var syntaxHighlighter: TreeSitterHighlighter? = null,
-        var syntaxHighlighterCreationAttempted: Boolean = false,
         var isTreeSitterSnapshotReady: Boolean = false,
         var foldingProvider: TreeSitterFoldingProvider? = null,
-        var foldingProviderCreationAttempted: Boolean = false,
         var isContentLoaded: Boolean = false
     ) {
         val contentLoadMutex = Mutex()
@@ -444,7 +445,9 @@ class EditorContainerState(
 
     // ========== 子管理器 ==========
 
-    private val lspEditorManager = LspEditorManager()
+    private val lspEditorManager = LspEditorManager(
+        fileWatchService = GlobalContext.getOrNull()?.getOrNull<IFileWatchService>(),
+    )
     private val searchStateManager = SearchStateManager()
     private val tabManager = EditorTabManager(context, editorManager)
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -1133,6 +1136,24 @@ class EditorContainerState(
         return callback.applyTextEdits(edits)
     }
 
+    internal fun canApplyTextEditsInTab(tabId: String, edits: List<TextEditOperation>): Boolean {
+        if (edits.isEmpty()) return false
+        val tab = tabManager.findTab(tabId) ?: return false
+        if (!isCodeEditableType(tab.contentType)) return false
+        val callback = codeEditorCallbacks[tabId] ?: return false
+        return callback.validateTextEdits(edits)
+    }
+
+    internal fun isLspDocumentVersionCurrent(tabId: String, expectedVersion: Int): Boolean =
+        lspEditorManager.isDocumentVersionCurrent(tabId, expectedVersion)
+
+    internal fun readTabDocumentVersion(tabId: String): Long? = codeEditorCallbacks[tabId]?.documentVersion?.invoke()
+
+    internal fun readTextFromTab(tabId: String): String? = codeEditorCallbacks[tabId]?.readAllText?.invoke()
+
+    internal fun replaceTextInTab(tabId: String, text: String): Boolean =
+        codeEditorCallbacks[tabId]?.replaceWholeText?.invoke(text) ?: false
+
     fun applyTextEditsInActiveTab(edits: List<TextEditOperation>): Boolean {
         val activeTab = getActiveTab() ?: return false
         return applyTextEditsInTab(
@@ -1271,11 +1292,7 @@ class EditorContainerState(
     }
 
     fun requestCloseTab(index: Int) {
-        val closedTabId = tabs.getOrNull(index)?.id
         tabManager.requestCloseTab(index)
-        if (closedTabId != null && tabs.none { it.id == closedTabId }) {
-            tabLifecycleCoordinator.cleanupClosedTabState(closedTabId)
-        }
         normalizeEditorPaneState()
         persistSplitEditorState()
     }
@@ -1303,12 +1320,8 @@ class EditorContainerState(
     }
 
     fun confirmSaveAndClose(): Boolean {
-        val tabIdsBeforeClose = tabs.map { it.id }
         val closed = tabManager.confirmSaveAndClose()
         if (closed) {
-            tabIdsBeforeClose
-                .filter { closedTabId -> tabs.none { it.id == closedTabId } }
-                .let { closedTabIds -> tabLifecycleCoordinator.releaseRemovedTabResources(closedTabIds) }
             normalizeEditorPaneState()
             persistSplitEditorState()
         }
@@ -1317,12 +1330,8 @@ class EditorContainerState(
 
     fun confirmDiscardAndClose() {
         val hadPendingClose = pendingCloseTab != null
-        val tabIdsBeforeClose = tabs.map { it.id }
         tabManager.confirmDiscardAndClose()
         if (hadPendingClose) {
-            tabIdsBeforeClose
-                .filter { closedTabId -> tabs.none { it.id == closedTabId } }
-                .let { closedTabIds -> tabLifecycleCoordinator.releaseRemovedTabResources(closedTabIds) }
             normalizeEditorPaneState()
             persistSplitEditorState()
         }
@@ -1341,10 +1350,8 @@ class EditorContainerState(
     fun closeOtherTabs(exceptIndex: Int): Boolean {
         val keptTabId = tabs.getOrNull(exceptIndex)?.id
         if (keptTabId == null) return false
-        val tabIdsToRelease = tabs.map { it.id }.filter { it != keptTabId }
         val completed = tabManager.closeOtherTabs(exceptIndex)
         if (!completed) return true
-        tabLifecycleCoordinator.releaseRemovedTabResources(tabIdsToRelease)
         val keptPane = resolvePaneForTab(keptTabId)
         tabLifecycleCoordinator.retainOnlyTabPaneState(keptTabId, keptPane)
         normalizeEditorPaneState(preferredActiveTabId = keptTabId)
@@ -1359,10 +1366,8 @@ class EditorContainerState(
 
     fun closeAllTabs(): Boolean {
         val hadTabs = tabs.isNotEmpty()
-        val tabIdsToRelease = tabs.map { it.id }
         val completed = tabManager.closeAllTabs()
         if (!completed) return hadTabs
-        tabLifecycleCoordinator.releaseRemovedTabResources(tabIdsToRelease)
         tabLifecycleCoordinator.clearSplitPaneState()
         isSplitEditorEnabled = false
         focusedPane = EditorPaneId.PRIMARY

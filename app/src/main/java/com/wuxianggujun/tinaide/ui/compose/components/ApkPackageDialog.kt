@@ -60,6 +60,7 @@ import com.wuxianggujun.tinaide.core.apkbuilder.ApkKeyStoreManager
 import com.wuxianggujun.tinaide.core.apkbuilder.ApkSigningConfig
 import com.wuxianggujun.tinaide.core.apkbuilder.ApkTemplateType
 import com.wuxianggujun.tinaide.core.apkbuilder.DebugKeyStore
+import com.wuxianggujun.tinaide.core.apkbuilder.NativeLibraryAbiDetector
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.str
 import com.wuxianggujun.tinaide.core.i18n.strOr
@@ -1141,7 +1142,13 @@ fun ApkPackageDialog(
                                 val config = ApkBuildConfig(
                                     soFiles = effectiveSoFiles,
                                     targetAbis = listOf(
-                                        Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"
+                                        effectiveSoFiles
+                                            .firstOrNull { it.name == "libmain.so" }
+                                            ?.let { mainLibrary ->
+                                                runCatching { NativeLibraryAbiDetector.detect(mainLibrary) }.getOrNull()
+                                            }
+                                            ?: Build.SUPPORTED_ABIS.firstOrNull()
+                                            ?: "arm64-v8a"
                                     ),
                                     executableFile = if (resolvedTemplateOption.templateType == ApkTemplateType.TERMINAL) executableFile else null,
                                     packageName = packageName.trim(),
@@ -1425,19 +1432,14 @@ private fun isSharedLibraryFileName(name: String): Boolean = name.contains(".so"
 
 private fun mergeNamedLibraries(
     baseLibraries: List<File>,
-    overridingLibraries: List<File>
-): List<File> {
-    val merged = linkedMapOf<String, File>()
-    baseLibraries
-        .asSequence()
-        .filter(File::isFile)
-        .forEach { merged[it.name] = it }
-    overridingLibraries
-        .asSequence()
-        .filter(File::isFile)
-        .forEach { merged[it.name] = it }
-    return merged.values.toList()
-}
+    additionalLibraries: List<File>
+): List<File> = (baseLibraries + additionalLibraries)
+    .asSequence()
+    .filter(File::isFile)
+    .distinctBy { library ->
+        runCatching { library.canonicalPath }.getOrDefault(library.absolutePath)
+    }
+    .toList()
 
 private fun deleteManagedApkExportFileIfPresent(file: File, managedDir: File) {
     val resolvedFile = runCatching { file.canonicalFile }.getOrDefault(file.absoluteFile)

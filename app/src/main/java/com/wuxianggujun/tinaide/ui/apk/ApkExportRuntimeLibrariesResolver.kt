@@ -67,7 +67,7 @@ object ApkExportRuntimeLibrariesResolver {
                 File(sdlResolveResult.spec.sdlLibraryPath)
                     .takeIf { it.isFile }
                     ?.let(selectedSdlRuntimeLibraries::add)
-                sdlResolveResult.spec.preloadLibraryPaths
+                (sdlResolveResult.spec.preSdlLibraryPaths + sdlResolveResult.spec.preloadLibraryPaths)
                     .asSequence()
                     .map(::File)
                     .filter { it.isFile }
@@ -146,10 +146,14 @@ object ApkExportRuntimeLibrariesResolver {
 
     internal fun resolveRootLibraries(buildLibraries: List<File>): List<File> {
         if (buildLibraries.isEmpty()) return emptyList()
-        return buildLibraries
-            .firstOrNull { it.name == "libmain.so" }
-            ?.let(::listOf)
-            ?: listOf(buildLibraries.first())
+        val uniqueLibraries = buildLibraries
+            .map(::canonicalOrAbsolute)
+            .distinctBy { it.absolutePath }
+        val mainLibrary = uniqueLibraries.firstOrNull { it.name == "libmain.so" }
+        return buildList(uniqueLibraries.size) {
+            mainLibrary?.let(::add)
+            uniqueLibraries.filterTo(this) { it != mainLibrary }
+        }
     }
 
     internal fun resolveDependencyClosure(

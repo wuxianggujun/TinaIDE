@@ -3,7 +3,7 @@ package com.wuxianggujun.tinaide.core.apkbuilder
 import java.io.File
 import java.io.IOException
 
-internal object NativeLibraryAbiDetector {
+object NativeLibraryAbiDetector {
     private const val ELF_HEADER_PREFIX_SIZE = 20
     private const val ELF_CLASS_32 = 1
     private const val ELF_CLASS_64 = 2

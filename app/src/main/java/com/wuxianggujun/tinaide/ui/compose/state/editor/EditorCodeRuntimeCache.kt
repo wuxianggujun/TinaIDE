@@ -43,8 +43,7 @@ internal class EditorCodeRuntimeCache(
 
     fun getOrCreateSyntaxHighlighter(tab: EditorTabState): TreeSitterHighlighter? {
         val runtime = getOrCreate(tab)
-        if (!runtime.syntaxHighlighterCreationAttempted) {
-            runtime.syntaxHighlighterCreationAttempted = true
+        if (runtime.syntaxHighlighter == null) {
             runtime.installSyntaxHighlighter(
                 TreeSitterHighlighter.create(context.applicationContext, tab.file)
             )
@@ -54,8 +53,7 @@ internal class EditorCodeRuntimeCache(
 
     fun getOrCreateFoldingProvider(tab: EditorTabState): TreeSitterFoldingProvider? {
         val runtime = getOrCreate(tab)
-        if (!runtime.foldingProviderCreationAttempted) {
-            runtime.foldingProviderCreationAttempted = true
+        if (runtime.foldingProvider == null) {
             runtime.foldingProvider = TreeSitterFoldingProvider.create(context.applicationContext, tab.file)
         }
         return runtime.foldingProvider
@@ -127,8 +125,6 @@ internal class EditorCodeRuntimeCache(
         resetDocumentBinding()
         resetStateBindings()
         clearLanguageServices()
-        syntaxHighlighterCreationAttempted = false
-        foldingProviderCreationAttempted = false
         editorState.clearSemanticTokens()
         editorState.clearFoldRegions()
         editorState.retargetFile(newFile)

@@ -1,5 +1,6 @@
 package com.wuxianggujun.tinaide.editor.session
 
+import android.os.FileObserver
 import com.google.common.truth.Truth.assertThat
 import java.io.File
 import java.nio.charset.Charset
@@ -7,6 +8,7 @@ import java.nio.file.Files
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -17,6 +19,23 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE)
 class DocumentSessionTest {
+
+    @Test
+    fun deletedFileEvent_shouldMarkExternalModification() = runTest {
+        val file = Files.createTempFile("document-session-deleted", ".txt").toFile()
+        val session = createSession(file, this)
+        try {
+            file.delete()
+
+            session.handleFileEvent(FileObserver.DELETE, file.name)
+            runCurrent()
+
+            assertThat(session.state.value.hasExternalModification).isTrue()
+        } finally {
+            session.stopFileWatcher()
+            file.delete()
+        }
+    }
 
     @Test
     fun reloadFromDisk_shouldRefreshUndoRedoAndCharset() = runTest {
@@ -66,6 +85,31 @@ class DocumentSessionTest {
             assertThat(result).isInstanceOf(SaveResult.Success::class.java)
             assertThat(file.readBytes()).isEqualTo("新的中文内容".toByteArray(gbk))
             assertThat(session.state.value.charsetName).isEqualTo(gbk.name())
+        } finally {
+            session.stopFileWatcher()
+            file.delete()
+        }
+    }
+
+    @Test
+    fun delayedDeleteEventFromAtomicSave_shouldNotReportExternalModification() = runTest {
+        val file = Files.createTempFile("document-session-atomic-save", ".txt").toFile()
+        file.writeText("old")
+        val session = createSession(file, this)
+        val binding = FakeEditorBinding(
+            text = "new",
+            canUndo = true,
+            canRedo = false,
+        )
+
+        try {
+            session.attachEditor(binding)
+            assertThat(session.save(SaveReason.MANUAL)).isInstanceOf(SaveResult.Success::class.java)
+
+            session.handleFileEvent(FileObserver.DELETE, file.name)
+
+            assertThat(file.exists()).isTrue()
+            assertThat(session.state.value.hasExternalModification).isFalse()
         } finally {
             session.stopFileWatcher()
             file.delete()

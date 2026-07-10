@@ -40,6 +40,55 @@ class ApkBuilder(private val context: Context) {
             val entryAbi = entryName.substringAfter("lib/").substringBefore('/')
             return entryAbi !in targetAbis || entryName in replacementEntryNames
         }
+
+        internal fun putNativeLibraryEntry(
+            entries: MutableMap<String, File>,
+            entryName: String,
+            library: File
+        ): File? {
+            val existing = entries[entryName]
+            if (existing == null) {
+                entries[entryName] = library
+                return null
+            }
+            if (sameFileOrContent(existing, library)) return null
+            return existing
+        }
+
+        private fun sameFileOrContent(first: File, second: File): Boolean {
+            val firstCanonical = runCatching { first.canonicalFile }.getOrDefault(first.absoluteFile)
+            val secondCanonical = runCatching { second.canonicalFile }.getOrDefault(second.absoluteFile)
+            if (firstCanonical == secondCanonical) return true
+            if (!first.isFile || !second.isFile || first.length() != second.length()) return false
+
+            return first.inputStream().buffered().use firstStream@ { firstInput ->
+                second.inputStream().buffered().use secondStream@ { secondInput ->
+                    val firstBuffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    val secondBuffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    while (true) {
+                        val firstCount = firstInput.read(firstBuffer)
+                        val secondCount = secondInput.read(secondBuffer)
+                        if (firstCount != secondCount) return@secondStream false
+                        if (firstCount < 0) return@secondStream true
+                        if (!firstBuffer.regionMatches(0, secondBuffer, 0, firstCount)) return@secondStream false
+                    }
+                    @Suppress("UNREACHABLE_CODE")
+                    false
+                }
+            }
+        }
+
+        private fun ByteArray.regionMatches(
+            thisOffset: Int,
+            other: ByteArray,
+            otherOffset: Int,
+            length: Int
+        ): Boolean {
+            for (index in 0 until length) {
+                if (this[thisOffset + index] != other[otherOffset + index]) return false
+            }
+            return true
+        }
     }
 
     private val template = ApkTemplate(context)
@@ -222,7 +271,18 @@ class ApkBuilder(private val context: Context) {
                     )
                 )
             }
-            entries.putIfAbsent("lib/$detectedAbi/${library.name}", library)
+            val entryName = "lib/$detectedAbi/${library.name}"
+            val conflictingLibrary = putNativeLibraryEntry(entries, entryName, library)
+            if (conflictingLibrary != null) {
+                throw IllegalArgumentException(
+                    Strings.apk_builder_library_entry_conflict.strOr(
+                        context,
+                        entryName,
+                        conflictingLibrary.absolutePath,
+                        library.absolutePath
+                    )
+                )
+            }
         }
         return entries
     }

@@ -36,22 +36,33 @@ fun isTaskUnderModule(taskName: String, modulePath: String): Boolean {
     return normalizedTaskName == modulePath || normalizedTaskName.startsWith("$modulePath:")
 }
 
-fun isLocalTestOrHelpTask(taskName: String): Boolean {
+fun isLocalTestTask(taskName: String): Boolean {
     val leafTaskName = taskName.substringAfterLast(":")
-    return leafTaskName == "help" || leafTaskName.startsWith("test")
+    return leafTaskName.startsWith("test")
 }
 
-fun isTreeSitterIndependentLocalTestRequest(): Boolean =
+fun isDependencyFreeInspectionTask(taskName: String): Boolean =
+    taskName.substringAfterLast(":") in setOf("help", "tasks", "projects", "properties")
+
+fun isTreeSitterIndependentRequest(): Boolean =
     requestedGradleTasks.isNotEmpty() &&
         requestedGradleTasks.all { taskName ->
-                    isLocalTestOrHelpTask(taskName) &&
-                (
-                    isTaskUnderModule(taskName, ":core:plugin")
-                    )
+            isDependencyFreeInspectionTask(taskName) ||
+                (isLocalTestTask(taskName) && isTaskUnderModule(taskName, ":core:plugin"))
         }
 
 val shouldIncludeTreeSitterComposite =
-    !isTreeSitterIndependentLocalTestRequest()
+    !isTreeSitterIndependentRequest()
+
+fun mayNeedRikkaHubComposite(taskName: String): Boolean {
+    if (isDependencyFreeInspectionTask(taskName)) return false
+    if (!taskName.startsWith(":")) return true
+    return isTaskUnderModule(taskName, ":app") ||
+        isTaskUnderModule(taskName, ":rikkahub")
+}
+
+val shouldIncludeRikkaHubComposite =
+    requestedGradleTasks.isEmpty() || requestedGradleTasks.any(::mayNeedRikkaHubComposite)
 
 // 让 composite build 的 Android 工程也能找到 SDK（避免单独配置时失败）
 if (shouldIncludeTreeSitterComposite) {
@@ -59,7 +70,18 @@ if (shouldIncludeTreeSitterComposite) {
 }
 
 pluginManagement {
-    includeBuild("build-logic")
+    val pluginRequestTasks = gradle.startParameter.taskNames
+    val rootInspectionTasks = setOf("help", "tasks", "projects", "properties")
+    val shouldIncludeBuildLogic = !gradle.startParameter.isConfigureOnDemand ||
+        pluginRequestTasks.isEmpty() ||
+        pluginRequestTasks.any { taskName ->
+            val leafTaskName = taskName.substringAfterLast(":")
+            val rootScoped = !taskName.startsWith(":") || taskName.count { it == ':' } == 1
+            leafTaskName !in rootInspectionTasks || !rootScoped
+        }
+    if (shouldIncludeBuildLogic) {
+        includeBuild("build-logic")
+    }
     val preferOfficialRepositories = System.getenv("CI").equals("true", ignoreCase = true)
     repositories {
         if (preferOfficialRepositories) {
@@ -125,15 +147,17 @@ if (shouldIncludeTreeSitterComposite) {
 }
 
 val rikkahubBuildDir = file("external/rikkahub")
-if (rikkahubBuildDir.isDirectory) {
+if (shouldIncludeRikkaHubComposite && rikkahubBuildDir.isDirectory) {
     ensureIncludedBuildLocalProperties(rikkahubBuildDir)
     includeBuild(rikkahubBuildDir) {
         dependencySubstitution {
             substitute(module("me.rerere.rikkahub:rikkahub-embedded")).using(project(":embedded"))
         }
     }
-} else {
+} else if (!rikkahubBuildDir.isDirectory) {
     logger.lifecycle("Skipping RikkaHub included build because external/rikkahub is missing.")
+} else {
+    logger.lifecycle("Skipping RikkaHub included build for tasks that do not consume rikkahub-embedded.")
 }
 
 dependencyResolutionManagement {

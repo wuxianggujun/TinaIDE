@@ -406,38 +406,38 @@ class RopeTextBuffer(
         recordHistory: Boolean,
         fromUndoRedo: Boolean
     ): TextChange? {
-        val safeStart = start.coerceIn(0, rope.length)
-        val safeEnd = end.coerceIn(safeStart, rope.length)
-        if (safeStart == safeEnd && text.isEmpty()) return null
+        require(start in 0..rope.length) { "start out of bounds: $start (length=${rope.length})" }
+        require(end in start..rope.length) { "end out of bounds: $end (start=$start, length=${rope.length})" }
+        if (start == end && text.isEmpty()) return null
 
-        val oldText = if (safeStart < safeEnd) rope.substring(safeStart, safeEnd) else ""
+        val oldText = if (start < end) rope.substring(start, end) else ""
         if (oldText == text) return null
 
-        val startPos = offsetToPositionInternal(safeStart)
-        val endPos = if (safeStart < safeEnd) offsetToPositionInternal(safeEnd) else startPos
+        val startPos = offsetToPositionInternal(start)
+        val endPos = if (start < end) offsetToPositionInternal(end) else startPos
 
-        if (safeStart < safeEnd) {
-            rope.delete(safeStart, safeEnd)
+        if (start < end) {
+            rope.delete(start, end)
         }
         if (text.isNotEmpty()) {
-            rope.insert(safeStart, text)
+            rope.insert(start, text)
         }
-        lineIndex.applyChange(safeStart, oldText = oldText, newText = text)
+        lineIndex.applyChange(start, oldText = oldText, newText = text)
         if (recordHistory) {
             // 原子记录一条 Replace：undo 一次即可恢复原文。
             // 保持对纯删除 / 纯插入的降级：避免往 undoStack 里塞无意义的空字符串 op。
             val op: EditOperation = when {
-                oldText.isEmpty() -> EditOperation.Insert(safeStart, text)
-                text.isEmpty() -> EditOperation.Delete(safeStart, oldText)
-                else -> EditOperation.Replace(offset = safeStart, oldText = oldText, newText = text)
+                oldText.isEmpty() -> EditOperation.Insert(start, text)
+                text.isEmpty() -> EditOperation.Delete(start, oldText)
+                else -> EditOperation.Replace(offset = start, oldText = oldText, newText = text)
             }
             history.record(op)
         }
         versionCounter.incrementAndGet()
 
         return TextChange(
-            startOffset = safeStart,
-            endOffset = safeEnd,
+            startOffset = start,
+            endOffset = end,
             oldText = oldText,
             newText = text,
             startLine = startPos.line,

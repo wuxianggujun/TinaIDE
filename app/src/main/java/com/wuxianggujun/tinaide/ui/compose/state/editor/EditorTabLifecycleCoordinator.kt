@@ -15,6 +15,7 @@ internal class EditorTabLifecycleCoordinator(
     fun handleManagerTabClosed(tabId: String, contentType: ContentType) {
         if (isCodeEditableType(contentType)) {
             releaseLspForTab(tabId)
+            clearCodeEditorRuntime(tabId)
         }
         splitPaneState.removeTab(tabId)
         normalizeEditorPaneState()
@@ -30,11 +31,6 @@ internal class EditorTabLifecycleCoordinator(
 
     fun releaseRemovedTabResources(tabIds: Iterable<String>) {
         tabIds.forEach(::releaseRemovedTabResources)
-    }
-
-    fun cleanupClosedTabState(tabId: String) {
-        releaseRemovedTabResources(tabId)
-        splitPaneState.removeTab(tabId)
     }
 
     fun retainOnlyTabPaneState(

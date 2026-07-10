@@ -93,7 +93,7 @@ class ApkExportRuntimeLibrariesResolverTest {
     }
 
     @Test
-    fun `resolvePackagedLibraries keeps only root lib and reachable dependencies`() {
+    fun `resolvePackagedLibraries keeps every project build library as a root`() {
         val tempDir = Files.createTempDirectory("apk-export-runtime-packaged-libs-test").toFile()
         val main = File(tempDir, "libmain.so").apply { writeText("main") }
         val linked = File(tempDir, "libfoo.so").apply { writeText("foo") }
@@ -112,7 +112,7 @@ class ApkExportRuntimeLibrariesResolverTest {
             )
 
             assertThat(result.libraries.map { it.name })
-                .containsExactly("libmain.so", "libfoo.so")
+                .containsExactly("libmain.so", "libfoo.so", "libSDL3.so")
                 .inOrder()
             assertThat(result.missingLibraries).isEmpty()
         } finally {

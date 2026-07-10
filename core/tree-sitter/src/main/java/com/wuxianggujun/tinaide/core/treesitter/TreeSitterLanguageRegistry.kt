@@ -143,7 +143,6 @@ object TreeSitterLanguageRegistry {
         return if (resolved != null) {
             loadedLanguageCache.putIfAbsent(normalized, resolved) ?: resolved
         } else {
-            missingLanguageCache.add(normalized)
             null
         }
     }

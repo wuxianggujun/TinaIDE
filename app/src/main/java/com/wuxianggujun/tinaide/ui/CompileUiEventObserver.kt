@@ -150,7 +150,9 @@ class ContextCompileSdlLauncher(
         val staged = withContext(Dispatchers.IO) {
             SdlRuntimeLibraryStager.stage(
                 context = context,
+                sdlLibraryPath = runtime.spec.sdlLibraryPath,
                 mainLibraryPath = libraryPath,
+                preSdlLibraryPaths = runtime.spec.preSdlLibraryPaths,
                 preloadLibraryPaths = runtime.spec.preloadLibraryPaths
             )
         }
@@ -162,9 +164,10 @@ class ContextCompileSdlLauncher(
             is SdlRuntimeLibraryStager.StageResult.Success -> {
                 val intent = ExternalSdlActivity.createIntent(
                     context = context,
-                    sdlLibraryPath = runtime.spec.sdlLibraryPath,
+                    sdlLibraryPath = staged.runtime.sdlLibraryPath,
                     mainLibraryPath = staged.runtime.mainLibraryPath,
                     requiredSdlMajor = runtime.spec.requiredSdlMajor,
+                    preSdlLibraryPaths = staged.runtime.preSdlLibraryPaths,
                     preloadLibraryPaths = staged.runtime.preloadLibraryPaths,
                     sdlOrientation = runConfig.sdlOrientation,
                     enableFloatingLog = runConfig.enableFloatingLog,

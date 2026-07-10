@@ -4329,6 +4329,7 @@ kept=%3$d bytes
   <string name="apk_builder_target_abi_missing">No target ABI was specified for the APK.</string>
   <string name="apk_builder_library_abi_unknown">Unable to detect the Android ABI of native library %1$s. Verify that it is a valid ELF .so file.</string>
   <string name="apk_builder_library_abi_mismatch">Native library %1$s uses ABI %2$s, but the APK target ABI is %3$s.</string>
+  <string name="apk_builder_library_entry_conflict">APK path %1$s maps to two different native libraries: %2$s and %3$s.</string>
   <string name="apk_builder_sign_failed">APK signing failed. Retry, or switch to custom signing if it keeps failing. Details: %1$s</string>
   <string name="apk_builder_install">Install</string>
   <string name="apk_builder_install_failed">Failed to start APK installation: %1$s</string>

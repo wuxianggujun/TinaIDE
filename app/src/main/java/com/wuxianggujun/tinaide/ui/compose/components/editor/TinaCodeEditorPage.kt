@@ -261,6 +261,10 @@ fun TinaCodeEditorPage(
             applyTextEdits = { edits ->
                 applyTextEdits(buffer, editorState, edits)
             },
+            validateTextEdits = { edits ->
+                resolveTextEdits(buffer, edits) != null
+            },
+            documentVersion = { buffer.version },
             toggleLineComment = { commentToken ->
                 editorState.toggleLineComment(commentToken)
             },
@@ -288,10 +292,13 @@ fun TinaCodeEditorPage(
                     column = cursor.column
                 )
             },
-            setSelectionRange = { startLine, startColumn, endLine, endColumn ->
+            setSelectionRange = selection@ { startLine, startColumn, endLine, endColumn ->
+                val startOffset = buffer.strictOffset(startLine, startColumn) ?: return@selection false
+                val endOffset = buffer.strictOffset(endLine, endColumn) ?: return@selection false
+                if (endOffset < startOffset) return@selection false
                 editorState.selectRange(
-                    startOffset = buffer.safeOffset(startLine, startColumn),
-                    endOffset = buffer.safeOffset(endLine, endColumn)
+                    startOffset = startOffset,
+                    endOffset = endOffset
                 )
                 true
             },
@@ -848,6 +855,28 @@ fun TinaCodeEditorPage(
                                 runtime.contentLoadMutex.withLock {
                                     loading = true
                                     loadError = null
+                                    val detachedSnapshot = state.getTabDetachedEditorSnapshot(tab.id)
+                                    if (detachedSnapshot != null) {
+                                        binding.withSuppressed { buffer.replaceAll(detachedSnapshot.text) }
+                                        runtime.isTreeSitterSnapshotReady = false
+                                        ensureTreeSitterPrepared(
+                                            runtime = runtime,
+                                            editorState = editorState,
+                                            syntaxHighlighter = syntaxHighlighter,
+                                            textSnapshot = textSnapshot
+                                        )
+                                        restoreEditorViewState(editorState, detachedSnapshot.viewState)
+                                        state.markTabDetachedEditorSnapshotRestored(tab.id, detachedSnapshot)
+                                        state.updateTabState(
+                                            tabId = tab.id,
+                                            isDirty = detachedSnapshot.isDirty,
+                                            canUndo = buffer.canUndo(),
+                                            canRedo = buffer.canRedo()
+                                        )
+                                        state.markCodeEditorRuntimeLoaded(tab.id)
+                                        loading = false
+                                        return@withLock
+                                    }
                                     val detectedCharset = FileEncodingDetector.detectCharset(tab.file)
                                     binding.withSuppressed { buffer.loadFromFile(tab.file, detectedCharset) }
                                         .onSuccess {
@@ -1318,23 +1347,30 @@ private suspend fun ensureTreeSitterPrepared(
     textSnapshot: VersionedBufferTextSnapshot
 ) {
     if (runtime.isTreeSitterSnapshotReady) return
-    refreshTreeSitterAfterBufferLoad(
-        editorState = editorState,
-        syntaxHighlighter = syntaxHighlighter,
-        textSnapshot = textSnapshot
-    )
-    runtime.isTreeSitterSnapshotReady = true
+    val highlighter = syntaxHighlighter ?: return
+    try {
+        refreshTreeSitterAfterBufferLoad(
+            editorState = editorState,
+            syntaxHighlighter = highlighter,
+            textSnapshot = textSnapshot
+        )
+        runtime.isTreeSitterSnapshotReady = true
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (error: Exception) {
+        Timber.tag("TinaCodeEditor").w(error, "Tree-sitter initialization failed; continuing without syntax highlighting")
+        runtime.isTreeSitterSnapshotReady = false
+    }
 }
 
 private suspend fun refreshTreeSitterAfterBufferLoad(
     editorState: EditorState,
-    syntaxHighlighter: TreeSitterHighlighter?,
+    syntaxHighlighter: TreeSitterHighlighter,
     textSnapshot: VersionedBufferTextSnapshot
 ) {
-    val highlighter = syntaxHighlighter ?: return
     val text = textSnapshot.readText()
     // 阻塞直到首个渲染快照就位：首帧不再闪默认色。
-    withContext(Dispatchers.IO) { highlighter.openDocumentBlocking(text) }
+    withContext(Dispatchers.IO) { syntaxHighlighter.openDocumentBlocking(text) }
     editorState.notifyHighlightChanged()
 }
 
@@ -1431,24 +1467,17 @@ private fun applyTextEdits(
 
     val cursorBefore = editorState.cursorPosition
     var changed = false
-    val sortedEdits = edits.sortedWith(
-        compareByDescending<EditorContainerState.TextEditOperation> { it.startLine }
-            .thenByDescending { it.startColumn }
-            .thenByDescending { it.endLine }
-            .thenByDescending { it.endColumn }
-    )
+    val resolvedEdits = resolveTextEdits(buffer, edits) ?: return false
 
     return buffer.editTransaction(
         cursorBefore = editorState.cursorOffset,
         cursorAfter = { editorState.cursorOffset }
     ) {
-        sortedEdits.forEach { edit ->
-            val startOffset = buffer.safeOffset(edit.startLine, edit.startColumn)
-            val endOffset = buffer.safeOffset(edit.endLine, edit.endColumn).coerceAtLeast(startOffset)
-            val oldText = buffer.substring(startOffset, endOffset)
+        resolvedEdits.forEach { edit ->
+            val oldText = buffer.substring(edit.startOffset, edit.endOffset)
             if (oldText == edit.newText) return@forEach
 
-            buffer.replace(startOffset, endOffset, edit.newText)
+            buffer.replace(edit.startOffset, edit.endOffset, edit.newText)
             changed = true
         }
 
@@ -1456,6 +1485,35 @@ private fun applyTextEdits(
             restoreCursor(editorState, buffer, cursorBefore.line, cursorBefore.column)
         }
         changed
+    }
+}
+
+private data class ResolvedTextEdit(
+    val startOffset: Int,
+    val endOffset: Int,
+    val newText: String
+)
+
+private fun resolveTextEdits(
+    buffer: RopeTextBuffer,
+    edits: List<EditorContainerState.TextEditOperation>
+): List<ResolvedTextEdit>? {
+    if (edits.isEmpty()) return null
+    val sortedEdits = edits.sortedWith(
+        compareByDescending<EditorContainerState.TextEditOperation> { it.startLine }
+            .thenByDescending { it.startColumn }
+            .thenByDescending { it.endLine }
+            .thenByDescending { it.endColumn }
+    )
+    var nextStartOffset = buffer.length
+    return buildList(sortedEdits.size) {
+        sortedEdits.forEach { edit ->
+            val startOffset = buffer.strictOffset(edit.startLine, edit.startColumn) ?: return null
+            val endOffset = buffer.strictOffset(edit.endLine, edit.endColumn) ?: return null
+            if (endOffset < startOffset || endOffset > nextStartOffset) return null
+            add(ResolvedTextEdit(startOffset, endOffset, edit.newText))
+            nextStartOffset = startOffset
+        }
     }
 }
 
@@ -1470,10 +1528,12 @@ private fun restoreCursor(
     editorState.moveCursorTo(buffer.positionToOffset(safeLine, safeColumn))
 }
 
-private fun RopeTextBuffer.safeOffset(line: Int, column: Int): Int {
-    val safeLine = line.coerceIn(0, (lineCount - 1).coerceAtLeast(0))
-    val safeColumn = column.coerceIn(0, getLine(safeLine).length)
-    return positionToOffset(safeLine, safeColumn)
+private fun RopeTextBuffer.strictOffset(line: Int, column: Int): Int? {
+    if (line !in 0 until lineCount) return null
+    val lineText = getLine(line)
+    val logicalLineLength = if (lineText.endsWith('\r')) lineText.length - 1 else lineText.length
+    if (column !in 0..logicalLineLength) return null
+    return positionToOffset(line, column)
 }
 
 private fun buildLocalCompletions(

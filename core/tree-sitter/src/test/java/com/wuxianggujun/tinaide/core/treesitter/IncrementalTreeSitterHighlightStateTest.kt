@@ -26,6 +26,44 @@ import org.robolectric.annotation.Config
 class IncrementalTreeSitterHighlightStateTest {
 
     @Test
+    fun emptyDocument_thenInsert_shouldStartParsing() {
+        val parser = mockk<TSParser>()
+        val query = mockQuery()
+        val workerTree = mockTree("xmlWorker")
+        val renderTree = mockTree("xmlRender")
+        val xmlText = "<root/>"
+
+        every { parser.reset() } just runs
+        every { parser.parseString(xmlText) } returns workerTree
+        every { workerTree.copy() } returns renderTree
+
+        createFixture(parser = parser, query = query).use { fixture ->
+            val updates = AtomicInteger(0)
+            fixture.state.setOnStateUpdated { updates.incrementAndGet() }
+
+            fixture.state.openDocument("")
+            fixture.state.applyTextChange(
+                TextChange(
+                    startOffset = 0,
+                    endOffset = 0,
+                    oldText = "",
+                    newText = xmlText,
+                    startLine = 0,
+                    startColumn = 0,
+                    endLine = 0,
+                    endColumn = 0
+                )
+            )
+
+            waitUntil { updates.get() == 1 }
+
+            assertThat(fixture.state.readSnapshot(xmlText)).isNotNull()
+        }
+
+        verify(exactly = 1) { parser.parseString(xmlText) }
+    }
+
+    @Test
     fun openDocument_thenImmediateEdit_shouldOnlyPublishLatestSnapshot() {
         val parser = mockk<TSParser>()
         val query = mockQuery()

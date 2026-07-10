@@ -4463,6 +4463,7 @@ kept=%3$d bytes
   <string name="apk_builder_target_abi_missing">未指定 APK 目标 ABI</string>
   <string name="apk_builder_library_abi_unknown">无法识别原生库 %1$s 的 Android ABI，请确认它是有效的 ELF .so 文件</string>
   <string name="apk_builder_library_abi_mismatch">原生库 %1$s 的 ABI 为 %2$s，但当前 APK 目标 ABI 为 %3$s</string>
+  <string name="apk_builder_library_entry_conflict">APK 路径 %1$s 对应了两个不同的原生库：%2$s 与 %3$s</string>
   <string name="apk_builder_sign_failed">APK 签名失败，请重试；如果仍然失败，请切换为自定义签名。详情：%1$s</string>
   <string name="apk_builder_install">安装</string>
   <string name="apk_builder_install_failed">拉起安装失败：%1$s</string>

@@ -12,6 +12,7 @@ import org.gradle.kotlin.dsl.getByType
 class TinaAndroidLibraryPlugin : Plugin<Project> {
     override fun apply(target: Project) {
         with(target) {
+            pluginManager.apply("tina.kotlin.quality")
             pluginManager.apply("com.android.library")
 
             val nativeAbis = resolveNativeAbis()

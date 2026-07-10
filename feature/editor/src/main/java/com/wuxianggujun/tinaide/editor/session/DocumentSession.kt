@@ -5,14 +5,12 @@ import android.os.Build
 import android.os.FileObserver
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
+import com.wuxianggujun.tinaide.editor.io.AtomicTextFileWriter
 import com.wuxianggujun.tinaide.editor.io.FileCharsetDetector
 import com.wuxianggujun.tinaide.editor.symbol.ProjectSymbolIndexService
 import java.io.File
 import java.io.IOException
 import java.nio.charset.Charset
-import java.nio.file.AtomicMoveNotSupportedException
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -93,7 +91,8 @@ class DocumentSession(
     companion object {
         private const val DUPLICATE_FILE_EVENT_WINDOW_MS = 250L
         private const val INTERNAL_WRITE_SUPPRESS_WINDOW_MS = 1500L
-        private const val FILE_WATCH_EVENTS = FileObserver.CLOSE_WRITE or FileObserver.MOVED_TO
+        private const val FILE_WATCH_EVENTS =
+            FileObserver.CLOSE_WRITE or FileObserver.MOVED_TO or FileObserver.DELETE or FileObserver.MOVED_FROM
         private const val MAX_SNAPSHOT_READ_ATTEMPTS = 8
         const val UNSTABLE_DOCUMENT_VERSION = Long.MIN_VALUE
     }
@@ -593,26 +592,7 @@ class DocumentSession(
         if (!parent.exists() && !parent.mkdirs()) {
             throw IOException(Strings.editor_error_cannot_create_dir.strOr(context, parent.absolutePath))
         }
-        val tmpFile = File(parent, "${targetFile.name}.autosave.tmp")
-        tmpFile.writeText(content, fileCharset)
-        try {
-            try {
-                Files.move(
-                    tmpFile.toPath(),
-                    targetFile.toPath(),
-                    StandardCopyOption.REPLACE_EXISTING,
-                    StandardCopyOption.ATOMIC_MOVE
-                )
-            } catch (ignored: AtomicMoveNotSupportedException) {
-                Files.move(
-                    tmpFile.toPath(),
-                    targetFile.toPath(),
-                    StandardCopyOption.REPLACE_EXISTING
-                )
-            }
-        } finally {
-            runCatching { if (tmpFile.exists()) tmpFile.delete() }
-        }
+        AtomicTextFileWriter.write(targetFile, content, fileCharset)
     }
 
     fun lastEditAt(): Long? = lastEditTimestamp
@@ -640,7 +620,7 @@ class DocumentSession(
         fileObserver?.startWatching()
     }
 
-    private fun handleFileEvent(event: Int, eventPath: String?) {
+    internal fun handleFileEvent(event: Int, eventPath: String?) {
         if (event and FILE_WATCH_EVENTS == 0) return
         if (!eventPath.isNullOrBlank()) {
             val normalized = eventPath.replace('\\', '/')
@@ -651,15 +631,20 @@ class DocumentSession(
             }
         }
 
-        coroutineScope.launch(Dispatchers.IO) {
-            if (isSavingInternally) return@launch
+        if (isSavingInternally) return
 
-            val marker = readCurrentWriteMarker() ?: return@launch
-            if (shouldIgnoreInternalWrite(marker)) return@launch
-            if (isDuplicateObservedWrite(marker)) return@launch
-
+        if (event and (FileObserver.DELETE or FileObserver.MOVED_FROM) != 0) {
+            val replacementMarker = readCurrentWriteMarker()
+            if (replacementMarker != null && shouldIgnoreInternalWrite(replacementMarker)) return
             markExternalModification()
+            return
         }
+
+        val marker = readCurrentWriteMarker() ?: return
+        if (shouldIgnoreInternalWrite(marker)) return
+        if (isDuplicateObservedWrite(marker)) return
+
+        markExternalModification()
     }
 
     internal fun markExternalModification() {

@@ -204,6 +204,29 @@ class SdlRuntimeResolverTest {
     }
 
     @Test
+    fun `resolveSdlDependencyLibraries includes packaged cxx runtime before SDL`() {
+        val tempDir = Files.createTempDirectory("sdl-runtime-own-dependency-test").toFile()
+        try {
+            val main = File(tempDir, "libmain.so").apply { writeText("main") }
+            val sdl = File(tempDir, "libSDL3.so").apply { writeText("sdl") }
+            val cxx = File(tempDir, "libc++_shared.so").apply { writeText("cxx") }
+
+            val result = SdlRuntimeResolver.resolveSdlDependencyLibraries(
+                runtimeIndex = mapOf(cxx.name to cxx),
+                mainLibrary = main,
+                sdlLibrary = sdl,
+                dependencyReader = { library ->
+                    if (library == sdl) setOf(cxx.name, "libandroid.so") else emptySet()
+                },
+            )
+
+            assertThat(result).containsExactly(cxx.absolutePath)
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `resolvePreloadLibraries does not load a second SDL library for matching soname`() {
         val tempDir = Files.createTempDirectory("sdl-runtime-versioned-soname-test").toFile()
         try {
