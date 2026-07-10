@@ -27,14 +27,16 @@ class AtomicTextFileWriterTest {
     fun write_shouldPreserveSymbolicLinkWhenSupported() {
         val directory = createTempDirectory("atomic-text-writer-link-")
         try {
-            val realFile = directory.resolve("real.txt").apply { Files.writeString(this, "old") }
+            val realFile = directory.resolve("real.txt").apply {
+                Files.write(this, "old".toByteArray(Charsets.UTF_8))
+            }
             val link = directory.resolve("link.txt")
             if (runCatching { Files.createSymbolicLink(link, realFile.fileName) }.isFailure) return
 
             AtomicTextFileWriter.write(link.toFile(), "new", Charsets.UTF_8)
 
             assertThat(Files.isSymbolicLink(link)).isTrue()
-            assertThat(Files.readString(realFile)).isEqualTo("new")
+            assertThat(Files.readAllBytes(realFile).toString(Charsets.UTF_8)).isEqualTo("new")
         } finally {
             directory.toFile().deleteRecursively()
         }
@@ -45,7 +47,7 @@ class AtomicTextFileWriterTest {
         val directory = createTempDirectory("atomic-text-writer-mode-")
         try {
             val target = directory.resolve("run.sh")
-            Files.writeString(target, "old")
+            Files.write(target, "old".toByteArray(Charsets.UTF_8))
             val fileStore = Files.getFileStore(target)
             if (!fileStore.supportsFileAttributeView("posix")) return
             val permissions = setOf(

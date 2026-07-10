@@ -66,7 +66,6 @@ core/storage/src/main/java/com/wuxianggujun/tinaide/storage/ProjectImporter.kt |
 core/storage/src/main/java/com/wuxianggujun/tinaide/storage/ProjectLocationManager.kt | deleteRecursively=4,renameTo=1 | Workspace location migration cleanup.
 core/storage/src/main/java/com/wuxianggujun/tinaide/storage/StorageCleanupSupport.kt | deleteRecursively=1 | Low-level storage cleanup helper.
 core/storage/src/main/java/com/wuxianggujun/tinaide/storage/TinaFileProvider.kt | delete=1 | FileProvider delete contract.
-feature/editor/src/main/java/com/wuxianggujun/tinaide/editor/session/DocumentSession.kt | delete=1 | Atomic save temp file cleanup.
 feature/editor/src/main/java/com/wuxianggujun/tinaide/editor/symbol/SymbolIndexCache.kt | delete=3 | Symbol index cache cleanup.
 feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/CompilerSettingsSection.kt | delete=2 | Compiler settings temp file cleanup.
 feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/EditorSettingsSection.kt | delete=1 | Editor settings temp file cleanup.

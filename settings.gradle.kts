@@ -36,23 +36,20 @@ fun isTaskUnderModule(taskName: String, modulePath: String): Boolean {
     return normalizedTaskName == modulePath || normalizedTaskName.startsWith("$modulePath:")
 }
 
-fun isLocalTestTask(taskName: String): Boolean {
-    val leafTaskName = taskName.substringAfterLast(":")
-    return leafTaskName.startsWith("test")
-}
-
 fun isDependencyFreeInspectionTask(taskName: String): Boolean =
     taskName.substringAfterLast(":") in setOf("help", "tasks", "projects", "properties")
 
-fun isTreeSitterIndependentRequest(): Boolean =
-    requestedGradleTasks.isNotEmpty() &&
-        requestedGradleTasks.all { taskName ->
-            isDependencyFreeInspectionTask(taskName) ||
-                (isLocalTestTask(taskName) && isTaskUnderModule(taskName, ":core:plugin"))
-        }
+fun mayNeedTreeSitterComposite(taskName: String): Boolean {
+    if (isDependencyFreeInspectionTask(taskName)) return false
+    if (!taskName.startsWith(":")) return true
+    return isTaskUnderModule(taskName, ":app") ||
+        isTaskUnderModule(taskName, ":core:tree-sitter") ||
+        isTaskUnderModule(taskName, ":core:editor-view") ||
+        isTaskUnderModule(taskName, ":feature:editor")
+}
 
 val shouldIncludeTreeSitterComposite =
-    !isTreeSitterIndependentRequest()
+    requestedGradleTasks.isEmpty() || requestedGradleTasks.any(::mayNeedTreeSitterComposite)
 
 fun mayNeedRikkaHubComposite(taskName: String): Boolean {
     if (isDependencyFreeInspectionTask(taskName)) return false
@@ -143,7 +140,7 @@ if (shouldIncludeTreeSitterComposite) {
         }
     }
 } else {
-    logger.lifecycle("Skipping tina-android-tree-sitter included build for isolated local tests.")
+    logger.lifecycle("Skipping tina-android-tree-sitter included build for tasks that do not consume it.")
 }
 
 val rikkahubBuildDir = file("external/rikkahub")

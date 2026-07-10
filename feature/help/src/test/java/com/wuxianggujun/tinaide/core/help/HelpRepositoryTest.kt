@@ -1,8 +1,11 @@
 package com.wuxianggujun.tinaide.core.help
 
 import android.app.Application
+import android.content.Context
+import android.content.res.Configuration
 import com.google.common.truth.Truth.assertThat
 import com.wuxianggujun.tinaide.core.i18n.Strings
+import java.util.Locale
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -20,7 +23,7 @@ class HelpRepositoryTest {
 
     @Test
     fun pluginQuickStart_shouldBeListedLoadedAndSearchable() = runTest {
-        val repository = HelpRepository(RuntimeEnvironment.getApplication())
+        val repository = HelpRepository(localizedContext(Locale.SIMPLIFIED_CHINESE))
 
         val document = repository.getDocumentById("plugin-quick-start")
 
@@ -37,6 +40,29 @@ class HelpRepositoryTest {
         val searchResults = repository.search("tinaplug")
         assertThat(searchResults.map { result -> result.document.id })
             .contains("plugin-quick-start")
+    }
+
+    @Test
+    fun englishLocale_shouldLoadEnglishMarkdown() = runTest {
+        val repository = HelpRepository(localizedContext(Locale.ENGLISH))
+        val document = repository.getDocumentById("plugin-quick-start")!!
+
+        val content = repository.loadDocumentContent(document).getOrThrow()
+
+        assertThat(content).contains("# Plugin Development Quick Start")
+        assertThat(content).contains(".tinaplug")
+        assertThat(content).doesNotContain("# 插件开发快速开始")
+    }
+
+    @Test
+    fun localizedAssetCandidates_shouldPreferEnglishAndFallbackToChinese() {
+        assertThat(HelpAssetPathResolver.candidatePaths("getting-started.md", "en-US"))
+            .containsExactly(
+                "help/en/getting-started.md",
+                "help/getting-started.md",
+            ).inOrder()
+        assertThat(HelpAssetPathResolver.candidatePaths("getting-started.md", "zh-CN"))
+            .containsExactly("help/getting-started.md")
     }
 
     @Test
@@ -73,5 +99,13 @@ class HelpRepositoryTest {
             .isEqualTo("known-issues")
         assertThat(repository.resolveDocumentByLinkTarget("https://example.com/help.md"))
             .isNull()
+    }
+
+    private fun localizedContext(locale: Locale): Context {
+        val application: Application = RuntimeEnvironment.getApplication()
+        val configuration = Configuration(application.resources.configuration).apply {
+            setLocale(locale)
+        }
+        return application.createConfigurationContext(configuration)
     }
 }

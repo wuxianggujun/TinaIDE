@@ -5,6 +5,9 @@ import com.google.common.truth.Truth.assertThat
 import java.io.File
 import java.nio.charset.Charset
 import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.nio.file.attribute.BasicFileAttributes
+import java.nio.file.attribute.FileTime
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -110,6 +113,39 @@ class DocumentSessionTest {
 
             assertThat(file.exists()).isTrue()
             assertThat(session.state.value.hasExternalModification).isFalse()
+        } finally {
+            session.stopFileWatcher()
+            file.delete()
+        }
+    }
+
+    @Test
+    fun externalAtomicReplacementWithSameSizeAndTimestamp_shouldReportModification() = runTest {
+        val file = Files.createTempFile("document-session-external-replace", ".txt").toFile()
+        file.writeText("old")
+        val session = createSession(file, this)
+        val binding = FakeEditorBinding(
+            text = "new",
+            canUndo = true,
+            canRedo = false,
+        )
+
+        try {
+            session.attachEditor(binding)
+            assertThat(session.save(SaveReason.MANUAL)).isInstanceOf(SaveResult.Success::class.java)
+            val savedAttributes = Files.readAttributes(file.toPath(), BasicFileAttributes::class.java)
+            val savedKey = savedAttributes.fileKey() ?: return@runTest
+            val replacement = Files.createTempFile(file.toPath().parent, ".external-", ".tmp")
+            Files.write(replacement, "ext".toByteArray(Charsets.UTF_8))
+            Files.setLastModifiedTime(replacement, FileTime.fromMillis(savedAttributes.lastModifiedTime().toMillis()))
+            Files.move(replacement, file.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            val replacementKey = Files.readAttributes(file.toPath(), BasicFileAttributes::class.java).fileKey()
+                ?: return@runTest
+            if (replacementKey == savedKey) return@runTest
+
+            session.handleFileEvent(FileObserver.DELETE, file.name)
+
+            assertThat(session.state.value.hasExternalModification).isTrue()
         } finally {
             session.stopFileWatcher()
             file.delete()

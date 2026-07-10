@@ -1,0 +1,86 @@
+name: Dev Static Checks
+
+on:
+  push:
+    branches:
+      - dev
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dev-static-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TINA_TOOLCHAIN_RELEASE_REPO: 'wuxianggujun/TinaIDE'
+  TINA_TOOLCHAIN_RELEASE_TAG: 'toolchain-v0.2.4'
+  TS_CLI_BUILD_FROM_SOURCE: 'false'
+  GRADLE_OPTS: "-Xmx4g -XX:MaxMetaspaceSize=1g -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8 -XX:+UseParallelGC"
+
+jobs:
+  static-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          lfs: false
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Run maintenance checks
+        run: python3 tools/checks/check_all.py
+
+      - name: Run i18n checks
+        run: python3 tools/i18n/check_all.py
+
+      - name: Restore tina-toolchain assets
+        run: bash tools/ci/restore-tina-toolchain-assets.sh arm64
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Install CMake
+        run: sdkmanager --install "cmake;3.22.1"
+
+      - name: Install tree-sitter CLI
+        run: npm install -g tree-sitter-cli@0.22.1
+
+      - name: Setup tree-sitter grammar dependencies
+        run: |
+          cd external/tina-android-tree-sitter/grammars/cpp
+          mkdir -p node_modules
+          ln -sf ../../c node_modules/tree-sitter-c
+
+          cd ../toml
+          npm install --ignore-scripts regexp-util
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Compile app Kotlin
+        run: |
+          ./gradlew :app:compileArm64DebugKotlin --no-daemon --configure-on-demand \
+            -Ptina.devAbi=arm64 \
+            -Ptina.buildProotFromSource=false \
+            -Dorg.gradle.internal.http.connectionTimeout=120000 \
+            -Dorg.gradle.internal.http.socketTimeout=120000 \
+            -Dorg.gradle.internal.repository.max.retries=4
+
+      - name: Cleanup Gradle processes
+        if: ${{ always() }}
+        run: |
+          set +e
+          ./gradlew --stop || true
+          pgrep -af 'GradleDaemon|org.gradle.launcher.daemon' || true

@@ -1,6 +1,6 @@
 # Changelog
 
-> 说明：服务端（后端/部署脚本）相关的变更记录请查看 `server/CHANGELOG.md`；服务器侧的部署文档更新也统一放在 `server/ops/**` 下，避免根 Changelog 混入运维细节。
+> 范围：本文件记录 TinaIDE Android App、仓库内构建工具和配套文档的版本变化。当前仓库没有独立服务端发布单元。
 
 本文档记录 TinaIDE 项目的版本更新历史，包括新功能、Bug 修复和改进。
 
@@ -11,20 +11,17 @@
 
 ## 维护约定（开发者）
 
-### App（TinaIDE）更新记录写在此处
+### TinaIDE 主仓库更新记录写在此处
 
-- 本文件 `CHANGELOG.md` 仅记录 TinaIDE App 的版本变更（新增功能 / 修复 / 优化）。
+- 本文件 `CHANGELOG.md` 记录 TinaIDE App，以及随 App 一起交付或维护的构建工具和文档变化。
 - 如需在提交时记录“文件级别操作”（A/M/D/R），可将 `git diff --cached --name-status` 的输出粘贴到对应版本区块的 `### Changed Files` 小节中（可选）。
 
-### 前端/后端/运维（server）更新写到 `server/CHANGELOG.md`
-
-- `server/` 下的变更（`tina-admin`、`tina-server`、`ops` 等）统一写入 `server/CHANGELOG.md`，不要写到本文件。
-
-### 版本号一致则合并追加，不要滥增版本
+### 已发布版本保持稳定，开发中变化写入 Unreleased
 
 - 先从 `version.properties` 读取当前 `versionName`。
-- 若本文件已存在该 `versionName` 的版本区块，则把本次变更**合并追加**到该区块中。
-- 只有当 `versionName` 确实发生变化（计划发布/升级）时，才创建新的版本区块。
+- 若对应版本已经打 Tag 或对外发布，不再把后续开发变化追加到该版本区块；统一写入 `Unreleased`。
+- 准备发布时，再把 `Unreleased` 内容归档到新的版本号和发布日期下。
+- 若版本尚未发布且只是同一发布候选的补充，可以合并到该版本区块，但必须在发布前完成。
 
 ### 新版本可详细，旧版本需精简
 
@@ -32,10 +29,33 @@
 - **旧版本**应逐步“压缩”为摘要：只保留用户可感知的变化点，避免继续维护大量已删除文件/类的链接与细节。
 - 若旧版本内容中引用的文件/类已不存在，可在整理时移除/合并相关条目（保持可读性优先）。
 
-### 不使用“未发布/Unreleased”区块
+## [Unreleased]
 
-- 本项目不使用 `Unreleased` / `未发布` 区块。
-- 所有变更必须归档到明确的版本号区块（版本号来源：`version.properties` 的 `versionName`）。
+### Changed
+
+- 加固 SDL 与通用 native library 的收集、ABI 识别、依赖排序和 APK 打包链路，减少运行时缺少间接 `.so` 或装载顺序错误的问题。
+- 重构编辑器文本缓冲、输入法编辑、撤销/重做、补全、签名提示和语义高亮同步逻辑，降低长文档编辑和增量更新时的状态漂移。
+- 工作区文本编辑改为通过统一入口应用；文档保存新增原子写入能力，自动保存与标签生命周期的状态收敛更明确。
+- Tree-sitter 增量高亮补充 query predicate 处理，并更新 Kotlin、XML 与 properties 查询资源。
+- Kotlin/Android library 模块的质量检查集中到 convention plugin，减少根构建脚本中的重复配置。
+
+### Fixed
+
+- 恢复根构建的 Android application/library 插件版本声明，并让 App 继续使用 AGP 内置 Kotlin 提供的 Parcelize 插件标记，修复本地 `external` 模块解析失败及 Parcelize 版本冲突。
+- 修复 SDL 工程导出 APK 时，native 依赖解析、ABI 目录判断和动态库装载顺序在部分项目结构下不稳定的问题。
+- 修复编辑器输入法组合文本、光标恢复、snippet 同步编辑、签名提示和撤销/重做在部分操作序列中的回归。
+- 修复自动保存与文件写入在并发或中断场景下可能留下不完整内容的问题。
+
+### Documentation
+
+- 更新 SDL 游戏引擎插件文档，补充当前 native runtime 打包与依赖处理口径。
+- 刷新当前事实源文档、Linux distro 运行时说明和 App 内设置帮助，并增加轻量文档一致性检查。
+- App 内 29 份帮助正文新增英文版本，帮助仓库按当前 Locale 加载英文并在缺失时回落到中文。
+- 同步中英文根 README 的 Registry、Linux distro 回落、SDK 与架构口径，并补齐架构/模块清单中的当前能力。
+
+### Tests
+
+- 扩展 APK builder、SDL runtime、编辑器状态、文本缓冲、Tree-sitter、WorkspaceEdit、原子写入和自动保存回归测试。
 
 ## [0.18.10] - 2026-06-29
 

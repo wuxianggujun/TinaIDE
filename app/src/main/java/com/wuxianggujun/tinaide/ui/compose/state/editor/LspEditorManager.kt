@@ -214,7 +214,7 @@ class LspEditorManager(
 
     // 文件监听（workspace/didChangeWatchedFiles）
     private var workspaceFileWatcher: FileWatchRegistration? = null
-    private val watchedPatterns = mutableListOf<Pair<String, List<String>>>() // registrationId -> glob patterns
+    private val watchedPatterns = mutableListOf<Pair<String, List<LspFileWatchPattern>>>()
 
     private val linuxEnvironmentProvider: LinuxEnvironmentProvider by lazy {
         runCatching { org.koin.core.context.GlobalContext.get().getOrNull<LinuxEnvironmentProvider>() }
@@ -2290,7 +2290,12 @@ class LspEditorManager(
     private fun notifyWorkspaceFileChange(file: File, eventType: FileChangeType) {
         val path = file.absolutePath
         val patterns = synchronized(stateLock) { watchedPatterns.toList() }
-        val matched = patterns.any { (_, globs) -> globs.any { matchesWatchPattern(path, it) } }
+        val eventMask = when (eventType) {
+            FileChangeType.Created -> LspFileWatchPattern.CREATE_EVENT
+            FileChangeType.Changed -> LspFileWatchPattern.CHANGE_EVENT
+            FileChangeType.Deleted -> LspFileWatchPattern.DELETE_EVENT
+        }
+        val matched = patterns.any { (_, globs) -> globs.any { it.matches(path, eventMask) } }
         if (!matched) return
 
         val changes = listOf(FileEvent(file.toURI().toString(), eventType))
@@ -2339,7 +2344,7 @@ class LspEditorManager(
                 val options = reg.registerOptions
                 if (options is DidChangeWatchedFilesRegistrationOptions) {
                     val globs = options.watchers.mapNotNull { watcher ->
-                        watcher.globPattern?.let { if (it.isLeft) it.left else null }
+                        LspFileWatchPattern.fromWatcher(watcher, lspProjectRoot)
                     }
                     if (globs.isNotEmpty()) {
                         watchedPatterns.add(reg.id to globs)
@@ -2353,28 +2358,6 @@ class LspEditorManager(
     private fun onCapabilityUnregistered(unregistrations: List<Unregistration>) {
         val ids = unregistrations.map { it.id }.toSet()
         synchronized(stateLock) { watchedPatterns.removeAll { (id, _) -> id in ids } }
-    }
-
-    /**
-     * 将 LSP glob 模式简化为路径后缀/文件名匹配。
-     * 覆盖 clangd 实际注册的典型模式：**‌/*.cmake, **/CMakeLists.txt, **‌/.clangd 等。
-     */
-    private fun matchesWatchPattern(path: String, pattern: String): Boolean {
-        val normalized = pattern.replace('\\', '/')
-        val pathNorm = path.replace('\\', '/')
-        return when {
-            normalized.startsWith("**/") -> {
-                val suffix = normalized.removePrefix("**/")
-                when {
-                    suffix.startsWith("*.") -> pathNorm.endsWith(suffix.removePrefix("*"))
-                    suffix.contains("/") -> pathNorm.contains(suffix)
-                    else -> pathNorm.endsWith("/$suffix") || pathNorm == suffix
-                }
-            }
-            normalized.startsWith("*..") || normalized.startsWith("*.") ->
-                pathNorm.endsWith(normalized.removePrefix("*"))
-            else -> pathNorm.endsWith(normalized)
-        }
     }
 
     private fun normalizeVisibleLines(visibleLines: IntRange): IntRange {

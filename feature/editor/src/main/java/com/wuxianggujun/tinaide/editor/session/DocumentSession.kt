@@ -11,6 +11,8 @@ import com.wuxianggujun.tinaide.editor.symbol.ProjectSymbolIndexService
 import java.io.File
 import java.io.IOException
 import java.nio.charset.Charset
+import java.nio.file.Files
+import java.nio.file.attribute.BasicFileAttributes
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -131,8 +133,7 @@ class DocumentSession(
         val timestamp: Long,
         val documentVersion: Long,
         val fingerprint: TextFingerprint,
-        val fileModifiedAt: Long,
-        val fileSize: Long,
+        val fileMarker: FileWriteMarker,
         val isUpToDate: Boolean,
     )
 
@@ -144,7 +145,8 @@ class DocumentSession(
     private data class FileWriteMarker(
         val modifiedAt: Long,
         val fileSize: Long,
-        val observedAt: Long
+        val observedAt: Long,
+        val fileKey: String?,
     )
 
     private data class EditorBindingState(
@@ -509,13 +511,20 @@ class DocumentSession(
                         val fingerprint = buildTextFingerprint(text)
                         writeFileSafely(targetFile, text)
                         val versionAfterWrite = binding?.currentDocumentVersion() ?: snapshotVersion
+                        val timestamp = System.currentTimeMillis()
+                        val fileMarker = readWriteMarker(targetFile, timestamp)
+                            ?: FileWriteMarker(
+                                modifiedAt = targetFile.lastModified(),
+                                fileSize = targetFile.length(),
+                                observedAt = timestamp,
+                                fileKey = null,
+                            )
                         SaveSnapshot(
                             text = text,
-                            timestamp = System.currentTimeMillis(),
+                            timestamp = timestamp,
                             documentVersion = snapshotVersion,
                             fingerprint = fingerprint,
-                            fileModifiedAt = targetFile.lastModified(),
-                            fileSize = targetFile.length(),
+                            fileMarker = fileMarker,
                             isUpToDate = versionAfterWrite == snapshotVersion,
                         )
                     }
@@ -523,11 +532,7 @@ class DocumentSession(
                     cleanVersion = snapshot.documentVersion
                     cleanFingerprint = snapshot.fingerprint
                     baselineState = BaselineState.READY
-                    val internalMarker = FileWriteMarker(
-                        modifiedAt = snapshot.fileModifiedAt,
-                        fileSize = snapshot.fileSize,
-                        observedAt = snapshot.timestamp
-                    )
+                    val internalMarker = snapshot.fileMarker
                     lastInternalWriteMarker = internalMarker
                     lastObservedWriteMarker = internalMarker
                     if (fileObserver == null) {
@@ -756,20 +761,26 @@ class DocumentSession(
         return TextFingerprint(length = text.length, hash = hash)
     }
 
-    private fun readCurrentWriteMarker(): FileWriteMarker? {
-        if (!file.exists() || !file.isFile) return null
+    private fun readCurrentWriteMarker(): FileWriteMarker? =
+        readWriteMarker(file, System.currentTimeMillis())
+
+    private fun readWriteMarker(targetFile: File, observedAt: Long): FileWriteMarker? {
+        if (!targetFile.exists() || !targetFile.isFile) return null
+        val attributes = runCatching {
+            Files.readAttributes(targetFile.toPath(), BasicFileAttributes::class.java)
+        }.getOrNull()
         return FileWriteMarker(
-            modifiedAt = file.lastModified(),
-            fileSize = file.length(),
-            observedAt = System.currentTimeMillis()
+            modifiedAt = attributes?.lastModifiedTime()?.toMillis() ?: targetFile.lastModified(),
+            fileSize = attributes?.size() ?: targetFile.length(),
+            observedAt = observedAt,
+            fileKey = attributes?.fileKey()?.toString(),
         )
     }
 
     private fun isDuplicateObservedWrite(marker: FileWriteMarker): Boolean {
         val previous = lastObservedWriteMarker
         if (previous != null &&
-            previous.modifiedAt == marker.modifiedAt &&
-            previous.fileSize == marker.fileSize &&
+            previous.hasSameFileSignature(marker) &&
             marker.observedAt - previous.observedAt in 0..DUPLICATE_FILE_EVENT_WINDOW_MS
         ) {
             return true
@@ -780,10 +791,13 @@ class DocumentSession(
 
     private fun shouldIgnoreInternalWrite(marker: FileWriteMarker): Boolean {
         val internal = lastInternalWriteMarker ?: return false
-        val sameSignature = internal.modifiedAt == marker.modifiedAt &&
-            internal.fileSize == marker.fileSize
-        if (!sameSignature) return false
+        if (!internal.hasSameFileSignature(marker)) return false
         val delta = marker.observedAt - internal.observedAt
         return delta in 0..INTERNAL_WRITE_SUPPRESS_WINDOW_MS
+    }
+
+    private fun FileWriteMarker.hasSameFileSignature(other: FileWriteMarker): Boolean {
+        if (modifiedAt != other.modifiedAt || fileSize != other.fileSize) return false
+        return fileKey == null || other.fileKey == null || fileKey == other.fileKey
     }
 }

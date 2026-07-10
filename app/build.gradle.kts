@@ -7,7 +7,7 @@ plugins {
     id("tina.kotlin.quality")
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.kotlin.serialization)
-    alias(libs.plugins.kotlin.parcelize)
+    id("kotlin-parcelize")
     id("tina.android.app.versioning")
     id("tina.android.app.abi-aggregation")
     id("tina.android.app.guardrails")

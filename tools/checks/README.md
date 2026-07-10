@@ -18,6 +18,24 @@ Optional i18n check:
 py tools/checks/check_all.py --include-i18n
 ```
 
+## Documentation consistency
+
+Run:
+
+```powershell
+py tools/checks/check_documentation.py
+```
+
+The check validates:
+
+- local Markdown links in the current fact documents and App help assets;
+- one-to-one registration between `HelpRepository`, default help assets, and `help/en/*.md`;
+- `minSdk`, `targetSdk`, and `compileSdk` facts in both root READMEs and the documentation status against `app/build.gradle.kts`;
+- Registry paths for plugin, package, and Linux distro metadata across both root READMEs and current Registry documentation;
+- the `CHANGELOG.md` `Unreleased` section and current preface paths.
+
+The check is deliberately limited to current documentation. Historical design notes and old Changelog entries may retain paths that only make sense in their original version.
+
 ## Direct file operations
 
 Run:
