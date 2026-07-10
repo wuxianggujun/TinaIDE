@@ -125,6 +125,57 @@ class IncrementalTreeSitterHighlightStateTest {
     }
 
     @Test
+    fun queuedEdits_shouldResetWhenAnIntermediateEditIsCoalesced() {
+        val parser = mockk<TSParser>()
+        val query = mockQuery()
+        val fooWorker = mockTree("fooWorker")
+        val fooRender = mockTree("fooRender")
+        val barWorker = mockTree("barWorker")
+        val barRender = mockTree("barRender")
+        val quxWorker = mockTree("quxWorker")
+        val quxRender = mockTree("quxRender")
+        val barParseStarted = CountDownLatch(1)
+        val releaseBarParse = CountDownLatch(1)
+
+        every { parser.reset() } just runs
+        every { fooWorker.copy() } returns fooRender
+        every { barWorker.copy() } returns barRender
+        every { quxWorker.copy() } returns quxRender
+        every { parser.parseString(FOO_TEXT) } returns fooWorker
+        every { parser.parseString(fooWorker, BAR_TEXT) } answers {
+            barParseStarted.countDown()
+            check(releaseBarParse.await(5, TimeUnit.SECONDS)) { "Timed out waiting to release bar parse" }
+            barWorker
+        }
+        every { parser.parseString(QUX_TEXT) } returns quxWorker
+
+        createFixture(parser = parser, query = query).use { fixture ->
+            val updates = AtomicInteger(0)
+            fixture.state.setOnStateUpdated { updates.incrementAndGet() }
+
+            fixture.state.openDocument(FOO_TEXT)
+            waitUntil { updates.get() == 1 }
+
+            updates.set(0)
+            fixture.state.applyTextChange(replaceIdentifierChange("foo", "bar"))
+            assertThat(barParseStarted.await(5, TimeUnit.SECONDS)).isTrue()
+            fixture.state.applyTextChange(replaceIdentifierChange("bar", "baz"))
+            fixture.state.applyTextChange(replaceIdentifierChange("baz", "qux"))
+            releaseBarParse.countDown()
+
+            waitUntil { updates.get() == 1 }
+
+            assertThat(fixture.state.readSnapshot(BAR_TEXT)).isNull()
+            assertThat(fixture.state.readSnapshot(QUX_TEXT)).isNotNull()
+        }
+
+        verify(exactly = 1) { parser.parseString(fooWorker, BAR_TEXT) }
+        verify(exactly = 1) { parser.parseString(QUX_TEXT) }
+        verify(exactly = 0) { parser.parseString(barWorker, QUX_TEXT) }
+        verify(exactly = 1) { barRender.close() }
+    }
+
+    @Test
     fun getLineSegments_shouldNotUseStaleTreeForDirtyLineWhileIncrementalParsePending() {
         val parser = mockk<TSParser>()
         val query = mockQuery()
@@ -339,6 +390,8 @@ class IncrementalTreeSitterHighlightStateTest {
 
     private fun mockQuery(): TSQuery = mockk {
         every { canAccess() } returns true
+        every { captureNames } returns emptyArray()
+        every { patternCount } returns 0
     }
 
     private fun mockTree(name: String): TSTree = mockk(name = name) {
@@ -352,5 +405,6 @@ class IncrementalTreeSitterHighlightStateTest {
         private const val FOO_TEXT = "val foo = 1"
         private const val BAR_TEXT = "val bar = 1"
         private const val BAZ_TEXT = "val baz = 1"
+        private const val QUX_TEXT = "val qux = 1"
     }
 }

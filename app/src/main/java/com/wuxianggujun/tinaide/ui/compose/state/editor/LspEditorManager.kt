@@ -105,6 +105,11 @@ data class PluginLspDependencyNotReadyEvent(
     val message: String
 )
 
+internal sealed interface SemanticTokensRequestResult {
+    data class Success(val tokens: List<SemanticToken>) : SemanticTokensRequestResult
+    data object Unavailable : SemanticTokensRequestResult
+}
+
 class LspEditorManager {
 
     companion object {
@@ -189,6 +194,9 @@ class LspEditorManager {
     private val remoteSyncedProjects = mutableSetOf<String>()
     private val semanticTokensCache = mutableMapOf<String, SemanticTokensCache>()
     private val foldingRangesCache = mutableMapOf<String, FoldingRangesCache>()
+    private val documentVersions = mutableMapOf<String, Long>()
+    private val builtinDiagnosticsRequestTokens = mutableMapOf<String, Any>()
+    private val builtinDiagnosticsJobs = mutableMapOf<String, Job>()
     private val completionWarmupTabIds = mutableSetOf<String>()
     private var sharedCxxSession: LspClientSession? = null
     private var sharedCxxShutdownJob: Job? = null
@@ -307,12 +315,13 @@ class LspEditorManager {
         hasPluginServer = lspPluginManager?.getServerConfigForFile(file) != null
     )
 
-    fun onTinaDocumentChanged(tabId: String, change: TextChange) {
+    fun onTinaDocumentChanged(tabId: String, change: TextChange, documentVersion: Long) {
         val tabSession = synchronized(stateLock) { tabSessions[tabId] } ?: return
         if (!tabSession.isConnected) return
         synchronized(stateLock) {
             semanticTokensCache.remove(tabId)
             foldingRangesCache.remove(tabId)
+            documentVersions[tabId] = maxOf(documentVersions[tabId] ?: Long.MIN_VALUE, documentVersion)
         }
         tabSession.builtinSession?.didChange(change)
         if (tabSession.builtinSession != null) {
@@ -382,16 +391,26 @@ class LspEditorManager {
         }
     }
 
-    suspend fun requestSemanticTokens(
+    internal suspend fun requestSemanticTokens(
         tabId: String,
         visibleLines: IntRange,
         documentVersion: Long
-    ): List<SemanticToken> = withContext(Dispatchers.IO) {
+    ): SemanticTokensRequestResult = withContext(Dispatchers.IO) {
         if (!assistSettings.semanticTokensEnabled) {
             synchronized(stateLock) { semanticTokensCache.remove(tabId) }
-            return@withContext emptyList()
+            return@withContext SemanticTokensRequestResult.Success(emptyList())
         }
-        if (visibleLines.isEmpty()) return@withContext emptyList()
+        if (visibleLines.isEmpty()) return@withContext SemanticTokensRequestResult.Success(emptyList())
+        val versionAccepted = synchronized(stateLock) {
+            val latestVersion = documentVersions[tabId]
+            if (latestVersion != null && documentVersion < latestVersion) {
+                false
+            } else {
+                documentVersions[tabId] = documentVersion
+                true
+            }
+        }
+        if (!versionAccepted) return@withContext SemanticTokensRequestResult.Unavailable
         val normalizedVisibleLines = normalizeVisibleLines(visibleLines)
 
         val cached = synchronized(stateLock) { semanticTokensCache[tabId] }
@@ -399,23 +418,36 @@ class LspEditorManager {
             cached.documentVersion == documentVersion &&
             cached.cachedLines.containsRange(normalizedVisibleLines)
         ) {
-            return@withContext cached.tokens.filterToVisibleLines(normalizedVisibleLines)
+            return@withContext SemanticTokensRequestResult.Success(
+                cached.tokens.filterToVisibleLines(normalizedVisibleLines)
+            )
         }
 
-        val tabSession = synchronized(stateLock) { tabSessions[tabId] } ?: return@withContext emptyList()
-        if (!tabSession.isConnected) return@withContext emptyList()
+        val tabSession = synchronized(stateLock) { tabSessions[tabId] }
+            ?: return@withContext SemanticTokensRequestResult.Unavailable
+        if (!tabSession.isConnected) return@withContext SemanticTokensRequestResult.Unavailable
         tabSession.builtinSession?.let { session ->
             val tokens = session.requestSemanticTokens()
-            synchronized(stateLock) {
-                semanticTokensCache[tabId] = SemanticTokensCache(
-                    documentVersion = documentVersion,
-                    cachedLines = 0..Int.MAX_VALUE,
-                    tokens = tokens
-                )
+            val cachedSuccessfully = synchronized(stateLock) {
+                if (documentVersions[tabId] != documentVersion ||
+                    tabSessions[tabId]?.builtinSession !== session
+                ) {
+                    false
+                } else {
+                    semanticTokensCache[tabId] = SemanticTokensCache(
+                        documentVersion = documentVersion,
+                        cachedLines = 0..Int.MAX_VALUE,
+                        tokens = tokens
+                    )
+                    true
+                }
             }
-            return@withContext tokens.filterToVisibleLines(normalizedVisibleLines)
+            if (!cachedSuccessfully) return@withContext SemanticTokensRequestResult.Unavailable
+            return@withContext SemanticTokensRequestResult.Success(
+                tokens.filterToVisibleLines(normalizedVisibleLines)
+            )
         }
-        val session = tabSession.lspSession ?: return@withContext emptyList()
+        val session = tabSession.lspSession ?: return@withContext SemanticTokensRequestResult.Unavailable
         val requestTicket = createTabRequestTicket(tabId, tabSession.documentUri)
         val requestedLines = expandSemanticRequestLines(normalizedVisibleLines)
 
@@ -456,9 +488,9 @@ class LspEditorManager {
         } else {
             null
         }
-        val raw = fullRawFirst ?: rangeRaw ?: return@withContext emptyList()
+        val raw = fullRawFirst ?: rangeRaw ?: return@withContext SemanticTokensRequestResult.Unavailable
         val fetchedFullDocument = fullRawFirst != null
-        if (!isTabRequestStillValid(requestTicket)) return@withContext emptyList()
+        if (!isTabRequestStillValid(requestTicket)) return@withContext SemanticTokensRequestResult.Unavailable
 
         val decoded = LspSemanticTokenDecoder.decode(
             rawData = raw.data.orEmpty(),
@@ -475,14 +507,22 @@ class LspEditorManager {
             requestedLines
         }
 
-        synchronized(stateLock) {
-            semanticTokensCache[tabId] = SemanticTokensCache(
-                documentVersion = documentVersion,
-                cachedLines = cachedLines,
-                tokens = decoded
-            )
+        val cachedSuccessfully = synchronized(stateLock) {
+            if (documentVersions[tabId] != documentVersion || tabSessions[tabId] !== tabSession) {
+                false
+            } else {
+                semanticTokensCache[tabId] = SemanticTokensCache(
+                    documentVersion = documentVersion,
+                    cachedLines = cachedLines,
+                    tokens = decoded
+                )
+                true
+            }
         }
-        return@withContext decoded.filterToVisibleLines(normalizedVisibleLines)
+        if (!cachedSuccessfully) return@withContext SemanticTokensRequestResult.Unavailable
+        return@withContext SemanticTokensRequestResult.Success(
+            decoded.filterToVisibleLines(normalizedVisibleLines)
+        )
     }
 
     suspend fun requestCompletion(
@@ -519,9 +559,14 @@ class LspEditorManager {
         }
 
         CompletionFetchResult.Success(
-            lspItems.map { item ->
-                val mainTextEdit = normalizeMainCompletionTextEdit(item)
+            lspItems.mapNotNull { item ->
+                val mainTextEdit = if (item.textEdit == null) {
+                    null
+                } else {
+                    normalizeMainCompletionTextEdit(item) ?: return@mapNotNull null
+                }
                 val additionalTextEdits = normalizeAdditionalCompletionTextEdits(item)
+                    ?: return@mapNotNull null
                 CompletionItem(
                     label = item.label.orEmpty(),
                     kind = mapCompletionKind(item.kind),
@@ -1457,7 +1502,7 @@ class LspEditorManager {
                 }
             } ?: return@launch
 
-            runCatching {
+            runCatchingPreservingCancellation {
                 withContext(Dispatchers.IO) { sessionToClose.close() }
             }.onFailure { error ->
                 Timber.tag(TAG).d(error, "shared clangd idle shutdown failed")
@@ -1692,7 +1737,7 @@ class LspEditorManager {
 
         lspScope.launch {
             val attachStartedAt = System.nanoTime()
-            runCatching {
+            runCatchingPreservingCancellation {
                 val snapshot = runCatching { textProvider() }.getOrDefault("")
                 val documentUri = file.toURI().toString()
                 sharedCxxSessionMutex.withLock {
@@ -1796,7 +1841,7 @@ class LspEditorManager {
         if (remote) RemoteLspConfigManager.updateConnectionState(RemoteLspConnectionState.CONNECTING)
 
         lspScope.launch {
-            runCatching {
+            runCatchingPreservingCancellation {
                 Timber.tag(TAG).d("startAttach: creating connection provider...")
                 val provider = providerFactory()
                 Timber.tag(TAG).d("startAttach: provider created: %s", provider.javaClass.simpleName)
@@ -1894,15 +1939,29 @@ class LspEditorManager {
         provider.syncProject(projectRoot.name, files) { _, _ -> }
     }
 
+    private inline fun <T> runCatchingPreservingCancellation(block: () -> T): Result<T> = try {
+        Result.success(block())
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (error: Throwable) {
+        Result.failure(error)
+    }
+
     private fun resolveClangdRunMode(): LinuxRunModePolicy.RunMode = LinuxRunModePolicy.resolve(Prefs.clangdRunMode, linuxEnvironmentProvider.get().isAvailable())
 
     private fun releaseSession(tabId: String, clearBinding: Boolean) {
         val sharedSession = synchronized(stateLock) { sharedCxxSession }
         val cancelledRequests = nextRequestGeneration(tabId)
         cancelledRequests.forEach { future -> future.cancel(true) }
+        val diagnosticsJob = synchronized(stateLock) {
+            builtinDiagnosticsRequestTokens.remove(tabId)
+            builtinDiagnosticsJobs.remove(tabId)
+        }
+        diagnosticsJob?.cancel()
         val removed = synchronized(stateLock) {
             attachTokenCache.remove(tabId)
             semanticTokensCache.remove(tabId)
+            documentVersions.remove(tabId)
             completionWarmupTabIds.remove(tabId)
             if (clearBinding) tabBindings.remove(tabId)
             tabSessions.remove(tabId)
@@ -1931,9 +1990,15 @@ class LspEditorManager {
     private fun disposeProject(clearBindings: Boolean = true) {
         cancelPendingSharedCxxShutdown()
         clearDiagnosticsInUi()
+        val diagnosticsJobs = synchronized(stateLock) {
+            builtinDiagnosticsRequestTokens.clear()
+            builtinDiagnosticsJobs.values.toList().also { builtinDiagnosticsJobs.clear() }
+        }
+        diagnosticsJobs.forEach { job -> job.cancel() }
         val (sessions, sharedSession, inflightRequests) = synchronized(stateLock) {
             attachTokenCache.clear()
             semanticTokensCache.clear()
+            documentVersions.clear()
             completionWarmupTabIds.clear()
             val inflight = tabRequestTracker.drainAll()
             val shared = sharedCxxSession
@@ -1977,15 +2042,24 @@ class LspEditorManager {
 
     private fun scheduleBuiltinDiagnostics(tabSession: TabSession) {
         val builtinSession = tabSession.builtinSession ?: return
-        lspScope.launch(Dispatchers.Default) {
-            val diagnostics = runCatching { builtinSession.currentDiagnostics() }
+        val requestToken = Any()
+        val previousJob = synchronized(stateLock) {
+            builtinDiagnosticsRequestTokens[tabSession.tabId] = requestToken
+            builtinDiagnosticsJobs.remove(tabSession.tabId)
+        }
+        previousJob?.cancel()
+
+        val job = lspScope.launch(Dispatchers.Default) {
+            val diagnostics = runCatchingPreservingCancellation { builtinSession.currentDiagnostics() }
                 .getOrElse { error ->
                     Timber.tag(TAG).w(error, "builtin diagnostics failed for %s", tabSession.file.name)
                     emptyList()
                 }
             val stillActive = synchronized(stateLock) {
                 val current = tabSessions[tabSession.tabId]
-                if (current?.builtinSession === builtinSession) {
+                if (current?.builtinSession === builtinSession &&
+                    builtinDiagnosticsRequestTokens[tabSession.tabId] === requestToken
+                ) {
                     lspKnownUris.add(tabSession.documentUri)
                     true
                 } else {
@@ -1994,6 +2068,20 @@ class LspEditorManager {
             }
             if (stillActive) {
                 onDiagnosticsChanged?.invoke(tabSession.documentUri, diagnostics)
+            }
+        }
+        synchronized(stateLock) {
+            if (builtinDiagnosticsRequestTokens[tabSession.tabId] === requestToken) {
+                builtinDiagnosticsJobs[tabSession.tabId] = job
+            } else {
+                job.cancel()
+            }
+        }
+        job.invokeOnCompletion {
+            synchronized(stateLock) {
+                if (builtinDiagnosticsJobs[tabSession.tabId] === job) {
+                    builtinDiagnosticsJobs.remove(tabSession.tabId)
+                }
             }
         }
     }
@@ -2396,10 +2484,17 @@ class LspEditorManager {
         }
     }
 
-    private fun normalizeAdditionalCompletionTextEdits(item: org.eclipse.lsp4j.CompletionItem): List<CompletionTextEdit> = item.additionalTextEdits.orEmpty()
-        .mapNotNull { textEdit ->
-            normalizeCompletionTextEdit(textEdit, item.insertTextFormat)
+    private fun normalizeAdditionalCompletionTextEdits(
+        item: org.eclipse.lsp4j.CompletionItem
+    ): List<CompletionTextEdit>? {
+        val rawEdits = item.additionalTextEdits.orEmpty()
+        if (rawEdits.isEmpty()) return emptyList()
+        val normalizedEdits = ArrayList<CompletionTextEdit>(rawEdits.size)
+        rawEdits.forEach { textEdit ->
+            normalizedEdits += normalizeCompletionTextEdit(textEdit, item.insertTextFormat) ?: return null
         }
+        return normalizedEdits
+    }
 
     private fun normalizeCompletionTextEdit(
         textEdit: TextEdit,
@@ -2407,15 +2502,13 @@ class LspEditorManager {
     ): CompletionTextEdit? {
         val range = textEdit.range ?: return null
         val start = range.start ?: return null
-        val end = range.end ?: start
-        val startLine = start.line.coerceAtLeast(0)
-        val startColumn = start.character.coerceAtLeast(0)
-        var endLine = end.line.coerceAtLeast(0)
-        var endColumn = end.character.coerceAtLeast(0)
-        if (endLine < startLine || (endLine == startLine && endColumn < startColumn)) {
-            endLine = startLine
-            endColumn = startColumn
-        }
+        val end = range.end ?: return null
+        val startLine = start.line
+        val startColumn = start.character
+        val endLine = end.line
+        val endColumn = end.character
+        if (startLine < 0 || startColumn < 0 || endLine < 0 || endColumn < 0) return null
+        if (endLine < startLine || (endLine == startLine && endColumn < startColumn)) return null
         val normalizedText = normalizeCompletionPayloadText(
             text = textEdit.newText.orEmpty(),
             insertTextFormat = insertTextFormat

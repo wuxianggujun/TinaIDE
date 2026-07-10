@@ -33,11 +33,12 @@ class ApkBuilder(private val context: Context) {
 
         internal fun shouldSkipTemplateLibEntry(
             entryName: String,
-            replacementLibraryNames: Set<String>
+            replacementEntryNames: Set<String>,
+            targetAbis: Set<String>,
         ): Boolean {
             if (!entryName.startsWith("lib/")) return false
-            val entryFileName = entryName.substringAfterLast("/")
-            return entryFileName in replacementLibraryNames
+            val entryAbi = entryName.substringAfter("lib/").substringBefore('/')
+            return entryAbi !in targetAbis || entryName in replacementEntryNames
         }
     }
 
@@ -127,11 +128,8 @@ class ApkBuilder(private val context: Context) {
         config: ApkBuildConfig,
         iconOverride: IconOverride
     ) {
-        val replacementLibraryNames = buildSet {
-            config.soFiles.forEach { add(it.name) }
-            config.sdlLibraryPath?.let { add(it.name) }
-            config.preloadLibraries.forEach { add(it.name) }
-        }
+        val nativeLibraryEntries = resolveNativeLibraryEntries(config)
+        val targetAbis = config.targetAbis.map(String::trim).filter(String::isNotEmpty).toSet()
         ZipFile(templateApk).use { zipIn ->
             FileOutputStream(outputApk).use { fos ->
                 ZipOutputStream(fos).use { zipOut ->
@@ -150,7 +148,13 @@ class ApkBuilder(private val context: Context) {
                         }
 
                         // Skip template lib/ entries that will be replaced
-                        if (shouldSkipTemplateLibEntry(entry.name, replacementLibraryNames)) {
+                        if (
+                            shouldSkipTemplateLibEntry(
+                                entryName = entry.name,
+                                replacementEntryNames = nativeLibraryEntries.keys,
+                                targetAbis = targetAbis,
+                            )
+                        ) {
                             continue
                         }
                         if (config.executableFile != null && entry.name == TERMINAL_EXECUTABLE_ASSET_PATH) {
@@ -161,35 +165,11 @@ class ApkBuilder(private val context: Context) {
                         writtenEntries.add(entry.name)
                     }
 
-                    // Inject user .so files
-                    for (abi in config.targetAbis) {
-                        for (soFile in config.soFiles) {
-                            val entryName = "lib/$abi/${soFile.name}"
-                            if (entryName !in writtenEntries) {
-                                Timber.tag(TAG).d("Injecting: $entryName")
-                                writeEntry(zipOut, entryName, soFile.readBytes(), stored = true)
-                                writtenEntries.add(entryName)
-                            }
-                        }
-
-                        // Inject SDL library if needed
-                        config.sdlLibraryPath?.let { sdlLib ->
-                            val entryName = "lib/$abi/${sdlLib.name}"
-                            if (entryName !in writtenEntries) {
-                                Timber.tag(TAG).d("Injecting SDL: $entryName")
-                                writeEntry(zipOut, entryName, sdlLib.readBytes(), stored = true)
-                                writtenEntries.add(entryName)
-                            }
-                        }
-
-                        // Inject preload libraries
-                        for (preload in config.preloadLibraries) {
-                            val entryName = "lib/$abi/${preload.name}"
-                            if (entryName !in writtenEntries) {
-                                Timber.tag(TAG).d("Injecting preload: $entryName")
-                                writeEntry(zipOut, entryName, preload.readBytes(), stored = true)
-                                writtenEntries.add(entryName)
-                            }
+                    nativeLibraryEntries.forEach { (entryName, library) ->
+                        if (entryName !in writtenEntries) {
+                            Timber.tag(TAG).d("Injecting: $entryName")
+                            writeEntry(zipOut, entryName, library.readBytes(), stored = true)
+                            writtenEntries.add(entryName)
                         }
                     }
 
@@ -208,6 +188,43 @@ class ApkBuilder(private val context: Context) {
                 }
             }
         }
+    }
+
+    private fun resolveNativeLibraryEntries(config: ApkBuildConfig): Map<String, File> {
+        val targetAbis = config.targetAbis
+            .asSequence()
+            .map(String::trim)
+            .filter(String::isNotEmpty)
+            .toSet()
+        if (targetAbis.isEmpty()) {
+            throw IllegalStateException(Strings.apk_builder_target_abi_missing.strOr(context))
+        }
+
+        val libraries = buildList {
+            addAll(config.soFiles)
+            config.sdlLibraryPath?.let(::add)
+            addAll(config.preloadLibraries)
+        }
+        val entries = linkedMapOf<String, File>()
+        libraries.forEach { library ->
+            val detectedAbi = runCatching { NativeLibraryAbiDetector.detect(library) }
+                .getOrNull()
+                ?: throw IllegalArgumentException(
+                    Strings.apk_builder_library_abi_unknown.strOr(context, library.name)
+                )
+            if (detectedAbi !in targetAbis) {
+                throw IllegalArgumentException(
+                    Strings.apk_builder_library_abi_mismatch.strOr(
+                        context,
+                        library.name,
+                        detectedAbi,
+                        targetAbis.joinToString(", ")
+                    )
+                )
+            }
+            entries.putIfAbsent("lib/$detectedAbi/${library.name}", library)
+        }
+        return entries
     }
 
     private fun writeEntry(

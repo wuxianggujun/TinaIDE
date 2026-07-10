@@ -64,7 +64,7 @@ class CompileUiEventObserverTest {
             )
         )
 
-        verify(exactly = 1) { sdlLauncher.open("/tmp/libdemo.so", emptyMap()) }
+        coVerify(exactly = 1) { sdlLauncher.open("/tmp/libdemo.so", emptyMap()) }
         verify(exactly = 1) {
             terminalLauncher.open(
                 command = "cmake --build .",

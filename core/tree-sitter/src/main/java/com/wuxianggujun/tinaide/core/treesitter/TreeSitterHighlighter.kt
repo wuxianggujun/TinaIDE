@@ -25,10 +25,12 @@ class TreeSitterHighlighter private constructor(
     private val closeExecutor = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "TreeSitterHighlighterDispose").apply { isDaemon = true }
     }
+    private val predicateEvaluator = TreeSitterQueryPredicateEvaluator(query)
     private val state = IncrementalTreeSitterHighlightState(
         parser = parser,
         query = query,
         captureTypeByIndex = captureTypeByIndex,
+        predicateEvaluator = predicateEvaluator,
         onClosed = {
             runCatching { query.close() }
             runCatching { parser.close() }
@@ -49,7 +51,8 @@ class TreeSitterHighlighter private constructor(
                             query = query,
                             captureTypeByIndex = captureTypeByIndex,
                             rootNode = tree.rootNode,
-                            textLength = text.length,
+                            sourceText = text,
+                            predicateEvaluator = predicateEvaluator,
                             visibleRange = visibleRange
                         )
                     }
@@ -72,7 +75,8 @@ class TreeSitterHighlighter private constructor(
                         query = query,
                         captureTypeByIndex = captureTypeByIndex,
                         rootNode = tree.rootNode,
-                        textLength = text.length,
+                        sourceText = text,
+                        predicateEvaluator = predicateEvaluator,
                         visibleRange = visibleRange
                     )
                 } finally {
@@ -241,27 +245,25 @@ class TreeSitterHighlighter private constructor(
 
             fun hasToken(token: String): Boolean = tokens.any { it == token }
 
-            fun containsToken(token: String): Boolean = hasToken(token) || normalized.contains(token)
-
             return when {
                 // @none / @spell = explicitly no highlight (tree-sitter spell/none markers)
                 hasToken("none") || hasToken("spell") -> HighlightType.DEFAULT
 
-                containsToken("comment") ||
-                    containsToken("doc") ||
-                    containsToken("documentation") -> HighlightType.COMMENT
+                hasToken("comment") ||
+                    hasToken("doc") ||
+                    hasToken("documentation") -> HighlightType.COMMENT
 
-                containsToken("string") ||
-                    containsToken("char") ||
-                    containsToken("character") -> HighlightType.STRING
+                hasToken("string") ||
+                    hasToken("char") ||
+                    hasToken("character") -> HighlightType.STRING
 
-                containsToken("number") ||
-                    containsToken("integer") ||
-                    containsToken("float") ||
-                    containsToken("numeric") -> HighlightType.NUMBER
+                hasToken("number") ||
+                    hasToken("integer") ||
+                    hasToken("float") ||
+                    hasToken("numeric") -> HighlightType.NUMBER
 
                 // @boolean → CONSTANT (true/false/yes/no are named constants, not keywords)
-                containsToken("boolean") -> HighlightType.CONSTANT
+                hasToken("boolean") -> HighlightType.CONSTANT
 
                 // @constant.builtin / @constant.macro → BUILTIN (NULL, EOF, __LINE__ etc.)
                 hasToken("constant") && (hasToken("builtin") || hasToken("macro")) -> HighlightType.BUILTIN
@@ -269,45 +271,48 @@ class TreeSitterHighlighter private constructor(
                 // @constant → CONSTANT (cmake VERSION/SHARED/CONFIG, Kotlin SCREAMING_CASE, C enum values)
                 hasToken("constant") -> HighlightType.CONSTANT
 
+                hasToken("label") -> HighlightType.CONSTANT
+
                 // @*.builtin that isn't constant → BUILTIN (type.builtin, function.builtin, variable.builtin)
                 hasToken("builtin") -> HighlightType.BUILTIN
 
-                containsToken("keyword") ||
-                    containsToken("conditional") ||
-                    containsToken("repeat") ||
-                    containsToken("exception") ||
-                    containsToken("preproc") ||
-                    containsToken("modifier") ||
-                    containsToken("module") -> HighlightType.KEYWORD
+                hasToken("keyword") ||
+                    hasToken("conditional") ||
+                    hasToken("repeat") ||
+                    hasToken("exception") ||
+                    hasToken("preproc") ||
+                    hasToken("modifier") ||
+                    hasToken("module") -> HighlightType.KEYWORD
 
                 // @function.builtin handled above; remaining function/* → FUNCTION
-                containsToken("function") ||
-                    containsToken("method") ||
-                    containsToken("constructor") ||
-                    containsToken("call") -> HighlightType.FUNCTION
+                hasToken("function") ||
+                    hasToken("method") ||
+                    hasToken("constructor") ||
+                    hasToken("call") -> HighlightType.FUNCTION
 
-                containsToken("type") ||
-                    containsToken("class") ||
-                    containsToken("struct") ||
-                    containsToken("enum") ||
-                    containsToken("interface") ||
-                    containsToken("namespace") -> HighlightType.TYPE
+                hasToken("type") ||
+                    hasToken("class") ||
+                    hasToken("struct") ||
+                    hasToken("enum") ||
+                    hasToken("interface") ||
+                    hasToken("namespace") -> HighlightType.TYPE
 
-                containsToken("property") ||
-                    containsToken("field") ||
-                    containsToken("member") -> HighlightType.PROPERTY
+                hasToken("property") ||
+                    hasToken("field") ||
+                    hasToken("member") ||
+                    hasToken("attribute") -> HighlightType.PROPERTY
 
-                containsToken("variable") ||
-                    containsToken("parameter") -> HighlightType.VARIABLE
+                hasToken("variable") ||
+                    hasToken("parameter") -> HighlightType.VARIABLE
 
-                containsToken("operator") -> HighlightType.OPERATOR
+                hasToken("operator") -> HighlightType.OPERATOR
 
-                containsToken("punctuation") ||
-                    containsToken("delimiter") ||
-                    containsToken("bracket") ||
-                    containsToken("paren") -> HighlightType.PUNCTUATION
+                hasToken("punctuation") ||
+                    hasToken("delimiter") ||
+                    hasToken("bracket") ||
+                    hasToken("paren") -> HighlightType.PUNCTUATION
 
-                containsToken("identifier") -> HighlightType.DEFAULT
+                hasToken("identifier") -> HighlightType.DEFAULT
 
                 else -> HighlightType.DEFAULT
             }

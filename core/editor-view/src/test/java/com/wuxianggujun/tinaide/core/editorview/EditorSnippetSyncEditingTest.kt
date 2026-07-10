@@ -126,6 +126,21 @@ class EditorSnippetSyncEditingTest {
         assertThat(state.selectionRange).isNull()
     }
 
+    @Test
+    fun editorInsert_shouldUndoAndRedoWholeRepeatedTabstopGroupInOneStep() {
+        val state = createSnippetState("const \${1:name} = \${1:name};")
+
+        editorInsert(state, "value")
+
+        assertThat(state.undo()).isTrue()
+        assertThat(state.textBuffer.toString()).isEqualTo("const name = name;")
+        assertThat(state.cursorOffset).isEqualTo(10)
+
+        assertThat(state.redo()).isTrue()
+        assertThat(state.textBuffer.toString()).isEqualTo("const value = value;")
+        assertThat(state.cursorOffset).isEqualTo(11)
+    }
+
     private fun createSnippetState(snippet: String): EditorState {
         val parsed = parseSnippet(snippet)
         val buffer = RopeTextBuffer().apply {

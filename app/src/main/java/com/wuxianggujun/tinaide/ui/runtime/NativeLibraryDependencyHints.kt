@@ -1,9 +1,12 @@
 package com.wuxianggujun.tinaide.ui.runtime
 
 import android.content.Context
+import android.os.Build
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.core.packages.model.GUIPackage
+import com.wuxianggujun.tinaide.core.packages.model.Platform
+import com.wuxianggujun.tinaide.core.packages.store.LocalInstallStateStore
 import java.io.File
 
 object NativeLibraryDependencyHints {
@@ -45,25 +48,63 @@ object NativeLibraryDependencyHints {
             .toList()
     }
 
+    internal fun shouldPreferInstalledPackageCandidate(
+        libraryName: String,
+        current: File,
+        candidate: File,
+    ): Boolean {
+        val preferredPackageId = libraryPackageHints[normalizeLibraryName(libraryName)] ?: return false
+        val currentPackageId = installedPackageId(current) ?: return false
+        val candidatePackageId = installedPackageId(candidate) ?: return false
+        return !currentPackageId.equals(preferredPackageId, ignoreCase = true) &&
+            candidatePackageId.equals(preferredPackageId, ignoreCase = true)
+    }
+
     fun buildInstalledLibraryPackageIndex(context: Context): Map<String, String> {
         val installRoot = File(context.filesDir, INSTALL_DIR_NAME)
         if (!installRoot.isDirectory) return emptyMap()
 
+        val installedPackageIds = runCatching {
+            LocalInstallStateStore(context.applicationContext)
+                .getAllInstalledPackages()
+                .asSequence()
+                .filter { it.platform == Platform.ANDROID }
+                .map { it.packageId.trim() }
+                .filter { it.isNotBlank() }
+                .toSet()
+        }.getOrDefault(emptySet())
+        if (installedPackageIds.isEmpty()) return emptyMap()
+
         val index = linkedMapOf<String, String>()
-        installRoot.listFiles { file -> file.isDirectory }
-            ?.sortedBy { it.name.lowercase() }
-            ?.forEach { packageDir ->
-                val libDir = File(packageDir, "lib")
-                if (!libDir.isDirectory) return@forEach
-                libDir.walkTopDown()
-                    .filter { file -> file.isFile && file.name.contains(".so") }
-                    .forEach { library ->
+        val deviceAbi = Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"
+        installedPackageIds.sorted().forEach { packageId ->
+            val packageDir = File(installRoot, packageId)
+            if (!packageDir.isDirectory) return@forEach
+            val runtimeDirs = listOf(
+                File(packageDir, "lib/$deviceAbi"),
+                File(packageDir, "libs/$deviceAbi"),
+                File(packageDir, "lib"),
+                File(packageDir, "libs"),
+                packageDir,
+            )
+            runtimeDirs.filter(File::isDirectory).forEach { runtimeDir ->
+                runtimeDir.listFiles { library ->
+                    library.isFile && library.name.contains(".so")
+                }?.forEach { library ->
                         val normalizedName = normalizeLibraryName(library.name)
                         if (normalizedName.isNotBlank()) {
-                            index.putIfAbsent(normalizedName, packageDir.name)
+                            val currentPackageId = index[normalizedName]
+                            val preferredPackageId = libraryPackageHints[normalizedName]
+                            if (
+                                currentPackageId == null ||
+                                packageId.equals(preferredPackageId, ignoreCase = true)
+                            ) {
+                                index[normalizedName] = packageId
+                            }
                         }
                     }
             }
+        }
         return index
     }
 
@@ -186,6 +227,17 @@ object NativeLibraryDependencyHints {
         val markerIndex = trimmed.indexOf(".so")
         if (markerIndex < 0) return trimmed
         return trimmed.substring(0, markerIndex + 3)
+    }
+
+    private fun installedPackageId(library: File): String? {
+        var current = library.parentFile
+        while (current != null) {
+            if (current.parentFile?.name == INSTALL_DIR_NAME) {
+                return current.name
+            }
+            current = current.parentFile
+        }
+        return null
     }
 
     private fun compactKey(value: String): String = value.lowercase()

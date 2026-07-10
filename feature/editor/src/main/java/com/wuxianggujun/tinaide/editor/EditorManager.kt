@@ -30,8 +30,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -62,9 +60,9 @@ class EditorManager(
     private val sessionStateJobs = mutableMapOf<String, Job>()
     private var autoSaveIntervalMillis: Long = 60_000L
     private val autoSaveScheduler = AutoSaveScheduler(scope, { autoSaveIntervalMillis }) { session ->
-        if (session.hasActiveEditor()) {
-            session.save(SaveReason.AUTO)
-        }
+        session.save(SaveReason.AUTO)
+        val state = session.state.value
+        state.isDirty && !state.hasExternalModification
     }
     private var activeTabId: String? = null
     private var isRestoringState: Boolean = false
@@ -109,7 +107,6 @@ class EditorManager(
         persistEditorState()
         configManager.removeListener(KEY_AUTO_SAVE, configListener)
         configManager.removeListener(ConfigKeys.CurrentProject.key, configListener)
-        autoSaveScheduler.cancelAll()
         val jobs: List<Job>
         val sessionsToStop: List<DocumentSession>
         synchronized(stateLock) {
@@ -122,6 +119,7 @@ class EditorManager(
             updateStateFlowsLocked()
         }
         jobs.forEach { it.cancel() }
+        autoSaveScheduler.cancelAll()
         sessionsToStop.forEach { it.stopFileWatcher() }
         scope.cancel()
     }
@@ -188,7 +186,6 @@ class EditorManager(
     }
 
     override fun closeFile(tab: EditorTab) {
-        autoSaveScheduler.cancel(tab.id)
         val sessionToStop: DocumentSession?
         val jobToCancel: Job?
         val removed: Boolean
@@ -204,6 +201,7 @@ class EditorManager(
             }
         }
         jobToCancel?.cancel()
+        autoSaveScheduler.cancel(tab.id)
         sessionToStop?.stopFileWatcher()
         if (!removed) return
         Timber.tag(TAG).d("Close tab: %s", tab.id)
@@ -409,25 +407,46 @@ class EditorManager(
     private fun updateAutoSaveInterval() {
         val raw = configManager.get(KEY_AUTO_SAVE, "60")
         val seconds = raw.toString().toLongOrNull() ?: 60L
-        autoSaveIntervalMillis = if (seconds <= 0L) 0L else seconds * 1000L
+        autoSaveIntervalMillis = if (seconds <= 0L) {
+            0L
+        } else {
+            seconds.coerceAtMost(Long.MAX_VALUE / 1000L) * 1000L
+        }
+        if (autoSaveIntervalMillis <= 0L) {
+            autoSaveScheduler.cancelAll()
+        } else {
+            synchronized(stateLock) {
+                sessions.values.forEach { session ->
+                    val state = session.state.value
+                    if (state.isDirty && !state.hasExternalModification) {
+                        autoSaveScheduler.schedule(session)
+                    }
+                }
+            }
+        }
         Timber.tag(TAG).d("Auto save interval: %dms", autoSaveIntervalMillis)
     }
 
     private fun observeSession(session: DocumentSession) {
         val job = scope.launch {
-            session.state
-                .map { state -> state.isDirty to state.lastError }
-                .distinctUntilChanged()
-                .collect { (isDirty, lastError) ->
-                    if (isDirty) {
+            var previousAutoSaveEligible: Boolean? = null
+            var previousError: String? = null
+            session.state.collect { state ->
+                val autoSaveEligible = state.isDirty && !state.hasExternalModification
+                if (autoSaveEligible != previousAutoSaveEligible) {
+                    if (autoSaveEligible) {
                         autoSaveScheduler.schedule(session)
                     } else {
                         autoSaveScheduler.cancel(session)
                     }
-                    if (lastError != null) {
-                        Timber.tag(TAG).w("Session %s error: %s", session.tabId, lastError)
-                    }
+                    previousAutoSaveEligible = autoSaveEligible
                 }
+                val lastError = state.lastError
+                if (lastError != null && lastError != previousError) {
+                    Timber.tag(TAG).w("Session %s error: %s", session.tabId, lastError)
+                }
+                previousError = lastError
+            }
         }
         val previous = synchronized(stateLock) {
             sessionStateJobs.put(session.tabId, job)
@@ -491,7 +510,7 @@ class EditorManager(
     override suspend fun forceOverwrite(tabId: String, reason: SaveReason): SaveResult = synchronized(stateLock) { sessions[tabId] }?.forceOverwrite(reason)
         ?: SaveResult.Failure(Strings.editor_error_not_initialized.strOr(context))
 
-    override fun reloadFromDisk(tabId: String): Boolean = synchronized(stateLock) { sessions[tabId] }?.reloadFromDisk() ?: false
+    override suspend fun reloadFromDisk(tabId: String): Boolean = synchronized(stateLock) { sessions[tabId] }?.reloadFromDisk() ?: false
 
     override fun acknowledgeExternalModification(tabId: String) {
         synchronized(stateLock) { sessions[tabId] }?.acknowledgeExternalModification()

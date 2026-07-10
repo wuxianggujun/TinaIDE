@@ -69,8 +69,18 @@ class TreeSitterHighlighterTest {
     fun classifyCaptureName_shouldDifferentiatePropertiesFromVariables() {
         assertThat(TreeSitterHighlighter.classifyCaptureName("property"))
             .isEqualTo(HighlightType.PROPERTY)
+        assertThat(TreeSitterHighlighter.classifyCaptureName("attribute"))
+            .isEqualTo(HighlightType.PROPERTY)
         assertThat(TreeSitterHighlighter.classifyCaptureName("variable.parameter"))
             .isEqualTo(HighlightType.VARIABLE)
+    }
+
+    @Test
+    fun classifyCaptureName_shouldMapLabelsWithoutSubstringGuessing() {
+        assertThat(TreeSitterHighlighter.classifyCaptureName("label"))
+            .isEqualTo(HighlightType.CONSTANT)
+        assertThat(TreeSitterHighlighter.classifyCaptureName("prototype"))
+            .isEqualTo(HighlightType.DEFAULT)
     }
 
     @Test

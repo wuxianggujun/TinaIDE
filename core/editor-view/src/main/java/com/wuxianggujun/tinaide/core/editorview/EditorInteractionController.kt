@@ -333,13 +333,7 @@ internal class EditorInteractionController(
         outAttrs: EditorInfo
     ): EditorInputConnection {
         val (selectionStart, selectionEnd) = imeSelectionOffsets()
-        outAttrs.inputType = InputType.TYPE_CLASS_TEXT or
-            InputType.TYPE_TEXT_FLAG_MULTI_LINE or
-            InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-        outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI or
-            EditorInfo.IME_FLAG_NO_FULLSCREEN
-        outAttrs.initialSelStart = selectionStart
-        outAttrs.initialSelEnd = selectionEnd
+        configureCodeEditorInput(outAttrs, selectionStart, selectionEnd)
         return EditorInputConnection(
             targetView = hostView,
             state = state,
@@ -371,4 +365,18 @@ internal class EditorInteractionController(
     }
 
     private fun isImeDiagnosticsEnabled(): Boolean = runCatching { Prefs.devDiagnosticsEnabled }.getOrDefault(false)
+}
+
+internal fun configureCodeEditorInput(
+    outAttrs: EditorInfo,
+    selectionStart: Int,
+    selectionEnd: Int
+) {
+    outAttrs.inputType = InputType.TYPE_CLASS_TEXT or
+        InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+        InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+    outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI or
+        EditorInfo.IME_FLAG_NO_FULLSCREEN
+    outAttrs.initialSelStart = selectionStart
+    outAttrs.initialSelEnd = selectionEnd
 }

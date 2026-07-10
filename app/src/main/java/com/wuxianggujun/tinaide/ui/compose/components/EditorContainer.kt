@@ -45,6 +45,7 @@ import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.str
 import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.editor.io.FileCharsetDetector
+import com.wuxianggujun.tinaide.editor.session.SaveResult
 import com.wuxianggujun.tinaide.ui.compose.components.editor.ContentType
 import com.wuxianggujun.tinaide.ui.compose.components.editor.EditorTabBar
 import com.wuxianggujun.tinaide.ui.compose.components.editor.EditorTabState
@@ -147,28 +148,41 @@ fun EditorContainer(
             file = conflictFile!!,
             onReload = {
                 val tabId = conflictTabId!!
-                val success = editorManager.reloadFromDisk(tabId)
-                showExternalModificationDialog = false
-                conflictTabId = null
-                conflictFile = null
                 scope.launch {
+                    val success = editorManager.reloadFromDisk(tabId)
                     if (success) {
+                        showExternalModificationDialog = false
+                        conflictTabId = null
+                        conflictFile = null
                         snackbarHostState.showSnackbar(
-                            com.wuxianggujun.tinaide.core.i18n.Strings.editor_reload_success.strOr(context)
+                            Strings.editor_reload_success.strOr(context)
                         )
                     } else {
                         snackbarHostState.showSnackbar(
-                            com.wuxianggujun.tinaide.core.i18n.Strings.editor_reload_failed.strOr(context)
+                            Strings.editor_reload_failed.strOr(context)
                         )
                     }
                 }
             },
             onKeepMine = {
                 val tabId = conflictTabId!!
-                editorManager.acknowledgeExternalModification(tabId)
-                showExternalModificationDialog = false
-                conflictTabId = null
-                conflictFile = null
+                scope.launch {
+                    when (val result = editorManager.forceOverwrite(tabId)) {
+                        is SaveResult.Success,
+                        SaveResult.NoOp -> {
+                            showExternalModificationDialog = false
+                            conflictTabId = null
+                            conflictFile = null
+                            snackbarHostState.showSnackbar(Strings.toast_saved.strOr(context))
+                        }
+
+                        is SaveResult.Failure -> {
+                            snackbarHostState.showSnackbar(
+                                Strings.toast_save_failed.strOr(context, result.message)
+                            )
+                        }
+                    }
+                }
             },
             onDismiss = {
                 showExternalModificationDialog = false
@@ -303,6 +317,8 @@ fun EditorContainer(
         initialPage = activeTabIndex.coerceAtLeast(0),
         pageCount = { tabs.size }
     )
+    val latestTabs by rememberUpdatedState(tabs)
+    val latestActiveTabIndex by rememberUpdatedState(activeTabIndex)
 
     // 同步 pager 和 state
     // 使用 snapshotFlow 监听 settledPage（动画完成后的页面），避免动画过程中的中间状态触发循环
@@ -325,8 +341,8 @@ fun EditorContainer(
         snapshotFlow { pagerState.settledPage }
             .distinctUntilChanged()
             .collect { settledPage ->
-                if (settledPage !in tabs.indices) return@collect
-                if (settledPage != activeTabIndex) {
+                if (settledPage !in latestTabs.indices) return@collect
+                if (settledPage != latestActiveTabIndex) {
                     state.selectTab(settledPage)
                 }
             }

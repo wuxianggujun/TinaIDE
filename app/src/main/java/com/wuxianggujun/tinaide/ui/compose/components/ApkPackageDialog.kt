@@ -7,6 +7,7 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
 import android.net.Uri
+import android.os.Build
 import android.provider.OpenableColumns
 import android.provider.Settings
 import android.widget.Toast
@@ -101,6 +102,7 @@ private data class RememberedCustomSigning(
  * @param preloadLibraries Additional libraries to include
  * @param missingLibraries Runtime libraries that could not be auto-resolved
  * @param availablePackages Package index used to infer providers for missing libraries
+ * @param installedLibraryPackageIndex Installed package providers indexed by library name
  * @param onOpenPackageManager Called when user wants to search packages for missing libraries
  * @param onDismiss Called when dialog is dismissed
  */
@@ -117,6 +119,7 @@ fun ApkPackageDialog(
     preloadLibraries: List<File> = emptyList(),
     missingLibraries: List<String> = emptyList(),
     availablePackages: List<GUIPackage> = emptyList(),
+    installedLibraryPackageIndex: Map<String, String> = emptyMap(),
     onOpenPackageManager: ((String) -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
@@ -234,12 +237,13 @@ fun ApkPackageDialog(
     val suggestedMissingLibraryPackageIds = remember(
         remainingMissingLibraries,
         availablePackages,
+        installedLibraryPackageIndex,
         context.filesDir
     ) {
         NativeLibraryDependencyHints.inferPackageIds(
             libraryNames = remainingMissingLibraries,
             availablePackages = availablePackages,
-            installedLibraryPackageIndex = NativeLibraryDependencyHints.buildInstalledLibraryPackageIndex(context)
+            installedLibraryPackageIndex = installedLibraryPackageIndex,
         )
     }
     val missingLibrariesMessage = if (remainingMissingLibraries.isNotEmpty()) {
@@ -1136,6 +1140,9 @@ fun ApkPackageDialog(
                                 }
                                 val config = ApkBuildConfig(
                                     soFiles = effectiveSoFiles,
+                                    targetAbis = listOf(
+                                        Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"
+                                    ),
                                     executableFile = if (resolvedTemplateOption.templateType == ApkTemplateType.TERMINAL) executableFile else null,
                                     packageName = packageName.trim(),
                                     appName = appName.trim(),

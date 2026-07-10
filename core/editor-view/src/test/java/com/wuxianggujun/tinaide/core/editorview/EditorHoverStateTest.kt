@@ -2,6 +2,7 @@ package com.wuxianggujun.tinaide.core.editorview
 
 import com.google.common.truth.Truth.assertThat
 import com.wuxianggujun.tinaide.core.textengine.RopeTextBuffer
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
@@ -31,6 +32,22 @@ class EditorHoverStateTest {
 
         state.dismissHover()
 
+        assertThat(state.hoverUiState).isEqualTo(HoverUiState.Hidden)
+    }
+
+    @Test
+    fun requestHover_shouldPropagateCancellationAndClearLoadingState() = runTest {
+        val state = EditorState(RopeTextBuffer("demo"))
+        state.onRequestHover = { throw CancellationException("cancelled") }
+        var cancellationPropagated = false
+
+        try {
+            state.requestHover()
+        } catch (_: CancellationException) {
+            cancellationPropagated = true
+        }
+
+        assertThat(cancellationPropagated).isTrue()
         assertThat(state.hoverUiState).isEqualTo(HoverUiState.Hidden)
     }
 }

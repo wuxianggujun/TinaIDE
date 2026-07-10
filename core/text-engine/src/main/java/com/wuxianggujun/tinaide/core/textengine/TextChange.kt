@@ -30,6 +30,17 @@ data class TextChange(
         get() = newLineBreakCount - oldLineBreakCount
 }
 
+/**
+ * 一次撤销或重做的完整结果。
+ *
+ * [changes] 按实际应用顺序排列；复合编辑会包含多个增量事件。
+ * [cursorOffset] 是该用户操作完成撤销/重做后应恢复的光标位置。
+ */
+data class UndoRedoResult(
+    val changes: List<TextChange>,
+    val cursorOffset: Int
+)
+
 fun interface TextChangeListener {
     fun onTextChanged(change: TextChange)
 }

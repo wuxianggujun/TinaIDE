@@ -86,11 +86,10 @@ internal class EditorInputConnection(
     private var afterCacheStart: Int = -1
     private var afterCacheEnd: Int = -1
     private var afterCacheText: String? = null
-    private var lastExtractedTextWindow: ImeExtractedTextWindow? = null
     private var pendingDeadKeyAccent: Int = 0
 
     override fun getTextBeforeCursor(n: Int, flags: Int): CharSequence {
-        val cursorOffset = cursorOffset()
+        val cursorOffset = selectionOffsets().first
         val length = n.coerceIn(0, surroundingContextChars())
         val start = (cursorOffset - length).coerceAtLeast(0)
         val version = state.textBuffer.version
@@ -111,7 +110,7 @@ internal class EditorInputConnection(
     }
 
     override fun getTextAfterCursor(n: Int, flags: Int): CharSequence {
-        val cursorOffset = cursorOffset()
+        val cursorOffset = selectionOffsets().second
         val length = n.coerceIn(0, surroundingContextChars())
         val end = (cursorOffset + length).coerceAtMost(state.textBuffer.length)
         val version = state.textBuffer.version
@@ -138,7 +137,7 @@ internal class EditorInputConnection(
 
     override fun getSelectedText(flags: Int): CharSequence? {
         val (start, end) = selectionOffsets()
-        if (start >= end) return ""
+        if (start >= end) return null
         val version = state.textBuffer.version
         val cached = selectedCacheText
         if (cached != null &&
@@ -181,13 +180,6 @@ internal class EditorInputConnection(
             ""
         }
         val windowLength = (windowEnd - windowStart).coerceAtLeast(0)
-        lastExtractedTextWindow = ImeExtractedTextWindow(
-            startOffset = windowStart,
-            endOffset = windowEnd,
-            documentLength = documentLength,
-            textVersion = state.textBuffer.version
-        )
-
         return ExtractedText().apply {
             text = extractedText
             // partialStart/End 只用于增量更新；getExtractedText 返回的是完整的当前窗口。
@@ -275,19 +267,6 @@ internal class EditorInputConnection(
     override fun setSelection(start: Int, end: Int): Boolean {
         val documentLength = state.textBuffer.length
         val before = imeSelectionOffsets()
-        val extractedWindow = currentExtractedTextWindow(documentLength)
-        if (isFullExtractedTextWindowSelection(start, end, extractedWindow)) {
-            state.selectAll()
-            composingRange = null
-            onNonInsertEdit()
-            val applied = imeSelectionOffsets()
-            logIme(
-                "setSelection extractedWindowSelectAll request=($start,$end) " +
-                    "window=(${extractedWindow!!.startOffset},${extractedWindow.endOffset}) " +
-                    "applied=(${applied.first},${applied.second}) docLen=$documentLength"
-            )
-            return true
-        }
         val (mappedStart, mappedEnd) = mapImeSelectionToDocument(
             start = start,
             end = end,
@@ -710,8 +689,6 @@ internal class EditorInputConnection(
             endOffset = endOffset,
             replacement = resolved.replacement
         )
-        if (!changed) return
-
         composingRange = nextComposingRange(
             editStart = startOffset,
             replacementLength = resolved.replacement.length,
@@ -720,7 +697,7 @@ internal class EditorInputConnection(
 
         if (resolved.cursorOffsetAfterInsert != null) {
             state.moveCursorTo(resolved.cursorOffsetAfterInsert)
-        } else if (resolved.replacement.isNotEmpty() && newCursorPosition != 1) {
+        } else {
             val targetOffset = when {
                 newCursorPosition > 0 -> startOffset + resolved.replacement.length + newCursorPosition - 1
                 else -> startOffset + newCursorPosition
@@ -728,6 +705,7 @@ internal class EditorInputConnection(
             state.moveCursorTo(targetOffset)
         }
 
+        if (!changed) return
         if (resolved.replacement.isNotEmpty()) {
             insertedCallback(resolved.replacement)
         } else {
@@ -804,11 +782,6 @@ internal class EditorInputConnection(
     private fun cursorOffset(): Int = state.cursorOffset.coerceIn(0, state.textBuffer.length)
 
     private fun surroundingContextChars(): Int = state.config.imeWindowChars.coerceIn(64, 4096)
-
-    private fun currentExtractedTextWindow(documentLength: Int): ImeExtractedTextWindow? {
-        val window = lastExtractedTextWindow ?: return null
-        return window.takeIf { it.isCurrent(documentLength, state.textBuffer.version) }
-    }
 
     private fun copySelectedTextToClipboard(): Boolean {
         val (start, end) = selectionOffsets()

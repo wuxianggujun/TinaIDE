@@ -77,14 +77,14 @@ friend-engine-sdl3.zip
 - `CompileUiEventObserver`
 - `SdlLauncher`
 
-运行前 TinaIDE 会检查构建产物：
+运行前 TinaIDE 会准备构建产物：
 
-1. 目标必须是可读的 `.so` 共享库。
-2. 共享库必须依赖 SDL2 或 SDL3。
-3. SDL 运行库必须能在已安装包目录中解析到。
-4. 项目同目录私有 `.so` 依赖会被 staging 到 app 私有目录后启动。
+1. 运行目标必须是 `.so` 共享库；静态库 `.a` 不能被 Android linker 直接加载。
+2. TinaIDE 会尽力从动态依赖识别 SDL2/SDL3；若 SDL 被静态链接或扫描不到版本，则优先尝试已安装的 SDL3，再尝试 SDL2。
+3. TinaIDE 按 ELF `DT_NEEDED` 递归解析依赖，并按“依赖先于使用方”的顺序预加载；只 staging 实际选中的项目 `.so`，不会把构建目录里的无关或过期库全部带入运行环境。
+4. 不再用 `File.isFile` 或缺失依赖扫描结果提前拒绝启动；复制或 linker 实际加载失败时，由运行界面直接显示本地化错误对话框。
 
-如果 `.so` 未检测到 SDL 依赖，TinaIDE 会拒绝用 SDL 图形运行启动。普通原生可执行文件应切换到终端模式运行。
+普通原生可执行文件仍应切换到终端模式运行；SDL 图形运行只接受可由 linker 加载的 `.so` 主库。
 
 ## CMake 模板要求
 
@@ -130,6 +130,7 @@ SDL3 项目仍可走现有 APK 导出链路。插件模板可以内置 `.tinaide
 
 - 游戏引擎插件优先发布 SDL3/CMake 模板。
 - 引擎 runtime 以项目源码、预编译 `.so` 或模板内 CMake 配置形式交付。
+- APK 导出只采用当前设备主 ABI 的已安装包运行库，并校验每个 ELF 的真实 ABI；安装状态之外的残留包目录不会参与依赖解析。
 - 如果需要独立 Android Activity/View 或 AAR 依赖管理，应先扩展插件系统和 Android Gradle App 构建系统，而不是恢复 TinaIDE 自研 GUI 协议。
 
 ## 不再支持

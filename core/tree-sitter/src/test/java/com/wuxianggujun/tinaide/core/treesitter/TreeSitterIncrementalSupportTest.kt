@@ -39,9 +39,7 @@ class TreeSitterIncrementalSupportTest {
     }
 
     @Test
-    fun applyTextChange_shouldKeepStaleFallbackWhenJoiningLinesByDeletingNewline() {
-        // 多行编辑（删除换行）：dirty 行 0/1 会被标 dirty。
-        // 新行为：保留旧 segments 做"过期色"兜底；被移位覆盖的新行号让移位结果赢。
+    fun applyTextChange_shouldDropDirtyColorsWhenJoiningLinesByDeletingNewline() {
         val change = TextChange(
             startOffset = 1,
             endOffset = 2,
@@ -62,17 +60,13 @@ class TreeSitterIncrementalSupportTest {
             change = HighlightLineCacheChange.from(change)
         )
 
-        // 新行 1：旧 line 2 移位占位（TYPE）。
-        // 新行 0：dirty fallback 用旧 line 0 的 KEYWORD 顶着。
-        assertThat(updated.keys).containsExactly(0, 1)
-        assertThat(updated[0]).isEqualTo(listOf(HighlightLineSegment(0, 1, HighlightType.KEYWORD)))
+        // 新行 1 由旧 line 2 移位；编辑区的新行 0 等待新语法树回填。
+        assertThat(updated.keys).containsExactly(1)
         assertThat(updated[1]).isEqualTo(listOf(HighlightLineSegment(0, 1, HighlightType.TYPE)))
     }
 
     @Test
-    fun applyTextChange_shouldKeepStaleFallbackOnInsertedLine() {
-        // 多行编辑（插入换行）：dirty = 旧 line 0；新 line 1 由旧 line 1 移位占位。
-        // 新行为：dirty 行保留旧 KEYWORD 做过期色兜底，避免 parse 前闪默认色。
+    fun applyTextChange_shouldDropDirtyColorsOnInsertedLine() {
         val change = TextChange(
             startOffset = 1,
             endOffset = 1,
@@ -92,8 +86,7 @@ class TreeSitterIncrementalSupportTest {
             change = HighlightLineCacheChange.from(change)
         )
 
-        assertThat(updated.keys).containsExactly(0, 2)
-        assertThat(updated[0]).isEqualTo(listOf(HighlightLineSegment(0, 1, HighlightType.KEYWORD)))
+        assertThat(updated.keys).containsExactly(2)
         assertThat(updated[2]).isEqualTo(listOf(HighlightLineSegment(0, 1, HighlightType.STRING)))
     }
 

@@ -22,6 +22,25 @@ interface TextBuffer {
     fun delete(start: Int, end: Int)
     fun replace(start: Int, end: Int, text: String)
 
+    /**
+     * 将多个底层编辑记录为一次可撤销的用户操作。
+     *
+     * [cursorAfter] 在 [block] 成功执行后求值，允许调用方根据最终文档状态记录光标。
+     */
+    fun <T> editTransaction(
+        cursorBefore: Int? = null,
+        cursorAfter: (() -> Int?)? = null,
+        block: TextBuffer.() -> T
+    ): T {
+        history.beginCompoundEdit(cursorBefore)
+        var completed = false
+        return try {
+            block(this).also { completed = true }
+        } finally {
+            history.finishCompoundEdit(completed, cursorAfter)
+        }
+    }
+
     fun substring(start: Int, end: Int): String
     fun charAt(offset: Int): Char?
     fun getLine(line: Int): String
@@ -36,9 +55,32 @@ interface TextBuffer {
 
     fun canUndo(): Boolean
     fun canRedo(): Boolean
-    fun undo(): TextChange?
-    fun redo(): TextChange?
+    fun undo(): UndoRedoResult?
+    fun redo(): UndoRedoResult?
 
     suspend fun loadFromFile(file: File, charset: Charset = Charsets.UTF_8): Result<Unit>
     suspend fun saveToFile(file: File, charset: Charset = Charsets.UTF_8): Result<Unit>
+}
+
+internal fun EditHistory.finishCompoundEdit(
+    completed: Boolean,
+    cursorAfter: (() -> Int?)?
+) {
+    var resolvedCursorAfter: Int? = null
+    var cursorFailure: Throwable? = null
+    if (completed && cursorAfter != null) {
+        try {
+            resolvedCursorAfter = cursorAfter()
+        } catch (throwable: Throwable) {
+            cursorFailure = throwable
+        }
+    }
+
+    try {
+        endCompoundEdit(resolvedCursorAfter)
+    } catch (endFailure: Throwable) {
+        cursorFailure?.let(endFailure::addSuppressed)
+        throw endFailure
+    }
+    cursorFailure?.let { throw it }
 }

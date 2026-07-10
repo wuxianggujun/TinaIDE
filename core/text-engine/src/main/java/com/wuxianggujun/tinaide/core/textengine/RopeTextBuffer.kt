@@ -8,6 +8,7 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
 import kotlin.concurrent.write
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import timber.log.Timber
@@ -72,17 +73,31 @@ class RopeTextBuffer(
         if (change != null) dispatchChange(change)
     }
 
+    override fun <T> editTransaction(
+        cursorBefore: Int?,
+        cursorAfter: (() -> Int?)?,
+        block: TextBuffer.() -> T
+    ): T = lock.write {
+        history.beginCompoundEdit(cursorBefore)
+        var completed = false
+        try {
+            block(this@RopeTextBuffer).also { completed = true }
+        } finally {
+            history.finishCompoundEdit(completed, cursorAfter)
+        }
+    }
+
     fun replaceAll(text: String) {
         val change = lock.write {
             val previous = rope.substring(0, rope.length)
-            val previousEndPos = offsetToPositionInternal(previous.length)
-            rope.setText(text)
-            lineIndex.rebuild(text)
             history.clear()
-            versionCounter.incrementAndGet()
             if (previous == text) {
                 null
             } else {
+                val previousEndPos = offsetToPositionInternal(previous.length)
+                rope.setText(text)
+                lineIndex.rebuild(text)
+                versionCounter.incrementAndGet()
                 TextChange(
                     startOffset = 0,
                     endOffset = previous.length,
@@ -173,97 +188,118 @@ class RopeTextBuffer(
 
     override fun canRedo(): Boolean = lock.read { history.canRedo() }
 
-    override fun undo(): TextChange? {
-        var change: TextChange? = null
-        lock.write {
-            val operation = history.undo() ?: return@write
-            change = when (operation) {
-                is EditOperation.Insert -> {
-                    applyDelete(
-                        start = operation.offset,
-                        end = operation.offset + operation.text.length,
-                        recordHistory = false,
-                        fromUndoRedo = true
-                    )
-                }
-                is EditOperation.Delete -> {
-                    applyInsert(
-                        offset = operation.offset,
-                        text = operation.text,
-                        recordHistory = false,
-                        fromUndoRedo = true
-                    )
-                }
-                is EditOperation.Replace -> {
-                    // 恢复原文：一步到位地把 newText 替回 oldText。
-                    applyReplace(
-                        start = operation.offset,
-                        end = operation.offset + operation.newText.length,
-                        text = operation.oldText,
-                        recordHistory = false,
-                        fromUndoRedo = true
-                    )
-                }
-            }
-        }
-        change?.let(::dispatchChange)
-        return change
+    override fun undo(): UndoRedoResult? = lock.write {
+        val operation = history.undo() ?: return@write null
+        val changes = applyUndoOperation(operation)
+        UndoRedoResult(
+            changes = changes,
+            cursorOffset = operation.cursorBeforeOrDefault(changes)
+        )
     }
 
-    override fun redo(): TextChange? {
-        var change: TextChange? = null
-        lock.write {
-            val operation = history.redo() ?: return@write
-            change = when (operation) {
-                is EditOperation.Insert -> {
-                    applyInsert(
-                        offset = operation.offset,
-                        text = operation.text,
-                        recordHistory = false,
-                        fromUndoRedo = true
-                    )
-                }
-                is EditOperation.Delete -> {
-                    applyDelete(
-                        start = operation.offset,
-                        end = operation.offset + operation.text.length,
-                        recordHistory = false,
-                        fromUndoRedo = true
-                    )
-                }
-                is EditOperation.Replace -> {
-                    // 重放替换：一步到位。
-                    applyReplace(
-                        start = operation.offset,
-                        end = operation.offset + operation.oldText.length,
-                        text = operation.newText,
-                        recordHistory = false,
-                        fromUndoRedo = true
-                    )
-                }
-            }
-        }
-        change?.let(::dispatchChange)
-        return change
+    override fun redo(): UndoRedoResult? = lock.write {
+        val operation = history.redo() ?: return@write null
+        val changes = applyRedoOperation(operation)
+        UndoRedoResult(
+            changes = changes,
+            cursorOffset = operation.cursorAfterOrDefault(changes)
+        )
     }
 
-    override suspend fun loadFromFile(file: File, charset: Charset): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching {
+    private fun applyUndoOperation(operation: EditOperation): List<TextChange> = when (operation) {
+        is EditOperation.Insert -> listOfNotNull(
+            applyDelete(
+                start = operation.offset,
+                end = operation.offset + operation.text.length,
+                recordHistory = false,
+                fromUndoRedo = true
+            ).also(::dispatchChangeIfPresent)
+        )
+        is EditOperation.Delete -> listOfNotNull(
+            applyInsert(
+                offset = operation.offset,
+                text = operation.text,
+                recordHistory = false,
+                fromUndoRedo = true
+            ).also(::dispatchChangeIfPresent)
+        )
+        is EditOperation.Replace -> listOfNotNull(
+            applyReplace(
+                start = operation.offset,
+                end = operation.offset + operation.newText.length,
+                text = operation.oldText,
+                recordHistory = false,
+                fromUndoRedo = true
+            ).also(::dispatchChangeIfPresent)
+        )
+        is EditOperation.Compound -> operation.operations.asReversed().flatMap(::applyUndoOperation)
+    }
+
+    private fun applyRedoOperation(operation: EditOperation): List<TextChange> = when (operation) {
+        is EditOperation.Insert -> listOfNotNull(
+            applyInsert(
+                offset = operation.offset,
+                text = operation.text,
+                recordHistory = false,
+                fromUndoRedo = true
+            ).also(::dispatchChangeIfPresent)
+        )
+        is EditOperation.Delete -> listOfNotNull(
+            applyDelete(
+                start = operation.offset,
+                end = operation.offset + operation.text.length,
+                recordHistory = false,
+                fromUndoRedo = true
+            ).also(::dispatchChangeIfPresent)
+        )
+        is EditOperation.Replace -> listOfNotNull(
+            applyReplace(
+                start = operation.offset,
+                end = operation.offset + operation.oldText.length,
+                text = operation.newText,
+                recordHistory = false,
+                fromUndoRedo = true
+            ).also(::dispatchChangeIfPresent)
+        )
+        is EditOperation.Compound -> operation.operations.flatMap(::applyRedoOperation)
+    }
+
+    private fun EditOperation.cursorBeforeOrDefault(changes: List<TextChange>): Int {
+        val recordedCursor = (this as? EditOperation.Compound)?.cursorBefore
+        return recordedCursor ?: changes.defaultCursorOffset()
+    }
+
+    private fun EditOperation.cursorAfterOrDefault(changes: List<TextChange>): Int {
+        val recordedCursor = (this as? EditOperation.Compound)?.cursorAfter
+        return recordedCursor ?: changes.defaultCursorOffset()
+    }
+
+    private fun List<TextChange>.defaultCursorOffset(): Int {
+        val lastChange = lastOrNull() ?: return 0
+        return lastChange.startOffset + lastChange.newText.length
+    }
+
+    private fun dispatchChangeIfPresent(change: TextChange?) {
+        if (change != null) dispatchChange(change)
+    }
+
+    override suspend fun loadFromFile(file: File, charset: Charset): Result<Unit> {
+        return try {
             val startNs = System.nanoTime()
-            val text = readFileTextOptimized(file, charset)
-
-            lock.write {
-                rope.setText(text)
-                lineIndex.rebuild(text)
-                history.clear()
-                versionCounter.incrementAndGet()
+            val text = withContext(Dispatchers.IO) {
+                readFileTextOptimized(file, charset)
             }
+            replaceAll(text)
             logSlowLoadIfNeeded(
                 file = file,
                 loadedChars = text.length,
                 durationMs = (System.nanoTime() - startNs) / 1_000_000L
             )
-            Unit
+            Result.success(Unit)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (error: Throwable) {
+            Result.failure(error)
         }
     }
 

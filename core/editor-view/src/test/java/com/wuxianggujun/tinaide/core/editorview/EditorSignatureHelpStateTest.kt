@@ -3,6 +3,7 @@ package com.wuxianggujun.tinaide.core.editorview
 import com.google.common.truth.Truth.assertThat
 import com.wuxianggujun.tinaide.core.editorlsp.SignatureHelpResult
 import com.wuxianggujun.tinaide.core.textengine.RopeTextBuffer
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
@@ -212,6 +213,22 @@ class EditorSignatureHelpStateTest {
         assertThat(state.selectSignatureHelp(2)).isTrue()
         assertThat(resolveDisplayedSignaturePreview(state))
             .isEqualTo("Map<String, List<Int>> metadata")
+    }
+
+    @Test
+    fun requestSignatureHelp_shouldPropagateCancellationAndClearLoadingState() = runTest {
+        val state = EditorState(RopeTextBuffer("foo("))
+        state.onRequestSignatureHelp = { throw CancellationException("cancelled") }
+        var cancellationPropagated = false
+
+        try {
+            state.requestSignatureHelp()
+        } catch (_: CancellationException) {
+            cancellationPropagated = true
+        }
+
+        assertThat(cancellationPropagated).isTrue()
+        assertThat(state.signatureHelpUiState).isEqualTo(SignatureHelpUiState.Hidden)
     }
 
     private fun resolveDisplayedSignaturePreview(state: EditorState): String? {

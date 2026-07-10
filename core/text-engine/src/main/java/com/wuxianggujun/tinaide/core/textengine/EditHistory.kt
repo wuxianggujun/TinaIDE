@@ -13,12 +13,30 @@ sealed interface EditOperation {
         val oldText: String,
         val newText: String
     ) : EditOperation
+
+    /**
+     * 一次用户意图产生的多个底层编辑。
+     *
+     * 例如 LSP completion 的主编辑与 additionalTextEdits、snippet 镜像占位符同步修改，
+     * 都必须作为一个整体撤销/重做。光标位置由事务边界记录，避免上层根据最后一个子编辑猜测。
+     */
+    data class Compound(
+        val operations: List<EditOperation>,
+        val cursorBefore: Int?,
+        val cursorAfter: Int?
+    ) : EditOperation {
+        init {
+            require(operations.isNotEmpty()) { "Compound edit must contain at least one operation" }
+        }
+    }
 }
 
 interface EditHistory {
     fun canUndo(): Boolean
     fun canRedo(): Boolean
     fun record(operation: EditOperation)
+    fun beginCompoundEdit(cursorBefore: Int? = null)
+    fun endCompoundEdit(cursorAfter: Int? = null)
     fun undo(): EditOperation?
     fun redo(): EditOperation?
     fun clear()
@@ -38,13 +56,24 @@ class DefaultEditHistory(
     private var lastRecordTimeMs: Long = Long.MIN_VALUE
     private var mergeChainActive: Boolean = false
 
-    override fun canUndo(): Boolean = undoStack.isNotEmpty()
+    private var compoundDepth: Int = 0
+    private val compoundOperations = mutableListOf<EditOperation>()
+    private var compoundCursorBefore: Int? = null
 
-    override fun canRedo(): Boolean = redoStack.isNotEmpty()
+    override fun canUndo(): Boolean = undoStack.isNotEmpty() || compoundOperations.isNotEmpty()
+
+    override fun canRedo(): Boolean = compoundDepth == 0 && redoStack.isNotEmpty()
 
     override fun record(operation: EditOperation) {
         val now = nowMs()
         redoStack.clear()
+
+        if (compoundDepth > 0) {
+            compoundOperations.add(operation)
+            mergeChainActive = false
+            lastRecordTimeMs = now
+            return
+        }
 
         val merged = if (mergeChainActive && (now - lastRecordTimeMs) <= mergeWindowMs) {
             tryMergeWithTop(operation)
@@ -53,15 +82,55 @@ class DefaultEditHistory(
         }
 
         if (!merged) {
-            undoStack.addLast(operation)
-            while (undoStack.size > maxHistorySize) {
-                undoStack.removeFirst()
-            }
+            pushUndo(operation)
         }
 
-        // Replace 是原子的，本身不参与输入流合并；遇到它就断链。
-        mergeChainActive = operation !is EditOperation.Replace
+        // 只有普通 Insert/Delete 可以继续参与输入流合并。
+        mergeChainActive = operation is EditOperation.Insert || operation is EditOperation.Delete
         lastRecordTimeMs = now
+    }
+
+    override fun beginCompoundEdit(cursorBefore: Int?) {
+        if (compoundDepth == 0) {
+            compoundOperations.clear()
+            compoundCursorBefore = cursorBefore
+            mergeChainActive = false
+            lastRecordTimeMs = Long.MIN_VALUE
+        }
+        compoundDepth++
+    }
+
+    override fun endCompoundEdit(cursorAfter: Int?) {
+        check(compoundDepth > 0) { "No compound edit is active" }
+        compoundDepth--
+        if (compoundDepth > 0) return
+
+        val operations = compoundOperations.toList()
+        val cursorBefore = compoundCursorBefore
+        compoundOperations.clear()
+        compoundCursorBefore = null
+        mergeChainActive = false
+        lastRecordTimeMs = Long.MIN_VALUE
+
+        if (operations.isEmpty()) return
+
+        val operation = if (operations.size == 1 && cursorBefore == null && cursorAfter == null) {
+            operations.single()
+        } else {
+            EditOperation.Compound(
+                operations = operations,
+                cursorBefore = cursorBefore,
+                cursorAfter = cursorAfter
+            )
+        }
+        pushUndo(operation)
+    }
+
+    private fun pushUndo(operation: EditOperation) {
+        undoStack.addLast(operation)
+        while (undoStack.size > maxHistorySize) {
+            undoStack.removeFirst()
+        }
     }
 
     private fun tryMergeWithTop(operation: EditOperation): Boolean {
@@ -111,6 +180,7 @@ class DefaultEditHistory(
             }
 
             is EditOperation.Replace -> return false
+            is EditOperation.Compound -> return false
         }
     }
 
@@ -125,6 +195,7 @@ class DefaultEditHistory(
     }
 
     override fun undo(): EditOperation? {
+        check(compoundDepth == 0) { "Cannot undo during a compound edit" }
         val operation = undoStack.removeLastOrNull() ?: return null
         redoStack.addLast(operation)
         mergeChainActive = false
@@ -132,6 +203,7 @@ class DefaultEditHistory(
     }
 
     override fun redo(): EditOperation? {
+        check(compoundDepth == 0) { "Cannot redo during a compound edit" }
         val operation = redoStack.removeLastOrNull() ?: return null
         undoStack.addLast(operation)
         mergeChainActive = false
@@ -143,5 +215,7 @@ class DefaultEditHistory(
         redoStack.clear()
         mergeChainActive = false
         lastRecordTimeMs = Long.MIN_VALUE
+        compoundOperations.clear()
+        compoundCursorBefore = null
     }
 }

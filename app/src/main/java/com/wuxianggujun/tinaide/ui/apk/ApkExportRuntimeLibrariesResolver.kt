@@ -4,6 +4,8 @@ import android.content.Context
 import com.wuxianggujun.tinaide.core.ndk.AndroidSysrootManager
 import com.wuxianggujun.tinaide.core.packages.InstalledPackagePathResolver
 import com.wuxianggujun.tinaide.ui.runtime.AndroidSystemLibraries
+import com.wuxianggujun.tinaide.ui.runtime.NativeLibraryDependencyHints
+import com.wuxianggujun.tinaide.ui.runtime.NativeLibraryDependencyReader
 import com.wuxianggujun.tinaide.ui.sdl.SdlRuntimeResolver
 import java.io.File
 import java.io.IOException
@@ -20,11 +22,6 @@ import timber.log.Timber
  */
 object ApkExportRuntimeLibrariesResolver {
     private const val TAG = "ApkExportLibResolver"
-    private const val ASCII_TOKEN_LIMIT = 4096
-    private const val ASCII_TAIL_LIMIT = 256
-
-    private val sharedLibraryNamePattern =
-        Regex("""lib[0-9A-Za-z_+\-.]+\.so(?:\.[0-9A-Za-z_+\-.]+)?""")
 
     // OS 提供的 NDK 系统库统一走 AndroidSystemLibraries.ndkProvided。
     // 注意：导出 APK 时 libc++_shared.so 需要打进包里，故不在系统库集合中，
@@ -56,14 +53,9 @@ object ApkExportRuntimeLibrariesResolver {
 
         val appContext = context.applicationContext
         val packagePaths = InstalledPackagePathResolver.resolve(appContext, projectRoot)
-        val runtimeCandidates = linkedSetOf<File>().apply {
-            addAll(buildLibraries)
-            addAll(scanRuntimeLibraries(packagePaths.runtimeLibDirs))
-            addAll(collectSysrootRuntimeLibraries(appContext))
-        }
-
         val rootLibraries = resolveRootLibraries(buildLibraries)
         val primaryLibrary = rootLibraries.first()
+        val selectedSdlRuntimeLibraries = mutableListOf<File>()
         when (
             val sdlResolveResult = SdlRuntimeResolver.resolve(
                 context = appContext,
@@ -74,12 +66,12 @@ object ApkExportRuntimeLibrariesResolver {
             is SdlRuntimeResolver.ResolveResult.Sdl -> {
                 File(sdlResolveResult.spec.sdlLibraryPath)
                     .takeIf { it.isFile }
-                    ?.let(runtimeCandidates::add)
+                    ?.let(selectedSdlRuntimeLibraries::add)
                 sdlResolveResult.spec.preloadLibraryPaths
                     .asSequence()
                     .map(::File)
                     .filter { it.isFile }
-                    .forEach(runtimeCandidates::add)
+                    .forEach(selectedSdlRuntimeLibraries::add)
             }
             is SdlRuntimeResolver.ResolveResult.Error -> {
                 Timber.tag(TAG).i(
@@ -88,6 +80,13 @@ object ApkExportRuntimeLibrariesResolver {
                 )
             }
             SdlRuntimeResolver.ResolveResult.NonSdl -> Unit
+        }
+
+        val runtimeCandidates = linkedSetOf<File>().apply {
+            addAll(buildLibraries)
+            addAll(selectedSdlRuntimeLibraries)
+            addAll(scanRuntimeLibraries(packagePaths.runtimeLibDirs))
+            addAll(collectSysrootRuntimeLibraries(appContext))
         }
 
         val dependencyResolution = resolvePackagedLibraries(
@@ -186,12 +185,10 @@ object ApkExportRuntimeLibrariesResolver {
                     return@forEach
                 }
 
-                val resolved = runtimeIndex[needed]
-                    ?: canonicalName?.let(runtimeIndex::get)
-                    ?: run {
-                        missingLibraries += needed
-                        return@forEach
-                    }
+                val resolved = runtimeIndex[needed] ?: run {
+                    missingLibraries += needed
+                    return@forEach
+                }
 
                 val resolvedFile = canonicalOrAbsolute(resolved)
                 if (resolvedFile.absolutePath == current.absolutePath) {
@@ -216,11 +213,17 @@ object ApkExportRuntimeLibrariesResolver {
             .asSequence()
             .map(::canonicalOrAbsolute)
             .filter { it.isFile && it.name.contains(".so") }
-            .sortedBy { it.absolutePath }
             .forEach { library ->
-                index.putIfAbsent(library.name, library)
-                canonicalSoName(library.name)?.let { canonical ->
-                    index.putIfAbsent(canonical, library)
+                val current = index[library.name]
+                if (
+                    current == null ||
+                    NativeLibraryDependencyHints.shouldPreferInstalledPackageCandidate(
+                        libraryName = library.name,
+                        current = current,
+                        candidate = library,
+                    )
+                ) {
+                    index[library.name] = library
                 }
             }
         return index
@@ -233,37 +236,8 @@ object ApkExportRuntimeLibrariesResolver {
     }
 
     @Throws(IOException::class)
-    internal fun extractNeededLibraryNames(library: File): Set<String> {
-        val results = linkedSetOf<String>()
-        val tokenBuilder = StringBuilder()
-        library.inputStream().buffered().use { input ->
-            val buffer = ByteArray(64 * 1024)
-            while (true) {
-                val read = input.read(buffer)
-                if (read <= 0) break
-
-                for (i in 0 until read) {
-                    val byteValue = buffer[i].toInt() and 0xFF
-                    if (byteValue in 32..126) {
-                        tokenBuilder.append(byteValue.toChar())
-                        if (tokenBuilder.length > ASCII_TOKEN_LIMIT) {
-                            collectLibraryNames(tokenBuilder, results)
-                            val tailStart =
-                                (tokenBuilder.length - ASCII_TAIL_LIMIT).coerceAtLeast(0)
-                            val tail = tokenBuilder.substring(tailStart)
-                            tokenBuilder.setLength(0)
-                            tokenBuilder.append(tail)
-                        }
-                    } else {
-                        collectLibraryNames(tokenBuilder, results)
-                        tokenBuilder.setLength(0)
-                    }
-                }
-            }
-        }
-        collectLibraryNames(tokenBuilder, results)
-        return results
-    }
+    internal fun extractNeededLibraryNames(library: File): Set<String> =
+        NativeLibraryDependencyReader.readNeededLibraryNames(library)
 
     internal fun scanBuildLibraries(buildDir: File?): List<File> {
         if (buildDir == null || !buildDir.isDirectory) return emptyList()
@@ -279,12 +253,12 @@ object ApkExportRuntimeLibrariesResolver {
         .filter { it.isDirectory }
         .flatMap { dir ->
             dir.listFiles { file -> file.isFile && file.name.contains(".so") }
+                ?.sortedBy { it.name.lowercase() }
                 ?.asSequence()
                 ?: emptySequence()
         }
         .map(::canonicalOrAbsolute)
         .distinctBy { it.absolutePath }
-        .sortedBy { it.absolutePath }
         .toList()
 
     internal fun collectSysrootRuntimeLibraries(context: Context): List<File> {
@@ -296,16 +270,6 @@ object ApkExportRuntimeLibrariesResolver {
         return listOfNotNull(
             File(sysrootLibDir, "libc++_shared.so").takeIf { it.isFile }
         )
-    }
-
-    private fun collectLibraryNames(tokenBuilder: StringBuilder, output: MutableSet<String>) {
-        if (tokenBuilder.isEmpty()) return
-        val token = tokenBuilder.toString()
-        if (!token.contains(".so")) return
-
-        sharedLibraryNamePattern.findAll(token).forEach { match ->
-            output += match.value
-        }
     }
 
     internal fun canonicalOrAbsolute(file: File): File = runCatching { file.canonicalFile }.getOrDefault(file.absoluteFile)

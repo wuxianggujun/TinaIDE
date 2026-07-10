@@ -73,11 +73,14 @@ import com.wuxianggujun.tinaide.ui.compose.components.EditorStatus
 import com.wuxianggujun.tinaide.ui.compose.state.editor.CMakeLanguageSupport
 import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState
 import com.wuxianggujun.tinaide.ui.compose.state.editor.MakeLanguageSupport
+import com.wuxianggujun.tinaide.ui.compose.state.editor.SemanticTokensRequestResult
 import com.wuxianggujun.tinaide.ui.compose.state.editor.TinaTextContentProvider
 import java.io.File
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
@@ -91,9 +94,13 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.koin.compose.koinInject
 import timber.log.Timber
+
+private const val LSP_EDITOR_STATE_BINDING_KEY = "lsp-editor-actions"
+private const val GUTTER_EDITOR_STATE_BINDING_KEY = "gutter-actions"
 
 @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
 @Composable
@@ -107,7 +114,7 @@ fun TinaCodeEditorPage(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val runtime = remember(tab.id, state) { state.getOrCreateCodeEditorRuntime(tab) }
+    val runtime = remember(tab.id, state, tab.file) { state.getOrCreateCodeEditorRuntime(tab) }
     val buffer = runtime.buffer
     val textSnapshot = remember(buffer) { VersionedBufferTextSnapshot(buffer) }
     val textContentProvider = remember(tab.id, buffer) { TinaTextContentProvider(buffer) }
@@ -132,8 +139,8 @@ fun TinaCodeEditorPage(
         )
     }
     val editorState = runtime.editorState
-    val syntaxHighlighter = remember(tab.id, runtime) { state.getOrCreateSyntaxHighlighter(tab) }
-    val foldingProvider = remember(tab.id, runtime) { state.getOrCreateFoldingProvider(tab) }
+    val syntaxHighlighter = remember(tab.id, runtime, tab.file) { state.getOrCreateSyntaxHighlighter(tab) }
+    val foldingProvider = remember(tab.id, runtime, tab.file) { state.getOrCreateFoldingProvider(tab) }
     val breakpointStore: BreakpointStore = koinInject()
     val bookmarkRepository: IBookmarkRepository = koinInject()
     val bookmarkProjectRootPath = state.getBookmarksProjectRootPathOrNull()
@@ -170,22 +177,7 @@ fun TinaCodeEditorPage(
     var performanceSnapshotReader by remember(tab.id) {
         mutableStateOf<(() -> EditorRenderPerformanceSnapshot)?>(null)
     }
-
-    DisposableEffect(tab.id, editorState, syntaxHighlighter) {
-        editorState.highlighter = syntaxHighlighter
-        syntaxHighlighter?.setOnStateUpdated {
-            editorState.notifyHighlightChanged()
-        }
-        // 首次 parse 统一由下方 LaunchedEffect(tab.id) 的 refreshTreeSitterAfterBufferLoad(openDocumentBlocking)
-        // 负责：buffer 加载完再以阻塞方式初始化，首帧整份上色。
-        // 这里不再提前跑一次异步 openDocument，避免与 blocking 路径赛跑（尤其是重组/主题切换时）。
-        onDispose {
-            syntaxHighlighter?.setOnStateUpdated(null)
-            if (editorState.highlighter === syntaxHighlighter) {
-                editorState.highlighter = null
-            }
-        }
-    }
+    val callbackRegistrationId = remember(tab.id, runtime) { Any() }
 
     LaunchedEffect(tab.id, editorState, buffer, foldingProvider) {
         combine(
@@ -218,12 +210,17 @@ fun TinaCodeEditorPage(
                 val provider = foldingProvider
 
                 if (request.preferLsp) {
-                    val lspRegions = runCatching {
+                    val lspRegions = try {
                         state.requestLspFoldingRanges(
                             tabId = tab.id,
                             documentVersion = documentVersion
                         )
-                    }.getOrNull()
+                    } catch (cancellation: CancellationException) {
+                        throw cancellation
+                    } catch (error: Exception) {
+                        Timber.tag("EditorFolding").w(error, "LSP folding request failed for %s", tab.file.name)
+                        null
+                    }
                     if (lspRegions != null) {
                         editorState.setFoldRegions(lspRegions, documentVersion = documentVersion)
                         return@collectLatest
@@ -242,7 +239,7 @@ fun TinaCodeEditorPage(
             }
     }
 
-    DisposableEffect(tab.id, state, editorState, buffer, codeSearchEngine) {
+    DisposableEffect(tab.id, state, editorState, buffer, codeSearchEngine, callbackRegistrationId) {
         val editorCallback = EditorContainerState.CodeEditorCallback(
             goToPosition = goToPosition@ { line, column ->
                 if (loading || loadError != null) {
@@ -338,6 +335,7 @@ fun TinaCodeEditorPage(
         )
         state.bindCodeEditorCallbacks(
             tabId = tab.id,
+            registrationId = callbackRegistrationId,
             search = { query, options ->
                 codeSearchEngine.search(query, options).filterIsInstance<CodeSearchResult>()
             },
@@ -350,170 +348,186 @@ fun TinaCodeEditorPage(
             editorCallback = editorCallback
         )
         onDispose {
-            state.unbindCodeEditorCallbacks(tab.id)
+            state.unbindCodeEditorCallbacks(tab.id, callbackRegistrationId)
         }
     }
 
-    val binding = remember(tab.id, state, buffer, textSnapshot) {
-        TextBufferSessionBinding(
-            tabId = tab.id,
-            state = state,
-            buffer = buffer,
-            editorState = editorState,
-            textSnapshot = textSnapshot
-        ) { _, _, change ->
-            state.notifyTinaTextChanged(tab.id, change)
+    val binding = remember(tab.id, state, runtime, textSnapshot, tab.file) {
+        runtime.getOrCreateDocumentBinding {
+            TextBufferSessionBinding(
+                tabId = tab.id,
+                state = state,
+                buffer = buffer,
+                editorState = editorState,
+                textSnapshot = textSnapshot
+            ) { _, _, documentVersion, change ->
+                state.notifyTinaTextChanged(tab.id, change, documentVersion)
+            }
         }
     }
 
-    DisposableEffect(binding) {
-        binding.attach()
-        onDispose { binding.detach() }
+    DisposableEffect(runtime, binding) {
+        runtime.acquireDocumentBinding(binding)
+        onDispose { runtime.releaseDocumentBinding(binding) }
     }
 
     DisposableEffect(tab.id, editorState, completionProvider, state, buffer, tab.file) {
-        val supportsBasicNavigation = state.supportsBasicLspNavigation(tab.file)
-        val supportsAdvancedNavigation = state.supportsAdvancedLspNavigation(tab.file)
-        val supportsRefactorActions = state.supportsLspRefactorActions(tab.file)
-        val supportsHeaderSourceSwitch = state.supportsHeaderSourceSwitch(tab.file)
+        val stateBinding = runtime.getOrCreateStateBinding(LSP_EDITOR_STATE_BINDING_KEY) {
+            val supportsBasicNavigation = state.supportsBasicLspNavigation(tab.file)
+            val supportsAdvancedNavigation = state.supportsAdvancedLspNavigation(tab.file)
+            val supportsRefactorActions = state.supportsLspRefactorActions(tab.file)
+            val supportsHeaderSourceSwitch = state.supportsHeaderSourceSwitch(tab.file)
 
-        editorState.onRequestCompletion = { position, triggerChar ->
-            when (
-                val result = completionProvider.requestCompletion(
-                    fileUri = tab.file.toURI().toString(),
-                    position = position,
-                    triggerChar = triggerChar
-                )
-            ) {
-                is CompletionFetchResult.Success -> EditorCompletionFetchResult.Success(
-                    result.items.map { item ->
-                        EditorCompletionItem(
-                            label = item.label,
-                            detail = item.detail,
-                            insertText = item.insertText ?: item.label,
-                            kind = item.kind.toEditorCompletionKind(),
-                            filterText = item.filterText,
-                            textEdit = item.textEdit?.toEditorCompletionTextEdit(),
-                            additionalTextEdits = item.additionalTextEdits.map { it.toEditorCompletionTextEdit() },
-                            snippetText = item.snippetText,
-                            isLsp = item.source == com.wuxianggujun.tinaide.core.editorlsp.CompletionSource.LSP
-                        )
+            RuntimeEditorStateBinding(
+                onAttach = {
+                    editorState.onRequestCompletion = { position, triggerChar ->
+                        when (
+                            val result = completionProvider.requestCompletion(
+                                fileUri = tab.file.toURI().toString(),
+                                position = position,
+                                triggerChar = triggerChar
+                            )
+                        ) {
+                            is CompletionFetchResult.Success -> EditorCompletionFetchResult.Success(
+                                result.items.map { item ->
+                                    EditorCompletionItem(
+                                        label = item.label,
+                                        detail = item.detail,
+                                        insertText = item.insertText ?: item.label,
+                                        kind = item.kind.toEditorCompletionKind(),
+                                        filterText = item.filterText,
+                                        textEdit = item.textEdit?.toEditorCompletionTextEdit(),
+                                        additionalTextEdits = item.additionalTextEdits.map {
+                                            it.toEditorCompletionTextEdit()
+                                        },
+                                        snippetText = item.snippetText,
+                                        isLsp = item.source ==
+                                            com.wuxianggujun.tinaide.core.editorlsp.CompletionSource.LSP
+                                    )
+                                }
+                            )
+
+                            is CompletionFetchResult.TransientFailure -> {
+                                EditorCompletionFetchResult.TransientFailure(result.reason)
+                            }
+                        }
                     }
-                )
-
-                is CompletionFetchResult.TransientFailure -> {
-                    EditorCompletionFetchResult.TransientFailure(result.reason)
+                    editorState.onRequestHover = { position ->
+                        state.requestLspHoverMarkdown(tab.id, position.line, position.column)
+                    }
+                    editorState.onRequestSignatureHelp = { position ->
+                        state.requestLspSignatureHelp(tab.id, position.line, position.column)
+                    }
+                    editorState.onRequestGotoDefinition = if (supportsBasicNavigation) {
+                        { state.onLspNavigationRequested?.invoke(tab.id, "definition") }
+                    } else {
+                        null
+                    }
+                    editorState.onRequestPeekDefinition = if (supportsBasicNavigation) {
+                        { state.onLspNavigationRequested?.invoke(tab.id, "peekDefinition") }
+                    } else {
+                        null
+                    }
+                    editorState.onRequestFindReferences = if (supportsBasicNavigation) {
+                        { state.onLspNavigationRequested?.invoke(tab.id, "references") }
+                    } else {
+                        null
+                    }
+                    editorState.onRequestGotoTypeDefinition = if (supportsAdvancedNavigation) {
+                        { state.onLspNavigationRequested?.invoke(tab.id, "typeDefinition") }
+                    } else {
+                        null
+                    }
+                    editorState.onRequestGotoImplementation = if (supportsAdvancedNavigation) {
+                        { state.onLspNavigationRequested?.invoke(tab.id, "implementation") }
+                    } else {
+                        null
+                    }
+                    editorState.onRequestCodeActions = if (supportsRefactorActions) {
+                        {
+                            val (start, end) = resolveSelectedRangeOrCursor(buffer, editorState)
+                            state.onLspCodeActionsRequested?.invoke(
+                                tab.id,
+                                start.line,
+                                start.column,
+                                end.line,
+                                end.column
+                            )
+                        }
+                    } else {
+                        null
+                    }
+                    editorState.onRequestRenameSymbol = if (supportsRefactorActions) {
+                        {
+                            val cursor = editorState.cursorPosition
+                            val currentName = resolveIdentifierAroundCursor(
+                                buffer = buffer,
+                                line = cursor.line,
+                                column = cursor.column
+                            )
+                            state.onLspRenameRequested?.invoke(
+                                tab.id,
+                                cursor.line,
+                                cursor.column,
+                                currentName
+                            )
+                        }
+                    } else {
+                        null
+                    }
+                    editorState.onRequestSwitchHeaderSource = if (supportsHeaderSourceSwitch) {
+                        { state.onLspNavigationRequested?.invoke(tab.id, "switchHeaderSource") }
+                    } else {
+                        null
+                    }
+                },
+                onDetach = {
+                    editorState.onRequestCompletion = null
+                    editorState.onRequestHover = null
+                    editorState.onRequestSignatureHelp = null
+                    editorState.onRequestPeekDefinition = null
+                    editorState.onRequestGotoDefinition = null
+                    editorState.onRequestFindReferences = null
+                    editorState.onRequestGotoTypeDefinition = null
+                    editorState.onRequestGotoImplementation = null
+                    editorState.onRequestCodeActions = null
+                    editorState.onRequestRenameSymbol = null
+                    editorState.onRequestSwitchHeaderSource = null
                 }
-            }
-        }
-        editorState.onRequestHover = { position ->
-            state.requestLspHoverMarkdown(
-                tabId = tab.id,
-                line = position.line,
-                column = position.column
             )
         }
-        editorState.onRequestSignatureHelp = { position ->
-            state.requestLspSignatureHelp(
-                tabId = tab.id,
-                line = position.line,
-                column = position.column
-            )
-        }
-        editorState.onRequestGotoDefinition = if (supportsBasicNavigation) {
-            { state.onLspNavigationRequested?.invoke(tab.id, "definition") }
-        } else {
-            null
-        }
-        editorState.onRequestPeekDefinition = if (supportsBasicNavigation) {
-            { state.onLspNavigationRequested?.invoke(tab.id, "peekDefinition") }
-        } else {
-            null
-        }
-        editorState.onRequestFindReferences = if (supportsBasicNavigation) {
-            { state.onLspNavigationRequested?.invoke(tab.id, "references") }
-        } else {
-            null
-        }
-        editorState.onRequestGotoTypeDefinition = if (supportsAdvancedNavigation) {
-            { state.onLspNavigationRequested?.invoke(tab.id, "typeDefinition") }
-        } else {
-            null
-        }
-        editorState.onRequestGotoImplementation = if (supportsAdvancedNavigation) {
-            { state.onLspNavigationRequested?.invoke(tab.id, "implementation") }
-        } else {
-            null
-        }
-        editorState.onRequestCodeActions = if (supportsRefactorActions) {
-            {
-                val (start, end) = resolveSelectedRangeOrCursor(buffer, editorState)
-                state.onLspCodeActionsRequested?.invoke(
-                    tab.id,
-                    start.line,
-                    start.column,
-                    end.line,
-                    end.column
-                )
-            }
-        } else {
-            null
-        }
-        editorState.onRequestRenameSymbol = if (supportsRefactorActions) {
-            {
-                val cursor = editorState.cursorPosition
-                val currentName = resolveIdentifierAroundCursor(
-                    buffer = buffer,
-                    line = cursor.line,
-                    column = cursor.column
-                )
-                state.onLspRenameRequested?.invoke(
-                    tab.id,
-                    cursor.line,
-                    cursor.column,
-                    currentName
-                )
-            }
-        } else {
-            null
-        }
-        editorState.onRequestSwitchHeaderSource = if (supportsHeaderSourceSwitch) {
-            { state.onLspNavigationRequested?.invoke(tab.id, "switchHeaderSource") }
-        } else {
-            null
-        }
+        runtime.acquireStateBinding(LSP_EDITOR_STATE_BINDING_KEY, stateBinding)
         onDispose {
-            editorState.onRequestCompletion = null
-            editorState.onRequestHover = null
-            editorState.onRequestSignatureHelp = null
-            editorState.onRequestPeekDefinition = null
-            editorState.onRequestGotoDefinition = null
-            editorState.onRequestFindReferences = null
-            editorState.onRequestGotoTypeDefinition = null
-            editorState.onRequestGotoImplementation = null
-            editorState.onRequestCodeActions = null
-            editorState.onRequestRenameSymbol = null
-            editorState.onRequestSwitchHeaderSource = null
+            runtime.releaseStateBinding(LSP_EDITOR_STATE_BINDING_KEY, stateBinding)
         }
     }
 
     DisposableEffect(tab.id, editorState, buffer, breakpointStore, tab.file) {
-        val toggleBreakpoint: (Int) -> Unit = { requestedLine ->
-            if (tab.file.extension.lowercase() in breakpointSupportedExtensions) {
-                val targetLine = resolveMarkerLine(buffer, requestedLine)
-                if (targetLine != null) {
-                    breakpointStore.toggle(tab.file.absolutePath, targetLine)
+        val stateBinding = runtime.getOrCreateStateBinding(GUTTER_EDITOR_STATE_BINDING_KEY) {
+            val toggleBreakpoint: (Int) -> Unit = { requestedLine ->
+                if (tab.file.extension.lowercase() in breakpointSupportedExtensions) {
+                    val targetLine = resolveMarkerLine(buffer, requestedLine)
+                    if (targetLine != null) {
+                        breakpointStore.toggle(tab.file.absolutePath, targetLine)
+                    }
                 }
             }
+            RuntimeEditorStateBinding(
+                onAttach = {
+                    editorState.onLineNumberTap = toggleBreakpoint
+                    editorState.onLineNumberLongPress = toggleBreakpoint
+                    editorState.onGutterFoldToggle = { line -> editorState.toggleFoldAtLine(line) }
+                },
+                onDetach = {
+                    editorState.onLineNumberTap = null
+                    editorState.onLineNumberLongPress = null
+                    editorState.onGutterFoldToggle = null
+                }
+            )
         }
-        editorState.onLineNumberTap = toggleBreakpoint
-        editorState.onLineNumberLongPress = toggleBreakpoint
-        editorState.onGutterFoldToggle = { line -> editorState.toggleFoldAtLine(line) }
-
+        runtime.acquireStateBinding(GUTTER_EDITOR_STATE_BINDING_KEY, stateBinding)
         onDispose {
-            editorState.onLineNumberTap = null
-            editorState.onLineNumberLongPress = null
-            editorState.onGutterFoldToggle = null
+            runtime.releaseStateBinding(GUTTER_EDITOR_STATE_BINDING_KEY, stateBinding)
         }
     }
 
@@ -554,73 +568,76 @@ fun TinaCodeEditorPage(
         }
     }
 
-    LaunchedEffect(tab.id) {
-        if (runtime.isContentLoaded) {
-            loading = false
+    LaunchedEffect(tab.id, tab.file, syntaxHighlighter) {
+        runtime.contentLoadMutex.withLock {
+            if (runtime.isContentLoaded) {
+                loading = false
+                loadError = null
+                ensureTreeSitterPrepared(
+                    runtime = runtime,
+                    editorState = editorState,
+                    syntaxHighlighter = syntaxHighlighter,
+                    textSnapshot = textSnapshot
+                )
+                return@withLock
+            }
+
+            loading = true
             loadError = null
-            ensureTreeSitterPrepared(
-                runtime = runtime,
-                editorState = editorState,
-                syntaxHighlighter = syntaxHighlighter,
-                textSnapshot = textSnapshot
-            )
-            return@LaunchedEffect
-        }
+            val detachedSnapshot = state.getTabDetachedEditorSnapshot(tab.id)
+            if (detachedSnapshot != null) {
+                try {
+                    binding.withSuppressed { buffer.replaceAll(detachedSnapshot.text) }
+                    ensureTreeSitterPrepared(
+                        runtime = runtime,
+                        editorState = editorState,
+                        syntaxHighlighter = syntaxHighlighter,
+                        textSnapshot = textSnapshot
+                    )
+                    restoreEditorViewState(editorState, detachedSnapshot.viewState)
+                    state.markTabDetachedEditorSnapshotRestored(tab.id, detachedSnapshot)
+                    state.updateTabState(
+                        tabId = tab.id,
+                        isDirty = detachedSnapshot.isDirty,
+                        canUndo = buffer.canUndo(),
+                        canRedo = buffer.canRedo()
+                    )
+                    state.markCodeEditorRuntimeLoaded(tab.id)
+                    loading = false
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (error: Exception) {
+                    loadError = error.message ?: Strings.editor_load_failed.strOr(context)
+                    loading = false
+                }
+                return@withLock
+            }
 
-        loading = true
-        loadError = null
-        val detachedSnapshot = state.getTabDetachedEditorSnapshot(tab.id)
-        if (detachedSnapshot != null) {
-            runCatching {
-                binding.withSuppressed { buffer.replaceAll(detachedSnapshot.text) }
-                ensureTreeSitterPrepared(
-                    runtime = runtime,
-                    editorState = editorState,
-                    syntaxHighlighter = syntaxHighlighter,
-                    textSnapshot = textSnapshot
-                )
-                restoreEditorViewState(editorState, detachedSnapshot.viewState)
-                state.markTabDetachedEditorSnapshotRestored(tab.id, detachedSnapshot)
-                state.updateTabState(
-                    tabId = tab.id,
-                    isDirty = detachedSnapshot.isDirty,
-                    canUndo = buffer.canUndo(),
-                    canRedo = buffer.canRedo()
-                )
-                state.markCodeEditorRuntimeLoaded(tab.id)
-            }.onSuccess {
-                loading = false
-            }.onFailure { error ->
-                loadError = error.message ?: Strings.editor_load_failed.strOr(context)
-                loading = false
-            }
-            return@LaunchedEffect
+            val detectedCharset = FileEncodingDetector.detectCharset(tab.file)
+            binding.withSuppressed { buffer.loadFromFile(tab.file, detectedCharset) }
+                .onSuccess {
+                    ensureTreeSitterPrepared(
+                        runtime = runtime,
+                        editorState = editorState,
+                        syntaxHighlighter = syntaxHighlighter,
+                        textSnapshot = textSnapshot
+                    )
+                    restoreEditorViewState(editorState, state.getTabEditorViewState(tab.id))
+                    state.markTabEditorSnapshotClean(tab.id, detectedCharset)
+                    state.updateTabState(
+                        tabId = tab.id,
+                        isDirty = false,
+                        canUndo = buffer.canUndo(),
+                        canRedo = buffer.canRedo()
+                    )
+                    state.markCodeEditorRuntimeLoaded(tab.id)
+                    loading = false
+                }
+                .onFailure { error ->
+                    loadError = error.message ?: Strings.editor_load_failed.strOr(context)
+                    loading = false
+                }
         }
-
-        val detectedCharset = FileEncodingDetector.detectCharset(tab.file)
-        binding.withSuppressed { buffer.loadFromFile(tab.file, detectedCharset) }
-            .onSuccess {
-                ensureTreeSitterPrepared(
-                    runtime = runtime,
-                    editorState = editorState,
-                    syntaxHighlighter = syntaxHighlighter,
-                    textSnapshot = textSnapshot
-                )
-                restoreEditorViewState(editorState, state.getTabEditorViewState(tab.id))
-                state.markTabEditorSnapshotClean(tab.id, detectedCharset)
-                state.updateTabState(
-                    tabId = tab.id,
-                    isDirty = false,
-                    canUndo = buffer.canUndo(),
-                    canRedo = buffer.canRedo()
-                )
-                state.markCodeEditorRuntimeLoaded(tab.id)
-                loading = false
-            }
-            .onFailure { error ->
-                loadError = error.message ?: Strings.editor_load_failed.strOr(context)
-                loading = false
-            }
     }
 
     LaunchedEffect(tab.id, state, tab.file) {
@@ -680,28 +697,31 @@ fun TinaCodeEditorPage(
         }
             .debounce(120)
             .distinctUntilChanged()
-            .collect { key ->
+            .collectLatest { key ->
                 if (!key.semanticTokensEnabled) {
                     applySemanticTokens(editorState, emptyList(), requestedVisibleLines = null)
-                    return@collect
+                    return@collectLatest
                 }
                 // LSP 未就绪时按兵不动：不发请求，也不清空既有 token。
                 // 一旦状态跳到 Ready，combine 会重新 emit 触发一次重发请求。
-                if (!key.lspReady) return@collect
+                if (!key.lspReady) return@collectLatest
                 if (key.lastLine < key.firstLine) {
                     applySemanticTokens(editorState, emptyList(), requestedVisibleLines = null)
-                    return@collect
+                    return@collectLatest
                 }
-                val tokens = state.requestLspSemanticTokens(
+                val result = state.requestLspSemanticTokens(
                     tabId = tab.id,
                     visibleLines = key.firstLine..key.lastLine,
                     documentVersion = key.documentVersion
                 )
-                applySemanticTokens(
-                    editorState = editorState,
-                    tokens = tokens,
-                    requestedVisibleLines = key.firstLine..key.lastLine
-                )
+                if (buffer.version != key.documentVersion) return@collectLatest
+                if (result is SemanticTokensRequestResult.Success) {
+                    applySemanticTokens(
+                        editorState = editorState,
+                        tokens = result.tokens,
+                        requestedVisibleLines = key.firstLine..key.lastLine
+                    )
+                }
             }
     }
 
@@ -825,33 +845,35 @@ fun TinaCodeEditorPage(
                     TextButton(
                         onClick = {
                             scope.launch {
-                                loading = true
-                                loadError = null
-                                val detectedCharset = FileEncodingDetector.detectCharset(tab.file)
-                                binding.withSuppressed { buffer.loadFromFile(tab.file, detectedCharset) }
-                                    .onSuccess {
-                                        runtime.isTreeSitterSnapshotReady = false
-                                        ensureTreeSitterPrepared(
-                                            runtime = runtime,
-                                            editorState = editorState,
-                                            syntaxHighlighter = syntaxHighlighter,
-                                            textSnapshot = textSnapshot
-                                        )
-                                        restoreEditorViewState(editorState, state.getTabEditorViewState(tab.id))
-                                        state.markTabEditorSnapshotClean(tab.id, detectedCharset)
-                                        state.updateTabState(
-                                            tabId = tab.id,
-                                            isDirty = false,
-                                            canUndo = buffer.canUndo(),
-                                            canRedo = buffer.canRedo()
-                                        )
-                                        state.markCodeEditorRuntimeLoaded(tab.id)
-                                        loading = false
-                                    }
-                                    .onFailure {
-                                        loadError = it.message ?: Strings.editor_load_failed.strOr(context)
-                                        loading = false
-                                    }
+                                runtime.contentLoadMutex.withLock {
+                                    loading = true
+                                    loadError = null
+                                    val detectedCharset = FileEncodingDetector.detectCharset(tab.file)
+                                    binding.withSuppressed { buffer.loadFromFile(tab.file, detectedCharset) }
+                                        .onSuccess {
+                                            runtime.isTreeSitterSnapshotReady = false
+                                            ensureTreeSitterPrepared(
+                                                runtime = runtime,
+                                                editorState = editorState,
+                                                syntaxHighlighter = syntaxHighlighter,
+                                                textSnapshot = textSnapshot
+                                            )
+                                            restoreEditorViewState(editorState, state.getTabEditorViewState(tab.id))
+                                            state.markTabEditorSnapshotClean(tab.id, detectedCharset)
+                                            state.updateTabState(
+                                                tabId = tab.id,
+                                                isDirty = false,
+                                                canUndo = buffer.canUndo(),
+                                                canRedo = buffer.canRedo()
+                                            )
+                                            state.markCodeEditorRuntimeLoaded(tab.id)
+                                            loading = false
+                                        }
+                                        .onFailure {
+                                            loadError = it.message ?: Strings.editor_load_failed.strOr(context)
+                                            loading = false
+                                        }
+                                }
                             }
                         }
                     ) {
@@ -869,43 +891,57 @@ private data class ActiveTabLspAttachmentState(
     val loadError: String?
 )
 
+private class RuntimeEditorStateBinding(
+    private val onAttach: () -> Unit,
+    private val onDetach: () -> Unit
+) : EditorContainerState.CodeEditorStateBinding {
+    override fun attach() = onAttach()
+
+    override fun detach() = onDetach()
+}
+
 private class TextBufferSessionBinding(
     private val tabId: String,
     private val state: EditorContainerState,
     private val buffer: RopeTextBuffer,
     private val editorState: EditorState,
     private val textSnapshot: VersionedBufferTextSnapshot,
-    private val onBufferEdited: (canUndo: Boolean, canRedo: Boolean, change: TextChange) -> Unit
-) : DocumentSession.EditorBinding,
+    private val onBufferEdited: (
+        canUndo: Boolean,
+        canRedo: Boolean,
+        documentVersion: Long,
+        change: TextChange
+    ) -> Unit
+) : EditorContainerState.CodeEditorDocumentBinding,
     TextChangeListener {
 
-    private var suppressNotify = false
+    private val suppressNotifyDepth = AtomicInteger()
 
-    fun attach() {
+    override fun attach() {
         buffer.addChangeListener(this)
         state.attachTabEditorBinding(tabId, this)
     }
 
-    fun detach() {
+    override fun detach() {
         buffer.removeChangeListener(this)
         state.detachTabEditorBinding(tabId, this)
     }
 
     /**
-     * 在 block 执行期间抑制 onTextChanged 的对外回调（isDirty 更新、tree-sitter 通知等），
-     * 用于初次加载 / 重载这种"非用户编辑"的 buffer 写入场景。
+     * 在 block 执行期间抑制用户编辑回调（dirty、undo/redo 与 LSP didChange），
+     * 用于初次加载 / 重载这类非用户触发的 buffer 写入。
      */
-    suspend fun <R> withSuppressed(block: suspend () -> R): R {
-        suppressNotify = true
+    override suspend fun <R> withSuppressed(block: suspend () -> R): R {
+        suppressNotifyDepth.incrementAndGet()
         try {
             return block()
         } finally {
-            suppressNotify = false
+            suppressNotifyDepth.decrementAndGet()
         }
     }
 
     override fun onTextChanged(change: TextChange) {
-        if (suppressNotify) return
+        if (suppressNotifyDepth.get() > 0) return
         val canUndo = buffer.canUndo()
         val canRedo = buffer.canRedo()
         state.notifyTabEditorContentChanged(
@@ -914,17 +950,25 @@ private class TextBufferSessionBinding(
             canRedo = canRedo,
             changeCausedByUndoManager = change.fromUndoRedo
         )
-        onBufferEdited(canUndo, canRedo, change)
+        onBufferEdited(canUndo, canRedo, buffer.version, change)
     }
 
     override fun readText(): String = textSnapshot.readText()
 
+    override fun readSnapshot(): DocumentSession.EditorContentSnapshot {
+        val snapshot = textSnapshot.readSnapshot()
+        return DocumentSession.EditorContentSnapshot(
+            text = snapshot.text,
+            documentVersion = snapshot.version
+        )
+    }
+
     override fun setText(text: CharSequence) {
-        suppressNotify = true
+        suppressNotifyDepth.incrementAndGet()
         try {
             buffer.replaceAll(text.toString())
         } finally {
-            suppressNotify = false
+            suppressNotifyDepth.decrementAndGet()
         }
     }
 
@@ -955,34 +999,47 @@ private class TextBufferSessionBinding(
 private class VersionedBufferTextSnapshot(
     private val buffer: RopeTextBuffer
 ) {
+    private companion object {
+        private const val MAX_SNAPSHOT_READ_ATTEMPTS = 8
+    }
+
+    data class Snapshot(
+        val text: String,
+        val version: Long
+    )
+
     private val lock = Any()
     private var cachedVersion = Long.MIN_VALUE
     private var cachedText = ""
 
-    fun readText(): String {
-        while (true) {
+    fun readText(): String = readSnapshot().text
+
+    fun readSnapshot(): Snapshot {
+        var latestSnapshot = ""
+        repeat(MAX_SNAPSHOT_READ_ATTEMPTS) {
             val versionBefore = buffer.version
             synchronized(lock) {
                 if (cachedVersion == versionBefore) {
-                    return cachedText
+                    return Snapshot(cachedText, cachedVersion)
                 }
             }
 
-            val snapshot = buffer.toString()
+            latestSnapshot = buffer.toString()
             val versionAfter = buffer.version
             if (versionBefore != versionAfter) {
-                continue
+                return@repeat
             }
 
             synchronized(lock) {
                 if (cachedVersion == versionAfter) {
-                    return cachedText
+                    return Snapshot(cachedText, cachedVersion)
                 }
                 cachedVersion = versionAfter
-                cachedText = snapshot
-                return snapshot
+                cachedText = latestSnapshot
+                return Snapshot(latestSnapshot, versionAfter)
             }
         }
+        return Snapshot(latestSnapshot, DocumentSession.UNSTABLE_DOCUMENT_VERSION)
     }
 }
 
@@ -1211,16 +1268,7 @@ private fun applySemanticTokens(
         return
     }
 
-    // 防止 LSP 暂时返回空结果时把可见区语义颜色清空，造成滚动闪烁。
-    if (mapped.isEmpty()) {
-        // 服务器如果回了 token，但类型全都不在已支持集合里，就不要把它们强行降级成蓝色 variable。
-        if (tokens.isNotEmpty()) {
-            editorState.clearSemanticTokens()
-        }
-        return
-    }
-
-    editorState.mergeSemanticTokens(mapped)
+    editorState.replaceSemanticTokensInLines(requestedVisibleLines, mapped)
 }
 
 private fun LspSemanticToken.toEditorSemanticTokenOrNull(): EditorSemanticToken? {
@@ -1364,9 +1412,14 @@ private fun replaceWholeText(
     if (original == newText) return false
 
     val cursorBefore = editorState.cursorPosition
-    buffer.replaceAll(newText)
-    restoreCursor(editorState, buffer, cursorBefore.line, cursorBefore.column)
-    return true
+    return buffer.editTransaction(
+        cursorBefore = editorState.cursorOffset,
+        cursorAfter = { editorState.cursorOffset }
+    ) {
+        buffer.replace(0, buffer.length, newText)
+        restoreCursor(editorState, buffer, cursorBefore.line, cursorBefore.column)
+        true
+    }
 }
 
 private fun applyTextEdits(
@@ -1385,25 +1438,25 @@ private fun applyTextEdits(
             .thenByDescending { it.endColumn }
     )
 
-    sortedEdits.forEach { edit ->
-        val startOffset = buffer.safeOffset(edit.startLine, edit.startColumn)
-        val endOffset = buffer.safeOffset(edit.endLine, edit.endColumn).coerceAtLeast(startOffset)
-        val oldText = buffer.substring(startOffset, endOffset)
-        if (oldText == edit.newText) return@forEach
+    return buffer.editTransaction(
+        cursorBefore = editorState.cursorOffset,
+        cursorAfter = { editorState.cursorOffset }
+    ) {
+        sortedEdits.forEach { edit ->
+            val startOffset = buffer.safeOffset(edit.startLine, edit.startColumn)
+            val endOffset = buffer.safeOffset(edit.endLine, edit.endColumn).coerceAtLeast(startOffset)
+            val oldText = buffer.substring(startOffset, endOffset)
+            if (oldText == edit.newText) return@forEach
 
-        if (startOffset < endOffset) {
-            buffer.delete(startOffset, endOffset)
+            buffer.replace(startOffset, endOffset, edit.newText)
+            changed = true
         }
-        if (edit.newText.isNotEmpty()) {
-            buffer.insert(startOffset, edit.newText)
+
+        if (changed) {
+            restoreCursor(editorState, buffer, cursorBefore.line, cursorBefore.column)
         }
-        changed = true
+        changed
     }
-
-    if (!changed) return false
-
-    restoreCursor(editorState, buffer, cursorBefore.line, cursorBefore.column)
-    return true
 }
 
 private fun restoreCursor(

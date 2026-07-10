@@ -10,6 +10,8 @@ import com.wuxianggujun.tinaide.ui.runtime.SdlRuntimeLibraryStager
 import com.wuxianggujun.tinaide.ui.sdl.ExternalSdlActivity
 import com.wuxianggujun.tinaide.ui.sdl.SdlRuntimeResolver
 import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class CompileUiEventObserver(
     private val toastPresenter: ToastPresenter,
@@ -22,7 +24,7 @@ class CompileUiEventObserver(
     }
 
     fun interface SdlLauncher {
-        fun open(libraryPath: String, environment: Map<String, String>)
+        suspend fun open(libraryPath: String, environment: Map<String, String>)
     }
 
     interface TerminalLauncher {
@@ -90,7 +92,7 @@ class ContextCompileSdlLauncher(
     private val onError: (String) -> Unit,
     private val activityStarter: (Intent) -> Unit = { intent -> context.startActivity(intent) },
 ) : CompileUiEventObserver.SdlLauncher {
-    override fun open(libraryPath: String, environment: Map<String, String>) {
+    override suspend fun open(libraryPath: String, environment: Map<String, String>) {
         val normalizedLibraryPath = libraryPath.trim()
         validateSharedLibraryPath(normalizedLibraryPath)?.let { message ->
             onError(message)
@@ -98,13 +100,15 @@ class ContextCompileSdlLauncher(
         }
 
         val runConfig = runConfigurationProvider()
-        when (
-            val runtime = SdlRuntimeResolver.resolve(
+        val runtime = withContext(Dispatchers.IO) {
+            SdlRuntimeResolver.resolve(
                 context = context,
                 mainLibraryPath = normalizedLibraryPath,
                 extraRuntimeLibDirs = launchRuntimeDirs(environment),
+                allowUndetectedSdl = true,
             )
-        ) {
+        }
+        when (runtime) {
             is SdlRuntimeResolver.ResolveResult.Sdl -> launchSdlRuntime(
                 libraryPath = normalizedLibraryPath,
                 runtime = runtime,
@@ -112,9 +116,7 @@ class ContextCompileSdlLauncher(
                 launchEnvironment = environment,
             )
 
-            SdlRuntimeResolver.ResolveResult.NonSdl -> {
-                onError(Strings.sdl_runtime_error_non_sdl_library.strOr(context, normalizedLibraryPath))
-            }
+            SdlRuntimeResolver.ResolveResult.NonSdl -> Unit
 
             is SdlRuntimeResolver.ResolveResult.Error -> onError(runtime.message)
         }
@@ -133,29 +135,26 @@ class ContextCompileSdlLauncher(
         if (libraryPath.isBlank()) {
             return Strings.sdl_runtime_error_main_library_missing.strOr(context)
         }
-        val libraryFile = File(libraryPath)
-        if (!libraryFile.isFile) {
-            return Strings.sdl_runtime_error_main_library_invalid.strOr(context, libraryPath)
-        }
-        if (!libraryFile.name.endsWith(".so", ignoreCase = true)) {
+        if (!File(libraryPath).name.endsWith(".so", ignoreCase = true)) {
             return Strings.sdl_runtime_invalid_shared_library.strOr(context, libraryPath)
         }
         return null
     }
 
-    private fun launchSdlRuntime(
+    private suspend fun launchSdlRuntime(
         libraryPath: String,
         runtime: SdlRuntimeResolver.ResolveResult.Sdl,
         runConfig: RunConfiguration,
         launchEnvironment: Map<String, String>,
     ) {
-        when (
-            val staged = SdlRuntimeLibraryStager.stage(
+        val staged = withContext(Dispatchers.IO) {
+            SdlRuntimeLibraryStager.stage(
                 context = context,
                 mainLibraryPath = libraryPath,
                 preloadLibraryPaths = runtime.spec.preloadLibraryPaths
             )
-        ) {
+        }
+        when (staged) {
             is SdlRuntimeLibraryStager.StageResult.Error -> {
                 onError(Strings.sdl_runtime_stage_failed.strOr(context, staged.message))
             }

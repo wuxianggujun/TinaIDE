@@ -19,11 +19,11 @@ import org.robolectric.annotation.Config
 class DocumentSessionTest {
 
     @Test
-    fun reloadFromDisk_shouldRefreshUndoRedoAndCharset() {
+    fun reloadFromDisk_shouldRefreshUndoRedoAndCharset() = runTest {
         val gbk = Charset.forName("GBK")
         val file = Files.createTempFile("document-session-reload", ".txt").toFile()
         file.writeText("中文内容", gbk)
-        val session = createSession(file)
+        val session = createSession(file, this)
         val binding = FakeEditorBinding(
             text = "stale",
             canUndo = true,
@@ -141,6 +141,70 @@ class DocumentSessionTest {
         }
     }
 
+    @Test
+    fun save_shouldRetrySnapshotReadWhenDocumentChangesDuringCapture() = runTest {
+        val file = Files.createTempFile("document-session-racing-save", ".txt").toFile()
+        file.writeText("old")
+        val session = createSession(file, this)
+        val binding = FakeEditorBinding(
+            text = "old",
+            canUndo = false,
+            canRedo = false
+        )
+
+        try {
+            session.attachEditor(binding)
+            session.markEditorSnapshotClean()
+            binding.setText("first edit")
+            session.notifyEditorContentChanged(canUndo = true, canRedo = false)
+            binding.mutateAfterNextRead("second edit")
+
+            val result = session.save(SaveReason.MANUAL)
+
+            assertThat(result).isInstanceOf(SaveResult.Success::class.java)
+            assertThat(file.readText()).isEqualTo("second edit")
+            assertThat(session.state.value.isDirty).isFalse()
+        } finally {
+            session.stopFileWatcher()
+            file.delete()
+        }
+    }
+
+    @Test
+    fun save_shouldProtectExternalChangesUntilForceOverwrite() = runTest {
+        val file = Files.createTempFile("document-session-conflict", ".txt").toFile()
+        file.writeText("old")
+        val session = createSession(file, this)
+        val binding = FakeEditorBinding(
+            text = "old",
+            canUndo = false,
+            canRedo = false
+        )
+
+        try {
+            session.attachEditor(binding)
+            session.markEditorSnapshotClean()
+            binding.setText("mine")
+            session.notifyEditorContentChanged(canUndo = true, canRedo = false)
+            file.writeText("external")
+            session.markExternalModification()
+
+            val blocked = session.save(SaveReason.MANUAL)
+
+            assertThat(blocked).isInstanceOf(SaveResult.Failure::class.java)
+            assertThat(file.readText()).isEqualTo("external")
+
+            val overwritten = session.forceOverwrite(SaveReason.MANUAL)
+
+            assertThat(overwritten).isInstanceOf(SaveResult.Success::class.java)
+            assertThat(file.readText()).isEqualTo("mine")
+            assertThat(session.state.value.hasExternalModification).isFalse()
+        } finally {
+            session.stopFileWatcher()
+            file.delete()
+        }
+    }
+
     private fun createSession(
         file: File,
         scope: CoroutineScope = TestScope(StandardTestDispatcher())
@@ -159,8 +223,17 @@ class DocumentSessionTest {
     ) : DocumentSession.EditorBinding {
         private var currentText = text
         private var version = 0L
+        private var mutationAfterRead: String? = null
 
-        override fun readText(): String = currentText
+        override fun readText(): String {
+            val snapshot = currentText
+            mutationAfterRead?.let { replacement ->
+                mutationAfterRead = null
+                currentText = replacement
+                version++
+            }
+            return snapshot
+        }
 
         override fun setText(text: CharSequence) {
             currentText = text.toString()
@@ -182,5 +255,9 @@ class DocumentSessionTest {
         override fun currentDocumentVersion(): Long = version
 
         override fun currentViewState(): EditorViewState? = viewState
+
+        fun mutateAfterNextRead(text: String) {
+            mutationAfterRead = text
+        }
     }
 }

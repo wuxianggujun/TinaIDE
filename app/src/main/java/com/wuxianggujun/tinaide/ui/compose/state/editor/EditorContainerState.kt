@@ -37,6 +37,7 @@ import com.wuxianggujun.tinaide.core.packages.PackageDependencyEvents
 import com.wuxianggujun.tinaide.core.textengine.Position
 import com.wuxianggujun.tinaide.core.textengine.RopeTextBuffer
 import com.wuxianggujun.tinaide.core.textengine.TextChange
+import com.wuxianggujun.tinaide.core.textengine.TextChangeListener
 import com.wuxianggujun.tinaide.core.treesitter.TreeSitterFoldingProvider
 import com.wuxianggujun.tinaide.core.treesitter.TreeSitterFoldingProvider.FoldRegion
 import com.wuxianggujun.tinaide.core.treesitter.TreeSitterHighlighter
@@ -62,6 +63,7 @@ import java.io.File
 import java.net.URI
 import java.nio.charset.Charset
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.sync.Mutex
 import org.eclipse.lsp4j.WorkspaceEdit
 import org.koin.core.context.GlobalContext
 import timber.log.Timber
@@ -302,7 +304,21 @@ class EditorContainerState(
         val applyEditorColorScheme: (scheme: EditorColorScheme) -> Unit = {}
     )
 
-    data class CodeEditorRuntime(
+    internal interface CodeEditorDocumentBinding : DocumentSession.EditorBinding {
+        fun attach()
+
+        fun detach()
+
+        suspend fun <R> withSuppressed(block: suspend () -> R): R
+    }
+
+    internal interface CodeEditorStateBinding {
+        fun attach()
+
+        fun detach()
+    }
+
+    class CodeEditorRuntime(
         val buffer: RopeTextBuffer,
         val editorState: EditorState,
         var syntaxHighlighter: TreeSitterHighlighter? = null,
@@ -311,7 +327,115 @@ class EditorContainerState(
         var foldingProvider: TreeSitterFoldingProvider? = null,
         var foldingProviderCreationAttempted: Boolean = false,
         var isContentLoaded: Boolean = false
-    )
+    ) {
+        val contentLoadMutex = Mutex()
+
+        private val stateSyncListener = TextChangeListener { change ->
+            editorState.applyTextBufferChange(change)
+            syntaxHighlighter?.applyTextChange(change)
+        }
+        private var documentBinding: CodeEditorDocumentBinding? = null
+        private var documentBindingReferences: Int = 0
+        private data class StateBindingRecord(
+            val binding: CodeEditorStateBinding,
+            var references: Int = 0
+        )
+        private val stateBindings = mutableMapOf<String, StateBindingRecord>()
+
+        init {
+            buffer.addChangeListener(stateSyncListener)
+        }
+
+        internal fun getOrCreateDocumentBinding(
+            factory: () -> CodeEditorDocumentBinding
+        ): CodeEditorDocumentBinding = documentBinding ?: factory().also { documentBinding = it }
+
+        internal fun acquireDocumentBinding(binding: CodeEditorDocumentBinding) {
+            check(documentBinding === binding) { "Document binding does not belong to this editor runtime" }
+            if (documentBindingReferences == 0) {
+                binding.attach()
+            }
+            documentBindingReferences++
+        }
+
+        internal fun releaseDocumentBinding(binding: CodeEditorDocumentBinding) {
+            if (documentBinding !== binding || documentBindingReferences == 0) return
+            documentBindingReferences--
+            if (documentBindingReferences == 0) {
+                binding.detach()
+            }
+        }
+
+        internal fun installSyntaxHighlighter(highlighter: TreeSitterHighlighter?) {
+            if (syntaxHighlighter === highlighter) return
+            syntaxHighlighter?.setOnStateUpdated(null)
+            syntaxHighlighter = highlighter
+            editorState.highlighter = highlighter
+            highlighter?.setOnStateUpdated(editorState::notifyHighlightChanged)
+        }
+
+        internal fun getOrCreateStateBinding(
+            key: String,
+            factory: () -> CodeEditorStateBinding
+        ): CodeEditorStateBinding = stateBindings.getOrPut(key) {
+            StateBindingRecord(factory())
+        }.binding
+
+        internal fun acquireStateBinding(key: String, binding: CodeEditorStateBinding) {
+            val record = stateBindings[key]
+            check(record?.binding === binding) { "State binding does not belong to this editor runtime" }
+            if (record.references == 0) {
+                binding.attach()
+            }
+            record.references++
+        }
+
+        internal fun releaseStateBinding(key: String, binding: CodeEditorStateBinding) {
+            val record = stateBindings[key] ?: return
+            if (record.binding !== binding || record.references == 0) return
+            record.references--
+            if (record.references == 0) {
+                binding.detach()
+            }
+        }
+
+        internal fun clearLanguageServices() {
+            syntaxHighlighter?.setOnStateUpdated(null)
+            if (editorState.highlighter === syntaxHighlighter) {
+                editorState.highlighter = null
+            }
+            syntaxHighlighter?.dispose()
+            foldingProvider?.dispose()
+            syntaxHighlighter = null
+            foldingProvider = null
+            isTreeSitterSnapshotReady = false
+        }
+
+        internal fun resetDocumentBinding() {
+            val binding = documentBinding
+            if (binding != null && documentBindingReferences > 0) {
+                binding.detach()
+            }
+            documentBinding = null
+            documentBindingReferences = 0
+        }
+
+        internal fun resetStateBindings() {
+            stateBindings.values.forEach { record ->
+                if (record.references > 0) {
+                    record.binding.detach()
+                }
+            }
+            stateBindings.clear()
+        }
+
+        internal fun dispose() {
+            resetDocumentBinding()
+            resetStateBindings()
+            clearLanguageServices()
+            buffer.removeChangeListener(stateSyncListener)
+        }
+    }
 
     /**
      * 记录最近一次已处理的依赖变更 revision（实例字段，避免多实例间的静态变量竞争）。
@@ -328,7 +452,14 @@ class EditorContainerState(
         editorManager = editorManager,
         activeTabProvider = { getActiveTab() },
     )
+    private data class CodeEditorCallbackRegistration(
+        val searchCallback: SearchStateManager.CodeViewerCallback,
+        val editorCallback: CodeEditorCallback
+    )
+
     private val codeEditorCallbacks = mutableMapOf<String, CodeEditorCallback>()
+    private val codeEditorCallbackRegistrations =
+        mutableMapOf<String, LinkedHashMap<Any, CodeEditorCallbackRegistration>>()
     private val splitPaneState = EditorSplitPaneState()
     private val codeRuntimeCache = EditorCodeRuntimeCache(
         context = context,
@@ -356,7 +487,7 @@ class EditorContainerState(
         isCodeEditableType = ::isCodeEditableType,
         releaseLspForTab = ::releaseTinaLspForTab,
         clearCodeEditorRuntime = codeRuntimeCache::remove,
-        removeCodeEditorCallback = codeEditorCallbacks::remove,
+        removeCodeEditorCallback = { tabId -> removeCodeEditorCallbacks(tabId) },
         cleanupSearchState = searchStateManager::cleanupForTab,
         dismissPeekDefinitionPanel = ::dismissPeekDefinitionPanel,
         normalizeEditorPaneState = { normalizeEditorPaneState() },
@@ -727,21 +858,38 @@ class EditorContainerState(
 
     internal fun bindCodeEditorCallbacks(
         tabId: String,
+        registrationId: Any,
         search: (String, SearchOptions) -> List<CodeSearchResult>,
         goToMatch: (CodeSearchResult) -> Unit,
         editorCallback: CodeEditorCallback
     ) {
-        bindCodeViewerSearchCallback(
-            tabId = tabId,
-            search = search,
-            goToMatch = goToMatch
+        val registration = CodeEditorCallbackRegistration(
+            searchCallback = SearchStateManager.CodeViewerCallback(
+                search = search,
+                goToMatch = goToMatch
+            ),
+            editorCallback = editorCallback
         )
-        registerCodeEditorCallback(tabId, editorCallback)
+        codeEditorCallbackRegistrations
+            .getOrPut(tabId) { LinkedHashMap() }[registrationId] = registration
+        activateCodeEditorRegistration(tabId, registration)
     }
 
-    internal fun unbindCodeEditorCallbacks(tabId: String) {
-        unbindCodeViewerSearchCallback(tabId)
-        unregisterCodeEditorCallback(tabId)
+    internal fun unbindCodeEditorCallbacks(tabId: String, registrationId: Any) {
+        val registrations = codeEditorCallbackRegistrations[tabId] ?: return
+        val removed = registrations.remove(registrationId) ?: return
+        if (registrations.isEmpty()) {
+            codeEditorCallbackRegistrations.remove(tabId)
+        }
+        if (codeEditorCallbacks[tabId] === removed.editorCallback) {
+            val replacement = registrations.values.lastOrNull()
+            if (replacement == null) {
+                codeEditorCallbacks.remove(tabId)
+                searchStateManager.unregisterCodeViewerCallback(tabId)
+            } else {
+                activateCodeEditorRegistration(tabId, replacement)
+            }
+        }
         codeRuntimeCache.trim()
     }
 
@@ -775,7 +923,21 @@ class EditorContainerState(
     }
 
     internal fun unregisterCodeEditorCallback(tabId: String) {
+        removeCodeEditorCallbacks(tabId)
+    }
+
+    private fun activateCodeEditorRegistration(
+        tabId: String,
+        registration: CodeEditorCallbackRegistration
+    ) {
+        searchStateManager.registerCodeViewerCallback(tabId, registration.searchCallback)
+        registerCodeEditorCallback(tabId, registration.editorCallback)
+    }
+
+    private fun removeCodeEditorCallbacks(tabId: String) {
+        codeEditorCallbackRegistrations.remove(tabId)
         codeEditorCallbacks.remove(tabId)
+        searchStateManager.unregisterCodeViewerCallback(tabId)
     }
 
     internal fun activeTabSupportsEditorPerformancePanel(): Boolean {
@@ -1661,8 +1823,8 @@ class EditorContainerState(
         lspUiState.removeStatus(tabId)
     }
 
-    fun notifyTinaTextChanged(tabId: String, change: TextChange) {
-        lspEditorManager.onTinaDocumentChanged(tabId, change)
+    fun notifyTinaTextChanged(tabId: String, change: TextChange, documentVersion: Long) {
+        lspEditorManager.onTinaDocumentChanged(tabId, change, documentVersion)
     }
 
     fun notifyFileSaved(tabId: String, file: File, fullText: String) {
@@ -1676,11 +1838,11 @@ class EditorContainerState(
         triggerChar: Char?
     ): CompletionFetchResult = lspEditorManager.requestCompletion(tabId, position, triggerChar)
 
-    suspend fun requestLspSemanticTokens(
+    internal suspend fun requestLspSemanticTokens(
         tabId: String,
         visibleLines: IntRange,
         documentVersion: Long
-    ): List<SemanticToken> = lspEditorManager.requestSemanticTokens(
+    ): SemanticTokensRequestResult = lspEditorManager.requestSemanticTokens(
         tabId = tabId,
         visibleLines = visibleLines,
         documentVersion = documentVersion
@@ -1882,6 +2044,7 @@ class EditorContainerState(
         lspEditorManager.release()
         searchStateManager.release()
         codeEditorCallbacks.clear()
+        codeEditorCallbackRegistrations.clear()
         codeRuntimeCache.release()
         navigationHistoryManager.clear()
         lspUiState.clear()

@@ -14,6 +14,7 @@ import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -90,11 +91,32 @@ class DocumentSession(
     private val coroutineScope: CoroutineScope
 ) {
     companion object {
+        private const val DUPLICATE_FILE_EVENT_WINDOW_MS = 250L
         private const val INTERNAL_WRITE_SUPPRESS_WINDOW_MS = 1500L
+        private const val FILE_WATCH_EVENTS = FileObserver.CLOSE_WRITE or FileObserver.MOVED_TO
+        private const val MAX_SNAPSHOT_READ_ATTEMPTS = 8
+        const val UNSTABLE_DOCUMENT_VERSION = Long.MIN_VALUE
     }
+
+    data class EditorContentSnapshot(
+        val text: String,
+        val documentVersion: Long
+    )
 
     interface EditorBinding {
         fun readText(): String
+        fun readSnapshot(): EditorContentSnapshot {
+            var latestText = ""
+            repeat(MAX_SNAPSHOT_READ_ATTEMPTS) {
+                val versionBefore = currentDocumentVersion()
+                latestText = readText()
+                val versionAfter = currentDocumentVersion()
+                if (versionBefore == versionAfter) {
+                    return EditorContentSnapshot(latestText, versionAfter)
+                }
+            }
+            return EditorContentSnapshot(latestText, UNSTABLE_DOCUMENT_VERSION)
+        }
         fun setText(text: CharSequence)
         fun textLength(): Int
         fun canUndo(): Boolean
@@ -167,12 +189,6 @@ class DocumentSession(
     private var isSavingInternally: Boolean = false
 
     @Volatile
-    private var fileLastModifiedOnOpen: Long = if (file.exists()) file.lastModified() else 0L
-
-    @Volatile
-    private var fileSizeOnOpen: Long = if (file.exists()) file.length() else 0L
-
-    @Volatile
     private var lastInternalWriteMarker: FileWriteMarker? = readCurrentWriteMarker()
 
     @Volatile
@@ -197,12 +213,16 @@ class DocumentSession(
     }
     fun attachEditor(binding: EditorBinding) {
         editorBinding.set(binding)
+        val snapshot = if (cleanVersion < 0L || cleanFingerprint == null) {
+            binding.readSnapshot()
+        } else {
+            null
+        }
         if (cleanVersion < 0L) {
-            cleanVersion = binding.currentDocumentVersion()
+            cleanVersion = snapshot!!.documentVersion
         }
         if (cleanFingerprint == null) {
-            val text = binding.readText()
-            cleanFingerprint = buildTextFingerprint(text)
+            cleanFingerprint = buildTextFingerprint(snapshot!!.text)
         }
         syncStateFromBinding(binding, changeCausedByUndoManager = false, forceCompare = true)
     }
@@ -212,14 +232,17 @@ class DocumentSession(
         if (baselineState == BaselineState.INITIAL_LOADING && !_state.value.isDirty) return
 
         val viewState = binding.currentViewState() ?: currentViewState()
-        val dirty = computeDirty(binding, changeCausedByUndoManager = false, forceCompare = true)
+        val contentSnapshot = binding.readSnapshot()
+        val dirty = cleanFingerprint?.let { baseline ->
+            buildTextFingerprint(contentSnapshot.text) != baseline
+        } ?: _state.value.isDirty
         val snapshot = DetachedEditorSnapshot(
-            text = binding.readText(),
+            text = contentSnapshot.text,
             viewState = viewState,
             isDirty = dirty,
             canUndo = binding.canUndo(),
             canRedo = binding.canRedo(),
-            documentVersion = binding.currentDocumentVersion(),
+            documentVersion = contentSnapshot.documentVersion,
             charsetName = fileCharset.name()
         )
         detachedEditorSnapshot = snapshot
@@ -237,8 +260,6 @@ class DocumentSession(
             )
         }
     }
-
-    fun hasActiveEditor(): Boolean = editorBinding.get() != null
 
     fun detachedEditorSnapshot(): DetachedEditorSnapshot? = detachedEditorSnapshot
 
@@ -268,16 +289,14 @@ class DocumentSession(
         val binding = editorBinding.get() ?: return
         val effectiveCharset = charset ?: fileCharset
         fileCharset = effectiveCharset
-        cleanVersion = binding.currentDocumentVersion()
-        val text = binding.readText()
-        cleanFingerprint = buildTextFingerprint(text)
+        val snapshot = binding.readSnapshot()
+        cleanVersion = snapshot.documentVersion
+        cleanFingerprint = buildTextFingerprint(snapshot.text)
         baselineState = BaselineState.READY
         val marker = readCurrentWriteMarker()
         if (marker != null) {
             lastInternalWriteMarker = marker
             lastObservedWriteMarker = marker
-            fileLastModifiedOnOpen = marker.modifiedAt
-            fileSizeOnOpen = marker.fileSize
         }
         _state.update {
             it.copy(
@@ -387,8 +406,6 @@ class DocumentSession(
         stopFileWatcher()
         file = newFile
         val marker = readCurrentWriteMarker()
-        fileLastModifiedOnOpen = marker?.modifiedAt ?: if (newFile.exists()) newFile.lastModified() else 0L
-        fileSizeOnOpen = marker?.fileSize ?: if (newFile.exists()) newFile.length() else 0L
         lastInternalWriteMarker = marker
         lastObservedWriteMarker = marker
         _state.update {
@@ -461,9 +478,16 @@ class DocumentSession(
         }
     }
     suspend fun save(reason: SaveReason): SaveResult {
-        _state.update { it.copy(isSaving = true, lastError = null) }
+        var saveStarted = false
         return try {
             saveMutex.withLock {
+                if (_state.value.hasExternalModification) {
+                    return@withLock SaveResult.Failure(
+                        Strings.editor_conflict_message.strOr(context, file.name)
+                    )
+                }
+                saveStarted = true
+                _state.update { it.copy(isSaving = true, lastError = null) }
                 isSavingInternally = true
                 try {
                     val binding = editorBinding.get()
@@ -475,8 +499,14 @@ class DocumentSession(
 
                     val targetFile = file
                     val snapshot = withContext(Dispatchers.IO) {
-                        val text = binding?.readText() ?: detachedSnapshot!!.text
-                        val snapshotVersion = binding?.currentDocumentVersion() ?: detachedSnapshot!!.documentVersion
+                        val contentSnapshot = binding?.readSnapshot() ?: detachedSnapshot!!.let {
+                            EditorContentSnapshot(
+                                text = it.text,
+                                documentVersion = it.documentVersion
+                            )
+                        }
+                        val text = contentSnapshot.text
+                        val snapshotVersion = contentSnapshot.documentVersion
                         val fingerprint = buildTextFingerprint(text)
                         writeFileSafely(targetFile, text)
                         val versionAfterWrite = binding?.currentDocumentVersion() ?: snapshotVersion
@@ -494,8 +524,6 @@ class DocumentSession(
                     cleanVersion = snapshot.documentVersion
                     cleanFingerprint = snapshot.fingerprint
                     baselineState = BaselineState.READY
-                    fileLastModifiedOnOpen = snapshot.fileModifiedAt
-                    fileSizeOnOpen = snapshot.fileSize
                     val internalMarker = FileWriteMarker(
                         modifiedAt = snapshot.fileModifiedAt,
                         fileSize = snapshot.fileSize,
@@ -503,9 +531,35 @@ class DocumentSession(
                     )
                     lastInternalWriteMarker = internalMarker
                     lastObservedWriteMarker = internalMarker
+                    if (fileObserver == null) {
+                        startFileWatcher()
+                    }
+
+                    val currentBinding = editorBinding.get()
+                    val activeBindingDirty = currentBinding?.let { activeBinding ->
+                        val activeSnapshot = activeBinding.readSnapshot()
+                        activeSnapshot.documentVersion == UNSTABLE_DOCUMENT_VERSION ||
+                            activeBinding.currentDocumentVersion() != activeSnapshot.documentVersion ||
+                            buildTextFingerprint(activeSnapshot.text) != snapshot.fingerprint
+                    }
+                    val detachedDirty = if (currentBinding != null) {
+                        detachedEditorSnapshot = null
+                        false
+                    } else {
+                        detachedEditorSnapshot?.let { detached ->
+                            val isDirty = buildTextFingerprint(detached.text) != snapshot.fingerprint
+                            detachedEditorSnapshot = detached.copy(
+                                isDirty = isDirty,
+                                charsetName = fileCharset.name()
+                            )
+                            isDirty
+                        } ?: false
+                    }
+                    val isDirtyAfterSave = activeBindingDirty
+                        ?: (detachedDirty || !snapshot.isUpToDate)
                     _state.update {
                         it.copy(
-                            isDirty = !snapshot.isUpToDate,
+                            isDirty = isDirtyAfterSave,
                             isSaving = false,
                             lastSavedAt = snapshot.timestamp,
                             lastError = null,
@@ -514,17 +568,6 @@ class DocumentSession(
                     }
 
                     // 保存后更新项目级符号索引（只影响当前文件，后台异步处理）
-                    if (binding != null) {
-                        detachedEditorSnapshot = null
-                    } else if (detachedEditorSnapshot != null) {
-                        detachedEditorSnapshot = detachedEditorSnapshot?.copy(
-                            isDirty = !snapshot.isUpToDate,
-                            canUndo = detachedEditorSnapshot?.canUndo ?: false,
-                            canRedo = detachedEditorSnapshot?.canRedo ?: false,
-                            documentVersion = snapshot.documentVersion,
-                            charsetName = fileCharset.name()
-                        )
-                    }
                     projectSymbolIndexServiceProvider()?.onFileSaved(targetFile, snapshot.text)
                     SaveResult.Success(
                         timestamp = snapshot.timestamp,
@@ -535,8 +578,12 @@ class DocumentSession(
                     isSavingInternally = false
                 }
             }
+        } catch (cancellation: CancellationException) {
+            if (saveStarted) {
+                _state.update { it.copy(isSaving = false) }
+            }
+            throw cancellation
         } catch (e: Exception) {
-            isSavingInternally = false
             _state.update { it.copy(isSaving = false, lastError = e.message) }
             SaveResult.Failure(e.message ?: Strings.editor_error_save_failed.strOr(context))
         }
@@ -574,17 +621,17 @@ class DocumentSession(
 
     private fun startFileWatcher() {
         if (!file.exists() || file.isDirectory) return
+        val watchDirectory = file.parentFile?.takeIf { it.isDirectory } ?: return
 
-        val mask = FileObserver.CLOSE_WRITE
         fileObserver = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            object : FileObserver(file, mask) {
+            object : FileObserver(watchDirectory, FILE_WATCH_EVENTS) {
                 override fun onEvent(event: Int, path: String?) {
                     handleFileEvent(event, path)
                 }
             }
         } else {
             @Suppress("DEPRECATION")
-            object : FileObserver(file.absolutePath, mask) {
+            object : FileObserver(watchDirectory.absolutePath, FILE_WATCH_EVENTS) {
                 override fun onEvent(event: Int, path: String?) {
                     handleFileEvent(event, path)
                 }
@@ -594,7 +641,7 @@ class DocumentSession(
     }
 
     private fun handleFileEvent(event: Int, eventPath: String?) {
-        if (event != FileObserver.CLOSE_WRITE) return
+        if (event and FILE_WATCH_EVENTS == 0) return
         if (!eventPath.isNullOrBlank()) {
             val normalized = eventPath.replace('\\', '/')
             val fileName = file.name.replace('\\', '/')
@@ -608,19 +655,19 @@ class DocumentSession(
             if (isSavingInternally) return@launch
 
             val marker = readCurrentWriteMarker() ?: return@launch
-            if (isDuplicateObservedWrite(marker)) return@launch
             if (shouldIgnoreInternalWrite(marker)) return@launch
+            if (isDuplicateObservedWrite(marker)) return@launch
 
-            val changed = marker.modifiedAt > fileLastModifiedOnOpen ||
-                marker.fileSize != fileSizeOnOpen
-            if (changed) {
-                _state.update { current ->
-                    if (current.hasExternalModification) {
-                        current
-                    } else {
-                        current.copy(hasExternalModification = true)
-                    }
-                }
+            markExternalModification()
+        }
+    }
+
+    internal fun markExternalModification() {
+        _state.update { current ->
+            if (current.hasExternalModification) {
+                current
+            } else {
+                current.copy(hasExternalModification = true)
             }
         }
     }
@@ -633,34 +680,37 @@ class DocumentSession(
     fun acknowledgeExternalModification() {
         val marker = readCurrentWriteMarker()
         if (marker != null) {
-            fileLastModifiedOnOpen = marker.modifiedAt
-            fileSizeOnOpen = marker.fileSize
             lastObservedWriteMarker = marker
         }
         _state.update { it.copy(hasExternalModification = false) }
     }
 
     suspend fun forceOverwrite(reason: SaveReason): SaveResult {
+        val restoreConflictOnFailure = _state.value.hasExternalModification
         acknowledgeExternalModification()
-        return save(reason)
+        val result = save(reason)
+        if (restoreConflictOnFailure && result is SaveResult.Failure) {
+            markExternalModification()
+        }
+        return result
     }
 
-    fun reloadFromDisk(): Boolean {
+    suspend fun reloadFromDisk(): Boolean {
         return try {
             val binding = editorBinding.get() ?: return false
-
-            val charset = FileCharsetDetector.detect(file)
-            val newContent = file.readText(charset)
+            val (charset, newContent) = withContext(Dispatchers.IO) {
+                val detectedCharset = FileCharsetDetector.detect(file)
+                detectedCharset to file.readText(detectedCharset)
+            }
 
             binding.setText(newContent)
             fileCharset = charset
-            cleanFingerprint = buildTextFingerprint(binding.readText())
-            cleanVersion = binding.currentDocumentVersion()
+            val snapshot = binding.readSnapshot()
+            cleanFingerprint = buildTextFingerprint(snapshot.text)
+            cleanVersion = snapshot.documentVersion
             baselineState = BaselineState.READY
             val marker = readCurrentWriteMarker()
             if (marker != null) {
-                fileLastModifiedOnOpen = marker.modifiedAt
-                fileSizeOnOpen = marker.fileSize
                 lastInternalWriteMarker = marker
                 lastObservedWriteMarker = marker
             }
@@ -676,6 +726,8 @@ class DocumentSession(
                 )
             }
             true
+        } catch (cancellation: CancellationException) {
+            throw cancellation
         } catch (e: Exception) {
             _state.update { it.copy(lastError = e.message) }
             false
@@ -705,7 +757,7 @@ class DocumentSession(
             return true
         }
 
-        val currentFingerprint = buildTextFingerprint(binding.readText())
+        val currentFingerprint = buildTextFingerprint(binding.readSnapshot().text)
         return currentFingerprint != baseline
     }
 
@@ -732,7 +784,8 @@ class DocumentSession(
         val previous = lastObservedWriteMarker
         if (previous != null &&
             previous.modifiedAt == marker.modifiedAt &&
-            previous.fileSize == marker.fileSize
+            previous.fileSize == marker.fileSize &&
+            marker.observedAt - previous.observedAt in 0..DUPLICATE_FILE_EVENT_WINDOW_MS
         ) {
             return true
         }

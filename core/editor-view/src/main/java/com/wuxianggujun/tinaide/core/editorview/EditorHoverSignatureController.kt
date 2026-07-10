@@ -5,6 +5,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.wuxianggujun.tinaide.core.editorlsp.SignatureHelpResult
 import com.wuxianggujun.tinaide.core.textengine.Position
+import kotlinx.coroutines.CancellationException
+import timber.log.Timber
 
 /**
  * Hover 与 SignatureHelp 的 UI 状态机控制器。
@@ -135,7 +137,14 @@ internal class EditorHoverSignatureController(
             } else {
                 publishHoverVisible(markdown)
             }
-        } catch (_: Throwable) {
+        } catch (cancellation: CancellationException) {
+            if (requestId == activeHoverRequestId) {
+                activeHoverRequestId = 0L
+                clearHover()
+            }
+            throw cancellation
+        } catch (error: Exception) {
+            Timber.tag("EditorHoverSignature").w(error, "Hover request failed")
             if (requestId == activeHoverRequestId) {
                 activeHoverRequestId = 0L
                 clearHover()
@@ -176,7 +185,14 @@ internal class EditorHoverSignatureController(
                     requestId = requestId
                 )
             }
-        } catch (_: Throwable) {
+        } catch (cancellation: CancellationException) {
+            if (requestId == activeSignatureHelpRequestId) {
+                activeSignatureHelpRequestId = 0L
+                clearSignatureHelp()
+            }
+            throw cancellation
+        } catch (error: Exception) {
+            Timber.tag("EditorHoverSignature").w(error, "Signature help request failed")
             if (requestId == activeSignatureHelpRequestId) {
                 activeSignatureHelpRequestId = 0L
                 clearSignatureHelp()

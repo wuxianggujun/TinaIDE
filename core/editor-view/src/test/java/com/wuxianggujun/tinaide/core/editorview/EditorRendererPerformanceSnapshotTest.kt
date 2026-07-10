@@ -3,6 +3,7 @@ package com.wuxianggujun.tinaide.core.editorview
 import android.graphics.Paint
 import android.graphics.Typeface
 import com.google.common.truth.Truth.assertThat
+import com.wuxianggujun.tinaide.core.textengine.RopeTextBuffer
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -15,17 +16,7 @@ class EditorRendererPerformanceSnapshotTest {
     @Test
     fun performanceSnapshot_shouldExposeAccumulatedMetricsAndCacheStats() {
         val lineLayoutCache = EditorLineLayoutCache()
-        val renderer = EditorRenderer(
-            lineNumberRenderer = LineNumberRenderer(
-                horizontalPaddingPx = 8f,
-                edgeStartPaddingPx = 8f
-            ),
-            gutterRenderer = GutterRenderer(minWidthPx = 18f),
-            lineLayoutCache = lineLayoutCache,
-            dividerMarginLeftPx = 4f,
-            dividerMarginRightPx = 4f,
-            dividerWidthPx = 1f
-        )
+        val renderer = createRenderer(lineLayoutCache)
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             textSize = 16f
             typeface = Typeface.MONOSPACE
@@ -72,4 +63,38 @@ class EditorRendererPerformanceSnapshotTest {
         assertThat(snapshot.lineLayoutCacheEntryCount).isEqualTo(1)
         assertThat(snapshot.lineLayoutCacheFloatCount).isEqualTo(5)
     }
+
+    @Test
+    fun hitZones_shouldInvalidateWhenLineNumberTypefaceChanges() {
+        val state = EditorState(RopeTextBuffer((1..120).joinToString("\n")))
+        val renderer = createRenderer()
+        val monospacePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = 16f
+            typeface = Typeface.MONOSPACE
+        }
+        val serifPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = 16f
+            typeface = Typeface.create(Typeface.SERIF, Typeface.BOLD)
+        }
+
+        renderer.hitZones(state, monospacePaint)
+        val actual = renderer.hitZones(state, serifPaint)
+        val expected = createRenderer().hitZones(state, serifPaint)
+
+        assertThat(actual).isEqualTo(expected)
+    }
+
+    private fun createRenderer(
+        lineLayoutCache: EditorLineLayoutCache = EditorLineLayoutCache()
+    ): EditorRenderer = EditorRenderer(
+        lineNumberRenderer = LineNumberRenderer(
+            horizontalPaddingPx = 8f,
+            edgeStartPaddingPx = 8f
+        ),
+        gutterRenderer = GutterRenderer(minWidthPx = 18f),
+        lineLayoutCache = lineLayoutCache,
+        dividerMarginLeftPx = 4f,
+        dividerMarginRightPx = 4f,
+        dividerWidthPx = 1f
+    )
 }

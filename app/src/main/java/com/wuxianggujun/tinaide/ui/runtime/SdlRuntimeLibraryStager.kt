@@ -48,10 +48,6 @@ object SdlRuntimeLibraryStager {
         stageRootDir: File,
         privatePathPrefixes: List<String>
     ): StageResult {
-        if (!mainLibrary.isFile) {
-            return StageResult.Error("Main library not found: ${mainLibrary.absolutePath}")
-        }
-
         return runCatching {
             stageRootDir.mkdirs()
             val stageKey = mainLibrary.absolutePath.hashCode().toUInt().toString(16)
@@ -69,7 +65,6 @@ object SdlRuntimeLibraryStager {
 
             preloadLibraryPaths
                 .map(::File)
-                .filter { it.isFile }
                 .forEach { preload ->
                     val resolved = if (isPrivateRuntimePath(preload, privatePathPrefixes)) {
                         preload
@@ -80,13 +75,6 @@ object SdlRuntimeLibraryStager {
                         stagedPreloads += resolved.absolutePath
                     }
                 }
-
-            collectSiblingProjectLibraries(mainLibrary).forEach { sibling ->
-                val stagedSibling = stageFile(sibling, stageDir)
-                if (stagedSibling.absolutePath != stagedMain.absolutePath) {
-                    stagedPreloads += stagedSibling.absolutePath
-                }
-            }
 
             Timber.tag(TAG).i(
                 "Staged SDL runtime: main=%s -> %s, preloadCount=%d",
@@ -116,19 +104,14 @@ object SdlRuntimeLibraryStager {
         return target
     }
 
-    private fun collectSiblingProjectLibraries(mainLibrary: File): List<File> = mainLibrary.parentFile
-        ?.listFiles { file ->
-            file.isFile &&
-                file.extension.equals("so", ignoreCase = true) &&
-                file.absolutePath != mainLibrary.absolutePath
-        }
-        ?.sortedBy { it.name }
-        .orEmpty()
-
     private fun isPrivateRuntimePath(file: File, privatePathPrefixes: List<String>): Boolean {
-        val absolutePath = file.absolutePath
+        val absolutePath = canonicalOrAbsolute(file).path
         return privatePathPrefixes.any { prefix ->
-            absolutePath.startsWith(prefix)
+            val prefixPath = canonicalOrAbsolute(File(prefix)).path.trimEnd(File.separatorChar)
+            absolutePath == prefixPath || absolutePath.startsWith(prefixPath + File.separator)
         }
     }
+
+    private fun canonicalOrAbsolute(file: File): File =
+        runCatching { file.canonicalFile }.getOrDefault(file.absoluteFile)
 }

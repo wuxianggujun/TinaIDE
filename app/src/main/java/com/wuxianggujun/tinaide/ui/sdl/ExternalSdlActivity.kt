@@ -301,7 +301,16 @@ class ExternalSdlActivity :
                 loadAbsolutePath(candidate)
             }
         }
+        loadAbsolutePath(mainLibraryPath)
     }
+
+    override fun getBrokenLibrariesErrorTitle(): String = Strings.sdl_host_title.strOr(this)
+
+    override fun getBrokenLibrariesErrorMessage(errorMessage: String?): String =
+        Strings.sdl_runtime_error_load_failed.strOr(this, errorMessage.orEmpty())
+
+    override fun getBrokenLibrariesExitButtonText(): String =
+        Strings.floating_overlay_exit.strOr(this)
 
     override fun getLibraries(): Array<String> = emptyArray()
 
@@ -430,14 +439,6 @@ class ExternalSdlActivity :
 
         if (requiredSdlMajor != 2 && requiredSdlMajor != 3) {
             return Strings.sdl_runtime_error_invalid_required_major.strOr(this, requiredSdlMajor)
-        }
-
-        if (!File(mainLibraryPath).isFile) {
-            return Strings.sdl_runtime_error_main_library_invalid.strOr(this, mainLibraryPath)
-        }
-
-        if (!File(sdlLibraryPath).isFile) {
-            return Strings.sdl_runtime_error_sdl_library_invalid.strOr(this, sdlLibraryPath)
         }
 
         return null

@@ -7,6 +7,7 @@ import com.wuxianggujun.tinaide.core.textengine.RopeTextBuffer
 import com.wuxianggujun.tinaide.core.treesitter.TreeSitterFoldingProvider
 import com.wuxianggujun.tinaide.core.treesitter.TreeSitterHighlighter
 import com.wuxianggujun.tinaide.ui.compose.components.editor.EditorTabState
+import java.io.File
 import timber.log.Timber
 
 internal class EditorCodeRuntimeCache(
@@ -35,6 +36,7 @@ internal class EditorCodeRuntimeCache(
                 )
             )
         }
+        runtime.retargetFile(tab.file)
         trim(protectedTabIds = setOf(tab.id))
         return runtime
     }
@@ -43,7 +45,9 @@ internal class EditorCodeRuntimeCache(
         val runtime = getOrCreate(tab)
         if (!runtime.syntaxHighlighterCreationAttempted) {
             runtime.syntaxHighlighterCreationAttempted = true
-            runtime.syntaxHighlighter = TreeSitterHighlighter.create(context.applicationContext, tab.file)
+            runtime.installSyntaxHighlighter(
+                TreeSitterHighlighter.create(context.applicationContext, tab.file)
+            )
         }
         return runtime.syntaxHighlighter
     }
@@ -65,7 +69,7 @@ internal class EditorCodeRuntimeCache(
     }
 
     fun remove(tabId: String) {
-        runtimesByTabId.remove(tabId)?.disposeCodeEditorRuntime()
+        runtimesByTabId.remove(tabId)?.dispose()
     }
 
     fun trim(protectedTabIds: Set<String> = emptySet()) {
@@ -86,7 +90,7 @@ internal class EditorCodeRuntimeCache(
                 tabId !in effectiveProtectedTabIds && tabs.firstOrNull { it.id == tabId }?.isDirty != true
             } ?: break
 
-            runtimesByTabId.remove(evictableTabId)?.disposeCodeEditorRuntime()
+            runtimesByTabId.remove(evictableTabId)?.dispose()
             Timber.tag("EditorContainerState").d(
                 "trimCodeEditorRuntimeCache: evicted tab=%s, remaining=%d",
                 evictableTabId,
@@ -97,24 +101,36 @@ internal class EditorCodeRuntimeCache(
 
     fun remapTabIds(idMap: Map<String, String>) {
         idMap.forEach { (oldId, newId) ->
-            runtimesByTabId.remove(oldId)?.let { runtime -> runtimesByTabId[newId] = runtime }
+            runtimesByTabId.remove(oldId)?.let { runtime ->
+                runtime.resetDocumentBinding()
+                runtime.resetStateBindings()
+                val replaced = runtimesByTabId.put(newId, runtime)
+                if (replaced !== runtime) {
+                    replaced?.dispose()
+                }
+            }
         }
+    }
+
+    fun retargetFile(tabId: String, newFile: File) {
+        runtimesByTabId[tabId]?.retargetFile(newFile)
     }
 
     fun release() {
-        runtimesByTabId.values.forEach { it.disposeCodeEditorRuntime() }
+        runtimesByTabId.values.forEach { it.dispose() }
         runtimesByTabId.clear()
     }
 
-    private fun EditorContainerState.CodeEditorRuntime.disposeCodeEditorRuntime() {
-        syntaxHighlighter?.setOnStateUpdated(null)
-        if (syntaxHighlighter != null && editorState.highlighter === syntaxHighlighter) {
-            editorState.highlighter = null
-        }
-        syntaxHighlighter?.dispose()
-        foldingProvider?.dispose()
-        syntaxHighlighter = null
-        foldingProvider = null
-        isTreeSitterSnapshotReady = false
+    private fun EditorContainerState.CodeEditorRuntime.retargetFile(newFile: File) {
+        if (editorState.file?.absolutePath == newFile.absolutePath) return
+
+        resetDocumentBinding()
+        resetStateBindings()
+        clearLanguageServices()
+        syntaxHighlighterCreationAttempted = false
+        foldingProviderCreationAttempted = false
+        editorState.clearSemanticTokens()
+        editorState.clearFoldRegions()
+        editorState.retargetFile(newFile)
     }
 }

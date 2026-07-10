@@ -251,14 +251,11 @@ object InstalledPackagePathResolver {
                 .filter { it.isNotBlank() }
                 .toSet()
         }.getOrElse { error ->
-            Timber.tag(TAG).w(error, "Failed to read install state, fallback to directory scan")
-            emptySet()
+            Timber.tag(TAG).w(error, "Failed to read install state; ignoring unmanaged package directories")
+            return emptyList()
         }
 
-        // 若安装状态为空（首次启动或历史数据缺失），回退到目录扫描以保持兼容。
-        if (installedAndroidPackageIds.isEmpty()) {
-            return allPackageDirs
-        }
+        if (installedAndroidPackageIds.isEmpty()) return emptyList()
 
         val selected = allPackageDirs.filter { dir -> dir.name in installedAndroidPackageIds }
             .sortedBy { it.name.lowercase() }
@@ -268,7 +265,7 @@ object InstalledPackagePathResolver {
                 installedAndroidPackageIds.size,
                 installDir.absolutePath
             )
-            return allPackageDirs
+            return emptyList()
         }
         return selected
     }

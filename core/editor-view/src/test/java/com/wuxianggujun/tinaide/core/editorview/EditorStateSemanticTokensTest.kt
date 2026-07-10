@@ -60,6 +60,29 @@ class EditorStateSemanticTokensTest {
     }
 
     @Test
+    fun replaceSemanticTokensInLines_shouldRemoveStaleTokensAndPreserveOtherLines() {
+        val state = createState()
+        val preserved = SemanticToken(
+            line = 0,
+            startColumn = 0,
+            length = 2,
+            tokenType = SemanticTokenType.KEYWORD
+        )
+        val stale = SemanticToken(
+            line = 4,
+            startColumn = 1,
+            length = 3,
+            tokenType = SemanticTokenType.FUNCTION
+        )
+        state.replaceSemanticTokens(listOf(preserved, stale))
+
+        state.replaceSemanticTokensInLines(3..5, emptyList())
+
+        assertThat(state.semanticTokensByLine.keys).containsExactly(0)
+        assertThat(state.semanticTokens).containsExactly(preserved)
+    }
+
+    @Test
     fun stylingVersion_shouldBumpForSyntaxAndSemanticChanges() {
         val state = createState()
 

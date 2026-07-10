@@ -15,41 +15,11 @@ internal data class ImeDeleteRange(
         get() = start >= end
 }
 
-internal data class ImeExtractedTextWindow(
-    val startOffset: Int,
-    val endOffset: Int,
-    val documentLength: Int,
-    val textVersion: Long
-) {
-    val length: Int
-        get() = (endOffset - startOffset).coerceAtLeast(0)
-
-    val coversDocument: Boolean
-        get() = startOffset <= 0 && endOffset >= documentLength
-
-    fun isCurrent(documentLength: Int, textVersion: Long): Boolean {
-        return this.documentLength == documentLength &&
-            this.textVersion == textVersion &&
-            startOffset in 0..documentLength &&
-            endOffset in startOffset..documentLength
-    }
-}
-
 internal fun extractedTextSelectionOffset(
     documentOffset: Int,
     windowStartOffset: Int,
     windowLength: Int
 ): Int = (documentOffset - windowStartOffset).coerceIn(0, windowLength.coerceAtLeast(0))
-
-internal fun isFullExtractedTextWindowSelection(
-    start: Int,
-    end: Int,
-    window: ImeExtractedTextWindow?
-): Boolean {
-    if (window == null || window.coversDocument || window.length <= 0) return false
-    return (start == 0 && end == window.length) ||
-        (start == window.length && end == 0)
-}
 
 internal fun mapImeSelectionToDocument(
     start: Int,
