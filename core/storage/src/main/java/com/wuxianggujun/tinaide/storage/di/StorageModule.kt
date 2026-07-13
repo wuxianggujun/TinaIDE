@@ -1,5 +1,7 @@
 package com.wuxianggujun.tinaide.storage.di
 
+import android.content.Context
+import com.wuxianggujun.tinaide.storage.FileDeletionService
 import com.wuxianggujun.tinaide.storage.ProjectLocationManager
 import com.wuxianggujun.tinaide.storage.StorageCleanupManager
 import com.wuxianggujun.tinaide.storage.StorageManager
@@ -15,4 +17,5 @@ val storageModule = module {
         ProjectLocationManager(get(), scope).also { it.onCreate() }
     }
     single { StorageCleanupManager(get()) }
+    single { FileDeletionService(get<Context>()) }
 }

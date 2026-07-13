@@ -12,6 +12,10 @@ import com.wuxianggujun.tinaide.file.IProjectSession
 import com.wuxianggujun.tinaide.project.ProjectListItem
 import com.wuxianggujun.tinaide.project.ProjectMetadataStore
 import com.wuxianggujun.tinaide.project.ProjectSourceLocation
+import com.wuxianggujun.tinaide.storage.FileDeletionCancellationSignal
+import com.wuxianggujun.tinaide.storage.FileDeletionProgress
+import com.wuxianggujun.tinaide.storage.FileDeletionResult
+import com.wuxianggujun.tinaide.storage.FileDeletionService
 import com.wuxianggujun.tinaide.storage.ProjectLocationManager
 import com.wuxianggujun.tinaide.storage.ProjectPaths
 import com.wuxianggujun.tinaide.storage.StorageManager
@@ -33,6 +37,7 @@ class ProjectManagerViewModel(
     private val projectSession: IProjectSession,
     private val projectLocationManager: ProjectLocationManager,
     private val storageManager: StorageManager,
+    private val fileDeletionService: FileDeletionService,
 ) : AndroidViewModel(application) {
 
     private companion object {
@@ -167,34 +172,104 @@ class ProjectManagerViewModel(
         }
     }
 
-    fun deleteProject(
+    suspend fun deleteProject(
         project: ProjectListItem,
-        onResult: (Result<Int>) -> Unit,
-    ) {
-        if (!_isDeleting.compareAndSet(expect = false, update = true)) return
-        viewModelScope.launch {
-            try {
-                val result = runCatching {
-                    val app = getApplication<Application>()
-                    withContext(NonCancellable + Dispatchers.IO) {
-                        val dir = project.dir
-                        ensureProjectFileAccess(dir)
-                        val projectId = project.id ?: ProjectMetadataStore.read(dir)?.id
-                        val ok = dir.deleteRecursively()
-                        if (!ok) throw RuntimeException(Strings.error_delete_failed.strOr(app))
-                        projectId?.let {
-                            runCatching {
-                                projectLocationManager.unregisterProject(it, deleteWorkspace = true)
-                            }
-                        }
-                    }
-                    reloadProjects()
-                    Strings.toast_project_deleted
+        cancellationSignal: FileDeletionCancellationSignal,
+        onProgress: suspend (FileDeletionProgress) -> Unit,
+    ): FileDeletionResult {
+        if (!_isDeleting.compareAndSet(expect = false, update = true)) {
+            return FileDeletionResult.Failure(
+                deletedItems = 0L,
+                totalItems = null,
+                failedPath = project.dir.absolutePath,
+                remainingAtOriginalPath = project.dir.exists(),
+            )
+        }
+
+        try {
+            val projectId = try {
+                withContext(Dispatchers.IO) {
+                    ensureProjectFileAccess(project.dir)
+                    project.id ?: ProjectMetadataStore.read(project.dir)?.id
                 }
-                onResult(result)
-            } finally {
-                _isDeleting.value = false
+            } catch (error: Throwable) {
+                return FileDeletionResult.Failure(
+                    deletedItems = 0L,
+                    totalItems = null,
+                    failedPath = project.dir.absolutePath,
+                    remainingAtOriginalPath = project.dir.exists(),
+                    cause = error,
+                )
             }
+
+            var completedItems = 0L
+            var completedTotal = 0L
+            var stagedOutsidePublicStorage = false
+
+            suspend fun deleteTarget(target: File): FileDeletionResult {
+                val result = fileDeletionService.delete(
+                    target = target,
+                    cancellationSignal = cancellationSignal,
+                    onProgress = { progress ->
+                        val targetTotalItems = progress.totalItems
+                        onProgress(
+                            if (targetTotalItems == null) {
+                                progress
+                            } else {
+                                progress.copy(
+                                    completedItems = completedItems + progress.completedItems,
+                                    totalItems = completedTotal + targetTotalItems,
+                                )
+                            }
+                        )
+                    },
+                )
+                return when (result) {
+                    is FileDeletionResult.Success -> {
+                        completedItems += result.deletedItems
+                        completedTotal += result.totalItems
+                        stagedOutsidePublicStorage =
+                            stagedOutsidePublicStorage || result.stagedOutsidePublicStorage
+                        result
+                    }
+                    is FileDeletionResult.Cancelled -> result.copy(
+                        deletedItems = completedItems + result.deletedItems,
+                        totalItems = result.totalItems?.let { completedTotal + it },
+                    )
+                    is FileDeletionResult.Failure -> result.copy(
+                        deletedItems = completedItems + result.deletedItems,
+                        totalItems = result.totalItems?.let { completedTotal + it },
+                    )
+                }
+            }
+
+            val workspaceResult = projectId
+                ?.let { ProjectPaths.getProjectWorkspaceDir(getApplication(), it) }
+                ?.takeIf(File::exists)
+                ?.let { workspace -> deleteTarget(workspace) }
+            if (workspaceResult != null && workspaceResult !is FileDeletionResult.Success) {
+                return workspaceResult
+            }
+
+            val sourceResult = deleteTarget(project.dir)
+            if (sourceResult !is FileDeletionResult.Success) return sourceResult
+
+            projectId?.let { id ->
+                withContext(Dispatchers.IO) {
+                    runCatching { projectLocationManager.unregisterProject(id, deleteWorkspace = false) }
+                        .onFailure { error ->
+                            Timber.tag(TAG).w(error, "Failed to unregister deleted project: %s", id)
+                        }
+                }
+            }
+            reloadProjects()
+            return FileDeletionResult.Success(
+                deletedItems = completedItems,
+                totalItems = completedTotal,
+                stagedOutsidePublicStorage = stagedOutsidePublicStorage,
+            )
+        } finally {
+            _isDeleting.value = false
         }
     }
 

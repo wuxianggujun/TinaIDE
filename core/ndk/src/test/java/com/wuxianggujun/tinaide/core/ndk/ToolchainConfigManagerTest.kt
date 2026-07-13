@@ -3,6 +3,7 @@ package com.wuxianggujun.tinaide.core.ndk
 import android.content.Context
 import com.google.common.truth.Truth.assertThat
 import java.io.File
+import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -57,7 +58,7 @@ class ToolchainConfigManagerTest {
     }
 
     @Test
-    fun removeToolchain_shouldRejectActiveToolchain() {
+    fun removeToolchain_shouldRejectActiveToolchain() = runTest {
         val info = toolchainInfo(id = "custom", path = "toolchains/custom")
         manager.getToolchainDir("custom").mkdirs()
         manager.saveConfig(
@@ -72,6 +73,23 @@ class ToolchainConfigManagerTest {
         assertThat(result.isFailure).isTrue()
         assertThat(result.exceptionOrNull()).isInstanceOf(IllegalStateException::class.java)
         assertThat(manager.readConfig().toolchains).containsExactly(info)
+    }
+
+    @Test
+    fun removeToolchain_shouldDeleteDirectoryAndConfigEntry() = runTest {
+        val info = toolchainInfo(id = "custom", path = "toolchains/custom")
+        val toolchainDir = manager.getToolchainDir("custom")
+        File(toolchainDir, "bin/clang").apply {
+            parentFile?.mkdirs()
+            writeText("clang", Charsets.UTF_8)
+        }
+        manager.registerToolchain(info)
+
+        val result = manager.removeToolchain("custom")
+
+        assertThat(result.isSuccess).isTrue()
+        assertThat(toolchainDir.exists()).isFalse()
+        assertThat(manager.readConfig().toolchains).isEmpty()
     }
 
     private fun toolchainInfo(

@@ -7,6 +7,7 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
 import android.net.Uri
+import android.os.Build
 import android.provider.OpenableColumns
 import android.provider.Settings
 import android.widget.Toast
@@ -59,6 +60,7 @@ import com.wuxianggujun.tinaide.core.apkbuilder.ApkKeyStoreManager
 import com.wuxianggujun.tinaide.core.apkbuilder.ApkSigningConfig
 import com.wuxianggujun.tinaide.core.apkbuilder.ApkTemplateType
 import com.wuxianggujun.tinaide.core.apkbuilder.DebugKeyStore
+import com.wuxianggujun.tinaide.core.apkbuilder.NativeLibraryAbiDetector
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.str
 import com.wuxianggujun.tinaide.core.i18n.strOr
@@ -101,6 +103,7 @@ private data class RememberedCustomSigning(
  * @param preloadLibraries Additional libraries to include
  * @param missingLibraries Runtime libraries that could not be auto-resolved
  * @param availablePackages Package index used to infer providers for missing libraries
+ * @param installedLibraryPackageIndex Installed package providers indexed by library name
  * @param onOpenPackageManager Called when user wants to search packages for missing libraries
  * @param onDismiss Called when dialog is dismissed
  */
@@ -117,6 +120,7 @@ fun ApkPackageDialog(
     preloadLibraries: List<File> = emptyList(),
     missingLibraries: List<String> = emptyList(),
     availablePackages: List<GUIPackage> = emptyList(),
+    installedLibraryPackageIndex: Map<String, String> = emptyMap(),
     onOpenPackageManager: ((String) -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
@@ -234,12 +238,13 @@ fun ApkPackageDialog(
     val suggestedMissingLibraryPackageIds = remember(
         remainingMissingLibraries,
         availablePackages,
+        installedLibraryPackageIndex,
         context.filesDir
     ) {
         NativeLibraryDependencyHints.inferPackageIds(
             libraryNames = remainingMissingLibraries,
             availablePackages = availablePackages,
-            installedLibraryPackageIndex = NativeLibraryDependencyHints.buildInstalledLibraryPackageIndex(context)
+            installedLibraryPackageIndex = installedLibraryPackageIndex,
         )
     }
     val missingLibrariesMessage = if (remainingMissingLibraries.isNotEmpty()) {
@@ -1136,6 +1141,15 @@ fun ApkPackageDialog(
                                 }
                                 val config = ApkBuildConfig(
                                     soFiles = effectiveSoFiles,
+                                    targetAbis = listOf(
+                                        effectiveSoFiles
+                                            .firstOrNull { it.name == "libmain.so" }
+                                            ?.let { mainLibrary ->
+                                                runCatching { NativeLibraryAbiDetector.detect(mainLibrary) }.getOrNull()
+                                            }
+                                            ?: Build.SUPPORTED_ABIS.firstOrNull()
+                                            ?: "arm64-v8a"
+                                    ),
                                     executableFile = if (resolvedTemplateOption.templateType == ApkTemplateType.TERMINAL) executableFile else null,
                                     packageName = packageName.trim(),
                                     appName = appName.trim(),
@@ -1418,19 +1432,14 @@ private fun isSharedLibraryFileName(name: String): Boolean = name.contains(".so"
 
 private fun mergeNamedLibraries(
     baseLibraries: List<File>,
-    overridingLibraries: List<File>
-): List<File> {
-    val merged = linkedMapOf<String, File>()
-    baseLibraries
-        .asSequence()
-        .filter(File::isFile)
-        .forEach { merged[it.name] = it }
-    overridingLibraries
-        .asSequence()
-        .filter(File::isFile)
-        .forEach { merged[it.name] = it }
-    return merged.values.toList()
-}
+    additionalLibraries: List<File>
+): List<File> = (baseLibraries + additionalLibraries)
+    .asSequence()
+    .filter(File::isFile)
+    .distinctBy { library ->
+        runCatching { library.canonicalPath }.getOrDefault(library.absolutePath)
+    }
+    .toList()
 
 private fun deleteManagedApkExportFileIfPresent(file: File, managedDir: File) {
     val resolvedFile = runCatching { file.canonicalFile }.getOrDefault(file.absoluteFile)

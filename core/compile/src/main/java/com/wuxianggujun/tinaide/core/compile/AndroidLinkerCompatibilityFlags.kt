@@ -3,7 +3,7 @@ package com.wuxianggujun.tinaide.core.compile
 import com.wuxianggujun.tinaide.core.ndk.AndroidSysrootManager
 
 internal object AndroidLinkerCompatibilityFlags {
-    internal const val DISABLE_AARCH64_AUTH_RELR_PACKING = "-Wl,-z,nopack-relative-auth-relocs"
+    internal const val DISABLE_RELATIVE_RELOCATION_PACKING = "-Wl,-z,nopack-relative-relocs"
 
     private const val ANDROID_RELR_MIN_API_LEVEL = 28
 
@@ -14,7 +14,7 @@ internal object AndroidLinkerCompatibilityFlags {
         return if (arch == AndroidSysrootManager.Companion.Arch.ARM64 &&
             apiLevel >= ANDROID_RELR_MIN_API_LEVEL
         ) {
-            listOf(DISABLE_AARCH64_AUTH_RELR_PACKING)
+            listOf(DISABLE_RELATIVE_RELOCATION_PACKING)
         } else {
             emptyList()
         }

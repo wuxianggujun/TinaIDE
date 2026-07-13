@@ -4,6 +4,7 @@ import java.io.File
 
 data class ApkBuildConfig(
     val soFiles: List<File>,
+    val targetAbis: List<String>,
     val executableFile: File? = null,
     val packageName: String,
     val appName: String,
@@ -12,7 +13,6 @@ data class ApkBuildConfig(
     val requestedPermissions: List<String> = emptyList(),
     val templateType: ApkTemplateType,
     val templateFile: File? = null,
-    val targetAbis: List<String> = listOf("arm64-v8a"),
     val sdlLibraryPath: File? = null,
     val preloadLibraries: List<File> = emptyList(),
     val iconFile: File? = null,

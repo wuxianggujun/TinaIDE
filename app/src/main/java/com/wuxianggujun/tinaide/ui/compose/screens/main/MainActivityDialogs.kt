@@ -7,6 +7,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
@@ -29,6 +30,7 @@ import com.wuxianggujun.tinaide.editor.session.SaveResult
 import com.wuxianggujun.tinaide.extensions.toastError
 import com.wuxianggujun.tinaide.extensions.toastInfo
 import com.wuxianggujun.tinaide.extensions.toastSuccess
+import com.wuxianggujun.tinaide.file.IFileDeletionOperations
 import com.wuxianggujun.tinaide.file.IFileOperations
 import com.wuxianggujun.tinaide.plugin.PluginManager
 import com.wuxianggujun.tinaide.plugin.ResolvedPluginApkExport
@@ -65,9 +67,12 @@ import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorActionsState
 import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState
 import com.wuxianggujun.tinaide.ui.compose.state.git.GitDialogState
 import com.wuxianggujun.tinaide.ui.compose.state.git.GitUiState
+import com.wuxianggujun.tinaide.ui.runtime.NativeLibraryDependencyHints
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.koin.compose.koinInject
 import timber.log.Timber
 
@@ -327,6 +332,7 @@ internal fun MainActivityFileDialogs(
 ) {
     val context = LocalContext.current
     val fileOperations: IFileOperations = koinInject()
+    val fileDeletionOperations: IFileDeletionOperations = koinInject()
 
     // 新建文件对话框
     if (dialogState.showNewFileDialog && dialogState.newFileTargetDir != null) {
@@ -371,7 +377,7 @@ internal fun MainActivityFileDialogs(
         DeleteConfirmDialog(
             file = dialogState.deleteFile!!,
             onDismiss = { dialogState.closeDeleteDialog() },
-            onDelete = fileOperations::deleteFile
+            onDelete = fileDeletionOperations::deleteFile,
         )
     }
 
@@ -542,42 +548,72 @@ internal fun MainActivityApkPackageDialog(
     }
     var availablePackages by remember { mutableStateOf<List<GUIPackage>>(emptyList()) }
     val enabledPlugins by pluginManager.enabledPluginsFlow.collectAsStateWithLifecycle()
-    val exportPayload = remember(
+    val exportPayload by produceState<MainActivityApkExportPayload?>(
+        null,
         state.showApkPackageDialog,
         state.apkExportType,
         projectRoot?.absolutePath,
         buildDir?.absolutePath
     ) {
-        when (state.apkExportType) {
-            ProjectApkExportType.TERMINAL -> {
-                val resolution = TerminalApkExportResolver.resolve(
-                    context = context,
-                    projectRoot = projectRoot,
-                    buildDir = buildDir
-                )
-                MainActivityApkExportPayload(
-                    soFiles = resolution.packagedLibraries,
-                    executableFile = resolution.executableFile,
-                    missingLibraries = resolution.missingLibraries
-                )
-            }
+        value = withContext(Dispatchers.IO) {
+            when (state.apkExportType) {
+                ProjectApkExportType.TERMINAL -> {
+                    val resolution = TerminalApkExportResolver.resolve(
+                        context = context.applicationContext,
+                        projectRoot = projectRoot,
+                        buildDir = buildDir
+                    )
+                    MainActivityApkExportPayload(
+                        soFiles = resolution.packagedLibraries,
+                        executableFile = resolution.executableFile,
+                        missingLibraries = resolution.missingLibraries,
+                        installedLibraryPackageIndex = resolveInstalledLibraryPackageIndex(
+                            context = context.applicationContext,
+                            missingLibraries = resolution.missingLibraries,
+                        ),
+                    )
+                }
 
-            ProjectApkExportType.SDL3,
-            ProjectApkExportType.NATIVE_ACTIVITY,
-            ProjectApkExportType.DISABLED,
-            null -> {
-                val resolution = ApkExportRuntimeLibrariesResolver.resolve(
-                    context = context,
-                    projectRoot = projectRoot,
-                    buildDir = buildDir
-                )
-                MainActivityApkExportPayload(
-                    soFiles = resolution.packagedLibraries,
-                    executableFile = null,
-                    missingLibraries = resolution.missingLibraries
-                )
+                ProjectApkExportType.SDL3,
+                ProjectApkExportType.NATIVE_ACTIVITY,
+                ProjectApkExportType.DISABLED,
+                null -> {
+                    val resolution = ApkExportRuntimeLibrariesResolver.resolve(
+                        context = context.applicationContext,
+                        projectRoot = projectRoot,
+                        buildDir = buildDir
+                    )
+                    MainActivityApkExportPayload(
+                        soFiles = resolution.packagedLibraries,
+                        executableFile = null,
+                        missingLibraries = resolution.missingLibraries,
+                        installedLibraryPackageIndex = resolveInstalledLibraryPackageIndex(
+                            context = context.applicationContext,
+                            missingLibraries = resolution.missingLibraries,
+                        ),
+                    )
+                }
             }
         }
+    }
+    val resolvedExportPayload = exportPayload
+    if (resolvedExportPayload == null) {
+        TinaAlertDialog(
+            onDismissRequest = state::closeApkPackageDialog,
+            title = { TinaDialogTitleText(stringResource(Strings.apk_builder_title)) },
+            text = {
+                TinaDialogContentColumn {
+                    TinaDialogMessageCard(message = stringResource(Strings.loading))
+                }
+            },
+            confirmButton = {
+                TinaTextButton(
+                    text = stringResource(Strings.action_close),
+                    onClick = state::closeApkPackageDialog,
+                )
+            },
+        )
+        return
     }
     val outputDir = remember(
         state.showApkPackageDialog,
@@ -656,14 +692,15 @@ internal fun MainActivityApkPackageDialog(
     }
 
     ApkPackageDialog(
-        soFiles = exportPayload.soFiles,
-        executableFile = exportPayload.executableFile,
+        soFiles = resolvedExportPayload.soFiles,
+        executableFile = resolvedExportPayload.executableFile,
         projectName = projectName,
         outputDir = outputDir,
         templateOptions = templateOptions,
         initialTemplateOptionId = initialTemplateOptionId,
-        missingLibraries = exportPayload.missingLibraries,
+        missingLibraries = resolvedExportPayload.missingLibraries,
         availablePackages = availablePackages,
+        installedLibraryPackageIndex = resolvedExportPayload.installedLibraryPackageIndex,
         onOpenPackageManager = { searchQuery ->
             state.closeApkPackageDialog()
             SettingsActivity.startPackages(context, searchQuery)
@@ -675,8 +712,18 @@ internal fun MainActivityApkPackageDialog(
 private data class MainActivityApkExportPayload(
     val soFiles: List<File>,
     val executableFile: File?,
-    val missingLibraries: List<String>
+    val missingLibraries: List<String>,
+    val installedLibraryPackageIndex: Map<String, String>,
 )
+
+private fun resolveInstalledLibraryPackageIndex(
+    context: android.content.Context,
+    missingLibraries: List<String>,
+): Map<String, String> = if (missingLibraries.isEmpty()) {
+    emptyMap()
+} else {
+    NativeLibraryDependencyHints.buildInstalledLibraryPackageIndex(context)
+}
 
 private fun toApkExportTemplateOption(
     export: ResolvedPluginApkExport

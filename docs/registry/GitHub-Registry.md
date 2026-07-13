@@ -1,15 +1,15 @@
 # TinaIDE GitHub Registry
 
-> 更新日期：2026-07-03
+> 最后人工核验：2026-07-10
 
-TinaIDE 开源版的插件市场与依赖包市场不再从 TinaServer 读取索引。
+TinaIDE 开源版的插件市场、依赖包市场与 Linux distro manifest 不再从 TinaServer 读取元数据。
 客户端默认读取公开仓库：
 
 ```text
 https://github.com/wuxianggujun/TinaIDE-Registry
 ```
 
-这个仓库是插件与依赖包的公开 Registry，不是 Android 主项目的源码目录。
+这个仓库是插件、依赖包与 Linux distro 元数据的公开 Registry，不是 Android 主项目的源码目录。
 它现在同时承载：
 
 - `plugins/index.v2.json` / `packages/index.v2.json`
@@ -17,6 +17,7 @@ https://github.com/wuxianggujun/TinaIDE-Registry
 - `plugins/<plugin-id>/<version>/*.tinaplug`
 - `packages/<package-id>/package.json`
 - `packages/<package-id>/<version>/*`
+- `linux-distro/manifest.v1.json`
 - `sources/plugins/**`
 - `sources/plugin-starters/**`
 - `metadata/*.json`
@@ -25,7 +26,7 @@ https://github.com/wuxianggujun/TinaIDE-Registry
 发布插件或依赖包时，需要把 `.tinaplug` / 包文件放入该仓库约定目录，或在索引里填写
 可信 CDN、对象存储、自建代理的绝对下载地址，并同步更新对应索引。
 
-客户端内置两个 Registry base，按顺序自动尝试：
+客户端会从 GitHub Raw 和 jsDelivr 开始按顺序尝试 Registry 端点：
 
 ```text
 https://raw.githubusercontent.com/wuxianggujun/TinaIDE-Registry/main
@@ -33,7 +34,7 @@ https://cdn.jsdelivr.net/gh/wuxianggujun/TinaIDE-Registry@main
 ```
 
 默认优先走 GitHub Raw，避免 jsDelivr 缓存旧索引导致市场列表为空；
-Raw 不可用时再回退到 jsDelivr CDN。
+Raw 不可用时再回退到 jsDelivr CDN，仍失败时才尝试当前代码配置的 GitHub Raw 代理候选。
 如果用户设备配置了系统代理，OkHttp 会继续按系统代理策略发起请求。
 
 不建议把插件/依赖索引托管在不可信的第三方 GitHub 加速代理上，因为索引会决定
@@ -55,6 +56,7 @@ plugins/<plugin-id>/<version>/<plugin-id>.tinaplug
 packages/index.v2.json
 packages/<package-id>/package.json
 packages/<package-id>/<version>/<file>.tar.xz
+linux-distro/manifest.v1.json
 sources/plugins/<plugin-id>/manifest.json
 sources/plugin-starters/<template>/
 metadata/plugins.json
@@ -62,9 +64,12 @@ metadata/packages.json
 scripts/build-registry.ps1
 ```
 
-当前 Android 主干只读取 v2 索引；v2 不存在、请求失败或解析失败时会直接返回错误，
+插件和依赖包市场只读取 v2 索引；v2 不存在、请求失败或解析失败时会直接返回错误，
 不再回退旧的 `plugins/index.json` / `packages/index.json`。Registry 默认也不再生成
 v1 全量索引；确实需要服务旧客户端时，才显式生成 v1 兼容产物。
+
+Linux distro 使用独立的 `linux-distro/manifest.v1.json` 协议。它不是市场 v1 fallback：
+显式刷新时按新鲜缓存、Registry 多端点、过期缓存、内置 asset 的顺序回落；启动和普通列表读取不会隐式请求网络。manifest 中的 artifact 保留官方 URL，`mirrors` 只负责派生替代下载地址，最终内容仍必须通过 SHA-256 校验。
 
 `download_url` 和 `download_sources[].url` 支持两种写法：
 

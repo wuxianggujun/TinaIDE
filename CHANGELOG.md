@@ -1,6 +1,6 @@
 # Changelog
 
-> 说明：服务端（后端/部署脚本）相关的变更记录请查看 `server/CHANGELOG.md`；服务器侧的部署文档更新也统一放在 `server/ops/**` 下，避免根 Changelog 混入运维细节。
+> 范围：本文件记录 TinaIDE Android App、仓库内构建工具和配套文档的版本变化。当前仓库没有独立服务端发布单元。
 
 本文档记录 TinaIDE 项目的版本更新历史，包括新功能、Bug 修复和改进。
 
@@ -11,20 +11,17 @@
 
 ## 维护约定（开发者）
 
-### App（TinaIDE）更新记录写在此处
+### TinaIDE 主仓库更新记录写在此处
 
-- 本文件 `CHANGELOG.md` 仅记录 TinaIDE App 的版本变更（新增功能 / 修复 / 优化）。
+- 本文件 `CHANGELOG.md` 记录 TinaIDE App，以及随 App 一起交付或维护的构建工具和文档变化。
 - 如需在提交时记录“文件级别操作”（A/M/D/R），可将 `git diff --cached --name-status` 的输出粘贴到对应版本区块的 `### Changed Files` 小节中（可选）。
 
-### 前端/后端/运维（server）更新写到 `server/CHANGELOG.md`
-
-- `server/` 下的变更（`tina-admin`、`tina-server`、`ops` 等）统一写入 `server/CHANGELOG.md`，不要写到本文件。
-
-### 版本号一致则合并追加，不要滥增版本
+### 已发布版本保持稳定，开发中变化写入 Unreleased
 
 - 先从 `version.properties` 读取当前 `versionName`。
-- 若本文件已存在该 `versionName` 的版本区块，则把本次变更**合并追加**到该区块中。
-- 只有当 `versionName` 确实发生变化（计划发布/升级）时，才创建新的版本区块。
+- 若对应版本已经打 Tag 或对外发布，不再把后续开发变化追加到该版本区块；统一写入 `Unreleased`。
+- 准备发布时，再把 `Unreleased` 内容归档到新的版本号和发布日期下。
+- 若版本尚未发布且只是同一发布候选的补充，可以合并到该版本区块，但必须在发布前完成。
 
 ### 新版本可详细，旧版本需精简
 
@@ -32,10 +29,54 @@
 - **旧版本**应逐步“压缩”为摘要：只保留用户可感知的变化点，避免继续维护大量已删除文件/类的链接与细节。
 - 若旧版本内容中引用的文件/类已不存在，可在整理时移除/合并相关条目（保持可读性优先）。
 
-### 不使用“未发布/Unreleased”区块
+## [Unreleased]
 
-- 本项目不使用 `Unreleased` / `未发布` 区块。
-- 所有变更必须归档到明确的版本号区块（版本号来源：`version.properties` 的 `versionName`）。
+## [0.18.11] - 2026-07-13
+
+### Changed
+
+- 大目录删除统一迁移到后台文件服务，新增扫描/删除进度、取消操作和异常退出恢复；公开项目目录优先同卷暂存后删除，减少逐文件触发 MediaProvider 的开销。
+- App 启动按主进程、崩溃进程、工具链进程和用户 native runtime 分流，非主进程只初始化崩溃捕获、主题与国际化所需的最小能力。
+- 内置依赖包改为带进程内/文件锁的 staging 原子发布，编译前会等待当前安装批次结束，避免启动安装与首次构建竞争同一目录。
+- 终端运行配置支持带引号和转义的参数解析，并为 Android linker 兼容告警提供默认隐藏、用户显式开启的输出选项。
+- 终端与底部日志按帧批量刷新并限制 UI 保留数量，运行暂存目录增加有界清理，降低持续输出和反复运行造成的重组与磁盘压力。
+- 加固 SDL 与通用 native library 的收集、ABI 识别、依赖排序和 APK 打包链路，减少运行时缺少间接 `.so` 或装载顺序错误的问题。
+- 重构编辑器文本缓冲、输入法编辑、撤销/重做、补全、签名提示和语义高亮同步逻辑，降低长文档编辑和增量更新时的状态漂移。
+- 工作区文本编辑改为通过统一入口应用；文档保存新增原子写入能力，自动保存与标签生命周期的状态收敛更明确。
+- Tree-sitter 增量高亮补充 query predicate 处理，并更新 Kotlin、XML 与 properties 查询资源。
+- Kotlin/Android library 模块的质量检查集中到 convention plugin，减少根构建脚本中的重复配置。
+
+### Fixed
+
+- 修复从侧滑文件树或项目列表删除 `build` 等大目录时主线程长时间卡住、对话框失去响应甚至进程崩溃的问题。
+- 修复终端运行时显示完整内部 staging shell 命令、默认刷出三类无害 AArch64 动态链接器告警，以及退出提示未跟随系统语言的问题。
+- 修复 arm64 编译使用已被当前 `ld.lld` 拒绝的 `nopack-relative-auth-relocs` 参数而产生 `unknown -z value` 告警的问题。
+- 修复主界面与编辑器入口重复执行工具链/sysroot 扫描、`:crash` 等辅助进程加载宿主数据库与后台任务，以及首次构建可能抢在内置包发布完成前开始的问题。
+- 修复终端 shell 探测、包安装/卸载、工具链与 sysroot 配置删除仍可能占用调用线程，以及项目克隆失败清理不完整的问题。
+- 恢复根构建的 Android application/library 插件版本声明，并让 App 继续使用 AGP 内置 Kotlin 提供的 Parcelize 插件标记，修复本地 `external` 模块解析失败及 Parcelize 版本冲突。
+- 修复 SDL 工程导出 APK 时，native 依赖解析、ABI 目录判断和动态库装载顺序在部分项目结构下不稳定的问题。
+- 修复编辑器输入法组合文本、光标恢复、snippet 同步编辑、签名提示和撤销/重做在部分操作序列中的回归。
+- 修复自动保存与文件写入在并发或中断场景下可能留下不完整内容的问题。
+
+### Documentation
+
+- 修正远程 LSP 与 PC 代理指南中的设置入口，统一为当前的“设置 → 语言服务器”。
+- 更新 SDL 游戏引擎插件文档，补充当前 native runtime 打包与依赖处理口径。
+- 刷新当前事实源文档、Linux distro 运行时说明和 App 内设置帮助，并增加轻量文档一致性检查。
+- App 内 29 份帮助正文新增英文版本，帮助仓库按当前 Locale 加载英文并在缺失时回落到中文。
+- 同步中英文根 README 的 Registry、Linux distro 回落、SDK 与架构口径，并补齐架构/模块清单中的当前能力。
+
+### Tests
+
+- 新增大目录删除/取消/恢复、启动进程角色、终端参数与告警过滤、本地化退出提示、运行暂存清理、包安装就绪、工具链删除、日志保留和项目克隆清理回归测试。
+- 扩展 APK builder、SDL runtime、编辑器状态、文本缓冲、Tree-sitter、WorkspaceEdit、原子写入和自动保存回归测试。
+
+### Verification
+
+- 已执行 `py tools/checks/check_all.py`，文档、国际化、资源冲突和直接文件操作基线检查通过。
+- 已执行 `./gradlew :core:storage:testDebugUnitTest :core:compile:testDebugUnitTest :core:packages:testDebugUnitTest :core:ndk:testDebugUnitTest :feature:terminal:testDebugUnitTest :feature:projectlist:testDebugUnitTest :app:testArm64DebugUnitTest --continue --console=plain`。
+- 已执行 `./gradlew ktlintCheck --console=plain`。
+- 已执行 `./gradlew :app:assembleArm64Debug --console=plain`，Arm64 Debug 候选 APK 打包通过。
 
 ## [0.18.10] - 2026-06-29
 

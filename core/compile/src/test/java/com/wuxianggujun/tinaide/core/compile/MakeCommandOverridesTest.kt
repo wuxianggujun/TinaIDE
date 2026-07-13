@@ -7,14 +7,22 @@ class MakeCommandOverridesTest {
 
     @Test
     fun `isValidSysrootApiLevel accepts configured range`() {
-        assertThat(MakeCommandOverrides.isValidSysrootApiLevel(21)).isTrue()
-        assertThat(MakeCommandOverrides.isValidSysrootApiLevel(35)).isTrue()
+        assertThat(
+            MakeCommandOverrides.isValidSysrootApiLevel(MakeCommandOverrides.MIN_SYSROOT_API_LEVEL)
+        ).isTrue()
+        assertThat(
+            MakeCommandOverrides.isValidSysrootApiLevel(MakeCommandOverrides.MAX_SYSROOT_API_LEVEL)
+        ).isTrue()
     }
 
     @Test
     fun `isValidSysrootApiLevel rejects out of range values`() {
-        assertThat(MakeCommandOverrides.isValidSysrootApiLevel(20)).isFalse()
-        assertThat(MakeCommandOverrides.isValidSysrootApiLevel(36)).isFalse()
+        assertThat(
+            MakeCommandOverrides.isValidSysrootApiLevel(MakeCommandOverrides.MIN_SYSROOT_API_LEVEL - 1)
+        ).isFalse()
+        assertThat(
+            MakeCommandOverrides.isValidSysrootApiLevel(MakeCommandOverrides.MAX_SYSROOT_API_LEVEL + 1)
+        ).isFalse()
     }
 
     @Test

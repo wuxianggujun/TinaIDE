@@ -24,10 +24,12 @@ class HelpRepositoryCatalogTest {
         val documents = repository.getAllDocuments()
         val sortedDocuments = documents.sortedWith(compareBy({ it.category.ordinal }, { it.order }))
         val assetNames = context.assets.list("help").orEmpty().toSet()
+        val englishAssetNames = context.assets.list("help/en").orEmpty().toSet()
 
         assertThat(documents.map { it.id }).containsNoDuplicates()
         assertThat(documents).containsExactlyElementsIn(sortedDocuments).inOrder()
         assertThat(assetNames).containsAtLeastElementsIn(documents.map { it.fileName })
+        assertThat(englishAssetNames).containsAtLeastElementsIn(documents.map { it.fileName })
     }
 
     @Test

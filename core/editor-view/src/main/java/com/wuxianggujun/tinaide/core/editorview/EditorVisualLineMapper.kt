@@ -250,7 +250,7 @@ internal class EditorVisualLineMapper(
     /**
      * 返回按文档行索引的 wrap segmentCount。
      * 命中缓存直接返回；否则按 wrap/tabSize/docLineCount/textVersion 任一变化做全量重建。
-     * 文本增量变化走 [applyTextChangeToDocSegmentCounts]（在 [EditorState.onTextBufferChanged] 内调用）。
+ * 文本增量变化走 [applyTextChangeToDocSegmentCounts]（在 [EditorState.applyTextBufferChange] 内调用）。
      */
     private fun ensureDocSegmentCounts(
         wrapColumns: Int,

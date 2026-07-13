@@ -331,6 +331,21 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
        }
     }
 
+    protected String getBrokenLibrariesErrorTitle() {
+        return "SDL Error";
+    }
+
+    protected String getBrokenLibrariesErrorMessage(String errorMessage) {
+        return "An error occurred while trying to start the application. Please try again and/or reinstall."
+              + System.getProperty("line.separator")
+              + System.getProperty("line.separator")
+              + "Error: " + errorMessage;
+    }
+
+    protected String getBrokenLibrariesExitButtonText() {
+        return "Exit";
+    }
+
     /**
      * This method is called by SDL before starting the native application thread.
      * It can be overridden to provide the arguments after the application name.
@@ -424,12 +439,9 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         if (mBrokenLibraries) {
             mSingleton = this;
             AlertDialog.Builder dlgAlert  = new AlertDialog.Builder(this);
-            dlgAlert.setMessage("An error occurred while trying to start the application. Please try again and/or reinstall."
-                  + System.getProperty("line.separator")
-                  + System.getProperty("line.separator")
-                  + "Error: " + errorMsgBrokenLib);
-            dlgAlert.setTitle("SDL Error");
-            dlgAlert.setPositiveButton("Exit",
+            dlgAlert.setMessage(getBrokenLibrariesErrorMessage(errorMsgBrokenLib));
+            dlgAlert.setTitle(getBrokenLibrariesErrorTitle());
+            dlgAlert.setPositiveButton(getBrokenLibrariesExitButtonText(),
                 new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface dialog,int id) {

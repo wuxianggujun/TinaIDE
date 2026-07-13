@@ -17,6 +17,7 @@ class ManifestPatcherTest {
             loadTemplateManifestBytes(),
             ApkBuildConfig(
                 soFiles = emptyList<File>(),
+                targetAbis = listOf("arm64-v8a"),
                 packageName = "com.example.dynamic",
                 appName = "Dynamic Export",
                 versionCode = 7,
@@ -53,6 +54,7 @@ class ManifestPatcherTest {
             loadTemplateManifestBytes(),
             ApkBuildConfig(
                 soFiles = emptyList<File>(),
+                targetAbis = listOf("arm64-v8a"),
                 packageName = "com.example.empty",
                 appName = "Empty",
                 requestedPermissions = emptyList(),

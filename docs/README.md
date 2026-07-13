@@ -1,6 +1,6 @@
 # TinaIDE 文档中心
 
-> 更新日期：2026-07-03
+> 最后人工核验：2026-07-11
 
 这里汇总 TinaIDE 当前仍然有效的项目文档，并标出应该优先回看的源码入口。
 
@@ -12,6 +12,7 @@
 - [开发指南](开发指南.md)：本地开发、验证命令、提交与协作约束
 - [文档状态与生命周期](documentation-status.md)：文档可信层级、历史参考边界与后续清理规则
 - [项目 README](../README.md)：项目定位、功能概览、仓库结构
+- [English README](../README_EN.md)：与中文首页同步维护的英文项目入口
 
 ## 当前事实源
 
@@ -30,8 +31,8 @@
 - LSP 会话与连接提供者：`core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/LspClientSession.kt`
 - 插件 LSP：`core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/lsp/LspPluginManager.kt`
 - RikkaHub 入口：`app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/DrawerContent.kt`、`app/src/main/java/com/wuxianggujun/tinaide/settings/SettingsActivity.kt`、`external/rikkahub/embedded`
-- 帮助文档入口：`feature/help/src/main/java/com/wuxianggujun/tinaide/core/help/HelpRepository.kt`
-- PRoot / Linux 环境：`core/proot/src/main/java/com/wuxianggujun/tinaide/core/proot/PRootBootstrap.kt`、`core/proot/src/main/java/com/wuxianggujun/tinaide/core/proot/SelfHostedLinuxDistroRuntime.kt`、`core/linux-distro/src/main/assets/linux-distro/manifest.json`
+- 帮助文档入口：`feature/help/src/main/java/com/wuxianggujun/tinaide/core/help/HelpRepository.kt`、`feature/help/src/main/assets/help/*.md`、`feature/help/src/main/assets/help/en/*.md`
+- PRoot / Linux 环境：`core/proot/src/main/java/com/wuxianggujun/tinaide/core/proot/PRootBootstrap.kt`、`core/proot/src/main/java/com/wuxianggujun/tinaide/core/proot/LinuxDistroCatalogRepository.kt`、`core/proot/src/main/java/com/wuxianggujun/tinaide/core/proot/RemoteLinuxDistroManifestSource.kt`、`core/linux-distro/src/main/assets/linux-distro/manifest.json`
 
 ## 文档导航
 
@@ -83,7 +84,7 @@
 
 ## 当前文档口径
 
-为了避免继续沿用旧叙事，先明确四点：
+为了避免继续沿用旧叙事，先明确以下口径：
 
 - 默认编译 / 运行链路依赖的是 `Android sysroot + native tina-toolchain`，不是 PRoot。
 - PRoot 是可选 Linux 环境，主要服务终端、Linux 工具和插件 / 调试扩展能力。

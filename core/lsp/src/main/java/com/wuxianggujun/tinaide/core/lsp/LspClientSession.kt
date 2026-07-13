@@ -317,6 +317,12 @@ class LspClientSession(
         isConnected && currentDocumentUri == documentUri
     }
 
+    fun currentDocumentVersion(documentUri: String? = null): Int? = synchronized(lock) {
+        if (!isConnected || version <= 0) return@synchronized null
+        if (documentUri != null && currentDocumentUri != documentUri) return@synchronized null
+        version
+    }
+
     fun didChangeWatchedFiles(changes: List<FileEvent>) {
         val server = synchronized(lock) { languageServer } ?: return
         if (!isConnected) return

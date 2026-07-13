@@ -3,6 +3,10 @@ package com.wuxianggujun.tinaide.core.ndk
 import android.content.Context
 import com.wuxianggujun.tinaide.core.serialization.JsonSerializer
 import java.io.File
+import java.io.IOException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
@@ -88,7 +92,10 @@ data class BuiltinSysrootProfileAsset(
     )
 }
 
-class SysrootProfileConfigManager(private val context: Context) {
+class SysrootProfileConfigManager(
+    private val context: Context,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+) {
 
     companion object {
         private const val TAG = "SysrootProfileConfig"
@@ -180,7 +187,12 @@ class SysrootProfileConfigManager(private val context: Context) {
         }
     }
 
-    fun removeProfile(id: String, deleteFiles: Boolean = true): Result<Unit> {
+    suspend fun removeProfile(id: String, deleteFiles: Boolean = true): Result<Unit> =
+        withContext(ioDispatcher) {
+            removeProfileOnIo(id, deleteFiles)
+        }
+
+    private fun removeProfileOnIo(id: String, deleteFiles: Boolean): Result<Unit> {
         return try {
             val config = readConfig()
             val profile = config.profiles.firstOrNull { it.id == id }
@@ -189,7 +201,10 @@ class SysrootProfileConfigManager(private val context: Context) {
                 return Result.failure(IllegalStateException("Cannot remove active sysroot profile"))
             }
             if (deleteFiles) {
-                getProfileDir(profile).deleteRecursively()
+                val profileDir = getProfileDir(profile)
+                if (profileDir.exists() && !profileDir.deleteRecursively()) {
+                    throw IOException("Failed to delete sysroot profile directory: ${profileDir.absolutePath}")
+                }
             }
             saveConfig(config.copy(profiles = config.profiles.filterNot { it.id == id }))
             Timber.tag(TAG).i("Removed sysroot profile: %s", id)

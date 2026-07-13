@@ -35,20 +35,29 @@ class StartupFlowManager(
      */
     fun checkStartupFlow(): Intent? {
         Timber.tag(TAG).d("Checking startup flow...")
-
-        if (requiresDependencyInstallation()) {
-            // 依赖未就绪：进入解压安装页（默认内置 Clang 资产）
-            Timber.tag(TAG).i("Dependency installation required, redirecting to installer")
-            return DependencyInstallActivity.createIntent(
+        return runCatching {
+            if (requiresDependencyInstallation()) {
+                // 依赖未就绪：进入解压安装页（默认内置 Clang 资产）
+                Timber.tag(TAG).i("Dependency installation required, redirecting to installer")
+                DependencyInstallActivity.createIntent(
+                    context = context,
+                    config = ToolchainConfig.recommended(),
+                    installLinuxEnvironment = false
+                )
+            } else {
+                Timber.tag(TAG).d("Startup checks passed, entering main interface")
+                null
+            }
+        }.onFailure { error ->
+            Timber.tag(TAG).e(error, "Startup check failed; redirecting to dependency installer")
+        }.getOrElse {
+            // 读取配置或资产状态异常时 fail-safe，避免停留在 Splash 或进入半初始化工作区。
+            DependencyInstallActivity.createIntent(
                 context = context,
                 config = ToolchainConfig.recommended(),
-                installLinuxEnvironment = false
+                installLinuxEnvironment = false,
             )
         }
-
-        // 所有检查通过，可以直接进入主界面
-        Timber.tag(TAG).d("Startup checks passed, entering main interface")
-        return null
     }
 
     /**

@@ -86,11 +86,14 @@ import com.wuxianggujun.tinaide.ui.wizard.NewProjectWizardActivity
 import com.wuxianggujun.tinaide.update.AppUpdateInfo
 import java.io.File
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
+import timber.log.Timber
 
 private enum class ManagedProjectActionType {
     IMPORT_LOCAL,
@@ -650,14 +653,13 @@ fun ProjectScreen(
             warningMessage = stringResource(Strings.dialog_delete_warning),
             confirmButtonText = stringResource(Strings.btn_delete),
             onDismiss = { showDeleteConfirmDialog = null },
-            onConfirm = {
+            onConfirm = { cancellationSignal, onProgress ->
+                viewModel.deleteProject(project, cancellationSignal, onProgress)
+            },
+            onDeleted = {
                 showDeleteConfirmDialog = null
-                viewModel.deleteProject(project) { result ->
-                    result
-                        .onSuccess { messageResId -> context.toastSuccess(messageResId.strOr(context)) }
-                        .onFailure { e -> context.handleErrorWithToast(e, Strings.toast_delete_failed.strOr(context)) }
-                }
-            }
+                context.toastSuccess(Strings.toast_project_deleted.strOr(context))
+            },
         )
     }
 }
@@ -788,15 +790,18 @@ private suspend fun cloneFromGit(
             )
         }
     } catch (t: Throwable) {
-        if (t is CancellationException) throw t
+        if (t is CancellationException) {
+            cleanupFailedCloneTarget(targetDir)
+            throw t
+        }
         com.wuxianggujun.tinaide.core.git.GitResult.Error(
             t.message?.trim()?.takeIf { it.isNotEmpty() }
                 ?: t.cause?.message?.trim()?.takeIf { it.isNotEmpty() }
                 ?: Strings.git_error_clone_failed.strOr(context)
         )
+    } finally {
+        onProgressChange(null)
     }
-
-    onProgressChange(null)
 
     when (result) {
         is com.wuxianggujun.tinaide.core.git.GitResult.Success -> {
@@ -804,10 +809,25 @@ private suspend fun cloneFromGit(
             viewModel.reloadProjects()
         }
         is com.wuxianggujun.tinaide.core.git.GitResult.Error -> {
+            cleanupFailedCloneTarget(targetDir)
             context.toastError(result.message)
-            runCatching { targetDir.deleteRecursively() }
         }
     }
+}
+
+internal suspend fun cleanupFailedCloneTarget(
+    targetDir: File,
+    ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+): Boolean = withContext(NonCancellable + ioDispatcher) {
+    runCatching {
+        !targetDir.exists() || targetDir.deleteRecursively()
+    }.onFailure { error ->
+        Timber.tag("ProjectGitClone").w(
+            error,
+            "Failed to clean partial clone directory: %s",
+            targetDir.absolutePath,
+        )
+    }.getOrDefault(false)
 }
 
 private fun resolveManagedProjectsRoot(

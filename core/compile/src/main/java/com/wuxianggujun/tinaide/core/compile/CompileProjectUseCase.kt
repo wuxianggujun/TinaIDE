@@ -15,6 +15,7 @@ import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.core.linux.LinuxEnvironmentProvider
 import com.wuxianggujun.tinaide.core.linux.UnavailableLinuxEnvironmentProvider
+import com.wuxianggujun.tinaide.core.packages.BundledPackagesReadiness
 import com.wuxianggujun.tinaide.core.packages.InstalledPackagePathResolver
 import com.wuxianggujun.tinaide.editor.IEditorTabProvider
 import com.wuxianggujun.tinaide.file.IProjectContext
@@ -234,6 +235,8 @@ class CompileProjectUseCase(
             )
         }
 
+        awaitBundledPackagesIfNeeded(action)
+
         if (strategyRegistry.resolve(buildSystem) == null) {
             val errorMsg = when (buildSystem) {
                 BuildSystem.UNKNOWN -> {
@@ -410,6 +413,7 @@ class CompileProjectUseCase(
         )
         val projectRoot = File(project.rootPath)
         val buildDir = File(project.buildDirPath)
+        awaitBundledPackagesIfNeeded(action)
 
         val buildSystem = BuildSystemDetector.detect(projectRoot)
         if (buildSystem != BuildSystem.CMAKE) {
@@ -469,6 +473,18 @@ class CompileProjectUseCase(
             else -> ""
         }
         Result.Success(Report(action = action, summary = summary))
+    }
+
+    private suspend fun awaitBundledPackagesIfNeeded(action: Action) {
+        when (val readiness = BundledPackagesReadiness.awaitCurrentInstall()) {
+            BundledPackagesReadiness.State.FAILED,
+            BundledPackagesReadiness.State.TIMED_OUT -> Timber.tag(TAG).w(
+                "Bundled package readiness=%s before action=%s; continuing with last stable installation",
+                readiness,
+                action,
+            )
+            else -> Unit
+        }
     }
 
     suspend fun getAvailableTargets(): List<TargetInfo> = withContext(Dispatchers.IO) {
@@ -804,6 +820,7 @@ class CompileProjectUseCase(
                     projectRoot = projectRoot,
                     extraEnvironment = launchEnvironment,
                     nativeRuntimeIdentity = nativeRuntimeIdentity,
+                    showLinkerWarnings = config.showLinkerWarnings,
                 )
                 LaunchSpec.Terminal(
                     command = command,

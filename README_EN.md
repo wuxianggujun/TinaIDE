@@ -1,5 +1,7 @@
 # TinaIDE
 
+> Last manually reviewed: 2026-07-11
+>
 > A C/C++ IDE for Android devices. The default development path uses
 > `native tina-toolchain + Android sysroot`; Linux distro / PRoot is optional.
 
@@ -129,12 +131,15 @@ Basic C/C++ build, run, and clangd completion no longer require PRoot.
 | Theme Plugins | Provide editor themes via plugins |
 | Snippet Plugins | Show snippets in completion list and insert placeholders |
 | Bundled Plugins | `assets/bundled_plugins/*` auto install/update on app start |
-| Public Registry | Plugins and packages are published from `https://github.com/wuxianggujun/TinaIDE-Registry` |
+| Public Registry | Plugins, packages, and Linux distro metadata are published from `https://github.com/wuxianggujun/TinaIDE-Registry` |
 
-The current Android client reads `plugins/index.v2.json` and
-`packages/index.v2.json` only. It no longer falls back to legacy
-`plugins/index.json` / `packages/index.json`; legacy v1 artifacts should be
-generated explicitly in the Registry repo only when old clients must be served.
+The current Android client reads `plugins/index.v2.json`,
+`packages/index.v2.json`, and `linux-distro/manifest.v1.json`. Marketplace
+requests no longer fall back to legacy `plugins/index.json` /
+`packages/index.json`; legacy v1 artifacts should be generated explicitly in
+the Registry repo only when old clients must be served. The Linux distro
+manifest uses a separate protocol and falls back through fresh cache, Registry
+endpoints, stale cache, and finally the bundled asset.
 
 ### File Preview
 
@@ -213,6 +218,7 @@ Mapping files are only archived locally by the public build logic.
 - [Architecture Overview](docs/架构概览.md) - Understand project architecture
 - [Development Guide](docs/开发指南.md) - Contribute to the project
 - [Documentation Center](docs/README.md) - Complete documentation index
+- [Linux Distro Runtime](docs/linux-distro-self-hosted-runtime.md) - Optional Linux environment and manifest fallback
 - [Changelog](CHANGELOG.md) - Version update history
 
 ### Technical Documentation
@@ -245,9 +251,9 @@ Mapping files are only archived locally by the public build logic.
 | `arm64-v8a` | ✅ Primary | Physical devices |
 | `x86_64` | ✅ Supported | Emulators |
 
-**Minimum API Level**: 28+ (Android 9.0+)
-**Target SDK**: 36
-**Compile SDK**: 37
+- `minSdk`: 28 (Android 9.0+)
+- `targetSdk`: 36
+- `compileSdk`: 37
 
 ## System Requirements
 

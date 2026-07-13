@@ -3,6 +3,10 @@ package com.wuxianggujun.tinaide.core.ndk
 import android.content.Context
 import com.wuxianggujun.tinaide.core.serialization.JsonSerializer
 import java.io.File
+import java.io.IOException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -39,7 +43,10 @@ data class InstalledToolchainConfig(
 /**
  * 工具链配置管理器
  */
-class ToolchainConfigManager(private val context: Context) {
+class ToolchainConfigManager(
+    private val context: Context,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+) {
 
     companion object {
         private const val TAG = "ToolchainConfigManager"
@@ -162,7 +169,12 @@ class ToolchainConfigManager(private val context: Context) {
     /**
      * 删除工具链
      */
-    fun removeToolchain(id: String, deleteFiles: Boolean = true): Result<Unit> {
+    suspend fun removeToolchain(id: String, deleteFiles: Boolean = true): Result<Unit> =
+        withContext(ioDispatcher) {
+            removeToolchainOnIo(id, deleteFiles)
+        }
+
+    private fun removeToolchainOnIo(id: String, deleteFiles: Boolean): Result<Unit> {
         return try {
             val config = readConfig()
             val toolchainInfo = config.toolchains.find { it.id == id }
@@ -176,8 +188,8 @@ class ToolchainConfigManager(private val context: Context) {
             // 删除文件
             if (deleteFiles) {
                 val toolchainDir = File(context.filesDir, toolchainInfo.path)
-                if (toolchainDir.exists()) {
-                    toolchainDir.deleteRecursively()
+                if (toolchainDir.exists() && !toolchainDir.deleteRecursively()) {
+                    throw IOException("Failed to delete toolchain directory: ${toolchainDir.absolutePath}")
                 }
             }
 

@@ -10,14 +10,22 @@ import com.wuxianggujun.tinaide.terminal.shell.ShellResolveResult
 import com.wuxianggujun.tinaide.terminal.shell.TerminalBackend
 import com.wuxianggujun.tinaide.terminal.shell.TerminalShellResolver
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.min
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.job
 import kotlinx.coroutines.withContext
 import timber.log.Timber
 
@@ -57,15 +65,22 @@ class TerminalSessionManager(
     // TerminalSessionClient 实例（每个会话共享）
     private lateinit var sessionClient: TinaTerminalSessionClient
 
+    // shell 探测可能挂起数秒；关闭/重启会话时必须取消旧启动任务并拒绝迟到结果。
+    private val sessionStartJobs = ConcurrentHashMap<String, Job>()
+
+    // 高频终端输出按显示帧合并，避免每个字符都触发一次 Compose 重组。
+    private val frameUpdateScheduled = AtomicBoolean(false)
+
     /**
      * 初始化会话客户端
      */
     fun initialize() {
+        if (::sessionClient.isInitialized) return
         sessionClient = TinaTerminalSessionClient(
             context = application,
             onTextChanged = { session ->
                 // 触发 UI 更新
-                _frameId.update { it + 1 }
+                requestFrameUpdate()
             },
             onTitleChanged = { session ->
                 // 更新会话标题
@@ -78,16 +93,16 @@ class TerminalSessionManager(
                 // 处理会话结束
                 val exitCode = session.exitStatus
                 updateSessionByTermuxSession(session) { it.withExited(exitCode) }
-                _frameId.update { it + 1 }
+                requestFrameUpdate()
             },
             onBell = { _ ->
                 // 可以在这里添加响铃反馈
             },
             onColorsChanged = { _ ->
-                _frameId.update { it + 1 }
+                requestFrameUpdate()
             },
             onCursorStateChange = { _ ->
-                _frameId.update { it + 1 }
+                requestFrameUpdate()
             },
             onShellPidSet = { session, pid ->
                 updateSessionByTermuxSession(session) { it.withShellPid(pid) }
@@ -98,7 +113,7 @@ class TerminalSessionManager(
                         .toIntOrNull()
                         ?: return@TinaTerminalSessionClient
                     updateSessionByTermuxSession(session) { it.withRunEnded(exitCode) }
-                    _frameId.update { it + 1 }
+                    requestFrameUpdate()
                 }
             }
         )
@@ -119,13 +134,15 @@ class TerminalSessionManager(
      * @param rows 终端行数
      * @param cols 终端列数
      * @param backend 终端后端（HOST 或 PROOT）
+     * @param initialCommand 一次性执行的内部命令；非空时不启动交互 shell
      * @return 新会话的 ID
      */
     fun createSession(
         workDir: String = "/",
         rows: Int = 24,
         cols: Int = 80,
-        backend: TerminalBackend = TerminalBackend.HOST
+        backend: TerminalBackend = TerminalBackend.HOST,
+        initialCommand: String? = null,
     ): String {
         sessionCounter++
         val title = if (sessionCounter == 1) "Terminal" else "Terminal $sessionCounter"
@@ -142,7 +159,7 @@ class TerminalSessionManager(
         _activeSessionId.value = sessionState.id
 
         // 启动终端会话
-        startTerminalSession(sessionState.id, workDir, rows, cols)
+        startTerminalSession(sessionState.id, workDir, rows, cols, initialCommand)
 
         return sessionState.id
     }
@@ -156,9 +173,12 @@ class TerminalSessionManager(
         sessionId: String,
         workDir: String,
         rows: Int,
-        cols: Int
+        cols: Int,
+        initialCommand: String? = null,
     ) {
-        scope.launch(Dispatchers.Main) {
+        sessionStartJobs.remove(sessionId)?.cancel()
+        val launchJob = scope.launch(Dispatchers.Main, start = CoroutineStart.LAZY) {
+            val runningJob = currentCoroutineContext().job
             try {
                 val sessionState = getSessionById(sessionId) ?: return@launch
                 val resolveResult = withContext(Dispatchers.IO) {
@@ -166,7 +186,8 @@ class TerminalSessionManager(
                         backend = sessionState.backend,
                         workDir = workDir,
                         rows = rows,
-                        cols = cols
+                        cols = cols,
+                        initialCommand = initialCommand,
                     )
                 }
 
@@ -178,10 +199,14 @@ class TerminalSessionManager(
                     }
                 }
 
+                if (!isCurrentStart(sessionId, runningJob)) return@launch
+
                 // 确定工作目录（在 IO 线程执行文件检查）
                 val cwd = withContext(Dispatchers.IO) {
                     if (File(resolution.cwd).exists()) resolution.cwd else "/"
                 }
+
+                if (!isCurrentStart(sessionId, runningJob)) return@launch
 
                 // 创建 Termux TerminalSession（必须在主线程）
                 val termuxSession = TerminalSession(
@@ -193,6 +218,12 @@ class TerminalSessionManager(
                     sessionClient
                 )
 
+                if (!isCurrentStart(sessionId, runningJob)) {
+                    termuxSession.suppressExitNotice = true
+                    termuxSession.finishIfRunning()
+                    return@launch
+                }
+
                 // 更新会话状态
                 updateSessionState(sessionId) {
                     it.copy(
@@ -200,7 +231,9 @@ class TerminalSessionManager(
                         status = SessionStatus.RUNNING
                     )
                 }
-                _frameId.update { it + 1 }
+                requestFrameUpdate()
+            } catch (_: CancellationException) {
+                // 关闭或重启会话时取消旧探测任务；不应把取消显示成启动失败。
             } catch (t: Throwable) {
                 Timber.tag(TAG).e(t, "Failed to start terminal session")
                 updateSessionState(sessionId) {
@@ -211,7 +244,27 @@ class TerminalSessionManager(
                         )
                     )
                 }
+            } finally {
+                sessionStartJobs.remove(sessionId, runningJob)
             }
+        }
+        sessionStartJobs[sessionId] = launchJob
+        launchJob.start()
+    }
+
+    private fun isCurrentStart(sessionId: String, job: Job): Boolean =
+        sessionStartJobs[sessionId] === job && getSessionById(sessionId) != null
+
+    private fun cancelSessionStart(sessionId: String) {
+        sessionStartJobs.remove(sessionId)?.cancel()
+    }
+
+    private fun requestFrameUpdate() {
+        if (!frameUpdateScheduled.compareAndSet(false, true)) return
+        scope.launch(Dispatchers.Main) {
+            delay(FRAME_UPDATE_INTERVAL_MS)
+            frameUpdateScheduled.set(false)
+            _frameId.update { it + 1 }
         }
     }
 
@@ -221,8 +274,14 @@ class TerminalSessionManager(
      * @param sessionId 要关闭的会话 ID
      * @param defaultWorkDir 当关闭最后一个会话时，新建默认会话的工作目录
      */
-    fun closeSession(sessionId: String, defaultWorkDir: String = "/") {
+    fun closeSession(
+        sessionId: String,
+        defaultWorkDir: String = "/",
+        createReplacement: Boolean = true
+    ) {
         val session = getSessionById(sessionId) ?: return
+
+        cancelSessionStart(sessionId)
 
         // 停止终端会话
         session.session?.finishIfRunning()
@@ -230,18 +289,20 @@ class TerminalSessionManager(
         // 从列表中移除
         _sessions.update { it.filter { s -> s.id != sessionId } }
 
-        // 如果关闭的是活动会话，切换到其他会话
-        if (_activeSessionId.value == sessionId) {
-            val remaining = _sessions.value
+        // 如果活动会话被关闭或状态已不一致，恢复到一个确定的活动会话。
+        val remaining = _sessions.value
+        if (_activeSessionId.value == sessionId || remaining.none { it.id == _activeSessionId.value }) {
             if (remaining.isNotEmpty()) {
                 _activeSessionId.value = remaining.last().id
-            } else {
+            } else if (createReplacement) {
                 // 如果没有剩余会话，自动创建一个新的默认会话
                 createSession(workDir = defaultWorkDir)
+            } else {
+                _activeSessionId.value = null
             }
         }
 
-        _frameId.update { it + 1 }
+        requestFrameUpdate()
     }
 
     /**
@@ -275,6 +336,8 @@ class TerminalSessionManager(
      */
     fun restartSession(sessionId: String, workDir: String = "/") {
         val session = getSessionById(sessionId) ?: return
+
+        cancelSessionStart(sessionId)
 
         // 停止旧会话
         session.session?.finishIfRunning()
@@ -582,6 +645,8 @@ class TerminalSessionManager(
      * 清理所有会话
      */
     fun cleanup() {
+        sessionStartJobs.values.forEach { it.cancel() }
+        sessionStartJobs.clear()
         _sessions.value.forEach { session ->
             session.session?.finishIfRunning()
         }
@@ -607,5 +672,7 @@ class TerminalSessionManager(
 
         /** Run 模式程序结束标记，格式 `tina-run-end;<exitCode>`。 */
         private const val OSC_RUN_END_PREFIX = "tina-run-end;"
+
+        private const val FRAME_UPDATE_INTERVAL_MS = 16L
     }
 }

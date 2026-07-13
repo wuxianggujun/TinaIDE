@@ -67,7 +67,7 @@ sealed interface SignatureHelpUiState {
 @Stable
 class EditorState(
     override val textBuffer: TextBuffer,
-    val file: File? = null,
+    file: File? = null,
     val projectRootPath: String? = null,
     config: EditorConfig = EditorConfig()
 ) : EditorStateSnapshot,
@@ -78,6 +78,9 @@ class EditorState(
     }
 
     private var lastSlowOperationLogAtMs: Long = 0L
+
+    var file by mutableStateOf(file)
+        private set
 
     private var _config by mutableStateOf(config)
     var config: EditorConfig
@@ -90,6 +93,10 @@ class EditorState(
         }
     var typeface by mutableStateOf<Typeface>(Typeface.MONOSPACE)
     var colorScheme by mutableStateOf(EditorColorScheme.builtinGray())
+
+    fun retargetFile(newFile: File?) {
+        file = newFile
+    }
 
     override var cursorOffset by mutableStateOf(0)
     override var selectionRange by mutableStateOf<OffsetRange?>(null)
@@ -413,6 +420,27 @@ class EditorState(
 
         semanticTokensByLine = mergedByLine
         semanticTokens = mergedByLine.values.flatten()
+        semanticTokensVersion++
+        bumpStylingVersion()
+    }
+
+    fun replaceSemanticTokensInLines(lines: IntRange, tokens: List<SemanticToken>) {
+        if (lines.isEmpty()) return
+
+        val updatedByLine = semanticTokensByLine.toMutableMap()
+        updatedByLine.keys
+            .filter { line -> line in lines }
+            .forEach(updatedByLine::remove)
+        tokens
+            .filter { token -> token.line in lines }
+            .groupBy { token -> token.line }
+            .forEach { (line, lineTokens) -> updatedByLine[line] = lineTokens }
+
+        val normalizedByLine = updatedByLine.toSortedMap()
+        if (semanticTokensByLine == normalizedByLine) return
+
+        semanticTokensByLine = normalizedByLine
+        semanticTokens = normalizedByLine.values.flatten()
         semanticTokensVersion++
         bumpStylingVersion()
     }
@@ -851,8 +879,11 @@ class EditorState(
             }
         }
         if (cursorOffset <= 0) return
-        val step = if (cursorOffset >= 2 &&
-            textBuffer.charAt(cursorOffset - 1)?.let(Character::isLowSurrogate) == true
+        val highSurrogate = textBuffer.charAt(cursorOffset - 2)
+        val lowSurrogate = textBuffer.charAt(cursorOffset - 1)
+        val step = if (
+            highSurrogate != null && lowSurrogate != null &&
+            Character.isSurrogatePair(highSurrogate, lowSurrogate)
         ) {
             2
         } else {
@@ -873,8 +904,11 @@ class EditorState(
             }
         }
         if (cursorOffset >= textBuffer.length) return
-        val step = if (cursorOffset < textBuffer.length - 1 &&
-            textBuffer.charAt(cursorOffset)?.let(Character::isHighSurrogate) == true
+        val highSurrogate = textBuffer.charAt(cursorOffset)
+        val lowSurrogate = textBuffer.charAt(cursorOffset + 1)
+        val step = if (
+            highSurrogate != null && lowSurrogate != null &&
+            Character.isSurrogatePair(highSurrogate, lowSurrogate)
         ) {
             2
         } else {
@@ -1454,7 +1488,7 @@ class EditorState(
         )
     }
 
-    internal fun onTextBufferChanged(change: TextChange) {
+    fun applyTextBufferChange(change: TextChange) {
         val currentVersion = textBuffer.version
         textVersion = currentVersion
         applyTextChangeToSemanticTokens(change)

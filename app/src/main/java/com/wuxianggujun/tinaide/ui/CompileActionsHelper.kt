@@ -12,8 +12,8 @@ import com.wuxianggujun.tinaide.editor.session.SaveResult
 import com.wuxianggujun.tinaide.file.IProjectContext
 import com.wuxianggujun.tinaide.storage.ProjectDirStructure
 import java.io.File
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.receiveAsFlow
 
 /**
  * 编译操作帮助类
@@ -86,8 +86,9 @@ class CompileActionsHelper(
         STOPPED,
     }
 
-    private val _uiEvents = MutableSharedFlow<UiEvent>(extraBufferCapacity = 16)
-    val uiEvents = _uiEvents.asSharedFlow()
+    // 生命周期暂时未到 STARTED 时缓存一次性事件，恢复后逐个消费。
+    private val uiEventsChannel = Channel<UiEvent>(capacity = Channel.BUFFERED)
+    val uiEvents = uiEventsChannel.receiveAsFlow()
 
     /**
      * 运行项目
@@ -163,7 +164,7 @@ class CompileActionsHelper(
             return
         }
 
-        _uiEvents.tryEmit(UiEvent.RevealInProjectTree(artifactsDir, selectTarget = false))
+        uiEventsChannel.trySend(UiEvent.RevealInProjectTree(artifactsDir, selectTarget = false))
         emitToast(Strings.toast_cmake_artifacts_dir_revealed.strOr(context), ToastType.SUCCESS)
     }
 
@@ -325,7 +326,7 @@ class CompileActionsHelper(
     }
 
     private fun emitToast(message: String, type: ToastType) {
-        _uiEvents.tryEmit(UiEvent.ShowToast(message, type))
+        uiEventsChannel.trySend(UiEvent.ShowToast(message, type))
     }
 
     private fun handleDebugSuccess(report: CompileProjectUseCase.Report) {
@@ -368,7 +369,7 @@ class CompileActionsHelper(
 
     private fun handleSdlLaunchSuccess(launch: CompileProjectUseCase.LaunchSpec.Sdl) {
         emitToast(Strings.toast_compile_done_opening_sdl.strOr(context), ToastType.SUCCESS)
-        _uiEvents.tryEmit(
+        uiEventsChannel.trySend(
             UiEvent.OpenSdl(
                 libraryPath = launch.libraryPath,
                 environment = launch.environment,
@@ -400,7 +401,7 @@ class CompileActionsHelper(
             }
             else -> {
                 emitToast(Strings.toast_compile_done_opening_terminal.strOr(context), ToastType.SUCCESS)
-                _uiEvents.tryEmit(
+                uiEventsChannel.trySend(
                     UiEvent.OpenTerminal(
                         launch.command,
                         launch.workingDirectory

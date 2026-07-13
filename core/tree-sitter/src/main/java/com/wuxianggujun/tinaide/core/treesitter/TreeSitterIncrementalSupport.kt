@@ -65,7 +65,7 @@ internal data class HighlightLineCacheChange(
  *     编辑点之前的 segment 不变；之后的按 [HighlightLineCacheChange.columnDelta] 整体平移；
  *     跨越编辑点的 segment 拉伸/截断。这样可以在 tree-sitter parse 跑完之前提供一份"肉眼可接受"的旧色，
  *     避免出现"先白再染色"的闪烁。
- *   - 多行编辑（含 `\n`）：安全起见丢弃编辑区内的缓存，等待 parse 回填。
+ *   - 多行编辑（含 `\n`）：丢弃编辑区内的缓存，避免把旧行颜色绘制到新文本的错误位置。
  */
 internal object HighlightLineCacheUpdater {
     fun applyTextChange(
@@ -93,19 +93,6 @@ internal object HighlightLineCacheUpdater {
             }
             if (targetLine >= 0) {
                 updated[targetLine] = segments
-            }
-        }
-
-        // 多行编辑兜底：保留旧 segments 作为"过期色"填入 dirty 行号，
-        // 避免 parse 完成前可视区出现默认色。内容已变、位置会错位，但肉眼上
-        // 明显优于闪白。`putIfAbsent` 确保已经被"移位填充"占位的新行不被覆盖。
-        if (!change.isSingleLineEdit) {
-            cache.forEach { (line, segments) ->
-                if (line in change.startLine..change.oldChangedEndLine &&
-                    !updated.containsKey(line)
-                ) {
-                    updated[line] = segments
-                }
             }
         }
 

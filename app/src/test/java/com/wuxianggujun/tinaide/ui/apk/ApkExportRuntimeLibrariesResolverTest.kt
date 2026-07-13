@@ -52,7 +52,7 @@ class ApkExportRuntimeLibrariesResolverTest {
     }
 
     @Test
-    fun `buildRuntimeLibraryIndex exposes canonical name for versioned library`() {
+    fun `buildRuntimeLibraryIndex does not alias a different soname`() {
         val tempDir = Files.createTempDirectory("apk-export-runtime-index-test").toFile()
         val versionedSdl = File(tempDir, "libSDL3.so.0").apply { writeText("sdl") }
 
@@ -62,7 +62,7 @@ class ApkExportRuntimeLibrariesResolverTest {
             )
 
             assertThat(index["libSDL3.so.0"]?.name).isEqualTo("libSDL3.so.0")
-            assertThat(index["libSDL3.so"]?.name).isEqualTo("libSDL3.so.0")
+            assertThat(index["libSDL3.so"]).isNull()
         } finally {
             tempDir.deleteRecursively()
         }
@@ -93,7 +93,7 @@ class ApkExportRuntimeLibrariesResolverTest {
     }
 
     @Test
-    fun `resolvePackagedLibraries keeps only root lib and reachable dependencies`() {
+    fun `resolvePackagedLibraries keeps every project build library as a root`() {
         val tempDir = Files.createTempDirectory("apk-export-runtime-packaged-libs-test").toFile()
         val main = File(tempDir, "libmain.so").apply { writeText("main") }
         val linked = File(tempDir, "libfoo.so").apply { writeText("foo") }
@@ -112,9 +112,56 @@ class ApkExportRuntimeLibrariesResolverTest {
             )
 
             assertThat(result.libraries.map { it.name })
-                .containsExactly("libmain.so", "libfoo.so")
+                .containsExactly("libmain.so", "libfoo.so", "libSDL3.so")
                 .inOrder()
             assertThat(result.missingLibraries).isEmpty()
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `buildRuntimeLibraryIndex preserves explicit candidate priority`() {
+        val tempDir = Files.createTempDirectory("apk-export-runtime-priority-test").toFile()
+        try {
+            val preferred = File(tempDir, "z-preferred/libSDL3.so").apply {
+                parentFile?.mkdirs()
+                writeText("preferred")
+            }
+            val other = File(tempDir, "a-other/libSDL3.so").apply {
+                parentFile?.mkdirs()
+                writeText("other")
+            }
+
+            val index = ApkExportRuntimeLibrariesResolver.buildRuntimeLibraryIndex(
+                listOf(preferred, other)
+            )
+
+            assertThat(index["libSDL3.so"]?.canonicalPath).isEqualTo(preferred.canonicalPath)
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `buildRuntimeLibraryIndex prefers the mapped installed package`() {
+        val tempDir = Files.createTempDirectory("apk-export-package-priority-test").toFile()
+        try {
+            val installRoot = File(tempDir, "installed-packages")
+            val other = File(installRoot, "aaa-other/lib/arm64-v8a/libSDL3_image.so").apply {
+                parentFile?.mkdirs()
+                writeText("other")
+            }
+            val preferred = File(installRoot, "sdl3-image/lib/arm64-v8a/libSDL3_image.so").apply {
+                parentFile?.mkdirs()
+                writeText("preferred")
+            }
+
+            val index = ApkExportRuntimeLibrariesResolver.buildRuntimeLibraryIndex(
+                listOf(other, preferred)
+            )
+
+            assertThat(index["libSDL3_image.so"]?.canonicalPath).isEqualTo(preferred.canonicalPath)
         } finally {
             tempDir.deleteRecursively()
         }

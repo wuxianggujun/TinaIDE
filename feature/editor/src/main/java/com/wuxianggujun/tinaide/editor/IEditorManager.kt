@@ -40,6 +40,6 @@ interface IEditorManager : IEditorTabProvider {
 
     // 外部文件修改相关方法
     suspend fun forceOverwrite(tabId: String, reason: SaveReason = SaveReason.MANUAL): SaveResult
-    fun reloadFromDisk(tabId: String): Boolean
+    suspend fun reloadFromDisk(tabId: String): Boolean
     fun acknowledgeExternalModification(tabId: String)
 }

@@ -13,7 +13,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import timber.log.Timber
 
-private const val RUN_CONFIG_SCHEMA_CURRENT = 4
+private const val RUN_CONFIG_SCHEMA_CURRENT = 5
 
 /**
  * 源文件模式 - 决定编译哪个源文件
@@ -126,7 +126,15 @@ data class RunConfiguration(
      *
      * 启用后可在全屏 SDL/ImGui 等图形程序中实时查看 stdout/stderr 输出。
      */
-    val enableFloatingLog: Boolean = false
+    val enableFloatingLog: Boolean = false,
+
+    /**
+     * 是否显示 Android linker 对 AArch64 Auth RELR 标签的兼容性告警。
+     *
+     * 默认关闭，仅隐藏已知的 0x70000011/12/13 告警。过滤期间 stderr 经 FIFO 转发；
+     * 依赖 `isatty(stderr)` 的程序可开启本选项以保持原始 TTY 语义。
+     */
+    val showLinkerWarnings: Boolean = false
 ) {
     fun normalized(): RunConfiguration = copy(
         toolchainId = toolchainId?.trim()?.takeIf { it.isNotEmpty() },
@@ -141,7 +149,7 @@ data class RunConfiguration(
      */
     fun getArgsList(): List<String> {
         if (args.isBlank()) return emptyList()
-        return args.split(Regex("\\s+")).filter { it.isNotBlank() }
+        return CommandLineArguments.parse(args)
     }
 
     /**
@@ -150,7 +158,7 @@ data class RunConfiguration(
     fun getArgsList(context: BuildVariables.BuildContext): List<String> {
         if (args.isBlank()) return emptyList()
         val expandedArgs = BuildVariables.expand(args, context)
-        return expandedArgs.split(Regex("\\s+")).filter { it.isNotBlank() }
+        return CommandLineArguments.parse(expandedArgs)
     }
 
     /**

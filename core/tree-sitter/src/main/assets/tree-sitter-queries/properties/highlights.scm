@@ -1,50 +1,17 @@
 (comment) @comment @spell
 
-(key) @property
+(property
+  key: (property_name) @property
+  separator: (sep) @operator
+  value: (property_value) @string)
 
-(value) @string
+(escape_sequence) @string.escape
 
-(value
-  (escape) @string.escape)
+(continuation
+  operator: "\\" @punctuation.special)
 
-((value) @boolean
+((property_value) @boolean
   (#any-of? @boolean "true" "false"))
 
-((value) @number
+((property_value) @number
   (#lua-match? @number "^%d+$"))
-
-((index) @number
-  (#lua-match? @number "^%d+$"))
-
-((substitution
-  (key) @constant)
-  (#lua-match? @constant "^[A-Z_][A-Z0-9_]*$"))
-
-(substitution
-  (key) @function
-  "::" @punctuation.special
-  (secret) @constant.macro)
-
-(property
-  [
-    "="
-    ":"
-  ] @operator)
-
-[
-  "${"
-  "}"
-] @punctuation.special
-
-(substitution
-  ":" @punctuation.special)
-
-[
-  "["
-  "]"
-] @punctuation.bracket
-
-[
-  "."
-  "\\"
-] @punctuation.delimiter

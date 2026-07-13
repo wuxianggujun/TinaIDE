@@ -29,6 +29,7 @@ class TerminalCommandBuilder(context: Context) {
      * @param args 命令行参数(已经过变量替换)
      * @param projectRoot 项目根目录,用于解析已安装包的 runtime lib 目录
      * @param extraEnvironment 额外注入到运行 shell 的环境变量
+     * @param showLinkerWarnings 是否原样显示已知的 AArch64 Auth RELR linker 兼容告警
      */
     fun build(
         workingDir: String,
@@ -37,11 +38,14 @@ class TerminalCommandBuilder(context: Context) {
         projectRoot: File,
         extraEnvironment: Map<String, String> = emptyMap(),
         nativeRuntimeIdentity: NativeRuntimeIdentity? = null,
+        showLinkerWarnings: Boolean = false,
     ): String {
         val outputFile = File(outputPath)
         val stageDir = File(appContext.filesDir, "run-bin")
-        val stageKey = outputFile.absolutePath.hashCode().toUInt().toString(16)
+        val stageIdentity = "${outputFile.absolutePath}:${outputFile.lastModified()}:${outputFile.length()}"
+        val stageKey = stageIdentity.hashCode().toUInt().toString(16)
         val stagedOutput = File(stageDir, "${outputFile.name}.$stageKey")
+        RunStagingCleaner.cleanup(stageDir, keepFileName = stagedOutput.name)
 
         // 对**真实存在**的源文件做 shebang 探测;stagedOutput 此时尚未拷贝到位,
         // 若对它探测会误判为 ELF,脚本产物会被套上 linker64 导致启动失败。
@@ -86,6 +90,7 @@ class TerminalCommandBuilder(context: Context) {
                 envPrefix = envPrefix,
                 ldLibraryPrefix = ldLibraryPrefix,
                 waitForEnterSuffix = waitForEnterSuffix,
+                showLinkerWarnings = showLinkerWarnings,
                 kind = sourceKind,
             )
         )
@@ -99,13 +104,29 @@ class TerminalCommandBuilder(context: Context) {
      */
     private fun buildWaitForEnterSuffix(): String {
         val rawTemplate = Strings.compile_run_press_enter_to_close.strOr(appContext)
-        val shellTemplate = rawTemplate
-            .replace("%1\$d", "%d")
-            .replace("\n", "\\n")
-        val quotedPrompt = shellQuotePosix(shellTemplate)
-        return "; __tina_rc=\$?" +
-            "; printf $quotedPrompt \"\$__tina_rc\"" +
-            "; printf '\\033]777;tina-run-end;%d\\a' \"\$__tina_rc\"" +
-            "; cat > /dev/null"
+        return buildLocalizedWaitForEnterSuffix(rawTemplate)
     }
+}
+
+/**
+ * 把 Android 本地化资源模板安全转换为运行结束后的 shell 后缀。
+ *
+ * 翻译文本始终作为 `printf` 的 `%s` 数据参数，只有退出码使用受控的 `%d`。这样译文中
+ * 即使包含 `%`、单引号或换行，也不会被 shell `printf` 误解为额外格式占位符。
+ */
+internal fun buildLocalizedWaitForEnterSuffix(rawTemplate: String): String {
+    val exitCodePlaceholder = "%1\$d"
+    val placeholderIndex = rawTemplate.indexOf(exitCodePlaceholder)
+    require(placeholderIndex >= 0 && rawTemplate.lastIndexOf(exitCodePlaceholder) == placeholderIndex) {
+        "Terminal exit prompt must contain exactly one %1\$d placeholder"
+    }
+
+    val promptBeforeExitCode = shellQuotePosix(rawTemplate.substring(0, placeholderIndex))
+    val promptAfterExitCode = shellQuotePosix(
+        rawTemplate.substring(placeholderIndex + exitCodePlaceholder.length)
+    )
+    return "; __tina_rc=\$?" +
+        "; printf '%s%d%s' $promptBeforeExitCode \"\$__tina_rc\" $promptAfterExitCode" +
+        "; printf '\\033]777;tina-run-end;%d\\a' \"\$__tina_rc\"" +
+        "; cat > /dev/null"
 }

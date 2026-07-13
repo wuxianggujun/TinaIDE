@@ -7,7 +7,6 @@ import com.itsaky.androidide.treesitter.TSParser
 import com.itsaky.androidide.treesitter.TSQuery
 import com.itsaky.androidide.treesitter.TSQueryCursor
 import com.itsaky.androidide.treesitter.TSTree
-import com.itsaky.androidide.treesitter.predicate.SetDirectiveHandler
 import com.wuxianggujun.tinaide.core.textengine.TextChange
 import java.util.LinkedHashMap
 import java.util.concurrent.CountDownLatch
@@ -19,7 +18,8 @@ internal class IncrementalTreeSitterHighlightState(
     private val parser: TSParser,
     private val query: TSQuery,
     private val captureTypeByIndex: Array<HighlightType>,
-    private val onClosed: (() -> Unit)? = null
+    private val onClosed: (() -> Unit)? = null,
+    private val predicateEvaluator: TreeSitterQueryPredicateEvaluator = TreeSitterQueryPredicateEvaluator(query),
 ) : AutoCloseable {
 
     private companion object {
@@ -65,11 +65,19 @@ internal class IncrementalTreeSitterHighlightState(
         }
     }
 
-    private data class ParseRequest(
+    private data class PendingParseRequest(
         val revision: Long,
         val sessionId: Long,
         val change: TextChange?,
         val reset: Boolean
+    )
+
+    private data class ParseRequest(
+        val revision: Long,
+        val sessionId: Long,
+        val change: TextChange?,
+        val reset: Boolean,
+        val text: String
     )
 
     private data class ParseResult(
@@ -88,7 +96,7 @@ internal class IncrementalTreeSitterHighlightState(
     private var sessionId = 0L
     private var renderSnapshot: RenderSnapshot? = null
     private var workerTree: TSTree? = null
-    private var pending: ParseRequest? = null
+    private var pending: PendingParseRequest? = null
     private var workerScheduled = false
     private var onStateUpdated: (() -> Unit)? = null
     private var pendingDirtyLineRanges: List<DirtyLineRange> = emptyList()
@@ -113,7 +121,7 @@ internal class IncrementalTreeSitterHighlightState(
 
     fun openDocument(text: String) {
         if (text.isEmpty()) {
-            clearState()
+            resetToEmptyDocument()
             return
         }
         var shouldSchedule = false
@@ -127,7 +135,7 @@ internal class IncrementalTreeSitterHighlightState(
             currentLineCount = buildLineStartOffsets(text).size
             renderSnapshotStale = true
             pendingDirtyLineRanges = emptyList()
-            pending = ParseRequest(
+            pending = PendingParseRequest(
                 revision = revision,
                 sessionId = sessionId,
                 change = null,
@@ -261,7 +269,7 @@ internal class IncrementalTreeSitterHighlightState(
         enqueueWorkerTreeCleanup(tree, shutdownWorker = true)
     }
 
-    private fun clearState() {
+    private fun resetToEmptyDocument() {
         val snapshot: SafeTsTree?
         val tree: TSTree?
         synchronized(lock) {
@@ -274,8 +282,8 @@ internal class IncrementalTreeSitterHighlightState(
             workerTree = null
             pending = null
             pendingDirtyLineRanges = emptyList()
-            currentText = null
-            currentLineCount = 0
+            currentText = StringBuilder()
+            currentLineCount = 1
             renderSnapshotStale = false
         }
         snapshot?.close()
@@ -320,11 +328,12 @@ internal class IncrementalTreeSitterHighlightState(
                 current = pendingDirtyLineRanges,
                 added = change.toDirtyLineRange()
             )
-            pending = ParseRequest(
+            val resetParse = pending != null || workerTree == null || renderSnapshot == null
+            pending = PendingParseRequest(
                 revision = revision,
                 sessionId = sessionId,
                 change = change,
-                reset = workerTree == null || renderSnapshot == null
+                reset = resetParse
             )
             renderSnapshotStale = true
             if (!workerScheduled) {
@@ -333,7 +342,7 @@ internal class IncrementalTreeSitterHighlightState(
             }
         }
         if (shouldClear) {
-            clearState()
+            resetToEmptyDocument()
             return
         }
         if (shouldSchedule) {
@@ -349,8 +358,20 @@ internal class IncrementalTreeSitterHighlightState(
                     workerScheduled = false
                     return
                 }
+                val snapshotText = currentText?.toString()
+                if (snapshotText == null) {
+                    pending = null
+                    workerScheduled = false
+                    return
+                }
                 pending = null
-                next
+                ParseRequest(
+                    revision = next.revision,
+                    sessionId = next.sessionId,
+                    change = next.change,
+                    reset = next.reset,
+                    text = snapshotText
+                )
             }
             val result = runCatching { parseRequest(request) }
                 .onFailure { Timber.tag("TreeSitter").d(it, "Incremental parse failed") }
@@ -360,11 +381,11 @@ internal class IncrementalTreeSitterHighlightState(
     }
 
     private fun parseRequest(request: ParseRequest): ParseResult? {
-        val (previous, text) = synchronized(lock) {
-            if (disposed || !query.canAccess()) return@synchronized null to null
-            workerTree to currentText?.toString()
+        val previous = synchronized(lock) {
+            if (disposed || request.sessionId != sessionId || !query.canAccess()) return null
+            workerTree
         }
-        val snapshotText = text ?: return null
+        val snapshotText = request.text
         val next = when {
             request.reset || previous == null -> {
                 parser.reset()
@@ -518,7 +539,8 @@ internal class IncrementalTreeSitterHighlightState(
                         query = query,
                         captureTypeByIndex = captureTypeByIndex,
                         rootNode = privateTree.rootNode,
-                        textLength = textLength,
+                        sourceText = snapshot.text,
+                        predicateEvaluator = predicateEvaluator,
                         visibleRange = byteStart..(byteEndExclusive - 1)
                     )
                 }.onFailure { error ->
@@ -600,9 +622,18 @@ internal class IncrementalTreeSitterHighlightState(
                     }
                 }
 
-                // 每块完成就触发一次 repaint —— 视觉上是渐进着色，且从视口开始。
-                val callback = synchronized(lock) { onStateUpdated }
-                callback?.invoke()
+                // Compose 状态只能从主线程推进；每块完成后异步请求一次渐进 repaint。
+                val shouldNotify = synchronized(lock) {
+                    !disposed && sessionId == expectedSessionId && onStateUpdated != null
+                }
+                if (shouldNotify) {
+                    mainHandler.post {
+                        val callback = synchronized(lock) {
+                            if (!disposed && sessionId == expectedSessionId) onStateUpdated else null
+                        }
+                        callback?.invoke()
+                    }
+                }
             }
         } finally {
             runCatching { privateTree.close() }
@@ -641,7 +672,8 @@ internal class IncrementalTreeSitterHighlightState(
                 query = query,
                 captureTypeByIndex = captureTypeByIndex,
                 rootNode = tree.rootNode,
-                textLength = snapshot.text.length,
+                sourceText = snapshot.text,
+                predicateEvaluator = predicateEvaluator,
                 visibleRange = start..(end - 1)
             )
         } ?: return null
@@ -772,20 +804,19 @@ internal fun captureHighlightSpans(
     query: TSQuery,
     captureTypeByIndex: Array<HighlightType>,
     rootNode: TSNode,
-    textLength: Int,
+    sourceText: String,
+    predicateEvaluator: TreeSitterQueryPredicateEvaluator,
     visibleRange: IntRange
 ): List<HighlightSpan> {
     if (visibleRange.isEmpty()) return emptyList()
 
+    val textLength = sourceText.length
     val clampedStart = visibleRange.first.coerceIn(0, textLength)
     val clampedEndExclusive = (visibleRange.last + 1).coerceIn(clampedStart, textLength)
     if (clampedEndExclusive <= clampedStart) return emptyList()
 
     TSQueryCursor.create().use { cursor ->
         cursor.setByteRange(clampedStart shl 1, clampedEndExclusive shl 1)
-        // 让 cursor 解析 `(#set! priority N)` 并把结果写进 match.metadata；
-        // 没有这一行，priority 声明就是死的。
-        cursor.addPredicateHandler(SetDirectiveHandler())
         val allowChangedNodes = runCatching { rootNode.hasChanges() }.getOrDefault(false)
         if (allowChangedNodes) {
             // 渲染侧拿到的是只读快照树；即便节点仍然带 changed 标记，也要避免直接崩溃。
@@ -806,10 +837,12 @@ internal fun captureHighlightSpans(
         val spans = ArrayList<HighlightSpan>(96)
         var match = cursor.nextMatch()
         while (match != null) {
-            val priority = match.getMetadata()
-                ?.getString("priority")
-                ?.toIntOrNull()
-                ?: DEFAULT_HIGHLIGHT_PRIORITY
+            val predicateEvaluation = predicateEvaluator.evaluate(match, sourceText)
+            if (!predicateEvaluation.accepted) {
+                match = cursor.nextMatch()
+                continue
+            }
+            val priority = predicateEvaluation.priority
             match.captures.forEach { capture ->
                 val type = captureTypeByIndex.getOrElse(capture.index) { HighlightType.DEFAULT }
                 // `@spell` / `@none` 这类辅助 capture 不能生成可绘制 span，

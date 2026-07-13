@@ -1,6 +1,7 @@
 package com.wuxianggujun.tinaide.core.editorview
 
 import android.content.Context
+import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.ExtractedTextRequest
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
@@ -35,7 +36,7 @@ class EditorInputConnectionExtractedTextTest {
     }
 
     @Test
-    fun setSelection_whenImeSelectsWholeExtractedWindow_shouldSelectWholeDocument() {
+    fun setSelection_afterExtractedText_shouldKeepAbsoluteDocumentCoordinates() {
         val text = largeText()
         val state = createState(text)
         val connection = createConnection(state)
@@ -47,8 +48,8 @@ class EditorInputConnectionExtractedTextTest {
 
         connection.setSelection(0, extracted.text.length)
 
-        assertThat(state.selectionRange).isEqualTo(OffsetRange(0, text.length))
-        assertThat(state.cursorOffset).isEqualTo(text.length)
+        assertThat(state.selectionRange).isEqualTo(OffsetRange(0, extracted.text.length))
+        assertThat(state.cursorOffset).isEqualTo(extracted.text.length)
     }
 
     @Test
@@ -66,6 +67,22 @@ class EditorInputConnectionExtractedTextTest {
 
         assertThat(state.selectionRange).isEqualTo(OffsetRange(1, 3))
         assertThat(state.cursorOffset).isEqualTo(3)
+    }
+
+    @Test
+    fun configureEditorInfo_shouldDisableFullscreenExtractEditing() {
+        val editorInfo = EditorInfo()
+
+        configureCodeEditorInput(
+            outAttrs = editorInfo,
+            selectionStart = 12,
+            selectionEnd = 18
+        )
+
+        assertThat(editorInfo.imeOptions and EditorInfo.IME_FLAG_NO_EXTRACT_UI).isNotEqualTo(0)
+        assertThat(editorInfo.imeOptions and EditorInfo.IME_FLAG_NO_FULLSCREEN).isNotEqualTo(0)
+        assertThat(editorInfo.initialSelStart).isEqualTo(12)
+        assertThat(editorInfo.initialSelEnd).isEqualTo(18)
     }
 
     private fun createState(text: String): EditorState {

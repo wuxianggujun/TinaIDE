@@ -56,4 +56,30 @@ class NativeLibraryDependencyHintsTest {
             tempDir.deleteRecursively()
         }
     }
+
+    @Test
+    fun `shouldPreferInstalledPackageCandidate selects mapped package`() {
+        val tempDir = Files.createTempDirectory("native-library-package-priority-test").toFile()
+        try {
+            val installRoot = File(tempDir, "installed-packages")
+            val current = File(installRoot, "other/lib/arm64-v8a/libSDL3_image.so").apply {
+                parentFile?.mkdirs()
+                writeText("other")
+            }
+            val candidate = File(installRoot, "sdl3-image/lib/arm64-v8a/libSDL3_image.so").apply {
+                parentFile?.mkdirs()
+                writeText("preferred")
+            }
+
+            assertThat(
+                NativeLibraryDependencyHints.shouldPreferInstalledPackageCandidate(
+                    libraryName = "libSDL3_image.so",
+                    current = current,
+                    candidate = candidate,
+                )
+            ).isTrue()
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
 }

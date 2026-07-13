@@ -2205,6 +2205,9 @@
   <string name="run_config_sdl_orientation_portrait_desc">强制竖屏显示</string>
   <string name="run_config_sdl_floating_log">悬浮日志窗口</string>
   <string name="run_config_sdl_floating_log_desc">在 SDL 图形全屏运行时显示可拖拽的实时日志窗口，方便查看 stdout/stderr 输出</string>
+  <string name="run_config_terminal_options">终端运行选项</string>
+  <string name="run_config_show_linker_warnings">显示动态链接器兼容性告警</string>
+  <string name="run_config_show_linker_warnings_desc">默认隐藏旧 Android linker 对 AArch64 Auth RELR 标签产生的三类无害告警；开启后原样显示</string>
 
   <!-- 悬浮覆盖层 -->
   <string name="floating_overlay_exit">退出</string>
@@ -2219,20 +2222,19 @@
 
   <string name="sdl_host_title">SDL 运行界面</string>
   <string name="sdl_runtime_error_main_library_missing">缺少待启动的主共享库路径</string>
-  <string name="sdl_runtime_error_main_library_invalid">主共享库不存在或不可读：%1$s</string>
   <string name="sdl_runtime_invalid_shared_library">SDL 图形运行需要共享库（.so），当前目标不是可加载的共享库：%1$s</string>
   <string name="sdl_runtime_no_shared_library_target">SDL 图形运行需要 CMake 共享库目标（.so）。请将 CMake 目标改为 add_library(... SHARED ...)，或切换到终端模式运行可执行文件。</string>
   <string name="sdl_runtime_auto_selected_shared_library_target">SDL 图形模式已自动切换到共享库目标：%1$s</string>
   <string name="cmake_run_target_auto_repaired">当前 CMake 构建目标不可用，已切换到项目默认目标：%1$s（原目标：%2$s）</string>
   <string name="terminal_runtime_invalid_executable_artifact">终端运行只能启动可执行文件，当前产物不是可执行文件：%1$s（类型：%2$s）。如果这是 NDK 共享库项目，请使用构建/导出产物，或新增可执行测试目标后再运行。</string>
-  <string name="sdl_runtime_error_non_sdl_library">当前共享库未检测到 SDL 依赖，无法用 SDL 图形运行时启动：%1$s</string>
+  <string name="sdl_runtime_error_no_available_runtime">未找到可用的 SDL2 或 SDL3 运行库，请先安装 SDL 运行库后重试。</string>
+  <string name="sdl_runtime_error_load_failed">SDL 运行库加载失败：%1$s</string>
   <string name="sdl_runtime_stage_failed">准备 SDL 图形运行时失败：%1$s</string>
   <string name="sdl_runtime_error_scan_failed">解析共享库失败：%1$s，原因：%2$s</string>
   <string name="sdl_runtime_error_conflicting_versions">检测到目标同时依赖 SDL2 和 SDL3，无法确定运行时版本。</string>
   <string name="sdl_runtime_error_sdl_not_found">检测到 SDL%1$d 依赖，但未在包管理器已安装包运行库目录找到 %2$s。请先安装对应 SDL%1$d 包。</string>
   <string name="sdl_runtime_error_sdl_package_broken">检测到已安装的 SDL%1$d 包（%2$s）缺少 %3$s，请在包管理器中重装该包。</string>
   <string name="sdl_runtime_error_missing_launch_params">SDL 启动参数缺失，无法启动 SDL 运行界面。</string>
-  <string name="sdl_runtime_error_sdl_library_invalid">SDL 运行库不存在或不可读：%1$s</string>
   <string name="sdl_runtime_error_invalid_required_major">SDL 主版本参数无效：%1$d（仅支持 2 或 3）</string>
   <string name="sdl_runtime_error_launch_failed">启动 SDL 运行界面失败：%1$s</string>
   <string name="native_library_missing_libraries_title">缺少运行库</string>
@@ -2336,6 +2338,14 @@
   <string name="delete_file_confirm">确定要删除文件 \"%1$s\" 吗？\n\n此操作不可撤销。</string>
   <string name="toast_deleted">已删除 %1$s</string>
   <string name="error_delete">删除失败</string>
+  <string name="delete_scanning_progress">正在扫描…已发现 %1$d 项</string>
+  <string name="delete_items_progress">正在删除 %1$d / %2$d 项</string>
+  <string name="delete_in_progress">正在删除…</string>
+  <string name="delete_cancelling">正在停止…</string>
+  <string name="delete_cancelled_summary">已取消删除；已删除 %1$d 项，剩余内容已保留。</string>
+  <string name="delete_cancelled_restore_failed">删除已停止，但剩余内容无法恢复到原路径。请重新打开项目并检查文件。</string>
+  <string name="delete_failed_partial_summary">删除未能完成；已删除 %1$d 项，剩余内容已尽力保留。</string>
+  <string name="delete_failed_restore_failed">删除失败，且剩余内容无法恢复到原路径。请重新打开项目并检查文件。</string>
 
   <!-- EditorContainer -->
   <string name="editor_no_file_open">未打开任何文件</string>
@@ -4461,6 +4471,10 @@ kept=%3$d bytes
   <string name="apk_builder_success">APK 打包成功！</string>
   <string name="apk_builder_failed">APK 打包失败：%1$s</string>
   <string name="apk_builder_terminal_executable_missing">终端模板缺少可执行文件，无法导出 APK</string>
+  <string name="apk_builder_target_abi_missing">未指定 APK 目标 ABI</string>
+  <string name="apk_builder_library_abi_unknown">无法识别原生库 %1$s 的 Android ABI，请确认它是有效的 ELF .so 文件</string>
+  <string name="apk_builder_library_abi_mismatch">原生库 %1$s 的 ABI 为 %2$s，但当前 APK 目标 ABI 为 %3$s</string>
+  <string name="apk_builder_library_entry_conflict">APK 路径 %1$s 对应了两个不同的原生库：%2$s 与 %3$s</string>
   <string name="apk_builder_sign_failed">APK 签名失败，请重试；如果仍然失败，请切换为自定义签名。详情：%1$s</string>
   <string name="apk_builder_install">安装</string>
   <string name="apk_builder_install_failed">拉起安装失败：%1$s</string>

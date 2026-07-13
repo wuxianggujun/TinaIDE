@@ -6,6 +6,17 @@ import org.junit.Test
 class TerminalShellResolverProbeTest {
 
     @Test
+    fun buildOneShotShellArgv_shouldPassInternalCommandAsSingleNonInteractiveArgument() {
+        val command = "cd '/project with spaces' && printf 'Hello, test!\\n'"
+
+        assertThat(buildOneShotShellArgv("/system/bin/sh", command).toList()).containsExactly(
+            "/system/bin/sh",
+            "-c",
+            command,
+        ).inOrder()
+    }
+
+    @Test
     fun buildGuestCommandAvailabilityProbe_shouldUseShellTestForAbsolutePath() {
         assertThat(buildGuestCommandAvailabilityProbe(" /usr/bin/zsh ")).isEqualTo(
             listOf("/bin/sh", "-lc", "[ -x '/usr/bin/zsh' ]")

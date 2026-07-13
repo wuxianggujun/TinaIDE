@@ -1,6 +1,7 @@
 package com.wuxianggujun.tinaide.core.editorview
 
 import android.graphics.Paint
+import android.graphics.Typeface
 import android.os.SystemClock
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -53,6 +54,7 @@ internal class EditorRenderer(
     private var cachedHitZonesTextSize = 0f
     private var cachedHitZonesLineCount = 0
     private var cachedHitZonesShowLineNumbers = false
+    private var cachedHitZonesTypeface: Typeface? = null
     private var cachedHitZones: EditorHitZones? = null
 
     override fun render(
@@ -356,7 +358,8 @@ internal class EditorRenderer(
         if (cached != null &&
             textSize == cachedHitZonesTextSize &&
             lineCount == cachedHitZonesLineCount &&
-            showLineNumbers == cachedHitZonesShowLineNumbers
+            showLineNumbers == cachedHitZonesShowLineNumbers &&
+            lineNumberPaint.typeface === cachedHitZonesTypeface
         ) {
             return cached
         }
@@ -380,6 +383,7 @@ internal class EditorRenderer(
         cachedHitZonesTextSize = textSize
         cachedHitZonesLineCount = lineCount
         cachedHitZonesShowLineNumbers = showLineNumbers
+        cachedHitZonesTypeface = lineNumberPaint.typeface
         cachedHitZones = result
         return result
     }

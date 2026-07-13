@@ -87,6 +87,7 @@ class RemoteLspConnectionProvider(
         private const val PIPE_BUFFER_SIZE = 64 * 1024 // 64KB 缓冲区
         private const val BASE_RECONNECT_DELAY_MS = 1000L // 基础重连延迟
         private const val MAX_RECONNECT_DELAY_MS = 30_000L // 最大重连延迟
+        private const val OUTBOUND_RETRY_DELAY_MS = 50L
     }
 
     // 协程作用域
@@ -98,6 +99,7 @@ class RemoteLspConnectionProvider(
     }
 
     // WebSocket 连接
+    @Volatile
     private var webSocket: WebSocket? = null
 
     // 管道流
@@ -117,6 +119,9 @@ class RemoteLspConnectionProvider(
     // 连接标志
     private val connected = AtomicBoolean(false)
     private val stopping = AtomicBoolean(false)
+    private val closed = AtomicBoolean(false)
+    private val connectionGeneration = AtomicLong(0L)
+    private val lifecycleLock = Any()
 
     // 重连相关
     private var reconnectAttempt = 0
@@ -135,6 +140,7 @@ class RemoteLspConnectionProvider(
     private val requestIdGen = AtomicLong(0L)
 
     // 连接完成通道
+    @Volatile
     private var connectChannel: Channel<Result<Unit>>? = null
 
     // 状态监听器
@@ -175,15 +181,15 @@ class RemoteLspConnectionProvider(
     override fun start() {
         Timber.tag(TAG).i("Connecting to remote LSP server: ws://$host:$port")
 
-        stopping.set(false)
-        reconnectAttempt = 0
+        if (!prepareForManualConnection()) throw closedConnectionException()
 
         // 同步连接（start() 可能被 LSP 框架重复调用，必须幂等）
         runBlocking {
             startMutex.withLock {
+                throwIfClosed()
                 ensurePipes()
                 if (!connected.get()) {
-                    connectWithTimeout()
+                    connectWithTimeout().getOrThrow()
                 }
             }
         }
@@ -195,10 +201,10 @@ class RemoteLspConnectionProvider(
     suspend fun startAsync(): Result<Unit> {
         Timber.tag(TAG).i("Async connecting to remote LSP server: ws://$host:$port")
 
-        stopping.set(false)
-        reconnectAttempt = 0
+        if (!prepareForManualConnection()) return Result.failure(closedConnectionException())
 
         return startMutex.withLock {
+            if (closed.get()) return@withLock Result.failure(closedConnectionException())
             ensurePipes()
             if (connected.get()) {
                 Result.success(Unit)
@@ -217,56 +223,157 @@ class RemoteLspConnectionProvider(
     }
 
     private suspend fun connectWithTimeout(): Result<Unit> {
-        notifyStateChanged(ConnectionState.CONNECTING)
+        val request = try {
+            Request.Builder()
+                .url("ws://$host:$port")
+                .build()
+        } catch (error: IllegalArgumentException) {
+            return Result.failure(
+                IOException(AppStrings.get(Strings.editor_lsp_connection_failed, getConnectionInfo()), error)
+            )
+        }
+        val resultChannel = Channel<Result<Unit>>(1)
+        val generation = synchronized(lifecycleLock) connectBlock@{
+            if (closed.get() || stopping.get()) return@connectBlock null
+            connectionGeneration.incrementAndGet().also {
+                connectChannel = resultChannel
+                notifyStateChanged(ConnectionState.CONNECTING)
+            }
+        }
+        if (generation == null) {
+            resultChannel.close()
+            return Result.failure(closedConnectionException())
+        }
+        if (!isCurrentConnection(generation)) {
+            resultChannel.close()
+            return Result.failure(closedConnectionException())
+        }
 
-        connectChannel = Channel(1)
-
-        // 建立 WebSocket 连接
-        val request = Request.Builder()
-            .url("ws://$host:$port")
-            .build()
-
-        webSocket = client.newWebSocket(request, createWebSocketListener())
+        val socket = try {
+            client.newWebSocket(request, createWebSocketListener(generation, resultChannel))
+        } catch (error: RuntimeException) {
+            val failure = IOException(
+                AppStrings.get(Strings.editor_lsp_connection_failed, getConnectionInfo()),
+                error,
+            )
+            synchronized(lifecycleLock) {
+                if (connectionGeneration.compareAndSet(generation, generation + 1)) {
+                    if (connectChannel === resultChannel) connectChannel = null
+                    connected.set(false)
+                    if (!closed.get() && !stopping.get()) {
+                        notifyStateChanged(ConnectionState.FAILED)
+                        if (!closed.get() && !stopping.get()) {
+                            notifyEvent(ConnectionEvent.Error(failure.message.orEmpty(), failure))
+                        }
+                    }
+                }
+            }
+            resultChannel.close()
+            return Result.failure(failure)
+        }
+        val socketAccepted = synchronized(lifecycleLock) {
+            if (isCurrentConnection(generation)) {
+                webSocket = socket
+                true
+            } else {
+                false
+            }
+        }
+        if (!socketAccepted) socket.cancel()
 
         // 等待连接结果
-        return withTimeoutOrNull(connectTimeoutMs) {
-            connectChannel?.receive()
-        } ?: run {
-            webSocket?.cancel()
-            notifyStateChanged(ConnectionState.FAILED)
-            notifyEvent(ConnectionEvent.Error(AppStrings.get(Strings.editor_lsp_connection_timeout), null))
-            Result.failure(
-                IOException(
-                    AppStrings.get(
-                        Strings.editor_lsp_connection_failed,
-                        "ws://$host:$port"
-                    )
+        return try {
+            val result = withTimeoutOrNull(connectTimeoutMs) {
+                resultChannel.receive()
+            } ?: run {
+                val timeoutAccepted = synchronized(lifecycleLock) {
+                    if (closed.get() || stopping.get() ||
+                        !connectionGeneration.compareAndSet(generation, generation + 1)
+                    ) {
+                        false
+                    } else {
+                        if (webSocket === socket) webSocket = null
+                        connected.set(false)
+                        notifyStateChanged(ConnectionState.FAILED)
+                        if (closed.get() || stopping.get()) {
+                            false
+                        } else {
+                            notifyEvent(
+                                ConnectionEvent.Error(
+                                    AppStrings.get(Strings.editor_lsp_connection_timeout),
+                                    null,
+                                )
+                            )
+                            !closed.get() && !stopping.get()
+                        }
+                    }
+                }
+                socket.cancel()
+                Result.failure(
+                    if (!timeoutAccepted && closed.get()) {
+                        closedConnectionException()
+                    } else {
+                        IOException(
+                            AppStrings.get(
+                                Strings.editor_lsp_connection_failed,
+                                "ws://$host:$port"
+                            )
+                        )
+                    }
                 )
-            )
+            }
+            if (result.isSuccess && (!isCurrentConnection(generation) || !connected.get())) {
+                Result.failure(
+                    IOException(AppStrings.get(Strings.editor_lsp_connection_failed, getConnectionInfo()))
+                )
+            } else {
+                result
+            }
+        } finally {
+            synchronized(lifecycleLock) {
+                if (connectChannel === resultChannel) connectChannel = null
+            }
+            resultChannel.close()
         }
     }
 
-    private fun createWebSocketListener() = object : WebSocketListener() {
+    private fun createWebSocketListener(
+        generation: Long,
+        resultChannel: Channel<Result<Unit>>,
+    ) = object : WebSocketListener() {
         override fun onOpen(webSocket: WebSocket, response: Response) {
-            Timber.tag(TAG).i("WebSocket connected to $host:$port")
-            connected.set(true)
-            reconnectAttempt = 0
-            notifyStateChanged(ConnectionState.CONNECTED)
-            notifyEvent(ConnectionEvent.Connected)
-
-            // 启动输出转发协程
-            startOutputForwarding()
-
-            // 发送连接成功
-            scope.launch {
-                connectChannel?.send(Result.success(Unit))
+            val accepted = synchronized(lifecycleLock) {
+                if (!isCurrentConnection(generation)) {
+                    false
+                } else {
+                    Timber.tag(TAG).i("WebSocket connected to $host:$port")
+                    connected.set(true)
+                    reconnectAttempt = 0
+                    notifyStateChanged(ConnectionState.CONNECTED)
+                    if (!isCurrentConnection(generation)) {
+                        false
+                    } else {
+                        notifyEvent(ConnectionEvent.Connected)
+                        if (!isCurrentConnection(generation)) {
+                            false
+                        } else {
+                            startOutputForwarding()
+                            resultChannel.trySend(Result.success(Unit))
+                            true
+                        }
+                    }
+                }
+            }
+            if (!accepted) {
+                webSocket.close(1000, "Stale connection")
+                return
             }
 
             Timber.tag(TAG).i("Remote LSP connection established")
         }
 
         override fun onMessage(webSocket: WebSocket, text: String) {
-            if (stopping.get()) return
+            if (!isCurrentConnection(generation)) return
 
             // 更新延迟（如果是 pong 响应）
             val pingTime = lastPingTime.get()
@@ -333,93 +440,147 @@ class RemoteLspConnectionProvider(
 
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
             Timber.tag(TAG).i("WebSocket closed: code=$code, reason=$reason")
-            handleDisconnect()
+            handleDisconnect(generation)
         }
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+            if (!isCurrentConnection(generation)) return
             Timber.tag(TAG).e(t, "WebSocket connection failed")
 
             // 如果还在连接阶段，发送失败结果
-            scope.launch {
-                connectChannel?.send(
-                    Result.failure(
-                        IOException(
-                            AppStrings.get(
-                                Strings.editor_lsp_connection_failed,
-                                t.message ?: AppStrings.get(Strings.error_unknown)
-                            ),
-                            t
-                        )
+            resultChannel.trySend(
+                Result.failure(
+                    IOException(
+                        AppStrings.get(
+                            Strings.editor_lsp_connection_failed,
+                            t.message ?: AppStrings.get(Strings.error_unknown)
+                        ),
+                        t
                     )
                 )
-            }
+            )
 
-            handleDisconnect(t)
+            handleDisconnect(generation, t)
         }
     }
 
-    private fun handleDisconnect(error: Throwable? = null) {
-        val wasConnected = connected.getAndSet(false)
-
-        if (wasConnected) {
-            notifyEvent(ConnectionEvent.Disconnected)
-            error?.let {
-                notifyEvent(ConnectionEvent.Error(it.message ?: AppStrings.get(Strings.error_unknown), it))
+    private fun handleDisconnect(generation: Long, error: Throwable? = null) {
+        synchronized(lifecycleLock) disconnectBlock@{
+            if (closed.get() || stopping.get()) return@disconnectBlock
+            if (!connectionGeneration.compareAndSet(generation, generation + 1)) {
+                return@disconnectBlock
             }
-        }
+            webSocket = null
+            if (connected.getAndSet(false)) {
+                notifyEvent(ConnectionEvent.Disconnected)
+                if (closed.get() || stopping.get()) return@disconnectBlock
+                error?.let {
+                    notifyEvent(ConnectionEvent.Error(it.message ?: AppStrings.get(Strings.error_unknown), it))
+                }
+                if (closed.get() || stopping.get()) return@disconnectBlock
+            }
 
-        // 若准备自动重连，不要重建/关闭 pipe（否则 LSP 框架持有的 Stream 将失效）
-        val willReconnect = !stopping.get() && autoReconnect && reconnectAttempt < maxReconnectAttempts
-        if (!willReconnect) {
-            closeStreams()
-        }
-
-        // 尝试重连
-        if (willReconnect) {
-            scheduleReconnect()
-        } else {
-            notifyStateChanged(ConnectionState.DISCONNECTED)
+            val willReconnect = autoReconnect && reconnectAttempt < maxReconnectAttempts
+            if (willReconnect) {
+                scheduleReconnect()
+            } else {
+                notifyStateChanged(ConnectionState.DISCONNECTED)
+            }
         }
     }
 
     private fun scheduleReconnect() {
-        reconnectJob?.cancel()
-        reconnectJob = scope.launch {
-            reconnectAttempt++
-            val delay = calculateReconnectDelay()
+        val job = scope.launch(start = CoroutineStart.LAZY) {
+            var lastError: Throwable? = null
+            while (true) {
+                val retry = synchronized(lifecycleLock) retryBlock@{
+                    if (closed.get() || stopping.get() || connected.get() ||
+                        reconnectAttempt >= maxReconnectAttempts
+                    ) {
+                        return@retryBlock null
+                    }
+                    reconnectAttempt++
+                    val currentAttempt = reconnectAttempt
+                    val reconnectDelayMs = calculateReconnectDelay(currentAttempt)
+                    Timber.tag(TAG).i(
+                        "Scheduling reconnect attempt %d/%d in %dms",
+                        currentAttempt,
+                        maxReconnectAttempts,
+                        reconnectDelayMs,
+                    )
+                    notifyStateChanged(ConnectionState.RECONNECTING)
+                    if (closed.get() || stopping.get()) return@retryBlock null
+                    notifyEvent(ConnectionEvent.Reconnecting(currentAttempt, maxReconnectAttempts))
+                    if (closed.get() || stopping.get()) return@retryBlock null
+                    currentAttempt to reconnectDelayMs
+                } ?: break
 
-            Timber.tag(TAG).i("Scheduling reconnect attempt $reconnectAttempt/$maxReconnectAttempts in ${delay}ms")
-            notifyStateChanged(ConnectionState.RECONNECTING)
-            notifyEvent(ConnectionEvent.Reconnecting(reconnectAttempt, maxReconnectAttempts))
+                delay(retry.second)
+                if (closed.get() || stopping.get()) return@launch
 
-            delay(delay)
+                val result = startMutex.withLock {
+                    if (closed.get()) {
+                        Result.failure(closedConnectionException())
+                    } else if (connected.get()) {
+                        Result.success(Unit)
+                    } else {
+                        ensurePipes()
+                        connectWithTimeout()
+                    }
+                }
+                if (result.isSuccess) return@launch
+                lastError = result.exceptionOrNull()
+                Timber.tag(TAG).w(lastError, "Reconnect attempt %d failed", retry.first)
+            }
 
-            if (!stopping.get()) {
-                try {
-                    connectWithTimeout()
-                } catch (e: Exception) {
-                    Timber.tag(TAG).e(e, "Reconnect attempt $reconnectAttempt failed")
-                    if (reconnectAttempt >= maxReconnectAttempts) {
-                        notifyStateChanged(ConnectionState.FAILED)
-                        notifyEvent(ConnectionEvent.Error(AppStrings.get(Strings.editor_lsp_reconnect_max_attempts), e))
+            synchronized(lifecycleLock) {
+                if (!closed.get() && !stopping.get() && !connected.get()) {
+                    notifyStateChanged(ConnectionState.FAILED)
+                    if (!closed.get() && !stopping.get()) {
+                        notifyEvent(
+                            ConnectionEvent.Error(
+                                AppStrings.get(Strings.editor_lsp_reconnect_max_attempts),
+                                lastError,
+                            ),
+                        )
                     }
                 }
             }
         }
+        val accepted = synchronized(lifecycleLock) {
+            if (closed.get() || stopping.get() || connected.get() || reconnectJob != null) {
+                false
+            } else {
+                reconnectJob = job
+                true
+            }
+        }
+        if (!accepted) {
+            job.cancel()
+            return
+        }
+        job.invokeOnCompletion {
+            synchronized(lifecycleLock) {
+                if (reconnectJob === job) reconnectJob = null
+            }
+        }
+        job.start()
     }
 
     /**
      * 计算重连延迟（指数退避）
      */
-    private fun calculateReconnectDelay(): Long {
-        val delay = BASE_RECONNECT_DELAY_MS * (1 shl (reconnectAttempt - 1).coerceAtMost(5))
+    private fun calculateReconnectDelay(attempt: Int): Long {
+        val delay = BASE_RECONNECT_DELAY_MS * (1 shl (attempt - 1).coerceAtMost(5))
         return delay.coerceAtMost(MAX_RECONNECT_DELAY_MS)
     }
 
     private fun startOutputForwarding() {
-        outputForwardJob?.cancel()
-        outputForwardJob = scope.launch {
-            forwardOutputToWebSocket()
+        synchronized(lifecycleLock) outputBlock@{
+            if (closed.get() || outputForwardJob?.isActive == true) return@outputBlock
+            outputForwardJob = scope.launch {
+                forwardOutputToWebSocket()
+            }
         }
     }
 
@@ -429,7 +590,7 @@ class RemoteLspConnectionProvider(
     private suspend fun forwardOutputToWebSocket() {
         try {
             withContext(Dispatchers.IO) {
-                while (isActive && !stopping.get() && connected.get()) {
+                while (isActive && !closed.get()) {
                     val contentLength = readContentLength(outputPipeIn) ?: break
                     if (contentLength <= 0) continue
 
@@ -444,7 +605,11 @@ class RemoteLspConnectionProvider(
                     var message = String(bodyBytes, Charsets.UTF_8)
                     captureInitializeRootUriIfNeeded(message)
                     message = uriMapper.rewriteClientToServer(message)
-                    webSocket?.send(message)
+                    while (isActive && !closed.get()) {
+                        val socket = webSocket.takeIf { connected.get() }
+                        if (socket != null && socket.send(message)) break
+                        delay(OUTBOUND_RETRY_DELAY_MS)
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -500,28 +665,35 @@ class RemoteLspConnectionProvider(
         get() = outputPipeOut
 
     override fun close() {
-        Timber.tag(TAG).i("Closing remote LSP connection")
-        stopping.set(true)
+        synchronized(lifecycleLock) closeBlock@{
+            if (!closed.compareAndSet(false, true)) return@closeBlock
+            Timber.tag(TAG).i("Closing remote LSP connection")
+            stopping.set(true)
+            connectionGeneration.incrementAndGet()
 
-        // 取消重连
-        reconnectJob?.cancel()
-        reconnectJob = null
+            val closeError = closedConnectionException()
+            connectChannel?.trySend(Result.failure(closeError))
+            connectChannel?.close()
+            connectChannel = null
 
-        // 取消输出转发
-        outputForwardJob?.cancel()
-        outputForwardJob = null
+            reconnectJob?.cancel()
+            reconnectJob = null
+            outputForwardJob?.cancel()
+            outputForwardJob = null
 
-        // 关闭 WebSocket
-        runCatching { webSocket?.close(1000, "Client closed") }
-        webSocket = null
+            runCatching { webSocket?.close(1000, "Client closed") }
+            webSocket = null
+            closeStreams()
 
-        // 关闭管道流
-        closeStreams()
+            val cancellation = CancellationException(closeError.message)
+            pendingRequests.values.forEach { request -> request.cancel(cancellation) }
+            pendingRequests.clear()
 
-        connected.set(false)
-        notifyStateChanged(ConnectionState.DISCONNECTED)
-
-        Timber.tag(TAG).i("Remote LSP connection closed")
+            connected.set(false)
+            notifyStateChanged(ConnectionState.DISCONNECTED)
+            scope.cancel(cancellation)
+            Timber.tag(TAG).i("Remote LSP connection closed")
+        }
     }
 
     private fun closeStreams() {
@@ -545,13 +717,15 @@ class RemoteLspConnectionProvider(
      * 手动触发重连
      */
     fun reconnect() {
+        if (!prepareForManualConnection()) {
+            Timber.tag(TAG).w("Connection provider is closed, ignoring reconnect request")
+            return
+        }
         if (connected.get()) {
             Timber.tag(TAG).w("Already connected, ignoring reconnect request")
             return
         }
 
-        stopping.set(false)
-        reconnectAttempt = 0
         scheduleReconnect()
     }
 
@@ -559,7 +733,7 @@ class RemoteLspConnectionProvider(
      * 测量延迟（发送 ping）
      */
     fun measureLatency() {
-        if (!connected.get()) return
+        if (closed.get() || !connected.get()) return
         lastPingTime.set(System.currentTimeMillis())
         // OkHttp 会自动处理 ping/pong，这里我们通过下一条消息的响应时间来估算延迟
     }
@@ -568,7 +742,7 @@ class RemoteLspConnectionProvider(
      * 直接发送消息到 WebSocket（用于自定义消息，如项目同步）
      */
     fun sendRawMessage(message: String): Boolean {
-        if (!connected.get()) {
+        if (closed.get() || !connected.get()) {
             Timber.tag(TAG).w("Cannot send message: not connected")
             return false
         }
@@ -588,6 +762,7 @@ class RemoteLspConnectionProvider(
         params: JSONObject,
         timeoutMs: Long
     ): JSONObject? {
+        if (closed.get()) return null
         if (!connected.get()) {
             val started = startAsync()
             if (started.isFailure) return null
@@ -614,6 +789,27 @@ class RemoteLspConnectionProvider(
         pendingRequests.remove(id)
         return response
     }
+
+    private fun isCurrentConnection(generation: Long): Boolean =
+        !closed.get() && !stopping.get() && connectionGeneration.get() == generation
+
+    private fun prepareForManualConnection(): Boolean = synchronized(lifecycleLock) {
+        if (closed.get()) {
+            false
+        } else {
+            stopping.set(false)
+            reconnectAttempt = 0
+            true
+        }
+    }
+
+    private fun throwIfClosed() {
+        if (closed.get()) throw closedConnectionException()
+    }
+
+    private fun closedConnectionException(): IOException = IOException(
+        AppStrings.get(Strings.editor_lsp_connection_closed, getConnectionInfo())
+    )
 
     /**
      * 发送项目同步消息

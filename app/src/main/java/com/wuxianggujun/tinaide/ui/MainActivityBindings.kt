@@ -360,21 +360,7 @@ internal fun BindPluginHostEvents(
 ) {
     val currentProject by projectContext.currentProjectFlow.collectAsState()
     val currentProjectRoot = currentProject?.rootPath
-    var previousProjectRoot by remember { mutableStateOf<String?>(null) }
     var previousIsCompiling by remember { mutableStateOf(false) }
-
-    LaunchedEffect(currentProjectRoot) {
-        val previous = previousProjectRoot
-        if (previous != currentProjectRoot) {
-            if (!previous.isNullOrBlank()) {
-                PluginHostEventDispatcher.emitProjectClosed(previous)
-            }
-            if (!currentProjectRoot.isNullOrBlank()) {
-                PluginHostEventDispatcher.emitProjectOpened(currentProjectRoot)
-            }
-            previousProjectRoot = currentProjectRoot
-        }
-    }
 
     LaunchedEffect(isCompiling, currentProjectRoot) {
         if (isCompiling != previousIsCompiling) {

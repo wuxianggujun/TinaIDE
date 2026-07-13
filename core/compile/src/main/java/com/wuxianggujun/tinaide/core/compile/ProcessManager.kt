@@ -24,8 +24,8 @@ import timber.log.Timber
  * 负责管理所有运行中的进程，提供统一的启动、停止、状态查询接口。
  * 使用 StateFlow 提供响应式的状态更新。
  *
- * 这是进程状态的唯一真实来源（Single Source of Truth），
- * 其他组件应该订阅 processState 来获取状态更新。
+ * 这是通过本类注册的构建/标准进程状态来源。独立 TerminalActivity 的 PTY 生命周期
+ * 由 ITerminalSessionManager 管理，不能用本类状态推断或终止终端会话。
  */
 class ProcessManager {
     private companion object {
@@ -202,6 +202,13 @@ class ProcessManager {
      */
     fun setCurrentRunJob(job: Job) {
         currentRunJob = job
+    }
+
+    /** 仅清除调用方自己登记的任务，避免旧任务完成时覆盖后启动的新任务。 */
+    fun clearCurrentRunJob(job: Job) {
+        if (currentRunJob === job) {
+            currentRunJob = null
+        }
     }
 
     /**

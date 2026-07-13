@@ -14,7 +14,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -62,7 +62,7 @@ fun MainScreen(
     onNavigateToFavorites: () -> Unit = {},
     onNavigateToDownloadHistory: () -> Unit = {},
 ) {
-    var selectedNavIndex by remember { mutableIntStateOf(0) }
+    var selectedNavIndex by rememberSaveable { mutableIntStateOf(0) }
     val saveableStateHolder = rememberSaveableStateHolder()
 
     // Spotlight 注册表

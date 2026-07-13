@@ -5,6 +5,7 @@ import android.content.Intent
 import com.wuxianggujun.tinaide.core.IAppNavigator
 import com.wuxianggujun.tinaide.core.symbol.IProjectSymbolIndexService
 import com.wuxianggujun.tinaide.file.FileManager
+import com.wuxianggujun.tinaide.file.IFileDeletionOperations
 import com.wuxianggujun.tinaide.file.IFileOperations
 import com.wuxianggujun.tinaide.file.IFileWatchService
 import com.wuxianggujun.tinaide.file.IProjectContext
@@ -40,10 +41,12 @@ val appModule = module {
             configManager = get(),
             projectLocationManager = get(),
             storageManager = get(),
+            fileDeletionService = get(),
             projectSymbolIndexServiceProvider = { getKoin().getOrNull<IProjectSymbolIndexService>() },
         ).also { it.onCreate() }
     }
     single<IFileOperations> { get<FileManager>() }
+    single<IFileDeletionOperations> { get<FileManager>() }
     single<IRecentFilesProvider> { get<FileManager>() }
     single<IFileWatchService> { get<FileManager>() }
     single<IProjectContext> { get<FileManager>() }

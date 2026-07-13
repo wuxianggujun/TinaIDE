@@ -54,25 +54,6 @@ class EditorInputConnectionUtilsTest {
     }
 
     @Test
-    fun isFullExtractedTextWindowSelection_shouldDetectWindowWideSelectionOnlyWhenWindowIsPartial() {
-        val partialWindow = ImeExtractedTextWindow(
-            startOffset = 1_000,
-            endOffset = 1_512,
-            documentLength = 10_000,
-            textVersion = 7L
-        )
-        val fullDocumentWindow = partialWindow.copy(
-            startOffset = 0,
-            endOffset = 10_000
-        )
-
-        assertThat(isFullExtractedTextWindowSelection(0, 512, partialWindow)).isTrue()
-        assertThat(isFullExtractedTextWindowSelection(512, 0, partialWindow)).isTrue()
-        assertThat(isFullExtractedTextWindowSelection(1, 512, partialWindow)).isFalse()
-        assertThat(isFullExtractedTextWindowSelection(0, 10_000, fullDocumentWindow)).isFalse()
-    }
-
-    @Test
     fun resolveEditRange_shouldPreferComposingRange() {
         val range = resolveEditRange(
             selectionStart = 100,

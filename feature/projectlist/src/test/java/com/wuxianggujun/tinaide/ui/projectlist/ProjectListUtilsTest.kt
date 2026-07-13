@@ -1,6 +1,7 @@
 package com.wuxianggujun.tinaide.ui.projectlist
 
 import com.google.common.truth.Truth.assertThat
+import java.nio.file.Files
 import org.junit.Test
 
 class ProjectListUtilsTest {
@@ -12,6 +13,28 @@ class ProjectListUtilsTest {
         assertThat(formatFileSize(1024)).isEqualTo("1 KB")
         assertThat(formatFileSize(5L * 1024 * 1024)).isEqualTo("5 MB")
         assertThat(formatFileSize(3L * 1024 * 1024 * 1024)).isEqualTo("3 GB")
+    }
+
+    @Test
+    fun calculateDirectoryStats_shouldCountFilesAndBytesInOneTraversal() {
+        val root = Files.createTempDirectory("tina-project-stats").toFile()
+        try {
+            root.resolve("src/main.cpp").apply {
+                parentFile?.mkdirs()
+                writeText("12345", Charsets.UTF_8)
+            }
+            root.resolve("build/output.bin").apply {
+                parentFile?.mkdirs()
+                writeBytes(ByteArray(7))
+            }
+
+            val stats = calculateDirectoryStats(root)
+
+            assertThat(stats.fileCount).isEqualTo(2)
+            assertThat(stats.sizeBytes).isEqualTo(12)
+        } finally {
+            root.deleteRecursively()
+        }
     }
 
     @Test

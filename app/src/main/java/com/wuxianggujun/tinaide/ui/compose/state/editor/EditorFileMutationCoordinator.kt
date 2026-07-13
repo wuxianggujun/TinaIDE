@@ -78,6 +78,7 @@ internal class EditorFileMutationCoordinator(
         retargetedTabs.forEach { tab ->
             diagnosticsState.removeForFile(tab.oldFile)
             if (isCodeEditableType(tab.contentType)) {
+                codeRuntimeCache.retargetFile(tab.newId, tab.newFile)
                 releaseTinaLspForTab(tab.newId)
             }
         }

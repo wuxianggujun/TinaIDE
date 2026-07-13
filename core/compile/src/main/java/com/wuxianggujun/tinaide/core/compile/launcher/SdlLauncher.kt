@@ -11,7 +11,7 @@ import java.io.File
 import timber.log.Timber
 
 /**
- * Validates a `.so` artifact before the UI starts the SDL graphical runtime.
+ * Prepares a `.so` artifact before the UI starts the SDL graphical runtime.
  */
 class SdlLauncher : Launcher {
 
@@ -25,11 +25,6 @@ class SdlLauncher : Launcher {
         emitter: BuildEventEmitter,
     ): LaunchOutcome {
         val file = File(artifact.absolutePath)
-        if (!file.isFile) {
-            val reason = Strings.sdl_runtime_error_main_library_invalid.strOr(ctx.appContext, artifact.absolutePath)
-            emitter.emit(BuildEvent.Launch.Failed(reason, wasArtifactCached = false))
-            return LaunchOutcome.Failed(reason)
-        }
         if (artifact.kind != ArtifactKind.SHARED_LIBRARY || !file.name.endsWith(".so", ignoreCase = true)) {
             val reason = Strings.sdl_runtime_invalid_shared_library.strOr(ctx.appContext, artifact.absolutePath)
             emitter.emit(BuildEvent.Launch.Failed(reason, wasArtifactCached = false))

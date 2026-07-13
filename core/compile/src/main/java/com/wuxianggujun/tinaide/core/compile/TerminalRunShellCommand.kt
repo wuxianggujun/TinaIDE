@@ -33,6 +33,7 @@ internal data class TerminalRunLayout(
     val envPrefix: String,
     val ldLibraryPrefix: String,
     val waitForEnterSuffix: String,
+    val showLinkerWarnings: Boolean,
     val kind: NativeExecutableRunner.ExecutableKind
 )
 
@@ -52,6 +53,16 @@ internal fun assembleTerminalRunShellCommand(
         kind = layout.kind,
         preferLinker64 = preferLinker64
     )
+    val runCommand = layout.envPrefix + layout.ldLibraryPrefix + runSnippet
+    val effectiveRunCommand = if (
+        layout.kind == NativeExecutableRunner.ExecutableKind.ELF &&
+        preferLinker64 &&
+        !layout.showLinkerWarnings
+    ) {
+        wrapWithKnownLinkerWarningFilter(runCommand, layout.stagedTargetPath)
+    } else {
+        runCommand
+    }
     return buildString {
         append("cd ").append(shellQuotePosix(layout.workingDir))
         append(" && mkdir -p ").append(shellQuotePosix(layout.stageDirPath))
@@ -61,9 +72,45 @@ internal fun assembleTerminalRunShellCommand(
             .append(shellQuotePosix(layout.stagedTargetPath))
         append(" && chmod 700 ").append(shellQuotePosix(layout.stagedTargetPath))
         append(" 2>/dev/null && printf '\\033[H\\033[2J' && ")
-        append(layout.envPrefix)
-        append(layout.ldLibraryPrefix)
-        append(runSnippet)
+        append(effectiveRunCommand)
         append(layout.waitForEnterSuffix)
     }
 }
+
+/**
+ * 实时转发 stderr，仅丢弃旧 Android linker 无法识别 AArch64 Auth RELR 标签时产生的
+ * 三种固定告警。使用 FIFO 而不是重定向到临时文件，避免程序运行期间 stderr 延迟到退出后
+ * 才显示；最后以子 shell 恢复程序退出码，确保后续终端提示拿到真实状态。
+ */
+private fun wrapWithKnownLinkerWarningFilter(
+    runCommand: String,
+    stagedTargetPath: String,
+): String = buildString {
+    append("{ __tina_err_fifo=")
+    append(shellQuotePosix("$stagedTargetPath.stderr"))
+    append(".\$\$")
+    append("; rm -f \"\$__tina_err_fifo\" 2>/dev/null")
+    append("; if mkfifo \"\$__tina_err_fifo\" 2>/dev/null; then ")
+    append("(while IFS= read -r __tina_line || [ -n \"\$__tina_line\" ]; do ")
+    append("case \"\$__tina_line\" in ")
+    KNOWN_AARCH64_AUTH_RELR_DYNAMIC_TAGS.forEach { tag ->
+        append("'WARNING: linker: Warning: '*' unused DT entry: unknown processor-specific (type ")
+        append(tag)
+        append(" arg '*') (ignoring)') ;; ")
+    }
+    append("*) printf '%s\\n' \"\$__tina_line\" >&2 ;; esac")
+    append("; done < \"\$__tina_err_fifo\") & __tina_filter_pid=\$!")
+    append("; ").append(runCommand).append(" 2>\"\$__tina_err_fifo\"")
+    append("; __tina_program_rc=\$?")
+    append("; wait \"\$__tina_filter_pid\"")
+    append("; rm -f \"\$__tina_err_fifo\"")
+    append("; (exit \"\$__tina_program_rc\")")
+    append("; else ").append(runCommand)
+    append("; fi; }")
+}
+
+private val KNOWN_AARCH64_AUTH_RELR_DYNAMIC_TAGS = listOf(
+    "0x70000011",
+    "0x70000012",
+    "0x70000013",
+)

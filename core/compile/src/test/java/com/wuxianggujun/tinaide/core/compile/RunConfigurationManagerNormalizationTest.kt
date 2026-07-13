@@ -34,7 +34,7 @@ class RunConfigurationManagerNormalizationTest {
 
             val manager = RunConfigurationManager.load(projectRoot.absolutePath)
 
-            assertThat(manager.schemaVersion).isEqualTo(4)
+            assertThat(manager.schemaVersion).isEqualTo(5)
             assertThat(manager.selectedId).isEqualTo("cfg-current")
             assertThat(manager.selectedConfig.buildType).isEqualTo(BuildType.DEBUG)
             assertThat(manager.selectedConfig.singleFileCppStandard).isEqualTo("CPP_20")
@@ -42,7 +42,7 @@ class RunConfigurationManagerNormalizationTest {
             assertThat(manager.selectedConfig.customCppCompiler).isNull()
 
             val persisted = readRunConfig(projectRoot)
-            assertThat(persisted).contains("\"schemaVersion\": 4")
+            assertThat(persisted).contains("\"schemaVersion\": 5")
             assertThat(persisted).contains("\"selectedId\": \"cfg-current\"")
             assertThat(persisted).contains("\"singleFileCppStandard\": \"CPP_20\"")
             assertThat(persisted).contains("\"customCCompiler\": null")
@@ -75,6 +75,64 @@ class RunConfigurationManagerNormalizationTest {
             val manager = RunConfigurationManager.load(projectRoot.absolutePath)
 
             assertThat(manager.selectedConfig.buildType).isEqualTo(BuildType.DEBUG)
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `load defaults missing linker warning option to hidden`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            writeRunConfig(
+                projectRoot,
+                """
+                {
+                  "schemaVersion": 4,
+                  "configurations": [
+                    {
+                      "id": "cfg-linker-warning-default",
+                      "name": "Debug"
+                    }
+                  ],
+                  "selectedId": "cfg-linker-warning-default"
+                }
+                """.trimIndent()
+            )
+
+            val manager = RunConfigurationManager.load(projectRoot.absolutePath)
+
+            assertThat(manager.selectedConfig.showLinkerWarnings).isFalse()
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `load preserves explicitly enabled linker warnings`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            writeRunConfig(
+                projectRoot,
+                """
+                {
+                  "schemaVersion": 4,
+                  "configurations": [
+                    {
+                      "id": "cfg-linker-warning-enabled",
+                      "name": "Debug",
+                      "showLinkerWarnings": true
+                    }
+                  ],
+                  "selectedId": "cfg-linker-warning-enabled"
+                }
+                """.trimIndent()
+            )
+
+            val manager = RunConfigurationManager.load(projectRoot.absolutePath)
+
+            assertThat(manager.selectedConfig.showLinkerWarnings).isTrue()
+            assertThat(readRunConfig(projectRoot)).contains("\"showLinkerWarnings\": true")
         } finally {
             projectRoot.deleteRecursively()
         }

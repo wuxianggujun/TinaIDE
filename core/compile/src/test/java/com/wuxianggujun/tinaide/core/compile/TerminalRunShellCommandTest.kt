@@ -26,6 +26,7 @@ class TerminalRunShellCommandTest {
         envPrefix: String = "",
         ldLibraryPrefix: String = "",
         waitForEnterSuffix: String = "",
+        showLinkerWarnings: Boolean = false,
         kind: NativeExecutableRunner.ExecutableKind = NativeExecutableRunner.ExecutableKind.ELF
     ): TerminalRunLayout = TerminalRunLayout(
         workingDir = workingDir,
@@ -36,6 +37,7 @@ class TerminalRunShellCommandTest {
         envPrefix = envPrefix,
         ldLibraryPrefix = ldLibraryPrefix,
         waitForEnterSuffix = waitForEnterSuffix,
+        showLinkerWarnings = showLinkerWarnings,
         kind = kind
     )
 
@@ -158,5 +160,49 @@ class TerminalRunShellCommandTest {
         )
 
         assertThat(command).endsWith(suffix)
+    }
+
+    @Test
+    fun `default ELF run filters only known AArch64 auth RELR linker warnings`() {
+        val command = assembleTerminalRunShellCommand(
+            layout = layout(showLinkerWarnings = false),
+            preferLinker64 = true
+        )
+
+        assertThat(command).contains("mkfifo \"\$__tina_err_fifo\"")
+        assertThat(command).contains("0x70000011")
+        assertThat(command).contains("0x70000012")
+        assertThat(command).contains("0x70000013")
+        assertThat(command).contains(
+            "'WARNING: linker: Warning: '*' unused DT entry: unknown processor-specific " +
+                "(type 0x70000012 arg '*') (ignoring)'"
+        )
+        assertThat(command).contains("printf '%s\\n' \"\$__tina_line\" >&2")
+        assertThat(command).contains("2>\"\$__tina_err_fifo\"")
+        assertThat(command).contains("(exit \"\$__tina_program_rc\")")
+        assertThat(command).doesNotContain("2>/dev/null; __tina_program_rc")
+    }
+
+    @Test
+    fun `explicit linker warning option keeps stderr unfiltered`() {
+        val command = assembleTerminalRunShellCommand(
+            layout = layout(showLinkerWarnings = true),
+            preferLinker64 = true
+        )
+
+        assertThat(command).doesNotContain("__tina_err_fifo")
+        assertThat(command).doesNotContain("0x70000011")
+        assertThat(command).contains("'/system/bin/linker64' '/data/files/run-bin/main.abcdef'")
+    }
+
+    @Test
+    fun `non linker launch does not install linker warning filter`() {
+        val command = assembleTerminalRunShellCommand(
+            layout = layout(showLinkerWarnings = false),
+            preferLinker64 = false
+        )
+
+        assertThat(command).doesNotContain("__tina_err_fifo")
+        assertThat(command).doesNotContain("0x70000011")
     }
 }

@@ -18,6 +18,8 @@ import com.wuxianggujun.tinaide.core.linux.LinuxEnvironmentProvider
 import com.wuxianggujun.tinaide.core.linux.LinuxRunModePolicy
 import com.wuxianggujun.tinaide.core.linux.UnavailableLinuxEnvironmentProvider
 import com.wuxianggujun.tinaide.editor.IEditorManager
+import com.wuxianggujun.tinaide.editor.io.AtomicTextFileWriter
+import com.wuxianggujun.tinaide.editor.io.FileCharsetDetector
 import com.wuxianggujun.tinaide.editor.session.SaveReason
 import com.wuxianggujun.tinaide.editor.session.SaveResult
 import com.wuxianggujun.tinaide.file.IProjectContext
@@ -26,10 +28,11 @@ import com.wuxianggujun.tinaide.storage.ProjectDirStructure
 import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState
 import java.io.File
 import java.net.URI
+import java.nio.charset.Charset
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.eclipse.lsp4j.TextEdit
@@ -48,7 +51,7 @@ import timber.log.Timber
  *
  * 设计原则：
  * - 从 MainActivity 中提取业务逻辑
- * - 使用 SharedFlow 发送一次性事件（如 Toast）
+ * - 使用有界 Channel 可靠发送一次性事件（如 Toast）
  */
 class MainActivityActionsViewModel(
     application: Application,
@@ -73,8 +76,28 @@ class MainActivityActionsViewModel(
 
     enum class ToastType { SUCCESS, ERROR, INFO }
 
-    private val _uiEvents = MutableSharedFlow<UiEvent>()
-    val uiEvents: SharedFlow<UiEvent> = _uiEvents.asSharedFlow()
+    private data class WorkspaceFileEditBatch(
+        val edits: MutableList<TextEdit> = mutableListOf(),
+        var expectedVersion: Int? = null
+    )
+
+    private data class OpenWorkspaceEditPlan(
+        val tabId: String,
+        val edits: List<EditorContainerState.TextEditOperation>,
+        val originalText: String,
+        val documentVersion: Long?,
+        val expectedLspVersion: Int?
+    )
+
+    private data class ClosedWorkspaceEditPlan(
+        val file: File,
+        val originalText: String,
+        val updatedText: String,
+        val charset: Charset
+    )
+
+    private val uiEventsChannel = Channel<UiEvent>(capacity = Channel.BUFFERED)
+    val uiEvents = uiEventsChannel.receiveAsFlow()
 
     private val context: Context get() = getApplication()
 
@@ -451,129 +474,184 @@ class MainActivityActionsViewModel(
         editorContainerState: EditorContainerState,
         edit: WorkspaceEdit
     ): Boolean {
-        val editsByFile = mutableMapOf<File, MutableList<TextEdit>>()
+        val editsByFile = linkedMapOf<File, WorkspaceFileEditBatch>()
 
-        edit.changes?.forEach { (uri, edits) ->
-            workspaceUriToFile(uri)?.let { file ->
-                editsByFile.getOrPut(file) { mutableListOf() }.addAll(edits)
+        fun addEdits(uri: String, edits: List<TextEdit>, expectedVersion: Int?): Boolean {
+            val file = workspaceUriToFile(uri) ?: return false
+            val batch = editsByFile.getOrPut(file) { WorkspaceFileEditBatch() }
+            if (expectedVersion != null) {
+                val previousVersion = batch.expectedVersion
+                if (previousVersion != null && previousVersion != expectedVersion) return false
+                batch.expectedVersion = expectedVersion
             }
+            batch.edits.addAll(edits)
+            return true
         }
 
-        edit.documentChanges?.forEach { change ->
-            if (change.isLeft) {
-                val docEdit = change.left
-                val file = workspaceUriToFile(docEdit.textDocument.uri) ?: return@forEach
+        edit.changes.orEmpty().forEach { (uri, edits) ->
+            if (!addEdits(uri, edits, expectedVersion = null)) return false
+        }
 
-                @Suppress("UNCHECKED_CAST")
-                val rawEdits = docEdit.edits as List<*>
-                val extracted = rawEdits.mapNotNull { item ->
-                    when (item) {
-                        is TextEdit -> item
-                        is org.eclipse.lsp4j.jsonrpc.messages.Either<*, *> -> {
-                            @Suppress("UNCHECKED_CAST")
-                            val either = item as org.eclipse.lsp4j.jsonrpc.messages.Either<TextEdit, *>
-                            when {
-                                either.isLeft -> either.left
-                                else -> either.right as? TextEdit
-                            }
-                        }
+        edit.documentChanges.orEmpty().forEach { change ->
+            if (!change.isLeft) return false
+            val documentEdit = change.left
+            val extractedEdits = mutableListOf<TextEdit>()
+            @Suppress("UNCHECKED_CAST")
+            val rawEdits = documentEdit.edits as List<*>
+            rawEdits.forEach { item ->
+                val textEdit = when (item) {
+                    is TextEdit -> item
+                    is org.eclipse.lsp4j.jsonrpc.messages.Either<*, *> -> when {
+                        item.isLeft -> item.left as? TextEdit
+                        item.isRight -> item.right as? TextEdit
                         else -> null
                     }
-                }
-
-                editsByFile.getOrPut(file) { mutableListOf() }.addAll(extracted)
+                    else -> null
+                } ?: return false
+                extractedEdits += textEdit
+            }
+            if (!addEdits(
+                    uri = documentEdit.textDocument.uri,
+                    edits = extractedEdits,
+                    expectedVersion = documentEdit.textDocument.version
+                )
+            ) {
+                return false
             }
         }
 
         if (editsByFile.isEmpty()) return false
 
-        var success = true
-        editsByFile.forEach { (file, fileEdits) ->
-            val sorted = fileEdits.sortedWith(
-                compareByDescending<TextEdit> { it.range.start.line }
-                    .thenByDescending { it.range.start.character }
-                    .thenByDescending { it.range.end.line }
-                    .thenByDescending { it.range.end.character }
-            )
-
+        val openPlans = mutableListOf<OpenWorkspaceEditPlan>()
+        val closedPlans = mutableListOf<ClosedWorkspaceEditPlan>()
+        editsByFile.forEach { (file, batch) ->
+            if (batch.edits.isEmpty()) return@forEach
             val tabId = editorContainerState.findOpenTabIdByFileOrNull(file)
             if (tabId != null) {
-                val mappedEdits = sorted.map { edit ->
+                if (batch.expectedVersion != null &&
+                    !editorContainerState.isLspDocumentVersionCurrent(tabId, batch.expectedVersion!!)
+                ) {
+                    return false
+                }
+                val mappedEdits = batch.edits.map { textEdit ->
                     EditorContainerState.TextEditOperation(
-                        startLine = edit.range.start.line,
-                        startColumn = edit.range.start.character,
-                        endLine = edit.range.end.line,
-                        endColumn = edit.range.end.character,
-                        newText = edit.newText ?: ""
+                        startLine = textEdit.range.start.line,
+                        startColumn = textEdit.range.start.character,
+                        endLine = textEdit.range.end.line,
+                        endColumn = textEdit.range.end.character,
+                        newText = textEdit.newText.orEmpty()
                     )
                 }
-                val applied = withContext(Dispatchers.Main.immediate) {
+                val plan = withContext(Dispatchers.Main.immediate) {
+                    val originalText = editorContainerState.readTextFromTab(tabId) ?: return@withContext null
+                    val updatedText = WorkspaceTextEditApplier.apply(originalText, batch.edits) ?: return@withContext null
+                    if (updatedText == originalText) return@withContext OpenWorkspaceEditPlan(
+                        tabId = tabId,
+                        edits = emptyList(),
+                        originalText = originalText,
+                        documentVersion = editorContainerState.readTabDocumentVersion(tabId),
+                        expectedLspVersion = batch.expectedVersion
+                    )
+                    if (!editorContainerState.canApplyTextEditsInTab(tabId, mappedEdits)) return@withContext null
+                    OpenWorkspaceEditPlan(
+                        tabId = tabId,
+                        edits = mappedEdits,
+                        originalText = originalText,
+                        documentVersion = editorContainerState.readTabDocumentVersion(tabId),
+                        expectedLspVersion = batch.expectedVersion
+                    )
+                } ?: return false
+                openPlans += plan
+            } else {
+                if (batch.expectedVersion != null) return false
+                val plan = withContext(Dispatchers.IO) {
                     runCatching {
-                        editorContainerState.applyTextEditsInTab(tabId, mappedEdits)
-                    }.getOrDefault(false)
-                }
-                if (!applied) success = false
-                return@forEach
+                        if (!file.isFile) return@runCatching null
+                        val charset = FileCharsetDetector.detect(file)
+                        val originalText = file.readText(charset)
+                        val updatedText = WorkspaceTextEditApplier.apply(originalText, batch.edits)
+                            ?: return@runCatching null
+                        ClosedWorkspaceEditPlan(file, originalText, updatedText, charset)
+                    }.getOrNull()
+                } ?: return false
+                closedPlans += plan
             }
-
-            // 文件未在编辑器中打开，直接修改文件
-            val applied = withContext(Dispatchers.IO) {
-                runCatching {
-                    applyTextEditsToFile(file, sorted)
-                }.getOrDefault(false)
-            }
-
-            if (!applied) success = false
         }
 
-        return success
-    }
+        if (openPlans.all { it.edits.isEmpty() } && closedPlans.all { it.originalText == it.updatedText }) {
+            return true
+        }
 
-    /**
-     * 应用 TextEdit 列表到文件
-     */
-    private fun applyTextEditsToFile(file: File, edits: List<TextEdit>): Boolean {
-        if (!file.isFile) return false
-        val original = file.readText(Charsets.UTF_8)
-        val updated = applyTextEditsToString(original, edits)
-        file.writeText(updated, Charsets.UTF_8)
+        val writtenClosedPlans = mutableListOf<ClosedWorkspaceEditPlan>()
+        closedPlans.filter { it.originalText != it.updatedText }.forEach { plan ->
+            val written = withContext(Dispatchers.IO) {
+                runCatching {
+                    if (!plan.file.isFile || plan.file.readText(plan.charset) != plan.originalText) {
+                        return@runCatching false
+                    }
+                    AtomicTextFileWriter.write(plan.file, plan.updatedText, plan.charset)
+                    true
+                }
+                    .onFailure { Timber.tag("WorkspaceEdit").w(it, "Failed to update %s", plan.file.absolutePath) }
+                    .getOrDefault(false)
+            }
+            if (!written) {
+                rollbackClosedWorkspaceEdits(writtenClosedPlans)
+                return false
+            }
+            writtenClosedPlans += plan
+        }
+
+        val appliedOpenPlans = mutableListOf<OpenWorkspaceEditPlan>()
+        openPlans.filter { it.edits.isNotEmpty() }.forEach { plan ->
+            val applied = withContext(Dispatchers.Main.immediate) {
+                val localVersionCurrent = plan.documentVersion == null ||
+                    editorContainerState.readTabDocumentVersion(plan.tabId) == plan.documentVersion
+                val lspVersionCurrent = plan.expectedLspVersion == null ||
+                    editorContainerState.isLspDocumentVersionCurrent(plan.tabId, plan.expectedLspVersion)
+                localVersionCurrent && lspVersionCurrent &&
+                    editorContainerState.applyTextEditsInTab(plan.tabId, plan.edits)
+            }
+            if (!applied) {
+                rollbackOpenWorkspaceEdits(editorContainerState, appliedOpenPlans)
+                rollbackClosedWorkspaceEdits(writtenClosedPlans)
+                return false
+            }
+            appliedOpenPlans += plan
+        }
+
         return true
     }
 
-    private fun applyTextEditsToString(original: String, edits: List<TextEdit>): String {
-        var updated = original
-        edits.forEach { textEdit ->
-            val startOffset = positionToOffset(updated, textEdit.range.start.line, textEdit.range.start.character)
-            val endOffset = positionToOffset(updated, textEdit.range.end.line, textEdit.range.end.character)
-                .coerceAtLeast(startOffset)
-            updated = updated.replaceRange(startOffset, endOffset, textEdit.newText ?: "")
-        }
-        return updated
-    }
-
-    private fun positionToOffset(text: String, line: Int, column: Int): Int {
-        val lineStarts = computeLineStarts(text)
-        val safeLine = line.coerceIn(0, lineStarts.lastIndex)
-        val lineStart = lineStarts[safeLine]
-        val lineEnd = if (safeLine + 1 < lineStarts.size) {
-            (lineStarts[safeLine + 1] - 1).coerceAtLeast(lineStart)
-        } else {
-            text.length
-        }
-        val maxColumn = (lineEnd - lineStart).coerceAtLeast(0)
-        val safeColumn = column.coerceIn(0, maxColumn)
-        return lineStart + safeColumn
-    }
-
-    private fun computeLineStarts(text: String): IntArray {
-        val starts = ArrayList<Int>()
-        starts.add(0)
-        text.forEachIndexed { index, ch ->
-            if (ch == '\n') {
-                starts.add(index + 1)
+    private suspend fun rollbackOpenWorkspaceEdits(
+        editorContainerState: EditorContainerState,
+        plans: List<OpenWorkspaceEditPlan>
+    ) {
+        withContext(Dispatchers.Main.immediate) {
+            plans.asReversed().forEach { plan ->
+                val restored = runCatching {
+                    editorContainerState.replaceTextInTab(plan.tabId, plan.originalText)
+                }.onFailure {
+                    Timber.tag("WorkspaceEdit").e(it, "Failed to roll back tab %s", plan.tabId)
+                }.getOrDefault(false)
+                if (!restored) {
+                    Timber.tag("WorkspaceEdit").e("Editor rejected rollback for tab %s", plan.tabId)
+                }
             }
         }
-        return starts.toIntArray()
+    }
+
+    private suspend fun rollbackClosedWorkspaceEdits(plans: List<ClosedWorkspaceEditPlan>) {
+        withContext(Dispatchers.IO) {
+            plans.asReversed().forEach { plan ->
+                runCatching {
+                    if (plan.file.isFile && plan.file.readText(plan.charset) == plan.updatedText) {
+                        AtomicTextFileWriter.write(plan.file, plan.originalText, plan.charset)
+                    }
+                }
+                    .onFailure { Timber.tag("WorkspaceEdit").e(it, "Failed to roll back %s", plan.file.absolutePath) }
+            }
+        }
     }
 
     /**
@@ -581,11 +659,12 @@ class MainActivityActionsViewModel(
      */
     private fun workspaceUriToFile(uri: String): File? = runCatching {
         val parsed = URI(uri)
-        when {
+        val file = when {
             parsed.scheme == null -> File(uri)
             parsed.scheme.equals("file", ignoreCase = true) -> File(parsed)
             else -> null
         }
+        file?.absoluteFile?.toPath()?.normalize()?.toFile()
     }.getOrNull()
 
     // ============ 项目关闭 ============
@@ -607,11 +686,10 @@ class MainActivityActionsViewModel(
         }
         editorManager.closeAll(clearPersistentState = forgetSession)
 
-        if (forgetSession) {
-            clearCurrentProjectState()
-        }
-
-        withContext(Dispatchers.IO) {
+        withContext(NonCancellable + Dispatchers.IO) {
+            if (forgetSession) {
+                clearCurrentProjectState()
+            }
             projectSession.closeProject()
         }
 
@@ -634,9 +712,7 @@ class MainActivityActionsViewModel(
     // ============ 辅助方法 ============
 
     private fun showToast(message: String, type: ToastType) {
-        viewModelScope.launch {
-            _uiEvents.emit(UiEvent.ShowToast(message, type))
-        }
+        uiEventsChannel.trySend(UiEvent.ShowToast(message, type))
     }
 
     private fun readTextFromClipboard(): String? {

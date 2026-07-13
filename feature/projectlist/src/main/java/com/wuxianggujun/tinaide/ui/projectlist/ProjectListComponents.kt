@@ -227,17 +227,22 @@ fun formatPathForDisplay(
     return if (projectName.isNotEmpty()) "$displayBase/$projectName" else displayBase
 }
 
-fun calculateDirectorySize(dir: File): Long {
-    var size = 0L
+data class DirectoryStats(
+    val sizeBytes: Long,
+    val fileCount: Int,
+)
+
+fun calculateDirectoryStats(dir: File): DirectoryStats {
+    var sizeBytes = 0L
+    var fileCount = 0
     dir.walkTopDown().forEach { file ->
         if (file.isFile) {
-            size += file.length()
+            sizeBytes += file.length()
+            fileCount++
         }
     }
-    return size
+    return DirectoryStats(sizeBytes = sizeBytes, fileCount = fileCount)
 }
-
-fun countFiles(dir: File): Int = dir.walkTopDown().count { it.isFile }
 
 fun formatFileSize(size: Long): String = when {
     size < 1024 -> "$size B"

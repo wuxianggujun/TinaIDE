@@ -12,9 +12,10 @@ kotlin {
 }
 
 dependencies {
-    compileOnly(libs.plugins.android.application.toDep())
-    compileOnly(libs.plugins.android.library.toDep())
-    compileOnly(libs.plugins.compose.compiler.toDep())
+    implementation(libs.plugins.android.application.toDep())
+    implementation(libs.plugins.android.library.toDep())
+    implementation(libs.plugins.compose.compiler.toDep())
+    implementation(libs.plugins.ktlint.toDep())
 }
 
 fun Provider<PluginDependency>.toDep() = map {
@@ -30,6 +31,10 @@ gradlePlugin {
         register("androidLibraryCompose") {
             id = "tina.android.library.compose"
             implementationClass = "TinaAndroidLibraryComposePlugin"
+        }
+        register("kotlinQuality") {
+            id = "tina.kotlin.quality"
+            implementationClass = "com.wuxianggujun.tinaide.buildlogic.TinaKotlinQualityPlugin"
         }
         register("androidAppVersioning") {
             id = "tina.android.app.versioning"

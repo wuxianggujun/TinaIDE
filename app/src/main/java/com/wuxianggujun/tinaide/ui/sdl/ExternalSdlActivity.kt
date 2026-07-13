@@ -35,6 +35,18 @@ import java.io.File
 import org.libsdl.app.SDLActivity
 import timber.log.Timber
 
+internal fun buildSdlLibraryLoadOrder(
+    preSdlLibraryPaths: List<String>,
+    sdlLibraryPath: String,
+    preloadLibraryPaths: List<String>,
+    mainLibraryPath: String
+): List<String> = linkedSetOf<String>().apply {
+    preSdlLibraryPaths.filterTo(this) { it.isNotBlank() }
+    sdlLibraryPath.takeIf { it.isNotBlank() }?.let(::add)
+    preloadLibraryPaths.filterTo(this) { it.isNotBlank() }
+    mainLibraryPath.takeIf { it.isNotBlank() }?.let(::add)
+}.toList()
+
 /**
  * 外部 SDL 启动 Activity：
  * - 不使用 APK 内置 SDL so；
@@ -67,6 +79,7 @@ class ExternalSdlActivity :
         const val EXTRA_SDL_LIBRARY_PATH = "extra_sdl_library_path"
         const val EXTRA_MAIN_LIBRARY_PATH = "extra_main_library_path"
         const val EXTRA_REQUIRED_SDL_MAJOR = "extra_required_sdl_major"
+        const val EXTRA_PRE_SDL_LIBRARY_PATHS = "extra_pre_sdl_library_paths"
         const val EXTRA_PRELOAD_LIBRARY_PATHS = "extra_preload_library_paths"
         const val EXTRA_SDL_ORIENTATION = "extra_sdl_orientation"
         const val EXTRA_ENABLE_FLOATING_LOG = "extra_enable_floating_log"
@@ -76,6 +89,7 @@ class ExternalSdlActivity :
             sdlLibraryPath: String,
             mainLibraryPath: String,
             requiredSdlMajor: Int,
+            preSdlLibraryPaths: List<String>,
             preloadLibraryPaths: List<String>,
             sdlOrientation: SdlOrientation = SdlOrientation.AUTO,
             enableFloatingLog: Boolean = false,
@@ -84,6 +98,10 @@ class ExternalSdlActivity :
             putExtra(EXTRA_SDL_LIBRARY_PATH, sdlLibraryPath)
             putExtra(EXTRA_MAIN_LIBRARY_PATH, mainLibraryPath)
             putExtra(EXTRA_REQUIRED_SDL_MAJOR, requiredSdlMajor)
+            putStringArrayListExtra(
+                EXTRA_PRE_SDL_LIBRARY_PATHS,
+                ArrayList(preSdlLibraryPaths)
+            )
             putStringArrayListExtra(
                 EXTRA_PRELOAD_LIBRARY_PATHS,
                 ArrayList(preloadLibraryPaths)
@@ -110,6 +128,7 @@ class ExternalSdlActivity :
     private var sdlLibraryPath: String = ""
     private var mainLibraryPath: String = ""
     private var requiredSdlMajor: Int = 0
+    private var preSdlLibraryPaths: List<String> = emptyList()
     private var preloadLibraryPaths: List<String> = emptyList()
 
     private var userOrientation: SdlOrientation = SdlOrientation.AUTO
@@ -143,6 +162,11 @@ class ExternalSdlActivity :
         sdlLibraryPath = intent.getStringExtra(EXTRA_SDL_LIBRARY_PATH).orEmpty()
         mainLibraryPath = intent.getStringExtra(EXTRA_MAIN_LIBRARY_PATH).orEmpty()
         requiredSdlMajor = intent.getIntExtra(EXTRA_REQUIRED_SDL_MAJOR, 0)
+        preSdlLibraryPaths = intent.getStringArrayListExtra(EXTRA_PRE_SDL_LIBRARY_PATHS)
+            ?.map { it.trim() }
+            ?.filter { it.isNotEmpty() }
+            ?.distinct()
+            .orEmpty()
         preloadLibraryPaths = intent.getStringArrayListExtra(EXTRA_PRELOAD_LIBRARY_PATHS)
             ?.map { it.trim() }
             ?.filter { it.isNotEmpty() }
@@ -295,13 +319,21 @@ class ExternalSdlActivity :
             System.load(path)
         }
 
-        loadAbsolutePath(sdlLibraryPath)
-        preloadLibraryPaths.forEach { candidate ->
-            if (candidate != mainLibraryPath && candidate != sdlLibraryPath) {
-                loadAbsolutePath(candidate)
-            }
-        }
+        buildSdlLibraryLoadOrder(
+            preSdlLibraryPaths = preSdlLibraryPaths,
+            sdlLibraryPath = sdlLibraryPath,
+            preloadLibraryPaths = preloadLibraryPaths,
+            mainLibraryPath = mainLibraryPath
+        ).forEach(::loadAbsolutePath)
     }
+
+    override fun getBrokenLibrariesErrorTitle(): String = Strings.sdl_host_title.strOr(this)
+
+    override fun getBrokenLibrariesErrorMessage(errorMessage: String?): String =
+        Strings.sdl_runtime_error_load_failed.strOr(this, errorMessage.orEmpty())
+
+    override fun getBrokenLibrariesExitButtonText(): String =
+        Strings.floating_overlay_exit.strOr(this)
 
     override fun getLibraries(): Array<String> = emptyArray()
 
@@ -430,14 +462,6 @@ class ExternalSdlActivity :
 
         if (requiredSdlMajor != 2 && requiredSdlMajor != 3) {
             return Strings.sdl_runtime_error_invalid_required_major.strOr(this, requiredSdlMajor)
-        }
-
-        if (!File(mainLibraryPath).isFile) {
-            return Strings.sdl_runtime_error_main_library_invalid.strOr(this, mainLibraryPath)
-        }
-
-        if (!File(sdlLibraryPath).isFile) {
-            return Strings.sdl_runtime_error_sdl_library_invalid.strOr(this, sdlLibraryPath)
         }
 
         return null

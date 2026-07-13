@@ -2,15 +2,20 @@ package com.wuxianggujun.tinaide.ui
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
 import com.wuxianggujun.tinaide.core.compile.BuildLogEntry
 import com.wuxianggujun.tinaide.core.compile.BuildLogLevel
 import com.wuxianggujun.tinaide.core.lsp.Diagnostic
 import com.wuxianggujun.tinaide.output.IOutputManager
 import com.wuxianggujun.tinaide.ui.compose.components.BottomPanelTab
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 
 /**
  * 底部面板 ViewModel
@@ -49,6 +54,11 @@ class BottomPanelViewModel(
     private val _selectedBottomTab = MutableStateFlow(BottomPanelTab.BUILD_LOG)
     val selectedBottomTab: StateFlow<BottomPanelTab> = _selectedBottomTab.asStateFlow()
 
+    private val pendingOutputLock = Any()
+    private val pendingBuildOutput = StringBuilder()
+    private val pendingRunOutput = StringBuilder()
+    private val outputFlushScheduled = AtomicBoolean(false)
+
     // ============ 监听器 ============
 
     /**
@@ -62,37 +72,24 @@ class BottomPanelViewModel(
      */
     private val buildLogListener = object : IOutputManager.OutputListener {
         override fun onOutputAppended(text: String, channel: IOutputManager.OutputChannel) {
-            when (channel) {
-                IOutputManager.OutputChannel.BUILD -> {
-                    val entries = parseOutputEntries(text)
-                    if (entries.isNotEmpty()) {
-                        _buildLogs.update { currentLogs ->
-                            val updatedLogs = currentLogs + entries
-                            _buildLogCount.value = updatedLogs.size
-                            updatedLogs
-                        }
-                    }
-                }
-                IOutputManager.OutputChannel.RUN -> {
-                    val entries = parseOutputEntries(text)
-                    if (entries.isNotEmpty()) {
-                        _runOutputLogs.update { currentLogs ->
-                            val updatedLogs = currentLogs + entries
-                            _runOutputCount.value = updatedLogs.size
-                            updatedLogs
-                        }
-                    }
+            synchronized(pendingOutputLock) {
+                when (channel) {
+                    IOutputManager.OutputChannel.BUILD -> appendPendingOutput(pendingBuildOutput, text)
+                    IOutputManager.OutputChannel.RUN -> appendPendingOutput(pendingRunOutput, text)
                 }
             }
+            scheduleOutputFlush()
         }
 
         override fun onOutputCleared(channel: IOutputManager.OutputChannel) {
             when (channel) {
                 IOutputManager.OutputChannel.BUILD -> {
+                    synchronized(pendingOutputLock) { pendingBuildOutput.setLength(0) }
                     _buildLogs.value = emptyList()
                     _buildLogCount.value = 0
                 }
                 IOutputManager.OutputChannel.RUN -> {
+                    synchronized(pendingOutputLock) { pendingRunOutput.setLength(0) }
                     _runOutputLogs.value = emptyList()
                     _runOutputCount.value = 0
                 }
@@ -172,10 +169,52 @@ class BottomPanelViewModel(
         outputManager.removeOutputListener(buildLogListener)
     }
 
+    private fun scheduleOutputFlush() {
+        if (!outputFlushScheduled.compareAndSet(false, true)) return
+        viewModelScope.launch(Dispatchers.Main.immediate) {
+            delay(OUTPUT_FLUSH_INTERVAL_MS)
+            val (buildText, runText) = synchronized(pendingOutputLock) {
+                val pending = pendingBuildOutput.toString() to pendingRunOutput.toString()
+                pendingBuildOutput.setLength(0)
+                pendingRunOutput.setLength(0)
+                outputFlushScheduled.set(false)
+                pending
+            }
+            appendParsedOutput(buildText, IOutputManager.OutputChannel.BUILD)
+            appendParsedOutput(runText, IOutputManager.OutputChannel.RUN)
+        }
+    }
+
+    private fun appendPendingOutput(buffer: StringBuilder, text: String) {
+        buffer.append(text)
+        if (buffer.length > MAX_PENDING_OUTPUT_CHARS) {
+            // 仅限制尚未渲染的 UI 队列；OutputManager 的完整有界缓冲不受影响。
+            buffer.delete(0, buffer.length - MAX_PENDING_OUTPUT_CHARS / 2)
+        }
+    }
+
+    private fun appendParsedOutput(text: String, channel: IOutputManager.OutputChannel) {
+        if (text.isBlank()) return
+        val entries = parseOutputEntries(text)
+        if (entries.isEmpty()) return
+        when (channel) {
+            IOutputManager.OutputChannel.BUILD -> _buildLogs.update { current ->
+                retainLatestLogs(current, entries, MAX_UI_LOG_ENTRIES).also {
+                    _buildLogCount.value = it.size
+                }
+            }
+            IOutputManager.OutputChannel.RUN -> _runOutputLogs.update { current ->
+                retainLatestLogs(current, entries, MAX_UI_LOG_ENTRIES).also {
+                    _runOutputCount.value = it.size
+                }
+            }
+        }
+    }
+
     private fun restoreBuildLogsFromBuffer() {
         val buffered = outputManager.getOutput(IOutputManager.OutputChannel.BUILD)
         if (buffered.isBlank()) return
-        val entries = parseOutputEntries(buffered)
+        val entries = retainLatestLogs(emptyList(), parseOutputEntries(buffered), MAX_UI_LOG_ENTRIES)
         _buildLogs.value = entries
         _buildLogCount.value = entries.size
     }
@@ -183,7 +222,7 @@ class BottomPanelViewModel(
     private fun restoreRunOutputFromBuffer() {
         val buffered = outputManager.getOutput(IOutputManager.OutputChannel.RUN)
         if (buffered.isBlank()) return
-        val entries = parseOutputEntries(buffered)
+        val entries = retainLatestLogs(emptyList(), parseOutputEntries(buffered), MAX_UI_LOG_ENTRIES)
         _runOutputLogs.value = entries
         _runOutputCount.value = entries.size
     }
@@ -197,4 +236,20 @@ class BottomPanelViewModel(
             BuildLogEntry.create(level, line)
         }
         .toList()
+
+    private companion object {
+        private const val OUTPUT_FLUSH_INTERVAL_MS = 32L
+        private const val MAX_UI_LOG_ENTRIES = 3_000
+        private const val MAX_PENDING_OUTPUT_CHARS = 512 * 1_024
+    }
+}
+
+internal fun <T> retainLatestLogs(current: List<T>, incoming: List<T>, limit: Int): List<T> {
+    require(limit > 0) { "limit must be positive" }
+    if (incoming.size >= limit) return incoming.takeLast(limit)
+    val keepFromCurrent = (limit - incoming.size).coerceAtMost(current.size)
+    return buildList(keepFromCurrent + incoming.size) {
+        addAll(current.takeLast(keepFromCurrent))
+        addAll(incoming)
+    }
 }

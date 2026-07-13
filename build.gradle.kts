@@ -7,46 +7,6 @@ import org.gradle.api.tasks.bundling.Zip
 plugins {
     alias(libs.plugins.android.application) apply false
     alias(libs.plugins.android.library) apply false
-    alias(libs.plugins.android.legacy.kapt) apply false
-    alias(libs.plugins.publish) apply false
-    alias(libs.plugins.ktlint) apply false
-}
-
-// 外部依赖模块不参与 ktlint 检查
-val externalModulePrefixes = listOf(
-    ":termux-terminal:",
-    ":tina-exec:",
-    ":xcrash",
-    ":immersionbar-local",
-    ":immersionbar-ktx-local",
-    ":devicecompat-local",
-    ":xxpermissions-local",
-    ":tools:",
-)
-
-subprojects {
-    val isExternal = externalModulePrefixes.any { prefix -> path.startsWith(prefix) || path == prefix.trimEnd(':') }
-
-    if (!isExternal) {
-        apply(plugin = "org.jlleitschuh.gradle.ktlint")
-
-        configure<org.jlleitschuh.gradle.ktlint.KtlintExtension> {
-            version.set("1.5.0")
-            android.set(true)
-            outputToConsole.set(true)
-            ignoreFailures.set(false)
-            filter {
-                exclude("**/generated/**")
-                exclude("**/build/**")
-            }
-        }
-    }
-
-    // 彻底避免 org.jetbrains:annotations 与 org.jetbrains:annotations-java5 同时进入 classpath 导致 duplicate classes
-    configurations.configureEach {
-        exclude(group = "org.jetbrains", module = "annotations-java5")
-    }
-
 }
 
 tasks.register("buildApkTemplates") {

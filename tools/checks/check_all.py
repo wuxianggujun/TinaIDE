@@ -49,6 +49,11 @@ def main() -> int:
 
     checks: list[tuple[str, Path, list[str]]] = [
         (
+            "documentation",
+            root / "tools/checks/check_documentation.py",
+            [],
+        ),
+        (
             "direct file operations",
             root / "tools/checks/check_direct_file_operations.py",
             [],

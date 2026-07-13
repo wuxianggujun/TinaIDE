@@ -79,6 +79,41 @@ class EditorInputConnectionEditTest {
     }
 
     @Test
+    fun surroundingText_shouldExcludeSelectedTextFromBeforeAndAfterCursor() {
+        val state = createState("abcdef")
+        val connection = createConnection(state)
+        state.selectRange(startOffset = 4, endOffset = 1)
+
+        assertThat(connection.getTextBeforeCursor(10, 0).toString()).isEqualTo("a")
+        assertThat(connection.getSelectedText(0).toString()).isEqualTo("bcd")
+        assertThat(connection.getTextAfterCursor(10, 0).toString()).isEqualTo("ef")
+    }
+
+    @Test
+    fun getSelectedText_withoutSelection_shouldReturnNull() {
+        val state = createState("abc")
+        val connection = createConnection(state)
+        state.moveCursorTo(1)
+
+        assertThat(connection.getSelectedText(0)).isNull()
+    }
+
+    @Test
+    fun repeatedComposingText_shouldNotEmitFalseTextChangeAndCommitShouldFinishComposition() {
+        val state = EditorState(RopeTextBuffer())
+        val connection = createConnection(state)
+
+        connection.setComposingText("a", 1)
+        val versionAfterInsert = state.textBuffer.version
+        connection.setComposingText("a", 1)
+        connection.commitText("a", 1)
+
+        assertThat(state.textBuffer.version).isEqualTo(versionAfterInsert)
+        connection.commitText("b", 1)
+        assertThat(state.textBuffer.toString()).isEqualTo("ab")
+    }
+
+    @Test
     fun performEditorAction_shouldInsertNewlineAndReplaceSelection() {
         val state = createState("abc")
         val connection = createConnection(state)

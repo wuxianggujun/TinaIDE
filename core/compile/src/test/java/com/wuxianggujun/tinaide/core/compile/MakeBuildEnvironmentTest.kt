@@ -63,7 +63,7 @@ class MakeBuildEnvironmentTest {
         )
 
         assertThat(env["LDFLAGS"]).isEqualTo(
-            "${AndroidLinkerCompatibilityFlags.DISABLE_AARCH64_AUTH_RELR_PACKING} -Wl,--as-needed"
+            "${AndroidLinkerCompatibilityFlags.DISABLE_RELATIVE_RELOCATION_PACKING} -Wl,--as-needed"
         )
     }
 

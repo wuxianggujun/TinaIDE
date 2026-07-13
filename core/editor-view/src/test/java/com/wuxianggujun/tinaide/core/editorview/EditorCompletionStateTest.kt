@@ -262,12 +262,15 @@ class EditorCompletionStateTest {
 
     @Test
     fun applySelectedCompletion_shouldApplyAdditionalTextEditsAndKeepCursorOnPrimaryEdit() {
+        val originalText = "int main() {\n    pri\n}\n"
+        val completedText = "#include <stdio.h>\nint main() {\n    printf\n}\n"
         val buffer = RopeTextBuffer().apply {
-            insert(0, "int main() {\n    pri\n}\n")
+            insert(0, originalText)
         }
         val state = EditorState(buffer)
         // "int main() {\n    pri" → line 1 col 7 → offset = 14 + 7 = 21
-        state.moveCursorTo(buffer.positionToOffset(1, 7))
+        val cursorBefore = buffer.positionToOffset(1, 7)
+        state.moveCursorTo(cursorBefore)
         state.seedVisibleCompletion(
             items = listOf(
                 EditorCompletionItem(
@@ -296,13 +299,116 @@ class EditorCompletionStateTest {
         val applied = state.applySelectedCompletion()
 
         assertThat(applied).isTrue()
-        assertThat(state.textBuffer.substring(0, state.textBuffer.length))
-            .isEqualTo("#include <stdio.h>\nint main() {\n    printf\n}\n")
+        assertThat(state.textBuffer.substring(0, state.textBuffer.length)).isEqualTo(completedText)
         // cursor at "printf" end = line 2 col 10
-        assertThat(state.cursorOffset).isEqualTo(
-            state.textBuffer.positionToOffset(2, 10)
-        )
+        val cursorAfter = state.textBuffer.positionToOffset(2, 10)
+        assertThat(state.cursorOffset).isEqualTo(cursorAfter)
         assertThat(state.showCompletion).isFalse()
+
+        assertThat(state.undo()).isTrue()
+        assertThat(state.textBuffer.toString()).isEqualTo(originalText)
+        assertThat(state.cursorOffset).isEqualTo(cursorBefore)
+
+        assertThat(state.redo()).isTrue()
+        assertThat(state.textBuffer.toString()).isEqualTo(completedText)
+        assertThat(state.cursorOffset).isEqualTo(cursorAfter)
+    }
+
+    @Test
+    fun applySelectedSnippetCompletion_shouldApplyAdditionalEditsAndUndoAsOneStep() {
+        val originalText = "int main() {\n    pri\n}\n"
+        val completedText = "#include <stdio.h>\nint main() {\n    printf(value)\n}\n"
+        val buffer = RopeTextBuffer().apply { insert(0, originalText) }
+        val state = EditorState(buffer)
+        val cursorBefore = buffer.positionToOffset(1, 7)
+        state.moveCursorTo(cursorBefore)
+        state.seedVisibleCompletion(
+            items = listOf(
+                EditorCompletionItem(
+                    label = "printf",
+                    insertText = "printf",
+                    snippetText = "printf(\${1:value})",
+                    textEdit = EditorCompletionTextEdit(
+                        startLine = 1,
+                        startColumn = 4,
+                        endLine = 1,
+                        endColumn = 7,
+                        newText = "printf"
+                    ),
+                    additionalTextEdits = listOf(
+                        EditorCompletionTextEdit(
+                            startLine = 0,
+                            startColumn = 0,
+                            endLine = 0,
+                            endColumn = 0,
+                            newText = "#include <stdio.h>\n"
+                        )
+                    )
+                )
+            )
+        )
+
+        assertThat(state.applySelectedCompletion()).isTrue()
+        assertThat(state.textBuffer.toString()).isEqualTo(completedText)
+        val cursorAfter = state.textBuffer.positionToOffset(2, 16)
+        assertThat(state.cursorOffset).isEqualTo(cursorAfter)
+        assertThat(state.activeSnippetSession).isNotNull()
+
+        assertThat(state.undo()).isTrue()
+        assertThat(state.textBuffer.toString()).isEqualTo(originalText)
+        assertThat(state.cursorOffset).isEqualTo(cursorBefore)
+
+        assertThat(state.redo()).isTrue()
+        assertThat(state.textBuffer.toString()).isEqualTo(completedText)
+        assertThat(state.cursorOffset).isEqualTo(cursorAfter)
+    }
+
+    @Test
+    fun applySelectedCompletion_shouldRejectAllEditsWhenAdditionalRangeIsInvalid() {
+        val originalText = "pri"
+        val state = EditorState(RopeTextBuffer(originalText))
+        state.moveCursorTo(originalText.length)
+        state.seedVisibleCompletion(
+            items = listOf(
+                EditorCompletionItem(
+                    label = "printf",
+                    textEdit = EditorCompletionTextEdit(0, 0, 0, 3, "printf"),
+                    additionalTextEdits = listOf(
+                        EditorCompletionTextEdit(99, 0, 99, 0, "#include <stdio.h>\n")
+                    )
+                )
+            )
+        )
+
+        assertThat(state.applySelectedCompletion()).isTrue()
+        assertThat(state.textBuffer.toString()).isEqualTo(originalText)
+        assertThat(state.cursorOffset).isEqualTo(originalText.length)
+        assertThat(state.showCompletion).isFalse()
+        assertThat(state.textBuffer.canUndo()).isFalse()
+    }
+
+    @Test
+    fun applySelectedCompletion_shouldRejectOverlappingTextEdits() {
+        val originalText = "pri"
+        val state = EditorState(RopeTextBuffer(originalText))
+        state.moveCursorTo(originalText.length)
+        state.seedVisibleCompletion(
+            items = listOf(
+                EditorCompletionItem(
+                    label = "printf",
+                    textEdit = EditorCompletionTextEdit(0, 0, 0, 3, "printf"),
+                    additionalTextEdits = listOf(
+                        EditorCompletionTextEdit(0, 1, 0, 2, "R")
+                    )
+                )
+            )
+        )
+
+        assertThat(state.applySelectedCompletion()).isTrue()
+        assertThat(state.textBuffer.toString()).isEqualTo(originalText)
+        assertThat(state.cursorOffset).isEqualTo(originalText.length)
+        assertThat(state.showCompletion).isFalse()
+        assertThat(state.textBuffer.canUndo()).isFalse()
     }
 
     @Test

@@ -120,6 +120,23 @@ class InstalledPackagePathResolverTest {
         assertThat(paths.linkLibraries).doesNotContain("ignored")
     }
 
+    @Test
+    fun `resolve ignores stale package directories without installed state`() {
+        val deviceAbi = Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"
+        createBinaryPackage(
+            packageId = "stale-sdl3",
+            abi = deviceAbi,
+            sharedLibrary = "libSDL3.so",
+            staticLibrary = "libSDL3.a"
+        )
+
+        val paths = InstalledPackagePathResolver.resolve(context)
+
+        assertThat(paths.runtimeLibDirs).isEmpty()
+        assertThat(paths.linkLibraries).isEmpty()
+        assertThat(paths.libDirs).isEmpty()
+    }
+
     private fun createHeaderPackage(packageId: String, headerPath: String) {
         val packageRoot = File(installRoot, packageId)
         writeFile(File(packageRoot, "include/$headerPath"), "")

@@ -6,6 +6,7 @@ import com.wuxianggujun.tinaide.core.i18n.Arrays
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
 import java.io.IOException
+import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -354,16 +355,15 @@ class HelpRepository(private val context: Context) {
      * 加载文档内容
      */
     suspend fun loadDocumentContent(document: HelpDocument): Result<String> = withContext(Dispatchers.IO) {
+        val cacheKey = contentCacheKey(document)
         // 检查缓存
-        contentCache[document.id]?.let {
+        contentCache[cacheKey]?.let {
             return@withContext Result.success(it)
         }
 
         try {
-            val content = context.assets.open("help/${document.fileName}").bufferedReader()
-                .use { it.readText() }
-            val sanitized = sanitizeHelpMarkdown(content)
-            contentCache[document.id] = sanitized
+            val sanitized = readLocalizedMarkdown(document)
+            contentCache[cacheKey] = sanitized
             Result.success(sanitized)
         } catch (e: IOException) {
             // 如果 assets 中没有，尝试返回占位内容
@@ -450,11 +450,10 @@ class HelpRepository(private val context: Context) {
      */
     suspend fun preloadAllContent() = withContext(Dispatchers.IO) {
         documents.forEach { doc ->
-            if (!contentCache.containsKey(doc.id)) {
+            val cacheKey = contentCacheKey(doc)
+            if (!contentCache.containsKey(cacheKey)) {
                 try {
-                    val content = context.assets.open("help/${doc.fileName}").bufferedReader()
-                        .use { it.readText() }
-                    contentCache[doc.id] = content
+                    contentCache[cacheKey] = readLocalizedMarkdown(doc)
                 } catch (_: IOException) {
                     // 忽略加载失败的文档
                 }
@@ -467,6 +466,30 @@ class HelpRepository(private val context: Context) {
      */
     fun clearCache() {
         contentCache.clear()
+    }
+
+    private fun contentCacheKey(document: HelpDocument): String =
+        "${currentLanguageCode()}:${document.id}"
+
+    private fun currentLanguageCode(): String {
+        val locales = context.resources.configuration.locales
+        return if (locales.isEmpty) Locale.getDefault().language else locales[0].language
+    }
+
+    @Throws(IOException::class)
+    private fun readLocalizedMarkdown(document: HelpDocument): String {
+        var lastError: IOException? = null
+        HelpAssetPathResolver.candidatePaths(document.fileName, currentLanguageCode()).forEach { assetPath ->
+            try {
+                val content = context.assets.open(assetPath)
+                    .bufferedReader(Charsets.UTF_8)
+                    .use { reader -> reader.readText() }
+                return sanitizeHelpMarkdown(content)
+            } catch (error: IOException) {
+                lastError = error
+            }
+        }
+        throw lastError ?: IOException("No help asset candidate for ${document.fileName}")
     }
 
     private fun normalizeHelpLinkTarget(linkTarget: String): String? {
