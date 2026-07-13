@@ -2,8 +2,11 @@ package com.wuxianggujun.tinaide.ui.compose.components
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -12,6 +15,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -21,14 +25,20 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import com.wuxianggujun.tinaide.core.common.simplifyPath
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.extensions.toastSuccess
+import com.wuxianggujun.tinaide.storage.FileDeletionCancellationSignal
+import com.wuxianggujun.tinaide.storage.FileDeletionPhase
+import com.wuxianggujun.tinaide.storage.FileDeletionProgress
+import com.wuxianggujun.tinaide.storage.FileDeletionResult
 import java.io.File
 import java.util.Locale
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 private val fileTreeNameRegex = Regex("[a-zA-Z0-9_.-]+")
 
@@ -313,16 +323,19 @@ private fun validateRenameName(
 fun DeleteConfirmDialog(
     file: File,
     onDismiss: () -> Unit,
-    onDelete: (File) -> Boolean = { target ->
-        if (target.isDirectory) {
-            target.deleteRecursively()
-        } else {
-            target.delete()
-        }
-    }
+    onDelete: suspend (
+        File,
+        FileDeletionCancellationSignal,
+        suspend (FileDeletionProgress) -> Unit,
+    ) -> FileDeletionResult,
 ) {
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-    val isDirectory = file.isDirectory
+    var errorMessage by remember(file) { mutableStateOf<String?>(null) }
+    var isDeleting by remember(file) { mutableStateOf(false) }
+    var cancelRequested by remember(file) { mutableStateOf(false) }
+    var deletionProgress by remember(file) { mutableStateOf<FileDeletionProgress?>(null) }
+    var cancellationSignal by remember(file) { mutableStateOf<FileDeletionCancellationSignal?>(null) }
+    val coroutineScope = rememberCoroutineScope()
+    val isDirectory = remember(file) { file.isDirectory }
     val typeName = if (isDirectory) {
         stringResource(Strings.delete_folder_title)
     } else {
@@ -337,35 +350,90 @@ fun DeleteConfirmDialog(
     val context = LocalContext.current
     val toastDeletedTemplate = stringResource(Strings.toast_deleted)
     val errorDelete = stringResource(Strings.error_delete)
+    val deleteCancelledTemplate = stringResource(Strings.delete_cancelled_summary)
+    val deleteCancelledRestoreFailed = stringResource(Strings.delete_cancelled_restore_failed)
+    val deleteFailedPartialTemplate = stringResource(Strings.delete_failed_partial_summary)
+    val deleteFailedRestoreFailed = stringResource(Strings.delete_failed_restore_failed)
     val targetPathDisplay = simplifyPath(file.absolutePath, context)
 
+    fun requestCancellation() {
+        if (!isDeleting || cancelRequested) return
+        cancelRequested = true
+        cancellationSignal?.cancel()
+    }
+
     fun submit() {
-        val deleted = runCatching { onDelete(file) }.getOrDefault(false)
+        if (isDeleting) return
+        isDeleting = true
+        cancelRequested = false
+        errorMessage = null
+        deletionProgress = null
+        val signal = FileDeletionCancellationSignal()
+        cancellationSignal = signal
 
-        if (!deleted) {
-            errorMessage = errorDelete
-            return
+        coroutineScope.launch {
+            when (val result = onDelete(file, signal) { progress -> deletionProgress = progress }) {
+                is FileDeletionResult.Success -> {
+                    context.toastSuccess(
+                        String.format(Locale.getDefault(), toastDeletedTemplate, file.name)
+                    )
+                    onDismiss()
+                }
+                is FileDeletionResult.Cancelled -> {
+                    isDeleting = false
+                    cancelRequested = false
+                    cancellationSignal = null
+                    deletionProgress = null
+                    errorMessage = if (result.remainingAtOriginalPath) {
+                        String.format(
+                            Locale.getDefault(),
+                            deleteCancelledTemplate,
+                            result.deletedItems,
+                        )
+                    } else {
+                        deleteCancelledRestoreFailed
+                    }
+                }
+                is FileDeletionResult.Failure -> {
+                    isDeleting = false
+                    cancelRequested = false
+                    cancellationSignal = null
+                    deletionProgress = null
+                    errorMessage = when {
+                        !result.remainingAtOriginalPath -> deleteFailedRestoreFailed
+                        result.deletedItems > 0L -> {
+                            String.format(
+                                Locale.getDefault(),
+                                deleteFailedPartialTemplate,
+                                result.deletedItems,
+                            )
+                        }
+                        else -> errorDelete
+                    }
+                }
+            }
         }
-
-        context.toastSuccess(
-            String.format(Locale.getDefault(), toastDeletedTemplate, file.name)
-        )
-        onDismiss()
     }
 
     TinaAlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (isDeleting) requestCancellation() else onDismiss() },
         title = { TinaDialogTitleText(typeName) },
         confirmButton = {
             TinaDangerButton(
                 text = stringResource(Strings.btn_delete),
-                onClick = ::submit
+                onClick = ::submit,
+                enabled = !isDeleting,
             )
         },
         dismissButton = {
             TinaTextButton(
-                text = stringResource(Strings.btn_cancel),
-                onClick = onDismiss
+                text = if (cancelRequested) {
+                    stringResource(Strings.delete_cancelling)
+                } else {
+                    stringResource(Strings.btn_cancel)
+                },
+                onClick = { if (isDeleting) requestCancellation() else onDismiss() },
+                enabled = !cancelRequested,
             )
         },
         text = {
@@ -381,6 +449,16 @@ fun DeleteConfirmDialog(
                     value = targetPathDisplay
                 )
 
+                val currentProgress = deletionProgress
+                if (currentProgress != null) {
+                    DeletionProgressContent(
+                        progress = currentProgress,
+                        cancelRequested = cancelRequested,
+                    )
+                } else if (isDeleting) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                }
+
                 errorMessage?.let {
                     TinaDialogMessageCard(
                         message = it,
@@ -391,4 +469,48 @@ fun DeleteConfirmDialog(
             }
         }
     )
+}
+
+@Composable
+private fun DeletionProgressContent(
+    progress: FileDeletionProgress,
+    cancelRequested: Boolean,
+) {
+    val totalItems = progress.totalItems
+    val progressText = when {
+        cancelRequested -> stringResource(Strings.delete_cancelling)
+        progress.phase == FileDeletionPhase.SCANNING -> {
+            stringResource(Strings.delete_scanning_progress, progress.completedItems)
+        }
+        totalItems != null -> {
+            stringResource(
+                Strings.delete_items_progress,
+                progress.completedItems,
+                totalItems,
+            )
+        }
+        else -> stringResource(Strings.delete_in_progress)
+    }
+
+    TinaDialogContentColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        val fraction = progress.fraction
+        if (fraction == null || progress.phase == FileDeletionPhase.SCANNING) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        } else {
+            LinearProgressIndicator(
+                progress = { fraction },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        Text(text = progressText, style = MaterialTheme.typography.bodyMedium)
+        progress.currentName?.takeIf(String::isNotBlank)?.let { currentName ->
+            Text(
+                text = currentName,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
 }

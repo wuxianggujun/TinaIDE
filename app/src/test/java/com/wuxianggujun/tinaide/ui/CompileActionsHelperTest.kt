@@ -87,6 +87,8 @@ class CompileActionsHelperTest {
         )
 
         every { projectContext.getCurrentProject() } returns project
+        every { editorManager.getOpenTabs() } returns emptyList()
+        every { editorManager.getActiveTabId() } returns null
         coEvery { editorManager.saveAll(any()) } returns emptyList()
 
         helper = CompileActionsHelper(

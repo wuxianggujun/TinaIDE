@@ -203,6 +203,7 @@ fun RunConfigDialog(
     var singleFileCppStandardDropdownExpanded by remember { mutableStateOf(false) }
     var sdlOrientation by remember { mutableStateOf(config.sdlOrientation) }
     var enableFloatingLog by remember { mutableStateOf(config.enableFloatingLog) }
+    var showLinkerWarnings by remember { mutableStateOf(config.showLinkerWarnings) }
     var showVariablesHelp by remember { mutableStateOf(false) }
 
     // 目标过滤：SDL 图形运行只加载共享库，终端模式只运行可执行文件。
@@ -312,7 +313,8 @@ fun RunConfigDialog(
                                     singleFileCppStandard = RunConfiguration
                                         .normalizeSingleFileCppStandard(singleFileCppStandard),
                                     sdlOrientation = sdlOrientation,
-                                    enableFloatingLog = enableFloatingLog
+                                    enableFloatingLog = enableFloatingLog,
+                                    showLinkerWarnings = showLinkerWarnings
                                 )
                             )
                         }
@@ -1032,6 +1034,19 @@ fun RunConfigDialog(
                     title = stringResource(Strings.run_config_output_sdl),
                     description = stringResource(Strings.run_config_output_sdl_desc)
                 )
+            }
+
+            if (outputMode == OutputMode.TERMINAL) {
+                RunConfigSectionCard(
+                    title = stringResource(Strings.run_config_terminal_options)
+                ) {
+                    RunConfigSwitchRow(
+                        checked = showLinkerWarnings,
+                        onCheckedChange = { showLinkerWarnings = it },
+                        title = stringResource(Strings.run_config_show_linker_warnings),
+                        description = stringResource(Strings.run_config_show_linker_warnings_desc)
+                    )
+                }
             }
 
             // SDL 图形运行选项（仅在 SDL 图形运行下显示）

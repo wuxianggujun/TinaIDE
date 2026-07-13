@@ -3,6 +3,7 @@ package com.wuxianggujun.tinaide.core.ndk
 import android.content.Context
 import com.google.common.truth.Truth.assertThat
 import java.io.File
+import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -104,6 +105,23 @@ class SysrootProfileConfigManagerTest {
         val configText = File(context.filesDir, "sysroot-profile-config.json").readText(Charsets.UTF_8)
         assertThat(configText).contains("\"ndkLlvmVersion\"")
         assertThat(configText).doesNotContain("\"llvmVersion\"")
+    }
+
+    @Test
+    fun removeProfile_shouldDeleteDirectoryAndConfigEntry() = runTest {
+        val info = profile(id = "custom")
+        val profileDir = manager.getProfileDir("custom")
+        File(profileDir, "usr/include/stdio.h").apply {
+            parentFile?.mkdirs()
+            writeText("header", Charsets.UTF_8)
+        }
+        manager.registerOrReplaceProfile(info)
+
+        val result = manager.removeProfile("custom")
+
+        assertThat(result.isSuccess).isTrue()
+        assertThat(profileDir.exists()).isFalse()
+        assertThat(manager.readConfig().profiles).isEmpty()
     }
 
     private fun profile(

@@ -62,11 +62,16 @@ class MultiTerminalViewModel(
         workDir: String = "/",
         rows: Int = 24,
         cols: Int = 80,
-        backend: TerminalBackend = TerminalBackend.HOST
-    ): String = sessionManager.createSession(workDir, rows, cols, backend)
+        backend: TerminalBackend = TerminalBackend.HOST,
+        initialCommand: String? = null,
+    ): String = sessionManager.createSession(workDir, rows, cols, backend, initialCommand)
 
     /** 关闭会话 */
-    fun closeSession(sessionId: String, defaultWorkDir: String = "/") = sessionManager.closeSession(sessionId, defaultWorkDir)
+    fun closeSession(
+        sessionId: String,
+        defaultWorkDir: String = "/",
+        createReplacement: Boolean = true
+    ) = sessionManager.closeSession(sessionId, defaultWorkDir, createReplacement)
 
     /** 标记该会话在退出时不再追加 `[Process completed - press Enter]` 横幅。 */
     fun markSuppressExitNotice(sessionId: String) = sessionManager.markSuppressExitNotice(sessionId)
@@ -136,9 +141,6 @@ class MultiTerminalViewModel(
     /** 获取当前主题对象 */
     fun getCurrentTheme(): TerminalTheme = TerminalTheme.fromName(currentTheme.value)
 
-    override fun onCleared() {
-        super.onCleared()
-        // 在 ViewModel 销毁时清理
-        sessionManager.cleanup()
-    }
+    // ITerminalSessionManager 是应用级单例；Activity ViewModel 销毁不能清理其他 Activity
+    // 正在使用的共享终端。一次性 Run 会话由 TerminalActivity 按 sessionId 显式关闭。
 }

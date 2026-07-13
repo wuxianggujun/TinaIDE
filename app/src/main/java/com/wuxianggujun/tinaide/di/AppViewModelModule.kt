@@ -50,7 +50,7 @@ val appViewModelModule = module {
     viewModel { DebugViewModel(androidApplication(), get(), get()) }
     viewModel { GitViewModel(get()) }
     viewModel { MainActivityActionsViewModel(androidApplication(), get(), get(), get(), get()) }
-    viewModel { ProjectManagerViewModel(androidApplication(), get(), get(), get()) }
+    viewModel { ProjectManagerViewModel(androidApplication(), get(), get(), get(), get()) }
     viewModel { FavoritesViewModel(get()) }
     viewModel { DownloadHistoryViewModel(get()) }
     viewModel { MarketScreenViewModel(androidApplication(), get()) }

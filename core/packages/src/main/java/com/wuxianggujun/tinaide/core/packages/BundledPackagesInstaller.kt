@@ -8,8 +8,12 @@ import com.wuxianggujun.tinaide.core.packages.model.Platform
 import com.wuxianggujun.tinaide.core.packages.store.LocalInstallStateStore
 import com.wuxianggujun.tinaide.core.serialization.JsonSerializer
 import java.io.File
+import java.io.RandomAccessFile
+import java.util.UUID
 import java.util.zip.ZipFile
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import timber.log.Timber
@@ -29,9 +33,13 @@ class BundledPackagesInstaller(
         private const val TAG = "BundledPackagesInstaller"
         private const val ASSET_DIR = "bundled_packages"
         private const val INSTALL_DIR_NAME = "installed-packages"
-    }
+        private const val INSTALL_LOCK_FILE_NAME = ".bundled-install.lock"
+        private const val STAGING_PREFIX = ".bundled-staging-"
+        private const val BACKUP_PREFIX = ".bundled-backup-"
+        private const val UUID_TEXT_LENGTH = 36
 
-    private val json = JsonSerializer.default
+        private val installMutex = Mutex()
+    }
 
     private val installDir: File by lazy {
         File(context.filesDir, INSTALL_DIR_NAME).also { it.mkdirs() }
@@ -46,6 +54,21 @@ class BundledPackagesInstaller(
      * @param forceReinstall 是否强制重新安装（删除已有目录）
      */
     suspend fun installBundledPackages(forceReinstall: Boolean = false) = withContext(Dispatchers.IO) {
+        installMutex.withLock {
+            val lockFile = File(installDir, INSTALL_LOCK_FILE_NAME)
+            RandomAccessFile(lockFile, "rw").channel.use { channel ->
+                val fileLock = channel.lock()
+                try {
+                    installBundledPackagesLocked(forceReinstall)
+                } finally {
+                    fileLock.release()
+                }
+            }
+        }
+    }
+
+    private fun installBundledPackagesLocked(forceReinstall: Boolean) {
+        cleanupInterruptedInstallDirectories()
         val assetManager = context.assets
         val entries = runCatching {
             assetManager.list(ASSET_DIR).orEmpty().toList()
@@ -53,7 +76,7 @@ class BundledPackagesInstaller(
 
         if (entries.isEmpty()) {
             Timber.tag(TAG).d("No bundled packages found in assets")
-            return@withContext
+            return
         }
 
         Timber.tag(TAG).i("Found ${entries.size} bundled package(s)")
@@ -114,37 +137,22 @@ class BundledPackagesInstaller(
         forceReinstall: Boolean = false
     ) {
         val targetDir = File(installDir, packageId)
-        val metadataFile = File(targetDir, "package.json")
-
-        // 强制重装：删除已有目录
-        if (forceReinstall && targetDir.exists()) {
-            Timber.tag(TAG).i("Force reinstall: deleting existing package $packageId")
-            targetDir.deleteRecursively()
-        }
-
-        // 检查是否已安装（避免重复解压）
-        if (targetDir.exists() && targetDir.listFiles()?.isNotEmpty() == true) {
-            if (!metadataFile.isFile) {
-                Timber.tag(TAG).w(
-                    "Package %s is installed but missing package.json, reinstalling bundled asset metadata",
-                    packageId
-                )
-                targetDir.deleteRecursively()
-            } else {
-                Timber.tag(TAG).d("Package $packageId already installed, skipping")
-                return
-            }
-        }
-
-        if (targetDir.exists() && targetDir.listFiles()?.isNotEmpty() == true) {
-            Timber.tag(TAG).d("Package $packageId already installed, skipping")
+        val installedMetadata = readValidPackageMetadata(targetDir)
+        if (!forceReinstall && installedMetadata != null) {
+            recordInstalledPackage(installedMetadata, targetDir)
+            Timber.tag(TAG).d("Package $packageId already installed and valid, skipping")
             return
+        }
+
+        if (targetDir.exists()) {
+            Timber.tag(TAG).w("Package $packageId is incomplete or force reinstall was requested; replacing atomically")
         }
 
         Timber.tag(TAG).i("Installing bundled package: $packageId from $assetPath (format: $format)")
 
-        // 复制到临时文件
-        val tempFile = File(context.cacheDir, "bundled_$packageId.tmp")
+        val operationId = UUID.randomUUID().toString()
+        val tempFile = File(context.cacheDir, "bundled_${packageId}_$operationId.tmp")
+        val stagingDir = File(installDir, "$STAGING_PREFIX$packageId-$operationId")
         try {
             context.assets.open(assetPath).use { input ->
                 tempFile.outputStream().use { output ->
@@ -153,52 +161,112 @@ class BundledPackagesInstaller(
             }
 
             // 根据格式解压
-            targetDir.mkdirs()
+            check(stagingDir.mkdirs()) { "Failed to create staging directory: ${stagingDir.absolutePath}" }
             when (format) {
-                CompressionFormat.ZIP -> extractZip(tempFile, targetDir)
+                CompressionFormat.ZIP -> extractZip(tempFile, stagingDir)
                 else -> {
                     // 使用 TarExtractor 统一处理 tar.xz/tar.zst/tar.gz
                     val compressionType = format.toTarExtractorType()
                         ?: throw IllegalStateException("Unsupported format: $format")
                     tempFile.inputStream().use { input ->
-                        TarExtractor.extract(input, targetDir, compressionType)
+                        TarExtractor.extract(input, stagingDir, compressionType)
                     }
                 }
             }
 
-            // 读取 package.json 获取元数据
-            val metadata = readPackageMetadata(targetDir)
-
-            if (metadata != null) {
-                // 更新安装状态
-                installStateStore.setInstalled(
-                    packageId = metadata.id,
-                    platform = Platform.ANDROID,
-                    version = metadata.version,
-                    packageName = metadata.name,
-                    installType = InstallType.DOWNLOAD,
-                    size = calculatePackageSize(targetDir),
-                    isBundled = true // 标记为内置包
-                )
-
-                Timber.tag(TAG).i("✓ Bundled package installed: ${metadata.name} v${metadata.version}")
-            } else {
-                Timber.tag(TAG).w("No package.json found for $packageId, using defaults")
-
-                // 没有 metadata，使用默认值
-                installStateStore.setInstalled(
-                    packageId = packageId,
-                    platform = Platform.ANDROID,
-                    version = "unknown",
-                    packageName = packageId,
-                    installType = InstallType.DOWNLOAD,
-                    size = calculatePackageSize(targetDir),
-                    isBundled = true // 标记为内置包
-                )
+            val metadata = checkNotNull(readValidPackageMetadata(stagingDir)) {
+                "Bundled package $packageId is missing a valid package.json"
             }
+            replaceDirectoryAtomically(stagingDir, targetDir, packageId, operationId)
+            recordInstalledPackage(metadata, targetDir)
+            Timber.tag(TAG).i("✓ Bundled package installed: ${metadata.name} v${metadata.version}")
         } finally {
             tempFile.delete()
+            if (stagingDir.exists()) stagingDir.deleteRecursively()
         }
+    }
+
+    private fun replaceDirectoryAtomically(
+        stagingDir: File,
+        targetDir: File,
+        packageId: String,
+        operationId: String,
+    ) {
+        val backupDir = File(installDir, "$BACKUP_PREFIX$packageId-$operationId")
+        var oldTargetMoved = false
+        try {
+            if (targetDir.exists()) {
+                check(targetDir.renameTo(backupDir)) {
+                    "Failed to move existing package to backup: ${targetDir.absolutePath}"
+                }
+                oldTargetMoved = true
+            }
+            check(stagingDir.renameTo(targetDir)) {
+                "Failed to publish bundled package: ${targetDir.absolutePath}"
+            }
+            if (oldTargetMoved && !backupDir.deleteRecursively()) {
+                Timber.tag(TAG).w("Failed to delete bundled package backup: ${backupDir.absolutePath}")
+            }
+        } catch (error: Throwable) {
+            if (oldTargetMoved && !targetDir.exists()) {
+                runCatching { backupDir.renameTo(targetDir) }
+                    .onFailure { restoreError -> error.addSuppressed(restoreError) }
+            }
+            throw error
+        }
+    }
+
+    private fun cleanupInterruptedInstallDirectories() {
+        installDir.listFiles().orEmpty().filter(File::isDirectory).forEach { staleDir ->
+            when {
+                staleDir.name.startsWith(STAGING_PREFIX) -> deleteStaleDirectory(staleDir)
+                staleDir.name.startsWith(BACKUP_PREFIX) -> recoverOrDeleteBackup(staleDir)
+            }
+        }
+    }
+
+    private fun recoverOrDeleteBackup(backupDir: File) {
+        val backupSuffix = backupDir.name.removePrefix(BACKUP_PREFIX)
+        val packageId = backupSuffix
+            .takeIf { it.length > UUID_TEXT_LENGTH + 1 }
+            ?.dropLast(UUID_TEXT_LENGTH + 1)
+            ?.takeIf(String::isNotBlank)
+        val targetDir = packageId?.let { File(installDir, it) }
+        if (targetDir != null && !targetDir.exists() && readValidPackageMetadata(backupDir) != null) {
+            if (backupDir.renameTo(targetDir)) {
+                Timber.tag(TAG).w("Recovered interrupted bundled package install: $packageId")
+                return
+            }
+            // 旧包仍是此时唯一的有效副本；恢复失败时保留备份，下一次启动继续重试。
+            Timber.tag(TAG).e("Failed to recover bundled package backup: ${backupDir.absolutePath}")
+            return
+        }
+        deleteStaleDirectory(backupDir)
+    }
+
+    private fun deleteStaleDirectory(staleDir: File) {
+        if (!staleDir.deleteRecursively()) {
+            Timber.tag(TAG).w("Failed to clean stale bundled package directory: ${staleDir.absolutePath}")
+        }
+    }
+
+    private fun readValidPackageMetadata(packageDir: File): PackageMetadata? {
+        if (!packageDir.isDirectory || packageDir.listFiles().isNullOrEmpty()) return null
+        return readPackageMetadata(packageDir)?.takeIf { metadata ->
+            metadata.id.isNotBlank() && metadata.name.isNotBlank() && metadata.version.isNotBlank()
+        }
+    }
+
+    private fun recordInstalledPackage(metadata: PackageMetadata, packageDir: File) {
+        installStateStore.setInstalled(
+            packageId = metadata.id,
+            platform = Platform.ANDROID,
+            version = metadata.version,
+            packageName = metadata.name,
+            installType = InstallType.DOWNLOAD,
+            size = calculatePackageSize(packageDir),
+            isBundled = true,
+        )
     }
 
     /**

@@ -7,20 +7,20 @@ import org.junit.Test
 class AndroidLinkerCompatibilityFlagsTest {
 
     @Test
-    fun `forTarget disables auth relr packing for arm64 api 28 and newer`() {
+    fun `forTarget disables relative relocation packing for arm64 api 28 and newer`() {
         assertThat(
             AndroidLinkerCompatibilityFlags.forTarget(
                 arch = AndroidSysrootManager.Companion.Arch.ARM64,
                 apiLevel = 28,
             )
-        ).containsExactly(AndroidLinkerCompatibilityFlags.DISABLE_AARCH64_AUTH_RELR_PACKING)
+        ).containsExactly(AndroidLinkerCompatibilityFlags.DISABLE_RELATIVE_RELOCATION_PACKING)
 
         assertThat(
             AndroidLinkerCompatibilityFlags.forTarget(
                 arch = AndroidSysrootManager.Companion.Arch.ARM64,
                 apiLevel = 35,
             )
-        ).containsExactly(AndroidLinkerCompatibilityFlags.DISABLE_AARCH64_AUTH_RELR_PACKING)
+        ).containsExactly(AndroidLinkerCompatibilityFlags.DISABLE_RELATIVE_RELOCATION_PACKING)
     }
 
     @Test
@@ -45,12 +45,12 @@ class AndroidLinkerCompatibilityFlagsTest {
         val merged = AndroidLinkerCompatibilityFlags.mergeWithUserLdFlags(
             arch = AndroidSysrootManager.Companion.Arch.ARM64,
             apiLevel = 28,
-            userLdFlags = " -Wl,-z,pack-relative-auth-relocs ",
+            userLdFlags = " -Wl,-z,pack-relative-relocs ",
         )
 
         assertThat(merged).isEqualTo(
-            "${AndroidLinkerCompatibilityFlags.DISABLE_AARCH64_AUTH_RELR_PACKING} " +
-                "-Wl,-z,pack-relative-auth-relocs"
+            "${AndroidLinkerCompatibilityFlags.DISABLE_RELATIVE_RELOCATION_PACKING} " +
+                "-Wl,-z,pack-relative-relocs"
         )
     }
 }

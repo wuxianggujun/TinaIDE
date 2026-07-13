@@ -7,16 +7,22 @@ import com.wuxianggujun.tinaide.core.compile.BuildSystemDetector
 import com.wuxianggujun.tinaide.core.compile.CompileProjectUseCase
 import com.wuxianggujun.tinaide.core.compile.ProcessManager
 import com.wuxianggujun.tinaide.core.compile.RunConfigurationManager
+import com.wuxianggujun.tinaide.core.i18n.Strings
+import com.wuxianggujun.tinaide.core.i18n.str
 import com.wuxianggujun.tinaide.file.IProjectContext
 import java.io.File
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
+import timber.log.Timber
 
 /**
  * 编译 ViewModel（按 AI 方案）
@@ -35,15 +41,16 @@ class CompilerViewModel(
     private val _progress = MutableStateFlow<CompileProjectUseCase.CompileProgress?>(null)
     val progress: StateFlow<CompileProjectUseCase.CompileProgress?> = _progress.asStateFlow()
 
-    private val _events = MutableSharedFlow<CompileEvent>(extraBufferCapacity = 1)
-    val events: SharedFlow<CompileEvent> = _events.asSharedFlow()
+    // Activity 暂时不可见时也要保留编译结果，恢复后只消费一次。
+    private val eventsChannel = Channel<CompileEvent>(capacity = Channel.BUFFERED)
+    val events = eventsChannel.receiveAsFlow()
 
     private var compileJob: Job? = null
 
     fun compile(
         operation: CompileProjectUseCase.Operation = CompileProjectUseCase.Operation.forRun()
     ) {
-        launchOperation {
+        launchOperation(operation.action) {
             compileUseCase.execute(
                 operation = operation,
                 onProgress = { p -> _progress.value = p }
@@ -64,24 +71,26 @@ class CompilerViewModel(
     }
 
     private fun runCMakeMaintenance(action: CompileProjectUseCase.Action) {
-        launchOperation {
+        launchOperation(action) {
             compileUseCase.executeCMakeMaintenance(action)
         }
     }
 
     private fun launchOperation(
+        action: CompileProjectUseCase.Action,
         operation: suspend () -> CompileProjectUseCase.Result
     ) {
         compileJob?.cancel()
-        val job = viewModelScope.launch {
+        val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
+            val runningJob = currentCoroutineContext().job
             try {
                 when (val result = operation()) {
                     is CompileProjectUseCase.Result.Success -> {
-                        _events.emit(CompileEvent.Success(result.report))
+                        eventsChannel.send(CompileEvent.Success(result.report))
                     }
 
                     is CompileProjectUseCase.Result.Error -> {
-                        _events.emit(
+                        eventsChannel.send(
                             CompileEvent.Error(
                                 action = result.action,
                                 message = result.userMessage,
@@ -90,12 +99,29 @@ class CompilerViewModel(
                         )
                     }
                 }
-            } catch (e: kotlinx.coroutines.CancellationException) {
+            } catch (_: CancellationException) {
                 // 操作被取消，不发送任何事件
+            } catch (t: Throwable) {
+                // 避免未处理异常沿 viewModelScope 冒泡到主线程并导致应用崩溃。
+                Timber.tag(TAG).e(t, "Compile operation failed unexpectedly: %s", action)
+                eventsChannel.send(
+                    CompileEvent.Error(
+                        action = action,
+                        message = t.message?.takeIf { it.isNotBlank() }
+                            ?: Strings.error_unknown_generic.str(),
+                        throwable = t
+                    )
+                )
+            } finally {
+                if (compileJob === runningJob) {
+                    compileJob = null
+                }
+                processManager.clearCurrentRunJob(runningJob)
             }
         }
         compileJob = job
         processManager.setCurrentRunJob(job)
+        job.start()
     }
 
     /**
@@ -168,8 +194,11 @@ class CompilerViewModel(
         // ViewModel 被清理时，取消编译任务
         compileJob?.cancel()
         compileJob = null
-        // 注意：不再在这里停止进程，因为用户可能希望进程继续运行
-        // 进程会在下次运行时自动停止，或者用户手动停止
+        // TerminalActivity 的 PTY 由 ITerminalSessionManager 独立管理，这里不能跨边界清理。
+    }
+
+    private companion object {
+        private const val TAG = "CompilerViewModel"
     }
 }
 

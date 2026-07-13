@@ -31,8 +31,15 @@
 
 ## [Unreleased]
 
+## [0.18.11] - 2026-07-13
+
 ### Changed
 
+- 大目录删除统一迁移到后台文件服务，新增扫描/删除进度、取消操作和异常退出恢复；公开项目目录优先同卷暂存后删除，减少逐文件触发 MediaProvider 的开销。
+- App 启动按主进程、崩溃进程、工具链进程和用户 native runtime 分流，非主进程只初始化崩溃捕获、主题与国际化所需的最小能力。
+- 内置依赖包改为带进程内/文件锁的 staging 原子发布，编译前会等待当前安装批次结束，避免启动安装与首次构建竞争同一目录。
+- 终端运行配置支持带引号和转义的参数解析，并为 Android linker 兼容告警提供默认隐藏、用户显式开启的输出选项。
+- 终端与底部日志按帧批量刷新并限制 UI 保留数量，运行暂存目录增加有界清理，降低持续输出和反复运行造成的重组与磁盘压力。
 - 加固 SDL 与通用 native library 的收集、ABI 识别、依赖排序和 APK 打包链路，减少运行时缺少间接 `.so` 或装载顺序错误的问题。
 - 重构编辑器文本缓冲、输入法编辑、撤销/重做、补全、签名提示和语义高亮同步逻辑，降低长文档编辑和增量更新时的状态漂移。
 - 工作区文本编辑改为通过统一入口应用；文档保存新增原子写入能力，自动保存与标签生命周期的状态收敛更明确。
@@ -41,6 +48,11 @@
 
 ### Fixed
 
+- 修复从侧滑文件树或项目列表删除 `build` 等大目录时主线程长时间卡住、对话框失去响应甚至进程崩溃的问题。
+- 修复终端运行时显示完整内部 staging shell 命令、默认刷出三类无害 AArch64 动态链接器告警，以及退出提示未跟随系统语言的问题。
+- 修复 arm64 编译使用已被当前 `ld.lld` 拒绝的 `nopack-relative-auth-relocs` 参数而产生 `unknown -z value` 告警的问题。
+- 修复主界面与编辑器入口重复执行工具链/sysroot 扫描、`:crash` 等辅助进程加载宿主数据库与后台任务，以及首次构建可能抢在内置包发布完成前开始的问题。
+- 修复终端 shell 探测、包安装/卸载、工具链与 sysroot 配置删除仍可能占用调用线程，以及项目克隆失败清理不完整的问题。
 - 恢复根构建的 Android application/library 插件版本声明，并让 App 继续使用 AGP 内置 Kotlin 提供的 Parcelize 插件标记，修复本地 `external` 模块解析失败及 Parcelize 版本冲突。
 - 修复 SDL 工程导出 APK 时，native 依赖解析、ABI 目录判断和动态库装载顺序在部分项目结构下不稳定的问题。
 - 修复编辑器输入法组合文本、光标恢复、snippet 同步编辑、签名提示和撤销/重做在部分操作序列中的回归。
@@ -48,6 +60,7 @@
 
 ### Documentation
 
+- 修正远程 LSP 与 PC 代理指南中的设置入口，统一为当前的“设置 → 语言服务器”。
 - 更新 SDL 游戏引擎插件文档，补充当前 native runtime 打包与依赖处理口径。
 - 刷新当前事实源文档、Linux distro 运行时说明和 App 内设置帮助，并增加轻量文档一致性检查。
 - App 内 29 份帮助正文新增英文版本，帮助仓库按当前 Locale 加载英文并在缺失时回落到中文。
@@ -55,7 +68,15 @@
 
 ### Tests
 
+- 新增大目录删除/取消/恢复、启动进程角色、终端参数与告警过滤、本地化退出提示、运行暂存清理、包安装就绪、工具链删除、日志保留和项目克隆清理回归测试。
 - 扩展 APK builder、SDL runtime、编辑器状态、文本缓冲、Tree-sitter、WorkspaceEdit、原子写入和自动保存回归测试。
+
+### Verification
+
+- 已执行 `py tools/checks/check_all.py`，文档、国际化、资源冲突和直接文件操作基线检查通过。
+- 已执行 `./gradlew :core:storage:testDebugUnitTest :core:compile:testDebugUnitTest :core:packages:testDebugUnitTest :core:ndk:testDebugUnitTest :feature:terminal:testDebugUnitTest :feature:projectlist:testDebugUnitTest :app:testArm64DebugUnitTest --continue --console=plain`。
+- 已执行 `./gradlew ktlintCheck --console=plain`。
+- 已执行 `./gradlew :app:assembleArm64Debug --console=plain`，Arm64 Debug 候选 APK 打包通过。
 
 ## [0.18.10] - 2026-06-29
 

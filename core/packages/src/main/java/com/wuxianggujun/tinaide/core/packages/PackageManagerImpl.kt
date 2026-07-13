@@ -10,6 +10,9 @@ import com.wuxianggujun.tinaide.core.packages.cache.PackageCacheManager
 import com.wuxianggujun.tinaide.core.packages.model.*
 import com.wuxianggujun.tinaide.core.packages.store.LocalInstallStateStore
 import com.wuxianggujun.tinaide.core.proot.PRootEnvironment
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 
 class PackageManagerImpl(
@@ -17,7 +20,8 @@ class PackageManagerImpl(
     private val apiClient: PackageApiClient,
     private val installStateStore: LocalInstallStateStore,
     private val cacheManager: PackageCacheManager = PackageCacheManager(context),
-    private val prootEnv: PRootEnvironment? = null
+    private val prootEnv: PRootEnvironment? = null,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : PackageManager {
 
     companion object {
@@ -187,6 +191,14 @@ class PackageManagerImpl(
         packageId: String,
         platform: Platform,
         progress: (InstallProgressEvent) -> Unit
+    ): InstallResult = withContext(ioDispatcher) {
+        installOnIo(packageId, platform, progress)
+    }
+
+    private suspend fun installOnIo(
+        packageId: String,
+        platform: Platform,
+        progress: (InstallProgressEvent) -> Unit,
     ): InstallResult {
         progress(InstallProgressEvent.Preparing("Resolving package dependencies..."))
 
@@ -449,7 +461,12 @@ class PackageManagerImpl(
         }
     }
 
-    override suspend fun uninstall(packageId: String, platform: Platform): UninstallResult {
+    override suspend fun uninstall(packageId: String, platform: Platform): UninstallResult =
+        withContext(ioDispatcher) {
+            uninstallOnIo(packageId, platform)
+        }
+
+    private suspend fun uninstallOnIo(packageId: String, platform: Platform): UninstallResult {
         val state = installStateStore.getInstallState(packageId)
         val platformState = state.forPlatform(platform)
 
@@ -600,7 +617,7 @@ class PackageManagerImpl(
         cachedVersions.clear()
     }
 
-    override suspend fun clearCache() {
+    override suspend fun clearCache() = withContext(ioDispatcher) {
         cacheManager.clearCache()
         cachedVersions.clear()
         downloadBackend.clearDownloadCache()

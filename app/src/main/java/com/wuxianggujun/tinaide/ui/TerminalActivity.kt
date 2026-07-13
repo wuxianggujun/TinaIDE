@@ -121,6 +121,9 @@ class TerminalActivity : ComponentActivity() {
 
         /** Intent extra key: 终端后端类型（"host" 或 "proot"） */
         const val EXTRA_BACKEND = "backend"
+
+        private const val STATE_RUN_SESSION_ID = "state_run_session_id"
+        private const val STATE_RUN_COMMAND_DISPATCHED = "state_run_command_dispatched"
     }
 
     private val viewModel: MultiTerminalViewModel by koinViewModel()
@@ -132,6 +135,7 @@ class TerminalActivity : ComponentActivity() {
     private var initialBackend: TerminalBackend = TerminalBackend.HOST
     private var isRunMode: Boolean = false
     private var runSessionId: String? = null
+    private var runCommandDispatched: Boolean = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         Prefs.applyTheme()
@@ -145,6 +149,8 @@ class TerminalActivity : ComponentActivity() {
         workDir = intent.getStringExtra(EXTRA_WORK_DIR) ?: "/"
         projectPath = intent.getStringExtra(EXTRA_PROJECT_PATH) ?: workDir
         initialCommand = intent.getStringExtra(EXTRA_COMMAND)
+        runSessionId = savedInstanceState?.getString(STATE_RUN_SESSION_ID)
+        runCommandDispatched = savedInstanceState?.getBoolean(STATE_RUN_COMMAND_DISPATCHED) == true
         requestNewSession = intent.getBooleanExtra(EXTRA_NEW_SESSION, false)
         initialBackend = try {
             intent.getStringExtra(EXTRA_BACKEND)?.let { TerminalBackend.valueOf(it.uppercase()) }
@@ -156,6 +162,17 @@ class TerminalActivity : ComponentActivity() {
 
         isRunMode = !initialCommand.isNullOrBlank()
 
+        // 进程回收后 TerminalSession 无法恢复；绝不能因为 savedInstanceState 中仍有原命令
+        // 而重复执行一次有副作用的用户程序。直接返回上层，由用户明确再次点击运行。
+        if (
+            isRunMode &&
+            runCommandDispatched &&
+            viewModel.sessions.value.none { it.id == runSessionId }
+        ) {
+            finish()
+            return
+        }
+
         // 尝试恢复之前的终端状态
         // 如果没有保存的状态，restoreState 会自动创建一个默认终端
         // 不要依赖 savedInstanceState：进程被系统回收后重建时 savedInstanceState 也可能不为 null，
@@ -164,7 +181,7 @@ class TerminalActivity : ComponentActivity() {
         // Run 模式跳过项目级状态恢复：命令以 `exit` 结束，不应让一次性运行污染用户保存的终端会话快照；
         // 已有内存会话时才请求追加新会话，避免与空列表场景的默认创建逻辑叠加出两个会话。
         if (isRunMode) {
-            requestNewSession = viewModel.sessions.value.isNotEmpty()
+            requestNewSession = !runCommandDispatched && viewModel.sessions.value.isNotEmpty()
         } else if (viewModel.sessions.value.isEmpty()) {
             isRestoringState = true
             viewModel.restoreState(projectPath, workDir)
@@ -182,7 +199,12 @@ class TerminalActivity : ComponentActivity() {
                     requestNewSession = requestNewSession,
                     isRunMode = isRunMode,
                     defaultBackend = initialBackend,
-                    onRunSessionIdChanged = { id -> runSessionId = id }
+                    initialRunSessionId = runSessionId,
+                    commandAlreadyDispatched = runCommandDispatched,
+                    onRunCommandDispatched = { id ->
+                        runSessionId = id
+                        runCommandDispatched = true
+                    }
                 )
             }
         }
@@ -200,23 +222,28 @@ class TerminalActivity : ComponentActivity() {
     override fun onDestroy() {
         // 兜底：系统回收或异常路径下，保证 Run 模式挂着的 `cat > /dev/null` 不会残留。
         // 正常 finishRun() 路径已经 closeSession，这里只处理异常。
-        if (isRunMode) {
-            runSessionId?.let { id ->
-                viewModel.markSuppressExitNotice(id)
-                viewModel.closeSession(id, workDir)
-            }
+        if (isRunMode && !isChangingConfigurations) {
+            closeRunSession()
         }
         super.onDestroy()
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString(STATE_RUN_SESSION_ID, runSessionId)
+        outState.putBoolean(STATE_RUN_COMMAND_DISPATCHED, runCommandDispatched)
+        super.onSaveInstanceState(outState)
+    }
+
     private fun closeRunOrFinish() {
-        if (isRunMode) {
-            runSessionId?.let { id ->
-                viewModel.markSuppressExitNotice(id)
-                viewModel.closeSession(id, workDir)
-            }
-        }
+        if (isRunMode) closeRunSession()
         finish()
+    }
+
+    private fun closeRunSession() {
+        val id = runSessionId ?: return
+        runSessionId = null
+        viewModel.markSuppressExitNotice(id)
+        viewModel.closeSession(id, workDir, createReplacement = false)
     }
 }
 
@@ -232,7 +259,9 @@ private fun TerminalScreen(
     requestNewSession: Boolean = false,
     isRunMode: Boolean = false,
     defaultBackend: TerminalBackend = TerminalBackend.HOST,
-    onRunSessionIdChanged: (String?) -> Unit = {}
+    initialRunSessionId: String? = null,
+    commandAlreadyDispatched: Boolean = false,
+    onRunCommandDispatched: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     val sessions by viewModel.sessions.collectAsStateWithLifecycle()
@@ -247,12 +276,34 @@ private fun TerminalScreen(
 
     var lastRows by remember { mutableIntStateOf(24) }
     var lastCols by remember { mutableIntStateOf(80) }
+    var pendingCommand by remember(initialCommand, commandAlreadyDispatched) {
+        mutableStateOf(initialCommand?.takeIf { !commandAlreadyDispatched && it.isNotBlank() })
+    }
+    var runSessionId by remember(initialCommand, initialRunSessionId) {
+        mutableStateOf(initialRunSessionId)
+    }
+    var initialSessionRequested by remember { mutableStateOf(false) }
 
     // 首次进入页面时创建会话（仅在没有通过 restoreState 恢复的情况下）
     // restoreState 会自动处理会话创建，所以这里只在没有会话且不是恢复状态时创建
-    LaunchedEffect(sessions, isRestoringState) {
-        if (sessions.isEmpty() && !isRestoringState) {
-            viewModel.createSession(workDir = workDir, rows = lastRows, cols = lastCols, backend = defaultBackend)
+    LaunchedEffect(sessions, isRestoringState, initialSessionRequested) {
+        if (sessions.isEmpty() && !isRestoringState && !initialSessionRequested) {
+            // Adapter 的 sessions 映射是异步的。必须先上闩，再创建会话；否则 pendingCommand
+            // 先被消费而会话列表尚未刷新时，Compose 可能再次进入这里并创建重复会话。
+            initialSessionRequested = true
+            val command = pendingCommand
+            val id = viewModel.createSession(
+                workDir = workDir,
+                rows = lastRows,
+                cols = lastCols,
+                backend = defaultBackend,
+                initialCommand = command,
+            )
+            if (command != null) {
+                runSessionId = id
+                onRunCommandDispatched(id)
+                pendingCommand = null
+            }
         }
     }
 
@@ -261,21 +312,21 @@ private fun TerminalScreen(
     LaunchedEffect(sessions.size, pendingNewSession) {
         if (!pendingNewSession) return@LaunchedEffect
         if (sessions.isEmpty()) return@LaunchedEffect
-        viewModel.createSession(workDir = workDir, rows = lastRows, cols = lastCols, backend = defaultBackend)
+        // 与上面的首次创建同理，先消费请求再触发同步状态更新，避免 effect 重入。
         pendingNewSession = false
-    }
-
-    // 启动后自动执行命令（只执行一次；等待会话可输入）
-    var pendingCommand by remember(initialCommand) { mutableStateOf(initialCommand?.takeIf { it.isNotBlank() }) }
-    var runSessionId by remember(initialCommand) { mutableStateOf<String?>(null) }
-    LaunchedEffect(activeSessionId, sessions, pendingCommand) {
-        val cmd = pendingCommand ?: return@LaunchedEffect
-        val session = sessions.find { it.id == activeSessionId } ?: return@LaunchedEffect
-        if (!session.canReceiveInput) return@LaunchedEffect
-        viewModel.sendText(cmd.trimEnd() + "\n")
-        runSessionId = session.id
-        onRunSessionIdChanged(session.id)
-        pendingCommand = null
+        val command = pendingCommand
+        val id = viewModel.createSession(
+            workDir = workDir,
+            rows = lastRows,
+            cols = lastCols,
+            backend = defaultBackend,
+            initialCommand = command,
+        )
+        if (command != null) {
+            runSessionId = id
+            onRunCommandDispatched(id)
+            pendingCommand = null
+        }
     }
 
     // Run 模式：shell 收到私有 OSC（tina-run-end;<code>）后会把 runExitCode 写入会话状态。

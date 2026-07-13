@@ -5,6 +5,10 @@ plugins {
 
 android {
     namespace = "com.wuxianggujun.tinaide.core.compile"
+
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 dependencies {

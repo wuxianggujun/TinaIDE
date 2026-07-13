@@ -38,13 +38,15 @@ interface ITerminalSessionManager {
      * @param rows 终端行数
      * @param cols 终端列数
      * @param backend 终端后端（HOST 或 PROOT）
+     * @param initialCommand 一次性执行的内部命令；非空时以非交互 shell 启动，避免命令回显
      * @return 新会话的 ID
      */
     fun createSession(
         workDir: String = "/",
         rows: Int = 24,
         cols: Int = 80,
-        backend: TerminalBackend = TerminalBackend.HOST
+        backend: TerminalBackend = TerminalBackend.HOST,
+        initialCommand: String? = null,
     ): String
 
     /**
@@ -52,8 +54,13 @@ interface ITerminalSessionManager {
      *
      * @param sessionId 要关闭的会话 ID
      * @param defaultWorkDir 当关闭最后一个会话时，新建默认会话的工作目录
+     * @param createReplacement 是否在关闭最后一个会话后自动创建默认会话
      */
-    fun closeSession(sessionId: String, defaultWorkDir: String = "/")
+    fun closeSession(
+        sessionId: String,
+        defaultWorkDir: String = "/",
+        createReplacement: Boolean = true
+    )
 
     /**
      * 切换到指定会话

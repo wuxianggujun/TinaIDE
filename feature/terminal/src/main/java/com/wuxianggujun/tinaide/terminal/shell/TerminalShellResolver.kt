@@ -107,6 +107,7 @@ class TerminalShellResolver(
         workDir: String,
         rows: Int,
         cols: Int,
+        initialCommand: String? = null,
     ): ShellResolveResult = withContext(Dispatchers.IO) {
         // rows/cols 目前由 Termux TerminalSession 在后续 resize/updateSize 中处理，这里仅用于保持接口稳定。
         val configured = terminalPrefs.terminalShellType
@@ -134,8 +135,16 @@ class TerminalShellResolver(
         val cwd = normalizeExistingDir(workDir)
 
         when (backend) {
-            TerminalBackend.PROOT -> buildPRootResolution(resolvedType = resolved, cwd = cwd)
-            TerminalBackend.HOST -> buildHostResolution(resolvedType = resolved, cwd = cwd)
+            TerminalBackend.PROOT -> buildPRootResolution(
+                resolvedType = resolved,
+                cwd = cwd,
+                initialCommand = initialCommand,
+            )
+            TerminalBackend.HOST -> buildHostResolution(
+                resolvedType = resolved,
+                cwd = cwd,
+                initialCommand = initialCommand,
+            )
         }
     }
 
@@ -189,7 +198,8 @@ class TerminalShellResolver(
 
     private suspend fun buildPRootResolution(
         resolvedType: TerminalPreferences.ShellType,
-        cwd: String
+        cwd: String,
+        initialCommand: String?,
     ): ShellResolveResult {
         val prootManager = resolvePRootEnvironment()?.getPRootManager()
             ?: return ShellResolveResult.Error(
@@ -209,9 +219,11 @@ class TerminalShellResolver(
             null
         } ?: return ShellResolveResult.Error(buildNoShellMessage(context, TerminalBackend.PROOT, terminalPrefs.terminalShellType))
 
-        val guestArgs = buildGuestShellArgs(resolvedType, guestShellPath)
+        val guestArgv = initialCommand?.takeIf { it.isNotBlank() }?.let {
+            buildOneShotShellArgv(guestShellPath, it).toList()
+        } ?: (listOf(guestShellPath) + buildGuestShellArgs(resolvedType, guestShellPath))
         val prootCommand = prootManager.buildPRootCommandLine(
-            command = listOf(guestShellPath) + guestArgs,
+            command = guestArgv,
             workDir = cwd
         )
 
@@ -242,14 +254,17 @@ class TerminalShellResolver(
 
     private fun buildHostResolution(
         resolvedType: TerminalPreferences.ShellType,
-        cwd: String
+        cwd: String,
+        initialCommand: String?,
     ): ShellResolveResult {
         val shellPath = hostShellCandidates(resolvedType).firstOrNull { candidate ->
             val file = File(candidate)
             file.isFile && file.canExecute()
         } ?: return ShellResolveResult.Error(buildNoShellMessage(context, TerminalBackend.HOST, terminalPrefs.terminalShellType))
 
-        val argv = buildHostShellArgs(shellPath).toTypedArray()
+        val argv = initialCommand?.takeIf { it.isNotBlank() }?.let {
+            buildOneShotShellArgv(shellPath, it)
+        } ?: buildHostShellArgs(shellPath).toTypedArray()
 
         val env = buildList {
             add("TERM=xterm-256color")
@@ -362,6 +377,13 @@ class TerminalShellResolver(
         return Strings.shell_error_format.strOr(context, prefix, configured.value, hint)
     }
 }
+
+/**
+ * Run 模式直接把内部命令作为 `shell -c` 的单个 argv 传给 PTY 子进程。
+ * 不能把命令写入交互 shell 的标准输入，否则 TTY echo 会把完整内部脚本显示给用户。
+ */
+internal fun buildOneShotShellArgv(shellPath: String, command: String): Array<String> =
+    arrayOf(shellPath, "-c", command)
 
 internal fun buildGuestCommandAvailabilityProbe(command: String): List<String>? {
     val normalized = command.trim()

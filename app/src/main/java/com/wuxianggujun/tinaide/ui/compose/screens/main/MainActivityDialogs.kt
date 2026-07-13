@@ -30,6 +30,7 @@ import com.wuxianggujun.tinaide.editor.session.SaveResult
 import com.wuxianggujun.tinaide.extensions.toastError
 import com.wuxianggujun.tinaide.extensions.toastInfo
 import com.wuxianggujun.tinaide.extensions.toastSuccess
+import com.wuxianggujun.tinaide.file.IFileDeletionOperations
 import com.wuxianggujun.tinaide.file.IFileOperations
 import com.wuxianggujun.tinaide.plugin.PluginManager
 import com.wuxianggujun.tinaide.plugin.ResolvedPluginApkExport
@@ -331,6 +332,7 @@ internal fun MainActivityFileDialogs(
 ) {
     val context = LocalContext.current
     val fileOperations: IFileOperations = koinInject()
+    val fileDeletionOperations: IFileDeletionOperations = koinInject()
 
     // 新建文件对话框
     if (dialogState.showNewFileDialog && dialogState.newFileTargetDir != null) {
@@ -375,7 +377,7 @@ internal fun MainActivityFileDialogs(
         DeleteConfirmDialog(
             file = dialogState.deleteFile!!,
             onDismiss = { dialogState.closeDeleteDialog() },
-            onDelete = fileOperations::deleteFile
+            onDelete = fileDeletionOperations::deleteFile,
         )
     }
 

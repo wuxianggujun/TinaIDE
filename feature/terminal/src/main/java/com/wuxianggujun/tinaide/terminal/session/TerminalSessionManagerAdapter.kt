@@ -48,16 +48,18 @@ class TerminalSessionManagerAdapter(
         workDir: String,
         rows: Int,
         cols: Int,
-        backend: TerminalBackend
+        backend: TerminalBackend,
+        initialCommand: String?,
     ): String = delegate.createSession(
         workDir = workDir,
         rows = rows,
         cols = cols,
-        backend = backend.toFeatureTerminalBackend()
+        backend = backend.toFeatureTerminalBackend(),
+        initialCommand = initialCommand,
     )
 
-    override fun closeSession(sessionId: String, defaultWorkDir: String) {
-        delegate.closeSession(sessionId, defaultWorkDir)
+    override fun closeSession(sessionId: String, defaultWorkDir: String, createReplacement: Boolean) {
+        delegate.closeSession(sessionId, defaultWorkDir, createReplacement)
     }
 
     override fun switchSession(sessionId: String) {

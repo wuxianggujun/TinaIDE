@@ -16,12 +16,23 @@ import com.wuxianggujun.tinaide.file.IFileWatchService
 import com.wuxianggujun.tinaide.file.IRecentFilesProvider
 import com.wuxianggujun.tinaide.plugin.script.api.PluginHostEventDispatcher
 import com.wuxianggujun.tinaide.project.ProjectMetadataStore
+import com.wuxianggujun.tinaide.storage.FileDeletionCancellationSignal
+import com.wuxianggujun.tinaide.storage.FileDeletionProgress
+import com.wuxianggujun.tinaide.storage.FileDeletionResult
+import com.wuxianggujun.tinaide.storage.FileDeletionService
 import com.wuxianggujun.tinaide.storage.ProjectLocationManager
 import com.wuxianggujun.tinaide.storage.StorageManager
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import timber.log.Timber
 
 /**
@@ -32,8 +43,10 @@ class FileManager(
     private val configManager: IConfigManager,
     private val projectLocationManager: ProjectLocationManager,
     private val storageManager: StorageManager,
+    private val fileDeletionService: FileDeletionService,
     private val projectSymbolIndexServiceProvider: () -> IProjectSymbolIndexService? = { null }
 ) : IFileOperations,
+    IFileDeletionOperations,
     IRecentFilesProvider,
     IFileWatchService,
     IProjectContext,
@@ -49,18 +62,29 @@ class FileManager(
     private val fileWatchLock = Any()
     private val fileWatchTrees = mutableMapOf<String, WatchTree>()
     private val fileListeners = mutableMapOf<String, MutableList<FileChangeListener>>()
+    private val fileWatcherScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val recentFilesLock = Any()
     private val recentFiles = mutableListOf<File>()
 
     override fun onCreate() {
         loadRecentFiles()
+        fileWatcherScope.launch {
+            runCatching { fileDeletionService.recoverAbandonedStaging() }
+                .onFailure { error ->
+                    Timber.tag(TAG).w(error, "Failed to recover interrupted staged deletion")
+                }
+        }
     }
 
     override fun onDestroy() {
-        synchronized(fileWatchLock) {
-            fileWatchTrees.values.forEach(WatchTree::stop)
-            fileWatchTrees.clear()
-            fileListeners.clear()
+        val watchTrees = synchronized(fileWatchLock) {
+            fileWatchTrees.values.toList().also {
+                fileWatchTrees.clear()
+                fileListeners.clear()
+            }
         }
+        watchTrees.forEach(WatchTree::stop)
+        fileWatcherScope.cancel()
         saveRecentFiles()
     }
 
@@ -104,6 +128,7 @@ class FileManager(
         // 启动项目级符号索引（后台构建）
         projectSymbolIndexServiceProvider()
             ?.onProjectOpened(projectDir)
+        PluginHostEventDispatcher.emitProjectOpened(project.rootPath)
 
         configManager.set(ConfigKeys.CurrentProject, path)
 
@@ -111,16 +136,23 @@ class FileManager(
     }
 
     override fun closeProject() {
-        _currentProject.value?.let {
-            _currentProject.value = null
-            configManager.remove(ConfigKeys.CurrentProject.key)
-        }
-        projectSymbolIndexServiceProvider()?.onProjectClosed()
+        closeCurrentProject(preserveLastProject = false)
     }
 
     override fun clearInMemorySession() {
-        _currentProject.value?.let {
+        closeCurrentProject(preserveLastProject = true)
+    }
+
+    private fun closeCurrentProject(preserveLastProject: Boolean) {
+        val previousProject = _currentProject.value
+        if (previousProject != null) {
             _currentProject.value = null
+            stopAllFileWatchersAsync()
+            projectSymbolIndexServiceProvider()?.onProjectClosed()
+            PluginHostEventDispatcher.emitProjectClosed(previousProject.rootPath)
+        }
+        if (!preserveLastProject) {
+            configManager.remove(ConfigKeys.CurrentProject.key)
         }
     }
 
@@ -159,6 +191,7 @@ class FileManager(
             _currentProject.value = project
             projectSymbolIndexServiceProvider()
                 ?.onProjectOpened(dir)
+            PluginHostEventDispatcher.emitProjectOpened(project.rootPath)
             return project
         } catch (e: Exception) {
             Timber.tag(TAG).e(e, "Error restoring current project")
@@ -205,13 +238,45 @@ class FileManager(
     override fun deleteFile(file: File): Boolean {
         if (!file.exists()) return false
         val wasDirectory = file.isDirectory
-        val deleted = if (file.isDirectory) file.deleteRecursively() else file.delete()
+        val deleted = runCatching {
+            if (wasDirectory) file.deleteRecursively() else file.delete()
+        }.onFailure { error ->
+            Timber.tag(TAG).e(error, "Failed to delete path: %s", file.absolutePath)
+        }.getOrDefault(false)
         if (deleted) {
             notifyFileDeleted(file)
             PluginHostEventDispatcher.emitFileDeleted(file, wasDirectory)
             removeRecentFilesForDeletedPath(file)
         }
         return deleted
+    }
+
+    override suspend fun deleteFile(
+        file: File,
+        cancellationSignal: FileDeletionCancellationSignal,
+        onProgress: suspend (FileDeletionProgress) -> Unit,
+    ): FileDeletionResult {
+        val wasDirectory = file.isDirectory
+        val result = fileDeletionService.delete(
+            target = file,
+            cancellationSignal = cancellationSignal,
+            onProgress = onProgress,
+        )
+        when (result) {
+            is FileDeletionResult.Success -> {
+                notifyFileDeleted(file)
+                PluginHostEventDispatcher.emitFileDeleted(file, wasDirectory)
+                removeRecentFilesForDeletedPath(file)
+            }
+            is FileDeletionResult.Cancelled,
+            is FileDeletionResult.Failure -> {
+                if (!file.exists()) {
+                    notifyFileDeleted(file)
+                    removeRecentFilesForDeletedPath(file)
+                }
+            }
+        }
+        return result
     }
 
     override fun renameFile(file: File, newName: String): Boolean {
@@ -264,7 +329,9 @@ class FileManager(
         return searchFilesRecursive(projectDir, query)
     }
 
-    override fun getRecentFiles(): List<File> = recentFiles.toList()
+    override fun getRecentFiles(): List<File> = synchronized(recentFilesLock) {
+        recentFiles.toList()
+    }
 
     override fun addFileWatcher(path: String, listener: FileChangeListener): FileWatchRegistration {
         synchronized(fileWatchLock) {
@@ -295,8 +362,8 @@ class FileManager(
             registrationPath = path,
             watchRootDir = watchRootDir
         )
-        watchTree.start()
         fileWatchTrees[path] = watchTree
+        watchTree.start()
     }
 
     private fun handleFileEvent(directory: File, event: Int, child: String?) {
@@ -319,13 +386,28 @@ class FileManager(
         }
     }
     private fun removeFileWatcherListener(path: String, listener: FileChangeListener) {
-        synchronized(fileWatchLock) {
+        val watchTreeToStop = synchronized(fileWatchLock) {
             val listeners = fileListeners[path] ?: return
             listeners.remove(listener)
-            if (listeners.isNotEmpty()) return
+            if (listeners.isNotEmpty()) return@synchronized null
 
             fileListeners.remove(path)
-            fileWatchTrees.remove(path)?.stop()
+            fileWatchTrees.remove(path)
+        }
+        if (watchTreeToStop != null) {
+            fileWatcherScope.launch { watchTreeToStop.stop() }
+        }
+    }
+
+    private fun stopAllFileWatchersAsync() {
+        val watchTrees = synchronized(fileWatchLock) {
+            fileWatchTrees.values.toList().also {
+                fileWatchTrees.clear()
+                fileListeners.clear()
+            }
+        }
+        watchTrees.forEach { watchTree ->
+            fileWatcherScope.launch { watchTree.stop() }
         }
     }
 
@@ -340,22 +422,29 @@ class FileManager(
     ) {
         private val observerLock = Any()
         private val observers = linkedMapOf<String, FileObserver>()
+        private val stopped = AtomicBoolean(false)
+        private var startJob: Job? = null
         private val mask = FileObserver.CREATE or FileObserver.MOVED_TO or FileObserver.MODIFY or
             FileObserver.CLOSE_WRITE or FileObserver.DELETE or FileObserver.DELETE_SELF or
             FileObserver.MOVED_FROM
 
         fun start() {
-            registerSubtree(watchRootDir)
-            val observerCount = synchronized(observerLock) { observers.size }
-            Timber.tag(TAG).d(
-                "WatchTree started: registration=%s root=%s observers=%d",
-                registrationPath,
-                watchRootDir.absolutePath,
-                observerCount
-            )
+            startJob = fileWatcherScope.launch {
+                registerSubtree(watchRootDir)
+                val observerCount = synchronized(observerLock) { observers.size }
+                Timber.tag(TAG).d(
+                    "WatchTree started: registration=%s root=%s observers=%d",
+                    registrationPath,
+                    watchRootDir.absolutePath,
+                    observerCount
+                )
+            }
         }
 
         fun stop() {
+            if (!stopped.compareAndSet(false, true)) return
+            startJob?.cancel()
+            startJob = null
             val snapshot = synchronized(observerLock) {
                 observers.values.toList().also { observers.clear() }
             }
@@ -368,6 +457,7 @@ class FileManager(
             val stack = ArrayDeque<File>()
             stack.add(rootDir)
             while (stack.isNotEmpty()) {
+                if (stopped.get()) return
                 val dir = stack.removeLast()
                 if (!shouldWatchDirectory(dir, watchRootDir)) continue
                 registerSingleDirectory(dir)
@@ -379,8 +469,10 @@ class FileManager(
         }
 
         private fun registerSingleDirectory(dir: File) {
+            if (stopped.get()) return
             val path = dir.absolutePath
             synchronized(observerLock) {
+                if (stopped.get()) return
                 if (observers.containsKey(path)) return
 
                 val observer = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -403,6 +495,7 @@ class FileManager(
         }
 
         private fun handleObservedEvent(directory: File, event: Int, child: String?) {
+            if (stopped.get()) return
             val file = if (child != null) File(directory, child) else directory
 
             if ((event and (FileObserver.CREATE or FileObserver.MOVED_TO)) != 0 && file.isDirectory) {
@@ -432,10 +525,12 @@ class FileManager(
 
     fun addToRecentFiles(file: File) {
         if (!file.exists() || file.isDirectory) return
-        recentFiles.remove(file)
-        recentFiles.add(0, file)
-        while (recentFiles.size > MAX_RECENT_FILES) {
-            recentFiles.removeAt(recentFiles.size - 1)
+        synchronized(recentFilesLock) {
+            recentFiles.remove(file)
+            recentFiles.add(0, file)
+            while (recentFiles.size > MAX_RECENT_FILES) {
+                recentFiles.removeAt(recentFiles.size - 1)
+            }
         }
         saveRecentFiles()
     }
@@ -523,17 +618,19 @@ class FileManager(
 
         val oldRootCompare = normalizeRecentLookupPathForCompare(oldRoot)
         val oldPrefixCompare = "$oldRootCompare/"
-        recentFiles.indices.forEach { index ->
-            val recent = recentFiles[index]
-            val recentPath = normalizeRecentLookupPath(recent.absolutePath)
-            val recentCompare = normalizeRecentLookupPathForCompare(recentPath)
-            recentFiles[index] = when {
-                recentCompare == oldRootCompare -> newPath
-                recentCompare.startsWith(oldPrefixCompare) -> {
-                    val suffix = recentPath.substring(oldRoot.length + 1)
-                    File(newPath, suffix.replace('/', File.separatorChar))
+        synchronized(recentFilesLock) {
+            recentFiles.indices.forEach { index ->
+                val recent = recentFiles[index]
+                val recentPath = normalizeRecentLookupPath(recent.absolutePath)
+                val recentCompare = normalizeRecentLookupPathForCompare(recentPath)
+                recentFiles[index] = when {
+                    recentCompare == oldRootCompare -> newPath
+                    recentCompare.startsWith(oldPrefixCompare) -> {
+                        val suffix = recentPath.substring(oldRoot.length + 1)
+                        File(newPath, suffix.replace('/', File.separatorChar))
+                    }
+                    else -> recent
                 }
-                else -> recent
             }
         }
         saveRecentFiles()
@@ -545,11 +642,13 @@ class FileManager(
 
         val targetRootCompare = normalizeRecentLookupPathForCompare(targetRoot)
         val targetPrefixCompare = "$targetRootCompare/"
-        val removed = recentFiles.removeAll { recent ->
-            val recentCompare = normalizeRecentLookupPathForCompare(
-                normalizeRecentLookupPath(recent.absolutePath)
-            )
-            recentCompare == targetRootCompare || recentCompare.startsWith(targetPrefixCompare)
+        val removed = synchronized(recentFilesLock) {
+            recentFiles.removeAll { recent ->
+                val recentCompare = normalizeRecentLookupPathForCompare(
+                    normalizeRecentLookupPath(recent.absolutePath)
+                )
+                recentCompare == targetRootCompare || recentCompare.startsWith(targetPrefixCompare)
+            }
         }
         if (removed) saveRecentFiles()
     }
@@ -566,9 +665,12 @@ class FileManager(
         try {
             val paths = configManager.get(ConfigKeys.RecentFiles)
             if (paths.isNotEmpty()) {
-                paths.split(";").forEach { p ->
-                    val f = File(p)
-                    if (f.exists()) recentFiles.add(f)
+                val existingFiles = paths.split(";")
+                    .map(::File)
+                    .filter(File::exists)
+                synchronized(recentFilesLock) {
+                    recentFiles.clear()
+                    recentFiles.addAll(existingFiles)
                 }
             }
         } catch (e: Exception) {
@@ -578,7 +680,9 @@ class FileManager(
 
     private fun saveRecentFiles() {
         try {
-            val paths = recentFiles.joinToString(";") { it.absolutePath }
+            val paths = synchronized(recentFilesLock) {
+                recentFiles.joinToString(";") { it.absolutePath }
+            }
             configManager.set(ConfigKeys.RecentFiles, paths)
         } catch (e: Exception) {
             Timber.tag(TAG).e(e, "Error saving recent files")

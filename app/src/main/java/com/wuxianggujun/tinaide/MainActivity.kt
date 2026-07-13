@@ -1,9 +1,13 @@
 package com.wuxianggujun.tinaide
 
+import android.content.Intent
 import android.os.Bundle
 import android.view.KeyEvent
 import androidx.activity.ComponentActivity
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.lifecycle.lifecycleScope
 import com.wuxianggujun.tinaide.core.compile.ProcessManager
+import com.wuxianggujun.tinaide.core.config.IConfigManager
 import com.wuxianggujun.tinaide.core.config.Prefs
 import com.wuxianggujun.tinaide.editor.IEditorManager
 import com.wuxianggujun.tinaide.extensions.toastError
@@ -12,6 +16,7 @@ import com.wuxianggujun.tinaide.extensions.toastSuccess
 import com.wuxianggujun.tinaide.file.IProjectContext
 import com.wuxianggujun.tinaide.file.IProjectSession
 import com.wuxianggujun.tinaide.output.IOutputManager
+import com.wuxianggujun.tinaide.startup.StartupFlowManager
 import com.wuxianggujun.tinaide.ui.BottomPanelViewModel
 import com.wuxianggujun.tinaide.ui.CompilerViewModel
 import com.wuxianggujun.tinaide.ui.DebugViewModel
@@ -26,6 +31,7 @@ import com.wuxianggujun.tinaide.ui.MainActivityFileTreeActionBridge
 import com.wuxianggujun.tinaide.ui.MainActivityNavigationHost
 import com.wuxianggujun.tinaide.ui.MainActivityShortcutDispatcher
 import com.wuxianggujun.tinaide.ui.MainViewModel
+import com.wuxianggujun.tinaide.ui.MainPortalActivity
 import com.wuxianggujun.tinaide.ui.compose.screens.main.MainActivityContentBridges
 import com.wuxianggujun.tinaide.ui.compose.screens.main.MainActivityContentDelegates
 import com.wuxianggujun.tinaide.ui.compose.screens.main.MainActivityContentServices
@@ -39,6 +45,9 @@ import com.wuxianggujun.tinaide.ui.createMainActivityWorkspaceHost
 import com.wuxianggujun.tinaide.ui.installMainActivityCleanup
 import com.wuxianggujun.tinaide.ui.installMainActivityStartup
 import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.koin.androidx.viewmodel.ext.android.viewModel as koinViewModel
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
@@ -58,6 +67,7 @@ class MainActivity :
 
     private val projectContext: IProjectContext by inject()
     private val projectSession: IProjectSession by inject()
+    private val configManager: IConfigManager by inject()
     private val editorManager: IEditorManager by inject()
     private val processManager: ProcessManager by inject()
     private val outputManager: IOutputManager by inject()
@@ -125,14 +135,47 @@ class MainActivity :
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        val splashScreen = installSplashScreen()
+        var workspaceStartupPending = true
+        splashScreen.setKeepOnScreenCondition { workspaceStartupPending }
         Prefs.applyTheme()
         super.onCreate(savedInstanceState)
-        // 进入编辑器前显式恢复上次会话（若 MainPortalActivity 走 openProject 打开则为幂等 no-op，
-        // 进程死亡冷启动时会从 ConfigKeys.CurrentProject 重新建立会话）
-        projectSession.restoreLastSession()
+
+        // Activity Result launchers必须在Activity进入STARTED之前注册。
+        // 启动检查可以异步执行，但导航宿主必须在同步onCreate阶段完成创建。
+        val currentNavigationHost = navigationHost
+        lifecycleScope.launch {
+            val startupResult = withContext(Dispatchers.IO) {
+                val redirect = StartupFlowManager(this@MainActivity, configManager).checkStartupFlow()
+                val project = if (redirect == null) projectSession.restoreLastSession() else null
+                redirect to project
+            }
+            val redirectIntent = startupResult.first
+            if (redirectIntent != null) {
+                workspaceStartupPending = false
+                startActivity(redirectIntent)
+                finish()
+                return@launch
+            }
+            if (startupResult.second == null) {
+                workspaceStartupPending = false
+                startActivity(
+                    Intent(this@MainActivity, MainPortalActivity::class.java).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    }
+                )
+                finish()
+                return@launch
+            }
+
+            installWorkspaceContent(currentNavigationHost)
+            workspaceStartupPending = false
+        }
+    }
+
+    private fun installWorkspaceContent(currentNavigationHost: MainActivityNavigationHost) {
         val currentCompileHost = compileHost
         val currentWorkspaceHost = workspaceHost
-        val currentNavigationHost = navigationHost
         installMainActivityStartup(
             activity = this,
             actionsDelegate = actionsDelegate,

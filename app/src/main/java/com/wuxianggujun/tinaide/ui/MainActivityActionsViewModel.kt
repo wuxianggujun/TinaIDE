@@ -30,9 +30,9 @@ import java.io.File
 import java.net.URI
 import java.nio.charset.Charset
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.eclipse.lsp4j.TextEdit
@@ -51,7 +51,7 @@ import timber.log.Timber
  *
  * 设计原则：
  * - 从 MainActivity 中提取业务逻辑
- * - 使用 SharedFlow 发送一次性事件（如 Toast）
+ * - 使用有界 Channel 可靠发送一次性事件（如 Toast）
  */
 class MainActivityActionsViewModel(
     application: Application,
@@ -96,8 +96,8 @@ class MainActivityActionsViewModel(
         val charset: Charset
     )
 
-    private val _uiEvents = MutableSharedFlow<UiEvent>()
-    val uiEvents: SharedFlow<UiEvent> = _uiEvents.asSharedFlow()
+    private val uiEventsChannel = Channel<UiEvent>(capacity = Channel.BUFFERED)
+    val uiEvents = uiEventsChannel.receiveAsFlow()
 
     private val context: Context get() = getApplication()
 
@@ -686,11 +686,10 @@ class MainActivityActionsViewModel(
         }
         editorManager.closeAll(clearPersistentState = forgetSession)
 
-        if (forgetSession) {
-            clearCurrentProjectState()
-        }
-
-        withContext(Dispatchers.IO) {
+        withContext(NonCancellable + Dispatchers.IO) {
+            if (forgetSession) {
+                clearCurrentProjectState()
+            }
             projectSession.closeProject()
         }
 
@@ -713,9 +712,7 @@ class MainActivityActionsViewModel(
     // ============ 辅助方法 ============
 
     private fun showToast(message: String, type: ToastType) {
-        viewModelScope.launch {
-            _uiEvents.emit(UiEvent.ShowToast(message, type))
-        }
+        uiEventsChannel.trySend(UiEvent.ShowToast(message, type))
     }
 
     private fun readTextFromClipboard(): String? {

@@ -223,7 +223,6 @@ android {
             }
         }
     }
-
 }
 
 androidComponents {

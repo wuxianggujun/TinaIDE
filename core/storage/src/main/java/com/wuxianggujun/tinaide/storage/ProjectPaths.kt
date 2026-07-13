@@ -333,6 +333,14 @@ object ProjectPaths {
     fun getExternalFilesRoot(context: Context): File = context.getExternalFilesDir(null) ?: context.filesDir
 
     /**
+     * 公开项目大目录删除暂存区。
+     *
+     * 公开 Documents 目录中的目标会优先同卷移动到这里，再逐项删除，避免 MediaProvider
+     * 在公开目录内处理成千上万个子项事件。该目录仅保存用户已经确认删除的临时内容。
+     */
+    fun getDeletionStagingRoot(context: Context): File = File(getExternalFilesRoot(context), "deletion-staging")
+
+    /**
      * 获取缓存目录根路径
      *
      * 典型路径：/data/data/<package>/cache

@@ -1,5 +1,6 @@
 package com.wuxianggujun.tinaide.ui
 
+import android.app.Application
 import com.wuxianggujun.tinaide.core.terminal.TerminalBackend
 import io.mockk.coVerify
 import io.mockk.mockk
@@ -8,7 +9,12 @@ import java.io.File
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34], manifest = Config.NONE, application = Application::class)
 @OptIn(ExperimentalCoroutinesApi::class)
 class CompileUiEventObserverTest {
 

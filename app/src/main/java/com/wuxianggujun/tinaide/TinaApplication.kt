@@ -26,6 +26,8 @@ import com.wuxianggujun.tinaide.extensions.applyTinaSystemBars
 import com.wuxianggujun.tinaide.output.di.outputModule
 import com.wuxianggujun.tinaide.plugin.di.pluginModule
 import com.wuxianggujun.tinaide.startup.BundledPackagesInstallTask
+import com.wuxianggujun.tinaide.startup.AppProcessRole
+import com.wuxianggujun.tinaide.startup.AppProcessRoleClassifier
 import com.wuxianggujun.tinaide.startup.CoreServiceRegistrar
 import com.wuxianggujun.tinaide.startup.ProjectMetadataInitializer
 import com.wuxianggujun.tinaide.startup.ServerConfigSyncTask
@@ -41,6 +43,7 @@ import com.wuxianggujun.tinaide.ui.workspace.di.workspaceModule
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import org.koin.android.ext.koin.androidContext
 import org.koin.core.context.startKoin
 import org.koin.java.KoinJavaComponent.get as koinGet
@@ -50,7 +53,6 @@ class TinaApplication : Application() {
 
     companion object {
         private const val TAG = "TinaApplication"
-        private const val TOOLCHAIN_PROCESS_SUFFIX = ":toolchain"
     }
 
     // 应用级协程作用域（用于后台任务）
@@ -101,12 +103,19 @@ class TinaApplication : Application() {
         NativeCrashHandler.install(this)
 
         // 初始化 Timber 日志框架（尽早初始化以捕获所有日志）
+        val processRole = AppProcessRoleClassifier.classify(packageName, processName)
+        val logsRoot = com.wuxianggujun.tinaide.storage.ProjectPaths.getLogsRoot(this)
         TinaTimber.initialize(
             context = this,
             isDebug = BuildConfig.DEBUG,
-            logDir = com.wuxianggujun.tinaide.storage.ProjectPaths.ensureDir(
-                com.wuxianggujun.tinaide.storage.ProjectPaths.getLogsRoot(this)
-            ),
+            logDir = if (processRole == AppProcessRole.HOST) {
+                com.wuxianggujun.tinaide.storage.ProjectPaths.ensureDir(logsRoot)
+            } else {
+                logsRoot
+            },
+            // xCrash tombstone 与 CrashActivity 展示链路不依赖 Timber 文件 Tree。
+            // 仅宿主进程写共享文件，避免 :crash/native 多进程并发追加同一日志文件。
+            enableFileLogging = processRole == AppProcessRole.HOST,
         )
         LogProcessRegistry.recordProcess(this, android.os.Process.myPid(), processName)
     }
@@ -114,34 +123,36 @@ class TinaApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         val processName = Application.getProcessName()
-        val isHostAppProcess = CrashLogPrivacyClassifier.isHostAppProcess(packageName, processName)
-        if (processName == packageName + TOOLCHAIN_PROCESS_SUFFIX) {
+        val processRole = AppProcessRoleClassifier.classify(packageName, processName)
+        if (processRole == AppProcessRole.TOOLCHAIN) {
             Timber.tag(TAG).i("Toolchain process detected, skipping heavy app initialization")
             return
         }
 
         AppStrings.initialize(this)
-        if (CrashLogPrivacyClassifier.isUserRuntimeProcess(packageName, processName)) {
-            // 原生运行容器进程只保留 Activity 必需的主题/字符串初始化。
-            // 用户 native 崩溃会结束对应隔离进程，不应触发宿主侧数据库、Koin、后台任务等初始化。
+        if (processRole != AppProcessRole.HOST) {
+            // :crash 继续保留 xCrash 日志展示、国际化和主题；用户 runtime 也保留 Activity
+            // 必需资源。数据库、Koin、Tree-sitter 与宿主后台任务只允许主进程初始化。
             val themeInitializer = ThemeInitializer(this)
             themeInitializer.initialize()
             themeInitializer.applyNightMode()
-            Timber.tag(TAG).i("Native runtime process detected, skipping host app initialization: %s", processName)
+            Timber.tag(TAG).i(
+                "Non-host process initialized with minimal runtime: role=%s process=%s",
+                processRole,
+                processName,
+            )
             return
         }
 
         // 初始化项目元数据存储的 IDE 版本信息
-        ProjectMetadataInitializer(this).execute()
+        ProjectMetadataInitializer(BuildConfig.VERSION_NAME).execute()
 
-        // Tree-sitter runtime (android-tree-sitter) 仅在主进程加载，避免 :crash 等进程不必要的 native 初始化
-        if (isHostAppProcess) {
-            runCatching {
-                TreeSitter.loadLibrary()
-                Timber.i("android-tree-sitter native library loaded successfully")
-            }.onFailure { t ->
-                Timber.e(t, "CRITICAL: Failed to load android-tree-sitter native library — tree-sitter features will crash")
-            }
+        // 能执行到这里的只有 HOST 进程。
+        runCatching {
+            TreeSitter.loadLibrary()
+            Timber.i("android-tree-sitter native library loaded successfully")
+        }.onFailure { t ->
+            Timber.e(t, "CRITICAL: Failed to load android-tree-sitter native library — tree-sitter features will crash")
         }
 
         // 清理旧的崩溃日志（保留最近 10 个）
@@ -173,32 +184,18 @@ class TinaApplication : Application() {
         // 执行副作用初始化（Prefs、设备信息、PRoot 等）
         CoreServiceRegistrar(this).execute()
 
-        // 启动时立即尝试上传主进程崩溃日志，并注册 JobScheduler 兜底重试（仅主进程）。
-        if (isHostAppProcess) {
-            CrashLogAutoUploader.uploadOnStartup(this, applicationScope)
-        }
+        // 启动时立即尝试上传主进程崩溃日志，并注册 JobScheduler 兜底重试。
+        CrashLogAutoUploader.uploadOnStartup(this, applicationScope)
 
-        val startupFlowManager = if (isHostAppProcess) {
-            StartupFlowManager(this, koinGet(IConfigManager::class.java))
-        } else {
-            null
-        }
-        val needsDependencyInstall = startupFlowManager?.requiresDependencyInstallation() == true
+        // 服务器配置同步不依赖本地 C/C++ 工具链，不应为了它在 Application 与 Portal
+        // 重复扫描 sysroot/toolchain 资产。
+        ServerConfigSyncTask(this, applicationScope).execute()
 
-        // 后台同步服务器配置 + 认证状态维护（仅主进程）
-        if (isHostAppProcess) {
-            if (needsDependencyInstall) {
-                Timber.tag(TAG).i("Skip immediate server config sync: dependency installation required")
-            } else {
-                ServerConfigSyncTask(this, applicationScope).execute()
-            }
+        // 调度收藏后台同步任务
+        FavoriteSyncWorker.schedule(this)
 
-            // 调度收藏后台同步任务
-            FavoriteSyncWorker.schedule(this)
-
-            // 安装内置包（SDL3 等预编译库）
-            BundledPackagesInstallTask(this, applicationScope).execute()
-        }
+        // 安装内置包（SDL3 等预编译库）
+        BundledPackagesInstallTask(this, applicationScope).execute()
 
         // 初始化主题
         val themeInitializer = ThemeInitializer(this)
@@ -228,18 +225,19 @@ class TinaApplication : Application() {
         // 首次启动时，PRoot 环境会在 DependencyInstallActivity 中安装
         // 非首次启动时，在后台检查并更新 PRoot 环境
         // 注意：CrashActivity 运行在 :crash 进程，避免多进程同时解包导致环境损坏
-        if (isHostAppProcess) {
-            val prootEnvReady = startupFlowManager?.isPRootEnvironmentReady() == true
+        applicationScope.launch(Dispatchers.IO) {
+            val prootEnvReady = StartupFlowManager(
+                this@TinaApplication,
+                koinGet(IConfigManager::class.java),
+            ).isPRootEnvironmentReady()
 
             // 注意：PRoot Linux 环境是可选功能，不应因为"启动流程完成"而自动触发下载/安装。
             // 仅当检测到 PRoot 环境已就绪（rootfs 已存在）时，才在后台做更新/修复。
             if (prootEnvReady) {
-                PRootBootstrap.start(this)
+                PRootBootstrap.start(this@TinaApplication)
             } else {
                 Timber.tag(TAG).i("Skip PRoot bootstrap: environment not ready")
             }
-        } else {
-            Timber.tag(TAG).i("Skip PRoot bootstrap in process: %s", processName)
         }
     }
 

@@ -11,6 +11,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.lifecycle.lifecycleScope
 import com.wuxianggujun.tinaide.MainActivity
 import com.wuxianggujun.tinaide.core.config.IConfigManager
 import com.wuxianggujun.tinaide.core.config.Prefs
@@ -20,12 +21,14 @@ import com.wuxianggujun.tinaide.extensions.toastError
 import com.wuxianggujun.tinaide.file.IProjectSession
 import com.wuxianggujun.tinaide.settings.SettingsActivity
 import com.wuxianggujun.tinaide.startup.StartupFlowManager
-import com.wuxianggujun.tinaide.storage.ProjectLocationManager
-import com.wuxianggujun.tinaide.storage.StorageManager
 import com.wuxianggujun.tinaide.ui.compose.screens.main.MainScreen
 import com.wuxianggujun.tinaide.ui.compose.screens.settings.SettingsRoute
 import com.wuxianggujun.tinaide.ui.theme.TinaIDETheme
 import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.get
 
@@ -44,6 +47,9 @@ class MainPortalActivity :
     ComponentActivity(),
     KoinComponent {
 
+    private var sessionCleanupJob: Job? = null
+    private var projectOpenJob: Job? = null
+
     override fun onStart() {
         super.onStart()
         // 用户一旦回到主页即归零项目会话内存态（FileWatcher 同步移除），
@@ -51,11 +57,15 @@ class MainPortalActivity :
         // 偏好键 ConfigKeys.CurrentProject 保留，进入 MainActivity 时再通过
         // projectSession.restoreLastSession() 恢复。
         val projectSession: IProjectSession = get()
-        projectSession.clearInMemorySession()
+        sessionCleanupJob = lifecycleScope.launch(Dispatchers.IO) {
+            projectSession.clearInMemorySession()
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        installSplashScreen()
+        val splashScreen = installSplashScreen()
+        var startupCheckPending = true
+        splashScreen.setKeepOnScreenCondition { startupCheckPending }
         Prefs.applyTheme()
         super.onCreate(savedInstanceState)
         actionBar?.hide()
@@ -64,14 +74,23 @@ class MainPortalActivity :
         // === 启动流程检查 ===
         // 检查是否需要引导（工具链安装/工作空间配置），如需要则跳转到对应页面并结束当前 Activity
         val configManager: IConfigManager = get()
-        val startupFlowManager = StartupFlowManager(this, configManager)
-        val redirectIntent = startupFlowManager.checkStartupFlow()
-        if (redirectIntent != null) {
-            startActivity(redirectIntent)
-            finish()
-            return
-        }
+        lifecycleScope.launch {
+            val redirectIntent = withContext(Dispatchers.IO) {
+                StartupFlowManager(this@MainPortalActivity, configManager).checkStartupFlow()
+            }
+            if (redirectIntent != null) {
+                startupCheckPending = false
+                startActivity(redirectIntent)
+                finish()
+                return@launch
+            }
 
+            installPortalContent()
+            startupCheckPending = false
+        }
+    }
+
+    private fun installPortalContent() {
         setContent {
             TinaIDETheme {
                 Surface(
@@ -79,21 +98,11 @@ class MainPortalActivity :
                     color = MaterialTheme.colorScheme.background
                 ) {
                     MainPortalScreen(
-                        onOpenProject = { projectPath ->
-                            openProjectEditor(projectPath)
-                        },
-                        onNavigateToSettings = {
-                            SettingsActivity.start(this)
-                        },
-                        onNavigateToAbout = {
-                            SettingsActivity.start(this, SettingsRoute.About)
-                        },
-                        onNavigateToPlugins = {
-                            SettingsActivity.start(this, SettingsRoute.Plugins)
-                        },
-                        onNavigateToPackages = {
-                            SettingsActivity.start(this, SettingsRoute.Packages)
-                        },
+                        onOpenProject = ::openProjectEditor,
+                        onNavigateToSettings = { SettingsActivity.start(this) },
+                        onNavigateToAbout = { SettingsActivity.start(this, SettingsRoute.About) },
+                        onNavigateToPlugins = { SettingsActivity.start(this, SettingsRoute.Plugins) },
+                        onNavigateToPackages = { SettingsActivity.start(this, SettingsRoute.Packages) },
                         onNavigateToFavorites = {
                             startActivity(
                                 Intent(this, UserContentActivity::class.java).apply {
@@ -115,28 +124,18 @@ class MainPortalActivity :
     }
 
     private fun openProjectEditor(projectPath: String) {
+        if (projectPath.isBlank() || projectOpenJob?.isActive == true) return
         val projectSession: IProjectSession = get()
-        val projectLocationManager: ProjectLocationManager = get()
-        val storageManager: StorageManager = get()
-
-        try {
-            val projectDir = if (projectPath.isNotEmpty()) File(projectPath) else null
-            if (projectDir != null && projectDir.exists()) {
-                val access = storageManager.checkProjectDirAccess(projectDir)
-                if (!access.canAccess) {
-                    toastError((access.failureMessageResId ?: Strings.toast_open_failed).strOr(this))
-                    return
-                }
-                runCatching { projectLocationManager.registerProject(projectDir) }
-                // 打开项目
-                projectSession.openProject(projectPath)
-                // 跳转到编辑器
-                startActivity(Intent(this, MainActivity::class.java))
+        projectOpenJob = lifecycleScope.launch {
+            sessionCleanupJob?.join()
+            val result = withContext(Dispatchers.IO) {
+                runCatching { projectSession.openProject(File(projectPath).absolutePath) }
             }
-            // 如果没有指定项目路径，留在当前界面（底部导航项目页）
-        } catch (e: Exception) {
-            // 打开失败，留在当前界面
-            toastError(e.message ?: Strings.toast_open_failed.strOr(this))
+            result.onSuccess {
+                startActivity(Intent(this@MainPortalActivity, MainActivity::class.java))
+            }.onFailure { error ->
+                toastError(error.message ?: Strings.toast_open_failed.strOr(this@MainPortalActivity))
+            }
         }
     }
 }

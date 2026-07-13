@@ -1936,6 +1936,14 @@
   <string name="delete_file_confirm">Are you sure you want to delete file \"%1$s\"?\n\nThis action cannot be undone.</string>
   <string name="toast_deleted">Deleted %1$s</string>
   <string name="error_delete">Delete failed</string>
+  <string name="delete_scanning_progress">Scanning… %1$d items found</string>
+  <string name="delete_items_progress">Deleting %1$d / %2$d items</string>
+  <string name="delete_in_progress">Deleting…</string>
+  <string name="delete_cancelling">Stopping…</string>
+  <string name="delete_cancelled_summary">Deletion cancelled; %1$d items were deleted and the remaining content was preserved.</string>
+  <string name="delete_cancelled_restore_failed">Deletion stopped, but the remaining content could not be restored to its original path. Reopen the project and check its files.</string>
+  <string name="delete_failed_partial_summary">Deletion did not finish; %1$d items were deleted and the remaining content was preserved where possible.</string>
+  <string name="delete_failed_restore_failed">Deletion failed, and the remaining content could not be restored to its original path. Reopen the project and check its files.</string>
 
   <!-- TerminalToolbar -->
   <string name="terminal_shell_running">Shell Running</string>
@@ -3574,6 +3582,9 @@ kept=%3$d bytes
   <string name="run_config_sdl_orientation_portrait_desc">Force portrait mode</string>
   <string name="run_config_sdl_floating_log">Floating Log Window</string>
   <string name="run_config_sdl_floating_log_desc">Show a draggable real-time log window during fullscreen SDL graphical runtime for stdout/stderr output</string>
+  <string name="run_config_terminal_options">Terminal Run Options</string>
+  <string name="run_config_show_linker_warnings">Show Dynamic Linker Compatibility Warnings</string>
+  <string name="run_config_show_linker_warnings_desc">Hide the three harmless warnings produced when an older Android linker sees AArch64 Auth RELR tags by default; enable to show them unchanged</string>
 
   <!-- Floating overlay -->
   <string name="floating_overlay_exit">Exit</string>

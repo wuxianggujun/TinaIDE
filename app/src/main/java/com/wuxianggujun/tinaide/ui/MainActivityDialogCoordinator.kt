@@ -15,6 +15,7 @@ import com.wuxianggujun.tinaide.file.IProjectContext
 import com.wuxianggujun.tinaide.file.IProjectSession
 import com.wuxianggujun.tinaide.storage.ProjectDirStructure
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -79,10 +80,10 @@ class MainActivityDialogCoordinator(
             editorManager.persistStateSnapshot()
         }
         editorManager.closeAll(clearPersistentState = forgetSession)
-        if (forgetSession) {
-            clearCurrentProjectState()
-        }
-        withContext(Dispatchers.IO) {
+        withContext(NonCancellable + Dispatchers.IO) {
+            if (forgetSession) {
+                clearCurrentProjectState()
+            }
             projectSession.closeProject()
         }
         withContext(Dispatchers.Main) {
