@@ -30,13 +30,11 @@ class PluginMenuResolverTest {
         context = RuntimeEnvironment.getApplication()
         pluginDir = Files.createTempDirectory("plugin-menu-resolver").toFile()
         PluginCommandRegistry.clear()
-        PluginCommandRegistry.setRuntimeProvider { null }
     }
 
     @After
     fun tearDown() {
         PluginCommandRegistry.clear()
-        PluginCommandRegistry.setRuntimeProvider { null }
         pluginDir.deleteRecursively()
     }
 

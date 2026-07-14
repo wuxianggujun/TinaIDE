@@ -591,8 +591,38 @@ if ($contributions -is [pscustomobject]) {
 
     }
 
-    if ((Get-Items (Get-PropValue $contributions "panels")).Count -gt 0) {
-        Add-ValidationWarning "contributions.panels is declared but panels are not supported yet."
+    $panels = @(Get-Items (Get-PropValue $contributions "panels"))
+    if ($panels.Count -gt 0 -and $pluginType -notin @("script", "hybrid")) {
+        Add-ValidationError "contributions.panels is supported only for script or hybrid plugins."
+    }
+    if ($panels.Count -gt 16) {
+        Add-ValidationError "A plugin may declare at most 16 panels."
+    }
+    $panelIds = @()
+    $panelIndex = 0
+    foreach ($panel in $panels) {
+        $panelIndex += 1
+        if ($null -eq $panel -or $panel -isnot [pscustomobject]) {
+            Add-ValidationError "contributions.panels[$panelIndex] must be an object."
+            continue
+        }
+        $panelId = Get-Text (Get-PropValue $panel "id")
+        $panelTitle = Get-Text (Get-PropValue $panel "title")
+        if ([string]::IsNullOrWhiteSpace($panelId) -or $panelId.Length -gt 128 -or
+            $panelId -notmatch '^[a-zA-Z0-9][a-zA-Z0-9._-]*$') {
+            Add-ValidationError "contributions.panels[$panelIndex].id is invalid: $panelId"
+        } else {
+            $panelIds += $panelId
+        }
+        if ([string]::IsNullOrWhiteSpace($panelTitle) -or $panelTitle.Length -gt 128) {
+            Add-ValidationError (
+                "contributions.panels[$panelIndex].title is required and must not exceed 128 characters."
+            )
+        }
+    }
+    $duplicatePanelIds = Get-Duplicates $panelIds
+    if ($duplicatePanelIds.Count -gt 0) {
+        Add-ValidationError "Duplicate panel id(s) detected: $($duplicatePanelIds -join ', ')"
     }
 
     if ($supportsRuntimePluginCommands -and -not $hasCommandExecute) {
@@ -663,6 +693,44 @@ if ($contributions -is [pscustomobject]) {
         if (-not (Test-Path (Join-Path $root $iconSpec))) {
             Add-ValidationError "contributions.fileIcons[$fileIconIndex].icon does not exist: $iconSpec"
         }
+    }
+}
+
+$activationEvents = @()
+foreach ($activationEvent in (Get-Items (Get-PropValue $manifest "activationEvents"))) {
+    $activationEvents += Get-Text $activationEvent
+}
+if ($activationEvents.Count -gt 0 -and $pluginType -ne "lsp") {
+    Add-ValidationError "manifest.activationEvents is supported only for LSP plugins."
+}
+$duplicateActivationEvents = Get-Duplicates $activationEvents
+if ($duplicateActivationEvents.Count -gt 0) {
+    Add-ValidationError "Duplicate activation event(s) detected: $($duplicateActivationEvents -join ', ')"
+}
+$contributedLanguages = [System.Collections.Generic.HashSet[string]]::new()
+if ($contributions -is [pscustomobject]) {
+    foreach ($server in (Get-Items (Get-PropValue $contributions "languageServers"))) {
+        if ($server -isnot [pscustomobject]) {
+            continue
+        }
+        foreach ($language in (Get-Items (Get-PropValue $server "languages"))) {
+            $languageId = Get-Text $language
+            if (-not [string]::IsNullOrWhiteSpace($languageId)) {
+                $contributedLanguages.Add($languageId) | Out-Null
+            }
+        }
+    }
+}
+foreach ($activationEvent in $activationEvents) {
+    if ($activationEvent -notmatch '^onLanguage:([a-zA-Z0-9][a-zA-Z0-9._+-]*)$') {
+        Add-ValidationError (
+            "Unsupported activation event '$activationEvent'. " +
+            "apiVersion 1 supports only onLanguage:<languageId>."
+        )
+    } elseif (-not $contributedLanguages.Contains($Matches[1])) {
+        Add-ValidationError (
+            "Activation event language '$($Matches[1])' is not declared in contributions.languageServers."
+        )
     }
 }
 

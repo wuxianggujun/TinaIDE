@@ -7,6 +7,7 @@ import com.wuxianggujun.tinaide.core.linux.UnavailableLinuxEnvironmentProvider
 import com.wuxianggujun.tinaide.core.lsp.LspConnectionProvider
 import java.io.InputStream
 import java.io.OutputStream
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 import kotlinx.coroutines.runBlocking
 import timber.log.Timber
@@ -18,10 +19,13 @@ import timber.log.Timber
  */
 class PluginLspConnectionProvider(
     private val config: LspServerConfig,
+    val ownerPluginId: String = config.id,
     private val workingDir: String,
     private val projectRoot: String,
     private val linuxEnvironmentProvider: LinuxEnvironmentProvider = UnavailableLinuxEnvironmentProvider,
     private val onStderrLine: (String) -> Unit = {},
+    private val onUnexpectedExit: (String) -> Unit = {},
+    private val onOwnerStopped: () -> Unit = {},
 ) : LspConnectionProvider {
 
     companion object {
@@ -40,6 +44,8 @@ class PluginLspConnectionProvider(
     @Volatile
     private var stopping = false
 
+    private val ownerStopNotified = AtomicBoolean(false)
+
     override fun start() {
         val serverConfig = config.server
 
@@ -56,6 +62,7 @@ class PluginLspConnectionProvider(
     private fun startStdioServer(serverConfig: LspServerConnectionConfig) {
         val command = serverConfig.command
             ?: throw IllegalArgumentException("No command specified for stdio server")
+        validateCommand(command, serverConfig.args.orEmpty(), serverConfig.env.orEmpty())
 
         val args = (serverConfig.args ?: emptyList()).map { arg ->
             expandVariables(arg)
@@ -82,8 +89,13 @@ class PluginLspConnectionProvider(
             }
         }
 
-        Timber.tag(TAG).i("Starting LSP server [${config.id}]: $fullCommand")
-        Timber.tag(TAG).d("Working dir: $workingDir, Project root: $projectRoot")
+        Timber.tag(TAG).i(
+            "Starting plugin LSP owner=%s server=%s command=%s args=%d",
+            ownerPluginId,
+            config.id,
+            command.substringAfterLast('/'),
+            args.size,
+        )
 
         stopping = false
         check(linuxEnvironment.isAvailable()) { "Linux environment is unavailable" }
@@ -108,6 +120,7 @@ class PluginLspConnectionProvider(
             workDir = guestWorkingDir,
             env = mergedEnv
         )
+        PluginLspSessionRegistry.register(ownerPluginId, this)
 
         // 消费 stderr，防止缓冲区满导致阻塞
         val p = process ?: return
@@ -127,7 +140,14 @@ class PluginLspConnectionProvider(
                     Timber.tag(TAG).d("stderr reader stopped for ${config.id}: ${e.message}")
                 }
             }
+            if (!stopping && !p.isRunning()) {
+                onUnexpectedExit("LSP server '${config.id}' exited unexpectedly")
+            }
         }
+    }
+
+    private fun validateCommand(command: String, args: List<String>, env: Map<String, String>) {
+        require(LspServerCommandPolicy.isValid(command, args, env)) { "Invalid LSP command configuration" }
     }
 
     private fun verifyServerCommandAvailable(
@@ -190,14 +210,31 @@ class PluginLspConnectionProvider(
     override fun close() {
         Timber.tag(TAG).i("Closing LSP connection for ${config.id}")
         stopping = true
+        PluginLspSessionRegistry.unregister(ownerPluginId, this)
         runCatching { stderrThread?.interrupt() }
         stderrThread = null
         runCatching { process?.destroy() }
         process = null
     }
 
+    internal fun closeFromOwner() {
+        close()
+        if (ownerStopNotified.compareAndSet(false, true)) {
+            runCatching(onOwnerStopped)
+                .onFailure { error ->
+                    Timber.tag(TAG).w(error, "Owner stop callback failed for ${config.id}")
+                }
+        }
+    }
+
     /**
      * 检查进程是否存活
      */
     fun isAlive(): Boolean = process?.isRunning() == true
+
+    fun reportProtocolFailure(error: Throwable) {
+        if (stopping) return
+        val detail = error.message?.takeIf { it.isNotBlank() } ?: error::class.java.simpleName
+        onUnexpectedExit("LSP server '${config.id}' protocol failed: $detail")
+    }
 }

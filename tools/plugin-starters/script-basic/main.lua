@@ -2,6 +2,12 @@ function on_project_opened(data)
   local root_path = data and data.rootPath or "unknown"
   tina.log.info("Project opened: " .. root_path)
   tina.ui.showMessage("Project opened: " .. root_path)
+  tina.panels.setContent("status", "Project opened: " .. root_path)
+end
+
+function on_custom(data)
+  local message = data and data.message or "custom event"
+  tina.panels.appendContent("status", "\n" .. tostring(message))
 end
 
 function on_editor_saved(data)
@@ -176,6 +182,9 @@ tina.events.on("editor.saved", "on_editor_saved")
 tina.events.on("file.created", "on_file_created")
 tina.events.on("file.renamed", "on_file_renamed")
 tina.events.on("diagnostics.changed", "on_diagnostics_changed")
+tina.events.on("custom", "on_custom")
+tina.panels.setContent("status", "{{PROJECT_NAME}} loaded")
+tina.events.emit("custom", { message = "Custom event delivered" })
 log_workspace_snapshot()
 log_active_editor_snapshot()
 

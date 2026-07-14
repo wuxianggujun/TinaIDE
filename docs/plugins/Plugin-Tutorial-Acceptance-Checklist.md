@@ -96,8 +96,8 @@
 3. 预期：标题显示“新建插件项目”。
 4. 预期：模板列表只包含插件模板：
    - `Tina Config Plugin`
-   - `Tina Script Command Plugin (Beta)`
-   - `Tina Script Plugin (Beta)`
+   - `Tina Script Command Plugin`
+   - `Tina Script Plugin`
    - `Tina LSP Plugin`
 5. 预期：插件模板卡片显示“插件”标识。
 6. 预期：配置页隐藏 C++ 标准、NDK API 这类无关字段。

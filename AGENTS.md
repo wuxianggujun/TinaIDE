@@ -145,7 +145,7 @@ TinaIDE 是 Android 上的 C/C++ IDE。当前默认运行链路是 **native tina
 - App 内帮助不直接读取 `docs/`；面向用户的帮助内容需同步检查 `feature/help/src/main/assets/help/*.md`。
 - RikkaHub 的模型、渠道和 API Key 由 `external/rikkahub` 自身数据层维护；TinaIDE 主仓库禁止新增旁路 API Key 存储、日志、导出配置或崩溃上报。
 - 项目、日志、缓存、配置路径优先走 `ProjectPaths`；Host/Guest 文件访问必须走白名单校验。
-- 修改 `tools/plugin-starters/**` 后必须同步检查 bundled starter zip：`app/src/main/assets/bundled_plugins/tinaide.plugin.starters/templates/*.zip`。
+- 修改 `tools/plugin-starters/**` 后必须重新构建并检查 starter zip：`tools/plugin-starters/dist/tinaide.plugin.starters/templates/*.zip`。
 
 **完成修改后的验证清单**：
 

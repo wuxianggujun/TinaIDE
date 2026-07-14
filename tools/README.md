@@ -25,5 +25,5 @@
 ## 状态说明
 
 - 工具脚本文档属于维护者工具文档，不能直接覆盖当前 App 行为说明。
-- 修改 `tools/plugin-starters/**` 后，必须同步检查 `app/src/main/assets/bundled_plugins/tinaide.plugin.starters/templates/*.zip`。
+- 修改 `tools/plugin-starters/**` 后，必须重新运行 `tools/plugin-starters/build-bundled-plugin-starters.ps1`，并检查 `tools/plugin-starters/dist/tinaide.plugin.starters/templates/*.zip`。
 - 涉及构建事实时，优先校对 `tools/build-apk.ps1`、`app/build.gradle.kts`、`build-logic/convention/**` 和 `docs/documentation-status.md`。

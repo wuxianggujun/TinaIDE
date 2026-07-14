@@ -159,7 +159,14 @@ data class LspPluginInfo(
     val toolchainConfigs: List<LspToolchainConfig>,
     /** 激活事件列表 */
     val activationEvents: List<String>
-)
+) {
+    fun supportsLanguageActivation(languageId: String): Boolean {
+        if (activationEvents.isEmpty()) return true
+        return activationEvents.any { event ->
+            event.equals("onLanguage:$languageId", ignoreCase = true)
+        }
+    }
+}
 
 /**
  * LSP 插件安装状态

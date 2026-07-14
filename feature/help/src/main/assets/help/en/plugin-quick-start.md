@@ -79,7 +79,7 @@ For a plugin project, Run:
 3. hot-installs it into TinaIDE;
 4. refreshes installed-plugin state.
 
-Normally the IDE does not need to restart.
+Normally the IDE does not need to restart. A newly installed plugin remains disabled; open its details, review permissions, and explicitly enable it.
 
 ## 6. Package and verify
 
@@ -91,6 +91,8 @@ Then open **Settings → Plugins → Install plugin from file** and install the 
 
 Errors block installation. Warnings can be confirmed. Script and hybrid plugins may require a separate permission confirmation.
 
+Installation uses staging and an atomic swap. A failed upgrade of a healthy enabled plugin restores the previous version. Package size, entry count, expanded size, per-entry size, and compression ratio are bounded before activation.
+
 ## Troubleshooting
 
 - No plugin template: install or enable TinaIDE Plugin Starters.
@@ -99,6 +101,8 @@ Errors block installation. Warnings can be confirmed. Script and hybrid plugins 
 - Theme installed but unchanged: select the plugin theme in its details or Editor settings.
 
 ## Continue learning
+
+Advanced script and hybrid plugins may declare optionalPermissions for on-demand grants. They may also declare contributions.panels and publish bounded plain text through tina.panels.setContent, appendContent, and clear.
 
 - [Plugin settings](plugins-settings.md)
 - [Create a project](create-project.md)

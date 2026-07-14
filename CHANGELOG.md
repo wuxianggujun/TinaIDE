@@ -31,6 +31,25 @@
 
 ## [Unreleased]
 
+### Changed
+
+- 将 `script` / `hybrid` 插件的 Lua/LuaJava JNI 执行迁移到非导出的 isolated process，宿主通过有界 Binder 协议和 capability gateway 提供 API v1；危险 Lua 库、Java 反射、native module 和越界 `require()` 均被禁用。
+- 插件生命周期新增期望启用态、有效状态、持久化故障/执行 journal 和自动隔离；安装升级改为可恢复的 staging/backup/atomic rename，新装默认禁用，并统一 Zip、Lua、日志、Binder、Network 与 PSS 资源上限。
+- LSP session 增加插件 owner，插件禁用、隔离、升级或卸载时关闭对应进程和编辑器连接；设置页同步显示等待授权、自动隔离和 runtime 不可用状态。
+- `contributions.panels` 与 `tina.panels.*` 进入 apiVersion 1 稳定契约，脚本可向编辑器底部插件面板发布有界纯文本；`optionalPermissions` 支持详情页按需授权/撤销，`activationEvents` 收敛为 LSP 的 `onLanguage:<id>` 语义。
+- Host capability gateway 拆出数据能力、SQLite 与 Binder 大载荷存储边界，运行时死亡会统一清理数据库、限流器、临时载荷和面板内容。
+
+### Fixed
+
+- 修复插件加载或回调执行期间禁用/卸载仍可能晚到激活、runtime 空闲死亡后健康插件不恢复，以及启动/回调故障在重启后反复触发的问题。
+- 修复 Lua `tina.config.get(key, fallback)` fallback 语义丢失，并在 Binder 返回值超过 256 KiB 时返回可归因的 `RESOURCE_LIMIT`，避免超大 transaction 直接破坏 runtime 通道。
+- 修复 `tina.events.emit` 空实现、未知事件可注册、重复订阅和插件可伪造宿主事件的问题；自定义事件现在只定向派发给当前插件。
+- 修复 LSP owner 已停止后编辑器仍显示 `LSP Ready`，以及旧 attach callback 可能干扰新会话的问题。
+
+### Tests
+
+- 新增面板内容隔离/UTF-8 上限、manifest panels/activationEvents 校验、optionalPermissions 显式授权、事件契约、LSP owner-stop 代际和底部面板可见性测试。
+
 ## [0.18.11] - 2026-07-13
 
 ### Changed

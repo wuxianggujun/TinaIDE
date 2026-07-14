@@ -6,6 +6,7 @@ internal enum class AppProcessRole {
     HOST,
     CRASH,
     TOOLCHAIN,
+    PLUGIN_RUNTIME,
     USER_RUNTIME,
     OTHER,
 }
@@ -19,6 +20,7 @@ internal enum class AppProcessRole {
 internal object AppProcessRoleClassifier {
     private const val CRASH_PROCESS_SUFFIX = ":crash"
     private const val TOOLCHAIN_PROCESS_SUFFIX = ":toolchain"
+    private const val PLUGIN_RUNTIME_PROCESS_SUFFIX = ":plugin_runtime"
 
     fun classify(packageName: String, processName: String): AppProcessRole {
         if (packageName.isBlank() || processName.isBlank()) return AppProcessRole.OTHER
@@ -26,6 +28,7 @@ internal object AppProcessRoleClassifier {
             CrashLogPrivacyClassifier.isHostAppProcess(packageName, processName) -> AppProcessRole.HOST
             processName == packageName + CRASH_PROCESS_SUFFIX -> AppProcessRole.CRASH
             processName == packageName + TOOLCHAIN_PROCESS_SUFFIX -> AppProcessRole.TOOLCHAIN
+            processName == packageName + PLUGIN_RUNTIME_PROCESS_SUFFIX -> AppProcessRole.PLUGIN_RUNTIME
             CrashLogPrivacyClassifier.isUserRuntimeProcess(packageName, processName) -> AppProcessRole.USER_RUNTIME
             else -> AppProcessRole.OTHER
         }

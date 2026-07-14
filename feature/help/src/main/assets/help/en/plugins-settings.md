@@ -10,6 +10,7 @@ The list can show:
 - disabled and bundled status;
 - theme-plugin status;
 - LSP dependency ready or not ready.
+- waiting for permission, automatically quarantined, or runtime unavailable.
 
 The overflow menu provides:
 
@@ -19,13 +20,19 @@ The overflow menu provides:
 
 ## Plugin details
 
-Details include the enable switch, description, ID, version, type, minimum app version, author, repository, license, install directory, and a summary of contributed themes or menus.
+Details include the enable switch, description, ID, version, type, minimum app version, author, repository, license, install directory, contributed themes or menus, required and optional permissions, and current grants.
 
 Theme plugins expose a **Plugin theme** action. LSP plugins can expose dependency installation and readiness state.
 
+New plugins are installed disabled and never execute merely because the list refreshes. Enabling a script plugin requires its permissions. A quarantined plugin shows a sanitized fault phase and time; re-enabling requires an explicit risk confirmation, and another attributable failure quarantines it again.
+
+Optional permissions are never granted by the declaration alone. Grant or revoke each one in the **Optional permission grants** card. Future related API calls are denied immediately after revocation.
+
 ## Install from file
 
-Select a .tinaplug package with the system picker. Script and hybrid plugins that request user-approved permissions display a confirmation before installation. Rejecting the request also removes the temporary import.
+Select a .tinaplug package with the system picker. Script and hybrid plugins that request user-approved permissions display a confirmation before installation. Rejecting the request also removes the temporary import. A successful new installation remains disabled until you explicitly enable it.
+
+When an enabled script or hybrid plugin contributes panels, the editor shows a **Plugins** bottom tab. Panels render bounded plain text only and are cleared after disable, uninstall, quarantine, or runtime failure.
 
 ## Manage and uninstall
 
@@ -44,12 +51,15 @@ The log screen supports:
 
 Check logs when a plugin is enabled but its contribution does not work.
 
+Automatic quarantine applies to attributable startup/callback failures, execution limits, runtime crashes, invalid contributions, and an LSP server that crashes after a successful start. Permission denial, normal network failures, and missing Linux/toolchain dependencies do not quarantine a plugin.
+
 ## Troubleshooting
 
 1. Confirm that the plugin is enabled.
 2. Select its theme if it contributes one.
 3. Install required LSP tooling for an LSP plugin.
 4. Review plugin logs.
+5. If the plugin is quarantined, review its fault details before choosing **Re-enable** or install a strictly newer version.
 
 ## Related documentation
 

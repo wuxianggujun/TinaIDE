@@ -4,10 +4,12 @@ import android.content.Context
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.str
 import com.wuxianggujun.tinaide.core.serialization.JsonSerializer
+import com.wuxianggujun.tinaide.plugin.script.RateLimiter
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CoroutineScope
@@ -95,7 +97,10 @@ class PluginLogManager private constructor(private val context: Context) {
     companion object {
         private const val TAG = "PluginLogManager"
         private const val MAX_LOG_ENTRIES = 5000 // 内存中最多保存5000条日志
-        private const val MAX_PERSISTED_ENTRIES = 10000 // 持久化最多保存10000条日志
+        private const val MAX_PERSISTED_ENTRIES = 5000
+        private const val MAX_LOGS_PER_PLUGIN = 1000
+        private const val MAX_LOG_BYTES = 8 * 1024
+        private const val MAX_LOGS_PER_MINUTE = 120
         private const val LOG_FILE_NAME = "plugin_logs.json"
 
         @Volatile
@@ -111,6 +116,7 @@ class PluginLogManager private constructor(private val context: Context) {
 
     private val idGenerator = AtomicLong(0)
     private val logs = CopyOnWriteArrayList<PluginLogEntry>()
+    private val logRateLimiters = ConcurrentHashMap<String, RateLimiter>()
     private val _logsFlow = MutableStateFlow<List<PluginLogEntry>>(emptyList())
     val logsFlow: StateFlow<List<PluginLogEntry>> = _logsFlow.asStateFlow()
 
@@ -134,19 +140,30 @@ class PluginLogManager private constructor(private val context: Context) {
         eventCode: String? = null,
         attributes: Map<String, String> = emptyMap(),
     ) {
+        val limiter = logRateLimiters.computeIfAbsent(pluginId) {
+            RateLimiter(MAX_LOGS_PER_MINUTE, 60_000L)
+        }
+        if (!limiter.tryAcquire()) return
         val entry = PluginLogEntry(
             id = idGenerator.incrementAndGet(),
             timestamp = System.currentTimeMillis(),
             pluginId = pluginId,
             pluginName = pluginName,
             level = level,
-            message = message,
-            stackTrace = stackTrace,
+            message = truncateUtf8(sanitizeDiagnosticText(message), MAX_LOG_BYTES),
+            stackTrace = stackTrace?.let(::sanitizeDiagnosticText)?.let { truncateUtf8(it, MAX_LOG_BYTES) },
             eventCode = eventCode,
-            attributes = attributes,
+            attributes = attributes.mapValues { (_, value) -> truncateUtf8(sanitizeDiagnosticText(value), 1024) },
         )
 
         logs.add(entry)
+
+        while (logs.count { it.pluginId == pluginId } > MAX_LOGS_PER_PLUGIN) {
+            logs.indexOfFirst { it.pluginId == pluginId }
+                .takeIf { it >= 0 }
+                ?.let(logs::removeAt)
+                ?: break
+        }
 
         // 限制内存中日志数量
         while (logs.size > MAX_LOG_ENTRIES) {
@@ -294,6 +311,7 @@ class PluginLogManager private constructor(private val context: Context) {
      */
     fun clearForPlugin(pluginId: String) {
         logs.removeAll { it.pluginId == pluginId }
+        logRateLimiters.remove(pluginId)
         _logsFlow.value = logs.toList()
         schedulePersistedSave()
     }
@@ -444,7 +462,14 @@ class PluginLogManager private constructor(private val context: Context) {
                 }
 
                 logs.clear()
-                logs.addAll(entries.takeLast(MAX_LOG_ENTRIES))
+                logs.addAll(
+                    entries
+                        .groupBy { it.pluginId }
+                        .values
+                        .flatMap { pluginEntries -> pluginEntries.takeLast(MAX_LOGS_PER_PLUGIN) }
+                        .sortedBy { it.timestamp }
+                        .takeLast(MAX_LOG_ENTRIES)
+                )
                 _logsFlow.value = logs.toList()
 
                 Timber.tag(TAG).i("Loaded ${logs.size} plugin logs from file")
@@ -454,5 +479,28 @@ class PluginLogManager private constructor(private val context: Context) {
                 runCatching { logFile.delete() }
             }
         }
+    }
+
+    private fun sanitizeDiagnosticText(value: String): String = value
+        .replace(Regex("/data/(?:data|user/\\d+)/[^/\\s]+(?:/[^\\s]*)?"), "<private-path>")
+        .replace(Regex("(?i)\\b[A-Z]:[\\\\/](?:[^\\s,;]+[\\\\/])*[^\\s,;]*"), "<private-path>")
+        .replace(Regex("(?<![:/A-Za-z0-9])/(?:[^\\s,;:()\\[\\]]+/)*[^\\s,;:()\\[\\]]+"), "<private-path>")
+        .replace(Regex("(?i)(token|api[_-]?key|authorization)\\s*[:=]\\s*[^\\s,;]+"), "$1=<redacted>")
+
+    private fun truncateUtf8(value: String, maxBytes: Int): String {
+        if (value.toByteArray(Charsets.UTF_8).size <= maxBytes) return value
+        val result = StringBuilder()
+        var index = 0
+        var usedBytes = 0
+        while (index < value.length) {
+            val codePoint = value.codePointAt(index)
+            val text = String(Character.toChars(codePoint))
+            val bytes = text.toByteArray(Charsets.UTF_8).size
+            if (usedBytes + bytes > maxBytes) break
+            result.append(text)
+            usedBytes += bytes
+            index += Character.charCount(codePoint)
+        }
+        return result.toString()
     }
 }

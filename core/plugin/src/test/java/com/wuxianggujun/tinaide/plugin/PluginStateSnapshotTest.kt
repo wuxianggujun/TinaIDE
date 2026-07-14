@@ -30,14 +30,21 @@ class PluginStateSnapshotTest {
                     enabled = true,
                     capabilities = listOf(" featureA ", "", PluginCapabilities.LINUX_ENVIRONMENT),
                 ),
+                installedPlugin(
+                    id = "script.panels",
+                    version = "1.0.0",
+                    type = PluginTypes.SCRIPT,
+                    enabled = true,
+                    panels = listOf(PluginPanel("status", "Status")),
+                ),
             )
         )
 
         assertThat(snapshot.installedPluginIds)
-            .containsExactly("system.disabled", "config.enabled", "system.enabled")
+            .containsExactly("system.disabled", "config.enabled", "system.enabled", "script.panels")
             .inOrder()
         assertThat(snapshot.enabledPluginIds)
-            .containsExactly("config.enabled", "system.enabled")
+            .containsExactly("config.enabled", "system.enabled", "script.panels")
             .inOrder()
         assertThat(snapshot.installedVersions)
             .containsExactly(
@@ -47,9 +54,19 @@ class PluginStateSnapshotTest {
                 "2.3.4",
                 "system.enabled",
                 "3.0.0",
+                "script.panels",
+                "1.0.0",
             )
         assertThat(snapshot.enabledCapabilities)
             .containsExactly("featureA", PluginCapabilities.LINUX_ENVIRONMENT)
+        assertThat(snapshot.resolvedPanels).containsExactly(
+            ResolvedPluginPanel(
+                pluginId = "script.panels",
+                pluginName = "script.panels",
+                panelId = "status",
+                title = "Status",
+            ),
+        )
         assertThat(snapshot.isInstalled("system.disabled")).isTrue()
         assertThat(snapshot.isEnabled("system.disabled")).isFalse()
         assertThat(snapshot.isEnabled("system.enabled")).isTrue()
@@ -62,6 +79,7 @@ class PluginStateSnapshotTest {
         type: String,
         enabled: Boolean,
         capabilities: List<String>? = null,
+        panels: List<PluginPanel>? = null,
     ): InstalledPlugin = InstalledPlugin(
         manifest = PluginManifest(
             id = id,
@@ -69,6 +87,7 @@ class PluginStateSnapshotTest {
             version = version,
             type = type,
             capabilities = capabilities,
+            contributions = panels?.let { PluginContributions(panels = it) },
         ),
         directory = File(id),
         enabled = enabled,

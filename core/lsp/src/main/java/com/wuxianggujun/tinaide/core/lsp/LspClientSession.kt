@@ -3,6 +3,7 @@ package com.wuxianggujun.tinaide.core.lsp
 import android.os.Process
 import java.io.File
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CompletionException
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
@@ -92,6 +93,7 @@ class LspClientSession(
     private val diagnosticsConsumer: (fileUri: String, diagnostics: List<org.eclipse.lsp4j.Diagnostic>) -> Unit,
     private val registrationConsumer: (registrations: List<Registration>) -> Unit = {},
     private val unregistrationConsumer: (unregistrations: List<Unregistration>) -> Unit = {},
+    private val protocolFailureConsumer: (Throwable) -> Unit = {},
     private val tag: String = "LspClientSession",
 ) : LspSession,
     AutoCloseable {
@@ -177,7 +179,7 @@ class LspClientSession(
                 launcher = createdLauncher
                 languageServer = server
                 remoteEndpoint = createdLauncher.remoteEndpoint
-                listenFuture = createdLauncher.startListening()
+                listenFuture = createdLauncher.startListening().also(::monitorProtocolListener)
                 Timber.tag(tag).i("connect: launcher listening, sending initialize request...")
 
                 val initializeParams = InitializeParams().apply {
@@ -518,6 +520,17 @@ class LspClientSession(
 
         runCatching { connectionProvider.close() }
         executor.shutdownNow()
+    }
+
+    private fun monitorProtocolListener(future: Future<*>) {
+        (future as? CompletableFuture<*>)?.whenComplete { _, error ->
+            if (error == null || closed.get()) return@whenComplete
+            val cause = (error as? CompletionException)?.cause ?: error
+            runCatching { protocolFailureConsumer(cause) }
+                .onFailure { callbackError ->
+                    Timber.tag(tag).w(callbackError, "LSP protocol failure callback failed")
+                }
+        }
     }
 
     private fun activateDocumentLocked(

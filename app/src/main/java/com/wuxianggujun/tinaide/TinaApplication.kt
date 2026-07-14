@@ -58,7 +58,9 @@ class TinaApplication : Application() {
     // 应用级协程作用域（用于后台任务）
     // 使用 Dispatchers.Default 而非 Dispatchers.Main：后台任务（ServerConfigSync、Auth、BundledPackages 等）
     // 不需要在主线程排队，子任务按需通过 withContext(Dispatchers.IO) 切换到 IO 线程。
-    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val applicationScope by lazy {
+        CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    }
 
     /**
      * attachBaseContext 中初始化 xCrash
@@ -72,6 +74,11 @@ class TinaApplication : Application() {
         // 初始化 xCrash（Native 崩溃捕获）
         // 必须在 attachBaseContext 中尽早调用
         val processName = Application.getProcessName()
+        val processRole = AppProcessRoleClassifier.classify(packageName, processName)
+        if (processRole == AppProcessRole.PLUGIN_RUNTIME) {
+            // The isolated Lua process must not initialize xCrash, logging, storage or host services.
+            return
+        }
         // 主进程和原生运行容器进程弹出崩溃界面。
         // SDL 用户 native 程序运行在隔离进程，崩溃时只结束运行容器，并由 :crash 进程展示日志。
         // 用户项目/插件运行日志属于用户隐私，只本地保存与展示，不上传到 TinaIDE 服务器。
@@ -103,7 +110,6 @@ class TinaApplication : Application() {
         NativeCrashHandler.install(this)
 
         // 初始化 Timber 日志框架（尽早初始化以捕获所有日志）
-        val processRole = AppProcessRoleClassifier.classify(packageName, processName)
         val logsRoot = com.wuxianggujun.tinaide.storage.ProjectPaths.getLogsRoot(this)
         TinaTimber.initialize(
             context = this,
@@ -124,8 +130,8 @@ class TinaApplication : Application() {
         super.onCreate()
         val processName = Application.getProcessName()
         val processRole = AppProcessRoleClassifier.classify(packageName, processName)
-        if (processRole == AppProcessRole.TOOLCHAIN) {
-            Timber.tag(TAG).i("Toolchain process detected, skipping heavy app initialization")
+        if (processRole == AppProcessRole.TOOLCHAIN || processRole == AppProcessRole.PLUGIN_RUNTIME) {
+            Timber.tag(TAG).i("Restricted process detected, skipping app initialization: %s", processRole)
             return
         }
 

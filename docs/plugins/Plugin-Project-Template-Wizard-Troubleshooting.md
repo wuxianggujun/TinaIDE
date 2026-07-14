@@ -212,7 +212,7 @@
 1. **教程快捷入口**
    - 打开设置页帮助中心，进入“插件开发快速开始”。
    - 点击“创建插件项目”。
-   - 预期：进入“新建插件项目”，只看到 `Tina Config Plugin`、`Tina Script Command Plugin (Beta)`、`Tina Script Plugin (Beta)`、`Tina LSP Plugin`。
+   - 预期：进入“新建插件项目”，只看到 `Tina Config Plugin`、`Tina Script Command Plugin`、`Tina Script Plugin`、`Tina LSP Plugin`。
 
 2. **项目页通用入口**
    - 回到项目页，点击右下角 **+**。

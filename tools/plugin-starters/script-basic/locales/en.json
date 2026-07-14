@@ -12,6 +12,11 @@
       "com.example.{{PROJECT_NAME}}.wrapSelection": {
         "title": "Wrap Selection"
       }
+    },
+    "panels": {
+      "status": {
+        "title": "Plugin Status"
+      }
     }
   }
 }

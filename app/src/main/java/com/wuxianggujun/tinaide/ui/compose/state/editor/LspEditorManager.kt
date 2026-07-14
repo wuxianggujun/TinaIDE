@@ -1388,9 +1388,10 @@ class LspEditorManager(
                     eventCode = "lsp.server.start_failed",
                 )
             }
-        ) {
+        ) { onOwnerStopped ->
             PluginLspConnectionProvider(
                 config = serverConfig,
+                ownerPluginId = pluginInfo.pluginId,
                 workingDir = projectRoot,
                 projectRoot = projectRoot,
                 linuxEnvironmentProvider = linuxEnvironmentProvider,
@@ -1411,7 +1412,11 @@ class LspEditorManager(
                         message = message,
                         eventCode = "lsp.server.stderr",
                     )
-                }
+                },
+                onUnexpectedExit = { message ->
+                    pluginManager.reportUnexpectedServerExit(pluginInfo.pluginId, message)
+                },
+                onOwnerStopped = onOwnerStopped,
             )
         }
     }
@@ -1472,6 +1477,9 @@ class LspEditorManager(
             },
             registrationConsumer = { registrations -> onCapabilityRegistered(registrations) },
             unregistrationConsumer = { unregistrations -> onCapabilityUnregistered(unregistrations) },
+            protocolFailureConsumer = { error ->
+                (provider as? PluginLspConnectionProvider)?.reportProtocolFailure(error)
+            },
         )
     }
 
@@ -1839,7 +1847,7 @@ class LspEditorManager(
         warmupCompletionOnReady: Boolean = false,
         onAttachSuccess: (() -> Unit)? = null,
         onAttachFailure: ((Throwable) -> Unit)? = null,
-        providerFactory: suspend () -> LspConnectionProvider,
+        providerFactory: suspend (onOwnerStopped: () -> Unit) -> LspConnectionProvider,
     ): Boolean {
         Timber.tag(TAG).i("startAttach: file=%s, kind=%s, languageId=%s, remote=%b", file.name, kind, languageId, remote)
         releaseSession(tabId, clearBinding = false)
@@ -1847,11 +1855,25 @@ class LspEditorManager(
         synchronized(stateLock) { attachTokenCache[tabId] = token }
         updateLspStatus(tabId, EditorStatus.Connecting)
         if (remote) RemoteLspConfigManager.updateConnectionState(RemoteLspConnectionState.CONNECTING)
+        val ownerStopHandler = PluginLspOwnerStopHandler(
+            expectedAttachToken = token,
+            currentAttachToken = { synchronized(stateLock) { attachTokenCache[tabId] } },
+            releaseSession = { releaseSession(tabId, clearBinding = false) },
+            markNoLsp = { updateLspStatus(tabId, EditorStatus.NoLsp) },
+        )
+
+        val onOwnerStopped: () -> Unit = {
+            lspScope.launch {
+                if (!ownerStopHandler.handle()) return@launch
+                Timber.tag(TAG).i("Plugin LSP owner stopped; releasing session for %s", file.name)
+            }
+            Unit
+        }
 
         lspScope.launch {
             runCatchingPreservingCancellation {
                 Timber.tag(TAG).d("startAttach: creating connection provider...")
-                val provider = providerFactory()
+                val provider = providerFactory(onOwnerStopped)
                 Timber.tag(TAG).d("startAttach: provider created: %s", provider.javaClass.simpleName)
                 val session = createLspClientSession(provider, workspaceRoot, file)
                 val snapshot = runCatching { textProvider() }.getOrDefault("")

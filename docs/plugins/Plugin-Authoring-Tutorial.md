@@ -1,6 +1,6 @@
 # TinaIDE 插件编写教程（基于模板）
 
-> 文档更新：2026-04-26
+> 文档更新：2026-07-13
 > 适用对象：第一次为 TinaIDE 编写插件的开发者
 > 说明：开始前请先从插件市场 / Registry 安装并启用 `TinaIDE Plugin Starters`；如果你是第一次写插件，先做 `config` 插件，先把主题和代码片段跑通。
 
@@ -35,8 +35,8 @@
 3. 确认向导标题是“新建插件项目”
 4. 选择以下模板之一：
    - `Tina Config Plugin`
-   - `Tina Script Command Plugin (Beta)`
-   - `Tina Script Plugin (Beta)`
+   - `Tina Script Command Plugin`
+   - `Tina Script Plugin`
    - `Tina LSP Plugin`
 5. 输入项目名
 6. 创建项目
@@ -200,26 +200,28 @@ my-config-plugin/
 
 ## 5. 如果你写的是 `script` 插件
 
-基于当前源码现状，脚本运行时、权限模型和宿主 API 模块已经具备基础实现，
-但脚本模板仍然更适合作为 **Beta / 进阶能力** 提供。
+脚本插件仍属于进阶能力，但 Lua 已固定运行在独立的 isolated process 中；
+死循环、Lua/JNI crash 和资源越限不会直接拖垮宿主进程。
 
 所以更稳妥的发布建议是：
 
-- 先把脚本模板标成 **Beta**
+- 明确脚本模板受 isolated process、权限与资源上限约束
 - 先面向高级用户或内部测试开放
-- 等脚本 API、权限提示和调试体验进一步稳定后，再把它放进正式主线
+- 不依赖 `io`、`debug`、`loadfile/dofile`、native `loadlib` 或 Java/luajava 反射
+- 多文件脚本只用受限 `require("module.name")` 加载插件目录内的 `.lua` 文件
+- 把自动隔离、重新启用确认和资源上限纳入测试
 
 ### 5.1 先选哪一个脚本模板
 
 当前脚本模板已经拆成两个方向：
 
-- `Tina Script Command Plugin (Beta)`
+- `Tina Script Command Plugin`
   适合命令注册、编辑器上下文菜单、活动编辑器读写
-- `Tina Script Plugin (Beta)`
+- `Tina Script Plugin`
   适合事件监听、工作区读写、诊断快照、自动化流程
 
 如果你现在的目标是“先做出一个能点、能写、能调试的 IDE 命令插件”，
-优先选 `Tina Script Command Plugin (Beta)`。
+优先选 `Tina Script Command Plugin`。
 
 ### 5.2 先从“最小权限”开始
 
@@ -435,7 +437,7 @@ register_command(command_ids.wrap_selection, "on_wrap_selection", "Wrap Selectio
 - `tina.editor.insertText(...)`
 - `tina.editor.replaceSelection(...)`
 
-如果你需要更完整的自动化能力，再切到 `Tina Script Plugin (Beta)`，继续使用：
+如果你需要更完整的自动化能力，再切到 `Tina Script Plugin`，继续使用：
 
 - `tina.events`
 - `tina.diagnostics`
@@ -454,7 +456,7 @@ register_command(command_ids.wrap_selection, "on_wrap_selection", "Wrap Selectio
 
 ### 5.7 当前推荐监听的事件
 
-下面这些事件更适合 `Tina Script Plugin (Beta)` 这种自动化 starter：
+下面这些事件更适合 `Tina Script Plugin` 这种自动化 starter：
 
 - `project.opened`
 - `project.closed`
@@ -576,7 +578,7 @@ LSP 插件本质上只有两块：
 - **运行**：校验、打包，并热安装到当前 TinaIDE
 - **调试**：插件项目暂不接入断点调试；脚本插件先通过日志和宿主 API 验证
 
-安装后默认 **不需要重启 IDE**。宿主会刷新插件列表和启用态：
+安装后默认 **不需要重启 IDE**。新安装插件默认禁用，必须先在详情页明确启用；升级会保留原有启用意图。宿主会刷新插件列表和启用态：
 
 - 配置类贡献（主题、片段、菜单、文件图标）会随插件状态刷新
 - 脚本 / LSP 这类有运行时的插件，会由对应管理器按启用态同步
@@ -590,6 +592,8 @@ LSP 插件本质上只有两块：
 点击“运行”
         ↓
 IDE 校验 + 打包 + 热安装
+        ↓
+到插件详情页确认权限并启用（首次安装）
         ↓
 看插件日志 / 菜单 / 主题 / LSP 是否生效
 ```
@@ -663,6 +667,8 @@ Write-Host "Packed to $outFile"
 `networkHosts` 等有错误会阻断安装，有警告会提示后允许继续。
 
 安装后建议按下面顺序验证：
+
+新安装插件不会自动启动。先进入详情页检查权限和状态，再主动启用。若详情页显示“已自动隔离”，先查看脱敏故障阶段和时间；只有确认风险后才重新启用。
 
 ### 8.1 Config 插件验证
 
@@ -744,7 +750,7 @@ Write-Host "Packed to $outFile"
 如果这份教程要配套你即将做的模板插件一起发布，我建议：
 
 - 教程正文主线先讲 `config` 和 `lsp`
-- `script` 放到进阶章节或 Beta 章节
+- `script` 放到进阶章节，并明确权限、隔离与资源边界
 - 所有示例都控制在“最小可运行”
 - 高级能力放到补充文档，不要塞进入门教程
 

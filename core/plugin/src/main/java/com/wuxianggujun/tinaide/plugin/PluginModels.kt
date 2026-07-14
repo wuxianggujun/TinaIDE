@@ -228,6 +228,22 @@ data class PluginPanel(
     val icon: String? = null
 )
 
+/** A manifest-declared text panel exposed by an enabled script or hybrid plugin. */
+data class ResolvedPluginPanel(
+    val pluginId: String,
+    val pluginName: String,
+    val panelId: String,
+    val title: String,
+    val icon: String? = null,
+) {
+    val key: PluginPanelKey = PluginPanelKey(pluginId, panelId)
+}
+
+data class PluginPanelKey(
+    val pluginId: String,
+    val panelId: String,
+)
+
 data class ResolvedPluginFileIcon(
     val pluginId: String,
     val iconSpec: String,

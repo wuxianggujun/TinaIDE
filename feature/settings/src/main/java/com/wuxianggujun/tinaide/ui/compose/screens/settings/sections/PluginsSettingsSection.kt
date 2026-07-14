@@ -73,6 +73,7 @@ import com.wuxianggujun.tinaide.plugin.PluginDiagnosticSeverity
 import com.wuxianggujun.tinaide.plugin.PluginDiagnosticsReport
 import com.wuxianggujun.tinaide.plugin.PluginDiagnosticsSnapshotFactory
 import com.wuxianggujun.tinaide.plugin.PluginDoctor
+import com.wuxianggujun.tinaide.plugin.PluginFaultRecord
 import com.wuxianggujun.tinaide.plugin.PluginHostLogSources
 import com.wuxianggujun.tinaide.plugin.PluginLogLevel
 import com.wuxianggujun.tinaide.plugin.PluginLogManager
@@ -85,6 +86,7 @@ import com.wuxianggujun.tinaide.plugin.lsp.LspPluginInfo
 import com.wuxianggujun.tinaide.plugin.lsp.LspPluginInstallState
 import com.wuxianggujun.tinaide.plugin.lsp.LspPluginManager
 import com.wuxianggujun.tinaide.plugin.lsp.ToolchainInstallState
+import com.wuxianggujun.tinaide.plugin.script.PermissionLevel
 import com.wuxianggujun.tinaide.plugin.script.PluginPermission
 import com.wuxianggujun.tinaide.plugin.script.PluginPermissionManager
 import com.wuxianggujun.tinaide.plugin.script.ScriptPluginInfo
@@ -113,6 +115,8 @@ import com.wuxianggujun.tinaide.ui.compose.components.tinaBackAction
 import com.wuxianggujun.tinaide.ui.compose.screens.settings.components.SettingsCard
 import com.wuxianggujun.tinaide.ui.compose.screens.settings.components.SettingsClickableItem
 import java.util.Locale
+import java.util.Date
+import java.text.DateFormat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -156,6 +160,7 @@ internal fun PluginsSettingsSection(
     val diagnosticCopiedText = stringResource(Strings.diagnostic_copied)
 
     val installedPlugins by pluginManager.pluginsFlow.collectAsState()
+    val pluginFaults by pluginManager.pluginFaultsFlow().collectAsState()
     val loadIssues by pluginManager.loadIssuesFlow.collectAsState()
     val pluginHealthReports by pluginManager.pluginHealthReportsFlow.collectAsState()
     val themesIndex by themeRegistry.themesFlow.collectAsState()
@@ -356,11 +361,31 @@ internal fun PluginsSettingsSection(
     }
 
     var pendingUninstall by remember { mutableStateOf<InstalledPlugin?>(null) }
+    var pendingQuarantinedReenable by remember { mutableStateOf<InstalledPlugin?>(null) }
     var pendingBatchUninstall by remember { mutableStateOf(false) }
     var pendingPluginInstall by remember { mutableStateOf<PendingPluginInstall?>(null) }
     var pendingPluginInstallWarning by remember { mutableStateOf<PendingPluginInstall?>(null) }
     var blockedPluginInstall by remember { mutableStateOf<PluginInstallPreview.Blocked?>(null) }
     var selectingThemesForPlugin by remember { mutableStateOf<InstalledPlugin?>(null) }
+
+    fun applyPluginEnabled(plugin: InstalledPlugin, enabled: Boolean) {
+        scope.launch {
+            pluginManager.setPluginEnabled(plugin.manifest.id, enabled)
+                .onFailure { error ->
+                    Timber.tag(TAG).w(error, "Toggle plugin failed pluginId=%s enabled=%s", plugin.manifest.id, enabled)
+                    pluginLogManager.error(
+                        source = PluginHostLogSources.Settings,
+                        message = "Toggle failed pluginId=${plugin.manifest.id} enabled=$enabled reason=${error.message.orEmpty()}",
+                        stackTrace = error.stackTraceToString(),
+                    )
+                    Toast.makeText(
+                        context,
+                        String.format(Locale.getDefault(), toastPluginsToggleFailedTemplate, error.message.orEmpty()),
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
+        }
+    }
 
     // LSP 插件相关状态
     val lspPluginRefreshKey = remember(lspPlugins) {
@@ -502,54 +527,22 @@ internal fun PluginsSettingsSection(
             lspPluginInfo = lspPlugins.find { it.pluginId == detailPlugin.manifest.id },
             lspInstallState = lspInstallStates[detailPlugin.manifest.id],
             scriptPluginInfo = scriptPluginStates[detailPlugin.manifest.id],
+            faultRecord = pluginFaults[detailPlugin.manifest.id],
             diagnosticsReport = diagnosticsSnapshot.getInstalledReport(detailPlugin.manifest.id),
             initialDiagnosticsSourceFilter = diagnosticsSourceFilter,
             grantedPermissions = permissionGrants[detailPlugin.manifest.id].orEmpty(),
+            onGrantOptionalPermission = { permission ->
+                permissionManager.grantPermission(detailPlugin.manifest.id, permission)
+            },
+            onRevokeOptionalPermission = { permission ->
+                permissionManager.revokePermission(detailPlugin.manifest.id, permission)
+            },
             onNavigateBack = { onPluginDetailChanged(null) },
             onToggleEnabled = { enabled ->
-                scope.launch {
-                    Timber.tag(TAG).i(
-                        "Toggle plugin requested pluginId=%s enabled=%s manager=%s",
-                        detailPlugin.manifest.id,
-                        enabled,
-                        pluginManager.instanceId
-                    )
-                    pluginLogManager.info(
-                        PluginHostLogSources.Settings,
-                        "Toggle requested pluginId=${detailPlugin.manifest.id} enabled=$enabled manager=${pluginManager.instanceId}"
-                    )
-                    pluginManager.setPluginEnabled(detailPlugin.manifest.id, enabled)
-                        .onSuccess {
-                            Timber.tag(TAG).i(
-                                "Toggle plugin applied pluginId=%s enabled=%s manager=%s",
-                                detailPlugin.manifest.id,
-                                enabled,
-                                pluginManager.instanceId
-                            )
-                            pluginLogManager.info(
-                                PluginHostLogSources.Settings,
-                                "Toggle applied pluginId=${detailPlugin.manifest.id} enabled=$enabled manager=${pluginManager.instanceId}"
-                            )
-                        }
-                        .onFailure { t ->
-                            Timber.tag(TAG).w(
-                                t,
-                                "Toggle plugin failed pluginId=%s enabled=%s manager=%s",
-                                detailPlugin.manifest.id,
-                                enabled,
-                                pluginManager.instanceId
-                            )
-                            pluginLogManager.error(
-                                source = PluginHostLogSources.Settings,
-                                message = "Toggle failed pluginId=${detailPlugin.manifest.id} enabled=$enabled manager=${pluginManager.instanceId} reason=${t.message.orEmpty()}",
-                                stackTrace = t.stackTraceToString()
-                            )
-                            Toast.makeText(
-                                context,
-                                String.format(Locale.getDefault(), toastPluginsToggleFailedTemplate, t.message ?: ""),
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        }
+                if (enabled && pluginFaults.containsKey(detailPlugin.manifest.id)) {
+                    pendingQuarantinedReenable = detailPlugin
+                } else {
+                    applyPluginEnabled(detailPlugin, enabled)
                 }
             },
             onSelectTheme = { selectingThemesForPlugin = detailPlugin },
@@ -688,6 +681,21 @@ internal fun PluginsSettingsSection(
 
             Spacer(modifier = Modifier.height(TinaSpacing.xl))
         }
+    }
+
+    pendingQuarantinedReenable?.let { plugin ->
+        TinaConfirmDialog(
+            title = stringResource(Strings.dialog_title_plugins_reenable_quarantined),
+            message = stringResource(Strings.dialog_msg_plugins_reenable_quarantined, plugin.manifest.name),
+            confirmText = stringResource(Strings.btn_plugins_reenable),
+            dismissText = stringResource(Strings.btn_cancel),
+            onConfirm = {
+                pendingQuarantinedReenable = null
+                applyPluginEnabled(plugin, true)
+            },
+            onDismiss = { pendingQuarantinedReenable = null },
+            isDanger = true,
+        )
     }
 
     // 卸载确认对话框
@@ -1953,9 +1961,12 @@ private fun InstalledPluginDetailScreen(
     lspPluginInfo: LspPluginInfo?,
     lspInstallState: LspPluginInstallState?,
     scriptPluginInfo: ScriptPluginInfo?,
+    faultRecord: PluginFaultRecord?,
     diagnosticsReport: PluginDiagnosticsReport?,
     initialDiagnosticsSourceFilter: PluginDiagnosticSourceFilter,
     grantedPermissions: Set<PluginPermission>,
+    onGrantOptionalPermission: (PluginPermission) -> Unit,
+    onRevokeOptionalPermission: (PluginPermission) -> Unit,
     onNavigateBack: () -> Unit,
     onToggleEnabled: (Boolean) -> Unit,
     onSelectTheme: () -> Unit,
@@ -2031,6 +2042,10 @@ private fun InstalledPluginDetailScreen(
     }
     val diagnosticCopiedText = stringResource(Strings.diagnostic_copied)
     var showPluginPermissionsDialog by remember(manifest.id) { mutableStateOf(false) }
+    var pendingOptionalPermission by remember(manifest.id) { mutableStateOf<PluginPermission?>(null) }
+    val optionalPermissions = remember(manifest.optionalPermissions) {
+        PluginPermission.parseList(manifest.optionalPermissions).sortedBy { permission -> permission.id }
+    }
     val availableDiagnosticSourceFilters = remember(detailDiagnostics) {
         PluginsSettingsSectionSupport.resolveAvailablePluginDiagnosticSourceFilters(detailDiagnostics)
     }
@@ -2202,6 +2217,36 @@ private fun InstalledPluginDetailScreen(
                         )
                     }
                 }
+                if (scriptPluginInfo == null && faultRecord != null) {
+                    PluginInfoRow(
+                        stringResource(
+                            Strings.plugins_details_runtime_state,
+                            stringResource(Strings.plugins_runtime_state_quarantined),
+                        )
+                    )
+                    PluginInfoRow(
+                        stringResource(
+                            Strings.plugins_details_runtime_error,
+                            faultRecord.message,
+                        )
+                    )
+                }
+                faultRecord?.let { fault ->
+                    PluginInfoRow(
+                        stringResource(
+                            Strings.plugins_details_fault_phase,
+                            stringResource(
+                                PluginsSettingsSectionSupport.resolvePluginFaultPhaseLabelRes(fault.phase)
+                            ),
+                        )
+                    )
+                    PluginInfoRow(
+                        stringResource(
+                            Strings.plugins_details_fault_time,
+                            DateFormat.getDateTimeInstance().format(Date(fault.timestampMillis)),
+                        )
+                    )
+                }
                 PluginInfoRow(stringResource(Strings.plugins_details_dir, plugin.directory.absolutePath))
 
                 PluginInfoRow(
@@ -2252,6 +2297,63 @@ private fun InstalledPluginDetailScreen(
                     }
                 },
             )
+        }
+
+        if (optionalPermissions.isNotEmpty()) {
+            DetailInfoCard(
+                title = stringResource(Strings.plugins_optional_permissions_title)
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(TinaSpacing.sm)) {
+                    Text(
+                        text = stringResource(Strings.plugins_optional_permissions_description),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    optionalPermissions.forEachIndexed { index, permission ->
+                        if (index > 0) {
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(TinaSpacing.xs),
+                            ) {
+                                Text(
+                                    text = permission.id,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium,
+                                )
+                                Text(
+                                    text = stringResource(
+                                        when (permission.level) {
+                                            PermissionLevel.L0_NO_RISK -> Strings.plugin_permission_no_risk
+                                            PermissionLevel.L1_LOW_RISK -> Strings.plugin_permission_low_risk
+                                            PermissionLevel.L2_MEDIUM_RISK -> Strings.plugin_permission_medium_risk
+                                            PermissionLevel.L3_HIGH_RISK -> Strings.plugin_permission_high_risk
+                                        }
+                                    ),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Switch(
+                                checked = permission in grantedPermissions,
+                                onCheckedChange = { checked ->
+                                    if (checked) {
+                                        pendingOptionalPermission = permission
+                                    } else {
+                                        onRevokeOptionalPermission(permission)
+                                    }
+                                },
+                            )
+                        }
+                    }
+                }
+            }
         }
 
         if (requirementsSummary.hasRequirements) {
@@ -2495,6 +2597,20 @@ private fun InstalledPluginDetailScreen(
             title = stringResource(Strings.plugins_diagnostics_permissions_dialog_title),
             message = permissionDialogMessage,
             onDismiss = { showPluginPermissionsDialog = false },
+        )
+    }
+
+
+    pendingOptionalPermission?.let { permission ->
+        PluginPermissionDialog(
+            pluginName = manifest.name,
+            permissions = setOf(permission),
+            onConfirm = {
+                pendingOptionalPermission = null
+                onGrantOptionalPermission(permission)
+            },
+            onDeny = { pendingOptionalPermission = null },
+            onDismiss = { pendingOptionalPermission = null },
         )
     }
 }

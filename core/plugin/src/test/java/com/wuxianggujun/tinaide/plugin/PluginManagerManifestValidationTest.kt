@@ -62,6 +62,50 @@ class PluginManagerManifestValidationTest {
     }
 
     @Test
+    fun `validateManifest should accept unique panels for script plugins`() {
+        val pluginDir = createScriptPluginDir("validate_panels")
+        val manifest = PluginManifest(
+            id = "test.plugin.panels",
+            name = "Validate Panels",
+            version = "1.0.0",
+            type = PluginTypes.SCRIPT,
+            contributions = PluginContributions(
+                panels = listOf(
+                    PluginPanel("status", "Status"),
+                    PluginPanel("trace", "Trace"),
+                ),
+            ),
+        )
+
+        PluginManifestValidator.validate(context, manifest, pluginDir)
+    }
+
+    @Test
+    fun `validateManifest should reject duplicate or non-script panels`() {
+        val scriptDir = createScriptPluginDir("validate_duplicate_panels")
+        val duplicate = PluginManifest(
+            id = "test.plugin.duplicate-panels",
+            name = "Duplicate Panels",
+            version = "1.0.0",
+            type = PluginTypes.SCRIPT,
+            contributions = PluginContributions(
+                panels = listOf(PluginPanel("status", "One"), PluginPanel("status", "Two")),
+            ),
+        )
+        val configDir = createConfigPluginDir("validate_config_panels")
+        val config = PluginManifest(
+            id = "test.plugin.config-panels",
+            name = "Config Panels",
+            version = "1.0.0",
+            type = PluginTypes.CONFIG,
+            contributions = PluginContributions(panels = listOf(PluginPanel("status", "Status"))),
+        )
+
+        assertThat(runValidationFailure(duplicate, scriptDir).message).contains("status")
+        assertThat(runValidationFailure(config, configDir).message).contains("script")
+    }
+
+    @Test
     fun `validateManifest should reject invalid plugin configuration defaults`() {
         val pluginDir = createScriptPluginDir("validate_configuration")
         val manifest = PluginManifest(
@@ -181,6 +225,46 @@ class PluginManagerManifestValidationTest {
     }
 
     @Test
+    fun `validateManifest should accept matching lsp language activation event`() {
+        val pluginDir = createLspPluginDir("validate_lsp_activation")
+        val manifest = createLspManifest(
+            toolchains = emptyList(),
+            activationEvents = listOf("onLanguage:python"),
+        )
+
+        PluginManifestValidator.validate(context, manifest, pluginDir)
+    }
+
+    @Test
+    fun `validateManifest should reject unknown lsp language activation event`() {
+        val pluginDir = createLspPluginDir("validate_lsp_activation_unknown")
+        val manifest = createLspManifest(
+            toolchains = emptyList(),
+            activationEvents = listOf("onLanguage:javascript"),
+        )
+
+        val error = runValidationFailure(manifest, pluginDir)
+
+        assertThat(error.message).contains("javascript")
+    }
+
+    @Test
+    fun `validateManifest should reject activation events on script plugins`() {
+        val pluginDir = createScriptPluginDir("validate_script_activation")
+        val manifest = PluginManifest(
+            id = "test.plugin.script-activation",
+            name = "Script Activation",
+            version = "1.0.0",
+            type = PluginTypes.SCRIPT,
+            activationEvents = listOf("onLanguage:python"),
+        )
+
+        val error = runValidationFailure(manifest, pluginDir)
+
+        assertThat(error.message).contains("LSP")
+    }
+
+    @Test
     fun `validateManifest should accept valid locale files`() {
         val pluginDir = createConfigPluginDir("validate_locale_valid")
         writeLocale(pluginDir, "zh-CN.json", """{"name":"中文插件"}""")
@@ -274,11 +358,13 @@ class PluginManagerManifestValidationTest {
     private fun createLspManifest(
         toolchains: List<LspToolchainConfig>,
         serverType: String = "stdio",
+        activationEvents: List<String>? = null,
     ): PluginManifest = PluginManifest(
         id = "test.plugin.lsp",
         name = "Validate LSP Plugin",
         version = "1.0.0",
         type = PluginTypes.LSP,
+        activationEvents = activationEvents,
         contributions = PluginContributions(
             languageServers = listOf(
                 LspServerConfig(

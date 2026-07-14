@@ -19,6 +19,8 @@
 5. 需要离线分发时，再运行 `pack.ps1` 或 `pack.sh`
 6. 用“设置 → 插件 → 从文件安装”验证生成的 `.tinaplug`
 
+首次安装后插件默认禁用。进入“设置 → 插件”详情页检查贡献内容，再明确启用；安装或列表刷新不会自动启动新插件。
+
 ## 当前能力边界
 
 - `editor/context`、`editor/toolbar` 与 `filetree/context` 已可用

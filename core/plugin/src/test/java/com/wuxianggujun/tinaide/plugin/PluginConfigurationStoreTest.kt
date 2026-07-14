@@ -3,13 +3,10 @@ package com.wuxianggujun.tinaide.plugin
 import android.app.Application
 import android.content.Context
 import com.google.common.truth.Truth.assertThat
-import com.wuxianggujun.tinaide.plugin.script.PluginExecutionResult
-import com.wuxianggujun.tinaide.plugin.script.ScriptPluginRuntime
 import com.wuxianggujun.tinaide.plugin.script.api.PluginEvent
 import com.wuxianggujun.tinaide.plugin.script.api.PluginEventBus
-import io.mockk.coEvery
-import io.mockk.coVerify
-import io.mockk.mockk
+import com.wuxianggujun.tinaide.plugin.script.PluginExecutionResult
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.After
 import org.junit.Before
@@ -39,13 +36,11 @@ class PluginConfigurationStoreTest {
             .commit()
         store = PluginConfigurationStore.getInstance(context)
         PluginEventBus.clear()
-        PluginEventBus.setRuntimeProvider { null }
     }
 
     @After
     fun tearDown() {
         PluginEventBus.clear()
-        PluginEventBus.setRuntimeProvider { null }
     }
 
     @Test
@@ -92,41 +87,48 @@ class PluginConfigurationStoreTest {
     }
 
     @Test
+    fun `configuration store should use a type-safe fallback only after manifest default`() {
+        val manifest = manifest(
+            id = "demo.fallback",
+            defaultEnabled = false,
+        )
+
+        assertThat(
+            store.getValue(manifest, "optional.label", JsonPrimitive("fallback")),
+        ).isEqualTo(JsonPrimitive("fallback"))
+        assertThat(
+            store.getValue(manifest, "optional.label", JsonPrimitive(42)),
+        ).isNull()
+        assertThat(
+            store.getValue(manifest, "output.format", JsonPrimitive("fallback")),
+        ).isEqualTo(JsonPrimitive("text"))
+    }
+
+    @Test
     fun `configuration store should emit targeted config changed events`() {
         val manifest = manifest(
             id = "demo.events",
             defaultEnabled = false,
         )
-        val runtime = mockk<ScriptPluginRuntime>()
-        val otherRuntime = mockk<ScriptPluginRuntime>()
-        coEvery { runtime.callFunction("onConfigChanged", any()) } returns PluginExecutionResult.Success(Unit)
-        coEvery { otherRuntime.callFunction("onConfigChanged", any()) } returns PluginExecutionResult.Success(Unit)
-        PluginEventBus.setRuntimeProvider { pluginId ->
-            when (pluginId) {
-                manifest.id -> runtime
-                "demo.other" -> otherRuntime
-                else -> null
-            }
+        val calls = CopyOnWriteArrayList<Triple<String, String, Map<String, Any?>?>>()
+        PluginEventBus.setCallbackInvoker { pluginId, callbackName, payload ->
+            calls += Triple(pluginId, callbackName, payload)
+            PluginExecutionResult.Success(Unit)
         }
         PluginEventBus.subscribe(manifest.id, PluginEvent.CONFIG_CHANGED.id, "onConfigChanged")
         PluginEventBus.subscribe("demo.other", PluginEvent.CONFIG_CHANGED.id, "onConfigChanged")
 
         assertThat(store.setValue(manifest, "feature.enabled", JsonPrimitive(true))).isTrue()
 
-        coVerify(timeout = 1_000, exactly = 1) {
-            runtime.callFunction(
-                "onConfigChanged",
-                match<Map<String, Any?>> { payload ->
-                    payload["pluginId"] == manifest.id &&
-                        payload["key"] == "feature.enabled" &&
-                        payload["value"] == true &&
-                        payload["previousValue"] == false
-                }
-            )
-        }
-        coVerify(exactly = 0) {
-            otherRuntime.callFunction("onConfigChanged", any())
-        }
+        waitUntil { calls.isNotEmpty() }
+        assertThat(calls).hasSize(1)
+        val (pluginId, callbackName, payload) = calls.single()
+        assertThat(pluginId).isEqualTo(manifest.id)
+        assertThat(callbackName).isEqualTo("onConfigChanged")
+        assertThat(payload?.get("pluginId")).isEqualTo(manifest.id)
+        assertThat(payload?.get("key")).isEqualTo("feature.enabled")
+        assertThat(payload?.get("value")).isEqualTo(true)
+        assertThat(payload?.get("previousValue")).isEqualTo(false)
     }
 
     private fun manifest(
@@ -148,7 +150,22 @@ class PluginConfigurationStoreTest {
                     default = JsonPrimitive("text"),
                     enumValues = listOf("text", "json"),
                 ),
+                "optional.label" to PluginConfigurationProperty(
+                    type = "string",
+                ),
             ),
         ),
     )
+
+    private fun waitUntil(
+        timeoutMillis: Long = 1_000,
+        condition: () -> Boolean,
+    ) {
+        val deadline = System.currentTimeMillis() + timeoutMillis
+        while (System.currentTimeMillis() < deadline) {
+            if (condition()) return
+            Thread.sleep(10)
+        }
+        assertThat(condition()).isTrue()
+    }
 }

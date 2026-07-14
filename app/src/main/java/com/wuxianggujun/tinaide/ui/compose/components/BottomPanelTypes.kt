@@ -14,6 +14,7 @@ enum class BottomPanelTab(@param:StringRes @get:StringRes val titleRes: Int) {
     OUTLINE(Strings.bottom_panel_outline),
     SYMBOLS(Strings.bottom_panel_symbols),
     BOOKMARKS(Strings.bottom_panel_bookmarks),
+    PLUGINS(Strings.bottom_panel_plugins),
     GIT(Strings.bottom_panel_git)
 }
 
@@ -31,6 +32,7 @@ private val defaultNormalModeBottomTabs = listOf(
     BottomPanelTab.OUTLINE,
     BottomPanelTab.SYMBOLS,
     BottomPanelTab.BOOKMARKS,
+    BottomPanelTab.PLUGINS,
     BottomPanelTab.GIT
 )
 
@@ -41,11 +43,11 @@ internal fun shouldShowEditorPerformanceTab(
 ): Boolean = developerOptionsEnabled && diagnosticsEnabled && activeTabSupportsEditorPerformancePanel
 
 internal fun resolveNormalModeBottomTabs(
-    showEditorPerformanceTab: Boolean
-): List<BottomPanelTab> = if (showEditorPerformanceTab) {
-    defaultNormalModeBottomTabs
-} else {
-    defaultNormalModeBottomTabs.filterNot { it == BottomPanelTab.PERFORMANCE }
+    showEditorPerformanceTab: Boolean,
+    hasPluginPanels: Boolean = false,
+): List<BottomPanelTab> = defaultNormalModeBottomTabs.filter { tab ->
+    (tab != BottomPanelTab.PERFORMANCE || showEditorPerformanceTab) &&
+        (tab != BottomPanelTab.PLUGINS || hasPluginPanels)
 }
 
 internal fun resolveSelectedBottomPanelTab(

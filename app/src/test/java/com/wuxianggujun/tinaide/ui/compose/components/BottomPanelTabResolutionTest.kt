@@ -80,6 +80,21 @@ class BottomPanelTabResolutionTest {
     }
 
     @Test
+    fun `resolveNormalModeBottomTabs shows plugins only when enabled panels exist`() {
+        val hidden = resolveNormalModeBottomTabs(
+            showEditorPerformanceTab = false,
+            hasPluginPanels = false,
+        )
+        val visible = resolveNormalModeBottomTabs(
+            showEditorPerformanceTab = false,
+            hasPluginPanels = true,
+        )
+
+        assertThat(hidden).doesNotContain(BottomPanelTab.PLUGINS)
+        assertThat(visible).contains(BottomPanelTab.PLUGINS)
+    }
+
+    @Test
     fun `formatBottomPanelTabBadgeCount hides empty count and caps large values`() {
         assertThat(formatBottomPanelTabBadgeCount(0)).isNull()
         assertThat(formatBottomPanelTabBadgeCount(-1)).isNull()

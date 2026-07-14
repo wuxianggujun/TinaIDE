@@ -1,6 +1,6 @@
 # 插件开发者指南
 
-> 文档更新：2026-06-05
+> 文档更新：2026-07-14
 
 当前仓库已具备“配置插件 + LSP 插件 + 脚本 / hybrid 插件”的基础闭环，
 当前已支持：
@@ -15,6 +15,7 @@
 - APK 导出模板（`contributions.apkExports`）
 - **LSP 插件**：通过插件安装语言服务器，提供代码补全、诊断等功能（`type: "lsp"`）
 - **脚本 / hybrid 插件**：Lua 运行时、权限确认、日志与宿主 API 边界
+- **插件文本面板**：manifest 声明、脚本发布内容、底部面板展示与生命周期清理
 - 内置兜底插件（assets 自动安装；当前包含基础项目模板与 C/C++ snippets）
 
 > 为满足 Google Play 合规性：当前仍不支持动态加载 DEX；脚本 / hybrid
@@ -33,7 +34,7 @@
 | [Plugin-Tutorial-Acceptance-Checklist.md](Plugin-Tutorial-Acceptance-Checklist.md) | 插件教程端到端验收清单 |
 | [Plugin-Tutorial-Maintenance-Log.md](Plugin-Tutorial-Maintenance-Log.md) | 历史参考：插件教程维护记录与设计决策 |
 | [Plugin-Authoring-Tutorial.md](Plugin-Authoring-Tutorial.md) | **插件编写教程（基于模板）** |
-| [Plugin-API-Guide.md](Plugin-API-Guide.md) | **插件 API 指南（稳定 / Beta 边界）** |
+| [Plugin-API-Guide.md](Plugin-API-Guide.md) | **插件 API 指南（apiVersion 1 稳定边界）** |
 | [LSP-Plugin-Development-Guide.md](LSP-Plugin-Development-Guide.md) | **LSP 插件开发指南**（新） |
 | [Plugin-Marketplace-Troubleshooting.md](Plugin-Marketplace-Troubleshooting.md) | 插件市场 Registry 安装与更新排障 |
 
@@ -116,6 +117,8 @@
 - 打包生成 `dist/<id>-<version>.tinaplug`
 - 热安装到当前 TinaIDE
 
+首次安装后插件保持禁用，需在“设置 → 插件”详情页检查权限并明确启用；升级保留原有启用意图。安装或刷新列表本身不会执行新插件。
+
 点击 `构建` 时只生成 `.tinaplug`，不执行热安装。
 
 ### 5. 手工兜底结构
@@ -145,11 +148,8 @@ my-plugin/
 - `contributions.apkExports`：APK 导出模板扩展（插件携带模板 APK，宿主负责通用打包逻辑）
 - `configuration`：插件配置 schema（宿主在插件详情页自动生成设置 UI）
 - `manifest.type = "script" / "hybrid"`：Lua 脚本运行时（需权限确认；不支持 DEX）
+- `contributions.panels`：脚本 / hybrid 文本面板；内容由 `tina.panels.*` 发布，在编辑器底部“插件”面板展示
 - 插件安装/卸载/启用/禁用（本地目录）
-
-已定义但暂未实现（manifest 里写了也不会生效）：
-
-- `contributions.panels`
 
 > 备注（与源码同步）：`editor/toolbar` 已接入编辑器标签栏右侧插件动作菜单，
 > 同时会进入主编辑器命令面板；`keybindings` 已接入 MainActivity 硬件键盘快捷键分发。
@@ -830,6 +830,4 @@ v1 兼容索引默认不再生成，只服务旧客户端。主仓库当前随 A
 - 直接按本文示例 `manifest.json` 声明 `filetree/context`、`editor/context` 或 `editor/toolbar`
   菜单项即可。
 
-下一步建议（仍以宿主命令扩展和权限收敛为主）：
-
-- 编辑器面板扩展：`contributions.panels`
+后续扩展仍以宿主命令白名单、纯文本安全渲染和权限收敛为边界，不引入动态 DEX 或插件自定义宿主 UI 代码。

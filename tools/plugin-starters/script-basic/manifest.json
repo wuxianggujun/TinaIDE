@@ -31,6 +31,12 @@
         "title": "Wrap Selection"
       }
     ],
+    "panels": [
+      {
+        "id": "status",
+        "title": "Plugin Status"
+      }
+    ],
     "menus": {
       "filetree/context": [
         {

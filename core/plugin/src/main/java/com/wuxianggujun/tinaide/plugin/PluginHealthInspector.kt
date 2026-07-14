@@ -45,7 +45,6 @@ internal object PluginHealthInspector {
                 customCommandIds = customMenuCommandIds + customKeyBindingCommandIds,
                 issues = this,
             )
-            inspectUnsupportedContributions(context, plugin.manifest, this)
             inspectFileIcons(context, plugin, this)
         }.sortedWith(
             compareByDescending<PluginDiagnosticIssue> { it.severity.priority }
@@ -494,21 +493,6 @@ internal object PluginHealthInspector {
         }
 
         return customKeyBindingCommandIds
-    }
-
-    private fun inspectUnsupportedContributions(
-        context: Context,
-        manifest: PluginManifest,
-        issues: MutableList<PluginDiagnosticIssue>,
-    ) {
-        if (!manifest.contributions?.panels.isNullOrEmpty()) {
-            issues += PluginDiagnosticIssue(
-                severity = PluginDiagnosticSeverity.WARNING,
-                category = PluginDiagnosticCategory.COMPATIBILITY,
-                message = Strings.plugin_diagnostic_panels_unsupported.strOr(context),
-                fixHint = Strings.plugin_diagnostic_panels_fix.strOr(context),
-            )
-        }
     }
 
     private fun inspectFileIcons(

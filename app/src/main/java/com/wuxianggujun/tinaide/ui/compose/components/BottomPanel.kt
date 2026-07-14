@@ -27,6 +27,8 @@ import com.wuxianggujun.tinaide.core.git.GitCommit
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.lsp.Diagnostic
 import com.wuxianggujun.tinaide.editor.symbol.ProjectSymbolIndexService
+import com.wuxianggujun.tinaide.plugin.PluginManager
+import com.wuxianggujun.tinaide.plugin.PluginPanelContentStore
 import com.wuxianggujun.tinaide.ui.BottomPanelViewModel
 import com.wuxianggujun.tinaide.ui.DebugViewModel
 import com.wuxianggujun.tinaide.ui.EditorStateViewModel
@@ -112,6 +114,9 @@ fun BottomPanel(
     val variables = debugViewModel.variables.collectAsStateWithLifecycleWhen(isActive)
     val callStack = debugViewModel.callStack.collectAsStateWithLifecycleWhen(isActive)
     val consoleLines = debugViewModel.consoleLines.collectAsStateWithLifecycleWhen(isActive)
+    val pluginManager = remember(context) { PluginManager.getInstance(context) }
+    val pluginState by pluginManager.pluginStateFlow.collectAsStateWithLifecycle()
+    val pluginPanelContents by PluginPanelContentStore.contents.collectAsStateWithLifecycle()
 
     // 变量详情对话框状态
     var showVariableDetailDialog by remember { mutableStateOf(false) }
@@ -119,7 +124,8 @@ fun BottomPanel(
 
     // 底部面板显示的标签页（构建日志、诊断、符号、Git）
     val normalModeTabs = resolveNormalModeBottomTabs(
-        showEditorPerformanceTab = showEditorPerformanceTab
+        showEditorPerformanceTab = showEditorPerformanceTab,
+        hasPluginPanels = pluginState.resolvedPanels.isNotEmpty(),
     )
     val resolvedBottomTab = resolveSelectedBottomPanelTab(
         selectedBottomTab = selectedBottomTab,
@@ -309,6 +315,11 @@ fun BottomPanel(
                                         bookmarkRepository = bookmarkRepository,
                                         onNavigate = onBookmarkNavigate,
                                         modifier = Modifier.fillMaxSize()
+                                    )
+                                    BottomPanelTab.PLUGINS -> PluginPanelsContent(
+                                        panels = pluginState.resolvedPanels,
+                                        contents = pluginPanelContents,
+                                        modifier = Modifier.fillMaxSize(),
                                     )
                                     BottomPanelTab.GIT -> GitLogPanel(
                                         currentBranch = gitCurrentBranch,

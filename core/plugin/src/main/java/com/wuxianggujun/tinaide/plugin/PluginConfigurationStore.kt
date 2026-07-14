@@ -20,12 +20,16 @@ class PluginConfigurationStore private constructor(
     fun getValue(
         manifest: PluginManifest,
         propertyKey: String,
+        fallback: JsonElement? = null,
     ): JsonElement? {
         val property = PluginConfigurationSchema.resolveProperty(manifest, propertyKey) ?: return null
         val storedValue = prefs.getString(buildPreferenceKey(manifest.id, propertyKey), null)
             ?.let(JsonSerializer::parseToJsonElementOrNull)
             ?.let { value -> PluginConfigurationSchema.normalizeValue(property, value) }
-        return storedValue ?: property.defaultValue
+        val normalizedFallback = fallback?.let { value ->
+            PluginConfigurationSchema.normalizeValue(property, value)
+        }
+        return storedValue ?: property.defaultValue ?: normalizedFallback
     }
 
     fun setValue(

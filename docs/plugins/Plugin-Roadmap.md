@@ -1,6 +1,6 @@
 # 插件系统路线图（Roadmap）
 
-> 文档更新：2026-07-03
+> 文档更新：2026-07-14
 > 目标：以 **配置插件优先** 的方式逐步扩展 TinaIDE 插件能力（Play 合规、低风险、可维护）。
 
 ---
@@ -286,24 +286,59 @@ interface HostCommand {
 
 ---
 
-## 4. 阶段 2：脚本 / Hybrid 插件能力收敛
+## 4. 阶段 2：插件宿主隔离与自愈
 
-脚本 / hybrid 插件基础运行时已经落地。下一阶段重点不是再引入另一套引擎，
-而是继续收敛权限、API、生命周期和渠道策略。
+阶段 2 的代码重构和 Android 设备验收已经完成。公开 `apiVersion 1` 不变，不引入另一套脚本引擎；
+本阶段把 Lua/JNI、Host API、状态机、安装事务和 LSP 生命周期收敛到可隔离、可归因、可恢复的边界。
 
-### 4.1 分级发布策略（建议）
+状态说明：
 
-- **Play 安全模式（推荐）**
-  - 仅允许运行“随 APK 一起发布”的脚本插件（例如 `assets/bundled_plugins/*` 中的脚本）
-  - 不提供“从文件安装脚本插件/从网络下载脚本并执行”的能力
-  - 脚本只允许调用宿主显式暴露的白名单 API（默认禁用高风险能力）
+- ✅：代码和 JVM/静态验证已完成。
+- 待决：属于发布策略，不在本轮技术重构中擅自决定。
 
-- **开发/非 Play 渠道模式（可选）**
-  - 允许从文件安装脚本插件（用户明确选择文件）
-  - 仍然必须：权限系统 + 沙箱 + API 白名单 + 审计日志
-  - 建议用 `BuildConfig` 开关控制（release 默认关闭）
+### 4.1 实施状态
 
-### 4.2 必做清单（安全与可维护）
+| 能力 | 状态 | 当前结果 |
+|------|------|----------|
+| Lua/JNI 进程隔离 | ✅ | 非导出的 `:plugin_runtime` 使用 `isolatedProcess=true`；宿主通过类型化 Binder 调用，已删除宿主进程 Lua fallback。`PluginRuntimeIsolationInstrumentedTest` 和真实 App 验收均已验证 runtime 主动终止后的 Binder death、自愈和 PID 替换；watchdog 额外使用 500ms Binder death fallback，慢设备冷启动连接超时放宽为 10 秒。 |
+| Lua 沙箱与 API v1 兼容 | ✅ | 禁用危险库、Java/LuaJava 反射和 native module；保留插件目录内只读纯 Lua `require()`。同一设备测试已覆盖死循环 watchdog、受限 `require()`、危险库和 stale generation/超大 Binder 返回值。 |
+| Host capability gateway | ✅ | 文件、编辑器、Command、Clipboard、Network、Database、UI 等能力统一回到宿主；每次调用重验 generation、有效启用态、manifest 声明和运行时授权。 |
+| 故障状态机与自愈 | ✅ | 已落地 `desiredEnabled`、有效状态、故障记录和 in-flight journal；禁用/卸载递增 generation，故障插件隔离，空闲 runtime 死亡后恢复健康插件。`PluginQuarantinePersistenceInstrumentedTest` 已验证两次宿主对象图重建后的持久化；真实 App 验收进一步确认 watchdog 后故障插件进入 `QUARANTINED / EXECUTION_TIMEOUT`、健康 survivor 在新 runtime 恢复 `ACTIVE`，且 `force-stop/relaunch` 后 quarantine 不丢失。 |
+| 安装事务与资源限制 | ✅ | 新装默认禁用；升级使用 staging/backup/atomic rename 和恢复 journal；Zip、Lua、日志、Binder、Network 与 PSS 均设置上限。设备测试已验证约 96 MiB Lua 保留内存触发 `RESOURCE_LIMIT` 后 runtime 可恢复。 |
+| LSP 生命周期归属 | ✅ | session 绑定 `ownerPluginId`，禁用、隔离、升级、卸载会关闭会话；command/args/env 已校验。JVM 测试覆盖 owner 定向清理和成功启动后的异常退出回调；真实 App 验收确认 readiness 失败不隔离、server 异常退出进入 `QUARANTINED / LSP_CRASH`、重新启用可建立新会话，UI 禁用会关闭 PRoot/server，并通过 owner-stop 回调释放编辑器 session，将状态从 `LSP Ready` 更新为 `No LSP`。 |
+| 设置 UI 与文档 | ✅ | 已增加等待授权、自动隔离、runtime 不可用和风险确认状态，并同步中英文资源、App 内帮助、API 合同与 starter README。 |
 
-- 必须：权限系统 + 沙箱 + API 白名单 + 用户授权提示
-- 推荐：先做“官方脚本插件 / 受控 hybrid 插件”验证稳定性，再逐步开放第三方
+### 4.2 设备验收结果（2026-07-14）
+
+1. Lua watchdog 触发后 isolated runtime PID 被替换，宿主 PID 和 Activity 保持；编辑器、文件抽屉仍可操作，健康 survivor 插件在新 runtime 恢复 `ACTIVE`。
+2. 真实 `force-stop/relaunch` 后 `QUARANTINED / EXECUTION_TIMEOUT` 持久化；用户风险确认和重新启用流程通过。
+3. 真实 PRoot LSP 已完成 initialize 并进入 fully connected；readiness 失败不会隔离插件，成功启动后的 server 异常退出会进入 `QUARANTINED / LSP_CRASH`，重新启用后可创建新 PRoot/server 进程。
+4. 从插件 UI 禁用 owner 后，PRoot 与 server PID 均退出，日志出现 `Closing LSP connection` 和 `Plugin LSP owner stopped; releasing session`，返回原编辑器后状态显示 `No LSP`。
+5. 阶段 2 的技术重构与设备验收至此完成；发布渠道策略已暂缓，不属于当前稳定性工作的验收项。
+
+### 4.3 发布渠道策略（暂缓，不在本轮范围）
+
+当前代码仍保留用户从文件安装 `.tinaplug` 的统一入口。Play/Release 是否允许安装 `script` / `hybrid`
+插件属于产品与合规策略，需要结合实际分发渠道单独决定；本轮不新增未经确认的 `BuildConfig` 分叉。
+
+可选策略仍是：Play 渠道只运行随 APK 发布的受控脚本插件，开发/非 Play 渠道允许用户明确选择文件安装。
+无论采用哪种策略，都不得绕过 isolated process、双层权限、Host API 白名单、资源限制和审计边界。
+
+### 4.4 P2 稳定契约收口（2026-07-14）
+
+| 能力 | 状态 | 当前结果 |
+|------|------|----------|
+| 文本面板 | ✅ | `contributions.panels` 仅允许 script/hybrid 声明；`tina.panels.setContent/appendContent/clear` 只能写本插件已声明面板，单面板上限 256 KiB UTF-8。底部“插件”面板仅在存在启用贡献时显示，禁用、卸载、隔离和 runtime death 会清理内容。 |
+| 自定义事件 | ✅ | 已实现 `tina.events.emit("custom", payload)` 定向异步派发；未知事件、非 object payload 和宿主事件伪造会被拒绝，重复订阅去重。 |
+| 可选权限 | ✅ | 插件详情页支持单项授予/撤销；`optionalPermissions` 包含的 L0 权限也必须显式授权，撤销后 capability gateway 立即拒绝调用。 |
+| LSP activationEvents | ✅ | apiVersion 1 仅接受 LSP `onLanguage:<languageId>`，并校验目标语言已由 `languageServers` 声明；声明列表会实际限制按 language ID 的激活。 |
+| Host gateway 降耦 | ✅ | 持久化 storage、network、database handler、SQLite 封装和 Binder 大载荷存储已从主路由拆出；主路由保留 generation/启用态/权限统一校验。 |
+| LSP owner-stop 回归 | ✅ | owner-stop 处理抽成可测试代际守卫，覆盖“当前 attach 释放并转 No LSP”和“旧 callback 不影响替换会话”。 |
+| 文档与 starter 路径 | ✅ | API 契约、开发指南、App 内帮助与 starter README 已同步；starter zip 的事实路径统一为 `tools/plugin-starters/dist/tinaide.plugin.starters/templates/`。 |
+
+### 4.5 本阶段不做
+
+- 不引入动态 DEX、远程插件代码或新的 Marketplace 协议。
+- 不为每个插件创建独立常驻进程。
+- 不把 LSP server 移入宿主 JVM；它继续作为有明确 owner 的外部工具进程运行。
+- 不新增 `apiVersion 2`，也不恢复 `io`、`os.execute`、native `loadlib` 或 Java 反射能力。

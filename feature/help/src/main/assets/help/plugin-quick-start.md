@@ -143,7 +143,7 @@
 3. 热安装到当前 TinaIDE
 4. 刷新已安装插件状态
 
-正常情况下不需要重启 IDE。安装完成后，去 `设置 → 插件` 看插件是否已经启用。
+正常情况下不需要重启 IDE。新安装插件默认禁用；安装完成后，去 `设置 → 插件` 打开详情页，确认权限后再主动启用。
 
 ## 6. 打包 `.tinaplug`
 
@@ -166,6 +166,8 @@ dist/<manifest.id>-<manifest.version>.tinaplug
 - `error` 会阻止安装
 - `warning` 允许确认后继续
 - `script` / `hybrid` 插件才会额外走权限确认
+
+安装采用 staging + 原子替换；升级失败时健康的旧版本会回滚。插件包还受大小、条目数、单项大小和压缩比限制，超限会直接给出错误，不会等到 OOM。
 
 如果这里报错，先回头改 `manifest.json` 和资源路径，不要先怀疑安装入口。
 
@@ -195,6 +197,9 @@ dist/<manifest.id>-<manifest.version>.tinaplug
 确认 `manifest.json` 里的路径是相对路径，并且文件确实会被打进最终 `.tinaplug`。
 
 ## 继续学习
+
+进阶 script / hybrid 插件可以声明 `optionalPermissions`，由用户在插件详情中按需授权；也可以声明
+`contributions.panels`，再通过 `tina.panels.setContent/appendContent/clear` 向编辑器底部“插件”面板发布纯文本。
 
 - [插件设置说明](plugins-settings.md)
 - [创建项目](create-project.md)

@@ -19,10 +19,13 @@
 - `tina.events.on("editor.selectionChanged", ...)`
 - `tina.events.on("diagnostics.changed", ...)`
 - `tina.events.on("file.created", ...)`
+- `tina.events.emit("custom", {...})`
+- `tina.panels.setContent(...)` / `appendContent(...)`
 - `tina.commands.register(...)`
 - `tina.commands.execute("view.toggleFileTree")`
 - `contributions.menus["filetree/context"]`
 - `contributions.menus["editor/context"]`
+- `contributions.panels`
 
 ## 默认命令示例
 
@@ -45,6 +48,13 @@
 7. 在 TinaIDE 中点击 **运行**，让 IDE 校验、打包并热安装
 8. 需要离线分发时，再执行 `pack.ps1` 或 `pack.sh`
 9. 用“设置 → 插件 → 从文件安装”验证生成的 `.tinaplug`
+
+模板默认声明 `status` 文本面板。启用插件后，编辑器底部会出现“插件”标签页；
+初始加载、项目打开和 `custom` 事件会更新面板内容。面板内容是有界纯文本，runtime 重启后由插件重新发布。
+
+首次安装后插件默认禁用。进入详情页确认权限并明确启用。Lua 只在 isolated plugin runtime 中执行；不要使用 `io`、`debug`、`loadfile/dofile`、native `loadlib` 或 Java/luajava 反射。多文件代码使用 `require("module.name")` 加载插件目录内的纯 Lua 模块。
+
+若插件因未处理异常、超时、资源越限或 runtime crash 被自动隔离，先查看详情页故障阶段和插件日志；确认修复后再手动重新启用或提升插件版本。
 
 ## 当前建议
 

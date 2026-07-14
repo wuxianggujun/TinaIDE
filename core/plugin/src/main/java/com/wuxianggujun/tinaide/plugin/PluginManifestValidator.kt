@@ -4,14 +4,20 @@ import android.content.Context
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.core.serialization.JsonSerializer
+import com.wuxianggujun.tinaide.plugin.lsp.LspServerCommandPolicy
 import com.wuxianggujun.tinaide.plugin.script.PluginPermission
 import com.wuxianggujun.tinaide.project.ProjectBuildSystem
 import java.io.File
 
 internal object PluginManifestValidator {
     private const val SUPPORTED_API_VERSION = 1
+    private const val MAX_PANEL_COUNT = 16
+    private const val MAX_PANEL_ID_LENGTH = 128
+    private const val MAX_PANEL_TITLE_LENGTH = 128
 
     private val pluginIdPattern = Regex("^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
+    private val panelIdPattern = Regex("^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
+    private val activationEventPattern = Regex("^onLanguage:([a-zA-Z0-9][a-zA-Z0-9._+-]*)$")
     private val supportedLspToolchainTypes = setOf("system", "download", "pip", "npm")
 
     fun validate(
@@ -33,6 +39,8 @@ internal object PluginManifestValidator {
         validatePermissionIds(context, manifest.optionalPermissions)
         validateConfiguration(context, manifest.configuration)
         validateLocales(context, manifest.locales, pluginDir)
+        validatePanels(context, manifest)
+        validateActivationEvents(context, manifest)
         validateLspContributions(context, manifest)
 
         if (manifest.type.equals(PluginTypes.SCRIPT, ignoreCase = true) ||
@@ -109,6 +117,61 @@ internal object PluginManifestValidator {
         }
     }
 
+    private fun validatePanels(
+        context: Context,
+        manifest: PluginManifest,
+    ) {
+        val panels = manifest.contributions?.panels.orEmpty()
+        if (panels.isEmpty()) return
+        require(manifest.type.equals(PluginTypes.SCRIPT, ignoreCase = true) ||
+            manifest.type.equals(PluginTypes.HYBRID, ignoreCase = true)) {
+            Strings.plugin_error_panels_type_invalid.strOr(context)
+        }
+        require(panels.size <= MAX_PANEL_COUNT) {
+            Strings.plugin_error_panels_too_many.strOr(context, MAX_PANEL_COUNT)
+        }
+        val duplicateIds = panels.groupingBy { it.id }.eachCount().filterValues { it > 1 }.keys
+        require(duplicateIds.isEmpty()) {
+            Strings.plugin_error_panels_duplicate_id.strOr(context, duplicateIds.joinToString(", "))
+        }
+        panels.forEach { panel ->
+            require(panel.id.length <= MAX_PANEL_ID_LENGTH && panelIdPattern.matches(panel.id)) {
+                Strings.plugin_error_panel_id_invalid.strOr(context, panel.id)
+            }
+            require(panel.title.isNotBlank() && panel.title.length <= MAX_PANEL_TITLE_LENGTH) {
+                Strings.plugin_error_panel_title_invalid.strOr(context, panel.id)
+            }
+        }
+    }
+
+    private fun validateActivationEvents(
+        context: Context,
+        manifest: PluginManifest,
+    ) {
+        val events = manifest.activationEvents.orEmpty()
+        if (events.isEmpty()) return
+        require(manifest.type.equals(PluginTypes.LSP, ignoreCase = true)) {
+            Strings.plugin_error_activation_events_type_invalid.strOr(context)
+        }
+        require(events.distinct().size == events.size) {
+            Strings.plugin_error_activation_events_duplicate.strOr(context)
+        }
+        val contributedLanguages = manifest.contributions?.languageServers.orEmpty()
+            .flatMap { it.languages }
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .toSet()
+        events.forEach { event ->
+            val languageId = activationEventPattern.matchEntire(event)?.groupValues?.get(1)
+            require(languageId != null) {
+                Strings.plugin_error_activation_event_invalid.strOr(context, event)
+            }
+            require(languageId in contributedLanguages) {
+                Strings.plugin_error_activation_event_language_missing.strOr(context, languageId)
+            }
+        }
+    }
+
     private fun validateLspContributions(
         context: Context,
         manifest: PluginManifest,
@@ -133,6 +196,15 @@ internal object PluginManifestValidator {
             }
             require(!server.server.command.isNullOrBlank()) {
                 Strings.plugin_error_lsp_server_command_empty.strOr(context, server.id)
+            }
+            require(
+                LspServerCommandPolicy.isValid(
+                    server.server.command,
+                    server.server.args.orEmpty(),
+                    server.server.env.orEmpty(),
+                ),
+            ) {
+                Strings.plugin_error_lsp_server_command_invalid.strOr(context, server.id)
             }
         }
         contributions?.toolchains.orEmpty().forEach { toolchain ->

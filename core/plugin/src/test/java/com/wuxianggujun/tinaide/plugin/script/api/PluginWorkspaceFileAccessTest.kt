@@ -3,6 +3,7 @@ package com.wuxianggujun.tinaide.plugin.script.api
 import com.google.common.truth.Truth.assertThat
 import java.io.File
 import java.nio.file.Files
+import org.junit.Assume.assumeTrue
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -34,6 +35,9 @@ class PluginWorkspaceFileAccessTest {
             .isEqualTo(safeFile.canonicalFile)
         assertThat(fileAccess.resolveSafePath("../outside.txt")).isNull()
         assertThat(fileAccess.resolveSafePath("docs/../outside.txt")).isNull()
+        assertThat(fileAccess.resolveSafePath("/absolute.txt")).isNull()
+        assertThat(fileAccess.resolveSafePath("C:\\absolute.txt")).isNull()
+        assertThat(fileAccess.resolveSafePath("\\\\server\\share\\absolute.txt")).isNull()
     }
 
     @Test
@@ -70,5 +74,25 @@ class PluginWorkspaceFileAccessTest {
         File(rootDir, "safe.txt").writeText("safe")
 
         assertThat(fileAccess.findFiles(pattern = "../*.txt", maxResults = 10)).isEmpty()
+        assertThat(fileAccess.findFiles(pattern = "/**/*.txt", maxResults = 10)).isEmpty()
+        assertThat(fileAccess.findFiles(pattern = "C:\\**\\*.txt", maxResults = 10)).isEmpty()
+    }
+
+    @Test
+    fun findFiles_shouldNotFollowSymbolicLinkDirectories() {
+        val sourceDirectory = File(rootDir, "source").apply { mkdirs() }
+        File(sourceDirectory, "only-once.txt").writeText("safe")
+        val link = File(rootDir, "linked-source")
+        val linkCreated = runCatching {
+            Files.createSymbolicLink(link.toPath(), sourceDirectory.toPath())
+        }.isSuccess
+        assumeTrue("Symbolic links are unavailable on this platform", linkCreated)
+
+        try {
+            assertThat(fileAccess.findFiles(pattern = "*.txt", maxResults = 10))
+                .containsExactly("source/only-once.txt")
+        } finally {
+            Files.deleteIfExists(link.toPath())
+        }
     }
 }
