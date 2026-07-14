@@ -320,7 +320,7 @@ class LspEditorManager(
         editorLspEnabled = Prefs.devEditorLspEnabled,
         builtinCmakeLspEnabled = Prefs.devBuiltinCmakeLspEnabled,
         cxxExtensions = lspSupportedExtensions,
-        hasPluginServer = lspPluginManager?.getServerConfigForFile(file) != null
+        hasPluginServer = lspPluginManager?.getServerConfigForFile(file, file.resolveLspLanguageId()) != null
     )
 
     fun onTinaDocumentChanged(tabId: String, change: TextChange, documentVersion: Long) {
@@ -1325,7 +1325,8 @@ class LspEditorManager(
     ): Boolean {
         val pluginManager = lspPluginManager ?: return false
         val ext = file.extension.lowercase()
-        val (pluginInfo, serverConfig) = pluginManager.getServerConfigForFile(file) ?: return false
+        val detectedLanguageId = languageIdForFile(file)
+        val (pluginInfo, serverConfig) = pluginManager.getServerConfigForFile(file, detectedLanguageId) ?: return false
         val readiness = pluginManager.inspectPluginReadiness(pluginInfo.pluginId)
         if (!readiness.ready) {
             val message = readiness.toPluginReadinessMessage()
@@ -1356,7 +1357,7 @@ class LspEditorManager(
             file = file,
             kind = SessionKind.PLUGIN,
             workspaceRoot = projectRoot,
-            languageId = serverConfig.languages.firstOrNull() ?: ext,
+            languageId = serverConfig.resolveDocumentLanguageId(detectedLanguageId, ext),
             textProvider = textProvider,
             initializationOptions = serverConfig.initializationOptions,
             onAttachSuccess = {

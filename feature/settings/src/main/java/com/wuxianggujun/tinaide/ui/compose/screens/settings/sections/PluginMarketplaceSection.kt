@@ -68,6 +68,7 @@ import com.wuxianggujun.tinaide.plugin.marketplace.PluginSummary
 import com.wuxianggujun.tinaide.ui.compose.components.DetailHeaderCard
 import com.wuxianggujun.tinaide.ui.compose.components.DetailIconPlaceholder
 import com.wuxianggujun.tinaide.ui.compose.components.DetailInfoCard
+import com.wuxianggujun.tinaide.ui.compose.components.PluginPermissionDialog
 import com.wuxianggujun.tinaide.ui.compose.components.TinaBackHandlers
 import com.wuxianggujun.tinaide.ui.compose.components.TinaSpacing
 import com.wuxianggujun.tinaide.ui.compose.components.TinaShapes
@@ -119,6 +120,23 @@ fun PluginMarketplaceScreen(
             onNavigateBack = { viewModel.closePluginDetails() }
         )
         return
+    }
+
+    uiState.pendingInstall?.let { pending ->
+        PluginPermissionDialog(
+            pluginName = pending.manifest.name,
+            permissions = pending.permissions,
+            onConfirm = viewModel::confirmPendingInstall,
+            onDeny = {
+                viewModel.dismissPendingInstall()
+                Toast.makeText(
+                    context,
+                    context.getString(Strings.toast_plugins_permission_denied),
+                    Toast.LENGTH_SHORT,
+                ).show()
+            },
+            onDismiss = viewModel::dismissPendingInstall,
+        )
     }
 
     Scaffold(

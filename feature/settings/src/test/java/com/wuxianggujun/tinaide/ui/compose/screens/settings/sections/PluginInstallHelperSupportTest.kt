@@ -8,6 +8,8 @@ import com.wuxianggujun.tinaide.plugin.PluginDiagnosticSeverity
 import com.wuxianggujun.tinaide.plugin.PluginDiagnosticSource
 import com.wuxianggujun.tinaide.plugin.PluginDiagnosticsReport
 import com.wuxianggujun.tinaide.plugin.PluginManifest
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.nio.file.Files
 import java.util.Locale
@@ -96,6 +98,20 @@ class PluginInstallHelperSupportTest {
                 manifest = null,
             )
         )
+    }
+
+    @Test
+    fun copyAtMost_shouldStopBeforeWritingPastLimit() {
+        val output = ByteArrayOutputStream()
+
+        val completed = PluginInstallHelperSupport.copyAtMost(
+            input = ByteArrayInputStream(ByteArray(12 * 1024)),
+            output = output,
+            maxBytes = 8L * 1024L,
+        )
+
+        assertThat(completed).isFalse()
+        assertThat(output.size()).isEqualTo(8 * 1024)
     }
 
     @Test

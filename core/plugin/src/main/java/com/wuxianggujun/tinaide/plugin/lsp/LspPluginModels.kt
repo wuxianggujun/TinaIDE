@@ -31,7 +31,20 @@ data class LspServerConfig(
     val settings: JsonElement? = null,
     /** 服务器能力配置 */
     val capabilities: LspCapabilitiesConfig? = null
-)
+) {
+    fun resolveDocumentLanguageId(
+        detectedLanguageId: String,
+        fallbackLanguageId: String,
+    ): String {
+        val detected = detectedLanguageId.trim()
+        return languages.firstOrNull { language -> language.equals(detected, ignoreCase = true) }
+            ?: languages.firstOrNull { language ->
+                detected.startsWith(language, ignoreCase = true)
+            }
+            ?: languages.firstOrNull()
+            ?: fallbackLanguageId
+    }
+}
 
 /**
  * 运行时依赖配置
@@ -165,6 +178,16 @@ data class LspPluginInfo(
         return activationEvents.any { event ->
             event.equals("onLanguage:$languageId", ignoreCase = true)
         }
+    }
+
+    fun supportsServerActivation(
+        config: LspServerConfig,
+        detectedLanguageId: String? = null,
+    ): Boolean {
+        if (activationEvents.isEmpty()) return true
+        if (detectedLanguageId == null) return config.languages.any(::supportsLanguageActivation)
+        val languageId = config.resolveDocumentLanguageId(detectedLanguageId, detectedLanguageId)
+        return supportsLanguageActivation(languageId)
     }
 }
 

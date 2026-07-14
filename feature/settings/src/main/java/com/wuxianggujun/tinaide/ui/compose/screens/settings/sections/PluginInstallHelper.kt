@@ -10,9 +10,11 @@ import com.wuxianggujun.tinaide.plugin.PluginManager
 import com.wuxianggujun.tinaide.plugin.PluginManifest
 import com.wuxianggujun.tinaide.plugin.ZipUtils
 import com.wuxianggujun.tinaide.plugin.script.PluginPermission
+import com.wuxianggujun.tinaide.plugin.script.PluginPermissionManager
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 
 data class PendingPluginInstall(
@@ -54,11 +56,18 @@ suspend fun previewPluginInstall(
     runCatching {
         val inputStream = context.contentResolver.openInputStream(uri)
             ?: uri.resolveFileUriOrNull()?.inputStream()
-        inputStream?.use { input ->
-            destFile.outputStream().use { output -> input.copyTo(output) }
+        val copiedWithinLimit = inputStream?.use { input ->
+            destFile.outputStream().use { output ->
+                PluginInstallHelperSupport.copyAtMost(
+                    input = input,
+                    output = output,
+                    maxBytes = ZipUtils.MAX_PACKAGE_BYTES,
+                )
+            }
         } ?: return@runCatching PluginInstallPreview.Failed(
             Strings.plugin_error_cannot_read_file.strOr(context)
         )
+        require(copiedWithinLimit) { Strings.plugin_error_package_too_large.strOr(context) }
 
         createPluginInstallPreview(context, destFile)
     }.getOrElse { throwable ->
@@ -103,10 +112,31 @@ suspend fun finishPluginInstall(
     pluginManager: PluginManager,
     pluginFile: File,
     toastPluginsInstalledTemplate: String,
-    toastPluginsInstallFailedTemplate: String
-): PluginInstallOutcome = withContext(Dispatchers.IO) {
+    toastPluginsInstallFailedTemplate: String,
+    permissionManager: PluginPermissionManager? = null,
+    permissions: Set<PluginPermission> = emptySet(),
+    permissionPluginId: String? = null,
+): PluginInstallOutcome = withContext(NonCancellable + Dispatchers.IO) {
     try {
-        val result = pluginManager.install(pluginFile).map { installed -> installed.manifest }
+        val permissionOwnerId = permissionManager?.let {
+            requireNotNull(permissionPluginId) { "Permission plugin id is required when granting permissions" }
+        }
+        val previousGrants = if (permissionManager != null && permissionOwnerId != null) {
+            permissionManager.getGrantedPermissions(permissionOwnerId)
+        } else {
+            null
+        }
+        val result = runCatching {
+            if (permissionManager != null && permissionOwnerId != null && permissions.isNotEmpty()) {
+                permissionManager.grantPermissions(permissionOwnerId, permissions)
+            }
+            pluginManager.install(pluginFile).getOrThrow().manifest
+        }
+        if (result.isFailure && permissionManager != null && permissionOwnerId != null && previousGrants != null) {
+            val installError = checkNotNull(result.exceptionOrNull())
+            runCatching { permissionManager.replacePermissions(permissionOwnerId, previousGrants) }
+                .onFailure(installError::addSuppressed)
+        }
         PluginInstallHelperSupport.buildInstallOutcome(
             result = result,
             installedTemplate = toastPluginsInstalledTemplate,

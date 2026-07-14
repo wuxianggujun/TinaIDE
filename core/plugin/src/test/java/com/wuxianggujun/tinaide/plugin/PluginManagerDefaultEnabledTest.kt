@@ -3,6 +3,9 @@ package com.wuxianggujun.tinaide.plugin
 import android.app.Application
 import android.content.Context
 import com.google.common.truth.Truth.assertThat
+import com.wuxianggujun.tinaide.plugin.runtime.PluginDatabase
+import com.wuxianggujun.tinaide.plugin.script.PluginPermission
+import com.wuxianggujun.tinaide.plugin.script.PluginPermissionManager
 import java.io.File
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -106,6 +109,48 @@ class PluginManagerDefaultEnabledTest {
         assertThat(prefs.getBoolean("desired_enabled_$pluginId", false)).isTrue()
         assertThat(prefs.getBoolean("enabled_$pluginId", false)).isTrue()
         assertThat(pluginManager.isPluginEnabled(pluginId)).isTrue()
+    }
+
+    @Test
+    fun `marketplace expectation rejects a package before it can replace another plugin`() = runBlocking {
+        val requestedId = pluginId("requested-market-id")
+        val packageId = pluginId("package-id")
+        val pluginManager = PluginManager(context)
+        val source = createInstallSource(packageId, version = "2.0.0")
+
+        val result = runCatching {
+            pluginManager.installPluginFromDirectory(
+                extractedDir = source,
+                allowSkipIfSameVersion = false,
+                expectedPackage = PluginPackageExpectation(requestedId, "2.0.0"),
+            )
+        }
+
+        assertThat(result.isFailure).isTrue()
+        assertThat(File(pluginsDir, requestedId).exists()).isFalse()
+        assertThat(File(pluginsDir, packageId).exists()).isFalse()
+    }
+
+    @Test
+    fun `uninstall revokes grants and removes plugin persistent data`() = runBlocking {
+        val pluginId = pluginId("uninstall-cleanup")
+        writePluginManifest(pluginId = pluginId, type = PluginTypes.CONFIG)
+        val pluginManager = PluginManager(context)
+        pluginManager.refreshInstalledPlugins()
+        val permissionManager = PluginPermissionManager.getInstance(context)
+        permissionManager.grantPermission(pluginId, PluginPermission.NETWORK_UNRESTRICTED)
+        val storage = context.getSharedPreferences("plugin_storage", Context.MODE_PRIVATE)
+        storage.edit().putString("$pluginId:key", "value").commit()
+        val databaseFile = context.getDatabasePath(PluginDatabase.databaseName(pluginId)).apply {
+            parentFile?.mkdirs()
+            writeText("database", Charsets.UTF_8)
+        }
+
+        pluginManager.uninstallPlugin(pluginId).getOrThrow()
+
+        assertThat(permissionManager.getGrantedPermissions(pluginId)).isEmpty()
+        assertThat(storage.contains("$pluginId:key")).isFalse()
+        assertThat(databaseFile.exists()).isFalse()
     }
 
     private fun writePluginManifest(

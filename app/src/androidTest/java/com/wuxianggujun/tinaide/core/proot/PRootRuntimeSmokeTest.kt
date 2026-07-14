@@ -29,7 +29,11 @@ class PRootRuntimeSmokeTest {
             timeout = 30_000L
         )
 
-        assertEquals("proot shell child-chain exitCode", 0, result.exitCode)
+        assertEquals(
+            "proot shell child-chain exitCode; output=${result.combinedOutput}",
+            0,
+            result.exitCode,
+        )
         assertTrue(
             "proot child-chain output should contain OK_CHILD_CHAIN",
             result.combinedOutput.contains("OK_CHILD_CHAIN")

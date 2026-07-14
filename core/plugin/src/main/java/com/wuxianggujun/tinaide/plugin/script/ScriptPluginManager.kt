@@ -15,6 +15,7 @@ import com.wuxianggujun.tinaide.plugin.PluginManager
 import com.wuxianggujun.tinaide.plugin.PluginRuntimeLifecycle
 import com.wuxianggujun.tinaide.plugin.runtime.BinderPluginRuntimeTransportFactory
 import com.wuxianggujun.tinaide.plugin.runtime.PluginRuntimeInvokeRequest
+import com.wuxianggujun.tinaide.plugin.runtime.PluginRuntimePayloadTooLargeException
 import com.wuxianggujun.tinaide.plugin.runtime.PluginRuntimeResponse
 import com.wuxianggujun.tinaide.plugin.runtime.PluginRuntimeResponseStatus
 import com.wuxianggujun.tinaide.plugin.runtime.PluginRuntimeTransportFactory
@@ -263,6 +264,11 @@ class ScriptPluginManager internal constructor(
             }
             updateState(pluginId, ScriptPluginState.RUNTIME_UNAVAILABLE, error.message, generation)
             return@withLock PluginExecutionResult.Error(error.message ?: "Plugin runtime service is unavailable")
+        } catch (error: PluginRuntimePayloadTooLargeException) {
+            if (!faultStore.clearInFlight(callId)) {
+                Timber.tag(TAG).e("Failed to clear oversized plugin execution journal for %s", pluginId)
+            }
+            return@withLock PluginExecutionResult.Error(Strings.plugin_error_event_payload_too_large.strOr(context))
         } catch (error: Throwable) {
             PluginRuntimeResponse(
                 pluginId = pluginId,

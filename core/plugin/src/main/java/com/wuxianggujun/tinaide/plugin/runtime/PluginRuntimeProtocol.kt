@@ -9,6 +9,10 @@ internal const val MAX_LUA_SOURCE_TOTAL_BYTES: Long = 8L * 1024L * 1024L
 internal const val DEFAULT_PLUGIN_EXECUTION_TIMEOUT_MS: Long = 5_000L
 internal const val MAX_PLUGIN_CALL_DURATION_MS: Long = 60_000L
 
+internal class PluginRuntimePayloadTooLargeException(
+    label: String,
+) : IllegalArgumentException("$label exceeds $MAX_BINDER_JSON_BYTES bytes")
+
 @Serializable
 internal data class PluginRuntimeLoadRequest(
     val pluginId: String,

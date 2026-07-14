@@ -18,6 +18,31 @@ class LspPluginActivationTest {
         assertThat(plugin.supportsLanguageActivation("javascript")).isFalse()
     }
 
+    @Test
+    fun `server activation requires at least one contributed language event`() {
+        val plugin = pluginInfo(listOf("onLanguage:python"))
+
+        assertThat(plugin.supportsServerActivation(serverConfig(listOf("python", "javascript")))).isTrue()
+        assertThat(plugin.supportsServerActivation(serverConfig(listOf("javascript")))).isFalse()
+    }
+
+    @Test
+    fun `multi language server activation follows the detected document language`() {
+        val plugin = pluginInfo(listOf("onLanguage:python"))
+        val server = serverConfig(listOf("python", "javascript"))
+
+        assertThat(plugin.supportsServerActivation(server, "python")).isTrue()
+        assertThat(plugin.supportsServerActivation(server, "javascript")).isFalse()
+    }
+
+    @Test
+    fun `document language resolution prefers exact and language family matches`() {
+        val server = serverConfig(listOf("typescript", "javascript"))
+
+        assertThat(server.resolveDocumentLanguageId("javascript", "js")).isEqualTo("javascript")
+        assertThat(server.resolveDocumentLanguageId("typescriptreact", "tsx")).isEqualTo("typescript")
+    }
+
     private fun pluginInfo(events: List<String>) = LspPluginInfo(
         pluginId = "test.lsp",
         pluginName = "Test LSP",
@@ -26,5 +51,13 @@ class LspPluginActivationTest {
         serverConfigs = emptyList(),
         toolchainConfigs = emptyList(),
         activationEvents = events,
+    )
+
+    private fun serverConfig(languages: List<String>) = LspServerConfig(
+        id = "test-server",
+        name = "Test Server",
+        languages = languages,
+        fileExtensions = listOf("test"),
+        server = LspServerConnectionConfig(type = "stdio", command = "test-server"),
     )
 }

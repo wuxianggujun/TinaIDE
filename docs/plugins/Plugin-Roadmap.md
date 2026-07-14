@@ -54,7 +54,7 @@
 | SnippetManager（代码片段） | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ | P1 | ✅ 已完成（`contributions.snippets`） |
 | Keybindings（快捷键绑定） | ⭐⭐⭐ | ⭐⭐⭐ | P2 | ✅ JSON 文件声明，MainActivity 硬件快捷键分发已接入 |
 | requires（依赖声明提示） | ⭐⭐⭐ | ⭐⭐ | P2 | ✅ 已完成：manifest 解析、详情展示、doctor 提示；不做安装 |
-| 插件详情页（权限/依赖/贡献预览） | ⭐⭐⭐ | ⭐⭐⭐ | P2 | UX 完整性 |
+| 插件详情页（权限/依赖/贡献预览） | ⭐⭐⭐ | ⭐⭐⭐ | P2 | ✅ 已完成：状态、故障、依赖、贡献、必需/可选权限与授权操作均已接入 |
 | **插件设置页面** | ⭐⭐⭐ | ⭐⭐⭐ | P2 | ✅ 已完成：manifest `configuration` schema、插件详情页自动配置 UI、持久化与 `tina.config.*` API |
 
 ---
@@ -304,8 +304,8 @@ interface HostCommand {
 | Lua 沙箱与 API v1 兼容 | ✅ | 禁用危险库、Java/LuaJava 反射和 native module；保留插件目录内只读纯 Lua `require()`。同一设备测试已覆盖死循环 watchdog、受限 `require()`、危险库和 stale generation/超大 Binder 返回值。 |
 | Host capability gateway | ✅ | 文件、编辑器、Command、Clipboard、Network、Database、UI 等能力统一回到宿主；每次调用重验 generation、有效启用态、manifest 声明和运行时授权。 |
 | 故障状态机与自愈 | ✅ | 已落地 `desiredEnabled`、有效状态、故障记录和 in-flight journal；禁用/卸载递增 generation，故障插件隔离，空闲 runtime 死亡后恢复健康插件。`PluginQuarantinePersistenceInstrumentedTest` 已验证两次宿主对象图重建后的持久化；真实 App 验收进一步确认 watchdog 后故障插件进入 `QUARANTINED / EXECUTION_TIMEOUT`、健康 survivor 在新 runtime 恢复 `ACTIVE`，且 `force-stop/relaunch` 后 quarantine 不丢失。 |
-| 安装事务与资源限制 | ✅ | 新装默认禁用；升级使用 staging/backup/atomic rename 和恢复 journal；Zip、Lua、日志、Binder、Network 与 PSS 均设置上限。设备测试已验证约 96 MiB Lua 保留内存触发 `RESOURCE_LIMIT` 后 runtime 可恢复。 |
-| LSP 生命周期归属 | ✅ | session 绑定 `ownerPluginId`，禁用、隔离、升级、卸载会关闭会话；command/args/env 已校验。JVM 测试覆盖 owner 定向清理和成功启动后的异常退出回调；真实 App 验收确认 readiness 失败不隔离、server 异常退出进入 `QUARANTINED / LSP_CRASH`、重新启用可建立新会话，UI 禁用会关闭 PRoot/server，并通过 owner-stop 回调释放编辑器 session，将状态从 `LSP Ready` 更新为 `No LSP`。 |
+| 安装事务与资源限制 | ✅ | 新装默认禁用；升级使用 staging/backup/atomic rename 和恢复 journal；Zip、Lua、日志、Binder、Network 与 PSS 均设置上限。市场下载与本地 URI 导入流量超过 64 MiB 会立即中止并删除残留；每次市场请求使用独立临时包，安装前后绑定请求 ID/版本；script/hybrid 权限授权与安装不可取消地提交，失败恢复原授权。设备测试已验证约 96 MiB Lua 保留内存触发 `RESOURCE_LIMIT` 后 runtime 可恢复。 |
+| LSP 生命周期归属 | ✅ | session 绑定 `ownerPluginId`，禁用、隔离、升级、卸载会关闭会话；command/args/env 已校验。owner 代际令牌会拒绝禁用期间尚未完成的延迟注册，`activationEvents` 同时约束 language、扩展名和文件模式路由。JVM 测试覆盖 owner 定向清理和成功启动后的异常退出回调；真实 App 验收确认 readiness 失败不隔离、server 异常退出进入 `QUARANTINED / LSP_CRASH`、重新启用可建立新会话，UI 禁用会关闭 PRoot/server，并通过 owner-stop 回调释放编辑器 session，将状态从 `LSP Ready` 更新为 `No LSP`。 |
 | 设置 UI 与文档 | ✅ | 已增加等待授权、自动隔离、runtime 不可用和风险确认状态，并同步中英文资源、App 内帮助、API 合同与 starter README。 |
 
 ### 4.2 设备验收结果（2026-07-14）
@@ -314,7 +314,8 @@ interface HostCommand {
 2. 真实 `force-stop/relaunch` 后 `QUARANTINED / EXECUTION_TIMEOUT` 持久化；用户风险确认和重新启用流程通过。
 3. 真实 PRoot LSP 已完成 initialize 并进入 fully connected；readiness 失败不会隔离插件，成功启动后的 server 异常退出会进入 `QUARANTINED / LSP_CRASH`，重新启用后可创建新 PRoot/server 进程。
 4. 从插件 UI 禁用 owner 后，PRoot 与 server PID 均退出，日志出现 `Closing LSP connection` 和 `Plugin LSP owner stopped; releasing session`，返回原编辑器后状态显示 `No LSP`。
-5. 阶段 2 的技术重构与设备验收至此完成；发布渠道策略已暂缓，不属于当前稳定性工作的验收项。
+5. PRoot 回归补齐真实子进程探针：宿主工作目录固定到 App 私有目录，Android x86_64 seccomp 拒绝的 `fork/vfork` 会在 PRoot 内等价转换为 `clone`；同一设备连续 3 次 guest `ls/cat` 子进程链路及 App 全量 instrumentation 均通过。验收同时修复了发行版注册表并发刷新共用临时文件导致的启动崩溃。
+6. 阶段 2 的技术重构与设备验收至此完成；发布渠道策略已暂缓，不属于当前稳定性工作的验收项。
 
 ### 4.3 发布渠道策略（暂缓，不在本轮范围）
 
@@ -331,8 +332,9 @@ interface HostCommand {
 | 文本面板 | ✅ | `contributions.panels` 仅允许 script/hybrid 声明；`tina.panels.setContent/appendContent/clear` 只能写本插件已声明面板，单面板上限 256 KiB UTF-8。底部“插件”面板仅在存在启用贡献时显示，禁用、卸载、隔离和 runtime death 会清理内容。 |
 | 自定义事件 | ✅ | 已实现 `tina.events.emit("custom", payload)` 定向异步派发；未知事件、非 object payload 和宿主事件伪造会被拒绝，重复订阅去重。 |
 | 可选权限 | ✅ | 插件详情页支持单项授予/撤销；`optionalPermissions` 包含的 L0 权限也必须显式授权，撤销后 capability gateway 立即拒绝调用。 |
-| LSP activationEvents | ✅ | apiVersion 1 仅接受 LSP `onLanguage:<languageId>`，并校验目标语言已由 `languageServers` 声明；声明列表会实际限制按 language ID 的激活。 |
-| Host gateway 降耦 | ✅ | 持久化 storage、network、database handler、SQLite 封装和 Binder 大载荷存储已从主路由拆出；主路由保留 generation/启用态/权限统一校验。 |
+| LSP activationEvents | ✅ | apiVersion 1 仅接受 LSP `onLanguage:<languageId>`，并校验目标语言已由 `languageServers` 声明；声明列表会实际限制 language ID、文件扩展名和文件模式路由。 |
+| Host gateway 降耦 | ✅ | 持久化 storage、network、database handler、SQLite 封装和 Binder 大载荷存储已从主路由拆出；网络重定向逐跳复验白名单，SQLite 使用完整 ID 哈希隔离；卸载撤销授权并清理 KV/DB，主路由保留 generation/启用态/权限统一校验。 |
+| 事件与 Lua 资源边界 | ✅ | 选区和诊断事件采用显式上限；宿主侧超大请求返回输入错误而不隔离插件；卸载按插件 ID 清理全部 Lua module generation 计数，避免代际错位残留。 |
 | LSP owner-stop 回归 | ✅ | owner-stop 处理抽成可测试代际守卫，覆盖“当前 attach 释放并转 No LSP”和“旧 callback 不影响替换会话”。 |
 | 文档与 starter 路径 | ✅ | API 契约、开发指南、App 内帮助与 starter README 已同步；starter zip 的事实路径统一为 `tools/plugin-starters/dist/tinaide.plugin.starters/templates/`。 |
 

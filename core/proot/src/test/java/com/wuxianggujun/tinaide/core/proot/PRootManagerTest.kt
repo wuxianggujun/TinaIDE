@@ -33,7 +33,7 @@ class PRootManagerTest {
     fun buildExecEnvironment_shouldApplyCachedLaunchConfigWithoutOuterLdPreload() {
         File(ProjectPaths.getPRootRoot(context), "proot-launch-config.txt").apply {
             parentFile?.mkdirs()
-            writeText("guest-probe-v1|linker", Charsets.UTF_8)
+            writeText("guest-child-probe-v2|linker", Charsets.UTF_8)
         }
         val manager = PRootManager(context, rootfsDir.absolutePath)
 
@@ -61,7 +61,7 @@ class PRootManagerTest {
     fun buildExecEnvironment_shouldIgnoreInvalidCachedLaunchConfig() {
         File(ProjectPaths.getPRootRoot(context), "proot-launch-config.txt").apply {
             parentFile?.mkdirs()
-            writeText("guest-probe-v1|invalid", Charsets.UTF_8)
+            writeText("guest-child-probe-v2|invalid", Charsets.UTF_8)
         }
         val manager = PRootManager(context, rootfsDir.absolutePath)
 

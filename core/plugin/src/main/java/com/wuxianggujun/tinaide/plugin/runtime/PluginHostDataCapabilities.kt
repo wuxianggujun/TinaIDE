@@ -18,8 +18,22 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.HttpUrl
+import okhttp3.Interceptor
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+
+internal data class PluginNetworkRequestPolicy(
+    val unrestricted: Boolean,
+    val allowedHosts: Set<String>,
+) {
+    fun allows(url: HttpUrl): Boolean = unrestricted ||
+        PluginNetworkHostRules.isUrlAllowed(url.toString(), allowedHosts)
+}
+
+private class PluginNetworkPolicyException(val blockedHost: String?) : java.io.IOException(
+    "Plugin network redirect target is not allowed",
+)
 
 /** Host-owned persistent storage and network capabilities. */
 internal class PluginHostDataCapabilities(
@@ -28,13 +42,35 @@ internal class PluginHostDataCapabilities(
     private val hasAnyPermission: (PluginManifest, Set<PluginPermission>) -> Boolean,
 ) {
     companion object {
+        private const val STORAGE_PREFERENCES_NAME = "plugin_storage"
         private const val MAX_NETWORK_BODY_BYTES = 8 * 1024 * 1024
+
+        internal fun clearPersistentData(context: Context, pluginId: String) {
+            val preferences = context.getSharedPreferences(STORAGE_PREFERENCES_NAME, Context.MODE_PRIVATE)
+            val prefix = "$pluginId:"
+            val editor = preferences.edit()
+            preferences.all.keys.filter { it.startsWith(prefix) }.forEach(editor::remove)
+            check(editor.commit()) { "Failed to clear plugin storage" }
+            PluginDatabase.deletePersistentFiles(context, pluginId)
+        }
     }
 
-    private val storagePreferences = context.getSharedPreferences("plugin_storage", Context.MODE_PRIVATE)
+    private val storagePreferences = context.getSharedPreferences(STORAGE_PREFERENCES_NAME, Context.MODE_PRIVATE)
     private val databases = ConcurrentHashMap<String, PluginDatabase>()
     private val networkLimiters = ConcurrentHashMap<String, RateLimiter>()
     private val appContext = context.applicationContext
+    private val networkClient = OkHttpClientProvider.custom {
+        addNetworkInterceptor(
+            Interceptor { chain ->
+                val request = chain.request()
+                val policy = request.tag(PluginNetworkRequestPolicy::class.java)
+                if (policy != null && !policy.allows(request.url)) {
+                    throw PluginNetworkPolicyException(request.url.host)
+                }
+                chain.proceed(request)
+            },
+        )
+    }
 
     fun call(request: PluginHostCallRequest): PluginHostCallResponse = when (request.namespace) {
         "storage" -> handleStorage(request)
@@ -97,7 +133,13 @@ internal class PluginHostDataCapabilities(
         }
         val body = if (request.method == "fetch") request.args.string(2) else request.args.string(1)
         val contentType = if (request.method == "fetch") request.args.string(3) else request.args.string(2)
-        val requestBuilder = Request.Builder().url(url)
+        val networkPolicy = PluginNetworkRequestPolicy(
+            unrestricted = unrestricted,
+            allowedHosts = manifest.networkHosts.orEmpty().toSet(),
+        )
+        val requestBuilder = Request.Builder()
+            .url(url)
+            .tag(PluginNetworkRequestPolicy::class.java, networkPolicy)
         val requestBody = (body ?: "").toRequestBody((contentType ?: "application/json").toMediaTypeOrNull())
         when (method) {
             "GET" -> requestBuilder.get()
@@ -107,25 +149,33 @@ internal class PluginHostDataCapabilities(
             "PATCH" -> requestBuilder.patch(requestBody)
             else -> return hostFailureWithValues(JsonNull, "Unsupported HTTP method: $method")
         }
-        OkHttpClientProvider.default.newCall(requestBuilder.build()).execute().use { response ->
-            val responseText = response.body?.byteStream()?.use { input ->
-                String(input.readLimited(MAX_NETWORK_BODY_BYTES), StandardCharsets.UTF_8)
-            }.orEmpty()
-            return when (request.method) {
-                "fetch" -> hostSuccess(
-                    JsonObject(
-                        mapOf(
-                            "status" to JsonPrimitive(response.code),
-                            "ok" to JsonPrimitive(response.isSuccessful),
-                            "body" to JsonPrimitive(responseText),
-                            "headers" to JsonObject(
-                                response.headers.associate { (name, value) -> name to JsonPrimitive(value) },
+        try {
+            networkClient.newCall(requestBuilder.build()).execute().use { response ->
+                val responseText = response.body?.byteStream()?.use { input ->
+                    String(input.readLimited(MAX_NETWORK_BODY_BYTES), StandardCharsets.UTF_8)
+                }.orEmpty()
+                return when (request.method) {
+                    "fetch" -> hostSuccess(
+                        JsonObject(
+                            mapOf(
+                                "status" to JsonPrimitive(response.code),
+                                "ok" to JsonPrimitive(response.isSuccessful),
+                                "body" to JsonPrimitive(responseText),
+                                "headers" to JsonObject(
+                                    response.headers.associate { (name, value) -> name to JsonPrimitive(value) },
+                                ),
                             ),
                         ),
-                    ),
-                )
-                else -> hostSuccess(JsonPrimitive(responseText))
+                    )
+                    else -> hostSuccess(JsonPrimitive(responseText))
+                }
             }
+        } catch (error: PluginNetworkPolicyException) {
+            return hostFailureWithValues(
+                JsonNull,
+                "Host not in whitelist: ${error.blockedHost.orEmpty()}",
+                PluginHostErrorKind.PERMISSION_DENIED,
+            )
         }
     }
 

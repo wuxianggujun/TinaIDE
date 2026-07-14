@@ -27,6 +27,8 @@ Lua 不再运行在 TinaIDE 主进程。宿主通过 Binder 调用非导出的 `
 - 宿主对象和真实路径不会进入 Lua；所有文件、编辑器、UI、Clipboard、Network 与 Database 能力都通过 `tina.*` 和权限检查访问。
 - 新安装插件默认禁用。安装完成后需在详情页明确启用；权限等待、自动隔离和 runtime 不可用会显示为不同状态。
 - 被自动隔离的插件必须由用户确认重新启用，或安装严格更高版本后再尝试运行。
+- 市场安装会在写入插件目录前绑定请求的 `pluginId` 与版本，并复用文件安装的权限确认；身份不一致的包会被拒绝。市场下载与系统文件选择器导入都执行 64 MiB 流式上限。
+- 只有 script/hybrid 的必需权限会在安装事务中授予；L0 权限自动授予，其他级别先确认，安装失败时恢复原授权。配置类插件不会被预授予脚本权限。
 
 资源上限、故障分类和恢复规则以 [插件 API 契约](../plugin-api-contract.md) 为准。
 
@@ -298,6 +300,12 @@ Lua 不再运行在 TinaIDE 主进程。宿主通过 Binder 调用非导出的 `
 
 - `storage.database`
 
+隔离与清理：
+
+- 数据库文件名由完整插件 ID 的 SHA-256 派生，不会因 `.` / `_` 归一化产生跨插件碰撞。
+- 旧版数据库仅在同名映射没有其他已安装插件竞争时迁移。
+- 卸载会撤销该插件的权限授权，并清理 `tina.storage` 与 `tina.db` 持久化数据；普通升级不会清理。
+
 ### 4.10 `tina.network`
 
 用途：网络请求。
@@ -316,6 +324,7 @@ Lua 不再运行在 TinaIDE 主进程。宿主通过 Binder 调用非导出的 `
 约束：
 
 - 使用 `network.fetch` 时，目标主机必须命中白名单
+- HTTP 重定向的每一跳都会重新检查白名单，不能通过首跳允许域名跳转到未声明主机
 - 若要完全放开，需要更高风险权限
 
 ### 4.11 `tina.commands`
@@ -441,6 +450,9 @@ Lua 不再运行在 TinaIDE 主进程。宿主通过 Binder 调用非导出的 `
 - `editor.selectionChanged` 已在宿主侧做 180ms 防抖
 - `diagnostics.changed` 由 LSP / 内置语言服务诊断变化触发
 - `editor.dirtyChanged` 只在脏状态真正变化时触发
+- 选区文本最多携带 16 Ki 字符；超出时 `selection.textTruncated=true`
+- 单次诊断事件最多携带 32 条详情、每条消息最多 384 字符，并限制 URI、文件名、来源与错误码长度；原始总数仍由 `totalCount` 提供，截断时 `diagnosticsTruncated=true`
+- 宿主拒绝的超大事件载荷属于宿主输入限制，只返回调用错误，不会把健康插件误判为 runtime crash
 
 ### 4.13 `tina.panels`
 

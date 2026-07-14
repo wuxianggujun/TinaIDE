@@ -5,6 +5,8 @@ import com.wuxianggujun.tinaide.core.network.ApiResult
 import com.wuxianggujun.tinaide.core.network.registry.GitHubRegistryConfig
 import com.wuxianggujun.tinaide.core.network.registry.RegistryEndpoint
 import com.wuxianggujun.tinaide.core.network.registry.RegistryUrl
+import com.wuxianggujun.tinaide.plugin.ZipUtils
+import java.io.RandomAccessFile
 import java.nio.file.Files
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -257,6 +259,81 @@ class PluginRegistryProtocolTest {
             assertThat(interceptor.requestedUrls)
                 .containsExactly(officialIndexUrl.url, proxyIndexUrl.url, proxyDetailUrl, proxyDownloadUrl)
                 .inOrder()
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun downloadPlugin_shouldRejectAndDeleteOversizedPartialBeforeNetworkTransfer(): Unit = runBlocking {
+        val baseUrl = "https://registry.example"
+        val indexUrl = registryUrl(baseUrl, "index.json")
+        val detailUrl = "$baseUrl/plugins/example/plugin.json"
+        val downloadUrl = "$baseUrl/plugins/example/example.tinaplug"
+        val interceptor = FakeRegistryInterceptor(
+            mapOf(
+                indexUrl.url to RegistryResponse(
+                    body = """
+                    {
+                      "schema_version": 2,
+                      "generated_at": "2026-06-06T00:00:00Z",
+                      "plugins": [
+                        {
+                          "id": "tinaide.plugin.example",
+                          "plugin_id": "tinaide.plugin.example",
+                          "name": "Example",
+                          "description": "Example",
+                          "category": "tool",
+                          "tags": [],
+                          "publisher": { "id": "tinaide", "display_name": "TinaIDE" },
+                          "latest_version": "1.0.0",
+                          "detail_url": "$detailUrl",
+                          "created_at": "2026-06-01T00:00:00Z",
+                          "updated_at": "2026-06-06T00:00:00Z"
+                        }
+                      ]
+                    }
+                    """.trimIndent(),
+                ),
+                detailUrl to RegistryResponse(
+                    body = """
+                    {
+                      "id": "tinaide.plugin.example",
+                      "plugin_id": "tinaide.plugin.example",
+                      "name": "Example",
+                      "publisher": { "id": "tinaide", "display_name": "TinaIDE" },
+                      "versions": [
+                        {
+                          "version": "1.0.0",
+                          "version_code": 1,
+                          "file_size": 1,
+                          "download_url": "$downloadUrl",
+                          "created_at": "2026-06-06T00:00:00Z"
+                        }
+                      ],
+                      "created_at": "2026-06-01T00:00:00Z",
+                      "updated_at": "2026-06-06T00:00:00Z"
+                    }
+                    """.trimIndent(),
+                ),
+            ),
+        )
+        val api = pluginApi(indexUrl, interceptor.client())
+        val tempDir = Files.createTempDirectory("plugin-size-limit-test").toFile()
+        val targetFile = tempDir.resolve("example.tinaplug")
+        RandomAccessFile(targetFile, "rw").use { file ->
+            file.setLength(ZipUtils.MAX_PACKAGE_BYTES + 1)
+        }
+
+        try {
+            val result = api.downloadPlugin(
+                pluginId = "tinaide.plugin.example",
+                targetFile = targetFile,
+            )
+
+            assertThat(result).isNotInstanceOf(ApiResult.Success::class.java)
+            assertThat(targetFile.exists()).isFalse()
+            assertThat(interceptor.requestedUrls).doesNotContain(downloadUrl)
         } finally {
             tempDir.deleteRecursively()
         }

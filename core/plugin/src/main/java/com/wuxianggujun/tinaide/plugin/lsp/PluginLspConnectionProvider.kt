@@ -63,6 +63,8 @@ class PluginLspConnectionProvider(
         val command = serverConfig.command
             ?: throw IllegalArgumentException("No command specified for stdio server")
         validateCommand(command, serverConfig.args.orEmpty(), serverConfig.env.orEmpty())
+        val ownerLease = PluginLspSessionRegistry.acquire(ownerPluginId)
+            ?: throw IllegalStateException("LSP plugin owner '$ownerPluginId' is not active")
 
         val args = (serverConfig.args ?: emptyList()).map { arg ->
             expandVariables(arg)
@@ -120,7 +122,10 @@ class PluginLspConnectionProvider(
             workDir = guestWorkingDir,
             env = mergedEnv
         )
-        PluginLspSessionRegistry.register(ownerPluginId, this)
+        if (!PluginLspSessionRegistry.register(ownerLease, this)) {
+            closeFromOwner()
+            throw IllegalStateException("LSP plugin owner '$ownerPluginId' stopped during startup")
+        }
 
         // 消费 stderr，防止缓冲区满导致阻塞
         val p = process ?: return

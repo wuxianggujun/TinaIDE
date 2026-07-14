@@ -30,13 +30,17 @@ Optional permissions are never granted by the declaration alone. Grant or revoke
 
 ## Install from file
 
-Select a .tinaplug package with the system picker. Script and hybrid plugins that request user-approved permissions display a confirmation before installation. Rejecting the request also removes the temporary import. A successful new installation remains disabled until you explicitly enable it.
+Select a .tinaplug package with the system picker. Imports over 64 MiB are stopped while copying. Script and hybrid plugins that request user-approved permissions display a confirmation before installation; low-risk required permissions are granted automatically in the same install transaction. Rejecting the request also removes the temporary import, and a failed installation restores the previous grants. A successful new installation remains disabled until you explicitly enable it.
+
+Marketplace installation uses the same permission confirmation. Downloads over 64 MiB are stopped, and a package whose declared ID or version differs from the marketplace request is rejected before installation.
 
 When an enabled script or hybrid plugin contributes panels, the editor shows a **Plugins** bottom tab. Panels render bounded plain text only and are cleared after disable, uninstall, quarantine, or runtime failure.
 
 ## Manage and uninstall
 
 Manage mode supports multi-selection, select all, and batch uninstall. Bundled plugins cannot be uninstalled. A non-bundled plugin can also be removed from its detail page.
+
+Uninstalling a regular plugin revokes its grants and removes its local key-value and database data. Updating a plugin preserves that data.
 
 ## Plugin logs
 

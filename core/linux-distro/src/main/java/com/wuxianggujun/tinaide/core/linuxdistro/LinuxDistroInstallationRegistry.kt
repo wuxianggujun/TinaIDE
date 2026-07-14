@@ -4,6 +4,7 @@ import java.io.File
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
@@ -78,32 +79,38 @@ interface LinuxDistroInstallationRegistry {
 class FileLinuxDistroInstallationRegistry(
     private val registryFile: File,
 ) : LinuxDistroInstallationRegistry {
-    override fun list(): List<InstalledLinuxDistro> = readSnapshot().installations.sortedBy { installation -> installation.displayName.lowercase() }
+    private val registryLock = lockFor(registryFile)
 
-    override fun find(distroId: String): InstalledLinuxDistro? {
-        require(distroId.isSafeId()) { "Unsafe distro id: $distroId" }
-        return readSnapshot().installations.firstOrNull { installation -> installation.distroId == distroId }
+    override fun list(): List<InstalledLinuxDistro> = synchronized(registryLock) {
+        readSnapshot().installations.sortedBy { installation -> installation.displayName.lowercase() }
     }
 
-    override fun upsert(installation: InstalledLinuxDistro): InstalledLinuxDistro {
+    override fun find(distroId: String): InstalledLinuxDistro? = synchronized(registryLock) {
+        require(distroId.isSafeId()) { "Unsafe distro id: $distroId" }
+        readSnapshot().installations.firstOrNull { installation -> installation.distroId == distroId }
+    }
+
+    override fun upsert(installation: InstalledLinuxDistro): InstalledLinuxDistro = synchronized(registryLock) {
         val snapshot = readSnapshot()
         val merged = snapshot.installations
             .filterNot { current -> current.distroId == installation.distroId } + installation
         writeSnapshot(snapshot.copy(installations = merged.sortedBy { it.displayName.lowercase() }))
-        return installation
+        installation
     }
 
-    override fun remove(distroId: String): Boolean {
+    override fun remove(distroId: String): Boolean = synchronized(registryLock) {
         require(distroId.isSafeId()) { "Unsafe distro id: $distroId" }
         val snapshot = readSnapshot()
         val next = snapshot.installations.filterNot { installation -> installation.distroId == distroId }
-        if (next.size == snapshot.installations.size) return false
+        if (next.size == snapshot.installations.size) return@synchronized false
         writeSnapshot(snapshot.copy(installations = next))
-        return true
+        true
     }
 
     override fun replaceAll(installations: List<InstalledLinuxDistro>) {
-        writeSnapshot(LinuxDistroRegistrySnapshot(installations = installations.sortedBy { it.displayName.lowercase() }))
+        synchronized(registryLock) {
+            writeSnapshot(LinuxDistroRegistrySnapshot(installations = installations.sortedBy { it.displayName.lowercase() }))
+        }
     }
 
     private fun readSnapshot(): LinuxDistroRegistrySnapshot {
@@ -115,22 +122,38 @@ class FileLinuxDistroInstallationRegistry(
     }
 
     private fun writeSnapshot(snapshot: LinuxDistroRegistrySnapshot) {
-        registryFile.parentFile?.mkdirs()
-        val tempFile = File(registryFile.parentFile ?: File("."), "${registryFile.name}.tmp")
-        tempFile.writeText(json.encodeToString(LinuxDistroRegistrySnapshot.serializer(), snapshot), Charsets.UTF_8)
+        val parentDirectory = registryFile.parentFile ?: File(".")
+        parentDirectory.mkdirs()
+        val tempFile = Files.createTempFile(
+            parentDirectory.toPath(),
+            "${registryFile.name}.",
+            ".tmp",
+        ).toFile()
         try {
-            Files.move(
-                tempFile.toPath(),
-                registryFile.toPath(),
-                StandardCopyOption.REPLACE_EXISTING,
-                StandardCopyOption.ATOMIC_MOVE,
-            )
-        } catch (_: AtomicMoveNotSupportedException) {
-            Files.move(tempFile.toPath(), registryFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            tempFile.writeText(json.encodeToString(LinuxDistroRegistrySnapshot.serializer(), snapshot), Charsets.UTF_8)
+            try {
+                Files.move(
+                    tempFile.toPath(),
+                    registryFile.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE,
+                )
+            } catch (_: AtomicMoveNotSupportedException) {
+                Files.move(tempFile.toPath(), registryFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            }
+        } finally {
+            Files.deleteIfExists(tempFile.toPath())
         }
     }
 
     private companion object {
+        val registryLocks = ConcurrentHashMap<String, Any>()
+
+        fun lockFor(file: File): Any {
+            val normalizedPath = file.toPath().toAbsolutePath().normalize().toString()
+            return registryLocks.computeIfAbsent(normalizedPath) { Any() }
+        }
+
         val json: Json = Json {
             prettyPrint = true
             encodeDefaults = true

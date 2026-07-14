@@ -166,22 +166,31 @@ internal class PluginRuntimeClient(
         require(mainFile.isFile) { "Plugin main file does not exist: $mainEntry" }
         require(mainFile.length() <= MAX_LUA_SOURCE_BYTES) { "Plugin main file exceeds $MAX_LUA_SOURCE_BYTES bytes" }
         moduleBytesByRuntime[runtimeKey(plugin.manifest.id, generation)] = AtomicLong(mainFile.length())
-        val request = PluginRuntimeLoadRequest(
-            pluginId = plugin.manifest.id,
-            pluginName = plugin.manifest.name,
-            version = plugin.manifest.version,
-            apiVersion = plugin.manifest.apiVersion,
-            generation = generation,
-            callId = callId,
-        )
-        val service = connect()
-        val descriptor = ParcelFileDescriptor.open(mainFile, ParcelFileDescriptor.MODE_READ_ONLY)
-        return executeCall(plugin.manifest.id, generation, callId) { callback ->
-            try {
-                service.load(encode(request), descriptor, hostBridge, callback)
-            } finally {
-                descriptor.close()
+        try {
+            val request = PluginRuntimeLoadRequest(
+                pluginId = plugin.manifest.id,
+                pluginName = plugin.manifest.name,
+                version = plugin.manifest.version,
+                apiVersion = plugin.manifest.apiVersion,
+                generation = generation,
+                callId = callId,
+            )
+            val service = connect()
+            val descriptor = ParcelFileDescriptor.open(mainFile, ParcelFileDescriptor.MODE_READ_ONLY)
+            return executeCall(plugin.manifest.id, generation, callId) { callback ->
+                try {
+                    service.load(encode(request), descriptor, hostBridge, callback)
+                } finally {
+                    descriptor.close()
+                }
+            }.also { response ->
+                if (response.status != PluginRuntimeResponseStatus.SUCCESS) {
+                    clearModuleCounters(plugin.manifest.id)
+                }
             }
+        } catch (error: Throwable) {
+            clearModuleCounters(plugin.manifest.id)
+            throw error
         }
     }
 
@@ -193,23 +202,23 @@ internal class PluginRuntimeClient(
     }
 
     override suspend fun unload(request: PluginRuntimeUnloadRequest): PluginRuntimeResponse {
-        val service = serviceRef.get()
-        if (service == null) {
-            moduleBytesByRuntime.remove(runtimeKey(request.pluginId, request.generation))
+        try {
+            val service = serviceRef.get()
+            if (service == null) {
+                return PluginRuntimeResponse(
+                    request.pluginId,
+                    request.generation,
+                    request.callId,
+                    PluginRuntimeResponseStatus.SUCCESS,
+                )
+            }
+            return executeCall(request.pluginId, request.generation, request.callId) { callback ->
+                service.unload(encode(request), callback)
+            }
+        } finally {
+            clearModuleCounters(request.pluginId)
             gateway.cleanupPlugin(request.pluginId)
-            return PluginRuntimeResponse(
-                request.pluginId,
-                request.generation,
-                request.callId,
-                PluginRuntimeResponseStatus.SUCCESS,
-            )
         }
-        val response = executeCall(request.pluginId, request.generation, request.callId) { callback ->
-            service.unload(encode(request), callback)
-        }
-        moduleBytesByRuntime.remove(runtimeKey(request.pluginId, request.generation))
-        gateway.cleanupPlugin(request.pluginId)
-        return response
     }
 
     fun terminate() {
@@ -426,9 +435,16 @@ internal class PluginRuntimeClient(
     }
 
     private fun requireSize(value: String, label: String) {
-        require(value.toByteArray(StandardCharsets.UTF_8).size <= MAX_BINDER_JSON_BYTES) {
-            "$label exceeds $MAX_BINDER_JSON_BYTES bytes"
+        if (value.toByteArray(StandardCharsets.UTF_8).size > MAX_BINDER_JSON_BYTES) {
+            throw PluginRuntimePayloadTooLargeException(label)
         }
+    }
+
+    internal fun clearModuleCounters(pluginId: String) {
+        val prefix = "$pluginId:"
+        moduleBytesByRuntime.keys
+            .filter { key -> key.startsWith(prefix) }
+            .forEach(moduleBytesByRuntime::remove)
     }
 
     private fun runtimeKey(pluginId: String, generation: Long): String = "$pluginId:$generation"

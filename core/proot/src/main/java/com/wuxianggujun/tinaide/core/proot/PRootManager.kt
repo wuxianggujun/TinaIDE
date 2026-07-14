@@ -241,7 +241,9 @@ class PRootManager(
         ensureSupportedRuntime()
         ensureInitScript()
 
-        val probeCmd = listOf("/bin/sh", "-lc", "echo __TINA_PROOT_OK__")
+        // Use a real child process so a launch mode is not cached merely because
+        // the initial guest shell and its builtins can run.
+        val probeCmd = listOf("/bin/sh", "-lc", "/bin/true && echo __TINA_PROOT_OK__")
         // Android 15+ 必须使用 nativeLibraryDir，只需探测启动模式（direct/linker）
         val candidates = listOf(
             LaunchConfig(mode = "direct"),
@@ -260,7 +262,7 @@ class PRootManager(
             val cmdLine = arrayOf("/system/bin/sh", initProotScript.absolutePath) + probeCmd.toTypedArray()
 
             val process = try {
-                Runtime.getRuntime().exec(cmdLine, envArray)
+                startHostProcess(cmdLine, envArray)
             } catch (e: IOException) {
                 Timber.tag("PRootManager").d(e, "Probe launch failed to start (mode=%s)", candidate.mode)
                 return@withContext false
@@ -401,7 +403,7 @@ class PRootManager(
 
         val process = try {
             // 使用 Runtime.exec() 直接执行，避免 ProcessBuilder 可能的 shell 包装
-            Runtime.getRuntime().exec(prootCommand.toTypedArray(), envArray)
+            startHostProcess(prootCommand.toTypedArray(), envArray)
         } catch (e: IOException) {
             Timber.tag("PRootManager").e(e, "Failed to start proot process")
             return@withContext PRootResult(
@@ -650,7 +652,7 @@ class PRootManager(
         val envArray = envMap.map { "${it.key}=${it.value}" }.toTypedArray()
 
         val process = try {
-            Runtime.getRuntime().exec(prootCommand.toTypedArray(), envArray)
+            startHostProcess(prootCommand.toTypedArray(), envArray)
         } catch (e: IOException) {
             Timber.tag("PRootManager").e(e, "Failed to start proot process")
             return@withContext PRootResult(
@@ -852,8 +854,16 @@ class PRootManager(
 
         Timber.tag("PRootManager").d("Starting interactive proot: %s", prootCommand.joinToString(" "))
 
-        val process = Runtime.getRuntime().exec(prootCommand.toTypedArray(), envArray)
+        val process = startHostProcess(prootCommand.toTypedArray(), envArray)
         return InteractiveProcessImpl(process)
+    }
+
+    private fun startHostProcess(
+        command: Array<String>,
+        environment: Array<String>,
+    ): Process {
+        val hostWorkingDirectory = context.filesDir.apply { mkdirs() }
+        return Runtime.getRuntime().exec(command, environment, hostWorkingDirectory)
     }
 
     fun buildPRootCommandLine(
@@ -1234,7 +1244,7 @@ class PRootManager(
         private const val ENV_TINA_PROOT_LD_PRELOAD_LINKER = "TINA_PROOT__LD_PRELOAD_LINKER"
         private const val ENV_TINA_PROOT_ENABLE_TINA_EXEC = "TINA_PROOT_ENABLE_TINA_EXEC"
         private const val ENV_TINA_PROOT_LAUNCH_CONFIG_RETRY = "TINA_PROOT_LAUNCH_CONFIG_RETRY"
-        private const val LAUNCH_CONFIG_VERSION = "guest-probe-v1"
+        private const val LAUNCH_CONFIG_VERSION = "guest-child-probe-v2"
         private const val OUTPUT_TAIL_MAX_LINES = 200
 
         fun getCurrentAbi(): String = Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"

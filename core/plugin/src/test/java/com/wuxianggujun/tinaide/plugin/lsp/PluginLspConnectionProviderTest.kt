@@ -48,6 +48,7 @@ class PluginLspConnectionProviderTest {
 
     @Test
     fun `start should fail before interactive process when command is missing`() {
+        PluginLspSessionRegistry.activate("pylsp")
         val environment = RecordingLinuxEnvironment(
             probeResult = LinuxExecutionResult(
                 exitCode = 127,
@@ -86,6 +87,7 @@ class PluginLspConnectionProviderTest {
 
     @Test
     fun `unexpected process exit should report failure after successful start`() {
+        PluginLspSessionRegistry.activate("plugin.python")
         val process = StubInteractiveProcess(running = false)
         val environment = RecordingLinuxEnvironment(
             probeResult = successfulProbe(),
@@ -160,6 +162,21 @@ class PluginLspConnectionProviderTest {
         assertThat(ownerStopCount).isEqualTo(0)
     }
 
+    @Test
+    fun `session registry should reject a startup lease invalidated by owner stop`() {
+        val ownerPluginId = "plugin.racing"
+        PluginLspSessionRegistry.activate(ownerPluginId)
+        val lease = checkNotNull(PluginLspSessionRegistry.acquire(ownerPluginId))
+        val provider = providerForOwner(
+            ownerPluginId = ownerPluginId,
+            process = BlockingInteractiveProcess(),
+        )
+
+        PluginLspSessionRegistry.closeAll(ownerPluginId)
+
+        assertThat(PluginLspSessionRegistry.register(lease, provider)).isFalse()
+    }
+
     private fun lspServerConfig(type: String): LspServerConfig = LspServerConfig(
         id = "pylsp",
         name = "Python Language Server",
@@ -175,19 +192,22 @@ class PluginLspConnectionProviderTest {
         ownerPluginId: String,
         process: LinuxInteractiveProcess,
         onOwnerStopped: () -> Unit = {},
-    ): PluginLspConnectionProvider = PluginLspConnectionProvider(
-        config = lspServerConfig(type = "stdio"),
-        ownerPluginId = ownerPluginId,
-        workingDir = "/workspace",
-        projectRoot = "/workspace",
-        linuxEnvironmentProvider = StaticLinuxEnvironmentProvider(
-            RecordingLinuxEnvironment(
-                probeResult = successfulProbe(),
-                interactiveProcess = process,
+    ): PluginLspConnectionProvider {
+        PluginLspSessionRegistry.activate(ownerPluginId)
+        return PluginLspConnectionProvider(
+            config = lspServerConfig(type = "stdio"),
+            ownerPluginId = ownerPluginId,
+            workingDir = "/workspace",
+            projectRoot = "/workspace",
+            linuxEnvironmentProvider = StaticLinuxEnvironmentProvider(
+                RecordingLinuxEnvironment(
+                    probeResult = successfulProbe(),
+                    interactiveProcess = process,
+                ),
             ),
-        ),
-        onOwnerStopped = onOwnerStopped,
-    )
+            onOwnerStopped = onOwnerStopped,
+        )
+    }
 
     private fun successfulProbe() = LinuxExecutionResult(
         exitCode = 0,

@@ -10,6 +10,8 @@ import com.wuxianggujun.tinaide.project.ProjectLanguage
 import com.wuxianggujun.tinaide.project.ProjectTemplateOption
 import com.wuxianggujun.tinaide.project.ProjectTemplateSpec
 import com.wuxianggujun.tinaide.plugin.runtime.PluginRuntimeUnavailableException
+import com.wuxianggujun.tinaide.plugin.runtime.PluginHostDataCapabilities
+import com.wuxianggujun.tinaide.plugin.script.PluginPermissionManager
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
@@ -39,6 +41,11 @@ internal data class PluginInstallTransactionRecord(
     val hadLegacyEnabled: Boolean,
     val oldLegacyEnabled: Boolean,
     val previousFault: PluginFaultRecord? = null,
+)
+
+internal data class PluginPackageExpectation(
+    val pluginId: String,
+    val version: String? = null,
 )
 
 class PluginManager(
@@ -241,7 +248,7 @@ class PluginManager(
         )
     }
 
-    suspend fun installPlugin(zipFile: File): Result<PluginManifest> = withContext(Dispatchers.IO) {
+    internal suspend fun inspectPluginPackage(zipFile: File): Result<PluginManifest> = withContext(Dispatchers.IO) {
         runCatching {
             require(zipFile.exists()) { Strings.plugin_error_file_not_exist.strOr(context, zipFile.path) }
             require(zipFile.length() <= ZipUtils.MAX_PACKAGE_BYTES) {
@@ -255,7 +262,44 @@ class PluginManager(
                 } catch (error: PluginArchiveException) {
                     throw IllegalArgumentException(localizeArchiveFailure(error), error)
                 }
-                val installed = installPluginFromDirectory(tempDir, allowSkipIfSameVersion = false)
+                validatePluginDirectoryLimits(tempDir)
+                val manifestFile = File(tempDir, MANIFEST_FILE_NAME)
+                require(manifestFile.exists()) {
+                    Strings.plugin_error_missing_manifest.strOr(context, MANIFEST_FILE_NAME)
+                }
+                JsonSerializer.decodeFromFile<PluginManifest>(manifestFile).also { manifest ->
+                    validateManifest(manifest, tempDir)
+                }
+            } finally {
+                if (tempDir.exists()) tempDir.deleteRecursively()
+            }
+        }
+    }
+
+    suspend fun installPlugin(zipFile: File): Result<PluginManifest> = installPlugin(zipFile, expectedPackage = null)
+
+    internal suspend fun installPlugin(
+        zipFile: File,
+        expectedPackage: PluginPackageExpectation?,
+    ): Result<PluginManifest> = withContext(Dispatchers.IO) {
+        runCatching {
+            require(zipFile.exists()) { Strings.plugin_error_file_not_exist.strOr(context, zipFile.path) }
+            require(zipFile.length() <= ZipUtils.MAX_PACKAGE_BYTES) {
+                Strings.plugin_error_package_too_large.strOr(context)
+            }
+
+            val tempDir = createStagingDirectory()
+            try {
+                try {
+                    ZipUtils.unzipToDirectory(zipFile, tempDir)
+                } catch (error: PluginArchiveException) {
+                    throw IllegalArgumentException(localizeArchiveFailure(error), error)
+                }
+                val installed = installPluginFromDirectory(
+                    extractedDir = tempDir,
+                    allowSkipIfSameVersion = false,
+                    expectedPackage = expectedPackage,
+                )
                 requireNotNull(installed) { Strings.plugin_error_install_failed.strOr(context) }
                 installed
             } finally {
@@ -277,6 +321,8 @@ class PluginManager(
 
                 val pluginDir = File(pluginsDir, pluginId)
                 PluginRuntimeLifecycle.stop(pluginId)
+                PluginPermissionManager.getInstance(context).revokeAllPermissions(pluginId)
+                PluginHostDataCapabilities.clearPersistentData(context, pluginId)
                 if (pluginDir.exists()) {
                     check(pluginDir.deleteRecursively()) { "Failed to remove plugin directory" }
                 }
@@ -414,7 +460,7 @@ class PluginManager(
         }
     }
 
-    private fun validatePluginId(id: String) {
+    internal fun validatePluginId(id: String) {
         require(id.isNotBlank()) { Strings.plugin_error_id_empty.strOr(context) }
         require(PLUGIN_ID_PATTERN.matches(id)) { Strings.plugin_error_id_invalid.strOr(context, id) }
         require(!id.contains("..")) { Strings.plugin_error_id_contains_dotdot.strOr(context, id) }
@@ -529,7 +575,8 @@ class PluginManager(
     internal suspend fun installPluginFromDirectory(
         extractedDir: File,
         allowSkipIfSameVersion: Boolean,
-        markAsBundled: Boolean = false
+        markAsBundled: Boolean = false,
+        expectedPackage: PluginPackageExpectation? = null,
     ): PluginManifest? = mutationMutex.withLock {
         val stagingDir = prepareStagingDirectory(extractedDir)
         var backupDir: File? = null
@@ -550,6 +597,24 @@ class PluginManager(
                 decodedManifest
             }
             validateManifest(manifest, stagingDir)
+            expectedPackage?.let { expected ->
+                require(manifest.id == expected.pluginId) {
+                    Strings.plugin_error_marketplace_id_mismatch.strOr(
+                        context,
+                        expected.pluginId,
+                        manifest.id,
+                    )
+                }
+                expected.version?.let { expectedVersion ->
+                    require(manifest.version == expectedVersion) {
+                        Strings.plugin_error_marketplace_version_mismatch.strOr(
+                            context,
+                            expectedVersion,
+                            manifest.version,
+                        )
+                    }
+                }
+            }
 
             val previousManifest = getInstalledManifestOrNull(manifest.id)
             if (allowSkipIfSameVersion && previousManifest?.version == manifest.version) return null
@@ -777,8 +842,13 @@ class PluginManager(
         return _pluginStateFlow.value.enabledCapabilities.contains(capability)
     }
 
-    suspend fun install(zipFile: File): Result<InstalledPlugin> = withContext(Dispatchers.IO) {
-        installPlugin(zipFile).map { manifest ->
+    suspend fun install(zipFile: File): Result<InstalledPlugin> = install(zipFile, expectedPackage = null)
+
+    internal suspend fun install(
+        zipFile: File,
+        expectedPackage: PluginPackageExpectation?,
+    ): Result<InstalledPlugin> = withContext(Dispatchers.IO) {
+        installPlugin(zipFile, expectedPackage).map { manifest ->
             refreshInstalledPlugins()
             logHostInfo("install completed pluginId=${manifest.id} version=${manifest.version} instance=$instanceId")
             getInstalledPlugin(manifest.id)

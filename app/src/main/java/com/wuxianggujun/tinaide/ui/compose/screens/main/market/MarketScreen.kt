@@ -71,6 +71,7 @@ import com.wuxianggujun.tinaide.plugin.marketplace.PluginMarketplaceSelectionSup
 import com.wuxianggujun.tinaide.plugin.marketplace.PluginSummary
 import com.wuxianggujun.tinaide.plugin.marketplace.PluginVersion
 import com.wuxianggujun.tinaide.ui.compose.components.PluginCardSkeleton
+import com.wuxianggujun.tinaide.ui.compose.components.PluginPermissionDialog
 import com.wuxianggujun.tinaide.ui.compose.components.TinaAlertDialog
 import com.wuxianggujun.tinaide.ui.compose.components.TinaBackHandlers
 import com.wuxianggujun.tinaide.ui.compose.components.TinaCard
@@ -133,6 +134,23 @@ fun MarketScreen(
         if (PluginMarketplaceSelectionSupport.shouldClosePluginDetails(pluginState.selectedPluginId, selectedPlugin)) {
             viewModel.closePluginDetails()
         }
+    }
+
+    pluginState.pendingInstall?.let { pending ->
+        PluginPermissionDialog(
+            pluginName = pending.manifest.name,
+            permissions = pending.permissions,
+            onConfirm = viewModel::confirmPendingPluginInstall,
+            onDeny = {
+                viewModel.dismissPendingPluginInstall()
+                Toast.makeText(
+                    context,
+                    context.getString(Strings.toast_plugins_permission_denied),
+                    Toast.LENGTH_SHORT,
+                ).show()
+            },
+            onDismiss = viewModel::dismissPendingPluginInstall,
+        )
     }
 
     // 如果选中了插件，显示详情页面；拦截返回手势，防止直接退出 APP

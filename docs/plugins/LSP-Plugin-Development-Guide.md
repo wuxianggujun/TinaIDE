@@ -102,11 +102,7 @@ tinaide.lsp.python/
     ]
   },
   "activationEvents": [
-    "onLanguage:python",
-    "workspaceContains:**/*.py",
-    "workspaceContains:requirements.txt",
-    "workspaceContains:setup.py",
-    "workspaceContains:pyproject.toml"
+    "onLanguage:python"
   ]
 }
 ```

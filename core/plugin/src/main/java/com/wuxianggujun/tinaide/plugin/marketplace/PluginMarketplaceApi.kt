@@ -11,6 +11,7 @@ import com.wuxianggujun.tinaide.core.network.registry.GitHubRegistryProxyConfig
 import com.wuxianggujun.tinaide.core.network.registry.RegistryEndpoint
 import com.wuxianggujun.tinaide.core.network.registry.RegistryUrl
 import com.wuxianggujun.tinaide.core.serialization.JsonSerializer
+import com.wuxianggujun.tinaide.plugin.ZipUtils
 import java.io.File
 import java.io.IOException
 import java.io.RandomAccessFile
@@ -361,6 +362,10 @@ class PluginMarketplaceApi private constructor(
         var startByte = 0L
         if (targetFile.exists()) {
             startByte = targetFile.length()
+            if (startByte > ZipUtils.MAX_PACKAGE_BYTES) {
+                targetFile.delete()
+                return ApiResult.Error(-1, Strings.plugin_error_package_too_large.str())
+            }
         }
 
         val requestBuilder = Request.Builder()
@@ -384,8 +389,13 @@ class PluginMarketplaceApi private constructor(
             } else {
                 contentLength
             }
+            if (total > ZipUtils.MAX_PACKAGE_BYTES) {
+                targetFile.delete()
+                return ApiResult.Error(-1, Strings.plugin_error_package_too_large.str())
+            }
 
             val isResume = resp.code == 206
+            var exceededPackageLimit = false
             RandomAccessFile(targetFile, "rw").use { raf ->
                 if (isResume) {
                     raf.seek(startByte)
@@ -399,11 +409,19 @@ class PluginMarketplaceApi private constructor(
                     var bytesRead: Int
                     while (inputStream.read(buffer).also { bytesRead = it } != -1) {
                         coroutineContext.ensureActive()
+                        if (downloaded + bytesRead > ZipUtils.MAX_PACKAGE_BYTES) {
+                            exceededPackageLimit = true
+                            break
+                        }
                         raf.write(buffer, 0, bytesRead)
                         downloaded += bytesRead
                         onProgress?.invoke(downloaded, total)
                     }
                 }
+            }
+            if (exceededPackageLimit) {
+                targetFile.delete()
+                return ApiResult.Error(-1, Strings.plugin_error_package_too_large.str())
             }
 
             if (!expectedHash.isNullOrBlank()) {

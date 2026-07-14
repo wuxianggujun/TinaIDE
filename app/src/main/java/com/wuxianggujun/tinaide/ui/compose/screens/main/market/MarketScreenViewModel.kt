@@ -20,6 +20,7 @@ import com.wuxianggujun.tinaide.core.proot.PRootEnvironment
 import com.wuxianggujun.tinaide.core.user.DownloadHistoryItem
 import com.wuxianggujun.tinaide.core.user.FavoritePlugin
 import com.wuxianggujun.tinaide.core.user.UserContentRepository
+import com.wuxianggujun.tinaide.plugin.marketplace.MarketplacePendingPluginInstall
 import com.wuxianggujun.tinaide.plugin.marketplace.PluginDetail
 import com.wuxianggujun.tinaide.plugin.marketplace.PluginMarketplaceRepository
 import com.wuxianggujun.tinaide.plugin.marketplace.PluginSummary
@@ -63,6 +64,7 @@ class MarketScreenViewModel(
     // 进行中的下载/安装任务：用于支持用户主动取消（取消协程会触发 OkHttp Call.cancel 立即断开连接）。
     private val pluginDownloadJobs = mutableMapOf<String, Job>()
     private val packageInstallJobs = mutableMapOf<String, Job>()
+    private var pendingDownloadHistoryPlugin: PluginSummary? = null
 
     init {
         observeInstalledPlugins()
@@ -159,6 +161,8 @@ class MarketScreenViewModel(
         val pluginId = plugin.pluginId
         val installedVersion = pluginRepository.getInstalledVersion(pluginId)
         if (_pluginState.value.downloadingPlugins.containsKey(pluginId)) return
+        if (pluginDownloadJobs.isNotEmpty()) return
+        if (_pluginState.value.pendingInstall != null) return
         if (installedVersion != null && installedVersion == plugin.latestVersion) return
 
         val job = viewModelScope.launch {
@@ -166,8 +170,8 @@ class MarketScreenViewModel(
                 it.copy(downloadingPlugins = it.downloadingPlugins + (pluginId to 0f))
             }
 
-            val result = try {
-                pluginRepository.downloadAndInstallPlugin(
+            val preparation = try {
+                pluginRepository.preparePluginInstall(
                     pluginId = pluginId,
                     version = plugin.latestVersion,
                     onProgress = { downloaded, total ->
@@ -185,50 +189,32 @@ class MarketScreenViewModel(
                 throw e
             }
 
-            _pluginState.update {
-                val newDownloading = it.downloadingPlugins - pluginId
-                val newInstalled = if (result.isSuccess) {
-                    it.installedPlugins + pluginId
-                } else {
-                    it.installedPlugins
-                }
-                val newUpdatable = if (result.isSuccess) {
-                    it.updatablePlugins - pluginId
-                } else {
-                    it.updatablePlugins
-                }
-                if (result.isSuccess) {
+            val pending = preparation.getOrNull()
+            if (pending == null) {
+                applyPluginInstallResult(
+                    pluginId,
+                    Result.failure<Any?>(checkNotNull(preparation.exceptionOrNull())),
+                )
+            } else if (pending.needsUserConfirmation) {
+                pendingDownloadHistoryPlugin = plugin
+                _pluginState.update {
                     it.copy(
-                        downloadingPlugins = newDownloading,
-                        installedPlugins = newInstalled,
-                        updatablePlugins = newUpdatable,
-                        message = Strings.plugin_marketplace_install_success.str()
-                    )
-                } else {
-                    val throwable = result.exceptionOrNull()
-                    val reason = throwable?.message?.trim()?.takeIf { msg -> msg.isNotBlank() }
-                        ?: throwable?.cause?.message?.trim()?.takeIf { msg -> msg.isNotBlank() }
-                        ?: throwable?.toString()
-                    it.copy(
-                        downloadingPlugins = newDownloading,
-                        installedPlugins = newInstalled,
-                        updatablePlugins = newUpdatable,
-                        message = if (reason != null) {
-                            Strings.toast_plugins_install_failed.str(reason)
-                        } else {
-                            Strings.plugin_marketplace_install_failed.str()
-                        }
+                        downloadingPlugins = it.downloadingPlugins - pluginId,
+                        pendingInstall = pending,
                     )
                 }
-            }
-
-            if (result.isSuccess) {
-                recordPluginDownload(plugin)
-                loadPlugins()
+            } else {
+                applyPluginInstallResult(
+                    pluginId = pluginId,
+                    result = pluginRepository.confirmPluginInstall(pending),
+                    historyPlugin = plugin,
+                )
             }
         }
         pluginDownloadJobs[pluginId] = job
-        job.invokeOnCompletion { pluginDownloadJobs.remove(pluginId) }
+        job.invokeOnCompletion {
+            if (pluginDownloadJobs[pluginId] === job) pluginDownloadJobs.remove(pluginId)
+        }
     }
 
     /**
@@ -239,6 +225,68 @@ class MarketScreenViewModel(
         pluginDownloadJobs.remove(pluginId)?.cancel(CancellationException("Plugin download cancelled by user"))
         _pluginState.update {
             it.copy(downloadingPlugins = it.downloadingPlugins - pluginId)
+        }
+    }
+
+    fun confirmPendingPluginInstall() {
+        val pending = _pluginState.value.pendingInstall ?: return
+        val historyPlugin = pendingDownloadHistoryPlugin
+        pendingDownloadHistoryPlugin = null
+        _pluginState.update {
+            it.copy(
+                pendingInstall = null,
+                downloadingPlugins = it.downloadingPlugins + (pending.requestedPluginId to 0f),
+            )
+        }
+        val job = viewModelScope.launch {
+            applyPluginInstallResult(
+                pluginId = pending.requestedPluginId,
+                result = pluginRepository.confirmPluginInstall(pending),
+                historyPlugin = historyPlugin,
+            )
+        }
+        pluginDownloadJobs[pending.requestedPluginId] = job
+        job.invokeOnCompletion {
+            if (pluginDownloadJobs[pending.requestedPluginId] === job) {
+                pluginDownloadJobs.remove(pending.requestedPluginId)
+            }
+        }
+    }
+
+    fun dismissPendingPluginInstall() {
+        val pending = _pluginState.value.pendingInstall ?: return
+        pendingDownloadHistoryPlugin = null
+        pluginRepository.discardPendingInstall(pending)
+        _pluginState.update { it.copy(pendingInstall = null) }
+    }
+
+    private fun applyPluginInstallResult(
+        pluginId: String,
+        result: Result<*>,
+        historyPlugin: PluginSummary? = null,
+    ) {
+        _pluginState.update {
+            val throwable = result.exceptionOrNull()
+            val reason = throwable?.message?.trim()?.takeIf { message -> message.isNotBlank() }
+                ?: throwable?.cause?.message?.trim()?.takeIf { message -> message.isNotBlank() }
+                ?: throwable?.toString()
+            it.copy(
+                downloadingPlugins = it.downloadingPlugins - pluginId,
+                installedPlugins = if (result.isSuccess) it.installedPlugins + pluginId else it.installedPlugins,
+                updatablePlugins = if (result.isSuccess) it.updatablePlugins - pluginId else it.updatablePlugins,
+                message = if (result.isSuccess) {
+                    Strings.plugin_marketplace_install_success.str()
+                } else if (reason != null) {
+                    Strings.toast_plugins_install_failed.str(reason)
+                } else {
+                    Strings.plugin_marketplace_install_failed.str()
+                },
+            )
+        }
+        if (result.isSuccess) {
+            (historyPlugin ?: _pluginState.value.plugins.find { it.pluginId == pluginId })
+                ?.let(::recordPluginDownload)
+            loadPlugins()
         }
     }
 
@@ -582,6 +630,12 @@ class MarketScreenViewModel(
             )
         }
     }
+
+    override fun onCleared() {
+        pendingDownloadHistoryPlugin = null
+        _pluginState.value.pendingInstall?.let(pluginRepository::discardPendingInstall)
+        super.onCleared()
+    }
 }
 
 private fun PluginSummary.merge(detail: PluginDetail): PluginSummary = copy(
@@ -605,6 +659,7 @@ data class PluginState(
     val selectedPluginId: String? = null,
     val selectedPluginDetail: PluginDetail? = null,
     val isPluginDetailLoading: Boolean = false,
+    val pendingInstall: MarketplacePendingPluginInstall? = null,
     val error: String? = null,
     val message: String? = null
 )

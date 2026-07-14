@@ -10,6 +10,7 @@ import com.wuxianggujun.tinaide.plugin.PluginEffectiveStatus
 import com.wuxianggujun.tinaide.plugin.PluginInFlightRecord
 import com.wuxianggujun.tinaide.plugin.PluginManager
 import com.wuxianggujun.tinaide.plugin.runtime.PluginRuntimeInvokeRequest
+import com.wuxianggujun.tinaide.plugin.runtime.PluginRuntimePayloadTooLargeException
 import com.wuxianggujun.tinaide.plugin.runtime.PluginRuntimeResponse
 import com.wuxianggujun.tinaide.plugin.runtime.PluginRuntimeResponseStatus
 import com.wuxianggujun.tinaide.plugin.runtime.PluginRuntimeTransport
@@ -56,7 +57,7 @@ class ScriptPluginManagerTest {
         context = RuntimeEnvironment.getApplication()
         File(context.filesDir, "plugins").deleteRecursively()
         context.getSharedPreferences("tinaide_plugins", Context.MODE_PRIVATE).edit().clear().commit()
-        context.getSharedPreferences("tinaide_plugin_permissions", Context.MODE_PRIVATE).edit().clear().commit()
+        context.getSharedPreferences("plugin_permissions", Context.MODE_PRIVATE).edit().clear().commit()
         PluginEventBus.clear()
         PluginCommandRegistry.clear()
         pluginManager = PluginManager(context)
@@ -249,6 +250,23 @@ class ScriptPluginManagerTest {
         val state = awaitState(pluginId, ScriptPluginState.QUARANTINED)
         assertThat(state.fault?.phase).isEqualTo(PluginFaultPhase.EVENT)
         assertThat(state.fault?.kind).isEqualTo(PluginFaultKind.UNHANDLED_EXCEPTION)
+    }
+
+    @Test
+    fun `oversized host event is rejected without quarantining plugin`() = runBlocking {
+        val pluginId = installScriptPlugin("plugin.oversized.host.event")
+        createManager()
+        awaitState(pluginId, ScriptPluginState.ACTIVE)
+        transport.invokeHandler = {
+            throw PluginRuntimePayloadTooLargeException("invoke request")
+        }
+
+        val result = requireNotNull(manager).executeInPlugin(pluginId, "onProjectOpened", emptyMap<String, Any?>())
+
+        assertThat(result).isInstanceOf(PluginExecutionResult.Error::class.java)
+        assertThat(pluginManager.getPluginFault(pluginId)).isNull()
+        assertThat(pluginManager.isPluginEnabled(pluginId)).isTrue()
+        assertThat(faultStore.getInFlight()).isNull()
     }
 
     @Test

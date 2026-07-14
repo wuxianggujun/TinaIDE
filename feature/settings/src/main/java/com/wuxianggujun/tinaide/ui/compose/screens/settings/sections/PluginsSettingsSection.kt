@@ -148,6 +148,26 @@ internal fun PluginsSettingsSection(
     val appContext = context.applicationContext
     val scope = rememberCoroutineScope()
 
+    fun updateOptionalPermission(
+        logMessage: String,
+        update: () -> Unit,
+    ) {
+        scope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching(update) }
+            result.onFailure { error ->
+                Timber.tag(TAG).e(error, logMessage)
+                Toast.makeText(
+                    context,
+                    context.getString(
+                        Strings.plugin_permission_update_failed,
+                        error.message ?: error.javaClass.simpleName,
+                    ),
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
+        }
+    }
+
     val toastPluginsInstalledTemplate = stringResource(Strings.toast_plugins_installed)
     val toastPluginsInstallFailedTemplate = stringResource(Strings.toast_plugins_install_failed)
     val toastPluginsToggleFailedTemplate = stringResource(Strings.toast_plugins_toggle_failed)
@@ -411,7 +431,10 @@ internal fun PluginsSettingsSection(
                     pluginManager = pluginManager,
                     pluginFile = pending.tempFile,
                     toastPluginsInstalledTemplate = toastPluginsInstalledTemplate,
-                    toastPluginsInstallFailedTemplate = toastPluginsInstallFailedTemplate
+                    toastPluginsInstallFailedTemplate = toastPluginsInstallFailedTemplate,
+                    permissionManager = permissionManager.takeIf { isScriptPlugin },
+                    permissions = pending.permissions.takeIf { isScriptPlugin }.orEmpty(),
+                    permissionPluginId = pending.manifest.id.takeIf { isScriptPlugin },
                 )
                 Toast.makeText(context, outcome.message, Toast.LENGTH_SHORT).show()
             }
@@ -532,10 +555,14 @@ internal fun PluginsSettingsSection(
             initialDiagnosticsSourceFilter = diagnosticsSourceFilter,
             grantedPermissions = permissionGrants[detailPlugin.manifest.id].orEmpty(),
             onGrantOptionalPermission = { permission ->
-                permissionManager.grantPermission(detailPlugin.manifest.id, permission)
+                updateOptionalPermission("Failed to grant optional plugin permission") {
+                    permissionManager.grantPermission(detailPlugin.manifest.id, permission)
+                }
             },
             onRevokeOptionalPermission = { permission ->
-                permissionManager.revokePermission(detailPlugin.manifest.id, permission)
+                updateOptionalPermission("Failed to revoke optional plugin permission") {
+                    permissionManager.revokePermission(detailPlugin.manifest.id, permission)
+                }
             },
             onNavigateBack = { onPluginDetailChanged(null) },
             onToggleEnabled = { enabled ->
@@ -921,11 +948,11 @@ internal fun PluginsSettingsSection(
                         pluginManager = pluginManager,
                         pluginFile = pending.tempFile,
                         toastPluginsInstalledTemplate = toastPluginsInstalledTemplate,
-                        toastPluginsInstallFailedTemplate = toastPluginsInstallFailedTemplate
+                        toastPluginsInstallFailedTemplate = toastPluginsInstallFailedTemplate,
+                        permissionManager = permissionManager,
+                        permissions = pending.permissions,
+                        permissionPluginId = pending.manifest.id,
                     )
-                    if (outcome.manifest != null) {
-                        permissionManager.grantPermissions(pending.manifest.id, pending.permissions)
-                    }
                     Toast.makeText(context, outcome.message, Toast.LENGTH_SHORT).show()
                 }
             },

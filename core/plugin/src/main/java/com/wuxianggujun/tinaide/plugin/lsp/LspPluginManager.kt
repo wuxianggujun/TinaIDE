@@ -57,7 +57,10 @@ class LspPluginManager(
             startedPluginIds.remove(pluginId)
             PluginLspSessionRegistry.closeAll(pluginId)
         },
-        activate = { Result.success(Unit) },
+        activate = { pluginId ->
+            PluginLspSessionRegistry.activate(pluginId)
+            Result.success(Unit)
+        },
     )
 
     private val _lspPluginsFlow = MutableStateFlow<List<LspPluginInfo>>(emptyList())
@@ -113,6 +116,7 @@ class LspPluginManager(
             }
         _lspPluginsFlow.value = lspPlugins
         val activePluginIds = lspPlugins.mapTo(mutableSetOf()) { it.pluginId }
+        activePluginIds.forEach(PluginLspSessionRegistry::activate)
         (previousPluginIds - activePluginIds).forEach { pluginId ->
             startedPluginIds.remove(pluginId)
             PluginLspSessionRegistry.closeAll(pluginId)
@@ -167,10 +171,13 @@ class LspPluginManager(
      * 优先按扩展名匹配，再按文件名模式匹配，
      * 兼容无扩展名文件与 `pom.xml` 这类固定文件名。
      */
-    fun getServerConfigForFile(file: File): Pair<LspPluginInfo, LspServerConfig>? {
+    fun getServerConfigForFile(
+        file: File,
+        detectedLanguageId: String? = null,
+    ): Pair<LspPluginInfo, LspServerConfig>? {
         val fileName = file.name
         val ext = file.extension.lowercase()
-        return findServerConfig { config ->
+        return findServerConfig(detectedLanguageId) { config ->
             matchesFileExtension(config, ext) ||
                 matchesFilePattern(config, fileName, ext)
         }
@@ -455,11 +462,12 @@ class LspPluginManager(
     }
 
     private fun findServerConfig(
-        predicate: (LspServerConfig) -> Boolean
+        detectedLanguageId: String? = null,
+        predicate: (LspServerConfig) -> Boolean,
     ): Pair<LspPluginInfo, LspServerConfig>? {
         for (plugin in _lspPluginsFlow.value) {
             for (config in plugin.serverConfigs) {
-                if (predicate(config)) {
+                if (plugin.supportsServerActivation(config, detectedLanguageId) && predicate(config)) {
                     return plugin to config
                 }
             }
