@@ -27,9 +27,8 @@ import com.wuxianggujun.tinaide.plugin.script.api.PluginEventBus
 import java.nio.charset.StandardCharsets
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
-import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -37,6 +36,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -100,8 +100,6 @@ class ScriptPluginManager internal constructor(
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val startupRecoveryCompleted = CompletableDeferred<Unit>()
-    private val startupRecoverySucceeded = AtomicBoolean(false)
     private val operationMutex = Mutex()
     private val permissionManager = PluginPermissionManager.getInstance(context)
     private val faultStore = PluginFaultStore.getInstance(context)
@@ -162,33 +160,26 @@ class ScriptPluginManager internal constructor(
             try {
                 pluginManager.awaitInitialization()
                 recoverInterruptedExecution()
-                startupRecoverySucceeded.set(true)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
             } catch (error: Throwable) {
                 Timber.tag(TAG).e(error, "Plugin startup recovery failed; isolated runtimes remain disabled")
-            } finally {
-                startupRecoveryCompleted.complete(Unit)
+                return@launch
             }
-            if (!startupRecoverySucceeded.get()) return@launch
-            pluginManager.pluginStateFlow.collect { snapshot ->
-                runCatching {
-                    operationMutex.withLock { syncWithInstalledPluginsLocked(snapshot.installedPlugins) }
-                }.onFailure { error ->
-                    Timber.tag(TAG).e(error, "Failed to synchronize isolated plugin runtimes")
-                }
-            }
-        }
-        scope.launch {
-            startupRecoveryCompleted.await()
-            if (!startupRecoverySucceeded.get()) return@launch
-            permissionManager.grantsFlow.collect {
-                runCatching {
-                    operationMutex.withLock {
-                        syncWithInstalledPluginsLocked(pluginManager.listInstalledPlugins())
+
+            combine(
+                pluginManager.pluginStateFlow,
+                permissionManager.grantsFlow,
+            ) { snapshot, _ -> snapshot.installedPlugins }
+                .collect { installedPlugins ->
+                    try {
+                        operationMutex.withLock { syncWithInstalledPluginsLocked(installedPlugins) }
+                    } catch (cancellation: CancellationException) {
+                        throw cancellation
+                    } catch (error: Throwable) {
+                        Timber.tag(TAG).e(error, "Failed to synchronize isolated plugin runtimes")
                     }
-                }.onFailure { error ->
-                    Timber.tag(TAG).e(error, "Failed to synchronize plugin permission state")
                 }
-            }
         }
     }
 

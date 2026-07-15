@@ -48,6 +48,7 @@ class ScriptPluginManagerTest {
     private lateinit var context: Application
     private lateinit var pluginManager: PluginManager
     private lateinit var faultStore: PluginFaultStore
+    private lateinit var permissionManager: PluginPermissionManager
     private lateinit var transport: FakePluginRuntimeTransport
     private var manager: ScriptPluginManager? = null
     private val pluginIds = mutableSetOf<String>()
@@ -62,6 +63,7 @@ class ScriptPluginManagerTest {
         PluginCommandRegistry.clear()
         pluginManager = PluginManager(context)
         faultStore = PluginFaultStore.getInstance(context)
+        permissionManager = PluginPermissionManager.getInstance(context)
         transport = FakePluginRuntimeTransport()
     }
 
@@ -72,6 +74,7 @@ class ScriptPluginManagerTest {
         PluginEventBus.clear()
         PluginCommandRegistry.clear()
         pluginIds.forEach(faultStore::clearAllForUninstall)
+        pluginIds.forEach(permissionManager::revokeAllPermissions)
         faultStore.getInFlight()?.let { faultStore.clearInFlight(it.executionId) }
         File(context.filesDir, "plugins").deleteRecursively()
     }
@@ -116,6 +119,25 @@ class ScriptPluginManagerTest {
         assertThat(pluginManager.getPluginFault(pluginId)).isNull()
         assertThat(pluginManager.isPluginEnabled(pluginId)).isTrue()
         assertThat(faultStore.getEffectiveStatus(pluginId)).isEqualTo(PluginEffectiveStatus.RUNTIME_UNAVAILABLE)
+        assertThat(transport.loads.count { it == pluginId }).isEqualTo(1)
+    }
+
+    @Test
+    fun `granting required permission activates waiting plugin`() = runBlocking {
+        val pluginId = installScriptPlugin(
+            pluginId = "plugin.permission.grant",
+            requiredPermissions = setOf(PluginPermission.EDITOR_WRITE),
+        )
+
+        createManager()
+        awaitState(pluginId, ScriptPluginState.WAITING_PERMISSION)
+        assertThat(transport.loads).doesNotContain(pluginId)
+
+        permissionManager.grantPermission(pluginId, PluginPermission.EDITOR_WRITE)
+        val activeState = awaitState(pluginId, ScriptPluginState.ACTIVE)
+
+        assertThat(activeState.error).isNull()
+        assertThat(transport.loads.count { it == pluginId }).isEqualTo(1)
     }
 
     @Test
@@ -295,9 +317,15 @@ class ScriptPluginManagerTest {
         assertThat(transport.loads).isEmpty()
     }
 
-    private suspend fun installScriptPlugin(pluginId: String): String {
+    private suspend fun installScriptPlugin(
+        pluginId: String,
+        requiredPermissions: Set<PluginPermission> = emptySet(),
+    ): String {
         pluginIds += pluginId
         faultStore.clearAllForUninstall(pluginId)
+        val permissionsJson = requiredPermissions.joinToString(prefix = "[", postfix = "]") { permission ->
+            "\"${permission.id}\""
+        }
         val pluginDir = File(context.filesDir, "plugins/$pluginId").apply { mkdirs() }
         File(pluginDir, "main.lua").writeText("function ping() return 'pong' end", Charsets.UTF_8)
         File(pluginDir, "manifest.json").writeText(
@@ -308,6 +336,7 @@ class ScriptPluginManagerTest {
               "version": "1.0.0",
               "apiVersion": 1,
               "type": "script",
+              "permissions": $permissionsJson,
               "main": "main.lua"
             }
             """.trimIndent(),

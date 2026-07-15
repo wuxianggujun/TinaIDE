@@ -82,6 +82,17 @@ jobs:
             -Dorg.gradle.internal.http.socketTimeout=120000 \
             -Dorg.gradle.internal.repository.max.retries=4
 
+      - name: Upload plugin JVM failure reports
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: plugin-jvm-test-reports-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            core/plugin/build/test-results/testDebugUnitTest/
+            core/plugin/build/reports/tests/testDebugUnitTest/
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Cleanup Gradle processes
         if: ${{ always() }}
         run: |

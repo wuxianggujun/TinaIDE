@@ -56,7 +56,13 @@ class PluginFaultStoreTest {
                 executor.submit<Boolean> { store.recordFault(fault(pluginId)) }
             }
 
-            results.forEach { result -> assertThat(result.get(5, TimeUnit.SECONDS)).isTrue() }
+            val deadlineNanos =
+                System.nanoTime() + TimeUnit.SECONDS.toNanos(CONCURRENT_WRITE_TIMEOUT_SECONDS)
+            results.forEach { result ->
+                val remainingNanos = deadlineNanos - System.nanoTime()
+                assertThat(remainingNanos).isGreaterThan(0L)
+                assertThat(result.get(remainingNanos, TimeUnit.NANOSECONDS)).isTrue()
+            }
             assertThat(store.faults.value.keys).containsAtLeastElementsIn(pluginIds)
             pluginIds.forEach { pluginId ->
                 assertThat(store.getEffectiveStatus(pluginId))
@@ -64,6 +70,9 @@ class PluginFaultStoreTest {
             }
         } finally {
             executor.shutdownNow()
+            assertThat(
+                executor.awaitTermination(CONCURRENT_WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS),
+            ).isTrue()
         }
     }
 
@@ -109,6 +118,7 @@ class PluginFaultStoreTest {
     )
 
     private companion object {
+        const val CONCURRENT_WRITE_TIMEOUT_SECONDS = 20L
         const val PREFS_NAME = "tinaide_plugin_runtime_state"
         const val KEY_IN_FLIGHT = "in_flight"
     }
