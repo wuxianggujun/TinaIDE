@@ -6,6 +6,7 @@ $repoRoot = Split-Path -Parent $root
 $outputRoot = Join-Path $repoRoot "tools/plugin-starters/dist/tinaide.plugin.starters/templates"
 $sharedRoot = Join-Path $PSScriptRoot "shared"
 $stagingRoot = Join-Path $PSScriptRoot ".bundle"
+$zipBuilder = Join-Path $sharedRoot "build_deterministic_zip.py"
 
 $templates = @(
     @{ Name = "config-basic"; Output = "tina-config-plugin.zip" },
@@ -14,80 +15,17 @@ $templates = @(
     @{ Name = "lsp-basic"; Output = "tina-lsp-plugin.zip" }
 )
 
-function Get-ArchiveRelativePath {
-    param(
-        [Parameter(Mandatory = $true)][string]$BasePath,
-        [Parameter(Mandatory = $true)][string]$FilePath
-    )
-
-    try {
-        return ([System.IO.Path]::GetRelativePath($BasePath, $FilePath)).Replace("\", "/")
-    } catch {
-        $separator = [System.IO.Path]::DirectorySeparatorChar
-        $baseUri = [Uri]($BasePath.TrimEnd($separator) + $separator)
-        return [Uri]::UnescapeDataString($baseUri.MakeRelativeUri([Uri]$FilePath).ToString())
+function Resolve-PythonCommand {
+    foreach ($name in @("py", "python3", "python")) {
+        $command = Get-Command $name -ErrorAction SilentlyContinue
+        if ($null -ne $command) {
+            return $command.Source
+        }
     }
+    throw "Python 3 is required to build deterministic starter archives."
 }
 
-function Read-ArchiveEntryBytes {
-    param([Parameter(Mandatory = $true)][System.IO.FileInfo]$File)
-
-    $textExtensions = @(
-        ".json", ".md", ".txt", ".ps1", ".sh", ".lua", ".xml", ".properties",
-        ".gradle", ".kts", ".kt", ".java", ".c", ".cpp", ".h", ".hpp", ".cmake", ".pc"
-    )
-    if ($File.Extension.ToLowerInvariant() -in $textExtensions) {
-        $text = [System.IO.File]::ReadAllText($File.FullName, [System.Text.Encoding]::UTF8)
-        $normalized = $text -replace "`r`n", "`n" -replace "`r", "`n"
-        return [System.Text.Encoding]::UTF8.GetBytes($normalized)
-    }
-    return [System.IO.File]::ReadAllBytes($File.FullName)
-}
-
-function New-DeterministicZip {
-    param(
-        [Parameter(Mandatory = $true)][string]$SourceDir,
-        [Parameter(Mandatory = $true)][string]$OutputFile
-    )
-
-    Add-Type -AssemblyName System.IO.Compression
-    if (Test-Path -LiteralPath $OutputFile) {
-        Remove-Item -LiteralPath $OutputFile -Force
-    }
-    $sourcePath = (Resolve-Path -LiteralPath $SourceDir).Path
-    $stream = [System.IO.File]::Open($OutputFile, [System.IO.FileMode]::CreateNew)
-    $archive = [System.IO.Compression.ZipArchive]::new(
-        $stream,
-        [System.IO.Compression.ZipArchiveMode]::Create,
-        $false,
-        [System.Text.Encoding]::UTF8
-    )
-    try {
-        Get-ChildItem -LiteralPath $sourcePath -File -Recurse -Force |
-            ForEach-Object {
-                [pscustomobject]@{
-                    File = $_
-                    RelativePath = Get-ArchiveRelativePath -BasePath $sourcePath -FilePath $_.FullName
-                }
-            } |
-            Sort-Object -Property RelativePath |
-            ForEach-Object {
-                $entry = $archive.CreateEntry($_.RelativePath, [System.IO.Compression.CompressionLevel]::NoCompression)
-                $entry.LastWriteTime = [DateTimeOffset]::new(2020, 1, 1, 0, 0, 0, [TimeSpan]::Zero)
-                $entry.ExternalAttributes = 0
-                $entryStream = $entry.Open()
-                try {
-                    $bytes = Read-ArchiveEntryBytes -File $_.File
-                    $entryStream.Write($bytes, 0, $bytes.Length)
-                } finally {
-                    $entryStream.Dispose()
-                }
-            }
-    } finally {
-        $archive.Dispose()
-        $stream.Dispose()
-    }
-}
+$pythonCommand = Resolve-PythonCommand
 
 New-Item -ItemType Directory -Force -Path $outputRoot | Out-Null
 if (Test-Path $stagingRoot) {
@@ -123,7 +61,10 @@ foreach ($template in $templates) {
     Copy-Item (Join-Path $sharedRoot "validate_core.py") -Destination $starterSupportDir -Force
     Copy-Item (Join-Path $sharedRoot "validation-rules.json") -Destination $starterSupportDir -Force
 
-    New-DeterministicZip -SourceDir $stagingDir -OutputFile $outputZip
+    & $pythonCommand $zipBuilder --source $stagingDir --output $outputZip
+    if ($LASTEXITCODE -ne 0) {
+        throw "Starter archive build failed: $($template.Name)"
+    }
     Write-Host "Built $outputZip"
 }
 
