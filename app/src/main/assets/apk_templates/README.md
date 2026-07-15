@@ -22,7 +22,7 @@ https://github.com/wuxianggujun/TinaIDE-Registry/tree/main/sources/plugins/tinai
 ```
 
 主仓库内的 `plugins/tinaide.apk-export.terminal/` 仅作为历史本地副本和 Gradle
-兼容打包入口；当前客户端市场发布包从 Registry 的 `plugins/index.v2.json` 和插件详情文件分发，
+兼容打包入口；当前客户端市场发布包从 Registry 的 `plugins/index.v3.json` 和 `plugin.v3.json` 分发，
 不再回退读取 `plugins/index.json`。如确实需要服务旧客户端，应在 Registry 仓库显式生成 v1 兼容索引。
 
 一键构建并复制到此目录：

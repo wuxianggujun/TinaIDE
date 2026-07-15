@@ -19,10 +19,9 @@ internal object PluginHealthInspector {
         context: Context,
         plugin: InstalledPlugin,
     ): PluginHealthReport {
-        val currentAppVersion = resolveCurrentAppVersion(context)
         val commandContext = buildCommandInspectionContext(plugin.manifest)
         val issues = buildList {
-            inspectCompatibility(context, plugin.manifest, currentAppVersion, this)
+            inspectCompatibility(context, plugin.manifest, this)
             inspectPermissions(context, plugin.manifest, this)
             inspectNetworkHosts(context, plugin.manifest, this)
             inspectRequirements(context, plugin.manifest, this)
@@ -62,43 +61,36 @@ internal object PluginHealthInspector {
     private fun inspectCompatibility(
         context: Context,
         manifest: PluginManifest,
-        currentAppVersion: String?,
         issues: MutableList<PluginDiagnosticIssue>,
     ) {
-        val minAppVersion = manifest.minAppVersion?.trim().orEmpty()
-        if (minAppVersion.isBlank()) return
-
-        val hostVersion = currentAppVersion?.trim().orEmpty()
-        val isMinAppVersionComparable = PluginVersionComparator.compare(
-            minAppVersion,
-            minAppVersion
-        ) != null
-        val versionOrder = PluginVersionComparator.compare(hostVersion, minAppVersion)
-        when {
-            !isMinAppVersionComparable -> {
+        val compatibility = PluginCompatibility.evaluate(context, manifest)
+        when (compatibility.status) {
+            PluginCompatibilityStatus.INVALID_MIN_APP_VERSION -> {
                 issues += PluginDiagnosticIssue(
                     severity = PluginDiagnosticSeverity.WARNING,
                     category = PluginDiagnosticCategory.MANIFEST,
                     message = Strings.plugin_diagnostic_min_app_version_invalid.strOr(
                         context,
-                        minAppVersion
+                        compatibility.minAppVersion.orEmpty()
                     ),
                     fixHint = Strings.plugin_diagnostic_min_app_version_invalid_fix.strOr(context),
                 )
             }
 
-            versionOrder != null && versionOrder < 0 -> {
+            PluginCompatibilityStatus.HOST_TOO_OLD -> {
                 issues += PluginDiagnosticIssue(
                     severity = PluginDiagnosticSeverity.ERROR,
                     category = PluginDiagnosticCategory.COMPATIBILITY,
                     message = Strings.plugin_diagnostic_min_app_version_unsupported.strOr(
                         context,
-                        minAppVersion,
-                        hostVersion
+                        compatibility.minAppVersion.orEmpty(),
+                        compatibility.hostVersion.orEmpty()
                     ),
                     fixHint = Strings.plugin_diagnostic_min_app_version_unsupported_fix.strOr(context),
                 )
             }
+
+            else -> Unit
         }
     }
 
@@ -676,11 +668,4 @@ internal object PluginHealthInspector {
         else -> false
     }
 
-    private fun resolveCurrentAppVersion(context: Context): String? = runCatching {
-        context.packageManager
-            .getPackageInfo(context.packageName, 0)
-            .versionName
-            ?.trim()
-            ?.takeIf { it.isNotBlank() }
-    }.getOrNull()
 }

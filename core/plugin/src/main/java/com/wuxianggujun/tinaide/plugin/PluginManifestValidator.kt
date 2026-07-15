@@ -10,7 +10,7 @@ import com.wuxianggujun.tinaide.project.ProjectBuildSystem
 import java.io.File
 
 internal object PluginManifestValidator {
-    private const val SUPPORTED_API_VERSION = 1
+    internal const val SUPPORTED_API_VERSION = 1
     private const val MAX_PANEL_COUNT = 16
     private const val MAX_PANEL_ID_LENGTH = 128
     private const val MAX_PANEL_TITLE_LENGTH = 128

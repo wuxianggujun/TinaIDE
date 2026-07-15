@@ -6,8 +6,9 @@ object GitHubRegistryConfig {
     const val OWNER = "wuxianggujun"
     const val REPOSITORY = "TinaIDE-Registry"
     const val BRANCH = "main"
-    const val REGISTRY_SCHEMA_VERSION = 2
+    const val REGISTRY_SCHEMA_VERSION = 3
     const val REGISTRY_V2_INTRODUCED_APP_VERSION = "0.17.11"
+    const val REGISTRY_V3_INTRODUCED_APP_VERSION = "0.18.11"
     const val REGISTRY_V1_FALLBACK_REMOVED_APP_VERSION = "0.18.0"
 
     const val GITHUB_RAW_BASE_URL = "https://raw.githubusercontent.com/$OWNER/$REPOSITORY/$BRANCH"
@@ -17,6 +18,7 @@ object GitHubRegistryConfig {
     const val PRIMARY_BASE_URL = GITHUB_RAW_BASE_URL
 
     const val PLUGINS_INDEX_V2_PATH = "plugins/index.v2.json"
+    const val PLUGINS_INDEX_V3_PATH = "plugins/index.v3.json"
     const val PACKAGES_INDEX_V2_PATH = "packages/index.v2.json"
     const val LINUX_DISTRO_MANIFEST_PATH = "linux-distro/manifest.v1.json"
 
@@ -45,6 +47,11 @@ object GitHubRegistryConfig {
 
     fun pluginIndexV2Urls(customProxyPrefix: String? = null): List<RegistryUrl> = indexUrls(
         path = PLUGINS_INDEX_V2_PATH,
+        customProxyPrefix = customProxyPrefix,
+    )
+
+    fun pluginIndexV3Urls(customProxyPrefix: String? = null): List<RegistryUrl> = indexUrls(
+        path = PLUGINS_INDEX_V3_PATH,
         customProxyPrefix = customProxyPrefix,
     )
 

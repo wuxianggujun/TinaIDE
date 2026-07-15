@@ -2,6 +2,7 @@ package com.wuxianggujun.tinaide.plugin
 
 import android.app.Application
 import android.content.Context
+import android.content.pm.PackageInfo
 import com.google.common.truth.Truth.assertThat
 import com.wuxianggujun.tinaide.core.serialization.JsonSerializer
 import com.wuxianggujun.tinaide.plugin.runtime.PluginDatabase
@@ -17,6 +18,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
@@ -37,6 +39,13 @@ class PluginManagerDefaultEnabledTest {
     @Before
     fun setUp() {
         context = RuntimeEnvironment.getApplication()
+        shadowOf(context.packageManager).installPackage(
+            PackageInfo().apply {
+                packageName = context.packageName
+                versionName = "0.18.11"
+                applicationInfo = context.applicationInfo
+            },
+        )
         pluginsDir = File(context.filesDir, "plugins")
         pluginsDir.deleteRecursively()
         pluginsDir.mkdirs()
@@ -69,6 +78,53 @@ class PluginManagerDefaultEnabledTest {
         assertThat(pluginManager.getInstalledPlugin("tinaide.system.default")?.enabled).isFalse()
         assertThat(pluginManager.isPluginEnabled("tinaide.config.default")).isTrue()
         assertThat(pluginManager.getInstalledPlugin("tinaide.config.default")?.enabled).isTrue()
+    }
+
+    @Test
+    fun `incompatible installed plugin remains visible but cannot be enabled`() = runBlocking {
+        val pluginId = pluginId("incompatible-refresh")
+        writePluginManifest(
+            pluginId = pluginId,
+            type = PluginTypes.CONFIG,
+            minAppVersion = "999.0.0",
+        )
+        prefs.edit()
+            .putBoolean("desired_enabled_$pluginId", true)
+            .putBoolean("enabled_$pluginId", true)
+            .commit()
+        val pluginManager = PluginManager(context)
+
+        pluginManager.refreshInstalledPlugins()
+        val enableResult = pluginManager.setPluginEnabled(pluginId, true)
+
+        assertThat(pluginManager.getInstalledPlugin(pluginId)).isNotNull()
+        assertThat(pluginManager.getInstalledPlugin(pluginId)?.enabled).isFalse()
+        assertThat(pluginManager.isPluginEnabled(pluginId)).isFalse()
+        assertThat(prefs.getBoolean("desired_enabled_$pluginId", false)).isTrue()
+        assertThat(prefs.getBoolean("enabled_$pluginId", true)).isFalse()
+        assertThat(enableResult.isFailure).isTrue()
+    }
+
+    @Test
+    fun `install rejects plugin requiring a newer host before commit`() = runBlocking {
+        val pluginId = pluginId("incompatible-install")
+        val pluginManager = PluginManager(context)
+        val installSource = createInstallSource(
+            pluginId = pluginId,
+            version = "1.0.0",
+            minAppVersion = "999.0.0",
+        )
+
+        val result = runCatching {
+            pluginManager.installPluginFromDirectory(
+                extractedDir = installSource,
+                allowSkipIfSameVersion = false,
+            )
+        }
+
+        assertThat(result.isFailure).isTrue()
+        assertThat(File(pluginsDir, pluginId).exists()).isFalse()
+        assertThat(pluginManager.getInstalledPlugin(pluginId)).isNull()
     }
 
     @Test
@@ -329,6 +385,7 @@ class PluginManagerDefaultEnabledTest {
         assertThat(
             prefs.getStringSet(PluginManager.PREF_PENDING_UNINSTALL_CLEANUP, emptySet()),
         ).contains(pluginId)
+        assertThat(prefs.getBoolean("enabled_$pluginId", true)).isFalse()
 
         blockedSidecar.deleteRecursively()
         val recoveredManager = PluginManager(context)
@@ -388,6 +445,7 @@ class PluginManagerDefaultEnabledTest {
         version: String = "1.0.0",
         root: File = pluginsDir,
         optionalPermissions: List<String>? = null,
+        minAppVersion: String? = null,
     ) {
         val pluginDir = File(root, pluginId).apply { mkdirs() }
         File(pluginDir, PluginManager.MANIFEST_FILE_NAME).writeText(
@@ -398,6 +456,7 @@ class PluginManagerDefaultEnabledTest {
                     version = version,
                     type = type,
                     optionalPermissions = optionalPermissions,
+                    minAppVersion = minAppVersion,
                 ),
             ),
             Charsets.UTF_8,
@@ -415,12 +474,22 @@ class PluginManagerDefaultEnabledTest {
         return archive
     }
 
-    private fun createInstallSource(pluginId: String, version: String): File {
+    private fun createInstallSource(
+        pluginId: String,
+        version: String,
+        minAppVersion: String? = null,
+    ): File {
         val sourceRoot = File(context.cacheDir, "plugin-install-${System.nanoTime()}").apply {
             mkdirs()
             temporaryDirectories += this
         }
-        writePluginManifest(pluginId, PluginTypes.CONFIG, version, sourceRoot)
+        writePluginManifest(
+            pluginId = pluginId,
+            type = PluginTypes.CONFIG,
+            version = version,
+            root = sourceRoot,
+            minAppVersion = minAppVersion,
+        )
         return File(sourceRoot, pluginId)
     }
 

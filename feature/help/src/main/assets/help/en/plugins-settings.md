@@ -26,6 +26,8 @@ Theme plugins expose a **Plugin theme** action. LSP plugins can expose dependenc
 
 New plugins are installed disabled and never execute merely because the list refreshes. Enabling a script plugin requires its permissions. A quarantined plugin shows a sanitized fault phase and time; re-enabling requires an explicit risk confirmation, and another attributable failure quarantines it again.
 
+The marketplace only exposes versions supported by the current IDE. A newer release with a higher `minAppVersion` or unsupported Plugin API is not offered as an update until the IDE itself is upgraded. The downloaded manifest is checked again before install, enable, and execution.
+
 Optional permissions are never granted by the declaration alone. Grant or revoke each one in the **Optional permission grants** card. Future related API calls are denied immediately after revocation.
 
 ## Install from file

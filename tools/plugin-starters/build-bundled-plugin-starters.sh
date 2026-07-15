@@ -39,7 +39,8 @@ build_template() {
   cp "$SHARED_ROOT/validation-rules.json" "$staging_dir/.tina-starter/validation-rules.json"
   (
     cd "$staging_dir"
-    zip -qr "$output_zip" .
+    find . -exec touch -t 202001010000 {} +
+    find . -type f -print | LC_ALL=C sort | zip -qX0 "$output_zip" -@
   )
   echo "Built $output_zip"
 }

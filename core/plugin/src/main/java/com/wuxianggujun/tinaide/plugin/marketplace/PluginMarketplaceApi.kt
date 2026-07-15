@@ -11,6 +11,8 @@ import com.wuxianggujun.tinaide.core.network.registry.GitHubRegistryProxyConfig
 import com.wuxianggujun.tinaide.core.network.registry.RegistryEndpoint
 import com.wuxianggujun.tinaide.core.network.registry.RegistryUrl
 import com.wuxianggujun.tinaide.core.serialization.JsonSerializer
+import com.wuxianggujun.tinaide.plugin.PluginCompatibility
+import com.wuxianggujun.tinaide.plugin.PluginManifestValidator
 import com.wuxianggujun.tinaide.plugin.ZipUtils
 import java.io.File
 import java.io.IOException
@@ -41,6 +43,7 @@ class PluginMarketplaceApi private constructor(
     private val detailMutex = Mutex()
     private var cachedIndex: LoadedPluginRegistryCatalog? = null
     private val cachedDetails = mutableMapOf<String, PluginDetail>()
+    private var currentHostVersion: String? = null
 
     companion object {
         private const val TAG = "PluginMarketplaceApi"
@@ -49,11 +52,13 @@ class PluginMarketplaceApi private constructor(
             val appContext = context.applicationContext
             val settings = GitHubRegistryProxyConfig.load(appContext)
             return PluginMarketplaceApi(
-                indexUrls = GitHubRegistryConfig.pluginIndexV2Urls(settings.customMirrorPrefix),
+                indexUrls = GitHubRegistryConfig.pluginIndexV3Urls(settings.customMirrorPrefix),
                 indexClient = GitHubRegistryHttpClientFactory.probe(appContext),
                 downloadClient = GitHubRegistryHttpClientFactory.download(appContext),
                 customGitHubProxyPrefix = settings.customMirrorPrefix,
-            )
+            ).also { api ->
+                api.currentHostVersion = PluginCompatibility.resolveCurrentAppVersion(appContext)
+            }
         }
     }
 
@@ -63,8 +68,13 @@ class PluginMarketplaceApi private constructor(
         category: String? = null,
         search: String? = null,
         sort: String? = null,
-    ): ApiResult<PluginListData> = withIndex { index ->
-        val filtered = index.plugins
+    ): ApiResult<PluginListData> = withContext(Dispatchers.IO) {
+        val index = when (val indexResult = loadIndex()) {
+            is ApiResult.Success -> indexResult.data
+            is ApiResult.Error -> return@withContext indexResult
+            is ApiResult.NetworkError -> return@withContext indexResult
+        }
+        val filteredEntries = index.plugins
             .asSequence()
             .filter { plugin -> category.isNullOrBlank() || plugin.category == category }
             .filter { plugin ->
@@ -77,6 +87,18 @@ class PluginMarketplaceApi private constructor(
             }
             .sortedWith(pluginSortComparator(sort))
             .toList()
+        val filtered = buildList {
+            for (entry in filteredEntries) {
+                val detail = when (val detailResult = resolvePluginDetail(index, entry.pluginId)) {
+                    is ApiResult.Success -> detailResult.data
+                    is ApiResult.Error -> return@withContext detailResult
+                    is ApiResult.NetworkError -> return@withContext detailResult
+                }
+                val latest = detail.latestCompatibleVersionEntry(currentHostVersion)
+                    ?: continue
+                add(entry to latest.version)
+            }
+        }
 
         val safeLimit = limit.coerceAtLeast(1)
         val safePage = page.coerceAtLeast(1)
@@ -85,22 +107,28 @@ class PluginMarketplaceApi private constructor(
         val pageItems = filtered
             .drop((safePage - 1) * safeLimit)
             .take(safeLimit)
-            .map { it.toSummary() }
+            .map { (entry, latestVersion) -> entry.toSummary(latestVersion) }
 
-        PluginListData(
-            plugins = pageItems,
-            pagination = Pagination(
-                page = safePage,
-                limit = safeLimit,
-                total = total.toLong(),
-                totalPages = totalPages,
+        ApiResult.Success(
+            PluginListData(
+                plugins = pageItems,
+                pagination = Pagination(
+                    page = safePage,
+                    limit = safeLimit,
+                    total = total.toLong(),
+                    totalPages = totalPages,
+                ),
             ),
         )
     }
 
     suspend fun getPluginDetail(pluginId: String): ApiResult<PluginDetail> = withContext(Dispatchers.IO) {
         when (val indexResult = loadIndex()) {
-            is ApiResult.Success -> resolvePluginDetail(indexResult.data, pluginId)
+            is ApiResult.Success -> when (val detailResult = resolvePluginDetail(indexResult.data, pluginId)) {
+                is ApiResult.Success -> ApiResult.Success(detailResult.data.compatibleWith(currentHostVersion))
+                is ApiResult.Error -> detailResult
+                is ApiResult.NetworkError -> detailResult
+            }
             is ApiResult.Error -> indexResult
             is ApiResult.NetworkError -> indexResult
         }
@@ -119,7 +147,7 @@ class PluginMarketplaceApi private constructor(
                 is ApiResult.Success -> detailResult.data
                 else -> return@mapNotNull null
             }
-            val latest = remote.latestVersionEntry() ?: return@mapNotNull null
+            val latest = remote.latestCompatibleVersionEntry(currentHostVersion) ?: return@mapNotNull null
             if (!isNewerVersion(latest.version, installed.version)) return@mapNotNull null
             PluginUpdateInfo(
                 pluginId = installed.pluginId,
@@ -158,7 +186,7 @@ class PluginMarketplaceApi private constructor(
                 is ApiResult.Error -> return@withContext detailResult
                 is ApiResult.NetworkError -> return@withContext detailResult
             }
-            val pluginVersion = plugin.resolveVersion(version)
+            val pluginVersion = plugin.resolveVersion(version, currentHostVersion)
                 ?: return@withContext ApiResult.Error(
                     404,
                     Strings.plugin_marketplace_error_plugin_version_not_found.str(version ?: "latest"),
@@ -195,20 +223,17 @@ class PluginMarketplaceApi private constructor(
         }
     }
 
-    private suspend fun <T> withIndex(block: (LoadedPluginRegistryCatalog) -> T): ApiResult<T> = when (val result = loadIndex()) {
-        is ApiResult.Success -> runCatching { ApiResult.Success(block(result.data)) }
-            .getOrElse { error -> ApiResult.Error(-1, error.message ?: Strings.error_unknown.str()) }
-        is ApiResult.Error -> result
-        is ApiResult.NetworkError -> result
-    }
-
     private suspend fun loadIndex(): ApiResult<LoadedPluginRegistryCatalog> = withContext(Dispatchers.IO) {
         cachedIndex?.let { return@withContext ApiResult.Success(it) }
         indexMutex.withLock {
             cachedIndex?.let { return@withLock ApiResult.Success(it) }
-            val result = loadIndexFromUrls(indexUrls, "v2") { body, registryUrl ->
+            val result = loadIndexFromUrls(indexUrls, "v3") { body, registryUrl ->
+                val catalog = json.decodeFromString<PluginRegistryCatalog>(body)
+                require(catalog.schemaVersion == GitHubRegistryConfig.REGISTRY_SCHEMA_VERSION) {
+                    Strings.error_response_parse_failed.str()
+                }
                 LoadedPluginRegistryCatalog(
-                    catalog = json.decodeFromString<PluginRegistryCatalog>(body),
+                    catalog = catalog,
                     baseUrl = registryUrl.endpoint.baseUrl,
                     endpoint = registryUrl.endpoint,
                 )
@@ -471,7 +496,7 @@ class PluginMarketplaceApi private constructor(
 @Serializable
 data class PluginRegistryCatalog(
     @SerialName("schema_version")
-    val schemaVersion: Int = 2,
+    val schemaVersion: Int,
     @SerialName("generated_at")
     val generatedAt: String? = null,
     val plugins: List<PluginRegistryCatalogEntry> = emptyList(),
@@ -507,7 +532,7 @@ data class PluginRegistryCatalogEntry(
     @SerialName("updated_at")
     val updatedAt: String = "",
 ) {
-    fun toSummary(): PluginSummary = PluginSummary(
+    fun toSummary(compatibleLatestVersion: String? = latestVersion): PluginSummary = PluginSummary(
         id = id,
         pluginId = pluginId,
         name = name,
@@ -516,13 +541,20 @@ data class PluginRegistryCatalogEntry(
         tags = tags,
         iconUrl = iconUrl,
         publisher = publisher,
-        latestVersion = latestVersion,
+        latestVersion = compatibleLatestVersion,
         updatedAt = updatedAt,
     )
 }
 
-private fun PluginDetail.resolveVersion(version: String?): PluginVersion? = if (version.isNullOrBlank()) {
-    latestVersionEntry()
+private fun PluginDetail.resolveVersion(
+    version: String?,
+    hostVersion: String?,
+): PluginVersion? = if (version.isNullOrBlank()) {
+    latestCompatibleVersionEntry(hostVersion)
 } else {
-    versions.firstOrNull { it.version == version }
+    versions.firstOrNull { candidate ->
+        candidate.version == version &&
+            candidate.apiVersion == PluginManifestValidator.SUPPORTED_API_VERSION &&
+            PluginCompatibility.evaluate(hostVersion, candidate.minAppVersion).isCompatible
+    }
 }

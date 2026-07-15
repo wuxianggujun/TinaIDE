@@ -1,6 +1,6 @@
 # TinaIDE 插件编写教程（基于模板）
 
-> 文档更新：2026-07-13
+> 文档更新：2026-07-15
 > 适用对象：第一次为 TinaIDE 编写插件的开发者
 > 说明：开始前请先从插件市场 / Registry 安装并启用 `TinaIDE Plugin Starters`；如果你是第一次写插件，先做 `config` 插件，先把主题和代码片段跑通。
 
@@ -73,6 +73,8 @@
 - `id`：插件唯一标识，建议用反向域名风格
 - `name`：插件显示名称
 - `version`：建议从 `0.1.0` 开始
+- `apiVersion`：当前稳定值为 `1`，省略时按 `1` 处理
+- `minAppVersion`：只有确实依赖新宿主能力时才填写最低 TinaIDE 版本
 - `type`：必须和模板类型一致
 - `description`：一句话说明用途
 - `author.name`：作者名
@@ -84,6 +86,7 @@
   "id": "com.example.my-first-plugin",
   "name": "My First Plugin",
   "version": "0.1.0",
+  "apiVersion": 1,
   "type": "config",
   "description": "My first TinaIDE plugin.",
   "author": {
@@ -91,6 +94,10 @@
   }
 }
 ```
+
+`minAppVersion` 是兼容门禁，不是普通展示字段。省略它时，历史插件继续兼容；填写后，
+旧 IDE 的 Registry 视图不会展示该版本，宿主安装、启用和运行时也会再次校验。不要为了
+“跟随最新版”随意抬高它；只有插件真正使用了该宿主版本新增的能力时才更新并提升插件版本。
 
 ### 3.1 `id` 的约束
 

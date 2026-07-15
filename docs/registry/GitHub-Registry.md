@@ -1,6 +1,6 @@
 # TinaIDE GitHub Registry
 
-> 最后人工核验：2026-07-10
+> 最后人工核验：2026-07-15
 
 TinaIDE 开源版的插件市场、依赖包市场与 Linux distro manifest 不再从 TinaServer 读取元数据。
 客户端默认读取公开仓库：
@@ -12,8 +12,9 @@ https://github.com/wuxianggujun/TinaIDE-Registry
 这个仓库是插件、依赖包与 Linux distro 元数据的公开 Registry，不是 Android 主项目的源码目录。
 它现在同时承载：
 
-- `plugins/index.v2.json` / `packages/index.v2.json`
-- `plugins/<plugin-id>/plugin.json`
+- `plugins/index.v3.json` / `plugins/<plugin-id>/plugin.v3.json`
+- `plugins/index.v2.json` / `plugins/<plugin-id>/plugin.json`
+- `packages/index.v2.json`
 - `plugins/<plugin-id>/<version>/*.tinaplug`
 - `packages/<package-id>/package.json`
 - `packages/<package-id>/<version>/*`
@@ -52,6 +53,8 @@ https://raw.githubusercontent.com/wuxianggujun/TinaIDE-Registry/main
 ```text
 plugins/index.v2.json
 plugins/<plugin-id>/plugin.json
+plugins/index.v3.json
+plugins/<plugin-id>/plugin.v3.json
 plugins/<plugin-id>/<version>/<plugin-id>.tinaplug
 packages/index.v2.json
 packages/<package-id>/package.json
@@ -64,9 +67,10 @@ metadata/packages.json
 scripts/build-registry.ps1
 ```
 
-插件和依赖包市场只读取 v2 索引；v2 不存在、请求失败或解析失败时会直接返回错误，
-不再回退旧的 `plugins/index.json` / `packages/index.json`。Registry 默认也不再生成
-v1 全量索引；确实需要服务旧客户端时，才显式生成 v1 兼容产物。
+`0.18.11+` 插件市场只读取 v3 完整索引，并按宿主版本与 Plugin API 选择最高兼容版本；
+旧 IDE 继续读取只含 `0.17.11 + Plugin API v1` 可用版本的 v2 兼容视图。依赖包市场仍
+读取 v2。任一入口失败时都不回退旧的 `plugins/index.json` / `packages/index.json`。
+Registry 默认不生成 v1 全量索引；确需服务更旧客户端时才显式生成。
 
 Linux distro 使用独立的 `linux-distro/manifest.v1.json` 协议。它不是市场 v1 fallback：
 显式刷新时按新鲜缓存、Registry 多端点、过期缓存、内置 asset 的顺序回落；启动和普通列表读取不会隐式请求网络。manifest 中的 artifact 保留官方 URL，`mirrors` 只负责派生替代下载地址，最终内容仍必须通过 SHA-256 校验。
@@ -92,10 +96,10 @@ pwsh ./scripts/build-registry.ps1
 ```
 
 脚本会重新打包 `sources/plugins/**`，计算插件包和依赖包的 SHA-256，
-并重写 v2 产物：
+并重写以下产物：
 
-- `plugins/index.v2.json`：插件轻量列表。
-- `plugins/<plugin-id>/plugin.json`：单个插件详情和版本历史。
+- `plugins/index.v3.json` / `plugin.v3.json`：插件轻量列表与完整版本历史。
+- `plugins/index.v2.json` / `plugin.json`：旧宿主可安全使用的版本子集。
 - `packages/index.v2.json`：依赖包轻量列表。
 - `packages/<package-id>/package.json`：单个包详情、版本和下载信息。
 
@@ -106,13 +110,14 @@ pwsh ./scripts/build-registry.ps1 -IncludeLegacyV1
 pwsh ./scripts/validate-registry.ps1 -AllowLegacyV1
 ```
 
-## v2 索引设计
+## 轻量索引设计
 
-v2 的核心目标是避免客户端每次刷新市场都下载和解析全量详情。
+v2/v3 都避免客户端每次刷新市场时下载和解析全量详情。
 列表页只读取轻量索引；用户打开详情、安装、检查更新时，再按需读取单个详情文件。
 
 ```text
-[index.v2.json] --列表/搜索/分类--> [详情页或安装] --按需--> [<id>/plugin.json 或 <id>/package.json]
+[plugins/index.v3.json] --列表/搜索/分类--> [按需读取 plugin.v3.json] --兼容筛选--> [展示/更新/下载]
+[packages/index.v2.json] --列表/搜索/分类--> [按需读取 package.json]
 ```
 
 轻量索引必须包含列表展示、分类过滤和排序需要的字段。详情文件包含版本历史、
@@ -120,13 +125,13 @@ v2 的核心目标是避免客户端每次刷新市场都下载和解析全量�
 
 ## 协议生命周期
 
-当前主协议是 v2。Android 主干已经移除 v1 fallback，列表、详情、安装和更新检查
-都以 `index.v2.json` + 单项详情文件为唯一入口。当前应用版本为 `0.18.10`，
-与 v2-only 行为一致。
+当前插件主协议是 v3，依赖包协议仍是 v2。Android 主干已经移除 v1 fallback。
 
 - `0.17.11`：Android 客户端引入 v2 优先读取，并把 v1 fallback 标记为废弃兼容层。
-- `0.18.0` 起：Android 客户端删除 v1 fallback 代码，市场读取只要求 v2；
+- `0.18.0` 起：Android 客户端删除 v1 fallback 代码；
   Registry 默认停止生成 `plugins/index.json` / `packages/index.json`。
+- `0.18.11` 起：插件客户端读取 v3 并按 `api_version`、`min_app_version` 选择最高兼容版本；
+  v2 固定为旧宿主兼容视图，不再把新且不兼容的版本暴露给旧 IDE。
 
 停止默认生成 v1 兼容索引前必须同时满足：
 
@@ -136,17 +141,63 @@ v2 的核心目标是避免客户端每次刷新市场都下载和解析全量�
 - `scripts/validate-registry.ps1` 已能阻止 v2 详情缺失和轻量索引混入重字段。
 
 Android 仓库已经移除 `PluginRegistryIndex` / `PackageRegistryIndex` 生产模型和 v1
-回退读取测试；Registry 仓库默认构建和校验也已经切到 v2-only。
+回退读取测试；Registry 默认同时构建插件 v2/v3 与依赖包 v2。
 
 ## 插件索引
 
-### 插件 v2 轻量索引
+### 插件 v3 完整兼容索引
+
+`plugins/index.v3.json` 是 `0.18.11+` 的插件入口，`detail_url` 指向 `plugin.v3.json`。
+详情中的每个版本都必须包含 `api_version`，可选 `min_app_version`；客户端不会仅相信
+索引的 `latest_version`，而会从完整历史中选择当前宿主支持的最高版本。
+
+```json
+{
+  "schema_version": 3,
+  "plugins": [
+    {
+      "id": "tinaide.plugin.example",
+      "plugin_id": "tinaide.plugin.example",
+      "name": "Example Plugin",
+      "publisher": { "id": "tinaide", "display_name": "TinaIDE" },
+      "latest_version": "2.0.0",
+      "detail_url": "plugins/tinaide.plugin.example/plugin.v3.json",
+      "created_at": "2026-05-21T00:00:00Z",
+      "updated_at": "2026-07-15T00:00:00Z"
+    }
+  ]
+}
+```
+
+```json
+{
+  "plugin_id": "tinaide.plugin.example",
+  "versions": [
+    {
+      "version": "2.0.0",
+      "version_code": 20000,
+      "file_size": 1234,
+      "file_hash": "sha256:<sha256>",
+      "download_url": "plugins/tinaide.plugin.example/2.0.0/tinaide.plugin.example.tinaplug",
+      "api_version": 1,
+      "min_app_version": "0.18.11",
+      "created_at": "2026-07-15T00:00:00Z"
+    }
+  ]
+}
+```
+
+### 插件 v2 旧宿主兼容索引
 
 `plugins/index.v2.json` 的推荐结构：
 
 ```json
 {
   "schema_version": 2,
+  "compatibility": {
+    "host_version": "0.17.11",
+    "api_version": 1
+  },
   "generated_at": "2026-06-06T00:00:00Z",
   "plugins": [
     {
@@ -190,6 +241,7 @@ Android 仓库已经移除 `PluginRegistryIndex` / `PackageRegistryIndex` 生产
       "file_size": 1234,
       "file_hash": "sha256:<sha256>",
       "download_url": "plugins/tinaide.plugin.example/1.0.0/tinaide.plugin.example.tinaplug",
+      "api_version": 1,
       "created_at": "2026-05-21T00:00:00Z"
     }
   ],

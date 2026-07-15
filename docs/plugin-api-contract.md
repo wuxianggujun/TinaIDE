@@ -8,6 +8,7 @@
 | `name` | 是 | 稳定 | 展示名称。 |
 | `version` | 是 | 稳定 | 插件版本。 |
 | `apiVersion` | 否 | 稳定 | 当前固定为 `1`，省略时默认 `1`。宿主会拒绝其他版本。 |
+| `minAppVersion` | 否 | 稳定 | 插件要求的最低 TinaIDE 版本。省略时保持历史兼容；明确高于当前宿主时，Registry 不展示更新，宿主也拒绝安装、启用和运行。 |
 | `type` | 否 | 稳定 | 当前重点支持 `script`、`hybrid`、`lsp`。 |
 | `main` | `script`/`hybrid` 必填逻辑项 | 稳定 | 省略时默认 `main.lua`，宿主要求对应文件存在。 |
 | `permissions` | 否 | 稳定 | 必需权限声明。未声明的宿主 API 调用会被拒绝。 |

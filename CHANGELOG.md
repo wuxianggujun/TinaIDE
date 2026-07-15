@@ -38,6 +38,7 @@
 - LSP session 增加插件 owner，插件禁用、隔离、升级或卸载时关闭对应进程和编辑器连接；设置页同步显示等待授权、自动隔离和 runtime 不可用状态。
 - `contributions.panels` 与 `tina.panels.*` 进入 apiVersion 1 稳定契约，脚本可向编辑器底部插件面板发布有界纯文本；`optionalPermissions` 支持详情页按需授权/撤销，`activationEvents` 收敛为 LSP 的 `onLanguage:<id>` 语义。
 - Host capability gateway 拆出数据能力、SQLite 与 Binder 大载荷存储边界，运行时死亡会统一清理数据库、限流器、临时载荷和面板内容。
+- 插件市场切换到 Registry v3 完整版本历史，按当前 IDE 版本和 Plugin API 选择最高兼容版本；Registry v2 保留为 `0.17.11 + API v1` 旧宿主兼容视图，v2/v3 共用不可变插件制品。
 
 ### Fixed
 
@@ -45,10 +46,12 @@
 - 修复 Lua `tina.config.get(key, fallback)` fallback 语义丢失，并在 Binder 返回值超过 256 KiB 时返回可归因的 `RESOURCE_LIMIT`，避免超大 transaction 直接破坏 runtime 通道。
 - 修复 `tina.events.emit` 空实现、未知事件可注册、重复订阅和插件可伪造宿主事件的问题；自定义事件现在只定向派发给当前插件。
 - 修复 LSP owner 已停止后编辑器仍显示 `LSP Ready`，以及旧 attach callback 可能干扰新会话的问题。
+- 修复旧 IDE 仍可能看到不兼容插件更新、宿主刷新后保留不兼容插件启用态，以及卸载清理中断时过早删除降级安全禁用标记的问题。
 
 ### Tests
 
 - 新增面板内容隔离/UTF-8 上限、manifest panels/activationEvents 校验、optionalPermissions 显式授权、事件契约、LSP owner-stop 代际和底部面板可见性测试。
+- 新增 Registry v3 代理/详情/下载协议、Marketplace 兼容版本回退与宿主安装/启用兼容门禁测试。
 
 ## [0.18.11] - 2026-07-13
 

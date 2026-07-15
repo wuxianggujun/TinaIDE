@@ -1,6 +1,6 @@
 # 插件开发者指南
 
-> 文档更新：2026-07-14
+> 文档更新：2026-07-15
 
 当前仓库已具备“配置插件 + LSP 插件 + 脚本 / hybrid 插件”的基础闭环，
 当前已支持：
@@ -771,8 +771,8 @@ my-plugin.tinaplug
 https://github.com/wuxianggujun/TinaIDE-Registry
 ```
 
-Registry 中的 `sources/plugins/**`、`plugins/index.v2.json` 和详情文件负责当前客户端市场分发；
-v1 兼容索引默认不再生成，只服务旧客户端。主仓库当前随 APK 分发的内置插件位于
+Registry 中的 `sources/plugins/**`、`plugins/index.v3.json` 和 `plugin.v3.json` 负责当前客户端市场分发；
+`plugins/index.v2.json` / `plugin.json` 仅暴露旧宿主可用版本，v1 索引默认不生成。主仓库当前随 APK 分发的内置插件位于
 `app/src/main/assets/bundled_plugins/`，用于首次启动的兜底自动安装：
 
 - `tinaide.project.templates`：基础项目模板

@@ -1,6 +1,6 @@
 # TinaIDE 文档状态与生命周期
 
-> 最后人工核验：2026-07-11
+> 最后人工核验：2026-07-15
 
 本文用于说明仓库内文档的可信层级、维护边界和后续清理规则。遇到文档内容冲突时，先按这里的顺序判断，不要直接以历史设计稿或旧路线图作为当前实现依据。
 
@@ -50,7 +50,7 @@
 - App 内帮助：中文正文位于 `feature/help/src/main/assets/help/*.md`，英文正文位于 `feature/help/src/main/assets/help/en/*.md`；英文缺失或加载失败时回落到中文。
 - 远程 LSP：Android 客户端保留 WebSocket remote LSP 能力；当前仓库不内置 `tools/tina-lsp-proxy.py` 或 `tools/tina-lsp-proxy-kt` PC 代理实现。
 - Release 构建：可能递增 `version.properties` 并备份 R8 mapping；mapping 文件仅由公开构建逻辑做本地归档。
-- Registry：当前 Android 主干读取 `plugins/index.v2.json`、`packages/index.v2.json` 与 `linux-distro/manifest.v1.json`。
+- Registry：当前 Android 主干读取插件 `plugins/index.v3.json`、依赖包 `packages/index.v2.json` 与 `linux-distro/manifest.v1.json`；插件 `plugins/index.v2.json` 仅作为旧宿主兼容视图保留。
 - MT 管理器访问：默认开启；只暴露 TinaIDE 自己的 `data`、`Android/data`、`Android/obb` 和 `user_de_data`，可在设置中关闭。
 
 ### 设计参考

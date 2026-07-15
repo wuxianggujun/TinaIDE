@@ -34,6 +34,7 @@ REGISTRY_FACT_DOCUMENTS = (
     "docs/registry/GitHub-Registry.md",
 )
 REGISTRY_PATHS = (
+    "plugins/index.v3.json",
     "plugins/index.v2.json",
     "packages/index.v2.json",
     "linux-distro/manifest.v1.json",

@@ -199,11 +199,12 @@ class PluginManager(
                     val manifest = JsonSerializer.decodeFromFile<PluginManifest>(manifestFile)
                     manifestForIssue = manifest
                     validateManifest(manifest, dir)
+                    val compatibility = PluginCompatibility.evaluate(context, manifest)
                     val localizedManifest = PluginLocalizationResolver.localize(manifest, dir, context)
                     InstalledPlugin(
                         manifest = localizedManifest,
                         directory = dir,
-                        enabled = resolvePluginEnabled(manifest)
+                        enabled = resolvePluginEnabled(manifest, compatibility)
                     )
                 }.onFailure { t ->
                     manifestForIssue?.let { invalidManifest ->
@@ -279,6 +280,7 @@ class PluginManager(
                 }
                 JsonSerializer.decodeFromFile<PluginManifest>(manifestFile).also { manifest ->
                     validateManifest(manifest, tempDir)
+                    PluginCompatibility.requireCompatible(context, manifest)
                 }
             } finally {
                 if (tempDir.exists()) tempDir.deleteRecursively()
@@ -367,6 +369,11 @@ class PluginManager(
                     enabled
                 )
                 logHostInfo("setPluginEnabled requested pluginId=$pluginId enabled=$enabled instance=$instanceId")
+                if (enabled) {
+                    getInstalledManifestOrNull(pluginId)?.let { manifest ->
+                        PluginCompatibility.requireCompatible(context, manifest)
+                    }
+                }
                 if (!enabled) PluginRuntimeLifecycle.stop(pluginId)
                 setPluginEnabledInternal(pluginId, enabled, userRequested = true)
                 refreshInstalledPlugins()
@@ -397,12 +404,28 @@ class PluginManager(
         }
     }
 
-    private fun resolvePluginEnabled(manifest: PluginManifest): Boolean {
+    private fun resolvePluginEnabled(
+        manifest: PluginManifest,
+        compatibility: PluginCompatibilityResult = PluginCompatibility.evaluate(context, manifest),
+    ): Boolean {
         val desired = getDesiredPluginEnabledOrNull(manifest.id)
             ?: getStoredPluginEnabledOrNull(manifest.id)
             ?: getDefaultEnabledValue(manifest)
         migrateDesiredEnabled(manifest.id, desired)
+        if (!compatibility.isCompatible) {
+            persistLegacyDisabled(manifest.id)
+            return false
+        }
         return desired && !faultStore.isQuarantined(manifest.id)
+    }
+
+    private fun persistLegacyDisabled(pluginId: String) {
+        val key = PREF_ENABLED_PREFIX + pluginId
+        if (!prefs.contains(key) || prefs.getBoolean(key, true)) {
+            check(prefs.edit().putBoolean(key, false).commit()) {
+                "Failed to persist legacy disabled state"
+            }
+        }
     }
 
     private fun getDesiredPluginEnabledOrNull(pluginId: String): Boolean? {
@@ -628,6 +651,7 @@ class PluginManager(
                 decodedManifest
             }
             validateManifest(manifest, stagingDir)
+            PluginCompatibility.requireCompatible(context, manifest)
             expectedPackage?.let { expected ->
                 require(manifest.id == expected.pluginId) {
                     Strings.plugin_error_marketplace_id_mismatch.strOr(
@@ -855,6 +879,7 @@ class PluginManager(
         check(
             prefs.edit()
                 .putStringSet(PREF_PENDING_UNINSTALL_CLEANUP, pending)
+                .putBoolean(PREF_ENABLED_PREFIX + pluginId, false)
                 .commit(),
         ) { "Failed to persist pending plugin uninstall" }
     }
@@ -865,12 +890,6 @@ class PluginManager(
             .toSet()
 
     private fun completePendingUninstallCleanup(pluginId: String) {
-        check(
-            prefs.edit()
-                .remove(PREF_ENABLED_PREFIX + pluginId)
-                .remove(PREF_DESIRED_ENABLED_PREFIX + pluginId)
-                .commit(),
-        ) { "Failed to clear plugin enabled state" }
         check(faultStore.clearAllForUninstall(pluginId)) { "Failed to clear plugin fault state" }
         check(PluginConfigurationStore.getInstance(context).clearPlugin(pluginId)) {
             "Failed to clear plugin configuration"
@@ -881,9 +900,11 @@ class PluginManager(
         val remaining = pendingUninstallCleanupIds() - pluginId
         check(
             prefs.edit()
+                .remove(PREF_ENABLED_PREFIX + pluginId)
+                .remove(PREF_DESIRED_ENABLED_PREFIX + pluginId)
                 .putStringSet(PREF_PENDING_UNINSTALL_CLEANUP, remaining)
                 .commit(),
-        ) { "Failed to clear pending plugin uninstall" }
+        ) { "Failed to commit completed plugin uninstall" }
     }
 
     private fun restoreInstallState(transaction: PluginInstallTransactionRecord) {
