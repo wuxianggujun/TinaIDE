@@ -4,6 +4,8 @@ import android.app.Application
 import android.content.Context
 import com.google.common.truth.Truth.assertThat
 import com.wuxianggujun.tinaide.core.serialization.JsonSerializer
+import com.wuxianggujun.tinaide.plugin.script.PluginPermission
+import com.wuxianggujun.tinaide.plugin.script.PluginPermissionManager
 import java.io.File
 import org.junit.After
 import org.junit.Assert.assertThrows
@@ -26,6 +28,7 @@ class PluginInstallTransactionRecoveryTest {
     private lateinit var pluginsDir: File
     private lateinit var prefs: android.content.SharedPreferences
     private lateinit var faultStore: PluginFaultStore
+    private lateinit var permissionManager: PluginPermissionManager
     private val pluginIds = mutableSetOf<String>()
 
     @Before
@@ -37,13 +40,40 @@ class PluginInstallTransactionRecoveryTest {
         prefs = context.getSharedPreferences("tinaide_plugins", Context.MODE_PRIVATE)
         prefs.edit().clear().commit()
         faultStore = PluginFaultStore.getInstance(context)
+        permissionManager = PluginPermissionManager.getInstance(context)
     }
 
     @After
     fun tearDown() {
         pluginIds.forEach(faultStore::clearAllForUninstall)
+        pluginIds.forEach(permissionManager::revokeAllPermissions)
         prefs.edit().clear().commit()
         pluginsDir.deleteRecursively()
+    }
+
+    @Test
+    fun `recovery restores permission grants captured by interrupted install`() {
+        val pluginId = pluginId("permission-rollback")
+        permissionManager.replacePermissions(
+            pluginId,
+            setOf(PluginPermission.NETWORK_UNRESTRICTED),
+        )
+        writeTransaction(
+            PluginInstallTransactionRecord(
+                transactionId = "permission-rollback",
+                pluginId = pluginId,
+                hadDesiredEnabled = false,
+                oldDesiredEnabled = false,
+                hadLegacyEnabled = false,
+                oldLegacyEnabled = false,
+                previousPermissionIds = listOf(PluginPermission.EDITOR_READ.id),
+            ),
+        )
+
+        PluginManager(context).recoverInterruptedInstallTransactions()
+
+        assertThat(permissionManager.getGrantedPermissions(pluginId))
+            .containsExactly(PluginPermission.EDITOR_READ)
     }
 
     @Test

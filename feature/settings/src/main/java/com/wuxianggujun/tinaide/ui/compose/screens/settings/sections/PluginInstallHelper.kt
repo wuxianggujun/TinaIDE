@@ -4,13 +4,13 @@ import android.content.Context
 import android.net.Uri
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
+import com.wuxianggujun.tinaide.plugin.InstalledPlugin
 import com.wuxianggujun.tinaide.plugin.PluginDiagnosticsReport
 import com.wuxianggujun.tinaide.plugin.PluginDoctor
 import com.wuxianggujun.tinaide.plugin.PluginManager
 import com.wuxianggujun.tinaide.plugin.PluginManifest
 import com.wuxianggujun.tinaide.plugin.ZipUtils
 import com.wuxianggujun.tinaide.plugin.script.PluginPermission
-import com.wuxianggujun.tinaide.plugin.script.PluginPermissionManager
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
@@ -108,35 +108,20 @@ internal fun createPluginInstallPreview(
 }
 
 suspend fun finishPluginInstall(
-    context: Context,
     pluginManager: PluginManager,
     pluginFile: File,
+    expectedManifest: PluginManifest,
     toastPluginsInstalledTemplate: String,
     toastPluginsInstallFailedTemplate: String,
-    permissionManager: PluginPermissionManager? = null,
     permissions: Set<PluginPermission> = emptySet(),
-    permissionPluginId: String? = null,
 ): PluginInstallOutcome = withContext(NonCancellable + Dispatchers.IO) {
     try {
-        val permissionOwnerId = permissionManager?.let {
-            requireNotNull(permissionPluginId) { "Permission plugin id is required when granting permissions" }
-        }
-        val previousGrants = if (permissionManager != null && permissionOwnerId != null) {
-            permissionManager.getGrantedPermissions(permissionOwnerId)
-        } else {
-            null
-        }
-        val result = runCatching {
-            if (permissionManager != null && permissionOwnerId != null && permissions.isNotEmpty()) {
-                permissionManager.grantPermissions(permissionOwnerId, permissions)
-            }
-            pluginManager.install(pluginFile).getOrThrow().manifest
-        }
-        if (result.isFailure && permissionManager != null && permissionOwnerId != null && previousGrants != null) {
-            val installError = checkNotNull(result.exceptionOrNull())
-            runCatching { permissionManager.replacePermissions(permissionOwnerId, previousGrants) }
-                .onFailure(installError::addSuppressed)
-        }
+        val result = pluginManager.installWithPermissions(
+            zipFile = pluginFile,
+            pluginId = expectedManifest.id,
+            version = expectedManifest.version,
+            permissions = permissions,
+        ).map(InstalledPlugin::manifest)
         PluginInstallHelperSupport.buildInstallOutcome(
             result = result,
             installedTemplate = toastPluginsInstalledTemplate,

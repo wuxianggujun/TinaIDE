@@ -70,13 +70,13 @@ class PluginConfigurationStore private constructor(
         return true
     }
 
-    fun clearPlugin(pluginId: String) {
+    fun clearPlugin(pluginId: String): Boolean {
         val prefix = "$pluginId:"
         val keys = prefs.all.keys.filter { key -> key.startsWith(prefix) }
-        if (keys.isEmpty()) return
-        prefs.edit().apply {
+        if (keys.isEmpty()) return true
+        return prefs.edit().apply {
             keys.forEach(::remove)
-        }.apply()
+        }.commit()
     }
 
     private fun emitChangedIfNeeded(

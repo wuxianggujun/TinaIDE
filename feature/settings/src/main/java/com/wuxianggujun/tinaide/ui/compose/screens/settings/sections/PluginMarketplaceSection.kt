@@ -83,6 +83,7 @@ fun PluginMarketplaceScreen(
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
+    val permissionDeniedText = stringResource(Strings.toast_plugins_permission_denied)
     val selectedPlugin = PluginMarketplaceSelectionSupport.resolveSelectedPlugin(
         selectedPluginId = uiState.selectedPluginId,
         plugins = uiState.plugins,
@@ -131,7 +132,7 @@ fun PluginMarketplaceScreen(
                 viewModel.dismissPendingInstall()
                 Toast.makeText(
                     context,
-                    context.getString(Strings.toast_plugins_permission_denied),
+                    permissionDeniedText,
                     Toast.LENGTH_SHORT,
                 ).show()
             },

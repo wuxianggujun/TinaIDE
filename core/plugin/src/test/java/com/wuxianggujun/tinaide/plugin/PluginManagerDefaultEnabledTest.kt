@@ -3,10 +3,13 @@ package com.wuxianggujun.tinaide.plugin
 import android.app.Application
 import android.content.Context
 import com.google.common.truth.Truth.assertThat
+import com.wuxianggujun.tinaide.core.serialization.JsonSerializer
 import com.wuxianggujun.tinaide.plugin.runtime.PluginDatabase
 import com.wuxianggujun.tinaide.plugin.script.PluginPermission
 import com.wuxianggujun.tinaide.plugin.script.PluginPermissionManager
 import java.io.File
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Before
@@ -44,7 +47,11 @@ class PluginManagerDefaultEnabledTest {
 
     @After
     fun tearDown() {
-        pluginIds.forEach(faultStore::clearAllForUninstall)
+        val permissionManager = PluginPermissionManager.getInstance(context)
+        pluginIds.forEach { pluginId ->
+            faultStore.clearAllForUninstall(pluginId)
+            permissionManager.revokeAllPermissions(pluginId)
+        }
         temporaryDirectories.forEach(File::deleteRecursively)
         pluginsDir.deleteRecursively()
         prefs.edit().clear().commit()
@@ -132,6 +139,151 @@ class PluginManagerDefaultEnabledTest {
     }
 
     @Test
+    fun `permission install transaction restores grants after package identity mismatch`() = runBlocking {
+        val requestedId = pluginId("permission-requested-id")
+        val packageId = pluginId("permission-package-id")
+        val permissionManager = PluginPermissionManager.getInstance(context)
+        permissionManager.grantPermission(requestedId, PluginPermission.EDITOR_READ)
+        val archive = createPluginArchive(
+            PluginManifest(
+                id = packageId,
+                name = packageId,
+                version = "2.0.0",
+                type = PluginTypes.CONFIG,
+            ),
+        )
+
+        val result = PluginManager(context).installWithPermissions(
+            zipFile = archive,
+            pluginId = requestedId,
+            version = "2.0.0",
+            permissions = setOf(PluginPermission.NETWORK_UNRESTRICTED),
+        )
+
+        assertThat(result.isFailure).isTrue()
+        assertThat(permissionManager.getGrantedPermissions(requestedId))
+            .containsExactly(PluginPermission.EDITOR_READ)
+        assertThat(File(pluginsDir, requestedId).exists()).isFalse()
+        assertThat(File(pluginsDir, packageId).exists()).isFalse()
+    }
+
+    @Test
+    fun `permission install transaction rejects grants absent from verified manifest`() = runBlocking {
+        val pluginId = pluginId("permission-declaration")
+        val permissionManager = PluginPermissionManager.getInstance(context)
+        permissionManager.grantPermission(pluginId, PluginPermission.EDITOR_READ)
+        val archive = createPluginArchive(
+            PluginManifest(
+                id = pluginId,
+                name = pluginId,
+                version = "1.0.0",
+                type = PluginTypes.CONFIG,
+            ),
+        )
+
+        val result = PluginManager(context).installWithPermissions(
+            zipFile = archive,
+            pluginId = pluginId,
+            version = "1.0.0",
+            permissions = setOf(PluginPermission.NETWORK_UNRESTRICTED),
+        )
+
+        assertThat(result.isFailure).isTrue()
+        assertThat(permissionManager.getGrantedPermissions(pluginId))
+            .containsExactly(PluginPermission.EDITOR_READ)
+        assertThat(File(pluginsDir, pluginId).exists()).isFalse()
+    }
+
+    @Test
+    fun `permission install transaction removes stale grants after verified replacement`() = runBlocking {
+        val pluginId = pluginId("permission-trim")
+        val permissionManager = PluginPermissionManager.getInstance(context)
+        permissionManager.replacePermissions(
+            pluginId,
+            setOf(PluginPermission.EDITOR_READ, PluginPermission.CLIPBOARD_READ),
+        )
+        val archive = createPluginArchive(
+            PluginManifest(
+                id = pluginId,
+                name = pluginId,
+                version = "2.0.0",
+                type = PluginTypes.CONFIG,
+                permissions = listOf(PluginPermission.NETWORK_UNRESTRICTED.id),
+                optionalPermissions = listOf(PluginPermission.EDITOR_READ.id),
+            ),
+        )
+
+        val result = PluginManager(context).installWithPermissions(
+            zipFile = archive,
+            pluginId = pluginId,
+            version = "2.0.0",
+            permissions = setOf(PluginPermission.NETWORK_UNRESTRICTED),
+        )
+
+        assertThat(result.isSuccess).isTrue()
+        assertThat(permissionManager.getGrantedPermissions(pluginId))
+            .containsExactly(
+                PluginPermission.EDITOR_READ,
+                PluginPermission.NETWORK_UNRESTRICTED,
+            )
+        Unit
+    }
+
+    @Test
+    fun `plain install also removes grants absent from replacement manifest`() = runBlocking {
+        val pluginId = pluginId("plain-install-permission-trim")
+        val permissionManager = PluginPermissionManager.getInstance(context)
+        permissionManager.replacePermissions(
+            pluginId,
+            setOf(PluginPermission.EDITOR_READ, PluginPermission.CLIPBOARD_READ),
+        )
+        val archive = createPluginArchive(
+            PluginManifest(
+                id = pluginId,
+                name = pluginId,
+                version = "2.0.0",
+                type = PluginTypes.CONFIG,
+                optionalPermissions = listOf(PluginPermission.EDITOR_READ.id),
+            ),
+        )
+
+        val result = PluginManager(context).install(archive)
+
+        assertThat(result.isSuccess).isTrue()
+        assertThat(permissionManager.getGrantedPermissions(pluginId))
+            .containsExactly(PluginPermission.EDITOR_READ)
+        Unit
+    }
+
+    @Test
+    fun `optional permission mutation accepts only manifest optional permissions`() = runBlocking {
+        val pluginId = pluginId("optional-permission")
+        writePluginManifest(
+            pluginId = pluginId,
+            type = PluginTypes.CONFIG,
+            optionalPermissions = listOf(PluginPermission.NETWORK_UNRESTRICTED.id),
+        )
+        val pluginManager = PluginManager(context)
+
+        val grant = pluginManager.setOptionalPermission(
+            pluginId = pluginId,
+            permission = PluginPermission.NETWORK_UNRESTRICTED,
+            granted = true,
+        )
+        val undeclared = pluginManager.setOptionalPermission(
+            pluginId = pluginId,
+            permission = PluginPermission.EDITOR_READ,
+            granted = true,
+        )
+
+        assertThat(grant.isSuccess).isTrue()
+        assertThat(undeclared.isFailure).isTrue()
+        assertThat(PluginPermissionManager.getInstance(context).getGrantedPermissions(pluginId))
+            .containsExactly(PluginPermission.NETWORK_UNRESTRICTED)
+        Unit
+    }
+
+    @Test
     fun `uninstall revokes grants and removes plugin persistent data`() = runBlocking {
         val pluginId = pluginId("uninstall-cleanup")
         writePluginManifest(pluginId = pluginId, type = PluginTypes.CONFIG)
@@ -153,24 +305,114 @@ class PluginManagerDefaultEnabledTest {
         assertThat(databaseFile.exists()).isFalse()
     }
 
+    @Test
+    fun `uninstall commits plugin removal and retries interrupted persistent cleanup`() = runBlocking {
+        val pluginId = pluginId("uninstall-recovery")
+        writePluginManifest(pluginId = pluginId, type = PluginTypes.CONFIG)
+        val pluginManager = PluginManager(context)
+        pluginManager.refreshInstalledPlugins()
+        val permissionManager = PluginPermissionManager.getInstance(context)
+        permissionManager.grantPermission(pluginId, PluginPermission.NETWORK_UNRESTRICTED)
+        val databaseFile = context.getDatabasePath(PluginDatabase.databaseName(pluginId)).apply {
+            parentFile?.mkdirs()
+            writeText("database", Charsets.UTF_8)
+        }
+        val blockedSidecar = File(databaseFile.path + "-wal").apply {
+            mkdirs()
+            File(this, "blocked").writeText("keep directory non-empty", Charsets.UTF_8)
+        }
+
+        val result = pluginManager.uninstallPlugin(pluginId)
+
+        assertThat(result.isSuccess).isTrue()
+        assertThat(File(pluginsDir, pluginId).exists()).isFalse()
+        assertThat(
+            prefs.getStringSet(PluginManager.PREF_PENDING_UNINSTALL_CLEANUP, emptySet()),
+        ).contains(pluginId)
+
+        blockedSidecar.deleteRecursively()
+        val recoveredManager = PluginManager(context)
+        recoveredManager.onCreate()
+        recoveredManager.awaitInitialization()
+
+        assertThat(permissionManager.getGrantedPermissions(pluginId)).isEmpty()
+        assertThat(databaseFile.exists()).isFalse()
+        assertThat(
+            prefs.getStringSet(PluginManager.PREF_PENDING_UNINSTALL_CLEANUP, emptySet()),
+        ).doesNotContain(pluginId)
+        recoveredManager.onDestroy()
+    }
+
+    @Test
+    fun `reinstall finishes pending uninstall before committing replacement`() = runBlocking {
+        val pluginId = pluginId("reinstall-after-cleanup")
+        writePluginManifest(pluginId = pluginId, type = PluginTypes.CONFIG)
+        val pluginManager = PluginManager(context)
+        pluginManager.refreshInstalledPlugins()
+        val permissionManager = PluginPermissionManager.getInstance(context)
+        permissionManager.grantPermission(pluginId, PluginPermission.NETWORK_UNRESTRICTED)
+        val databaseFile = context.getDatabasePath(PluginDatabase.databaseName(pluginId)).apply {
+            parentFile?.mkdirs()
+            writeText("database", Charsets.UTF_8)
+        }
+        val blockedSidecar = File(databaseFile.path + "-wal").apply {
+            mkdirs()
+            File(this, "blocked").writeText("keep directory non-empty", Charsets.UTF_8)
+        }
+
+        pluginManager.uninstallPlugin(pluginId).getOrThrow()
+        blockedSidecar.deleteRecursively()
+        val replacement = createPluginArchive(
+            PluginManifest(
+                id = pluginId,
+                name = pluginId,
+                version = "2.0.0",
+                type = PluginTypes.CONFIG,
+            ),
+        )
+
+        val installed = pluginManager.install(replacement).getOrThrow()
+
+        assertThat(installed.manifest.version).isEqualTo("2.0.0")
+        assertThat(File(pluginsDir, pluginId).isDirectory).isTrue()
+        assertThat(permissionManager.getGrantedPermissions(pluginId)).isEmpty()
+        assertThat(databaseFile.exists()).isFalse()
+        assertThat(
+            prefs.getStringSet(PluginManager.PREF_PENDING_UNINSTALL_CLEANUP, emptySet()),
+        ).doesNotContain(pluginId)
+    }
+
     private fun writePluginManifest(
         pluginId: String,
         type: String,
         version: String = "1.0.0",
         root: File = pluginsDir,
+        optionalPermissions: List<String>? = null,
     ) {
         val pluginDir = File(root, pluginId).apply { mkdirs() }
         File(pluginDir, PluginManager.MANIFEST_FILE_NAME).writeText(
-            """
-            {
-              "id": "$pluginId",
-              "name": "$pluginId",
-              "version": "$version",
-              "type": "$type"
-            }
-            """.trimIndent(),
+            JsonSerializer.encode(
+                PluginManifest(
+                    id = pluginId,
+                    name = pluginId,
+                    version = version,
+                    type = type,
+                    optionalPermissions = optionalPermissions,
+                ),
+            ),
             Charsets.UTF_8,
         )
+    }
+
+    private fun createPluginArchive(manifest: PluginManifest): File {
+        val archive = File(context.cacheDir, "${manifest.id}-${System.nanoTime()}.tinaplug")
+        temporaryDirectories += archive
+        ZipOutputStream(archive.outputStream().buffered()).use { zip ->
+            zip.putNextEntry(ZipEntry(PluginManager.MANIFEST_FILE_NAME))
+            zip.write(JsonSerializer.encode(manifest).toByteArray(Charsets.UTF_8))
+            zip.closeEntry()
+        }
+        return archive
     }
 
     private fun createInstallSource(pluginId: String, version: String): File {

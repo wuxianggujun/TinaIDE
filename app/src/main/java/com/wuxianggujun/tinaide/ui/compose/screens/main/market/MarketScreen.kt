@@ -99,6 +99,7 @@ fun MarketScreen(
     viewModel: MarketScreenViewModel = koinViewModel()
 ) {
     val context = LocalContext.current
+    val permissionDeniedText = stringResource(Strings.toast_plugins_permission_denied)
     var selectedTab by remember { mutableIntStateOf(0) }
     val pluginState by viewModel.pluginState.collectAsState()
     val packageState by viewModel.packageState.collectAsState()
@@ -145,7 +146,7 @@ fun MarketScreen(
                 viewModel.dismissPendingPluginInstall()
                 Toast.makeText(
                     context,
-                    context.getString(Strings.toast_plugins_permission_denied),
+                    permissionDeniedText,
                     Toast.LENGTH_SHORT,
                 ).show()
             },

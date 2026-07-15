@@ -119,6 +119,8 @@ import java.util.Date
 import java.text.DateFormat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonPrimitive
 import timber.log.Timber
@@ -147,19 +149,24 @@ internal fun PluginsSettingsSection(
     val context = LocalContext.current
     val appContext = context.applicationContext
     val scope = rememberCoroutineScope()
+    val permissionMutationMutex = remember { Mutex() }
+    val permissionUpdateFailedTemplate = stringResource(Strings.plugin_permission_update_failed)
 
     fun updateOptionalPermission(
         logMessage: String,
-        update: () -> Unit,
+        update: suspend () -> Result<Unit>,
     ) {
         scope.launch {
-            val result = withContext(Dispatchers.IO) { runCatching(update) }
+            val result = permissionMutationMutex.withLock {
+                runCatching { update().getOrThrow() }
+            }
             result.onFailure { error ->
                 Timber.tag(TAG).e(error, logMessage)
                 Toast.makeText(
                     context,
-                    context.getString(
-                        Strings.plugin_permission_update_failed,
+                    String.format(
+                        Locale.getDefault(),
+                        permissionUpdateFailedTemplate,
                         error.message ?: error.javaClass.simpleName,
                     ),
                     Toast.LENGTH_SHORT,
@@ -427,14 +434,12 @@ internal fun PluginsSettingsSection(
         } else {
             scope.launch {
                 val outcome = finishPluginInstall(
-                    context = appContext,
                     pluginManager = pluginManager,
                     pluginFile = pending.tempFile,
+                    expectedManifest = pending.manifest,
                     toastPluginsInstalledTemplate = toastPluginsInstalledTemplate,
                     toastPluginsInstallFailedTemplate = toastPluginsInstallFailedTemplate,
-                    permissionManager = permissionManager.takeIf { isScriptPlugin },
                     permissions = pending.permissions.takeIf { isScriptPlugin }.orEmpty(),
-                    permissionPluginId = pending.manifest.id.takeIf { isScriptPlugin },
                 )
                 Toast.makeText(context, outcome.message, Toast.LENGTH_SHORT).show()
             }
@@ -556,12 +561,20 @@ internal fun PluginsSettingsSection(
             grantedPermissions = permissionGrants[detailPlugin.manifest.id].orEmpty(),
             onGrantOptionalPermission = { permission ->
                 updateOptionalPermission("Failed to grant optional plugin permission") {
-                    permissionManager.grantPermission(detailPlugin.manifest.id, permission)
+                    pluginManager.setOptionalPermission(
+                        pluginId = detailPlugin.manifest.id,
+                        permission = permission,
+                        granted = true,
+                    )
                 }
             },
             onRevokeOptionalPermission = { permission ->
                 updateOptionalPermission("Failed to revoke optional plugin permission") {
-                    permissionManager.revokePermission(detailPlugin.manifest.id, permission)
+                    pluginManager.setOptionalPermission(
+                        pluginId = detailPlugin.manifest.id,
+                        permission = permission,
+                        granted = false,
+                    )
                 }
             },
             onNavigateBack = { onPluginDetailChanged(null) },
@@ -944,14 +957,12 @@ internal fun PluginsSettingsSection(
                 pendingPluginInstall = null
                 scope.launch {
                     val outcome = finishPluginInstall(
-                        context = appContext,
                         pluginManager = pluginManager,
                         pluginFile = pending.tempFile,
+                        expectedManifest = pending.manifest,
                         toastPluginsInstalledTemplate = toastPluginsInstalledTemplate,
                         toastPluginsInstallFailedTemplate = toastPluginsInstallFailedTemplate,
-                        permissionManager = permissionManager,
                         permissions = pending.permissions,
-                        permissionPluginId = pending.manifest.id,
                     )
                     Toast.makeText(context, outcome.message, Toast.LENGTH_SHORT).show()
                 }

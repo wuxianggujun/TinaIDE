@@ -106,19 +106,18 @@ class PluginInstallHelperTest {
 
     @Test
     fun `finishPluginInstall should refresh plugin manager state`() = runTest {
-        val zipFile = createPluginArchive(
-            manifest = PluginManifest(
-                id = "demo.refresh.install",
-                name = "Refresh Install Plugin",
-                version = "1.0.0",
-                type = "config",
-            )
+        val manifest = PluginManifest(
+            id = "demo.refresh.install",
+            name = "Refresh Install Plugin",
+            version = "1.0.0",
+            type = "config",
         )
+        val zipFile = createPluginArchive(manifest = manifest)
 
         val outcome = finishPluginInstall(
-            context = context,
             pluginManager = pluginManager,
             pluginFile = zipFile,
+            expectedManifest = manifest,
             toastPluginsInstalledTemplate = "Installed %s",
             toastPluginsInstallFailedTemplate = "Failed %s",
         )
@@ -133,27 +132,26 @@ class PluginInstallHelperTest {
     @Test
     fun `finishPluginInstall should auto grant low risk permissions before script install`() = runTest {
         val pluginId = "demo.auto.permission"
+        val manifest = PluginManifest(
+            id = pluginId,
+            name = "Auto Permission Plugin",
+            version = "1.0.0",
+            type = "script",
+            main = "main.lua",
+            permissions = listOf(PluginPermission.EDITOR_READ.id),
+        )
         val zipFile = createPluginArchive(
-            manifest = PluginManifest(
-                id = pluginId,
-                name = "Auto Permission Plugin",
-                version = "1.0.0",
-                type = "script",
-                main = "main.lua",
-                permissions = listOf(PluginPermission.EDITOR_READ.id),
-            ),
+            manifest = manifest,
             extraFiles = mapOf("main.lua" to "return {}"),
         )
 
         val outcome = finishPluginInstall(
-            context = context,
             pluginManager = pluginManager,
             pluginFile = zipFile,
+            expectedManifest = manifest,
             toastPluginsInstalledTemplate = "Installed %s",
             toastPluginsInstallFailedTemplate = "Failed %s",
-            permissionManager = permissionManager,
             permissions = setOf(PluginPermission.EDITOR_READ),
-            permissionPluginId = pluginId,
         )
 
         assertThat(outcome.manifest?.id).isEqualTo(pluginId)
@@ -164,26 +162,25 @@ class PluginInstallHelperTest {
     fun `finishPluginInstall should restore grants when script install fails`() = runTest {
         val pluginId = "demo.rollback.permission"
         permissionManager.grantPermission(pluginId, PluginPermission.EDITOR_READ)
+        val manifest = PluginManifest(
+            id = pluginId,
+            name = "Rollback Permission Plugin",
+            version = "1.0.0",
+            type = "script",
+            main = "missing.lua",
+            permissions = listOf(PluginPermission.NETWORK_UNRESTRICTED.id),
+        )
         val zipFile = createPluginArchive(
-            manifest = PluginManifest(
-                id = pluginId,
-                name = "Rollback Permission Plugin",
-                version = "1.0.0",
-                type = "script",
-                main = "missing.lua",
-                permissions = listOf(PluginPermission.NETWORK_UNRESTRICTED.id),
-            ),
+            manifest = manifest,
         )
 
         val outcome = finishPluginInstall(
-            context = context,
             pluginManager = pluginManager,
             pluginFile = zipFile,
+            expectedManifest = manifest,
             toastPluginsInstalledTemplate = "Installed %s",
             toastPluginsInstallFailedTemplate = "Failed %s",
-            permissionManager = permissionManager,
             permissions = setOf(PluginPermission.NETWORK_UNRESTRICTED),
-            permissionPluginId = pluginId,
         )
 
         assertThat(outcome.manifest).isNull()

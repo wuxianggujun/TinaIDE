@@ -9,7 +9,6 @@ import com.wuxianggujun.tinaide.plugin.PluginManifest
 import com.wuxianggujun.tinaide.plugin.PluginHostLogSources
 import com.wuxianggujun.tinaide.plugin.PluginLogManager
 import com.wuxianggujun.tinaide.plugin.PluginManager
-import com.wuxianggujun.tinaide.plugin.PluginPackageExpectation
 import com.wuxianggujun.tinaide.plugin.PluginStateSnapshot
 import com.wuxianggujun.tinaide.plugin.PluginTypes
 import com.wuxianggujun.tinaide.plugin.script.PluginPermission
@@ -194,24 +193,12 @@ class PluginMarketplaceRepository(
         pending: MarketplacePendingPluginInstall,
     ): Result<InstalledPlugin> = withContext(Dispatchers.IO) {
         withContext(NonCancellable) {
-            val previousGrants = permissionManager.getGrantedPermissions(pending.requestedPluginId)
-            val result = runCatching {
-                if (pending.permissions.isNotEmpty()) {
-                    permissionManager.grantPermissions(pending.requestedPluginId, pending.permissions)
-                }
-                pluginManager.install(
-                    zipFile = pending.packageFile,
-                    expectedPackage = PluginPackageExpectation(
-                        pluginId = pending.requestedPluginId,
-                        version = pending.requestedVersion,
-                    ),
-                ).getOrThrow()
-            }.onFailure { error ->
-                runCatching {
-                    permissionManager.replacePermissions(pending.requestedPluginId, previousGrants)
-                }.onFailure { restoreError ->
-                    error.addSuppressed(restoreError)
-                }
+            val result = pluginManager.installWithPermissions(
+                zipFile = pending.packageFile,
+                pluginId = pending.requestedPluginId,
+                version = pending.manifest.version,
+                permissions = pending.permissions,
+            ).onFailure { error ->
                 pluginLogManager.error(
                     source = PluginHostLogSources.Marketplace,
                     message = "Install failed after confirmation pluginId=${pending.requestedPluginId} version=${pending.requestedVersion.orEmpty()} reason=${error.message.orEmpty()}",

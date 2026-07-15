@@ -64,6 +64,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
@@ -1774,34 +1775,50 @@ class LspEditorManager(
                         Timber.tag(TAG).d("startSharedCxxAttach: creating shared clangd session...")
                         val provider = providerFactory()
                         val session = createLspClientSession(provider, workspaceRoot, file)
-                        withContext(Dispatchers.IO) {
-                            session.connect(
-                                languageId = languageId,
-                                initialText = snapshot,
-                                initializationOptions = initializationOptions
-                            ).getOrThrow()
+                        try {
+                            withContext(Dispatchers.IO) {
+                                session.connect(
+                                    languageId = languageId,
+                                    initialText = snapshot,
+                                    initializationOptions = initializationOptions,
+                                ).getOrThrow()
+                            }
+                        } catch (error: Throwable) {
+                            withContext(NonCancellable + Dispatchers.IO) {
+                                runCatching { session.close() }
+                            }
+                            throw error
                         }
                         synchronized(stateLock) { sharedCxxSession = session }
                         session
                     }
                 }
             }.onSuccess { session ->
-                val stale = synchronized(stateLock) { attachTokenCache[tabId] !== token }
-                if (stale) {
+                val committed = synchronized(stateLock) {
+                    if (attachTokenCache[tabId] !== token) {
+                        false
+                    } else {
+                        tabSessions[tabId] = TabSession(
+                            tabId = tabId,
+                            file = file,
+                            kind = SessionKind.CXX,
+                            documentUri = file.toURI().toString(),
+                            lspSession = session,
+                        )
+                        updateLspStatus(tabId, EditorStatus.Ready)
+                        if (remote) {
+                            RemoteLspConfigManager.updateConnectionState(RemoteLspConnectionState.CONNECTED)
+                        }
+                        true
+                    }
+                }
+                if (!committed) {
                     Timber.tag(TAG).w(
                         "startSharedCxxAttach: token stale after activation, discarding result for %s",
                         file.name
                     )
+                    scheduleSharedCxxShutdownIfIdle()
                     return@onSuccess
-                }
-                synchronized(stateLock) {
-                    tabSessions[tabId] = TabSession(
-                        tabId = tabId,
-                        file = file,
-                        kind = SessionKind.CXX,
-                        documentUri = file.toURI().toString(),
-                        lspSession = session
-                    )
                 }
                 if (!hasWorkspaceFileWatcher()) {
                     startFileWatcher(workspaceRoot)
@@ -1811,8 +1828,6 @@ class LspEditorManager(
                     file.name,
                     elapsedMillis(attachStartedAt)
                 )
-                updateLspStatus(tabId, EditorStatus.Ready)
-                if (remote) RemoteLspConfigManager.updateConnectionState(RemoteLspConnectionState.CONNECTED)
                 if (warmupCompletionOnReady) {
                     scheduleCompletionWarmup(tabId, file)
                 }
@@ -1820,17 +1835,20 @@ class LspEditorManager(
                 Timber.tag(
                     TAG
                 ).w(e, "startSharedCxxAttach: activation failed for %s — %s: %s", file.name, e.javaClass.simpleName, e.message)
-                val stale = synchronized(stateLock) { attachTokenCache[tabId] !== token }
-                if (!stale) {
-                    updateLspStatus(tabId, EditorStatus.Error)
-                    if (remote) {
-                        RemoteLspConfigManager.updateConnectionState(
-                            RemoteLspConnectionState.ERROR,
-                            e.message ?: Strings.lsp_error_connection_failed.str()
-                        )
-                    }
-                    releaseSession(tabId, clearBinding = false)
-                }
+                releaseSession(
+                    tabId = tabId,
+                    clearBinding = false,
+                    expectedAttachToken = token,
+                    onCurrentAttachment = {
+                        updateLspStatus(tabId, EditorStatus.Error)
+                        if (remote) {
+                            RemoteLspConfigManager.updateConnectionState(
+                                RemoteLspConnectionState.ERROR,
+                                e.message ?: Strings.lsp_error_connection_failed.str(),
+                            )
+                        }
+                    },
+                )
             }
         }
         return true
@@ -1857,16 +1875,23 @@ class LspEditorManager(
         updateLspStatus(tabId, EditorStatus.Connecting)
         if (remote) RemoteLspConfigManager.updateConnectionState(RemoteLspConnectionState.CONNECTING)
         val ownerStopHandler = PluginLspOwnerStopHandler(
-            expectedAttachToken = token,
-            currentAttachToken = { synchronized(stateLock) { attachTokenCache[tabId] } },
-            releaseSession = { releaseSession(tabId, clearBinding = false) },
-            markNoLsp = { updateLspStatus(tabId, EditorStatus.NoLsp) },
+            transitionIfCurrent = {
+                releaseSession(
+                    tabId = tabId,
+                    clearBinding = false,
+                    expectedAttachToken = token,
+                    onCurrentAttachment = {
+                        updateLspStatus(tabId, EditorStatus.NoLsp)
+                    },
+                )
+            },
         )
 
         val onOwnerStopped: () -> Unit = {
             lspScope.launch {
-                if (!ownerStopHandler.handle()) return@launch
-                Timber.tag(TAG).i("Plugin LSP owner stopped; releasing session for %s", file.name)
+                if (ownerStopHandler.handle()) {
+                    Timber.tag(TAG).i("Plugin LSP owner stopped; releasing session for %s", file.name)
+                }
             }
             Unit
         }
@@ -1879,50 +1904,68 @@ class LspEditorManager(
                 val session = createLspClientSession(provider, workspaceRoot, file)
                 val snapshot = runCatching { textProvider() }.getOrDefault("")
                 Timber.tag(TAG).d("startAttach: calling session.connect(languageId=%s, textLen=%d)...", languageId, snapshot.length)
-                withContext(Dispatchers.IO) { session.connect(languageId, snapshot, initializationOptions).getOrThrow() }
+                try {
+                    withContext(Dispatchers.IO) {
+                        session.connect(languageId, snapshot, initializationOptions).getOrThrow()
+                    }
+                } catch (error: Throwable) {
+                    withContext(NonCancellable + Dispatchers.IO) {
+                        runCatching { session.close() }
+                    }
+                    throw error
+                }
                 Timber.tag(TAG).i("startAttach: session.connect() succeeded for %s", file.name)
                 session
             }.onSuccess { session ->
-                val stale = synchronized(stateLock) { attachTokenCache[tabId] !== token }
-                if (stale) {
+                val committed = synchronized(stateLock) {
+                    if (attachTokenCache[tabId] !== token) {
+                        false
+                    } else {
+                        tabSessions[tabId] = TabSession(
+                            tabId = tabId,
+                            file = file,
+                            kind = kind,
+                            documentUri = file.toURI().toString(),
+                            lspSession = session,
+                        )
+                        updateLspStatus(tabId, EditorStatus.Ready)
+                        if (remote) {
+                            RemoteLspConfigManager.updateConnectionState(RemoteLspConnectionState.CONNECTED)
+                        }
+                        onAttachSuccess?.invoke()
+                        true
+                    }
+                }
+                if (!committed) {
                     Timber.tag(TAG).w("startAttach: token stale after connect, discarding session for %s", file.name)
                     runCatching { session.close() }
                     return@onSuccess
-                }
-                synchronized(stateLock) {
-                    tabSessions[tabId] = TabSession(
-                        tabId = tabId,
-                        file = file,
-                        kind = kind,
-                        documentUri = file.toURI().toString(),
-                        lspSession = session
-                    )
                 }
                 // CXX session 建立后启动文件监听（只需一个 watcher 覆盖整个 workspace）
                 if (kind == SessionKind.CXX && !hasWorkspaceFileWatcher()) {
                     startFileWatcher(workspaceRoot)
                 }
                 Timber.tag(TAG).i("startAttach: LSP ready for %s", file.name)
-                updateLspStatus(tabId, EditorStatus.Ready)
-                if (remote) RemoteLspConfigManager.updateConnectionState(RemoteLspConnectionState.CONNECTED)
-                onAttachSuccess?.invoke()
                 if (warmupCompletionOnReady) {
                     scheduleCompletionWarmup(tabId, file)
                 }
             }.onFailure { e ->
                 Timber.tag(TAG).w(e, "startAttach: LSP attach failed for %s — %s: %s", file.name, e.javaClass.simpleName, e.message)
-                val stale = synchronized(stateLock) { attachTokenCache[tabId] !== token }
-                if (!stale) {
-                    onAttachFailure?.invoke(e)
-                    updateLspStatus(tabId, EditorStatus.Error)
-                    if (remote) {
-                        RemoteLspConfigManager.updateConnectionState(
-                            RemoteLspConnectionState.ERROR,
-                            e.message ?: Strings.lsp_error_connection_failed.str()
-                        )
-                    }
-                    releaseSession(tabId, clearBinding = false)
-                }
+                releaseSession(
+                    tabId = tabId,
+                    clearBinding = false,
+                    expectedAttachToken = token,
+                    onCurrentAttachment = {
+                        onAttachFailure?.invoke(e)
+                        updateLspStatus(tabId, EditorStatus.Error)
+                        if (remote) {
+                            RemoteLspConfigManager.updateConnectionState(
+                                RemoteLspConnectionState.ERROR,
+                                e.message ?: Strings.lsp_error_connection_failed.str(),
+                            )
+                        }
+                    },
+                )
             }
         }
         return true
@@ -1980,26 +2023,40 @@ class LspEditorManager(
 
     private fun resolveClangdRunMode(): LinuxRunModePolicy.RunMode = LinuxRunModePolicy.resolve(Prefs.clangdRunMode, linuxEnvironmentProvider.get().isAvailable())
 
-    private fun releaseSession(tabId: String, clearBinding: Boolean) {
-        val sharedSession = synchronized(stateLock) { sharedCxxSession }
-        val cancelledRequests = nextRequestGeneration(tabId)
-        cancelledRequests.forEach { future -> future.cancel(true) }
-        val diagnosticsJob = synchronized(stateLock) {
-            builtinDiagnosticsRequestTokens.remove(tabId)
-            builtinDiagnosticsJobs.remove(tabId)
-        }
-        diagnosticsJob?.cancel()
-        val removed = synchronized(stateLock) {
+    private fun releaseSession(
+        tabId: String,
+        clearBinding: Boolean,
+        expectedAttachToken: Any? = null,
+        onCurrentAttachment: (() -> Unit)? = null,
+    ): Boolean {
+        val (releaseState, cancelledRequests) = synchronized(stateLock) {
+            if (expectedAttachToken != null && attachTokenCache[tabId] !== expectedAttachToken) {
+                return false
+            }
+            onCurrentAttachment?.invoke()
+            val requests = nextRequestGeneration(tabId)
             attachTokenCache.remove(tabId)
             semanticTokensCache.remove(tabId)
             documentVersions.remove(tabId)
             completionWarmupTabIds.remove(tabId)
             if (clearBinding) tabBindings.remove(tabId)
-            tabSessions.remove(tabId)
+            val removed = tabSessions.remove(tabId)
+            removed?.let { tabSession ->
+                lspKnownUris.remove(tabSession.documentUri)
+                onDiagnosticsChanged?.invoke(tabSession.documentUri, emptyList())
+            }
+            Triple(
+                sharedCxxSession,
+                builtinDiagnosticsJobs.remove(tabId).also {
+                    builtinDiagnosticsRequestTokens.remove(tabId)
+                },
+                removed,
+            ) to requests
         }
+        val (sharedSession, diagnosticsJob, removed) = releaseState
+        cancelledRequests.forEach { future -> future.cancel(true) }
+        diagnosticsJob?.cancel()
         removed?.let { tabSession ->
-            synchronized(stateLock) { lspKnownUris.remove(tabSession.documentUri) }
-            onDiagnosticsChanged?.invoke(tabSession.documentUri, emptyList())
             tabSession.builtinSession?.close()
             tabSession.lspSession?.let { session ->
                 if (tabSession.kind == SessionKind.CXX && session === sharedSession) {
@@ -2012,6 +2069,7 @@ class LspEditorManager(
             }
         }
         scheduleSharedCxxShutdownIfIdle()
+        return true
     }
 
     private fun registerBinding(binding: TabBinding) {

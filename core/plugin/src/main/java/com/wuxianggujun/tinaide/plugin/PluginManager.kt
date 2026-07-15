@@ -11,6 +11,7 @@ import com.wuxianggujun.tinaide.project.ProjectTemplateOption
 import com.wuxianggujun.tinaide.project.ProjectTemplateSpec
 import com.wuxianggujun.tinaide.plugin.runtime.PluginRuntimeUnavailableException
 import com.wuxianggujun.tinaide.plugin.runtime.PluginHostDataCapabilities
+import com.wuxianggujun.tinaide.plugin.script.PluginPermission
 import com.wuxianggujun.tinaide.plugin.script.PluginPermissionManager
 import java.io.File
 import java.util.UUID
@@ -18,6 +19,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -41,11 +43,17 @@ internal data class PluginInstallTransactionRecord(
     val hadLegacyEnabled: Boolean,
     val oldLegacyEnabled: Boolean,
     val previousFault: PluginFaultRecord? = null,
+    val previousPermissionIds: List<String>? = null,
 )
 
 internal data class PluginPackageExpectation(
     val pluginId: String,
     val version: String? = null,
+)
+
+private data class PluginPermissionInstallUpdate(
+    val pluginId: String,
+    val requestedPermissions: Set<PluginPermission>,
 )
 
 class PluginManager(
@@ -61,6 +69,7 @@ class PluginManager(
         private const val PREFS_NAME = "tinaide_plugins"
         private const val PREF_ENABLED_PREFIX = "enabled_"
         private const val PREF_DESIRED_ENABLED_PREFIX = "desired_enabled_"
+        internal const val PREF_PENDING_UNINSTALL_CLEANUP = "pending_uninstall_cleanup_ids"
 
         private val PLUGIN_ID_PATTERN = Regex("^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
 
@@ -140,6 +149,7 @@ class PluginManager(
             try {
                 mutationMutex.withLock {
                     recoverInterruptedInstallTransactions()
+                    recoverPendingUninstallCleanup()
                     refreshInstalledPlugins()
                 }
                 initializationCompleted.complete(Unit)
@@ -276,37 +286,18 @@ class PluginManager(
         }
     }
 
-    suspend fun installPlugin(zipFile: File): Result<PluginManifest> = installPlugin(zipFile, expectedPackage = null)
+    suspend fun installPlugin(zipFile: File): Result<PluginManifest> =
+        installPluginTransaction(zipFile, expectedPackage = null, permissionUpdate = null)
+            .map(InstalledPlugin::manifest)
 
     internal suspend fun installPlugin(
         zipFile: File,
         expectedPackage: PluginPackageExpectation?,
-    ): Result<PluginManifest> = withContext(Dispatchers.IO) {
-        runCatching {
-            require(zipFile.exists()) { Strings.plugin_error_file_not_exist.strOr(context, zipFile.path) }
-            require(zipFile.length() <= ZipUtils.MAX_PACKAGE_BYTES) {
-                Strings.plugin_error_package_too_large.strOr(context)
-            }
-
-            val tempDir = createStagingDirectory()
-            try {
-                try {
-                    ZipUtils.unzipToDirectory(zipFile, tempDir)
-                } catch (error: PluginArchiveException) {
-                    throw IllegalArgumentException(localizeArchiveFailure(error), error)
-                }
-                val installed = installPluginFromDirectory(
-                    extractedDir = tempDir,
-                    allowSkipIfSameVersion = false,
-                    expectedPackage = expectedPackage,
-                )
-                requireNotNull(installed) { Strings.plugin_error_install_failed.strOr(context) }
-                installed
-            } finally {
-                if (tempDir.exists()) tempDir.deleteRecursively()
-            }
-        }
-    }
+    ): Result<PluginManifest> = installPluginTransaction(
+        zipFile = zipFile,
+        expectedPackage = expectedPackage,
+        permissionUpdate = null,
+    ).map(InstalledPlugin::manifest)
 
     suspend fun uninstallPlugin(pluginId: String): Result<Unit> = withContext(Dispatchers.IO) {
         mutationMutex.withLock {
@@ -320,22 +311,47 @@ class PluginManager(
                 logHostInfo("uninstall requested pluginId=$pluginId instance=$instanceId")
 
                 val pluginDir = File(pluginsDir, pluginId)
+                markPendingUninstallCleanup(pluginId)
                 PluginRuntimeLifecycle.stop(pluginId)
-                PluginPermissionManager.getInstance(context).revokeAllPermissions(pluginId)
-                PluginHostDataCapabilities.clearPersistentData(context, pluginId)
                 if (pluginDir.exists()) {
                     check(pluginDir.deleteRecursively()) { "Failed to remove plugin directory" }
                 }
-                check(
-                    prefs.edit()
-                        .remove(PREF_ENABLED_PREFIX + pluginId)
-                        .remove(PREF_DESIRED_ENABLED_PREFIX + pluginId)
-                        .commit(),
-                ) { "Failed to clear plugin enabled state" }
-                check(faultStore.clearAllForUninstall(pluginId)) { "Failed to clear plugin fault state" }
-                PluginConfigurationStore.getInstance(context).clearPlugin(pluginId)
-
                 refreshInstalledPlugins()
+                runCatching {
+                    completePendingUninstallCleanup(pluginId)
+                }.onFailure { error ->
+                    Timber.tag(TAG).w(
+                        error,
+                        "Plugin removed but persistent cleanup is pending: %s",
+                        pluginId,
+                    )
+                    logHostError("uninstall cleanup pending pluginId=$pluginId", error)
+                }
+                Unit
+            }
+        }
+    }
+
+    suspend fun setOptionalPermission(
+        pluginId: String,
+        permission: PluginPermission,
+        granted: Boolean,
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        mutationMutex.withLock {
+            runCatching {
+                validatePluginId(pluginId)
+                val manifest = requireNotNull(getInstalledManifestOrNull(pluginId)) {
+                    Strings.plugin_error_permission_not_declared.strOr(context, permission.id)
+                }
+                require(permission in PluginPermission.parseList(manifest.optionalPermissions)) {
+                    Strings.plugin_error_permission_not_declared.strOr(context, permission.id)
+                }
+                val permissionManager = PluginPermissionManager.getInstance(context)
+                if (granted) {
+                    permissionManager.grantPermission(pluginId, permission)
+                } else {
+                    permissionManager.revokePermission(pluginId, permission)
+                }
             }
         }
     }
@@ -578,6 +594,21 @@ class PluginManager(
         markAsBundled: Boolean = false,
         expectedPackage: PluginPackageExpectation? = null,
     ): PluginManifest? = mutationMutex.withLock {
+        installPluginFromDirectoryLocked(
+            extractedDir = extractedDir,
+            allowSkipIfSameVersion = allowSkipIfSameVersion,
+            markAsBundled = markAsBundled,
+            expectedPackage = expectedPackage,
+        )
+    }
+
+    private suspend fun installPluginFromDirectoryLocked(
+        extractedDir: File,
+        allowSkipIfSameVersion: Boolean,
+        markAsBundled: Boolean = false,
+        expectedPackage: PluginPackageExpectation? = null,
+        permissionUpdate: PluginPermissionInstallUpdate? = null,
+    ): PluginManifest? {
         val stagingDir = prepareStagingDirectory(extractedDir)
         var backupDir: File? = null
         var transactionFile: File? = null
@@ -615,6 +646,35 @@ class PluginManager(
                     }
                 }
             }
+            if (manifest.id in pendingUninstallCleanupIds()) {
+                finishPendingUninstall(manifest.id)
+            }
+
+            val permissionManager = PluginPermissionManager.getInstance(context)
+            val declaredPermissions =
+                PluginPermission.parseList(manifest.permissions) +
+                    PluginPermission.parseList(manifest.optionalPermissions)
+            permissionUpdate?.let { update ->
+                require(update.pluginId == manifest.id) {
+                    Strings.plugin_error_marketplace_id_mismatch.strOr(
+                        context,
+                        update.pluginId,
+                        manifest.id,
+                    )
+                }
+                val undeclaredPermission =
+                    update.requestedPermissions.firstOrNull { it !in declaredPermissions }
+                require(undeclaredPermission == null) {
+                    Strings.plugin_error_permission_not_declared.strOr(
+                        context,
+                        checkNotNull(undeclaredPermission).id,
+                    )
+                }
+            }
+            val previousPermissions = permissionManager.getGrantedPermissions(manifest.id)
+            val targetPermissions =
+                (previousPermissions intersect declaredPermissions) +
+                    permissionUpdate?.requestedPermissions.orEmpty()
 
             val previousManifest = getInstalledManifestOrNull(manifest.id)
             if (allowSkipIfSameVersion && previousManifest?.version == manifest.version) return null
@@ -645,17 +705,13 @@ class PluginManager(
                 hadLegacyEnabled = hadEnabled,
                 oldLegacyEnabled = oldEnabled,
                 previousFault = previousFault,
+                previousPermissionIds = previousPermissions.map(PluginPermission::id).sorted(),
             )
             transactionFile = writeInstallTransaction(transaction)
 
             try {
                 PluginRuntimeLifecycle.stop(manifest.id)
-            } catch (error: Throwable) {
-                runCatching { PluginRuntimeLifecycle.activate(manifest.id) }
-                if (transactionFile?.delete() == true) transactionFile = null
-                throw error
-            }
-            try {
+                permissionManager.replacePermissions(manifest.id, targetPermissions)
                 if (targetDir.exists()) {
                     backupDir = File(backupRoot, checkNotNull(transaction.backupDirectoryName))
                     atomicRename(targetDir, backupDir)
@@ -686,6 +742,7 @@ class PluginManager(
                     backupDir?.takeIf { it.exists() }?.let { atomicRename(it, targetDir) }
                 }
                 restoreInstallState(transaction)
+                restoreInstallPermissions(transaction)
                 runCatching { PluginRuntimeLifecycle.activate(manifest.id) }
                 transactionFile?.delete()
                 throw error
@@ -695,7 +752,7 @@ class PluginManager(
                 runCatching { backup.deleteRecursively() }
                     .onFailure { error -> Timber.tag(TAG).w(error, "Failed to remove committed plugin backup") }
             }
-            return@withLock manifest
+            return manifest
         } finally {
             if (stagingDir.exists()) stagingDir.deleteRecursively()
         }
@@ -754,6 +811,7 @@ class PluginManager(
                     }
                 }
                 restoreInstallState(transaction)
+                restoreInstallPermissions(transaction)
                 check(transactionFile.delete()) { "Unable to clear recovered plugin transaction" }
                 Timber.tag(TAG).w("Recovered interrupted plugin install transaction: %s", transaction.pluginId)
             }
@@ -762,6 +820,70 @@ class PluginManager(
         backupRoot.listFiles().orEmpty()
             .filterNot { backup -> backup.name in referencedBackups }
             .forEach { backup -> backup.deleteRecursively() }
+    }
+
+    internal suspend fun recoverPendingUninstallCleanup() {
+        pendingUninstallCleanupIds().sorted().forEach { pluginId ->
+            runCatching {
+                validatePluginId(pluginId)
+                finishPendingUninstall(pluginId)
+                Timber.tag(TAG).w("Recovered interrupted plugin uninstall: %s", pluginId)
+            }.onFailure { error ->
+                Timber.tag(TAG).w(
+                    error,
+                    "Interrupted plugin uninstall still requires cleanup: %s",
+                    pluginId,
+                )
+                logHostError("uninstall recovery pending pluginId=$pluginId", error)
+            }
+        }
+    }
+
+    private suspend fun finishPendingUninstall(pluginId: String) {
+        PluginRuntimeLifecycle.stop(pluginId)
+        val pluginDir = File(pluginsDir, pluginId)
+        if (pluginDir.exists()) {
+            check(pluginDir.deleteRecursively()) {
+                "Failed to finish interrupted plugin directory removal"
+            }
+        }
+        completePendingUninstallCleanup(pluginId)
+    }
+
+    private fun markPendingUninstallCleanup(pluginId: String) {
+        val pending = pendingUninstallCleanupIds() + pluginId
+        check(
+            prefs.edit()
+                .putStringSet(PREF_PENDING_UNINSTALL_CLEANUP, pending)
+                .commit(),
+        ) { "Failed to persist pending plugin uninstall" }
+    }
+
+    private fun pendingUninstallCleanupIds(): Set<String> =
+        prefs.getStringSet(PREF_PENDING_UNINSTALL_CLEANUP, emptySet())
+            .orEmpty()
+            .toSet()
+
+    private fun completePendingUninstallCleanup(pluginId: String) {
+        check(
+            prefs.edit()
+                .remove(PREF_ENABLED_PREFIX + pluginId)
+                .remove(PREF_DESIRED_ENABLED_PREFIX + pluginId)
+                .commit(),
+        ) { "Failed to clear plugin enabled state" }
+        check(faultStore.clearAllForUninstall(pluginId)) { "Failed to clear plugin fault state" }
+        check(PluginConfigurationStore.getInstance(context).clearPlugin(pluginId)) {
+            "Failed to clear plugin configuration"
+        }
+        PluginPermissionManager.getInstance(context).revokeAllPermissions(pluginId)
+        PluginHostDataCapabilities.clearPersistentData(context, pluginId)
+
+        val remaining = pendingUninstallCleanupIds() - pluginId
+        check(
+            prefs.edit()
+                .putStringSet(PREF_PENDING_UNINSTALL_CLEANUP, remaining)
+                .commit(),
+        ) { "Failed to clear pending plugin uninstall" }
     }
 
     private fun restoreInstallState(transaction: PluginInstallTransactionRecord) {
@@ -784,6 +906,14 @@ class PluginManager(
         } else {
             check(faultStore.clearFault(transaction.pluginId)) { "Unable to restore plugin fault state" }
         }
+    }
+
+    private fun restoreInstallPermissions(transaction: PluginInstallTransactionRecord) {
+        val previousPermissionIds = transaction.previousPermissionIds ?: return
+        PluginPermissionManager.getInstance(context).replacePermissions(
+            transaction.pluginId,
+            PluginPermission.parseList(previousPermissionIds),
+        )
     }
 
     private fun getInstalledManifestOrNull(pluginId: String): PluginManifest? {
@@ -842,17 +972,81 @@ class PluginManager(
         return _pluginStateFlow.value.enabledCapabilities.contains(capability)
     }
 
-    suspend fun install(zipFile: File): Result<InstalledPlugin> = install(zipFile, expectedPackage = null)
+    suspend fun install(zipFile: File): Result<InstalledPlugin> =
+        installPluginTransaction(zipFile, expectedPackage = null, permissionUpdate = null)
 
     internal suspend fun install(
         zipFile: File,
         expectedPackage: PluginPackageExpectation?,
-    ): Result<InstalledPlugin> = withContext(Dispatchers.IO) {
-        installPlugin(zipFile, expectedPackage).map { manifest ->
-            refreshInstalledPlugins()
-            logHostInfo("install completed pluginId=${manifest.id} version=${manifest.version} instance=$instanceId")
-            getInstalledPlugin(manifest.id)
-                ?: throw IllegalStateException("Plugin installed but not found: ${manifest.id}")
+    ): Result<InstalledPlugin> = installPluginTransaction(
+        zipFile = zipFile,
+        expectedPackage = expectedPackage,
+        permissionUpdate = null,
+    )
+
+    suspend fun installWithPermissions(
+        zipFile: File,
+        pluginId: String,
+        version: String?,
+        permissions: Set<PluginPermission>,
+    ): Result<InstalledPlugin> = installPluginTransaction(
+        zipFile = zipFile,
+        expectedPackage = PluginPackageExpectation(pluginId = pluginId, version = version),
+        permissionUpdate = PluginPermissionInstallUpdate(
+            pluginId = pluginId,
+            requestedPermissions = permissions,
+        ),
+    )
+
+    private suspend fun installPluginTransaction(
+        zipFile: File,
+        expectedPackage: PluginPackageExpectation?,
+        permissionUpdate: PluginPermissionInstallUpdate?,
+    ): Result<InstalledPlugin> = withContext(NonCancellable + Dispatchers.IO) {
+        mutationMutex.withLock {
+            runCatching {
+                val manifest = installPluginArchiveLocked(
+                    zipFile = zipFile,
+                    expectedPackage = expectedPackage,
+                    permissionUpdate = permissionUpdate,
+                )
+                refreshInstalledPlugins()
+                logHostInfo(
+                    "install completed pluginId=${manifest.id} version=${manifest.version} instance=$instanceId",
+                )
+                getInstalledPlugin(manifest.id)
+                    ?: throw IllegalStateException("Plugin installed but not found: ${manifest.id}")
+            }
+        }
+    }
+
+    private suspend fun installPluginArchiveLocked(
+        zipFile: File,
+        expectedPackage: PluginPackageExpectation?,
+        permissionUpdate: PluginPermissionInstallUpdate?,
+    ): PluginManifest {
+        require(zipFile.exists()) { Strings.plugin_error_file_not_exist.strOr(context, zipFile.path) }
+        require(zipFile.length() <= ZipUtils.MAX_PACKAGE_BYTES) {
+            Strings.plugin_error_package_too_large.strOr(context)
+        }
+
+        val tempDir = createStagingDirectory()
+        try {
+            try {
+                ZipUtils.unzipToDirectory(zipFile, tempDir)
+            } catch (error: PluginArchiveException) {
+                throw IllegalArgumentException(localizeArchiveFailure(error), error)
+            }
+            return requireNotNull(
+                installPluginFromDirectoryLocked(
+                    extractedDir = tempDir,
+                    allowSkipIfSameVersion = false,
+                    expectedPackage = expectedPackage,
+                    permissionUpdate = permissionUpdate,
+                ),
+            ) { Strings.plugin_error_install_failed.strOr(context) }
+        } finally {
+            if (tempDir.exists()) tempDir.deleteRecursively()
         }
     }
 

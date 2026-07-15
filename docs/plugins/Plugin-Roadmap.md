@@ -1,6 +1,6 @@
 # 插件系统路线图（Roadmap）
 
-> 文档更新：2026-07-14
+> 文档更新：2026-07-15
 > 目标：以 **配置插件优先** 的方式逐步扩展 TinaIDE 插件能力（Play 合规、低风险、可维护）。
 
 ---
@@ -304,7 +304,7 @@ interface HostCommand {
 | Lua 沙箱与 API v1 兼容 | ✅ | 禁用危险库、Java/LuaJava 反射和 native module；保留插件目录内只读纯 Lua `require()`。同一设备测试已覆盖死循环 watchdog、受限 `require()`、危险库和 stale generation/超大 Binder 返回值。 |
 | Host capability gateway | ✅ | 文件、编辑器、Command、Clipboard、Network、Database、UI 等能力统一回到宿主；每次调用重验 generation、有效启用态、manifest 声明和运行时授权。 |
 | 故障状态机与自愈 | ✅ | 已落地 `desiredEnabled`、有效状态、故障记录和 in-flight journal；禁用/卸载递增 generation，故障插件隔离，空闲 runtime 死亡后恢复健康插件。`PluginQuarantinePersistenceInstrumentedTest` 已验证两次宿主对象图重建后的持久化；真实 App 验收进一步确认 watchdog 后故障插件进入 `QUARANTINED / EXECUTION_TIMEOUT`、健康 survivor 在新 runtime 恢复 `ACTIVE`，且 `force-stop/relaunch` 后 quarantine 不丢失。 |
-| 安装事务与资源限制 | ✅ | 新装默认禁用；升级使用 staging/backup/atomic rename 和恢复 journal；Zip、Lua、日志、Binder、Network 与 PSS 均设置上限。市场下载与本地 URI 导入流量超过 64 MiB 会立即中止并删除残留；每次市场请求使用独立临时包，安装前后绑定请求 ID/版本；script/hybrid 权限授权与安装不可取消地提交，失败恢复原授权。设备测试已验证约 96 MiB Lua 保留内存触发 `RESOURCE_LIMIT` 后 runtime 可恢复。 |
+| 安装事务与资源限制 | ✅ | 新装默认禁用；升级使用 staging/backup/atomic rename 和恢复 journal；Zip、Lua、日志、Binder、Network 与 PSS 均设置上限。市场下载与本地 URI 导入流量超过 64 MiB 会立即中止并删除残留；每次市场请求使用独立临时包，安装前后绑定请求 ID/版本。权限授权、manifest 身份/声明复验、文件安装和失败回滚统一进入同一互斥且不可取消的事务；旧授权快照也写入安装 journal，进程中断可恢复，成功替换会裁剪新 manifest 已不再声明的 grant。设备测试已验证约 96 MiB Lua 保留内存触发 `RESOURCE_LIMIT` 后 runtime 可恢复。 |
 | LSP 生命周期归属 | ✅ | session 绑定 `ownerPluginId`，禁用、隔离、升级、卸载会关闭会话；command/args/env 已校验。owner 代际令牌会拒绝禁用期间尚未完成的延迟注册，`activationEvents` 同时约束 language、扩展名和文件模式路由。JVM 测试覆盖 owner 定向清理和成功启动后的异常退出回调；真实 App 验收确认 readiness 失败不隔离、server 异常退出进入 `QUARANTINED / LSP_CRASH`、重新启用可建立新会话，UI 禁用会关闭 PRoot/server，并通过 owner-stop 回调释放编辑器 session，将状态从 `LSP Ready` 更新为 `No LSP`。 |
 | 设置 UI 与文档 | ✅ | 已增加等待授权、自动隔离、runtime 不可用和风险确认状态，并同步中英文资源、App 内帮助、API 合同与 starter README。 |
 
@@ -325,17 +325,17 @@ interface HostCommand {
 可选策略仍是：Play 渠道只运行随 APK 发布的受控脚本插件，开发/非 Play 渠道允许用户明确选择文件安装。
 无论采用哪种策略，都不得绕过 isolated process、双层权限、Host API 白名单、资源限制和审计边界。
 
-### 4.4 P2 稳定契约收口（2026-07-14）
+### 4.4 P2 稳定契约收口（2026-07-15）
 
 | 能力 | 状态 | 当前结果 |
 |------|------|----------|
 | 文本面板 | ✅ | `contributions.panels` 仅允许 script/hybrid 声明；`tina.panels.setContent/appendContent/clear` 只能写本插件已声明面板，单面板上限 256 KiB UTF-8。底部“插件”面板仅在存在启用贡献时显示，禁用、卸载、隔离和 runtime death 会清理内容。 |
 | 自定义事件 | ✅ | 已实现 `tina.events.emit("custom", payload)` 定向异步派发；未知事件、非 object payload 和宿主事件伪造会被拒绝，重复订阅去重。 |
-| 可选权限 | ✅ | 插件详情页支持单项授予/撤销；`optionalPermissions` 包含的 L0 权限也必须显式授权，撤销后 capability gateway 立即拒绝调用。 |
+| 可选权限 | ✅ | 插件详情页支持单项授予/撤销；`optionalPermissions` 包含的 L0 权限也必须显式授权，撤销后 capability gateway 立即拒绝调用。UI 操作和核心状态变更均串行化，并在核心层复验“已安装且属于 optional 声明”，避免快速点击、卸载和升级交错覆盖授权。 |
 | LSP activationEvents | ✅ | apiVersion 1 仅接受 LSP `onLanguage:<languageId>`，并校验目标语言已由 `languageServers` 声明；声明列表会实际限制 language ID、文件扩展名和文件模式路由。 |
-| Host gateway 降耦 | ✅ | 持久化 storage、network、database handler、SQLite 封装和 Binder 大载荷存储已从主路由拆出；网络重定向逐跳复验白名单，SQLite 使用完整 ID 哈希隔离；卸载撤销授权并清理 KV/DB，主路由保留 generation/启用态/权限统一校验。 |
+| Host gateway 降耦 | ✅ | 持久化 storage、network、database handler、SQLite 封装和 Binder 大载荷存储已从主路由拆出；网络重定向逐跳复验白名单，SQLite 使用完整 ID 哈希隔离；卸载先提交目录移除，再以持久化 journal 幂等清理授权、配置、KV/DB，清理中断会在启动或同 ID 重装前恢复，主路由保留 generation/启用态/权限统一校验。 |
 | 事件与 Lua 资源边界 | ✅ | 选区和诊断事件采用显式上限；宿主侧超大请求返回输入错误而不隔离插件；卸载按插件 ID 清理全部 Lua module generation 计数，避免代际错位残留。 |
-| LSP owner-stop 回归 | ✅ | owner-stop 处理抽成可测试代际守卫，覆盖“当前 attach 释放并转 No LSP”和“旧 callback 不影响替换会话”。 |
+| LSP owner-stop 回归 | ✅ | owner-stop 的 attach token 校验、请求代际失效、session 移除和 `No LSP` 状态切换合并为一次原子转移；attach 成功/失败也必须在同一 token 校验下提交，避免延迟回调把替换会话或 `No LSP` 覆盖成旧 `Ready/Error`。初始化失败或协程取消会在不可取消的 IO 清理段关闭尚未登记的临时 session，避免遗留孤儿 server。覆盖“当前 attach 释放并转 No LSP”和“旧 callback 不影响替换会话”。 |
 | 文档与 starter 路径 | ✅ | API 契约、开发指南、App 内帮助与 starter README 已同步；starter zip 的事实路径统一为 `tools/plugin-starters/dist/tinaide.plugin.starters/templates/`。 |
 
 ### 4.5 本阶段不做
