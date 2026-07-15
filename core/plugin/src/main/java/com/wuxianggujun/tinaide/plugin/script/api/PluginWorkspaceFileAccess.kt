@@ -63,7 +63,6 @@ internal class PluginWorkspaceFileAccess(
                 Timber.w("Plugin workspace scan stopped after $MAX_FIND_FILES_SCANNED_ENTRIES entries")
                 break
             }
-            if (results.size >= limit) break
             if (!file.isFile || Files.isSymbolicLink(file.toPath())) continue
 
             val relativePath = toRelativePath(rootPrefix, file) ?: continue
@@ -72,7 +71,7 @@ internal class PluginWorkspaceFileAccess(
             }
         }
 
-        return results.sorted()
+        return results.sorted().take(limit)
     }
 
     /** Converts a host path/URI into the only path form visible to isolated Lua: workspace-relative. */

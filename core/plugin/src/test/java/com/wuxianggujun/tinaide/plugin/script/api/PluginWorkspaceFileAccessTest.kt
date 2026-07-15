@@ -58,10 +58,10 @@ class PluginWorkspaceFileAccessTest {
     }
 
     @Test
-    fun findFiles_shouldCapRequestedResults() {
-        File(rootDir, "a.txt").writeText("a")
-        File(rootDir, "b.txt").writeText("b")
+    fun findFiles_shouldSortBeforeApplyingResultLimit() {
         File(rootDir, "c.txt").writeText("c")
+        File(rootDir, "b.txt").writeText("b")
+        File(rootDir, "a.txt").writeText("a")
 
         val files = fileAccess.findFiles(pattern = "*.txt", maxResults = 2)
 
