@@ -55,6 +55,56 @@ class HelpRepositoryTest {
     }
 
     @Test
+    fun pluginCourse_shouldLoadEveryChineseAndEnglishArticleByLinkTarget() = runTest {
+        val courseFiles = listOf(
+            "plugin-quick-start.md",
+            "plugin-manifest-compatibility.md",
+            "plugin-script-api.md",
+            "plugin-panels-events.md",
+            "plugin-lsp-troubleshooting.md",
+            "plugin-testing-recovery.md",
+        )
+
+        listOf(Locale.SIMPLIFIED_CHINESE, Locale.ENGLISH).forEach { locale ->
+            val repository = HelpRepository(localizedContext(locale))
+            courseFiles.forEach { fileName ->
+                val content = repository.loadDocumentContentByLinkTarget(fileName).getOrThrow()
+
+                assertThat(content.trim()).isNotEmpty()
+                assertThat(content.length).isGreaterThan(500)
+                assertThat(content).contains("# ")
+
+                internalMarkdownLinkRegex.findAll(content).forEach { match ->
+                    val target = match.groupValues[1]
+                    val resolvedDocument = repository.resolveDocumentByLinkTarget(target)
+                    assertThat(resolvedDocument).isNotNull()
+                }
+            }
+        }
+    }
+
+    @Test
+    fun loadDocumentContentByLinkTarget_shouldRejectUnknownOrExternalTargets() = runTest {
+        val repository = HelpRepository(RuntimeEnvironment.getApplication())
+
+        assertThat(repository.loadDocumentContentByLinkTarget("missing.md").isFailure).isTrue()
+        assertThat(repository.loadDocumentContentByLinkTarget("https://example.com/help.md").isFailure)
+            .isTrue()
+    }
+
+    @Test
+    fun pluginPanelsCourse_shouldUseStableCustomEventId() = runTest {
+        listOf(Locale.SIMPLIFIED_CHINESE, Locale.ENGLISH).forEach { locale ->
+            val repository = HelpRepository(localizedContext(locale))
+            val content = repository.loadDocumentContentByLinkTarget("plugin-panels-events.md").getOrThrow()
+
+            assertThat(content).contains("tina.events.on(\"custom\"")
+            assertThat(content).contains("tina.events.emit(\"custom\"")
+            assertThat(content).doesNotContain("custom.refresh")
+        }
+    }
+
+    @Test
     fun localizedAssetCandidates_shouldPreferEnglishAndFallbackToChinese() {
         assertThat(HelpAssetPathResolver.candidatePaths("getting-started.md", "en-US"))
             .containsExactly(
@@ -97,6 +147,10 @@ class HelpRepositoryTest {
             .isEqualTo("plugins-settings")
         assertThat(repository.resolveDocumentByLinkTarget("help/known-issues.md#common-issues")?.id)
             .isEqualTo("known-issues")
+        assertThat(repository.resolveDocumentByLinkTarget("plugin-script-api.md")?.id)
+            .isEqualTo("plugin-script-api")
+        assertThat(repository.resolveDocumentByLinkTarget("plugin-testing-recovery.md")?.id)
+            .isEqualTo("plugin-testing-recovery")
         assertThat(repository.resolveDocumentByLinkTarget("https://example.com/help.md"))
             .isNull()
     }
@@ -107,5 +161,11 @@ class HelpRepositoryTest {
             setLocale(locale)
         }
         return application.createConfigurationContext(configuration)
+    }
+
+    companion object {
+        private val internalMarkdownLinkRegex = Regex(
+            """(?<!!)\[[^]]+]\(([^)#?]+\.md)(?:#[^)]+)?\)"""
+        )
     }
 }

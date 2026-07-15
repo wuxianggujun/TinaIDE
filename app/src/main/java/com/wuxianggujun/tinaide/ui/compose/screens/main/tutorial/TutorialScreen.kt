@@ -76,8 +76,6 @@ import com.wuxianggujun.tinaide.ui.compose.components.TinaTopBar
 import com.wuxianggujun.tinaide.ui.compose.components.tinaBackAction
 import com.wuxianggujun.tinaide.ui.compose.screens.settings.SettingsRoute
 import com.wuxianggujun.tinaide.ui.wizard.NewProjectWizardActivity
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 private const val PLUGIN_QUICK_START_TUTORIAL_ID = "plugin_quick_start"
 
@@ -135,6 +133,7 @@ fun TutorialScreen(
                 },
                 resolveTutorialByLinkTarget = viewModel::resolveTutorialByLinkTarget,
                 resolveHelpDocumentByLinkTarget = helpRepository::resolveDocumentByLinkTarget,
+                loadTutorialContent = helpRepository::loadDocumentContentByLinkTarget,
                 onLinkClick = { target ->
                     if (target.startsWith("#")) {
                         return@TutorialArticleContent
@@ -227,6 +226,7 @@ private fun TutorialArticleContent(
     onOpenPluginSettings: () -> Unit,
     resolveTutorialByLinkTarget: (String) -> Tutorial?,
     resolveHelpDocumentByLinkTarget: (String) -> HelpDocument?,
+    loadTutorialContent: suspend (String) -> Result<String>,
     onLinkClick: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -256,12 +256,13 @@ private fun TutorialArticleContent(
         errorMessage = null
         markdown = null
 
-        runCatching {
-            withContext(Dispatchers.IO) {
-                context.assets.open(contentUrl).bufferedReader().use { it.readText() }
+        loadTutorialContent(contentUrl).onSuccess { content ->
+            if (content.isBlank()) {
+                errorMessage = helpLoadFailedMessage
+                markdown = null
+            } else {
+                markdown = content
             }
-        }.onSuccess { raw ->
-            markdown = sanitizeTutorialMarkdown(raw)
             isLoading = false
         }.onFailure {
             errorMessage = helpLoadFailedMessage
@@ -628,16 +629,6 @@ private fun TutorialContinueLearningCard(
         }
     }
 }
-
-/**
- * 清理帮助文档中偶发的“`n+”伪换行标记，避免 Markdown 渲染异常。
- *
- * 这些标记通常来自生成/拷贝过程中的转义问题，优先在渲染前做一次兜底修复。
- */
-private fun sanitizeTutorialMarkdown(raw: String): String = raw
-    .replace("`n+- ", "`\n- ")
-    .replace("`n+-", "`\n- ")
-    .replace("`n+", "`\n")
 
 /**
  * 教程分类标题

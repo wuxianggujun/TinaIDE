@@ -2920,6 +2920,16 @@ kept=%3$d bytes
   <string name="help_doc_create_project_summary">学习如何创建 C/C++ 项目</string>
   <string name="help_doc_plugin_quick_start_title">插件开发快速开始</string>
   <string name="help_doc_plugin_quick_start_summary">先做一个 config 插件，改主题和代码片段，运行热安装，再打包并做安装前预检</string>
+  <string name="help_doc_plugin_manifest_compatibility_title">插件 Manifest 与版本兼容</string>
+  <string name="help_doc_plugin_manifest_compatibility_summary">理解 apiVersion、minAppVersion、插件版本和旧 IDE 的兼容选择规则</string>
+  <string name="help_doc_plugin_script_api_title">Script API 与最小权限</string>
+  <string name="help_doc_plugin_script_api_summary">用命令型 Lua 插件学习 editor、commands、workspace 与权限边界</string>
+  <string name="help_doc_plugin_panels_events_title">插件面板与事件联动</string>
+  <string name="help_doc_plugin_panels_events_summary">声明文本面板，监听宿主事件，并安全更新插件输出</string>
+  <string name="help_doc_plugin_lsp_troubleshooting_title">LSP 插件开发与排错</string>
+  <string name="help_doc_plugin_lsp_troubleshooting_summary">配置 languageServers 与 toolchains，验证启动、退出和 owner 生命周期</string>
+  <string name="help_doc_plugin_testing_recovery_title">插件测试、自愈与发布前检查</string>
+  <string name="help_doc_plugin_testing_recovery_summary">用日志、隔离状态、回滚和兼容门禁完成稳定性验收</string>
   <string name="help_quick_actions_title">快捷操作</string>
   <string name="help_action_create_plugin_project">创建插件项目</string>
   <string name="help_action_open_plugin_settings">打开插件设置</string>
@@ -3011,6 +3021,45 @@ kept=%3$d bytes
     <item>validate</item>
     <item>package</item>
     <item>starter</item>
+  </string-array>
+  <string-array name="help_keywords_plugin_manifest_compatibility">
+    <item>manifest</item>
+    <item>apiVersion</item>
+    <item>minAppVersion</item>
+    <item>兼容</item>
+    <item>旧版本</item>
+    <item>更新</item>
+  </string-array>
+  <string-array name="help_keywords_plugin_script_api">
+    <item>script</item>
+    <item>lua</item>
+    <item>api</item>
+    <item>权限</item>
+    <item>commands</item>
+    <item>editor</item>
+    <item>workspace</item>
+  </string-array>
+  <string-array name="help_keywords_plugin_panels_events">
+    <item>panels</item>
+    <item>events</item>
+    <item>面板</item>
+    <item>事件</item>
+    <item>diagnostics</item>
+  </string-array>
+  <string-array name="help_keywords_plugin_lsp_troubleshooting">
+    <item>lsp</item>
+    <item>languageServers</item>
+    <item>toolchains</item>
+    <item>语言服务器</item>
+    <item>排错</item>
+  </string-array>
+  <string-array name="help_keywords_plugin_testing_recovery">
+    <item>插件日志</item>
+    <item>自动隔离</item>
+    <item>自愈</item>
+    <item>回滚</item>
+    <item>测试</item>
+    <item>quarantine</item>
   </string-array>
   <string-array name="help_keywords_settings_overview">
     <item>设置</item>

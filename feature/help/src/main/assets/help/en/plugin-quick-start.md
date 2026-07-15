@@ -21,6 +21,8 @@ Set at least:
 - id
 - name
 - version
+- apiVersion (the current stable value is 1)
+- minAppVersion (only when a newer host capability is truly required)
 - type
 - description
 - author.name
@@ -33,6 +35,7 @@ Example:
       "id": "com.example.my-first-plugin",
       "name": "My First Plugin",
       "version": "0.1.0",
+      "apiVersion": 1,
       "type": "config",
       "description": "My first TinaIDE plugin.",
       "author": {
@@ -45,6 +48,8 @@ Example:
     }
 
 The id may contain letters, digits, periods, underscores, and hyphens. It cannot be a path or contain two consecutive path-traversal dots.
+
+The example omits minAppVersion so a plugin with no newer host dependency remains compatible with older IDEs. Add or raise it only for a capability that really requires a newer TinaIDE; an older IDE will not offer an incompatible plugin update.
 
 ## 3. Add a theme
 
@@ -105,6 +110,11 @@ Installation uses staging and an atomic swap. A failed upgrade of a healthy enab
 Advanced script and hybrid plugins may declare optionalPermissions for on-demand grants. They may also declare contributions.panels and publish bounded plain text through tina.panels.setContent, appendContent, and clear.
 
 - [Plugin settings](plugins-settings.md)
+- [Plugin Manifest and Version Compatibility](plugin-manifest-compatibility.md)
+- [Script API and Least Privilege](plugin-script-api.md)
+- [Plugin Panels and Events](plugin-panels-events.md)
+- [LSP Plugin Development and Troubleshooting](plugin-lsp-troubleshooting.md)
+- [Plugin Testing, Recovery, and Preflight](plugin-testing-recovery.md)
 - [Create a project](create-project.md)
 - [Build a project](build-project.md)
 - [Known issues](known-issues.md)

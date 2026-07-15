@@ -283,13 +283,58 @@ class HelpRepository(private val context: Context) {
             order = 2
         ),
         HelpDocument(
+            id = "plugin-manifest-compatibility",
+            title = Strings.help_doc_plugin_manifest_compatibility_title.strOr(context),
+            category = HelpCategory.ADVANCED,
+            keywords = keywords(Arrays.help_keywords_plugin_manifest_compatibility),
+            fileName = "plugin-manifest-compatibility.md",
+            summary = Strings.help_doc_plugin_manifest_compatibility_summary.strOr(context),
+            order = 3
+        ),
+        HelpDocument(
+            id = "plugin-script-api",
+            title = Strings.help_doc_plugin_script_api_title.strOr(context),
+            category = HelpCategory.ADVANCED,
+            keywords = keywords(Arrays.help_keywords_plugin_script_api),
+            fileName = "plugin-script-api.md",
+            summary = Strings.help_doc_plugin_script_api_summary.strOr(context),
+            order = 4
+        ),
+        HelpDocument(
+            id = "plugin-panels-events",
+            title = Strings.help_doc_plugin_panels_events_title.strOr(context),
+            category = HelpCategory.ADVANCED,
+            keywords = keywords(Arrays.help_keywords_plugin_panels_events),
+            fileName = "plugin-panels-events.md",
+            summary = Strings.help_doc_plugin_panels_events_summary.strOr(context),
+            order = 5
+        ),
+        HelpDocument(
+            id = "plugin-lsp-troubleshooting",
+            title = Strings.help_doc_plugin_lsp_troubleshooting_title.strOr(context),
+            category = HelpCategory.ADVANCED,
+            keywords = keywords(Arrays.help_keywords_plugin_lsp_troubleshooting),
+            fileName = "plugin-lsp-troubleshooting.md",
+            summary = Strings.help_doc_plugin_lsp_troubleshooting_summary.strOr(context),
+            order = 6
+        ),
+        HelpDocument(
+            id = "plugin-testing-recovery",
+            title = Strings.help_doc_plugin_testing_recovery_title.strOr(context),
+            category = HelpCategory.ADVANCED,
+            keywords = keywords(Arrays.help_keywords_plugin_testing_recovery),
+            fileName = "plugin-testing-recovery.md",
+            summary = Strings.help_doc_plugin_testing_recovery_summary.strOr(context),
+            order = 7
+        ),
+        HelpDocument(
             id = "plugins-settings",
             title = Strings.help_doc_plugin_settings_title.strOr(context),
             category = HelpCategory.ADVANCED,
             keywords = keywords(Arrays.help_keywords_plugin_settings),
             fileName = "plugins-settings.md",
             summary = Strings.help_doc_plugin_settings_summary.strOr(context),
-            order = 4
+            order = 8
         ),
         HelpDocument(
             id = "about-and-logs",
@@ -298,7 +343,7 @@ class HelpRepository(private val context: Context) {
             keywords = keywords(Arrays.help_keywords_about_and_logs),
             fileName = "about-and-logs.md",
             summary = Strings.help_doc_about_and_logs_summary.strOr(context),
-            order = 5
+            order = 9
         ),
 
         // 常见问题
@@ -349,6 +394,18 @@ class HelpRepository(private val context: Context) {
         return documents.find { document ->
             document.fileName.equals(normalizedFileName, ignoreCase = true)
         }
+    }
+
+    /**
+     * 按站内 Markdown 链接加载文档。
+     *
+     * 教程页和帮助页共享同一套本地化、UTF-8、缓存与缺失资源回退规则，避免教程页
+     * 直接读取固定 asset 后在英文环境或资源变更时显示空白。
+     */
+    suspend fun loadDocumentContentByLinkTarget(linkTarget: String): Result<String> {
+        val document = resolveDocumentByLinkTarget(linkTarget)
+            ?: return Result.failure(IOException("Unknown help document: $linkTarget"))
+        return loadDocumentContent(document)
     }
 
     /**

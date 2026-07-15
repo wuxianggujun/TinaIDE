@@ -3282,6 +3282,16 @@ kept=%3$d bytes
   <string name="help_doc_create_project_summary">Learn how to create a C/C++ project</string>
   <string name="help_doc_plugin_quick_start_title">Plugin Development Quick Start</string>
   <string name="help_doc_plugin_quick_start_summary">Build a first config plugin by changing theme and snippets, run to hot-install, then package .tinaplug and verify with install preflight</string>
+  <string name="help_doc_plugin_manifest_compatibility_title">Plugin Manifest and Version Compatibility</string>
+  <string name="help_doc_plugin_manifest_compatibility_summary">Understand apiVersion, minAppVersion, plugin versions, and compatible updates for older IDEs</string>
+  <string name="help_doc_plugin_script_api_title">Script API and Least Privilege</string>
+  <string name="help_doc_plugin_script_api_summary">Build a command-focused Lua plugin with editor, commands, workspace, and permission boundaries</string>
+  <string name="help_doc_plugin_panels_events_title">Plugin Panels and Events</string>
+  <string name="help_doc_plugin_panels_events_summary">Declare text panels, listen to host events, and publish bounded plugin output safely</string>
+  <string name="help_doc_plugin_lsp_troubleshooting_title">LSP Plugin Development and Troubleshooting</string>
+  <string name="help_doc_plugin_lsp_troubleshooting_summary">Configure languageServers and toolchains, then verify startup, exit, and owner lifecycle</string>
+  <string name="help_doc_plugin_testing_recovery_title">Plugin Testing, Recovery, and Preflight</string>
+  <string name="help_doc_plugin_testing_recovery_summary">Use logs, quarantine state, rollback, and compatibility gates for stability acceptance</string>
   <string name="help_quick_actions_title">Quick actions</string>
   <string name="help_action_create_plugin_project">Create Plugin Project</string>
   <string name="help_action_open_plugin_settings">Open Plugin Settings</string>
@@ -3371,6 +3381,44 @@ kept=%3$d bytes
     <item>validate</item>
     <item>package</item>
     <item>starter</item>
+  </string-array>
+  <string-array name="help_keywords_plugin_manifest_compatibility">
+    <item>manifest</item>
+    <item>apiVersion</item>
+    <item>minAppVersion</item>
+    <item>compatibility</item>
+    <item>older IDE</item>
+    <item>update</item>
+  </string-array>
+  <string-array name="help_keywords_plugin_script_api">
+    <item>script</item>
+    <item>lua</item>
+    <item>api</item>
+    <item>permissions</item>
+    <item>commands</item>
+    <item>editor</item>
+    <item>workspace</item>
+  </string-array>
+  <string-array name="help_keywords_plugin_panels_events">
+    <item>panels</item>
+    <item>events</item>
+    <item>diagnostics</item>
+    <item>plugin output</item>
+  </string-array>
+  <string-array name="help_keywords_plugin_lsp_troubleshooting">
+    <item>lsp</item>
+    <item>languageServers</item>
+    <item>toolchains</item>
+    <item>language server</item>
+    <item>troubleshooting</item>
+  </string-array>
+  <string-array name="help_keywords_plugin_testing_recovery">
+    <item>plugin logs</item>
+    <item>quarantine</item>
+    <item>recovery</item>
+    <item>rollback</item>
+    <item>testing</item>
+    <item>preflight</item>
   </string-array>
   <string-array name="help_keywords_settings_overview">
     <item>settings</item>

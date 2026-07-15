@@ -40,6 +40,8 @@
 - `id`
 - `name`
 - `version`
+- `apiVersion`（当前稳定值为 `1`）
+- `minAppVersion`（仅在确实依赖新宿主能力时填写）
 - `type`
 - `description`
 - `author.name`
@@ -53,6 +55,7 @@
   "id": "com.example.my-first-plugin",
   "name": "My First Plugin",
   "version": "0.1.0",
+  "apiVersion": 1,
   "type": "config",
   "description": "My first TinaIDE plugin.",
   "author": {
@@ -70,6 +73,9 @@
 ```
 
 `id` 只能包含字母、数字、`.`、`_`、`-`，不能是路径，也不能带 `..`。
+
+示例省略了 `minAppVersion`，这样没有新宿主依赖的插件仍兼容旧 IDE。只有使用了新版本
+TinaIDE 才提供的能力时才填写或提高它；旧 IDE 不会显示不兼容的插件更新。
 
 先别急着加 `commands`、`permissions` 或 `lsp`。第一版先把主题和片段跑通。
 
@@ -202,6 +208,11 @@ dist/<manifest.id>-<manifest.version>.tinaplug
 `contributions.panels`，再通过 `tina.panels.setContent/appendContent/clear` 向编辑器底部“插件”面板发布纯文本。
 
 - [插件设置说明](plugins-settings.md)
+- [插件 Manifest 与版本兼容](plugin-manifest-compatibility.md)
+- [Script API 与最小权限](plugin-script-api.md)
+- [插件面板与事件联动](plugin-panels-events.md)
+- [LSP 插件开发与排错](plugin-lsp-troubleshooting.md)
+- [插件测试、自愈与发布前检查](plugin-testing-recovery.md)
 - [创建项目](create-project.md)
 - [编译项目](build-project.md)
 - [已知问题](known-issues.md)
