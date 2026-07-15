@@ -40,6 +40,10 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
+      - name: Prepare diagnostics directory
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force -Path artifacts/plugin-device-gate | Out-Null
+
       - name: Run plugin device stability gate
         shell: pwsh
         env:
@@ -53,6 +57,7 @@ jobs:
           if ($env:SKIP_FULL_SUITE -and $env:SKIP_FULL_SUITE.ToLowerInvariant() -eq 'true') {
             $arguments += '-SkipFullSuite'
           }
+          $arguments += @('-ArtifactsDirectory', 'artifacts/plugin-device-gate')
           ./tools/testing/plugin-device-gate.ps1 @arguments
 
       - name: Cleanup test processes
@@ -60,3 +65,12 @@ jobs:
         shell: pwsh
         run: |
           ./gradlew.bat --stop
+
+      - name: Upload plugin device diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: plugin-device-gate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/plugin-device-gate
+          if-no-files-found: warn
+          retention-days: 14

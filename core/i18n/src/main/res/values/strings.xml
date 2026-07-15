@@ -4344,6 +4344,7 @@ kept=%3$d bytes
   <string name="tutorial_title">教程</string>
   <string name="tutorial_empty">暂无教程</string>
   <string name="tutorial_progress">进度: %1$d%%</string>
+  <string name="tutorial_reading">阅读中</string>
   <string name="tutorial_duration">%1$s 分钟</string>
   <string name="tutorial_start">开始学习</string>
   <string name="tutorial_continue">继续学习</string>

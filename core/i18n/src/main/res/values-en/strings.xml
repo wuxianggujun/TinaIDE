@@ -4204,6 +4204,7 @@ kept=%3$d bytes
   <string name="tutorial_title">Learn</string>
   <string name="tutorial_empty">No tutorials available</string>
   <string name="tutorial_progress">Progress: %1$d%%</string>
+  <string name="tutorial_reading">Reading in progress</string>
   <string name="tutorial_duration">%1$s min</string>
   <string name="tutorial_start">Start Learning</string>
   <string name="tutorial_continue">Continue</string>

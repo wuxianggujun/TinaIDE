@@ -477,7 +477,7 @@ class HelpRepository(private val context: Context) {
             }
 
             // 内容匹配（如果已缓存）
-            contentCache[doc.id]?.let { content ->
+            contentCache[contentCacheKey(doc)]?.let { content ->
                 val contentLower = content.lowercase()
                 if (contentLower.contains(queryLower)) {
                     score += 2f

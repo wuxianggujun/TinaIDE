@@ -38,6 +38,10 @@ jobs:
       - name: Run i18n checks
         run: python3 tools/i18n/check_all.py
 
+      - name: Test plugin device gate result parser
+        shell: pwsh
+        run: ./tools/testing/plugin-device-gate-result.tests.ps1
+
       - name: Restore tina-toolchain assets
         run: bash tools/ci/restore-tina-toolchain-assets.sh arm64
 
@@ -69,9 +73,9 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Compile app Kotlin
+      - name: Run plugin JVM tests and compile app Kotlin
         run: |
-          ./gradlew :app:compileArm64DebugKotlin --no-daemon --configure-on-demand \
+          ./gradlew :core:plugin:testDebugUnitTest :app:compileArm64DebugKotlin --no-daemon --configure-on-demand \
             -Ptina.devAbi=arm64 \
             -Ptina.buildProotFromSource=false \
             -Dorg.gradle.internal.http.connectionTimeout=120000 \

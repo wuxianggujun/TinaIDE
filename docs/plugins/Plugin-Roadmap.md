@@ -344,9 +344,12 @@ interface HostCommand {
 |------|------|----------|
 | isolated runtime native crash | ✅ 代码完成 | `PluginRuntimeIsolationInstrumentedTest` 通过内部 debuggable-only Binder 测试入口向 `:plugin_runtime` 发送真实 `SIGSEGV`，断言宿主 PID 保持、故障插件进入 `QUARANTINED / RUNTIME_CRASH`、健康插件在替换后的 runtime PID 恢复。测试入口不属于公开 Plugin API，非 debuggable 构建拒绝执行。 |
 | force-stop/relaunch quarantine | ✅ 代码完成 | `PluginQuarantinePersistenceInstrumentedTest` 提供 prepare/verify 两阶段，`tools/testing/plugin-device-gate.ps1` 在阶段间执行真实 `adb force-stop`，验证新进程仍读取相同故障、有效状态和 desired enabled 状态。 |
-| 统一设备入口 | ✅ | 同一脚本运行两套关键 instrumentation suite，校验单设备、测试结果和 force-stop 后 PID，并在结束时停止测试进程、卸载测试 APK 和回收 Gradle daemon。 |
-| 长期 CI | 🟡 需设备 runner | `.github/workflows/plugin-device-gate.yml` 提供手动自托管设备门禁；runner 必须带 `android-device` 标签。没有连接设备或测试被跳过时不计为通过。 |
+| 统一设备入口 | ✅ | 同一脚本运行两套关键 instrumentation suite，校验单设备、force-stop 后 PID 和每个阶段的精确测试数；`0 tests`、ignored/assumption skip、runner failure、数量不匹配均明确失败。每次运行保留 instrumentation 原始输出、设备信息、logcat、汇总和 verdict 诊断制品，并在结束时停止测试进程、卸载测试 APK 和回收 Gradle daemon。 |
+| 长期 CI | 🟡 设备基础设施待接入 | `dev-static-check.yml` 已纳入 `:core:plugin:testDebugUnitTest`，插件 JVM 回归不再只靠本地执行；`.github/workflows/plugin-device-gate.yml` 已准备严格结果判定和诊断制品上传。设备门禁仍需先在默认分支完成 workflow 注册，并配置带 `android-device` 标签的 self-hosted Android 设备 runner；这两项属于仓库/设备基础设施待办，完成前不能把 workflow 代码存在视为真机门禁已运行。 |
 | 真实 PRoot LSP | 保留人工/条件式验收 | 仍依赖 ABI、发行版和 toolchain 资产，不并入普通插件 instrumentation；`assumeTrue` 跳过不等于通过。 |
+
+门禁口径：JVM CI 已可长期执行；设备 workflow 的脚本和判定逻辑已就绪，但默认分支注册与 self-hosted
+设备 runner 尚未完成，因此本节不新增任何真机验收结论。
 
 ### 4.6 本阶段不做
 
