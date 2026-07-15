@@ -1,0 +1,62 @@
+name: Plugin Device Stability Gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      serial:
+        description: Optional ADB device serial
+        required: false
+        type: string
+      skip_full_suite:
+        description: Run only the force-stop/relaunch persistence gate
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: plugin-device-gate-${{ inputs.serial || 'default' }}
+  cancel-in-progress: false
+
+jobs:
+  plugin-device-gate:
+    runs-on: [self-hosted, Windows, X64, android-device]
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          lfs: false
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Run plugin device stability gate
+        shell: pwsh
+        env:
+          DEVICE_SERIAL: ${{ inputs.serial }}
+          SKIP_FULL_SUITE: ${{ inputs.skip_full_suite }}
+        run: |
+          $arguments = @()
+          if ($env:DEVICE_SERIAL) {
+            $arguments += @('-Serial', $env:DEVICE_SERIAL)
+          }
+          if ($env:SKIP_FULL_SUITE -and $env:SKIP_FULL_SUITE.ToLowerInvariant() -eq 'true') {
+            $arguments += '-SkipFullSuite'
+          }
+          ./tools/testing/plugin-device-gate.ps1 @arguments
+
+      - name: Cleanup test processes
+        if: ${{ always() }}
+        shell: pwsh
+        run: |
+          ./gradlew.bat --stop

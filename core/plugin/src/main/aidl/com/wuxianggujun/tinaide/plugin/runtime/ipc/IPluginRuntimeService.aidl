@@ -15,4 +15,5 @@ interface IPluginRuntimeService {
     void invoke(String requestJson, IPluginRuntimeCallback callback);
     void unload(String requestJson, IPluginRuntimeCallback callback);
     oneway void terminate();
+    oneway void crashWithSigsegvForTest();
 }

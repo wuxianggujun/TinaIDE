@@ -47,11 +47,13 @@ core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/cache/Package
 core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/download/ResumableDownloader.kt | renameTo=1,delete=6 | Download temp file promotion and cleanup.
 core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/BundledPluginsInstaller.kt | deleteRecursively=1,delete=1 | Bundled plugin install staging cleanup.
 core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/PluginLogManager.kt | delete=2 | Plugin log cleanup.
-core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/PluginManager.kt | deleteRecursively=10,renameTo=2,delete=4 | Plugin-private same-filesystem staging, atomic install journal, rollback, and interrupted transaction cleanup.
+core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/PluginManager.kt | deleteRecursively=12,renameTo=2,delete=3 | Plugin-private same-filesystem staging, atomic install journal, rollback, and interrupted transaction cleanup.
 core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/lsp/LspToolchainInstaller.kt | delete=1 | Plugin LSP toolchain temp file cleanup.
-core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/marketplace/PluginMarketplaceApi.kt | delete=1 | Marketplace download temp file cleanup.
-core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/marketplace/PluginMarketplaceRepository.kt | delete=1 | Marketplace cache file cleanup.
-core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/runtime/PluginHostCapabilityGateway.kt | delete=4 | One HTTP DELETE request builder call plus plugin-private bulk payload temp-file cleanup.
+core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/marketplace/PluginMarketplaceApi.kt | delete=4 | Bounded marketplace download target cleanup on HTTP, size-limit, and I/O failures.
+core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/marketplace/PluginMarketplaceRepository.kt | delete=4 | Request-scoped marketplace package cleanup after install, cancellation, replacement, or shutdown.
+core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/runtime/PluginBulkPayloadStore.kt | delete=3 | Plugin-private Binder payload temp-file consume, expiry, and shutdown cleanup.
+core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/runtime/PluginDatabase.kt | renameTo=1,delete=2 | Plugin-private database migration promotion and obsolete database/sidecar cleanup.
+core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/runtime/PluginHostDataCapabilities.kt | delete=1 | HTTP DELETE request builder call, not a filesystem operation.
 core/project/src/main/java/com/wuxianggujun/tinaide/project/ProjectCreationService.kt | deleteRecursively=1 | Failed project creation rollback.
 core/project/src/main/java/com/wuxianggujun/tinaide/project/ProjectTemplateInstaller.kt | deleteRecursively=1,delete=1 | Project template staging cleanup.
 core/proot/src/main/java/com/wuxianggujun/tinaide/core/proot/InstallLogManager.kt | delete=2 | PRoot install log cleanup.

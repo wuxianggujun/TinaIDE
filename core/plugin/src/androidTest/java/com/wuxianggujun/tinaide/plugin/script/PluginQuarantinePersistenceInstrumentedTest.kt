@@ -28,6 +28,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -113,6 +114,117 @@ class PluginQuarantinePersistenceInstrumentedTest {
         }
     }
 
+    @Test
+    fun forceStopRelaunchPhase_persistsQuarantineAcrossRealProcessRestart() = runBlocking {
+        val phase = InstrumentationRegistry.getArguments().getString(RELAUNCH_PHASE_ARGUMENT)
+        assumeTrue(
+            "This two-phase test is orchestrated by tools/testing/plugin-device-gate.ps1",
+            phase == RELAUNCH_PHASE_PREPARE || phase == RELAUNCH_PHASE_VERIFY,
+        )
+
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        when (phase) {
+            RELAUNCH_PHASE_PREPARE -> prepareForceStopFixture(context)
+            RELAUNCH_PHASE_VERIFY -> verifyForceStopFixture(context)
+        }
+    }
+
+    private suspend fun prepareForceStopFixture(context: Context) {
+        cleanupForceStopFixture(context)
+        val pluginDirectory = File(context.filesDir, "plugins/$FORCE_STOP_PLUGIN_ID")
+        val pluginPreferences = context.getSharedPreferences(PLUGIN_PREFERENCES, Context.MODE_PRIVATE)
+        var pluginManager: PluginManager? = null
+        var scriptManager: ScriptPluginManager? = null
+        var prepared = false
+
+        try {
+            writePlugin(pluginDirectory, FORCE_STOP_PLUGIN_ID)
+            assertTrue(
+                pluginPreferences.edit()
+                    .putBoolean("desired_enabled_$FORCE_STOP_PLUGIN_ID", true)
+                    .putBoolean("enabled_$FORCE_STOP_PLUGIN_ID", true)
+                    .commit(),
+            )
+            val initialStore = PluginFaultStore.getInstance(context)
+            assertTrue(
+                initialStore.beginExecution(
+                    PluginInFlightRecord(
+                        pluginId = FORCE_STOP_PLUGIN_ID,
+                        pluginVersion = "1.0.0",
+                        generation = FORCE_STOP_GENERATION,
+                        phase = PluginFaultPhase.COMMAND,
+                        executionId = FORCE_STOP_EXECUTION_ID,
+                        startedAtMillis = System.currentTimeMillis(),
+                    ),
+                ),
+            )
+
+            PluginFaultStore.resetForTests()
+            pluginManager = PluginManager(context).also { it.onCreate() }
+            val transport = RecordingTransport()
+            scriptManager = createScriptManager(context, pluginManager, transport)
+            val state = awaitState(scriptManager, FORCE_STOP_PLUGIN_ID, ScriptPluginState.QUARANTINED)
+
+            assertEquals(PluginFaultKind.INTERRUPTED_EXECUTION, state.fault?.kind)
+            assertEquals(FORCE_STOP_EXECUTION_ID, state.fault?.executionId)
+            assertTrue(transport.loads.isEmpty())
+            forceStopMarker(context).writeText(FORCE_STOP_EXECUTION_ID, Charsets.UTF_8)
+            prepared = true
+        } finally {
+            scriptManager?.shutdown()
+            pluginManager?.onDestroy()
+            PluginFaultStore.resetForTests()
+            if (!prepared) cleanupForceStopFixture(context)
+        }
+    }
+
+    private suspend fun verifyForceStopFixture(context: Context) {
+        val pluginDirectory = File(context.filesDir, "plugins/$FORCE_STOP_PLUGIN_ID")
+        val pluginPreferences = context.getSharedPreferences(PLUGIN_PREFERENCES, Context.MODE_PRIVATE)
+        var pluginManager: PluginManager? = null
+        var scriptManager: ScriptPluginManager? = null
+
+        try {
+            assertTrue("Force-stop preparation marker is missing", forceStopMarker(context).isFile)
+            assertTrue("Force-stop plugin fixture is missing", pluginDirectory.isDirectory)
+            PluginFaultStore.resetForTests()
+            pluginManager = PluginManager(context).also { it.onCreate() }
+            val transport = RecordingTransport()
+            scriptManager = createScriptManager(context, pluginManager, transport)
+            val state = awaitState(scriptManager, FORCE_STOP_PLUGIN_ID, ScriptPluginState.QUARANTINED)
+            val faultStore = PluginFaultStore.getInstance(context)
+
+            assertEquals(PluginFaultKind.INTERRUPTED_EXECUTION, state.fault?.kind)
+            assertEquals(FORCE_STOP_EXECUTION_ID, state.fault?.executionId)
+            assertEquals(PluginEffectiveStatus.QUARANTINED, faultStore.getEffectiveStatus(FORCE_STOP_PLUGIN_ID))
+            assertFalse(pluginManager.isPluginEnabled(FORCE_STOP_PLUGIN_ID))
+            assertNull(pluginManager.getEnabledPlugin(FORCE_STOP_PLUGIN_ID))
+            assertTrue(pluginPreferences.getBoolean("desired_enabled_$FORCE_STOP_PLUGIN_ID", false))
+            assertFalse(pluginPreferences.getBoolean("enabled_$FORCE_STOP_PLUGIN_ID", true))
+            assertTrue(transport.loads.isEmpty())
+        } finally {
+            scriptManager?.shutdown()
+            pluginManager?.onDestroy()
+            cleanupForceStopFixture(context)
+        }
+    }
+
+    private fun cleanupForceStopFixture(context: Context) {
+        PluginFaultStore.resetForTests()
+        PluginFaultStore.getInstance(context).clearAllForUninstall(FORCE_STOP_PLUGIN_ID)
+        context.getSharedPreferences(PLUGIN_PREFERENCES, Context.MODE_PRIVATE)
+            .edit()
+            .remove("desired_enabled_$FORCE_STOP_PLUGIN_ID")
+            .remove("enabled_$FORCE_STOP_PLUGIN_ID")
+            .commit()
+        File(context.filesDir, "plugins/$FORCE_STOP_PLUGIN_ID").deleteRecursively()
+        forceStopMarker(context).delete()
+        PluginFaultStore.resetForTests()
+    }
+
+    private fun forceStopMarker(context: Context): File =
+        File(context.filesDir, "plugin-device-gate-force-stop.marker")
+
     private fun createScriptManager(
         context: Context,
         pluginManager: PluginManager,
@@ -179,6 +291,12 @@ class PluginQuarantinePersistenceInstrumentedTest {
 
     private companion object {
         const val PLUGIN_PREFERENCES = "tinaide_plugins"
+        const val RELAUNCH_PHASE_ARGUMENT = "tina.plugin.relaunch.phase"
+        const val RELAUNCH_PHASE_PREPARE = "prepare"
+        const val RELAUNCH_PHASE_VERIFY = "verify"
+        const val FORCE_STOP_PLUGIN_ID = "test.runtime.force-stop-persistence"
+        const val FORCE_STOP_EXECUTION_ID = "force-stop-execution-v1"
+        const val FORCE_STOP_GENERATION = 73L
 
         fun success(pluginId: String, generation: Long, callId: String) = PluginRuntimeResponse(
             pluginId = pluginId,

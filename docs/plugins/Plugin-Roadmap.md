@@ -338,7 +338,17 @@ interface HostCommand {
 | LSP owner-stop 回归 | ✅ | owner-stop 的 attach token 校验、请求代际失效、session 移除和 `No LSP` 状态切换合并为一次原子转移；attach 成功/失败也必须在同一 token 校验下提交，避免延迟回调把替换会话或 `No LSP` 覆盖成旧 `Ready/Error`。初始化失败或协程取消会在不可取消的 IO 清理段关闭尚未登记的临时 session，避免遗留孤儿 server。覆盖“当前 attach 释放并转 No LSP”和“旧 callback 不影响替换会话”。 |
 | 文档与 starter 路径 | ✅ | API 契约、开发指南、App 内帮助与 starter README 已同步；starter zip 的事实路径统一为 `tools/plugin-starters/dist/tinaide.plugin.starters/templates/`。 |
 
-### 4.5 本阶段不做
+### 4.5 设备稳定性门禁（2026-07-15）
+
+| 门禁 | 状态 | 当前结果 |
+|------|------|----------|
+| isolated runtime native crash | ✅ 代码完成 | `PluginRuntimeIsolationInstrumentedTest` 通过内部 debuggable-only Binder 测试入口向 `:plugin_runtime` 发送真实 `SIGSEGV`，断言宿主 PID 保持、故障插件进入 `QUARANTINED / RUNTIME_CRASH`、健康插件在替换后的 runtime PID 恢复。测试入口不属于公开 Plugin API，非 debuggable 构建拒绝执行。 |
+| force-stop/relaunch quarantine | ✅ 代码完成 | `PluginQuarantinePersistenceInstrumentedTest` 提供 prepare/verify 两阶段，`tools/testing/plugin-device-gate.ps1` 在阶段间执行真实 `adb force-stop`，验证新进程仍读取相同故障、有效状态和 desired enabled 状态。 |
+| 统一设备入口 | ✅ | 同一脚本运行两套关键 instrumentation suite，校验单设备、测试结果和 force-stop 后 PID，并在结束时停止测试进程、卸载测试 APK 和回收 Gradle daemon。 |
+| 长期 CI | 🟡 需设备 runner | `.github/workflows/plugin-device-gate.yml` 提供手动自托管设备门禁；runner 必须带 `android-device` 标签。没有连接设备或测试被跳过时不计为通过。 |
+| 真实 PRoot LSP | 保留人工/条件式验收 | 仍依赖 ABI、发行版和 toolchain 资产，不并入普通插件 instrumentation；`assumeTrue` 跳过不等于通过。 |
+
+### 4.6 本阶段不做
 
 - 不引入动态 DEX、远程插件代码或新的 Marketplace 协议。
 - 不为每个插件创建独立常驻进程。

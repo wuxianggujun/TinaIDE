@@ -2,9 +2,12 @@ package com.wuxianggujun.tinaide.plugin.runtime
 
 import android.app.Service
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.os.Debug
 import android.os.IBinder
 import android.os.Process
+import android.system.Os
+import android.system.OsConstants
 import com.wuxianggujun.tinaide.core.serialization.JsonSerializer
 import com.wuxianggujun.tinaide.plugin.runtime.ipc.IPluginHostBridge
 import com.wuxianggujun.tinaide.plugin.runtime.ipc.IPluginRuntimeCallback
@@ -95,6 +98,13 @@ class PluginRuntimeService : Service() {
 
         override fun terminate() {
             Process.killProcess(Process.myPid())
+        }
+
+        override fun crashWithSigsegvForTest() {
+            check(applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+                "Native crash injection is restricted to debuggable builds"
+            }
+            Os.kill(Process.myPid(), OsConstants.SIGSEGV)
         }
     }
 

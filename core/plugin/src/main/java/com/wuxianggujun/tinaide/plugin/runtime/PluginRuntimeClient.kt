@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
+import android.content.pm.ApplicationInfo
 import android.os.IBinder
 import android.os.ParcelFileDescriptor
 import com.wuxianggujun.tinaide.core.serialization.JsonSerializer
@@ -233,6 +234,12 @@ internal class PluginRuntimeClient(
     internal fun requestRuntimeProcessTermination(): Boolean {
         val service = serviceRef.get() ?: return false
         return runCatching { service.terminate() }.isSuccess
+    }
+
+    internal fun requestRuntimeNativeCrashForTest(): Boolean {
+        if (appContext.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return false
+        val service = serviceRef.get() ?: return false
+        return runCatching { service.crashWithSigsegvForTest() }.isSuccess
     }
 
     private fun terminateRuntimeAfterFault() {
