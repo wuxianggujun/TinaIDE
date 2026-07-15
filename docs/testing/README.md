@@ -1,6 +1,6 @@
 # TinaIDE 测试文档
 
-> 最后人工核验：2026-07-15
+> 最后人工核验：2026-07-16
 
 本目录只保留当前仍值得固定维护的测试入口说明。
 
@@ -31,6 +31,26 @@ py tools/checks/check_documentation.py
 - 第一组覆盖 popup 组件 smoke、共享 anchor/layout 回归、`EditorOverlays` 组合场景。
 - 第二组覆盖设备侧补全框、签名提示、选择菜单 popup 的稳定 tag 与交互回归。
 
+## 插件 JVM 稳定性门禁
+
+插件 manifest、权限、Script API、隔离状态机、安装事务、LSP owner 和 Marketplace 回归统一运行：
+
+```powershell
+./gradlew :core:plugin:testDebugUnitTest --no-daemon --console=plain
+```
+
+2026-07-15 的基线为 39 个测试套件、176 项测试，要求 0 failures、0 errors、0 skipped。
+其中包含 workspace 确定性排序、runtime unavailable 单次加载、权限授予后激活，以及并发故障写入线程回收。
+教程目录/文章状态和帮助全文搜索属于 app/feature 帮助测试，不计入这 176 项。测试数变化时应核对 XML，而不是只看 Gradle 的 `BUILD SUCCESSFUL`。
+
+`Dev Static Checks` 会运行该任务并继续编译 `:app:compileArm64DebugKotlin`。插件 JVM 步骤失败时会上传：
+
+- `core/plugin/build/test-results/testDebugUnitTest/`
+- `core/plugin/build/reports/tests/testDebugUnitTest/`
+
+制品名为 `plugin-jvm-test-reports-<run_id>-<run_attempt>`，保留 14 天；成功运行不会上传失败报告。
+最近一次确认的成功记录为 run `29429731887`（提交 `e6635f737`）。
+
 ## 插件设备稳定性门禁
 
 连接一台 ADB 设备后，在仓库根目录运行：
@@ -47,6 +67,9 @@ pwsh ./tools/testing/plugin-device-gate.ps1
 - `prepare -> adb force-stop -> verify` 两阶段真实进程重启后的 quarantine 持久化。
 
 脚本只操作 `com.wuxianggujun.tinaide.core.plugin.test` 测试包，不会清除 TinaIDE 主 App 数据；结束时默认 force-stop 并卸载测试包，同时停止本轮 Gradle daemon。已提前构建时可传 `-SkipBuild`，排查时可传 `-KeepTestApp` 保留测试包。多设备环境必须传 `-Serial <device>`。
+
+结果解析要求精确测试数；`0 tests`、ignored/assumption skip、instrumentation runner failure、阶段数量不匹配或 force-stop 后测试包进程仍存在均判定失败。手动 workflow 无论成功失败都会上传
+`plugin-device-gate-<run_id>-<run_attempt>`，保留 14 天，内容包括设备信息、原始 instrumentation 输出、logcat、阶段汇总和 verdict。
 
 GitHub Actions 的 `Plugin Device Stability Gate` 是手动触发任务，目标 runner 必须带有 `self-hosted`、`Windows`、`X64`、`android-device` 标签并连接可用设备。未配置设备 runner 时不要把工作流排队状态当作测试通过。
 

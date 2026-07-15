@@ -109,6 +109,8 @@ if files == nil then
 end
 ```
 
+`findFiles` sorts `/`-separated workspace-relative paths before applying the result limit. As long as the scan cap is not reached, the same tree produces the same first N items across creation orders and host file systems. If a large workspace reaches the 50,000-entry scan cap, the result represents only the scanned set and is not a complete index.
+
 A permission denial is not a runtime crash and does not trigger quarantine.
 
 ## Verification loop

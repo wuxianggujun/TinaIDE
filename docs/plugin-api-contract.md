@@ -128,11 +128,12 @@ locale 文件只覆盖用户可见字段，不覆盖 `id`、`version`、`type`�
 | --- | --- | --- | --- |
 | `readFile(path)` | `workspace.read` / `file.read` | 稳定 | 成功返回文本；失败返回 `nil, error`。 |
 | `writeFile(path, content)` | `workspace.write` / `file.write` | 稳定 | 成功返回 `true`；失败返回 `false, error`。 |
-| `findFiles(pattern, maxResults)` | `workspace.read` / `file.read` | 稳定 | 返回相对路径数组；`pattern` 支持 `*`、`?`、`**/`，默认 `**/*`，结果最多 1000 条。 |
+| `findFiles(pattern, maxResults)` | `workspace.read` / `file.read` | 稳定 | 返回按相对路径升序排列的数组；`pattern` 支持 `*`、`?`、`**/`，默认 `**/*`，结果最多 1000 条。 |
 
 工作区 API 只接受项目相对路径，Unix、Windows drive 和 UNC 绝对路径都会被拒绝。
 `findFiles` 会跳过符号链接和常见重目录：`.git`、`.gradle`、`.idea`、`.cxx`、`build`、`node_modules`；
-为避免插件触发无界目录遍历，单次调用最多扫描 50,000 项，超大工作区应使用更具体的 pattern。
+为避免插件触发无界目录遍历，单次调用最多扫描 50,000 项；触及上限后停止枚举，返回值只代表已扫描集合中的匹配项，不是完整工作区索引。
+匹配项统一转换为 `/` 相对路径并排序后才应用 `maxResults`；对未触及扫描上限的相同目录树，不会因宿主文件系统遍历顺序不同而返回不同前 N 项。
 
 ### `tina.editor.*`
 

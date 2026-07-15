@@ -1,6 +1,6 @@
 # 插件教程验收清单
 
-> 文档更新：2026-07-15
+> 文档更新：2026-07-16
 > 目标：把“插件教程是否真的可用”变成可复查的验收项，避免后续再次回落到普通新建项目、普通 C/C++ 运行链路或旧命令模型。
 
 ---
@@ -270,6 +270,16 @@ CompileActionsHelper
 4. `main.lua` 在插件加载时调用 `tina.commands.register(...)` 注册同一个命令 ID。
 5. 插件成功启用，并且运行时没有加载错误。
 
+### 7.3 Workspace 搜索与运行时状态
+
+Script API 教程使用 `tina.workspace.findFiles()` 时还应满足：
+
+1. 返回值只包含项目相对路径，并统一使用 `/`。
+2. 未触及 50,000 项扫描上限的相同目录树，在不同文件创建顺序和 Windows/Linux 文件系统上返回相同排序。
+3. `maxResults` 在稳定排序后应用，不能因为遍历顺序不同而得到不同前 N 项。
+4. runtime service 暂时不可用时，插件保持启用意愿并显示 `RUNTIME_UNAVAILABLE`，不产生 fault 或 quarantine。
+5. 缺少必需权限时保持 `WAITING_PERMISSION`；授予权限后只执行一次加载并进入 `ACTIVE`。
+
 ---
 
 ## 8. 常见失败与排查入口
@@ -349,6 +359,16 @@ CompileActionsHelper
 - `TutorialArticleLoadStateTest`
   - 教程文章成功、缺失、空白、失败和异常状态均可重复验证；协程取消继续向上传播，不伪装成加载错误。
   - 界面重试按钮复用同一加载状态机；实际点击后的重新加载由 Compose UI / 真机走查确认。
+- `PluginWorkspaceFileAccessTest`
+  - 反向创建同一批文件时，排序和 `maxResults` 结果仍完全一致。
+- `ScriptPluginManagerTest`
+  - runtime unavailable 不隔离插件且首次只调用一次 load。
+  - `WAITING_PERMISSION` 在授权后进入 `ACTIVE`，并且只加载一次。
+- `PluginFaultStoreTest`
+  - 并发故障写入保留全部插件记录；整组 deadline 结束后 executor 必须退出，不得污染后续测试。
+
+插件 JVM 门禁必须全部通过；当前测试数和最近一次远端成功记录统一维护在 `docs/testing/README.md`，
+避免验收清单复制易变计数。JVM/静态门禁不替代本清单中的真实设备教程走查和 instrumentation。
 
 ---
 

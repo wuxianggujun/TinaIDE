@@ -1,6 +1,6 @@
 # 插件系统路线图（Roadmap）
 
-> 文档更新：2026-07-15
+> 文档更新：2026-07-16
 > 目标：以 **配置插件优先** 的方式逐步扩展 TinaIDE 插件能力（Play 合规、低风险、可维护）。
 
 ---
@@ -345,13 +345,27 @@ interface HostCommand {
 | isolated runtime native crash | ✅ 代码完成 | `PluginRuntimeIsolationInstrumentedTest` 通过内部 debuggable-only Binder 测试入口向 `:plugin_runtime` 发送真实 `SIGSEGV`，断言宿主 PID 保持、故障插件进入 `QUARANTINED / RUNTIME_CRASH`、健康插件在替换后的 runtime PID 恢复。测试入口不属于公开 Plugin API，非 debuggable 构建拒绝执行。 |
 | force-stop/relaunch quarantine | ✅ 代码完成 | `PluginQuarantinePersistenceInstrumentedTest` 提供 prepare/verify 两阶段，`tools/testing/plugin-device-gate.ps1` 在阶段间执行真实 `adb force-stop`，验证新进程仍读取相同故障、有效状态和 desired enabled 状态。 |
 | 统一设备入口 | ✅ | 同一脚本运行两套关键 instrumentation suite，校验单设备、force-stop 后 PID 和每个阶段的精确测试数；`0 tests`、ignored/assumption skip、runner failure、数量不匹配均明确失败。每次运行保留 instrumentation 原始输出、设备信息、logcat、汇总和 verdict 诊断制品，并在结束时停止测试进程、卸载测试 APK 和回收 Gradle daemon。 |
-| 长期 CI | 🟡 设备基础设施待接入 | `dev-static-check.yml` 已纳入 `:core:plugin:testDebugUnitTest`，插件 JVM 回归不再只靠本地执行；`.github/workflows/plugin-device-gate.yml` 已准备严格结果判定和诊断制品上传。设备门禁仍需先在默认分支完成 workflow 注册，并配置带 `android-device` 标签的 self-hosted Android 设备 runner；这两项属于仓库/设备基础设施待办，完成前不能把 workflow 代码存在视为真机门禁已运行。 |
+| JVM 长期 CI | ✅ | `dev-static-check.yml` 固定执行 `:core:plugin:testDebugUnitTest` 与 App Kotlin 编译；失败时上传并保留 14 天的插件测试 XML/HTML 报告。提交 `e6635f737` 对应的 `Dev Static Checks` run `29429731887` 已成功，当前快照为 176 项 JVM 测试且无失败、错误或跳过。 |
+| 设备长期 CI | 🟡 设备基础设施待接入 | `.github/workflows/plugin-device-gate.yml` 已准备严格结果判定和诊断制品上传，但仍需在默认分支完成 workflow 注册，并配置带 `android-device` 标签的 self-hosted Android 设备 runner。完成前不能把 workflow 文件存在或排队状态视为真机门禁已运行。 |
 | 真实 PRoot LSP | 保留人工/条件式验收 | 仍依赖 ABI、发行版和 toolchain 资产，不并入普通插件 instrumentation；`assumeTrue` 跳过不等于通过。 |
 
 门禁口径：JVM CI 已可长期执行；设备 workflow 的脚本和判定逻辑已就绪，但默认分支注册与 self-hosted
 设备 runner 尚未完成，因此本节不新增任何真机验收结论。
 
-### 4.6 本阶段不做
+### 4.6 JVM 稳定性与确定性收口（2026-07-15）
+
+| 能力 | 状态 | 当前结果 |
+|------|------|----------|
+| 教程加载与全文搜索 | ✅ | 教程目录和正文分别建模 Loading/Empty/Error/Content；正文失败提供重试。帮助搜索统一使用 `language:documentId` 缓存键，避免正文关键词漏搜和中英文缓存串用。 |
+| workspace 搜索确定性 | ✅ | `tina.workspace.findFiles()` 在最多扫描 50,000 项的资源边界内收集匹配结果，统一按 `/` 相对路径排序后再应用 `maxResults`；未触及扫描上限的相同目录树在 Windows/Linux 和不同创建顺序下返回相同前 N 项。 |
+| script runtime 首次同步 | ✅ | 插件状态与权限流使用单一 `combine` 同步入口，首次只加载一次；后续权限授予/撤销仍触发同步。runtime service 不可用保持 `RUNTIME_UNAVAILABLE`，不会因第二次加载短暂回退到 `LOADING`，也不会误隔离插件。 |
+| 测试进程隔离 | ✅ | 故障存储并发回归采用整组 20 秒 deadline，并在结束时等待 executor 退出；协程取消不再被普通 `Throwable` 分支吞掉，避免伪错误和跨测试线程污染。 |
+| CI 失败可诊断性 | ✅ | 插件 JVM 步骤失败时自动上传 `core/plugin` 的 XML 与 HTML 测试报告；成功运行不生成无意义制品。 |
+
+以上收口不修改 manifest schema、公开 `apiVersion 1`、Registry v2/v3 选择协议或插件持久化结构，
+旧 IDE 与旧插件兼容边界保持不变。
+
+### 4.7 本阶段不做
 
 - 不引入动态 DEX、远程插件代码或新的 Marketplace 协议。
 - 不为每个插件创建独立常驻进程。

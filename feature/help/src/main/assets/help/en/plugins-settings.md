@@ -30,6 +30,10 @@ The marketplace only exposes versions supported by the current IDE. A newer rele
 
 Optional permissions are never granted by the declaration alone. Grant or revoke each one in the **Optional permission grants** card. Future related API calls are denied immediately after revocation.
 
+When required permissions are missing, a script plugin remains **Waiting for permission**. Grant changes automatically re-evaluate its state; it becomes active only when it is enabled, not quarantined, has all required permissions, and the host plugin runtime infrastructure is available.
+
+**Runtime unavailable** means that the host plugin runtime infrastructure cannot execute safely, for example because the isolated runtime service or execution-record storage is unavailable. It is not quarantine, does not create a plugin fault, and does not clear your enable intent. No risk confirmation is required; the plugin becomes active only after a later runtime-recovery path or state/permission synchronization successfully loads it.
+
 ## Install from file
 
 Select a .tinaplug package with the system picker. Imports over 64 MiB are stopped while copying. Script and hybrid plugins that request user-approved permissions display a confirmation before installation; low-risk required permissions are granted automatically in the same install transaction. Rejecting the request also removes the temporary import, and a failed installation restores the previous grants. A successful new installation remains disabled until you explicitly enable it.

@@ -39,6 +39,8 @@
 - `contributions.panels` 与 `tina.panels.*` 进入 apiVersion 1 稳定契约，脚本可向编辑器底部插件面板发布有界纯文本；`optionalPermissions` 支持详情页按需授权/撤销，`activationEvents` 收敛为 LSP 的 `onLanguage:<id>` 语义。
 - Host capability gateway 拆出数据能力、SQLite 与 Binder 大载荷存储边界，运行时死亡会统一清理数据库、限流器、临时载荷和面板内容。
 - 插件市场切换到 Registry v3 完整版本历史，按当前 IDE 版本和 Plugin API 选择最高兼容版本；Registry v2 保留为 `0.17.11 + API v1` 旧宿主兼容视图，v2/v3 共用不可变插件制品。
+- 插件教程目录和文章正文增加明确的加载、空、失败与重试状态，帮助全文搜索统一使用带语言维度的正文缓存；文章阅读进度不再显示没有计算依据的 `0%`。
+- `Dev Static Checks` 固定执行插件 JVM 回归与 App Kotlin 编译，并在失败时上传插件测试 XML/HTML 报告，便于定位仅在 CI 环境出现的失败。
 
 ### Fixed
 
@@ -47,11 +49,26 @@
 - 修复 `tina.events.emit` 空实现、未知事件可注册、重复订阅和插件可伪造宿主事件的问题；自定义事件现在只定向派发给当前插件。
 - 修复 LSP owner 已停止后编辑器仍显示 `LSP Ready`，以及旧 attach callback 可能干扰新会话的问题。
 - 修复旧 IDE 仍可能看到不兼容插件更新、宿主刷新后保留不兼容插件启用态，以及卸载清理中断时过早删除降级安全禁用标记的问题。
+- 修复 `tina.workspace.findFiles()` 在未触及 50,000 项扫描上限时，因不同文件系统遍历顺序返回不同前 N 项的问题；结果现在统一按相对路径排序后再应用数量上限。
+- 修复插件状态与权限两个 `StateFlow` 首次回放导致同一 script 插件重复加载，以及 runtime 不可用状态可能短暂回退为 `LOADING` 的竞态；权限后续变更仍会触发一次同步。
+- 修复插件故障存储并发测试超时后遗留执行线程、污染后续运行时测试的问题，并让协程取消继续向上传播而不是记录为插件启动错误。
 
 ### Tests
 
 - 新增面板内容隔离/UTF-8 上限、manifest panels/activationEvents 校验、optionalPermissions 显式授权、事件契约、LSP owner-stop 代际和底部面板可见性测试。
 - 新增 Registry v3 代理/详情/下载协议、Marketplace 兼容版本回退与宿主安装/启用兼容门禁测试。
+- 新增教程目录/文章状态与双语正文搜索缓存回归。
+- 插件模块新增 workspace 确定性排序、runtime unavailable 单次加载和等待权限后激活回归；当前 `core:plugin` 快照为 176 项 JVM 测试且无失败、错误或跳过。
+
+### Documentation
+
+- 同步插件路线图、教程维护记录、端到端验收清单、测试入口、API 合同和中英文 App 内帮助，明确 JVM CI 已运行、设备 workflow 仍待默认分支注册与自托管设备 runner。
+
+### Verification
+
+- 已执行 `./gradlew :core:plugin:testDebugUnitTest --no-daemon --console=plain`，39 个测试套件、176 项测试全部通过。
+- 已执行 `./gradlew :core:plugin:ktlintCheck --no-daemon --console=plain`。
+- GitHub Actions `Dev Static Checks` run `29429731887` 已通过插件 JVM 回归与 `:app:compileArm64DebugKotlin`。
 
 ## [0.18.11] - 2026-07-13
 

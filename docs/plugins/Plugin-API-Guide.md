@@ -217,7 +217,7 @@ Lua 不再运行在 TinaIDE 主进程。宿主通过 Binder 调用非导出的 `
 
 - `readFile` 成功返回文本；失败返回 `nil, error`
 - `writeFile` 成功返回 `true`；失败返回 `false, error`
-- `findFiles` 返回相对路径数组，路径统一使用 `/`
+- `findFiles` 返回相对路径数组，路径统一使用 `/`，并按相对路径升序排列
 
 约束：
 
@@ -225,6 +225,8 @@ Lua 不再运行在 TinaIDE 主进程。宿主通过 Binder 调用非导出的 `
 - 不允许路径逃逸
 - `findFiles` 支持 `*`、`?`、`**/`
 - `findFiles` 会跳过 `.git`、`.gradle`、`.idea`、`.cxx`、`build`、`node_modules`
+- `maxResults` 默认 200，限制在 1 到 1000；匹配项排序后才截取前 N 项，未触及扫描上限的同一目录树不受 Windows/Linux 遍历顺序影响
+- 单次调用最多扫描 50,000 项；触及上限时结果只覆盖已扫描集合，不能当作完整工作区索引
 
 权限：
 
