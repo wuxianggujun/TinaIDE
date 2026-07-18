@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -119,6 +120,7 @@ fun HelpScreen(
                         isLoading = uiState.isLoadingContent,
                         onCreatePluginProject = onCreatePluginProject,
                         onOpenPluginSettings = onOpenPluginSettings,
+                        onRetry = viewModel::retrySelectedDocument,
                         onLinkClick = { target ->
                             if (target.startsWith("#")) {
                                 return@HelpDocumentContent
@@ -232,11 +234,6 @@ private fun HelpDocumentList(
                         Text(
                             text = stringResource(Strings.help_no_documents),
                             style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = stringResource(Strings.help_loading),
-                            style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -427,12 +424,13 @@ private fun HelpDocumentCard(
  * 文档内容显示
  */
 @Composable
-private fun HelpDocumentContent(
+internal fun HelpDocumentContent(
     document: HelpDocument,
     content: String?,
     isLoading: Boolean,
     onCreatePluginProject: () -> Unit,
     onOpenPluginSettings: () -> Unit,
+    onRetry: () -> Unit,
     onLinkClick: (String) -> Unit,
 ) {
     if (isLoading) {
@@ -466,10 +464,18 @@ private fun HelpDocumentContent(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center
         ) {
-            Text(
-                text = stringResource(Strings.help_load_failed),
-                color = MaterialTheme.colorScheme.error
-            )
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(TinaSpacing.md),
+            ) {
+                Text(
+                    text = stringResource(Strings.help_load_failed),
+                    color = MaterialTheme.colorScheme.error
+                )
+                Button(onClick = onRetry) {
+                    Text(text = stringResource(Strings.action_retry))
+                }
+            }
         }
     }
 }
