@@ -345,7 +345,7 @@ interface HostCommand {
 | isolated runtime native crash | ✅ 代码完成 | `PluginRuntimeIsolationInstrumentedTest` 通过内部 debuggable-only Binder 测试入口向 `:plugin_runtime` 发送真实 `SIGSEGV`，断言宿主 PID 保持、故障插件进入 `QUARANTINED / RUNTIME_CRASH`、健康插件在替换后的 runtime PID 恢复。测试入口不属于公开 Plugin API，非 debuggable 构建拒绝执行。 |
 | force-stop/relaunch quarantine | ✅ 代码完成 | `PluginQuarantinePersistenceInstrumentedTest` 提供 prepare/verify 两阶段，`tools/testing/plugin-device-gate.ps1` 在阶段间执行真实 `adb force-stop`，验证新进程仍读取相同故障、有效状态和 desired enabled 状态。 |
 | 统一设备入口 | ✅ | 同一脚本运行两套关键 instrumentation suite，校验单设备、force-stop 后 PID 和每个阶段的精确测试数；`0 tests`、ignored/assumption skip、runner failure、数量不匹配均明确失败。每次运行保留 instrumentation 原始输出、设备信息、logcat、汇总和 verdict 诊断制品，并在结束时停止测试进程、卸载测试 APK 和回收 Gradle daemon。 |
-| JVM 长期 CI | ✅ | `dev-static-check.yml` 固定执行 `:core:plugin:testDebugUnitTest`、`:feature:help:testDebugUnitTest`、`:feature:tutorial:testDebugUnitTest` 和 App 教程文章状态测试；教程门禁任务同时完成 App Kotlin 编译，失败时上传并保留 14 天的插件/教程 XML/HTML 报告。插件核心快照仍为 176 项 JVM 测试且无失败、错误或跳过，教程测试单独统计，避免混淆基线。 |
+| JVM 长期 CI | ✅ | `dev-static-check.yml` 固定执行 `:core:plugin:testDebugUnitTest`、`:feature:help:testDebugUnitTest`、`:feature:tutorial:testDebugUnitTest` 和 App 教程文章状态测试；教程门禁任务同时完成 App Kotlin 编译，失败时上传并保留 14 天的插件/教程 XML/HTML 报告。提交 `76173ebe4` 对应的 run `29691804039` 已完整通过两个 Gradle 步骤和进程清理；插件核心快照仍为 176 项 JVM 测试，教程测试单独统计，避免混淆基线。 |
 | 设备长期 CI | 🟡 设备基础设施待接入 | `.github/workflows/plugin-device-gate.yml` 已准备严格结果判定和诊断制品上传，但仍需在默认分支完成 workflow 注册，并配置带 `android-device` 标签的 self-hosted Android 设备 runner。完成前不能把 workflow 文件存在或排队状态视为真机门禁已运行。 |
 | 真实 PRoot LSP | 保留人工/条件式验收 | 仍依赖 ABI、发行版和 toolchain 资产，不并入普通插件 instrumentation；`assumeTrue` 跳过不等于通过。 |
 

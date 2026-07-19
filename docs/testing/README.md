@@ -57,7 +57,7 @@ GitHub Actions 的 `CI=true` 配置只使用官方 Google/Maven Central/Gradle P
 - `app/build/reports/tests/testArm64DebugUnitTest/`
 
 制品名为 `plugin-jvm-test-reports-<run_id>-<run_attempt>`，保留 14 天；成功运行不会上传失败报告。
-最近一次确认的成功记录为 run `29429731887`（提交 `e6635f737`）。
+最近一次确认的成功记录为 run `29691804039`（提交 `76173ebe4`）；插件、帮助、教程和 App 文章状态两个 Gradle 步骤及最终 Gradle 进程清理均成功。
 
 ## 教程与帮助 JVM 稳定性门禁
 

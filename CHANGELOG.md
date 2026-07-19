@@ -70,7 +70,7 @@
 
 - 已执行 `./gradlew :core:plugin:testDebugUnitTest --no-daemon --console=plain`，39 个测试套件、176 项测试全部通过。
 - 已执行 `./gradlew :core:plugin:ktlintCheck --no-daemon --console=plain`。
-- GitHub Actions `Dev Static Checks` run `29429731887` 已通过插件 JVM 回归与 `:app:compileArm64DebugKotlin`。
+- GitHub Actions `Dev Static Checks` run `29691804039`（提交 `76173ebe4`）已通过插件、帮助、教程 JVM 回归、App 教程文章状态测试与最终 Gradle 进程清理。
 
 ## [0.18.11] - 2026-07-13
 
