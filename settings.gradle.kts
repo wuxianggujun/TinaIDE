@@ -81,31 +81,22 @@ pluginManagement {
     }
     val preferOfficialRepositories = System.getenv("CI").equals("true", ignoreCase = true)
     repositories {
-        if (preferOfficialRepositories) {
-            google {
+        if (!preferOfficialRepositories) {
+            // Windows/国内网络环境下，Maven Central 偶发 TLS 握手失败时优先走镜像。
+            maven("https://maven.aliyun.com/repository/google") {
+                name = "AliyunGoogleMirror"
                 content {
                     includeGroupByRegex("com\\.android.*")
                     includeGroupByRegex("com\\.google.*")
                     includeGroupByRegex("androidx.*")
                 }
             }
-            mavenCentral()
-            gradlePluginPortal()
-        }
-        // Windows/国内网络环境下，Maven Central 偶发 TLS 握手失败时优先走镜像。
-        maven("https://maven.aliyun.com/repository/google") {
-            name = "AliyunGoogleMirror"
-            content {
-                includeGroupByRegex("com\\.android.*")
-                includeGroupByRegex("com\\.google.*")
-                includeGroupByRegex("androidx.*")
+            maven("https://maven.aliyun.com/repository/public") {
+                name = "AliyunPublicMirror"
             }
-        }
-        maven("https://maven.aliyun.com/repository/public") {
-            name = "AliyunPublicMirror"
-        }
-        maven("https://maven.aliyun.com/repository/gradle-plugin") {
-            name = "AliyunGradlePluginMirror"
+            maven("https://maven.aliyun.com/repository/gradle-plugin") {
+                name = "AliyunGradlePluginMirror"
+            }
         }
         google {
             content {
@@ -161,21 +152,19 @@ dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     val preferOfficialRepositories = System.getenv("CI").equals("true", ignoreCase = true)
     repositories {
-        if (preferOfficialRepositories) {
-            google()
-            mavenCentral()
-        }
-        // Windows/国内网络环境下，Maven Central 偶发 TLS 握手失败时优先走镜像。
-        maven("https://maven.aliyun.com/repository/google") {
-            name = "AliyunGoogleMirror"
-            content {
-                includeGroupByRegex("com\\.android.*")
-                includeGroupByRegex("com\\.google.*")
-                includeGroupByRegex("androidx.*")
+        if (!preferOfficialRepositories) {
+            // Windows/国内网络环境下，Maven Central 偶发 TLS 握手失败时优先走镜像。
+            maven("https://maven.aliyun.com/repository/google") {
+                name = "AliyunGoogleMirror"
+                content {
+                    includeGroupByRegex("com\\.android.*")
+                    includeGroupByRegex("com\\.google.*")
+                    includeGroupByRegex("androidx.*")
+                }
             }
-        }
-        maven("https://maven.aliyun.com/repository/public") {
-            name = "AliyunPublicMirror"
+            maven("https://maven.aliyun.com/repository/public") {
+                name = "AliyunPublicMirror"
+            }
         }
         google()
         mavenCentral()

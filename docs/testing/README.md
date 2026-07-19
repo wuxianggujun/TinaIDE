@@ -45,6 +45,8 @@ py tools/checks/check_documentation.py
 
 `Dev Static Checks` 会运行该任务，并额外固定执行教程/帮助 JVM 回归和 App 教程文章状态测试。插件、教程或帮助 JVM 步骤失败时会上传：
 
+GitHub Actions 的 `CI=true` 配置只使用官方 Google/Maven Central/Gradle Plugin Portal，避免动态版本解析被国内镜像的临时 metadata 错误阻断；本地非 CI 环境仍保留 Aliyun 镜像优先策略。
+
 - `core/plugin/build/test-results/testDebugUnitTest/`
 - `core/plugin/build/reports/tests/testDebugUnitTest/`
 - `feature/help/build/test-results/testDebugUnitTest/`
