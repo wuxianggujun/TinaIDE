@@ -10,1209 +10,7 @@ import kotlin.math.ln
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-internal data class HexBinaryAnalysis(
-    val fileKind: HexFileKind,
-    val fileSize: Long,
-    val fingerprint: HexFileFingerprint? = null,
-    val byteFrequency: HexByteFrequencySummary? = null,
-    val repeatedByteRuns: List<HexRepeatedByteRun> = emptyList(),
-    val magicSignatures: List<HexMagicSignatureMatch> = emptyList(),
-    val elf: HexElfSummary? = null,
-    val dex: HexDexSummary? = null,
-    val archive: HexArchiveSummary? = null,
-    val strings: List<HexStringEntry> = emptyList(),
-    val entropy: List<HexEntropyBucket> = emptyList(),
-    val entropyVisualBuckets: List<HexEntropyVisualBucket> = emptyList(),
-    val obfuscationFindings: List<HexObfuscationFinding> = emptyList(),
-    val signals: List<HexAnalysisSignal> = emptyList()
-)
-
-internal data class HexFileFingerprint(
-    val sha256: String,
-    val sha1: String,
-    val md5: String,
-    val crc32: Long,
-    val byteCount: Long
-)
-
-internal data class HexByteFrequencySummary(
-    val totalBytes: Long,
-    val uniqueByteValues: Int,
-    val zeroBytes: Long,
-    val ffBytes: Long,
-    val printableAsciiBytes: Long,
-    val controlBytes: Long,
-    val topBytes: List<HexByteFrequencyEntry>
-)
-
-internal data class HexByteFrequencyEntry(
-    val byteValue: Int,
-    val count: Long,
-    val ratio: Double
-)
-
-internal data class HexRepeatedByteRun(
-    val byteValue: Int,
-    val startOffset: Long,
-    val length: Long
-)
-
-internal data class HexMagicSignatureMatch(
-    val kind: HexMagicSignatureKind,
-    val offset: Long,
-    val signatureLength: Int
-)
-
-internal enum class HexMagicSignatureKind {
-    ELF,
-    DEX,
-    ZIP_LOCAL_FILE,
-    ZIP_CENTRAL_DIRECTORY,
-    ZIP_EOCD,
-    PNG,
-    JPEG,
-    ANDROID_RESOURCES,
-    SQLITE
-}
-
-private data class HexFileScanSummary(
-    val fingerprint: HexFileFingerprint,
-    val byteFrequency: HexByteFrequencySummary,
-    val repeatedByteRuns: List<HexRepeatedByteRun>,
-    val magicSignatures: List<HexMagicSignatureMatch>
-)
-
-private data class HexMagicSignatureDefinition(
-    val kind: HexMagicSignatureKind,
-    val bytes: IntArray
-)
-
-internal enum class HexFileKind {
-    ELF,
-    DEX,
-    APK,
-    ZIP,
-    PNG,
-    JPEG,
-    UNKNOWN
-}
-
-internal data class HexDexSummary(
-    val version: String,
-    val checksum: Long,
-    val signatureHex: String,
-    val fileSizeFromHeader: Long,
-    val headerSize: Long,
-    val endianTag: Long,
-    val mapOffset: Long,
-    val stringIdsSize: Int,
-    val stringIdsOffset: Long,
-    val typeIdsSize: Int,
-    val typeIdsOffset: Long,
-    val protoIdsSize: Int,
-    val protoIdsOffset: Long,
-    val fieldIdsSize: Int,
-    val fieldIdsOffset: Long,
-    val methodIdsSize: Int,
-    val methodIdsOffset: Long,
-    val classDefsSize: Int,
-    val classDefsOffset: Long,
-    val dataSize: Long,
-    val dataOffset: Long,
-    val stringEntries: List<HexDexStringEntry> = emptyList(),
-    val typeEntries: List<HexDexTypeEntry> = emptyList(),
-    val protoEntries: List<HexDexProtoEntry> = emptyList(),
-    val fieldEntries: List<HexDexFieldEntry> = emptyList(),
-    val methodEntries: List<HexDexMethodEntry> = emptyList(),
-    val classDefEntries: List<HexDexClassDefEntry> = emptyList(),
-    val classDataMethodEntries: List<HexDexClassDataMethodEntry> = emptyList(),
-    val codeItemEntries: List<HexDexCodeItemEntry> = emptyList(),
-    val callReferenceEntries: List<HexDexCallReferenceEntry> = emptyList(),
-    val stringReferenceEntries: List<HexDexStringReferenceEntry> = emptyList(),
-    val fieldReferenceEntries: List<HexDexFieldReferenceEntry> = emptyList(),
-    val mapEntries: List<HexDexMapEntry> = emptyList()
-) {
-    val nativeMethodCount: Int
-        get() = classDataMethodEntries.count { entry ->
-            entry.executionKind == HexDexClassDataMethodExecutionKind.NATIVE
-        }
-}
-
-internal data class HexDexStringEntry(
-    val index: Int,
-    val stringIdOffset: Long,
-    val dataOffset: Long,
-    val value: String
-)
-
-internal data class HexDexTypeEntry(
-    val index: Int,
-    val typeIdOffset: Long,
-    val descriptorStringIndex: Long,
-    val descriptor: String
-)
-
-internal data class HexDexProtoEntry(
-    val index: Int,
-    val protoIdOffset: Long,
-    val shortyStringIndex: Long,
-    val shorty: String,
-    val returnTypeIndex: Long,
-    val returnTypeDescriptor: String,
-    val parametersOffset: Long,
-    val parameterTypeDescriptors: List<String>,
-    val signature: String
-)
-
-internal data class HexDexFieldEntry(
-    val index: Int,
-    val fieldIdOffset: Long,
-    val classIndex: Int,
-    val classDescriptor: String,
-    val typeIndex: Int,
-    val typeDescriptor: String,
-    val nameStringIndex: Long,
-    val name: String
-)
-
-internal data class HexDexMethodEntry(
-    val index: Int,
-    val methodIdOffset: Long,
-    val classIndex: Int,
-    val classDescriptor: String,
-    val protoIndex: Int,
-    val protoShorty: String,
-    val protoSignature: String,
-    val nameStringIndex: Long,
-    val name: String
-)
-
-internal data class HexDexClassDefEntry(
-    val index: Int,
-    val classDefOffset: Long,
-    val classIndex: Long,
-    val classDescriptor: String,
-    val accessFlags: Long,
-    val superclassIndex: Long?,
-    val superclassDescriptor: String?,
-    val interfacesOffset: Long,
-    val sourceFileIndex: Long?,
-    val sourceFile: String?,
-    val annotationsOffset: Long,
-    val classDataOffset: Long,
-    val staticValuesOffset: Long
-)
-
-internal data class HexDexClassDataMethodEntry(
-    val index: Int,
-    val classDefIndex: Int,
-    val classDescriptor: String,
-    val kind: HexDexClassDataMethodKind,
-    val methodIndex: Long,
-    val methodName: String,
-    val methodClassDescriptor: String,
-    val protoSignature: String,
-    val accessFlags: Long,
-    val classDataOffset: Long,
-    val entryOffset: Long,
-    val codeOffset: Long,
-    val executionKind: HexDexClassDataMethodExecutionKind = dexClassDataMethodExecutionKind(
-        accessFlags = accessFlags,
-        codeOffset = codeOffset
-    )
-)
-
-internal enum class HexDexClassDataMethodKind {
-    DIRECT,
-    VIRTUAL
-}
-
-internal enum class HexDexClassDataMethodExecutionKind {
-    CODE,
-    NATIVE,
-    ABSTRACT,
-    NO_CODE
-}
-
-internal data class HexDexCodeItemEntry(
-    val index: Int,
-    val methodIndex: Long,
-    val methodName: String,
-    val methodClassDescriptor: String,
-    val protoSignature: String,
-    val codeOffset: Long,
-    val registersSize: Int,
-    val insSize: Int,
-    val outsSize: Int,
-    val triesSize: Int,
-    val debugInfoOffset: Long,
-    val insnsSize: Long,
-    val firstOpcode: Int,
-    val firstOpcodeName: String,
-    val previewCodeUnitsHex: String
-)
-
-internal data class HexDexCallReferenceEntry(
-    val index: Int,
-    val callerMethodIndex: Long,
-    val callerClassDescriptor: String,
-    val callerMethodName: String,
-    val callerProtoSignature: String,
-    val targetMethodIndex: Long,
-    val targetClassDescriptor: String,
-    val targetMethodName: String,
-    val targetProtoSignature: String,
-    val opcode: Int,
-    val opcodeName: String,
-    val instructionOffset: Long,
-    val codeOffset: Long,
-    val targetMethodIdOffset: Long?
-)
-
-internal data class HexDexStringReferenceEntry(
-    val index: Int,
-    val callerMethodIndex: Long,
-    val callerClassDescriptor: String,
-    val callerMethodName: String,
-    val callerProtoSignature: String,
-    val stringIndex: Long,
-    val value: String,
-    val opcode: Int,
-    val opcodeName: String,
-    val instructionOffset: Long,
-    val codeOffset: Long,
-    val stringIdOffset: Long?,
-    val stringDataOffset: Long?
-)
-
-internal data class HexDexFieldReferenceEntry(
-    val index: Int,
-    val callerMethodIndex: Long,
-    val callerClassDescriptor: String,
-    val callerMethodName: String,
-    val callerProtoSignature: String,
-    val fieldIndex: Long,
-    val fieldClassDescriptor: String,
-    val fieldName: String,
-    val fieldTypeDescriptor: String,
-    val opcode: Int,
-    val opcodeName: String,
-    val instructionOffset: Long,
-    val codeOffset: Long,
-    val fieldIdOffset: Long?
-)
-
-internal data class HexDexMapEntry(
-    val index: Int,
-    val type: Int,
-    val typeName: String,
-    val size: Long,
-    val offset: Long,
-    val entryFileOffset: Long
-)
-
-internal enum class DexMapEntryFilter {
-    ALL,
-    IDS,
-    CLASS_DATA,
-    CODE,
-    DATA
-}
-
-internal data class HexArchiveSummary(
-    val entries: List<HexArchiveEntry>,
-    val embeddedDexFiles: List<HexArchiveDexSummary> = emptyList(),
-    val nativeLibrarySummaries: List<HexArchiveNativeLibrarySummary> = emptyList(),
-    val signingBlockEntries: List<HexArchiveSigningBlockEntry> = emptyList(),
-    val manifestSummary: HexArchiveManifestSummary? = null,
-    val resourcesSummary: HexArchiveResourcesSummary? = null,
-    val zipStructure: HexArchiveZipStructure? = null
-) {
-    val dexFiles: List<HexArchiveEntry>
-        get() = entries.filter { entry -> entry.name.endsWith(".dex", ignoreCase = true) }
-
-    val nativeLibraries: List<HexArchiveEntry>
-        get() = entries.filter { entry ->
-            entry.name.startsWith("lib/", ignoreCase = true) && entry.name.endsWith(".so", ignoreCase = true)
-        }
-
-    val manifest: HexArchiveEntry?
-        get() = entries.firstOrNull { entry -> entry.name.equals("AndroidManifest.xml", ignoreCase = true) }
-
-    val resources: List<HexArchiveEntry>
-        get() = entries.filter { entry ->
-            entry.name.equals("resources.arsc", ignoreCase = true) || entry.name.startsWith("res/", ignoreCase = true)
-        }
-
-    val signatureFiles: List<HexArchiveEntry>
-        get() = entries.filter { entry -> entry.name.startsWith("META-INF/", ignoreCase = true) }
-}
-
-internal data class HexArchiveZipStructure(
-    val eocdOffset: Long,
-    val centralDirectoryOffset: Long,
-    val centralDirectorySize: Long,
-    val entryCount: Int,
-    val commentLength: Int,
-    val zip64LocatorOffset: Long? = null
-)
-
-internal data class HexArchiveEntry(
-    val index: Int,
-    val name: String,
-    val generalPurposeBitFlag: Int,
-    val compressionMethod: Int,
-    val crc32: Long,
-    val compressedSize: Long,
-    val uncompressedSize: Long,
-    val localHeaderOffset: Long,
-    val centralDirectoryOffset: Long,
-    val dataOffset: Long? = null,
-    val dataEndOffset: Long? = null,
-    val dataRangeStatus: HexArchiveEntryDataRangeStatus = HexArchiveEntryDataRangeStatus.UNKNOWN,
-    val localHeaderName: String? = null,
-    val localHeaderGeneralPurposeBitFlag: Int? = null,
-    val localHeaderCompressionMethod: Int? = null,
-    val localHeaderConsistency: HexArchiveEntryLocalHeaderConsistency = HexArchiveEntryLocalHeaderConsistency.UNKNOWN,
-    val nameRisks: Set<HexArchiveEntryNameRisk> = emptySet()
-) {
-    val usesDataDescriptor: Boolean
-        get() = (generalPurposeBitFlag and ZIP_GENERAL_PURPOSE_DATA_DESCRIPTOR_FLAG) != 0
-}
-
-internal enum class HexArchiveEntryDataRangeStatus {
-    OK,
-    UNKNOWN,
-    OUT_OF_FILE,
-    OVERLAPS_CENTRAL_DIRECTORY
-}
-
-internal enum class HexArchiveEntryLocalHeaderConsistency {
-    OK,
-    UNKNOWN,
-    NAME_MISMATCH,
-    METADATA_MISMATCH,
-    MULTIPLE_MISMATCHES
-}
-
-internal enum class HexArchiveEntryNameRisk {
-    EMPTY_NAME,
-    DUPLICATE_NAME,
-    ABSOLUTE_PATH,
-    WINDOWS_DRIVE_PATH,
-    PATH_TRAVERSAL,
-    BACKSLASH_SEPARATOR
-}
-
-private data class ZipEntryLocalHeader(
-    val name: String,
-    val generalPurposeBitFlag: Int,
-    val compressionMethod: Int,
-    val dataOffset: Long
-)
-
-internal data class HexArchiveNativeLibrarySummary(
-    val entryName: String,
-    val abi: String,
-    val fileName: String,
-    val localHeaderOffset: Long,
-    val dataOffset: Long?,
-    val compressionMethod: Int,
-    val crc32: Long,
-    val compressedSize: Long,
-    val uncompressedSize: Long,
-    val analyzedBytes: Long,
-    val truncated: Boolean,
-    val isElf: Boolean,
-    val is64Bit: Boolean? = null,
-    val endian: HexEndian? = null,
-    val machineName: String? = null,
-    val loadMode: HexArchiveNativeLoadMode = HexArchiveNativeLoadMode.UNKNOWN,
-    val pageAlignmentRemainder: Long? = null,
-    val obfuscationMarkers: List<HexArchiveNativeObfuscationMarker> = emptyList()
-)
-
-internal enum class HexArchiveNativeLoadMode {
-    DIRECT_MMAP_READY,
-    STORED_UNALIGNED,
-    NEEDS_DECOMPRESSION,
-    UNKNOWN
-}
-
-internal enum class ArchiveNativeLibraryLoadModeFilter {
-    ALL,
-    DIRECT_MMAP_READY,
-    STORED_UNALIGNED,
-    NEEDS_DECOMPRESSION,
-    UNKNOWN
-}
-
-internal data class HexArchiveNativeObfuscationMarker(
-    val type: HexObfuscationFindingType,
-    val evidence: String,
-    val relativeOffset: Long?
-)
-
-internal data class HexArchiveManifestSummary(
-    val entryName: String,
-    val localHeaderOffset: Long,
-    val analyzedBytes: Long,
-    val truncated: Boolean,
-    val stringCount: Int,
-    val elementCount: Int,
-    val rootElementName: String?,
-    val packageName: String?,
-    val permissions: List<String>
-)
-
-internal data class HexArchiveResourcesSummary(
-    val entryName: String,
-    val localHeaderOffset: Long,
-    val analyzedBytes: Long,
-    val truncated: Boolean,
-    val packageCountFromHeader: Int,
-    val globalStringCount: Int,
-    val typeSpecCount: Int,
-    val typeChunkCount: Int,
-    val packages: List<HexArchiveResourcePackage>
-)
-
-internal data class HexArchiveResourcePackage(
-    val id: Int,
-    val name: String,
-    val typeStringCount: Int,
-    val keyStringCount: Int,
-    val typeSpecCount: Int,
-    val typeChunkCount: Int
-)
-
-internal data class HexArchiveDexSummary(
-    val entryName: String,
-    val localHeaderOffset: Long,
-    val analyzedBytes: Long,
-    val truncated: Boolean,
-    val dex: HexDexSummary
-)
-
-internal data class HexArchiveSigningBlockEntry(
-    val index: Int,
-    val id: Long,
-    val idName: String,
-    val valueSize: Long,
-    val blockOffset: Long,
-    val blockSize: Long,
-    val pairOffset: Long,
-    val valueOffset: Long
-)
-
-internal enum class ArchiveEntryFilter {
-    ALL,
-    DEX,
-    NATIVE_LIBRARIES,
-    MANIFEST,
-    RESOURCES,
-    SIGNATURE
-}
-
-internal enum class HexEndian {
-    LITTLE,
-    BIG
-}
-
-internal data class HexElfSummary(
-    val is64Bit: Boolean,
-    val endian: HexEndian,
-    val type: Int,
-    val machine: Int,
-    val machineName: String,
-    val entryPoint: Long,
-    val programHeaderCount: Int,
-    val sectionHeaderCount: Int,
-    val sectionNames: List<String>,
-    val sections: List<HexElfSection> = emptyList(),
-    val noteEntries: List<HexElfNoteEntry> = emptyList(),
-    val programHeaders: List<HexElfProgramHeader> = emptyList(),
-    val loadSegments: List<HexElfLoadSegment> = emptyList(),
-    val sectionSegmentMappings: List<HexElfSectionSegmentMapping> = emptyList(),
-    val sectionEntropyEntries: List<HexElfSectionEntropyEntry> = emptyList(),
-    val hardeningChecks: List<HexElfHardeningCheck> = emptyList(),
-    val riskFindings: List<HexElfRiskFinding> = emptyList(),
-    val dynamicSymbols: List<HexElfSymbol> = emptyList(),
-    val dynamicStringEntries: List<HexElfDynamicStringEntry> = emptyList(),
-    val dynamicFlagEntries: List<HexElfDynamicFlagEntry> = emptyList(),
-    val initArrayEntries: List<HexElfInitArrayEntry> = emptyList(),
-    val relocations: List<HexElfRelocationEntry> = emptyList(),
-    val linkageEntries: List<HexElfLinkageEntry> = emptyList(),
-    val dynamicLinkerSteps: List<HexElfDynamicLinkerStep> = emptyList(),
-    val nativeApiHints: List<HexElfNativeApiHint> = emptyList(),
-    val jniRegistrationHints: List<HexElfJniRegistrationHint> = emptyList()
-) {
-    val entryFileOffset: Long?
-        get() = virtualAddressToFileOffset(entryPoint)
-
-    val importedSymbols: List<HexElfSymbol>
-        get() = dynamicSymbols.filter { it.isImported }
-
-    val exportedSymbols: List<HexElfSymbol>
-        get() = dynamicSymbols.filter { it.isExported }
-
-    val jniSymbols: List<HexElfSymbol>
-        get() = dynamicSymbols.filter { it.isJni }
-
-    val neededLibraries: List<HexElfDynamicStringEntry>
-        get() = dynamicStringEntries.filter { it.type == HexElfDynamicStringType.NEEDED }
-
-    val soname: HexElfDynamicStringEntry?
-        get() = dynamicStringEntries.firstOrNull { it.type == HexElfDynamicStringType.SONAME }
-
-    val runtimeSearchPaths: List<HexElfDynamicStringEntry>
-        get() = dynamicStringEntries.filter {
-            it.type == HexElfDynamicStringType.RPATH || it.type == HexElfDynamicStringType.RUNPATH
-        }
-
-    val buildId: HexElfNoteEntry?
-        get() = noteEntries.firstOrNull { it.isBuildId }
-
-    val gnuPropertyNotes: List<HexElfNoteEntry>
-        get() = noteEntries.filter { it.properties.isNotEmpty() }
-
-    fun virtualAddressToFileOffset(virtualAddress: Long): Long? = loadSegments.firstNotNullOfOrNull { segment ->
-        segment.virtualAddressToFileOffset(virtualAddress)
-    }
-}
-
-internal data class HexElfNoteEntry(
-    val index: Int,
-    val sectionName: String,
-    val name: String,
-    val type: Long,
-    val noteFileOffset: Long,
-    val descriptionOffset: Long,
-    val descriptionSize: Long,
-    val descriptionHex: String,
-    val descriptionText: String?,
-    val isBuildId: Boolean,
-    val properties: List<HexElfNotePropertyEntry> = emptyList()
-)
-
-internal data class HexElfNotePropertyEntry(
-    val index: Int,
-    val type: Long,
-    val typeName: String,
-    val value: Long,
-    val valueHex: String,
-    val propertyOffset: Long,
-    val dataOffset: Long,
-    val dataSize: Long,
-    val features: List<HexElfNotePropertyFeature> = emptyList()
-)
-
-internal enum class HexElfNotePropertyFeature {
-    X86_IBT,
-    X86_SHSTK,
-    AARCH64_BTI,
-    AARCH64_PAC
-}
-
-internal data class HexElfProgramHeader(
-    val index: Int,
-    val type: Long,
-    val typeName: String,
-    val programHeaderFileOffset: Long,
-    val fileOffset: Long,
-    val virtualAddress: Long,
-    val physicalAddress: Long,
-    val fileSize: Long,
-    val memorySize: Long,
-    val flags: Int,
-    val align: Long
-) {
-    val isLoad: Boolean
-        get() = type == ELF_PROGRAM_TYPE_LOAD.toLong()
-
-    val isExecutable: Boolean
-        get() = flags.hasElfProgramFlag(ELF_PROGRAM_FLAG_EXECUTE)
-
-    val isWritable: Boolean
-        get() = flags.hasElfProgramFlag(ELF_PROGRAM_FLAG_WRITE)
-
-    val isReadable: Boolean
-        get() = flags.hasElfProgramFlag(ELF_PROGRAM_FLAG_READ)
-
-    fun toLoadSegment(): HexElfLoadSegment? {
-        if (!isLoad) return null
-        return HexElfLoadSegment(
-            fileOffset = fileOffset,
-            virtualAddress = virtualAddress,
-            fileSize = fileSize,
-            memorySize = memorySize,
-            flags = flags
-        )
-    }
-}
-
-internal data class HexElfHardeningCheck(
-    val type: HexElfHardeningType,
-    val enabled: Boolean,
-    val evidenceFileOffset: Long?
-)
-
-internal enum class HexElfHardeningType {
-    PIE,
-    NX,
-    RELRO,
-    BIND_NOW,
-    IBT,
-    SHSTK,
-    BTI,
-    PAC
-}
-
-internal data class HexElfRiskFinding(
-    val index: Int,
-    val type: HexElfRiskFindingType,
-    val severity: HexElfRiskSeverity,
-    val evidenceFileOffset: Long?,
-    val detailValue: String? = null
-)
-
-internal enum class HexElfRiskSeverity {
-    INFO,
-    WARNING,
-    HIGH
-}
-
-internal enum class HexElfRiskFindingType {
-    RWX_LOAD_SEGMENT,
-    WRITABLE_EXECUTABLE_SECTION,
-    EXECUTABLE_STACK,
-    MISSING_RELRO,
-    MISSING_BIND_NOW,
-    LEGACY_RPATH,
-    RUNPATH_PRESENT,
-    MISSING_SONAME
-}
-
-internal data class HexElfDynamicStringEntry(
-    val index: Int,
-    val type: HexElfDynamicStringType,
-    val value: String,
-    val entryFileOffset: Long,
-    val loadOrder: Int? = null,
-    val semantic: HexElfDynamicStringSemantic = HexElfDynamicStringSemantic.UNKNOWN
-)
-
-internal enum class HexElfDynamicStringType {
-    NEEDED,
-    SONAME,
-    RPATH,
-    RUNPATH
-}
-
-internal enum class HexElfDynamicStringSemantic {
-    NEEDED_LIBRARY_LOAD,
-    SONAME_IDENTITY,
-    LEGACY_RPATH_SEARCH,
-    RUNPATH_SEARCH,
-    UNKNOWN
-}
-
-internal data class HexElfDynamicFlagEntry(
-    val index: Int,
-    val type: HexElfDynamicFlagType,
-    val value: Long,
-    val entryFileOffset: Long,
-    val isBindNow: Boolean
-)
-
-internal enum class HexElfDynamicFlagType {
-    BIND_NOW,
-    FLAGS,
-    FLAGS_1
-}
-
-internal data class HexElfInitArrayEntry(
-    val index: Int,
-    val pointerFileOffset: Long,
-    val functionAddress: Long,
-    val functionFileOffset: Long?
-)
-
-internal data class HexElfRelocationEntry(
-    val index: Int,
-    val sectionName: String,
-    val relocationFileOffset: Long,
-    val offsetAddress: Long,
-    val offsetFileOffset: Long?,
-    val targetSectionName: String?,
-    val symbolName: String?,
-    val symbolBinding: HexElfSymbolBinding?,
-    val symbolType: HexElfSymbolType?,
-    val isSymbolImported: Boolean,
-    val isSymbolExported: Boolean,
-    val isSymbolJni: Boolean,
-    val symbolIndex: Long,
-    val type: Long,
-    val typeName: String?,
-    val semantic: HexElfRelocationSemantic = HexElfRelocationSemantic.OTHER,
-    val addend: Long?
-)
-
-internal data class HexElfLinkageEntry(
-    val index: Int,
-    val symbolName: String?,
-    val symbolIndex: Long,
-    val relocationSectionName: String,
-    val relocationTypeName: String?,
-    val relocationFileOffset: Long,
-    val slotAddress: Long,
-    val slotFileOffset: Long?,
-    val slotSectionName: String?,
-    val symbolBinding: HexElfSymbolBinding?,
-    val symbolType: HexElfSymbolType?,
-    val isImported: Boolean,
-    val isExported: Boolean,
-    val isJni: Boolean,
-    val entryKind: HexElfLinkageEntryKind,
-    val bindingMode: HexElfLinkageBindingMode,
-    val resolutionSemantic: HexElfLinkageResolutionSemantic = HexElfLinkageResolutionSemantic.LOCAL_RELOCATION,
-    val pltStub: HexElfPltStub? = null
-)
-
-internal data class HexElfPltStub(
-    val fileOffset: Long,
-    val virtualAddress: Long,
-    val byteCount: Int,
-    val instructionBytes: String,
-    val architecture: HexElfPltStubArchitecture,
-    val semantic: HexElfPltStubSemantic,
-    val slotFileOffset: Long?,
-    val slotAddress: Long?
-)
-
-internal enum class HexElfPltStubArchitecture {
-    AARCH64,
-    X86_64
-}
-
-internal enum class HexElfPltStubSemantic {
-    LOAD_GOT_SLOT_AND_BRANCH,
-    UNKNOWN
-}
-
-internal enum class HexElfRelocationSemantic {
-    JUMP_SLOT_BINDING,
-    GLOB_DAT_ADDRESS,
-    RELATIVE_REBASE,
-    COPY_RELOCATION,
-    ABSOLUTE_ADDRESS,
-    PC_RELATIVE_ADDRESS,
-    OTHER
-}
-
-internal data class HexElfDynamicLinkerStep(
-    val index: Int,
-    val type: HexElfDynamicLinkerStepType,
-    val evidenceFileOffset: Long?,
-    val relatedCount: Int,
-    val detailValue: String?
-)
-
-internal enum class HexElfLinkageEntryKind {
-    PLT,
-    GOT,
-    RELATIVE,
-    OTHER
-}
-
-internal enum class HexElfLinkageBindingMode {
-    NOW,
-    LAZY,
-    LOAD_TIME,
-    LOCAL
-}
-
-internal enum class HexElfLinkageResolutionSemantic {
-    EAGER_PLT_BINDING,
-    LAZY_PLT_CALL,
-    LOAD_TIME_GOT_WRITE,
-    RELATIVE_REBASE,
-    LOCAL_RELOCATION
-}
-
-internal enum class HexElfDynamicLinkerStepType {
-    MAP_LOAD_SEGMENTS,
-    LOAD_NEEDED_LIBRARIES,
-    APPLY_RELOCATIONS,
-    RESOLVE_NOW_BINDINGS,
-    ENABLE_LAZY_PLT,
-    PROTECT_RELRO,
-    CALL_INIT_ARRAY,
-    EXPOSE_JNI_ENTRYPOINTS
-}
-
-internal data class HexElfNativeApiHint(
-    val index: Int,
-    val category: HexElfNativeApiCategory,
-    val symbolName: String,
-    val evidenceFileOffset: Long?
-)
-
-internal enum class HexElfNativeApiCategory {
-    DYNAMIC_LOADING,
-    MEMORY_PROTECTION,
-    PROCESS_CONTROL,
-    FILE_IO,
-    NETWORK,
-    CRYPTO,
-    THREADING,
-    LOGGING
-}
-
-internal data class HexElfJniRegistrationHint(
-    val index: Int,
-    val type: HexElfJniRegistrationHintType,
-    val evidenceFileOffset: Long?,
-    val symbolName: String? = null,
-    val stringValue: String? = null
-)
-
-internal enum class HexElfJniRegistrationHintType {
-    REGISTER_NATIVES_SYMBOL,
-    REGISTER_NATIVES_STRING,
-    JNI_ONLOAD_ENTRY,
-    JNI_ONUNLOAD_ENTRY,
-    STATIC_JNI_EXPORT,
-    JAVA_CLASS_DESCRIPTOR,
-    JNI_METHOD_SIGNATURE
-}
-
-internal data class HexElfSection(
-    val index: Int,
-    val name: String,
-    val type: Long,
-    val flags: Long,
-    val virtualAddress: Long,
-    val fileOffset: Long,
-    val size: Long,
-    val link: Int,
-    val entrySize: Long
-)
-
-internal data class HexElfLoadSegment(
-    val fileOffset: Long,
-    val virtualAddress: Long,
-    val fileSize: Long,
-    val memorySize: Long,
-    val flags: Int
-) {
-    fun virtualAddressToFileOffset(address: Long): Long? {
-        if (fileSize <= 0L || address < virtualAddress) return null
-        val relativeOffset = address - virtualAddress
-        if (relativeOffset !in 0 until fileSize) return null
-        return fileOffset + relativeOffset
-    }
-}
-
-internal data class HexElfSectionSegmentMapping(
-    val index: Int,
-    val sectionIndex: Int,
-    val sectionName: String,
-    val sectionFileOffset: Long,
-    val sectionSize: Long,
-    val sectionVirtualAddress: Long,
-    val segmentIndex: Int,
-    val segmentTypeName: String,
-    val segmentFileOffset: Long,
-    val segmentFileSize: Long,
-    val segmentVirtualAddress: Long,
-    val segmentMemorySize: Long,
-    val segmentFlags: Int,
-    val isExecutable: Boolean,
-    val isWritable: Boolean,
-    val isReadable: Boolean
-)
-
-internal data class HexElfSectionEntropyEntry(
-    val index: Int,
-    val sectionIndex: Int,
-    val sectionName: String,
-    val fileOffset: Long,
-    val size: Long,
-    val virtualAddress: Long,
-    val sampleSize: Long,
-    val entropy: Double,
-    val level: HexEntropyLevel,
-    val isAllocated: Boolean,
-    val isExecutable: Boolean,
-    val isWritable: Boolean
-)
-
-internal data class HexElfSymbol(
-    val name: String,
-    val value: Long,
-    val fileOffset: Long?,
-    val size: Long,
-    val binding: HexElfSymbolBinding,
-    val type: HexElfSymbolType,
-    val sectionIndex: Int,
-    val isImported: Boolean,
-    val isExported: Boolean,
-    val isJni: Boolean,
-    val sectionName: String? = null,
-    val sectionFileOffset: Long? = null,
-    val sectionSize: Long? = null
-)
-
-internal enum class HexElfSymbolBinding {
-    LOCAL,
-    GLOBAL,
-    WEAK,
-    OTHER
-}
-
-internal enum class HexElfSymbolType {
-    NOTYPE,
-    OBJECT,
-    FUNC,
-    SECTION,
-    FILE,
-    TLS,
-    OTHER
-}
-
-internal enum class ElfSectionFilter {
-    ALL,
-    ALLOCATED,
-    EXECUTABLE,
-    WRITABLE,
-    STRING_TABLE,
-    SYMBOL_TABLE
-}
-
-internal enum class ElfProgramHeaderFilter {
-    ALL,
-    LOAD,
-    EXECUTABLE,
-    WRITABLE,
-    DYNAMIC,
-    HARDENING
-}
-
-internal enum class ElfSectionSegmentFilter {
-    ALL,
-    EXECUTABLE,
-    WRITABLE,
-    READABLE
-}
-
-internal enum class ElfSymbolFilter {
-    ALL,
-    IMPORTED,
-    EXPORTED,
-    JNI
-}
-
-internal enum class ElfDynamicEntryFilter {
-    ALL,
-    NEEDED,
-    SONAME,
-    RPATH,
-    RUNPATH
-}
-
-internal enum class ElfDynamicFlagFilter {
-    ALL,
-    BIND_NOW,
-    FLAGS,
-    FLAGS_1
-}
-
-internal enum class ElfNoteFilter {
-    ALL,
-    BUILD_ID,
-    GNU,
-    ANDROID
-}
-
-internal enum class ElfRelocationFilter {
-    ALL,
-    PLT,
-    DYNAMIC
-}
-
-internal enum class ElfLinkageFilter {
-    ALL,
-    IMPORTS,
-    PLT,
-    GOT,
-    JNI,
-    NOW,
-    LAZY
-}
-
-internal enum class ElfDynamicLinkerStepFilter {
-    ALL,
-    LOADING,
-    RELOCATIONS,
-    BINDING,
-    HARDENING,
-    ENTRYPOINTS
-}
-
-internal enum class ElfRiskFilter {
-    ALL,
-    HIGH,
-    WARNING,
-    HARDENING,
-    SEGMENTS,
-    PATHS,
-    METADATA
-}
-
-internal enum class ElfJniHintFilter {
-    ALL,
-    REGISTER_NATIVES,
-    ENTRYPOINTS,
-    STATIC_EXPORTS,
-    DESCRIPTORS
-}
-
-internal enum class ElfNativeApiFilter {
-    ALL,
-    DYNAMIC_LOADING,
-    MEMORY,
-    PROCESS,
-    FILE,
-    NETWORK,
-    CRYPTO,
-    THREADING,
-    LOGGING
-}
-
-internal data class HexStringEntry(
-    val offset: Long,
-    val value: String,
-    val encoding: HexStringEncoding = HexStringEncoding.ASCII
-)
-
-internal enum class HexStringEncoding {
-    ASCII,
-    UTF_8,
-    UTF_16LE,
-    UTF_16BE
-}
-
-internal enum class StringEntryEncodingFilter {
-    ALL,
-    ASCII,
-    UTF_8,
-    UTF_16LE,
-    UTF_16BE
-}
-
-internal data class HexEntropyBucket(
-    val startOffset: Long,
-    val endOffset: Long,
-    val entropy: Double
-)
-
-internal data class HexEntropyVisualBucket(
-    val startOffset: Long,
-    val endOffset: Long,
-    val entropy: Double,
-    val normalizedHeight: Float,
-    val level: HexEntropyLevel
-)
-
-internal enum class HexEntropyLevel {
-    LOW,
-    MEDIUM,
-    HIGH
-}
-
-internal enum class EntropyBucketFilter {
-    ALL,
-    LOW,
-    MEDIUM,
-    HIGH
-}
-
-internal data class HexObfuscationFinding(
-    val type: HexObfuscationFindingType,
-    val confidence: HexFindingConfidence,
-    val evidence: String,
-    val offset: Long? = null
-)
-
-internal enum class HexObfuscationFindingType {
-    OLLVM_MARKER,
-    CONTROL_FLOW_FLATTENING_MARKER,
-    BOGUS_CONTROL_FLOW_MARKER,
-    INSTRUCTION_SUBSTITUTION_MARKER,
-    ANTI_DEBUG_HEURISTIC,
-    ANTI_INSTRUMENTATION_HEURISTIC,
-    PROTECTOR_PACKER_MARKER,
-    STRING_OBFUSCATION_HEURISTIC,
-    STRIPPED_SYMBOLS_HEURISTIC
-}
-
-internal enum class HexFindingConfidence {
-    LOW,
-    MEDIUM,
-    HIGH
-}
-
-internal data class HexAnalysisSignal(
-    val type: HexAnalysisSignalType,
-    val offset: Long? = null
-)
-
-internal enum class HexAnalysisSignalType {
-    HIGH_ENTROPY_REGION,
-    ELF_PROGRAM_HEADERS,
-    ELF_SECTION_SEGMENTS,
-    ELF_SECTION_ENTROPY,
-    ELF_HARDENING_WARNING,
-    ELF_GNU_PROPERTY,
-    ELF_INIT_ARRAY,
-    ELF_DYNAMIC_SYMBOLS,
-    ELF_DYNAMIC_DEPENDENCIES,
-    ELF_NOTES,
-    ELF_BUILD_ID,
-    ELF_RELOCATIONS,
-    ELF_LINKAGE,
-    ELF_DYNAMIC_LINKER_STEPS,
-    ELF_RISK_FINDINGS,
-    ELF_NATIVE_API_HINTS,
-    ELF_JNI_REGISTRATION_HINTS,
-    ELF_JNI_SYMBOLS,
-    ELF_RODATA,
-    OBFUSCATION_RISK,
-    DEX_FILE,
-    DEX_HEADER,
-    DEX_TYPE_IDS,
-    DEX_PROTO_IDS,
-    DEX_FIELD_IDS,
-    DEX_METHOD_IDS,
-    DEX_CLASS_DEFS,
-    DEX_CLASS_DATA,
-    DEX_NATIVE_METHODS,
-    DEX_CODE_ITEMS,
-    DEX_CALL_REFERENCES,
-    DEX_STRING_REFERENCES,
-    DEX_FIELD_REFERENCES,
-    DEX_MAP_LIST,
-    APK_FILE,
-    APK_MANIFEST,
-    APK_DEX_FILES,
-    APK_EMBEDDED_DEX_SUMMARIES,
-    APK_NATIVE_LIBRARIES,
-    APK_ZIP_STRUCTURE,
-    APK_SIGNING_BLOCK
-}
-
-private data class HexObfuscationEvidence(
+internal data class HexObfuscationEvidence(
     val value: String,
     val normalizedValue: String,
     val offset: Long? = null
@@ -1279,7 +77,7 @@ internal fun detectFileKind(file: File, header: ByteArray): HexFileKind = when {
     else -> HexFileKind.UNKNOWN
 }
 
-private fun scanFileSummary(file: File): HexFileScanSummary {
+internal fun scanFileSummary(file: File): HexFileScanSummary {
     val sha256 = MessageDigest.getInstance("SHA-256")
     val sha1 = MessageDigest.getInstance("SHA-1")
     val md5 = MessageDigest.getInstance("MD5")
@@ -1418,7 +216,7 @@ private fun scanFileSummary(file: File): HexFileScanSummary {
     )
 }
 
-private fun MutableList<HexRepeatedByteRun>.trimToLongestRepeatedByteRuns() {
+internal fun MutableList<HexRepeatedByteRun>.trimToLongestRepeatedByteRuns() {
     if (size <= MAX_REPEATED_BYTE_RUN_ENTRIES) return
     val longestRuns = sortedWith(
         compareByDescending<HexRepeatedByteRun> { it.length }
@@ -1429,467 +227,7 @@ private fun MutableList<HexRepeatedByteRun>.trimToLongestRepeatedByteRuns() {
     addAll(longestRuns)
 }
 
-internal fun filterStringEntries(
-    entries: List<HexStringEntry>,
-    query: String,
-    encodingFilter: StringEntryEncodingFilter = StringEntryEncodingFilter.ALL,
-    limit: Int = MAX_STRING_RESULTS
-): List<HexStringEntry> {
-    if (limit <= 0) return emptyList()
-    val trimmedQuery = query.trim()
-    return entries.asSequence()
-        .filter { entry -> encodingFilter.matches(entry.encoding) }
-        .filter { entry -> entry.matchesQuery(trimmedQuery) }
-        .sortedWith(compareBy<HexStringEntry> { it.offset }.thenBy { it.encoding.ordinal }.thenBy { it.value })
-        .take(limit)
-        .toList()
-}
-
-internal fun formatStringEntriesExport(entries: List<HexStringEntry>): String = entries.joinToString(separator = "\n") { entry ->
-    "0x%08X\t%s\t%s".format(
-        entry.offset,
-        entry.encoding.exportLabel,
-        entry.value.escapeForTabSeparatedExport()
-    )
-}
-
-internal fun filterElfSections(
-    sections: List<HexElfSection>,
-    query: String,
-    sectionFilter: ElfSectionFilter = ElfSectionFilter.ALL,
-    limit: Int = MAX_ELF_SECTION_HEADERS
-): List<HexElfSection> {
-    if (limit <= 0) return emptyList()
-    val trimmedQuery = query.trim()
-    return sections.asSequence()
-        .filter { section -> sectionFilter.matches(section) }
-        .filter { section -> section.matchesQuery(trimmedQuery) }
-        .take(limit)
-        .toList()
-}
-
-internal fun filterElfProgramHeaders(
-    programHeaders: List<HexElfProgramHeader>,
-    query: String,
-    programHeaderFilter: ElfProgramHeaderFilter = ElfProgramHeaderFilter.ALL,
-    limit: Int = MAX_ELF_PROGRAM_HEADERS
-): List<HexElfProgramHeader> {
-    if (limit <= 0) return emptyList()
-    val trimmedQuery = query.trim()
-    return programHeaders.asSequence()
-        .filter { programHeader -> programHeaderFilter.matches(programHeader) }
-        .filter { programHeader -> programHeader.matchesQuery(trimmedQuery) }
-        .take(limit)
-        .toList()
-}
-
-internal fun filterElfSectionSegmentMappings(
-    mappings: List<HexElfSectionSegmentMapping>,
-    query: String,
-    sectionSegmentFilter: ElfSectionSegmentFilter = ElfSectionSegmentFilter.ALL,
-    limit: Int = MAX_ELF_SECTION_SEGMENT_MAPPINGS
-): List<HexElfSectionSegmentMapping> {
-    if (limit <= 0) return emptyList()
-    val trimmedQuery = query.trim()
-    return mappings.asSequence()
-        .filter { mapping -> sectionSegmentFilter.matches(mapping) }
-        .filter { mapping -> mapping.matchesQuery(trimmedQuery) }
-        .take(limit)
-        .toList()
-}
-
-internal fun filterElfSectionEntropyEntries(
-    entries: List<HexElfSectionEntropyEntry>,
-    query: String,
-    entropyFilter: EntropyBucketFilter = EntropyBucketFilter.ALL,
-    limit: Int = MAX_ELF_SECTION_ENTROPY_ENTRIES
-): List<HexElfSectionEntropyEntry> {
-    if (limit <= 0) return emptyList()
-    val trimmedQuery = query.trim()
-    return entries.asSequence()
-        .filter { entry -> entropyFilter.matches(entry.level) }
-        .filter { entry -> entry.matchesQuery(trimmedQuery) }
-        .take(limit)
-        .toList()
-}
-
-internal fun filterElfSymbols(
-    symbols: List<HexElfSymbol>,
-    query: String,
-    symbolFilter: ElfSymbolFilter = ElfSymbolFilter.ALL,
-    limit: Int = MAX_ELF_SYMBOLS
-): List<HexElfSymbol> {
-    if (limit <= 0) return emptyList()
-    val trimmedQuery = query.trim()
-    return symbols.asSequence()
-        .filter { symbol -> symbolFilter.matches(symbol) }
-        .filter { symbol -> symbol.matchesQuery(trimmedQuery) }
-        .take(limit)
-        .toList()
-}
-
-internal fun filterElfDynamicEntries(
-    entries: List<HexElfDynamicStringEntry>,
-    query: String,
-    dynamicEntryFilter: ElfDynamicEntryFilter = ElfDynamicEntryFilter.ALL,
-    limit: Int = MAX_ELF_DYNAMIC_ENTRIES
-): List<HexElfDynamicStringEntry> {
-    if (limit <= 0) return emptyList()
-    val trimmedQuery = query.trim()
-    return entries.asSequence()
-        .filter { entry -> dynamicEntryFilter.matches(entry) }
-        .filter { entry -> entry.matchesQuery(trimmedQuery) }
-        .take(limit)
-        .toList()
-}
-
-internal fun filterElfDynamicFlags(
-    entries: List<HexElfDynamicFlagEntry>,
-    query: String,
-    dynamicFlagFilter: ElfDynamicFlagFilter = ElfDynamicFlagFilter.ALL,
-    limit: Int = MAX_ELF_DYNAMIC_ENTRIES
-): List<HexElfDynamicFlagEntry> {
-    if (limit <= 0) return emptyList()
-    val trimmedQuery = query.trim()
-    return entries.asSequence()
-        .filter { entry -> dynamicFlagFilter.matches(entry) }
-        .filter { entry -> entry.matchesQuery(trimmedQuery) }
-        .take(limit)
-        .toList()
-}
-
-internal fun filterElfNotes(
-    notes: List<HexElfNoteEntry>,
-    query: String,
-    noteFilter: ElfNoteFilter = ElfNoteFilter.ALL,
-    limit: Int = MAX_ELF_NOTES
-): List<HexElfNoteEntry> {
-    if (limit <= 0) return emptyList()
-    val trimmedQuery = query.trim()
-    return notes.asSequence()
-        .filter { note -> noteFilter.matches(note) }
-        .filter { note -> note.matchesQuery(trimmedQuery) }
-        .take(limit)
-        .toList()
-}
-
-internal fun filterElfRelocations(
-    relocations: List<HexElfRelocationEntry>,
-    query: String,
-    relocationFilter: ElfRelocationFilter = ElfRelocationFilter.ALL,
-    limit: Int = MAX_ELF_RELOCATIONS
-): List<HexElfRelocationEntry> {
-    if (limit <= 0) return emptyList()
-    val trimmedQuery = query.trim()
-    return relocations.asSequence()
-        .filter { relocation -> relocationFilter.matches(relocation) }
-        .filter { relocation -> relocation.matchesQuery(trimmedQuery) }
-        .take(limit)
-        .toList()
-}
-
-internal fun filterElfLinkageEntries(
-    entries: List<HexElfLinkageEntry>,
-    query: String,
-    linkageFilter: ElfLinkageFilter = ElfLinkageFilter.ALL,
-    limit: Int = MAX_ELF_LINKAGE_ENTRIES
-): List<HexElfLinkageEntry> {
-    if (limit <= 0) return emptyList()
-    val trimmedQuery = query.trim()
-    return entries.asSequence()
-        .filter { entry -> linkageFilter.matches(entry) }
-        .filter { entry -> entry.matchesQuery(trimmedQuery) }
-        .take(limit)
-        .toList()
-}
-
-internal fun filterElfDynamicLinkerSteps(
-    steps: List<HexElfDynamicLinkerStep>,
-    query: String,
-    stepFilter: ElfDynamicLinkerStepFilter = ElfDynamicLinkerStepFilter.ALL,
-    limit: Int = MAX_ELF_DYNAMIC_LINKER_STEPS
-): List<HexElfDynamicLinkerStep> {
-    if (limit <= 0) return emptyList()
-    val trimmedQuery = query.trim()
-    return steps.asSequence()
-        .filter { step -> stepFilter.matches(step) }
-        .filter { step -> step.matchesQuery(trimmedQuery) }
-        .take(limit)
-        .toList()
-}
-
-internal fun filterElfRiskFindings(
-    findings: List<HexElfRiskFinding>,
-    query: String,
-    riskFilter: ElfRiskFilter = ElfRiskFilter.ALL,
-    limit: Int = MAX_ELF_RISK_FINDINGS
-): List<HexElfRiskFinding> {
-    if (limit <= 0) return emptyList()
-    val trimmedQuery = query.trim()
-    return findings.asSequence()
-        .filter { finding -> riskFilter.matches(finding) }
-        .filter { finding -> finding.matchesQuery(trimmedQuery) }
-        .take(limit)
-        .toList()
-}
-
-internal fun filterElfJniRegistrationHints(
-    hints: List<HexElfJniRegistrationHint>,
-    query: String,
-    hintFilter: ElfJniHintFilter = ElfJniHintFilter.ALL,
-    limit: Int = MAX_ELF_JNI_HINTS
-): List<HexElfJniRegistrationHint> {
-    if (limit <= 0) return emptyList()
-    val trimmedQuery = query.trim()
-    return hints.asSequence()
-        .filter { hint -> hintFilter.matches(hint) }
-        .filter { hint -> hint.matchesQuery(trimmedQuery) }
-        .take(limit)
-        .toList()
-}
-
-internal fun filterElfNativeApiHints(
-    hints: List<HexElfNativeApiHint>,
-    query: String,
-    apiFilter: ElfNativeApiFilter = ElfNativeApiFilter.ALL,
-    limit: Int = MAX_ELF_NATIVE_API_HINTS
-): List<HexElfNativeApiHint> {
-    if (limit <= 0) return emptyList()
-    val trimmedQuery = query.trim()
-    return hints.asSequence()
-        .filter { hint -> apiFilter.matches(hint) }
-        .filter { hint -> hint.matchesQuery(trimmedQuery) }
-        .take(limit)
-        .toList()
-}
-
-internal fun filterDexStringEntries(
-    entries: List<HexDexStringEntry>,
-    query: String,
-    limit: Int = MAX_DEX_STRING_ENTRIES
-): List<HexDexStringEntry> {
-    if (limit <= 0) return emptyList()
-    val trimmedQuery = query.trim()
-    return entries.asSequence()
-        .filter { entry -> entry.matchesQuery(trimmedQuery) }
-        .take(limit)
-        .toList()
-}
-
-internal fun filterDexTypeEntries(
-    entries: List<HexDexTypeEntry>,
-    query: String,
-    limit: Int = MAX_DEX_TYPE_ENTRIES
-): List<HexDexTypeEntry> {
-    if (limit <= 0) return emptyList()
-    val trimmedQuery = query.trim()
-    return entries.asSequence()
-        .filter { entry -> entry.matchesQuery(trimmedQuery) }
-        .take(limit)
-        .toList()
-}
-
-internal fun filterDexProtoEntries(
-    entries: List<HexDexProtoEntry>,
-    query: String,
-    limit: Int = MAX_DEX_PROTO_ENTRIES
-): List<HexDexProtoEntry> {
-    if (limit <= 0) return emptyList()
-    val trimmedQuery = query.trim()
-    return entries.asSequence()
-        .filter { entry -> entry.matchesQuery(trimmedQuery) }
-        .take(limit)
-        .toList()
-}
-
-internal fun filterDexFieldEntries(
-    entries: List<HexDexFieldEntry>,
-    query: String,
-    limit: Int = MAX_DEX_FIELD_ENTRIES
-): List<HexDexFieldEntry> {
-    if (limit <= 0) return emptyList()
-    val trimmedQuery = query.trim()
-    return entries.asSequence()
-        .filter { entry -> entry.matchesQuery(trimmedQuery) }
-        .take(limit)
-        .toList()
-}
-
-internal fun filterDexMethodEntries(
-    entries: List<HexDexMethodEntry>,
-    query: String,
-    limit: Int = MAX_DEX_METHOD_ENTRIES
-): List<HexDexMethodEntry> {
-    if (limit <= 0) return emptyList()
-    val trimmedQuery = query.trim()
-    return entries.asSequence()
-        .filter { entry -> entry.matchesQuery(trimmedQuery) }
-        .take(limit)
-        .toList()
-}
-
-internal fun filterDexClassDefEntries(
-    entries: List<HexDexClassDefEntry>,
-    query: String,
-    limit: Int = MAX_DEX_CLASS_DEF_ENTRIES
-): List<HexDexClassDefEntry> {
-    if (limit <= 0) return emptyList()
-    val trimmedQuery = query.trim()
-    return entries.asSequence()
-        .filter { entry -> entry.matchesQuery(trimmedQuery) }
-        .take(limit)
-        .toList()
-}
-
-internal fun filterDexClassDataMethodEntries(
-    entries: List<HexDexClassDataMethodEntry>,
-    query: String,
-    limit: Int = MAX_DEX_CLASS_DATA_METHOD_ENTRIES
-): List<HexDexClassDataMethodEntry> {
-    if (limit <= 0) return emptyList()
-    val trimmedQuery = query.trim()
-    return entries.asSequence()
-        .filter { entry -> entry.matchesQuery(trimmedQuery) }
-        .take(limit)
-        .toList()
-}
-
-internal fun filterDexCodeItemEntries(
-    entries: List<HexDexCodeItemEntry>,
-    query: String,
-    limit: Int = MAX_DEX_CODE_ITEM_ENTRIES
-): List<HexDexCodeItemEntry> {
-    if (limit <= 0) return emptyList()
-    val trimmedQuery = query.trim()
-    return entries.asSequence()
-        .filter { entry -> entry.matchesQuery(trimmedQuery) }
-        .take(limit)
-        .toList()
-}
-
-internal fun filterDexCallReferenceEntries(
-    entries: List<HexDexCallReferenceEntry>,
-    query: String,
-    limit: Int = MAX_DEX_CALL_REFERENCE_ENTRIES
-): List<HexDexCallReferenceEntry> {
-    if (limit <= 0) return emptyList()
-    val trimmedQuery = query.trim()
-    return entries.asSequence()
-        .filter { entry -> entry.matchesQuery(trimmedQuery) }
-        .take(limit)
-        .toList()
-}
-
-internal fun filterDexStringReferenceEntries(
-    entries: List<HexDexStringReferenceEntry>,
-    query: String,
-    limit: Int = MAX_DEX_STRING_REFERENCE_ENTRIES
-): List<HexDexStringReferenceEntry> {
-    if (limit <= 0) return emptyList()
-    val trimmedQuery = query.trim()
-    return entries.asSequence()
-        .filter { entry -> entry.matchesQuery(trimmedQuery) }
-        .take(limit)
-        .toList()
-}
-
-internal fun filterDexFieldReferenceEntries(
-    entries: List<HexDexFieldReferenceEntry>,
-    query: String,
-    limit: Int = MAX_DEX_FIELD_REFERENCE_ENTRIES
-): List<HexDexFieldReferenceEntry> {
-    if (limit <= 0) return emptyList()
-    val trimmedQuery = query.trim()
-    return entries.asSequence()
-        .filter { entry -> entry.matchesQuery(trimmedQuery) }
-        .take(limit)
-        .toList()
-}
-
-internal fun filterDexMapEntries(
-    entries: List<HexDexMapEntry>,
-    query: String,
-    mapFilter: DexMapEntryFilter = DexMapEntryFilter.ALL,
-    limit: Int = MAX_DEX_MAP_ENTRIES
-): List<HexDexMapEntry> {
-    if (limit <= 0) return emptyList()
-    val trimmedQuery = query.trim()
-    return entries.asSequence()
-        .filter { entry -> mapFilter.matches(entry) }
-        .filter { entry -> entry.matchesQuery(trimmedQuery) }
-        .take(limit)
-        .toList()
-}
-
-internal fun filterArchiveEntries(
-    entries: List<HexArchiveEntry>,
-    query: String,
-    archiveFilter: ArchiveEntryFilter = ArchiveEntryFilter.ALL,
-    limit: Int = MAX_ARCHIVE_ENTRIES
-): List<HexArchiveEntry> {
-    if (limit <= 0) return emptyList()
-    val trimmedQuery = query.trim()
-    return entries.asSequence()
-        .filter { entry -> archiveFilter.matches(entry) }
-        .filter { entry -> entry.matchesQuery(trimmedQuery) }
-        .take(limit)
-        .toList()
-}
-
-internal fun filterArchiveDexSummaries(
-    entries: List<HexArchiveDexSummary>,
-    query: String,
-    limit: Int = MAX_ARCHIVE_DEX_SUMMARIES
-): List<HexArchiveDexSummary> {
-    if (limit <= 0) return emptyList()
-    val trimmedQuery = query.trim()
-    return entries.asSequence()
-        .filter { entry -> entry.matchesQuery(trimmedQuery) }
-        .take(limit)
-        .toList()
-}
-
-internal fun filterArchiveNativeLibrarySummaries(
-    entries: List<HexArchiveNativeLibrarySummary>,
-    query: String,
-    loadModeFilter: ArchiveNativeLibraryLoadModeFilter = ArchiveNativeLibraryLoadModeFilter.ALL,
-    limit: Int = MAX_ARCHIVE_NATIVE_LIBRARY_SUMMARIES
-): List<HexArchiveNativeLibrarySummary> {
-    if (limit <= 0) return emptyList()
-    val trimmedQuery = query.trim()
-    return entries.asSequence()
-        .filter { entry -> loadModeFilter.matches(entry) }
-        .filter { entry -> entry.matchesQuery(trimmedQuery) }
-        .take(limit)
-        .toList()
-}
-
-internal fun filterArchiveSigningBlockEntries(
-    entries: List<HexArchiveSigningBlockEntry>,
-    query: String,
-    limit: Int = MAX_ARCHIVE_SIGNING_BLOCK_ENTRIES
-): List<HexArchiveSigningBlockEntry> {
-    if (limit <= 0) return emptyList()
-    val trimmedQuery = query.trim()
-    return entries.asSequence()
-        .filter { entry -> entry.matchesQuery(trimmedQuery) }
-        .take(limit)
-        .toList()
-}
-
-internal fun filterEntropyVisualBuckets(
-    buckets: List<HexEntropyVisualBucket>,
-    filter: EntropyBucketFilter = EntropyBucketFilter.ALL,
-    limit: Int = ENTROPY_BUCKET_COUNT
-): List<HexEntropyVisualBucket> {
-    if (limit <= 0) return emptyList()
-    return buckets.asSequence()
-        .filter { bucket -> filter.matches(bucket.level) }
-        .take(limit)
-        .toList()
-}
-
-private fun parseDexSummary(
+internal fun parseDexSummary(
     randomAccessFile: RandomAccessFile,
     fileSize: Long,
     header: ByteArray
@@ -1899,7 +237,7 @@ private fun parseDexSummary(
     readAt = { offset, byteCount -> randomAccessFile.readAt(offset, byteCount) }
 )
 
-private fun parseDexSummary(
+internal fun parseDexSummary(
     bytes: ByteArray
 ): HexDexSummary? = parseDexSummary(
     fileSize = bytes.size.toLong(),
@@ -1907,7 +245,7 @@ private fun parseDexSummary(
     readAt = { offset, byteCount -> bytes.readAt(offset, byteCount) }
 )
 
-private fun parseDexSummary(
+internal fun parseDexSummary(
     fileSize: Long,
     header: ByteArray,
     readAt: (Long, Int) -> ByteArray
@@ -1979,7 +317,7 @@ private fun parseDexSummary(
     )
 }
 
-private fun readDexStringEntries(
+internal fun readDexStringEntries(
     readAt: (Long, Int) -> ByteArray,
     fileSize: Long,
     dex: HexDexSummary
@@ -2002,7 +340,7 @@ private fun readDexStringEntries(
     }
 }
 
-private fun readDexStringValue(
+internal fun readDexStringValue(
     readAt: (Long, Int) -> ByteArray,
     dataOffset: Long,
     fileSize: Long
@@ -2021,7 +359,7 @@ private fun readDexStringValue(
         .filter { char -> !char.isISOControl() || char == '\t' }
 }
 
-private fun readDexTypeEntries(
+internal fun readDexTypeEntries(
     readAt: (Long, Int) -> ByteArray,
     fileSize: Long,
     dex: HexDexSummary,
@@ -2045,7 +383,7 @@ private fun readDexTypeEntries(
     }
 }
 
-private fun readDexProtoEntries(
+internal fun readDexProtoEntries(
     readAt: (Long, Int) -> ByteArray,
     fileSize: Long,
     dex: HexDexSummary,
@@ -2089,7 +427,7 @@ private fun readDexProtoEntries(
     }
 }
 
-private fun readDexProtoParameterTypes(
+internal fun readDexProtoParameterTypes(
     readAt: (Long, Int) -> ByteArray,
     fileSize: Long,
     parametersOffset: Long,
@@ -2114,7 +452,7 @@ private fun readDexProtoParameterTypes(
     }
 }
 
-private fun readDexFieldEntries(
+internal fun readDexFieldEntries(
     readAt: (Long, Int) -> ByteArray,
     fileSize: Long,
     dex: HexDexSummary,
@@ -2145,7 +483,7 @@ private fun readDexFieldEntries(
     }
 }
 
-private fun readDexMethodEntries(
+internal fun readDexMethodEntries(
     readAt: (Long, Int) -> ByteArray,
     fileSize: Long,
     dex: HexDexSummary,
@@ -2180,7 +518,7 @@ private fun readDexMethodEntries(
     }
 }
 
-private fun readDexClassDefEntries(
+internal fun readDexClassDefEntries(
     readAt: (Long, Int) -> ByteArray,
     fileSize: Long,
     dex: HexDexSummary,
@@ -2220,7 +558,7 @@ private fun readDexClassDefEntries(
     }
 }
 
-private fun readDexClassDataMethodEntries(
+internal fun readDexClassDataMethodEntries(
     readAt: (Long, Int) -> ByteArray,
     fileSize: Long,
     classDefEntries: List<HexDexClassDefEntry>,
@@ -2247,7 +585,7 @@ private fun readDexClassDataMethodEntries(
     return parsedEntries
 }
 
-private fun readDexClassDataMethodsForClass(
+internal fun readDexClassDataMethodsForClass(
     classDataBytes: ByteArray,
     classDef: HexDexClassDefEntry,
     methodsByIndex: Map<Long, HexDexMethodEntry>,
@@ -2305,7 +643,7 @@ private fun readDexClassDataMethodsForClass(
     return entries
 }
 
-private fun ByteArray.readDexEncodedMethods(
+internal fun ByteArray.readDexEncodedMethods(
     cursor: Int,
     methodCount: Long,
     kind: HexDexClassDataMethodKind,
@@ -2348,13 +686,13 @@ private fun ByteArray.readDexEncodedMethods(
     return currentCursor
 }
 
-private fun ByteArray.skipDexEncodedField(cursor: Int): Int? {
+internal fun ByteArray.skipDexEncodedField(cursor: Int): Int? {
     val fieldIndexDiff = readDexUleb128(cursor) ?: return null
     val accessFlags = readDexUleb128(fieldIndexDiff.nextOffset) ?: return null
     return accessFlags.nextOffset
 }
 
-private fun readDexCodeItemEntries(
+internal fun readDexCodeItemEntries(
     readAt: (Long, Int) -> ByteArray,
     fileSize: Long,
     classDataMethodEntries: List<HexDexClassDataMethodEntry>
@@ -2401,7 +739,7 @@ private fun readDexCodeItemEntries(
     return entries
 }
 
-private fun readDexCodeItemPreviewCodeUnits(
+internal fun readDexCodeItemPreviewCodeUnits(
     readAt: (Long, Int) -> ByteArray,
     fileSize: Long,
     codeOffset: Long,
@@ -2425,7 +763,7 @@ private fun readDexCodeItemPreviewCodeUnits(
     }
 }
 
-private fun readDexCallReferenceEntries(
+internal fun readDexCallReferenceEntries(
     readAt: (Long, Int) -> ByteArray,
     fileSize: Long,
     classDataMethodEntries: List<HexDexClassDataMethodEntry>,
@@ -2486,12 +824,12 @@ private fun readDexCallReferenceEntries(
     return entries
 }
 
-private data class DexDataReferenceEntries(
+internal data class DexDataReferenceEntries(
     val stringReferenceEntries: List<HexDexStringReferenceEntry>,
     val fieldReferenceEntries: List<HexDexFieldReferenceEntry>
 )
 
-private fun readDexDataReferenceEntries(
+internal fun readDexDataReferenceEntries(
     readAt: (Long, Int) -> ByteArray,
     fileSize: Long,
     classDataMethodEntries: List<HexDexClassDataMethodEntry>,
@@ -2590,14 +928,14 @@ private fun readDexDataReferenceEntries(
     )
 }
 
-private fun ByteArray.toDexCodeUnits(limit: Int): List<Int> {
+internal fun ByteArray.toDexCodeUnits(limit: Int): List<Int> {
     val codeUnitCount = minOf(limit, size / DEX_CODE_UNIT_SIZE)
     return (0 until codeUnitCount).map { index ->
         u16(index * DEX_CODE_UNIT_SIZE, HexEndian.LITTLE)
     }
 }
 
-private fun dexInvokeMethodIndex(
+internal fun dexInvokeMethodIndex(
     codeUnits: List<Int>,
     cursor: Int,
     opcode: Int
@@ -2607,7 +945,7 @@ private fun dexInvokeMethodIndex(
     else -> null
 }
 
-private fun dexStringReferenceIndex(
+internal fun dexStringReferenceIndex(
     codeUnits: List<Int>,
     cursor: Int,
     opcode: Int
@@ -2625,7 +963,7 @@ private fun dexStringReferenceIndex(
     else -> null
 }
 
-private fun dexFieldReferenceIndex(
+internal fun dexFieldReferenceIndex(
     codeUnits: List<Int>,
     cursor: Int,
     opcode: Int
@@ -2635,7 +973,7 @@ private fun dexFieldReferenceIndex(
     else -> null
 }
 
-private fun dexInstructionCodeUnits(opcode: Int, firstCodeUnit: Int): Int = when (opcode) {
+internal fun dexInstructionCodeUnits(opcode: Int, firstCodeUnit: Int): Int = when (opcode) {
     0x00 -> if (firstCodeUnit == 0) 1 else 2
     0x01,
     0x04,
@@ -2688,7 +1026,7 @@ private fun dexInstructionCodeUnits(opcode: Int, firstCodeUnit: Int): Int = when
     else -> 1
 }
 
-private fun readDexMapEntries(
+internal fun readDexMapEntries(
     readAt: (Long, Int) -> ByteArray,
     fileSize: Long,
     mapOffset: Long
@@ -2715,7 +1053,7 @@ private fun readDexMapEntries(
     }
 }
 
-private fun parseArchiveSummary(
+internal fun parseArchiveSummary(
     file: File,
     randomAccessFile: RandomAccessFile,
     fileSize: Long
@@ -2823,7 +1161,7 @@ private fun parseArchiveSummary(
     )
 }
 
-private fun readZipEntryLocalHeader(
+internal fun readZipEntryLocalHeader(
     randomAccessFile: RandomAccessFile,
     localHeaderOffset: Long,
     fileSize: Long
@@ -2891,7 +1229,7 @@ internal fun archiveEntryLocalHeaderConsistency(
     }
 }
 
-private fun List<HexArchiveEntry>.withArchiveEntryNameRisks(): List<HexArchiveEntry> {
+internal fun List<HexArchiveEntry>.withArchiveEntryNameRisks(): List<HexArchiveEntry> {
     if (isEmpty()) return this
     val nameCounts = groupingBy { entry -> entry.name }.eachCount()
     return map { entry ->
@@ -2923,7 +1261,7 @@ internal fun archiveEntryNameRisks(
     return risks
 }
 
-private fun isArchivePathSeparator(value: Char): Boolean = value == '/' || value == '\\'
+internal fun isArchivePathSeparator(value: Char): Boolean = value == '/' || value == '\\'
 
 internal fun dexClassDataMethodExecutionKind(
     accessFlags: Long,
@@ -2935,7 +1273,7 @@ internal fun dexClassDataMethodExecutionKind(
     else -> HexDexClassDataMethodExecutionKind.NO_CODE
 }
 
-private fun findZip64LocatorOffset(
+internal fun findZip64LocatorOffset(
     randomAccessFile: RandomAccessFile,
     eocdOffset: Long
 ): Long? {
@@ -2948,7 +1286,7 @@ private fun findZip64LocatorOffset(
     }
 }
 
-private fun readApkSigningBlockEntries(
+internal fun readApkSigningBlockEntries(
     randomAccessFile: RandomAccessFile,
     centralDirectoryOffset: Long
 ): List<HexArchiveSigningBlockEntry> {
@@ -3013,7 +1351,7 @@ private fun readApkSigningBlockEntries(
     return entries
 }
 
-private fun readArchiveManifestSummary(
+internal fun readArchiveManifestSummary(
     file: File,
     entries: List<HexArchiveEntry>
 ): HexArchiveManifestSummary? {
@@ -3047,7 +1385,7 @@ private fun readArchiveManifestSummary(
     }.getOrNull()
 }
 
-private data class AndroidBinaryManifestSummary(
+internal data class AndroidBinaryManifestSummary(
     val stringCount: Int,
     val elementCount: Int,
     val rootElementName: String?,
@@ -3055,17 +1393,17 @@ private data class AndroidBinaryManifestSummary(
     val permissions: List<String>
 )
 
-private data class AndroidXmlStartElement(
+internal data class AndroidXmlStartElement(
     val name: String?,
     val attributes: Map<String, String>
 )
 
-private data class AndroidStringLength(
+internal data class AndroidStringLength(
     val value: Int,
     val bytesRead: Int
 )
 
-private fun readArchiveResourcesSummary(
+internal fun readArchiveResourcesSummary(
     file: File,
     entries: List<HexArchiveEntry>
 ): HexArchiveResourcesSummary? {
@@ -3099,7 +1437,7 @@ private fun readArchiveResourcesSummary(
     }.getOrNull()
 }
 
-private data class AndroidResourcesTableSummary(
+internal data class AndroidResourcesTableSummary(
     val packageCountFromHeader: Int,
     val globalStringCount: Int,
     val typeSpecCount: Int,
@@ -3107,7 +1445,7 @@ private data class AndroidResourcesTableSummary(
     val packages: List<HexArchiveResourcePackage>
 )
 
-private fun parseAndroidResourcesTable(bytes: ByteArray): AndroidResourcesTableSummary? {
+internal fun parseAndroidResourcesTable(bytes: ByteArray): AndroidResourcesTableSummary? {
     if (bytes.size < ANDROID_RESOURCE_TABLE_HEADER_SIZE ||
         bytes.u16(0, HexEndian.LITTLE) != ANDROID_RES_TABLE_TYPE
     ) {
@@ -3160,7 +1498,7 @@ private fun parseAndroidResourcesTable(bytes: ByteArray): AndroidResourcesTableS
     )
 }
 
-private fun parseAndroidResourcePackage(
+internal fun parseAndroidResourcePackage(
     bytes: ByteArray,
     packageOffset: Int,
     packageSize: Int
@@ -3227,7 +1565,7 @@ private fun parseAndroidResourcePackage(
     )
 }
 
-private fun readAndroidPackageStringPoolCount(
+internal fun readAndroidPackageStringPoolCount(
     bytes: ByteArray,
     packageOffset: Int,
     packageEnd: Int,
@@ -3252,7 +1590,7 @@ private fun readAndroidPackageStringPoolCount(
     return readAndroidStringPoolCount(bytes, stringPoolOffset, chunkSize.toInt())
 }
 
-private fun readAndroidStringPoolCount(
+internal fun readAndroidStringPoolCount(
     bytes: ByteArray,
     chunkOffset: Int,
     chunkSize: Int
@@ -3265,7 +1603,7 @@ private fun readAndroidStringPoolCount(
     return bytes.u32(chunkOffset + 8, HexEndian.LITTLE).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
 }
 
-private fun readAndroidUtf16FixedString(
+internal fun readAndroidUtf16FixedString(
     bytes: ByteArray,
     offset: Int,
     maxChars: Int,
@@ -3284,7 +1622,7 @@ private fun readAndroidUtf16FixedString(
     return chars.toString()
 }
 
-private fun parseAndroidBinaryManifest(bytes: ByteArray): AndroidBinaryManifestSummary? {
+internal fun parseAndroidBinaryManifest(bytes: ByteArray): AndroidBinaryManifestSummary? {
     if (bytes.size < ANDROID_CHUNK_HEADER_SIZE ||
         bytes.u16(0, HexEndian.LITTLE) != ANDROID_RES_XML_TYPE
     ) {
@@ -3343,7 +1681,7 @@ private fun parseAndroidBinaryManifest(bytes: ByteArray): AndroidBinaryManifestS
     )
 }
 
-private fun parseAndroidStringPool(
+internal fun parseAndroidStringPool(
     bytes: ByteArray,
     chunkOffset: Int,
     chunkSize: Int
@@ -3384,7 +1722,7 @@ private fun parseAndroidStringPool(
     }
 }
 
-private fun parseAndroidXmlStartElement(
+internal fun parseAndroidXmlStartElement(
     bytes: ByteArray,
     chunkOffset: Int,
     stringPool: List<String>
@@ -3408,7 +1746,7 @@ private fun parseAndroidXmlStartElement(
     return AndroidXmlStartElement(elementName, attributes)
 }
 
-private fun readAndroidXmlAttributeValue(
+internal fun readAndroidXmlAttributeValue(
     bytes: ByteArray,
     attributeOffset: Int,
     stringPool: List<String>
@@ -3426,7 +1764,7 @@ private fun readAndroidXmlAttributeValue(
     }
 }
 
-private fun readAndroidUtf8String(
+internal fun readAndroidUtf8String(
     bytes: ByteArray,
     offset: Int,
     limit: Int
@@ -3439,7 +1777,7 @@ private fun readAndroidUtf8String(
     return bytes.copyOfRange(stringOffset, stringEnd).toString(Charsets.UTF_8)
 }
 
-private fun readAndroidUtf16String(
+internal fun readAndroidUtf16String(
     bytes: ByteArray,
     offset: Int,
     limit: Int
@@ -3451,7 +1789,7 @@ private fun readAndroidUtf16String(
     return bytes.copyOfRange(stringOffset, stringEnd).toString(Charsets.UTF_16LE)
 }
 
-private fun readAndroidUtf8Length(
+internal fun readAndroidUtf8Length(
     bytes: ByteArray,
     offset: Int,
     limit: Int
@@ -3467,7 +1805,7 @@ private fun readAndroidUtf8Length(
     }
 }
 
-private fun readAndroidUtf16Length(
+internal fun readAndroidUtf16Length(
     bytes: ByteArray,
     offset: Int,
     limit: Int
@@ -3483,7 +1821,7 @@ private fun readAndroidUtf16Length(
     }
 }
 
-private fun readArchiveDexSummaries(
+internal fun readArchiveDexSummaries(
     file: File,
     entries: List<HexArchiveEntry>
 ): List<HexArchiveDexSummary> {
@@ -3516,7 +1854,7 @@ private fun readArchiveDexSummaries(
     }.getOrElse { emptyList() }
 }
 
-private fun readArchiveNativeLibrarySummaries(
+internal fun readArchiveNativeLibrarySummaries(
     file: File,
     entries: List<HexArchiveEntry>
 ): List<HexArchiveNativeLibrarySummary> {
@@ -3579,13 +1917,13 @@ internal fun archiveNativeLoadMode(
 
 internal fun archiveNativePageAlignmentRemainder(dataOffset: Long?): Long? = dataOffset?.floorMod(APK_NATIVE_LIBRARY_PAGE_ALIGNMENT)
 
-private data class ArchiveNativeElfHeader(
+internal data class ArchiveNativeElfHeader(
     val is64Bit: Boolean,
     val endian: HexEndian,
     val machineName: String
 )
 
-private fun parseArchiveNativeElfHeader(bytes: ByteArray): ArchiveNativeElfHeader? {
+internal fun parseArchiveNativeElfHeader(bytes: ByteArray): ArchiveNativeElfHeader? {
     if (bytes.size < ELF_IDENT_SIZE || !bytes.startsWith(0x7F, 'E'.code, 'L'.code, 'F'.code)) return null
 
     val is64Bit = when (bytes[ELF_CLASS_OFFSET].toInt() and 0xFF) {
@@ -3607,7 +1945,7 @@ private fun parseArchiveNativeElfHeader(bytes: ByteArray): ArchiveNativeElfHeade
     )
 }
 
-private fun scanArchiveNativeObfuscationMarkers(bytes: ByteArray): List<HexArchiveNativeObfuscationMarker> {
+internal fun scanArchiveNativeObfuscationMarkers(bytes: ByteArray): List<HexArchiveNativeObfuscationMarker> {
     val strings = extractPrintableAsciiStrings(bytes)
     val markers = mutableListOf<HexArchiveNativeObfuscationMarker>()
 
@@ -3660,14 +1998,14 @@ private fun scanArchiveNativeObfuscationMarkers(bytes: ByteArray): List<HexArchi
     return markers.take(MAX_ARCHIVE_NATIVE_OBFUSCATION_MARKERS)
 }
 
-private fun archiveNativeAbi(entryName: String): String = entryName
+internal fun archiveNativeAbi(entryName: String): String = entryName
     .split('/')
     .getOrNull(1)
     .orEmpty()
 
-private fun archiveNativeFileName(entryName: String): String = entryName.substringAfterLast('/')
+internal fun archiveNativeFileName(entryName: String): String = entryName.substringAfterLast('/')
 
-private fun parseElfSummary(randomAccessFile: RandomAccessFile, header: ByteArray): HexElfSummary? {
+internal fun parseElfSummary(randomAccessFile: RandomAccessFile, header: ByteArray): HexElfSummary? {
     if (header.size < ELF_IDENT_SIZE || !header.startsWith(0x7F, 'E'.code, 'L'.code, 'F'.code)) return null
 
     val is64Bit = when (header[ELF_CLASS_OFFSET].toInt() and 0xFF) {
@@ -3826,7 +2164,7 @@ private fun parseElfSummary(randomAccessFile: RandomAccessFile, header: ByteArra
     )
 }
 
-private fun readElfProgramHeaders(
+internal fun readElfProgramHeaders(
     randomAccessFile: RandomAccessFile,
     is64Bit: Boolean,
     endian: HexEndian,
@@ -3870,7 +2208,7 @@ private fun readElfProgramHeaders(
     return programHeaders
 }
 
-private fun readElfSectionHeaders(
+internal fun readElfSectionHeaders(
     randomAccessFile: RandomAccessFile,
     is64Bit: Boolean,
     endian: HexEndian,
@@ -3920,7 +2258,7 @@ private fun readElfSectionHeaders(
     return sections
 }
 
-private fun buildElfSectionSegmentMappings(
+internal fun buildElfSectionSegmentMappings(
     sections: List<HexElfSection>,
     programHeaders: List<HexElfProgramHeader>
 ): List<HexElfSectionSegmentMapping> {
@@ -3959,7 +2297,7 @@ private fun buildElfSectionSegmentMappings(
     return mappings
 }
 
-private fun readElfSectionEntropyEntries(
+internal fun readElfSectionEntropyEntries(
     randomAccessFile: RandomAccessFile,
     sections: List<HexElfSection>
 ): List<HexElfSectionEntropyEntry> {
@@ -3997,7 +2335,7 @@ private fun readElfSectionEntropyEntries(
     return entries
 }
 
-private fun readElfNoteEntries(
+internal fun readElfNoteEntries(
     randomAccessFile: RandomAccessFile,
     endian: HexEndian,
     machine: Int,
@@ -4077,7 +2415,7 @@ private fun readElfNoteEntries(
     return entries
 }
 
-private fun readElfDynamicSymbols(
+internal fun readElfDynamicSymbols(
     randomAccessFile: RandomAccessFile,
     is64Bit: Boolean,
     endian: HexEndian,
@@ -4155,7 +2493,7 @@ private fun readElfDynamicSymbols(
     return symbols
 }
 
-private fun resolveElfSymbolSection(
+internal fun resolveElfSymbolSection(
     sections: List<HexElfSection>,
     sectionIndex: Int,
     fileOffset: Long?
@@ -4175,7 +2513,7 @@ private fun resolveElfSymbolSection(
     }
 }
 
-private fun readElfDynamicStringEntries(
+internal fun readElfDynamicStringEntries(
     randomAccessFile: RandomAccessFile,
     is64Bit: Boolean,
     endian: HexEndian,
@@ -4234,7 +2572,7 @@ private fun readElfDynamicStringEntries(
     return entries.withDynamicStringSemantics()
 }
 
-private fun List<HexElfDynamicStringEntry>.withDynamicStringSemantics(): List<HexElfDynamicStringEntry> {
+internal fun List<HexElfDynamicStringEntry>.withDynamicStringSemantics(): List<HexElfDynamicStringEntry> {
     var neededLoadOrder = 0
     return map { entry ->
         when (entry.type) {
@@ -4249,7 +2587,7 @@ private fun List<HexElfDynamicStringEntry>.withDynamicStringSemantics(): List<He
     }
 }
 
-private fun readElfDynamicFlagEntries(
+internal fun readElfDynamicFlagEntries(
     randomAccessFile: RandomAccessFile,
     is64Bit: Boolean,
     endian: HexEndian,
@@ -4299,15 +2637,15 @@ private fun readElfDynamicFlagEntries(
     return entries
 }
 
-private fun List<HexElfLoadSegment>.virtualAddressToFileOffset(virtualAddress: Long): Long? = firstNotNullOfOrNull { segment -> segment.virtualAddressToFileOffset(virtualAddress) }
+internal fun List<HexElfLoadSegment>.virtualAddressToFileOffset(virtualAddress: Long): Long? = firstNotNullOfOrNull { segment -> segment.virtualAddressToFileOffset(virtualAddress) }
 
-private fun HexElfProgramHeader.containsFileRange(fileOffset: Long, size: Long): Boolean {
+internal fun HexElfProgramHeader.containsFileRange(fileOffset: Long, size: Long): Boolean {
     if (size <= 0L || fileSize <= 0L || fileOffset < this.fileOffset) return false
     val relativeStart = fileOffset - this.fileOffset
     return relativeStart <= fileSize && size <= fileSize - relativeStart
 }
 
-private fun readElfInitArrayEntries(
+internal fun readElfInitArrayEntries(
     randomAccessFile: RandomAccessFile,
     is64Bit: Boolean,
     endian: HexEndian,
@@ -4347,7 +2685,7 @@ private fun readElfInitArrayEntries(
     return entries
 }
 
-private fun readElfRelocations(
+internal fun readElfRelocations(
     randomAccessFile: RandomAccessFile,
     is64Bit: Boolean,
     endian: HexEndian,
@@ -4452,7 +2790,7 @@ private fun readElfRelocations(
     return entries
 }
 
-private fun buildElfLinkageEntries(
+internal fun buildElfLinkageEntries(
     randomAccessFile: RandomAccessFile,
     machine: Int,
     endian: HexEndian,
@@ -4510,7 +2848,7 @@ private fun buildElfLinkageEntries(
         .toList()
 }
 
-private class ElfPltStubResolver(
+internal class ElfPltStubResolver(
     private val randomAccessFile: RandomAccessFile,
     private val machine: Int,
     private val endian: HexEndian,
@@ -4557,7 +2895,7 @@ private class ElfPltStubResolver(
     }
 }
 
-private fun HexElfSection.pltEntryStartOffset(machine: Int): Long? = when (machine) {
+internal fun HexElfSection.pltEntryStartOffset(machine: Int): Long? = when (machine) {
     ELF_MACHINE_AARCH64 -> when (name) {
         ".plt" -> ELF_AARCH64_PLT_RESOLVER_STUB_SIZE.toLong()
         ".plt.sec" -> 0L
@@ -4571,13 +2909,13 @@ private fun HexElfSection.pltEntryStartOffset(machine: Int): Long? = when (machi
     else -> null
 }
 
-private data class ElfPltLayout(
+internal data class ElfPltLayout(
     val resolverStubSize: Int,
     val entrySize: Int,
     val minimumBytes: Int
 )
 
-private fun Int.pltLayout(): ElfPltLayout? = when (this) {
+internal fun Int.pltLayout(): ElfPltLayout? = when (this) {
     ELF_MACHINE_AARCH64 -> ElfPltLayout(
         resolverStubSize = ELF_AARCH64_PLT_RESOLVER_STUB_SIZE,
         entrySize = ELF_AARCH64_PLT_ENTRY_SIZE,
@@ -4591,7 +2929,7 @@ private fun Int.pltLayout(): ElfPltLayout? = when (this) {
     else -> null
 }
 
-private fun Int.pltStubArchitecture(): HexElfPltStubArchitecture? = when (this) {
+internal fun Int.pltStubArchitecture(): HexElfPltStubArchitecture? = when (this) {
     ELF_MACHINE_AARCH64 -> HexElfPltStubArchitecture.AARCH64
     ELF_MACHINE_X86_64 -> HexElfPltStubArchitecture.X86_64
     else -> null
@@ -4609,7 +2947,7 @@ internal fun classifyPltStubSemantic(
     else -> HexElfPltStubSemantic.UNKNOWN
 }
 
-private fun ByteArray.hasAarch64GotBranchPltStub(endian: HexEndian): Boolean {
+internal fun ByteArray.hasAarch64GotBranchPltStub(endian: HexEndian): Boolean {
     if (size < ELF_AARCH64_PLT_ENTRY_SIZE) return false
     val adrp = u32(0, endian)
     val ldr = u32(4, endian)
@@ -4621,7 +2959,7 @@ private fun ByteArray.hasAarch64GotBranchPltStub(endian: HexEndian): Boolean {
         br == AARCH64_BR_X17_VALUE
 }
 
-private fun ByteArray.hasX86_64GotBranchPltStub(): Boolean {
+internal fun ByteArray.hasX86_64GotBranchPltStub(): Boolean {
     if (size < ELF_X86_64_PLT_ENTRY_SIZE) return false
     return this[0] == 0xFF.toByte() &&
         this[1] == 0x25.toByte() &&
@@ -4629,7 +2967,7 @@ private fun ByteArray.hasX86_64GotBranchPltStub(): Boolean {
         this[11] == 0xE9.toByte()
 }
 
-private fun HexElfRelocationEntry.linkageEntryKind(): HexElfLinkageEntryKind {
+internal fun HexElfRelocationEntry.linkageEntryKind(): HexElfLinkageEntryKind {
     val relocationTypeName = typeName.orEmpty()
     return when {
         relocationTypeName.contains("JUMP_SLOT", ignoreCase = true) -> HexElfLinkageEntryKind.PLT
@@ -4641,7 +2979,7 @@ private fun HexElfRelocationEntry.linkageEntryKind(): HexElfLinkageEntryKind {
     }
 }
 
-private fun HexElfRelocationEntry.linkageBindingMode(
+internal fun HexElfRelocationEntry.linkageBindingMode(
     entryKind: HexElfLinkageEntryKind,
     bindNow: Boolean
 ): HexElfLinkageBindingMode = when {
@@ -4652,7 +2990,7 @@ private fun HexElfRelocationEntry.linkageBindingMode(
     else -> HexElfLinkageBindingMode.LOCAL
 }
 
-private fun HexElfRelocationEntry.linkageResolutionSemantic(
+internal fun HexElfRelocationEntry.linkageResolutionSemantic(
     entryKind: HexElfLinkageEntryKind,
     bindingMode: HexElfLinkageBindingMode
 ): HexElfLinkageResolutionSemantic = when {
@@ -4666,7 +3004,7 @@ private fun HexElfRelocationEntry.linkageResolutionSemantic(
     else -> HexElfLinkageResolutionSemantic.LOCAL_RELOCATION
 }
 
-private fun buildElfDynamicLinkerSteps(
+internal fun buildElfDynamicLinkerSteps(
     programHeaders: List<HexElfProgramHeader>,
     dynamicStringEntries: List<HexElfDynamicStringEntry>,
     hardeningChecks: List<HexElfHardeningCheck>,
@@ -4782,7 +3120,7 @@ private fun buildElfDynamicLinkerSteps(
     return steps.take(MAX_ELF_DYNAMIC_LINKER_STEPS)
 }
 
-private fun buildNeededLibraryLoadDetail(
+internal fun buildNeededLibraryLoadDetail(
     neededLibraries: List<HexElfDynamicStringEntry>,
     searchPaths: List<HexElfDynamicStringEntry>
 ): String {
@@ -4797,7 +3135,7 @@ private fun buildNeededLibraryLoadDetail(
         .joinToString("; ")
 }
 
-private fun List<HexElfSection>.sectionContainingVirtualAddress(address: Long): HexElfSection? = firstOrNull { section ->
+internal fun List<HexElfSection>.sectionContainingVirtualAddress(address: Long): HexElfSection? = firstOrNull { section ->
     if (section.virtualAddress <= 0L || section.size <= 0L || address < section.virtualAddress) {
         false
     } else {
@@ -4805,7 +3143,7 @@ private fun List<HexElfSection>.sectionContainingVirtualAddress(address: Long): 
     }
 }
 
-private data class ElfRelocationSymbolReference(
+internal data class ElfRelocationSymbolReference(
     val name: String?,
     val binding: HexElfSymbolBinding,
     val type: HexElfSymbolType,
@@ -4815,7 +3153,7 @@ private data class ElfRelocationSymbolReference(
     val isJni: Boolean
 )
 
-private class ElfRelocationSymbolReader(
+internal class ElfRelocationSymbolReader(
     private val randomAccessFile: RandomAccessFile,
     private val is64Bit: Boolean,
     private val endian: HexEndian,
@@ -4862,7 +3200,7 @@ private class ElfRelocationSymbolReader(
     }
 }
 
-private fun readElfStringTable(randomAccessFile: RandomAccessFile, section: HexElfSection): ByteArray {
+internal fun readElfStringTable(randomAccessFile: RandomAccessFile, section: HexElfSection): ByteArray {
     if (section.fileOffset <= 0L || section.size <= 0L || section.fileOffset >= randomAccessFile.length()) {
         return ByteArray(0)
     }
@@ -4874,14 +3212,14 @@ private fun readElfStringTable(randomAccessFile: RandomAccessFile, section: HexE
     return randomAccessFile.readAt(section.fileOffset, safeSize)
 }
 
-private fun elfSymbolBinding(binding: Int): HexElfSymbolBinding = when (binding) {
+internal fun elfSymbolBinding(binding: Int): HexElfSymbolBinding = when (binding) {
     ELF_SYMBOL_BIND_LOCAL -> HexElfSymbolBinding.LOCAL
     ELF_SYMBOL_BIND_GLOBAL -> HexElfSymbolBinding.GLOBAL
     ELF_SYMBOL_BIND_WEAK -> HexElfSymbolBinding.WEAK
     else -> HexElfSymbolBinding.OTHER
 }
 
-private fun elfSymbolType(type: Int): HexElfSymbolType = when (type) {
+internal fun elfSymbolType(type: Int): HexElfSymbolType = when (type) {
     ELF_SYMBOL_TYPE_NOTYPE -> HexElfSymbolType.NOTYPE
     ELF_SYMBOL_TYPE_OBJECT -> HexElfSymbolType.OBJECT
     ELF_SYMBOL_TYPE_FUNC -> HexElfSymbolType.FUNC
@@ -4891,7 +3229,7 @@ private fun elfSymbolType(type: Int): HexElfSymbolType = when (type) {
     else -> HexElfSymbolType.OTHER
 }
 
-private fun elfProgramHeaderTypeName(type: Long): String = when (type) {
+internal fun elfProgramHeaderTypeName(type: Long): String = when (type) {
     ELF_PROGRAM_TYPE_NULL -> "NULL"
     ELF_PROGRAM_TYPE_LOAD.toLong() -> "LOAD"
     ELF_PROGRAM_TYPE_DYNAMIC -> "DYNAMIC"
@@ -4905,7 +3243,7 @@ private fun elfProgramHeaderTypeName(type: Long): String = when (type) {
     else -> "0x%X".format(type)
 }
 
-private fun elfDynamicStringType(tag: Long): HexElfDynamicStringType? = when (tag) {
+internal fun elfDynamicStringType(tag: Long): HexElfDynamicStringType? = when (tag) {
     ELF_DYNAMIC_TAG_NEEDED -> HexElfDynamicStringType.NEEDED
     ELF_DYNAMIC_TAG_SONAME -> HexElfDynamicStringType.SONAME
     ELF_DYNAMIC_TAG_RPATH -> HexElfDynamicStringType.RPATH
@@ -4913,20 +3251,20 @@ private fun elfDynamicStringType(tag: Long): HexElfDynamicStringType? = when (ta
     else -> null
 }
 
-private fun elfDynamicFlagType(tag: Long): HexElfDynamicFlagType? = when (tag) {
+internal fun elfDynamicFlagType(tag: Long): HexElfDynamicFlagType? = when (tag) {
     ELF_DYNAMIC_TAG_BIND_NOW -> HexElfDynamicFlagType.BIND_NOW
     ELF_DYNAMIC_TAG_FLAGS -> HexElfDynamicFlagType.FLAGS
     ELF_DYNAMIC_TAG_FLAGS_1 -> HexElfDynamicFlagType.FLAGS_1
     else -> null
 }
 
-private fun isElfBindNowDynamicFlag(type: HexElfDynamicFlagType, value: Long): Boolean = when (type) {
+internal fun isElfBindNowDynamicFlag(type: HexElfDynamicFlagType, value: Long): Boolean = when (type) {
     HexElfDynamicFlagType.BIND_NOW -> true
     HexElfDynamicFlagType.FLAGS -> (value and ELF_DYNAMIC_FLAG_BIND_NOW) != 0L
     HexElfDynamicFlagType.FLAGS_1 -> (value and ELF_DYNAMIC_FLAG_1_NOW) != 0L
 }
 
-private fun buildElfHardeningChecks(
+internal fun buildElfHardeningChecks(
     elfType: Int,
     programHeaders: List<HexElfProgramHeader>,
     dynamicFlagEntries: List<HexElfDynamicFlagEntry>,
@@ -4995,7 +3333,7 @@ private fun buildElfHardeningChecks(
     return checks
 }
 
-private fun buildElfRiskFindings(
+internal fun buildElfRiskFindings(
     programHeaders: List<HexElfProgramHeader>,
     sections: List<HexElfSection>,
     hardeningChecks: List<HexElfHardeningCheck>,
@@ -5113,7 +3451,7 @@ private fun buildElfRiskFindings(
     return findings
 }
 
-private fun buildElfJniRegistrationHints(
+internal fun buildElfJniRegistrationHints(
     elf: HexElfSummary,
     strings: List<HexStringEntry>
 ): List<HexElfJniRegistrationHint> {
@@ -5221,7 +3559,7 @@ internal fun buildElfNativeApiHints(symbols: List<HexElfSymbol>): List<HexElfNat
     return hints
 }
 
-private fun nativeApiCategory(symbolName: String): HexElfNativeApiCategory? {
+internal fun nativeApiCategory(symbolName: String): HexElfNativeApiCategory? {
     val normalizedName = symbolName.removePrefix("__").substringBefore('@')
     return when {
         normalizedName in NATIVE_DYNAMIC_LOADING_SYMBOLS -> HexElfNativeApiCategory.DYNAMIC_LOADING
@@ -5294,7 +3632,7 @@ internal fun elfRelocationSemantic(typeName: String?): HexElfRelocationSemantic 
     }
 }
 
-private fun extractBinaryStrings(randomAccessFile: RandomAccessFile, fileSize: Long): List<HexStringEntry> {
+internal fun extractBinaryStrings(randomAccessFile: RandomAccessFile, fileSize: Long): List<HexStringEntry> {
     if (fileSize <= 0L) return emptyList()
     val scanSize = minOf(fileSize, MAX_STRING_SCAN_BYTES.toLong()).toInt()
     val bytes = randomAccessFile.readAt(0L, scanSize)
@@ -5308,7 +3646,7 @@ private fun extractBinaryStrings(randomAccessFile: RandomAccessFile, fileSize: L
         .take(MAX_STRING_RESULTS)
 }
 
-private fun extractPrintableAsciiStrings(bytes: ByteArray): List<HexStringEntry> {
+internal fun extractPrintableAsciiStrings(bytes: ByteArray): List<HexStringEntry> {
     val strings = mutableListOf<HexStringEntry>()
     var startIndex = -1
 
@@ -5329,7 +3667,7 @@ private fun extractPrintableAsciiStrings(bytes: ByteArray): List<HexStringEntry>
     return strings
 }
 
-private fun appendAsciiStringEntry(
+internal fun appendAsciiStringEntry(
     bytes: ByteArray,
     startIndex: Int,
     endIndex: Int,
@@ -5344,7 +3682,7 @@ private fun appendAsciiStringEntry(
     )
 }
 
-private fun extractUtf8Strings(bytes: ByteArray): List<HexStringEntry> {
+internal fun extractUtf8Strings(bytes: ByteArray): List<HexStringEntry> {
     val strings = mutableListOf<HexStringEntry>()
     var startIndex = -1
     var hasNonAscii = false
@@ -5372,7 +3710,7 @@ private fun extractUtf8Strings(bytes: ByteArray): List<HexStringEntry> {
     return strings
 }
 
-private fun appendUtf8StringEntry(
+internal fun appendUtf8StringEntry(
     startIndex: Int,
     chars: StringBuilder,
     hasNonAscii: Boolean,
@@ -5386,10 +3724,10 @@ private fun appendUtf8StringEntry(
     )
 }
 
-private fun extractUtf16Strings(bytes: ByteArray, littleEndian: Boolean): List<HexStringEntry> = extractUtf16Strings(bytes, littleEndian, startAlignment = 0) +
+internal fun extractUtf16Strings(bytes: ByteArray, littleEndian: Boolean): List<HexStringEntry> = extractUtf16Strings(bytes, littleEndian, startAlignment = 0) +
     extractUtf16Strings(bytes, littleEndian, startAlignment = 1)
 
-private fun extractUtf16Strings(
+internal fun extractUtf16Strings(
     bytes: ByteArray,
     littleEndian: Boolean,
     startAlignment: Int
@@ -5417,7 +3755,7 @@ private fun extractUtf16Strings(
     return strings
 }
 
-private fun appendUtf16StringEntry(
+internal fun appendUtf16StringEntry(
     startIndex: Int,
     chars: StringBuilder,
     littleEndian: Boolean,
@@ -5431,18 +3769,18 @@ private fun appendUtf16StringEntry(
     )
 }
 
-private fun ByteArray.utf16CodeUnit(offset: Int, littleEndian: Boolean): Int {
+internal fun ByteArray.utf16CodeUnit(offset: Int, littleEndian: Boolean): Int {
     val first = this[offset].toInt() and 0xFF
     val second = this[offset + 1].toInt() and 0xFF
     return if (littleEndian) first or (second shl 8) else (first shl 8) or second
 }
 
-private data class Utf8CodePoint(
+internal data class Utf8CodePoint(
     val value: Int,
     val byteCount: Int
 )
 
-private fun ByteArray.decodeUtf8CodePoint(offset: Int): Utf8CodePoint? {
+internal fun ByteArray.decodeUtf8CodePoint(offset: Int): Utf8CodePoint? {
     if (offset !in indices) return null
     val first = this[offset].toInt() and 0xFF
     return when {
@@ -5454,7 +3792,7 @@ private fun ByteArray.decodeUtf8CodePoint(offset: Int): Utf8CodePoint? {
     }
 }
 
-private fun ByteArray.decodeUtf8CodePoint(
+internal fun ByteArray.decodeUtf8CodePoint(
     offset: Int,
     first: Int,
     byteCount: Int,
@@ -5471,10 +3809,10 @@ private fun ByteArray.decodeUtf8CodePoint(
     return Utf8CodePoint(value, byteCount)
 }
 
-private fun Int.isPrintableStringCodePoint(): Boolean = this in PRINTABLE_ASCII_RANGE ||
+internal fun Int.isPrintableStringCodePoint(): Boolean = this in PRINTABLE_ASCII_RANGE ||
     (this >= UTF8_PRINTABLE_NON_ASCII_MIN && Character.isDefined(this) && !Character.isISOControl(this))
 
-private fun calculateEntropyBuckets(randomAccessFile: RandomAccessFile, fileSize: Long): List<HexEntropyBucket> {
+internal fun calculateEntropyBuckets(randomAccessFile: RandomAccessFile, fileSize: Long): List<HexEntropyBucket> {
     if (fileSize <= 0L) return emptyList()
     val bucketCount = if (fileSize < ENTROPY_BUCKET_COUNT) fileSize.toInt() else ENTROPY_BUCKET_COUNT
     val bucketSize = ((fileSize + bucketCount - 1) / bucketCount).coerceAtLeast(1L)
@@ -5507,13 +3845,13 @@ internal fun List<HexEntropyBucket>.toVisualBuckets(): List<HexEntropyVisualBuck
     )
 }
 
-private fun entropyLevel(entropy: Double): HexEntropyLevel = when {
+internal fun entropyLevel(entropy: Double): HexEntropyLevel = when {
     entropy >= HIGH_ENTROPY_THRESHOLD -> HexEntropyLevel.HIGH
     entropy >= MEDIUM_ENTROPY_THRESHOLD -> HexEntropyLevel.MEDIUM
     else -> HexEntropyLevel.LOW
 }
 
-private fun buildAnalysisSignals(
+internal fun buildAnalysisSignals(
     fileKind: HexFileKind,
     elf: HexElfSummary?,
     dex: HexDexSummary?,
@@ -5678,7 +4016,7 @@ private fun buildAnalysisSignals(
     return signals
 }
 
-private fun detectObfuscationFindings(
+internal fun detectObfuscationFindings(
     fileKind: HexFileKind,
     fileSize: Long,
     elf: HexElfSummary?,
@@ -5782,7 +4120,7 @@ private fun detectObfuscationFindings(
     return findings.take(MAX_OBFUSCATION_FINDINGS)
 }
 
-private fun buildObfuscationEvidence(
+internal fun buildObfuscationEvidence(
     elf: HexElfSummary,
     strings: List<HexStringEntry>
 ): List<HexObfuscationEvidence> {
@@ -5832,7 +4170,7 @@ private fun buildObfuscationEvidence(
     return evidence
 }
 
-private fun ElfSectionFilter.matches(section: HexElfSection): Boolean = when (this) {
+internal fun ElfSectionFilter.matches(section: HexElfSection): Boolean = when (this) {
     ElfSectionFilter.ALL -> true
     ElfSectionFilter.ALLOCATED -> section.flags.hasElfFlag(ELF_SECTION_FLAG_ALLOC)
     ElfSectionFilter.EXECUTABLE -> section.flags.hasElfFlag(ELF_SECTION_FLAG_EXECINSTR)
@@ -5842,7 +4180,7 @@ private fun ElfSectionFilter.matches(section: HexElfSection): Boolean = when (th
         section.type == ELF_SECTION_TYPE_DYNAMIC_SYMBOLS.toLong()
 }
 
-private fun HexElfSection.matchesQuery(query: String): Boolean {
+internal fun HexElfSection.matchesQuery(query: String): Boolean {
     if (query.isEmpty()) return true
     val normalizedHexQuery = query.removePrefix("0x").removePrefix("0X")
     return name.contains(query, ignoreCase = true) ||
@@ -5854,7 +4192,7 @@ private fun HexElfSection.matchesQuery(query: String): Boolean {
         size.matchesQuery(query, normalizedHexQuery)
 }
 
-private fun ElfProgramHeaderFilter.matches(programHeader: HexElfProgramHeader): Boolean = when (this) {
+internal fun ElfProgramHeaderFilter.matches(programHeader: HexElfProgramHeader): Boolean = when (this) {
     ElfProgramHeaderFilter.ALL -> true
     ElfProgramHeaderFilter.LOAD -> programHeader.isLoad
     ElfProgramHeaderFilter.EXECUTABLE -> programHeader.isExecutable
@@ -5865,7 +4203,7 @@ private fun ElfProgramHeaderFilter.matches(programHeader: HexElfProgramHeader): 
             programHeader.type == ELF_PROGRAM_TYPE_GNU_RELRO
 }
 
-private fun HexElfProgramHeader.matchesQuery(query: String): Boolean {
+internal fun HexElfProgramHeader.matchesQuery(query: String): Boolean {
     if (query.isEmpty()) return true
     val normalizedHexQuery = query.removePrefix("0x").removePrefix("0X")
     return typeName.contains(query, ignoreCase = true) ||
@@ -5881,20 +4219,20 @@ private fun HexElfProgramHeader.matchesQuery(query: String): Boolean {
         programFlagsQueryName().contains(query, ignoreCase = true)
 }
 
-private fun HexElfProgramHeader.programFlagsQueryName(): String = buildString {
+internal fun HexElfProgramHeader.programFlagsQueryName(): String = buildString {
     if (flags.hasElfProgramFlag(ELF_PROGRAM_FLAG_READ)) append('R')
     if (flags.hasElfProgramFlag(ELF_PROGRAM_FLAG_WRITE)) append('W')
     if (flags.hasElfProgramFlag(ELF_PROGRAM_FLAG_EXECUTE)) append('X')
 }
 
-private fun ElfSectionSegmentFilter.matches(mapping: HexElfSectionSegmentMapping): Boolean = when (this) {
+internal fun ElfSectionSegmentFilter.matches(mapping: HexElfSectionSegmentMapping): Boolean = when (this) {
     ElfSectionSegmentFilter.ALL -> true
     ElfSectionSegmentFilter.EXECUTABLE -> mapping.isExecutable
     ElfSectionSegmentFilter.WRITABLE -> mapping.isWritable
     ElfSectionSegmentFilter.READABLE -> mapping.isReadable
 }
 
-private fun HexElfSectionSegmentMapping.matchesQuery(query: String): Boolean {
+internal fun HexElfSectionSegmentMapping.matchesQuery(query: String): Boolean {
     if (query.isEmpty()) return true
     val normalizedHexQuery = query.removePrefix("0x").removePrefix("0X")
     return sectionName.contains(query, ignoreCase = true) ||
@@ -5912,13 +4250,13 @@ private fun HexElfSectionSegmentMapping.matchesQuery(query: String): Boolean {
         segmentFlagsQueryName().contains(query, ignoreCase = true)
 }
 
-private fun HexElfSectionSegmentMapping.segmentFlagsQueryName(): String = buildString {
+internal fun HexElfSectionSegmentMapping.segmentFlagsQueryName(): String = buildString {
     if (isReadable) append('R')
     if (isWritable) append('W')
     if (isExecutable) append('X')
 }
 
-private fun HexElfSectionEntropyEntry.matchesQuery(query: String): Boolean {
+internal fun HexElfSectionEntropyEntry.matchesQuery(query: String): Boolean {
     if (query.isEmpty()) return true
     val normalizedHexQuery = query.removePrefix("0x").removePrefix("0X")
     val entropyLabel = "%.2f".format(entropy)
@@ -5933,20 +4271,20 @@ private fun HexElfSectionEntropyEntry.matchesQuery(query: String): Boolean {
         sampleSize.matchesQuery(query, normalizedHexQuery)
 }
 
-private fun HexElfSectionEntropyEntry.sectionFlagsQueryName(): String = buildString {
+internal fun HexElfSectionEntropyEntry.sectionFlagsQueryName(): String = buildString {
     if (isAllocated) append('A')
     if (isWritable) append('W')
     if (isExecutable) append('X')
 }
 
-private fun ElfSymbolFilter.matches(symbol: HexElfSymbol): Boolean = when (this) {
+internal fun ElfSymbolFilter.matches(symbol: HexElfSymbol): Boolean = when (this) {
     ElfSymbolFilter.ALL -> true
     ElfSymbolFilter.IMPORTED -> symbol.isImported
     ElfSymbolFilter.EXPORTED -> symbol.isExported
     ElfSymbolFilter.JNI -> symbol.isJni
 }
 
-private fun ElfDynamicEntryFilter.matches(entry: HexElfDynamicStringEntry): Boolean = when (this) {
+internal fun ElfDynamicEntryFilter.matches(entry: HexElfDynamicStringEntry): Boolean = when (this) {
     ElfDynamicEntryFilter.ALL -> true
     ElfDynamicEntryFilter.NEEDED -> entry.type == HexElfDynamicStringType.NEEDED
     ElfDynamicEntryFilter.SONAME -> entry.type == HexElfDynamicStringType.SONAME
@@ -5954,14 +4292,14 @@ private fun ElfDynamicEntryFilter.matches(entry: HexElfDynamicStringEntry): Bool
     ElfDynamicEntryFilter.RUNPATH -> entry.type == HexElfDynamicStringType.RUNPATH
 }
 
-private fun ElfDynamicFlagFilter.matches(entry: HexElfDynamicFlagEntry): Boolean = when (this) {
+internal fun ElfDynamicFlagFilter.matches(entry: HexElfDynamicFlagEntry): Boolean = when (this) {
     ElfDynamicFlagFilter.ALL -> true
     ElfDynamicFlagFilter.BIND_NOW -> entry.isBindNow
     ElfDynamicFlagFilter.FLAGS -> entry.type == HexElfDynamicFlagType.FLAGS
     ElfDynamicFlagFilter.FLAGS_1 -> entry.type == HexElfDynamicFlagType.FLAGS_1
 }
 
-private fun ElfNoteFilter.matches(note: HexElfNoteEntry): Boolean = when (this) {
+internal fun ElfNoteFilter.matches(note: HexElfNoteEntry): Boolean = when (this) {
     ElfNoteFilter.ALL -> true
     ElfNoteFilter.BUILD_ID -> note.isBuildId
     ElfNoteFilter.GNU -> note.name.equals("GNU", ignoreCase = true)
@@ -5969,13 +4307,13 @@ private fun ElfNoteFilter.matches(note: HexElfNoteEntry): Boolean = when (this) 
         note.sectionName.contains("android", ignoreCase = true)
 }
 
-private fun ElfRelocationFilter.matches(relocation: HexElfRelocationEntry): Boolean = when (this) {
+internal fun ElfRelocationFilter.matches(relocation: HexElfRelocationEntry): Boolean = when (this) {
     ElfRelocationFilter.ALL -> true
     ElfRelocationFilter.PLT -> relocation.sectionName.contains(".plt", ignoreCase = true)
     ElfRelocationFilter.DYNAMIC -> !relocation.sectionName.contains(".plt", ignoreCase = true)
 }
 
-private fun ElfLinkageFilter.matches(entry: HexElfLinkageEntry): Boolean = when (this) {
+internal fun ElfLinkageFilter.matches(entry: HexElfLinkageEntry): Boolean = when (this) {
     ElfLinkageFilter.ALL -> true
     ElfLinkageFilter.IMPORTS -> entry.isImported
     ElfLinkageFilter.PLT -> entry.entryKind == HexElfLinkageEntryKind.PLT
@@ -5989,7 +4327,7 @@ private fun ElfLinkageFilter.matches(entry: HexElfLinkageEntry): Boolean = when 
     ElfLinkageFilter.LAZY -> entry.bindingMode == HexElfLinkageBindingMode.LAZY
 }
 
-private fun ElfDynamicLinkerStepFilter.matches(step: HexElfDynamicLinkerStep): Boolean = when (this) {
+internal fun ElfDynamicLinkerStepFilter.matches(step: HexElfDynamicLinkerStep): Boolean = when (this) {
     ElfDynamicLinkerStepFilter.ALL -> true
     ElfDynamicLinkerStepFilter.LOADING ->
         step.type == HexElfDynamicLinkerStepType.MAP_LOAD_SEGMENTS ||
@@ -6004,7 +4342,7 @@ private fun ElfDynamicLinkerStepFilter.matches(step: HexElfDynamicLinkerStep): B
             step.type == HexElfDynamicLinkerStepType.EXPOSE_JNI_ENTRYPOINTS
 }
 
-private fun ElfRiskFilter.matches(finding: HexElfRiskFinding): Boolean = when (this) {
+internal fun ElfRiskFilter.matches(finding: HexElfRiskFinding): Boolean = when (this) {
     ElfRiskFilter.ALL -> true
     ElfRiskFilter.HIGH -> finding.severity == HexElfRiskSeverity.HIGH
     ElfRiskFilter.WARNING -> finding.severity == HexElfRiskSeverity.WARNING
@@ -6021,7 +4359,7 @@ private fun ElfRiskFilter.matches(finding: HexElfRiskFinding): Boolean = when (t
     ElfRiskFilter.METADATA -> finding.type == HexElfRiskFindingType.MISSING_SONAME
 }
 
-private fun ElfJniHintFilter.matches(hint: HexElfJniRegistrationHint): Boolean = when (this) {
+internal fun ElfJniHintFilter.matches(hint: HexElfJniRegistrationHint): Boolean = when (this) {
     ElfJniHintFilter.ALL -> true
     ElfJniHintFilter.REGISTER_NATIVES ->
         hint.type == HexElfJniRegistrationHintType.REGISTER_NATIVES_SYMBOL ||
@@ -6035,7 +4373,7 @@ private fun ElfJniHintFilter.matches(hint: HexElfJniRegistrationHint): Boolean =
             hint.type == HexElfJniRegistrationHintType.JNI_METHOD_SIGNATURE
 }
 
-private fun ElfNativeApiFilter.matches(hint: HexElfNativeApiHint): Boolean = when (this) {
+internal fun ElfNativeApiFilter.matches(hint: HexElfNativeApiHint): Boolean = when (this) {
     ElfNativeApiFilter.ALL -> true
     ElfNativeApiFilter.DYNAMIC_LOADING -> hint.category == HexElfNativeApiCategory.DYNAMIC_LOADING
     ElfNativeApiFilter.MEMORY -> hint.category == HexElfNativeApiCategory.MEMORY_PROTECTION
@@ -6047,14 +4385,14 @@ private fun ElfNativeApiFilter.matches(hint: HexElfNativeApiHint): Boolean = whe
     ElfNativeApiFilter.LOGGING -> hint.category == HexElfNativeApiCategory.LOGGING
 }
 
-private fun EntropyBucketFilter.matches(level: HexEntropyLevel): Boolean = when (this) {
+internal fun EntropyBucketFilter.matches(level: HexEntropyLevel): Boolean = when (this) {
     EntropyBucketFilter.ALL -> true
     EntropyBucketFilter.LOW -> level == HexEntropyLevel.LOW
     EntropyBucketFilter.MEDIUM -> level == HexEntropyLevel.MEDIUM
     EntropyBucketFilter.HIGH -> level == HexEntropyLevel.HIGH
 }
 
-private fun HexElfDynamicStringEntry.matchesQuery(query: String): Boolean {
+internal fun HexElfDynamicStringEntry.matchesQuery(query: String): Boolean {
     if (query.isEmpty()) return true
     val normalizedHexQuery = query.removePrefix("0x").removePrefix("0X")
     return value.contains(query, ignoreCase = true) ||
@@ -6066,7 +4404,7 @@ private fun HexElfDynamicStringEntry.matchesQuery(query: String): Boolean {
         entryFileOffset.matchesQuery(query, normalizedHexQuery)
 }
 
-private fun HexElfDynamicStringSemantic.queryName(): String = when (this) {
+internal fun HexElfDynamicStringSemantic.queryName(): String = when (this) {
     HexElfDynamicStringSemantic.NEEDED_LIBRARY_LOAD ->
         "needed dependency declaration order load order direct library"
     HexElfDynamicStringSemantic.SONAME_IDENTITY ->
@@ -6079,7 +4417,7 @@ private fun HexElfDynamicStringSemantic.queryName(): String = when (this) {
         "unknown dynamic string"
 }
 
-private fun HexElfDynamicFlagEntry.matchesQuery(query: String): Boolean {
+internal fun HexElfDynamicFlagEntry.matchesQuery(query: String): Boolean {
     if (query.isEmpty()) return true
     val normalizedHexQuery = query.removePrefix("0x").removePrefix("0X")
     return type.name.contains(query, ignoreCase = true) ||
@@ -6089,9 +4427,9 @@ private fun HexElfDynamicFlagEntry.matchesQuery(query: String): Boolean {
         entryFileOffset.matchesQuery(query, normalizedHexQuery)
 }
 
-private fun HexElfDynamicFlagEntry.dynamicFlagQueryName(): String = if (isBindNow) "BIND_NOW NOW" else ""
+internal fun HexElfDynamicFlagEntry.dynamicFlagQueryName(): String = if (isBindNow) "BIND_NOW NOW" else ""
 
-private fun HexElfNoteEntry.matchesQuery(query: String): Boolean {
+internal fun HexElfNoteEntry.matchesQuery(query: String): Boolean {
     if (query.isEmpty()) return true
     val normalizedHexQuery = query.removePrefix("0x").removePrefix("0X")
     return sectionName.contains(query, ignoreCase = true) ||
@@ -6107,7 +4445,7 @@ private fun HexElfNoteEntry.matchesQuery(query: String): Boolean {
         descriptionSize.matchesQuery(query, normalizedHexQuery)
 }
 
-private fun HexElfNoteEntry.noteRoleQueryName(): String = buildString {
+internal fun HexElfNoteEntry.noteRoleQueryName(): String = buildString {
     if (isBuildId) append("build-id build id ")
     if (name.equals("GNU", ignoreCase = true)) append("gnu ")
     if (properties.isNotEmpty()) append("gnu property cet ")
@@ -6116,7 +4454,7 @@ private fun HexElfNoteEntry.noteRoleQueryName(): String = buildString {
     }
 }
 
-private fun HexElfNotePropertyEntry.matchesQuery(query: String): Boolean {
+internal fun HexElfNotePropertyEntry.matchesQuery(query: String): Boolean {
     if (query.isEmpty()) return true
     val normalizedHexQuery = query.removePrefix("0x").removePrefix("0X")
     return typeName.contains(query, ignoreCase = true) ||
@@ -6132,18 +4470,18 @@ private fun HexElfNotePropertyEntry.matchesQuery(query: String): Boolean {
         dataSize.matchesQuery(query, normalizedHexQuery)
 }
 
-private fun HexElfNotePropertyEntry.propertyFeatureQueryName(): String = features.joinToString(" ") { feature ->
+internal fun HexElfNotePropertyEntry.propertyFeatureQueryName(): String = features.joinToString(" ") { feature ->
     feature.queryName()
 }
 
-private fun HexElfNotePropertyFeature.queryName(): String = when (this) {
+internal fun HexElfNotePropertyFeature.queryName(): String = when (this) {
     HexElfNotePropertyFeature.X86_IBT -> "ibt indirect branch tracking branch target"
     HexElfNotePropertyFeature.X86_SHSTK -> "shstk shadow stack"
     HexElfNotePropertyFeature.AARCH64_BTI -> "bti branch target"
     HexElfNotePropertyFeature.AARCH64_PAC -> "pac pointer authentication"
 }
 
-private fun HexElfRelocationEntry.matchesQuery(query: String): Boolean {
+internal fun HexElfRelocationEntry.matchesQuery(query: String): Boolean {
     if (query.isEmpty()) return true
     val normalizedHexQuery = query.removePrefix("0x").removePrefix("0X")
     return sectionName.contains(query, ignoreCase = true) ||
@@ -6163,7 +4501,7 @@ private fun HexElfRelocationEntry.matchesQuery(query: String): Boolean {
         addend?.matchesQuery(query, normalizedHexQuery) == true
 }
 
-private fun HexElfRelocationSemantic.queryName(): String = when (this) {
+internal fun HexElfRelocationSemantic.queryName(): String = when (this) {
     HexElfRelocationSemantic.JUMP_SLOT_BINDING ->
         "jump slot plt call binding resolver"
     HexElfRelocationSemantic.GLOB_DAT_ADDRESS ->
@@ -6180,7 +4518,7 @@ private fun HexElfRelocationSemantic.queryName(): String = when (this) {
         "other relocation"
 }
 
-private fun HexElfRelocationEntry.symbolRoleQueryName(): String = when {
+internal fun HexElfRelocationEntry.symbolRoleQueryName(): String = when {
     isSymbolJni -> "jni"
     isSymbolImported -> "imported"
     isSymbolExported -> "exported"
@@ -6188,7 +4526,7 @@ private fun HexElfRelocationEntry.symbolRoleQueryName(): String = when {
     else -> ""
 }
 
-private fun HexElfLinkageEntry.matchesQuery(query: String): Boolean {
+internal fun HexElfLinkageEntry.matchesQuery(query: String): Boolean {
     if (query.isEmpty()) return true
     val normalizedHexQuery = query.removePrefix("0x").removePrefix("0X")
     return symbolName?.contains(query, ignoreCase = true) == true ||
@@ -6210,7 +4548,7 @@ private fun HexElfLinkageEntry.matchesQuery(query: String): Boolean {
         pltStub?.matchesQuery(query, normalizedHexQuery) == true
 }
 
-private fun HexElfPltStub.matchesQuery(
+internal fun HexElfPltStub.matchesQuery(
     query: String,
     normalizedHexQuery: String
 ): Boolean = architecture.name.contains(query, ignoreCase = true) ||
@@ -6222,12 +4560,12 @@ private fun HexElfPltStub.matchesQuery(
     slotFileOffset?.matchesQuery(query, normalizedHexQuery) == true ||
     slotAddress?.matchesQuery(query, normalizedHexQuery) == true
 
-private fun HexElfPltStub.pltStubQueryName(): String = when {
+internal fun HexElfPltStub.pltStubQueryName(): String = when {
     semantic == HexElfPltStubSemantic.LOAD_GOT_SLOT_AND_BRANCH -> "load got slot branch plt stub jmp push"
     else -> "stub plt"
 }
 
-private fun HexElfLinkageResolutionSemantic.queryName(): String = when (this) {
+internal fun HexElfLinkageResolutionSemantic.queryName(): String = when (this) {
     HexElfLinkageResolutionSemantic.EAGER_PLT_BINDING ->
         "bind_now now eager plt got startup import resolver"
     HexElfLinkageResolutionSemantic.LAZY_PLT_CALL ->
@@ -6240,7 +4578,7 @@ private fun HexElfLinkageResolutionSemantic.queryName(): String = when (this) {
         "local relocation fixup"
 }
 
-private fun HexElfLinkageEntry.symbolRoleQueryName(): String = when {
+internal fun HexElfLinkageEntry.symbolRoleQueryName(): String = when {
     isJni -> "jni"
     isImported -> "imported import"
     isExported -> "exported export"
@@ -6248,7 +4586,7 @@ private fun HexElfLinkageEntry.symbolRoleQueryName(): String = when {
     else -> ""
 }
 
-private fun HexElfDynamicLinkerStep.matchesQuery(query: String): Boolean {
+internal fun HexElfDynamicLinkerStep.matchesQuery(query: String): Boolean {
     if (query.isEmpty()) return true
     val normalizedHexQuery = query.removePrefix("0x").removePrefix("0X")
     return type.name.contains(query, ignoreCase = true) ||
@@ -6259,7 +4597,7 @@ private fun HexElfDynamicLinkerStep.matchesQuery(query: String): Boolean {
         evidenceFileOffset?.matchesQuery(query, normalizedHexQuery) == true
 }
 
-private fun HexElfDynamicLinkerStep.dynamicLinkerStepQueryName(): String = when (type) {
+internal fun HexElfDynamicLinkerStep.dynamicLinkerStepQueryName(): String = when (type) {
     HexElfDynamicLinkerStepType.MAP_LOAD_SEGMENTS -> "map load segment loading"
     HexElfDynamicLinkerStepType.LOAD_NEEDED_LIBRARIES -> "needed library dependency loading"
     HexElfDynamicLinkerStepType.APPLY_RELOCATIONS -> "relocation apply"
@@ -6270,7 +4608,7 @@ private fun HexElfDynamicLinkerStep.dynamicLinkerStepQueryName(): String = when 
     HexElfDynamicLinkerStepType.EXPOSE_JNI_ENTRYPOINTS -> "jni entrypoint"
 }
 
-private fun HexElfRiskFinding.matchesQuery(query: String): Boolean {
+internal fun HexElfRiskFinding.matchesQuery(query: String): Boolean {
     if (query.isEmpty()) return true
     val normalizedHexQuery = query.removePrefix("0x").removePrefix("0X")
     return type.name.contains(query, ignoreCase = true) ||
@@ -6281,7 +4619,7 @@ private fun HexElfRiskFinding.matchesQuery(query: String): Boolean {
         evidenceFileOffset?.matchesQuery(query, normalizedHexQuery) == true
 }
 
-private fun HexElfRiskFinding.riskFindingQueryName(): String = when (type) {
+internal fun HexElfRiskFinding.riskFindingQueryName(): String = when (type) {
     HexElfRiskFindingType.RWX_LOAD_SEGMENT -> "rwx load segment writable executable"
     HexElfRiskFindingType.WRITABLE_EXECUTABLE_SECTION -> "wx section writable executable"
     HexElfRiskFindingType.EXECUTABLE_STACK -> "nx stack gnu_stack executable"
@@ -6292,7 +4630,7 @@ private fun HexElfRiskFinding.riskFindingQueryName(): String = when (type) {
     HexElfRiskFindingType.MISSING_SONAME -> "soname metadata missing"
 }
 
-private fun HexElfJniRegistrationHint.matchesQuery(query: String): Boolean {
+internal fun HexElfJniRegistrationHint.matchesQuery(query: String): Boolean {
     if (query.isEmpty()) return true
     val normalizedHexQuery = query.removePrefix("0x").removePrefix("0X")
     return type.name.contains(query, ignoreCase = true) ||
@@ -6303,7 +4641,7 @@ private fun HexElfJniRegistrationHint.matchesQuery(query: String): Boolean {
         evidenceFileOffset?.matchesQuery(query, normalizedHexQuery) == true
 }
 
-private fun HexElfJniRegistrationHint.jniHintQueryName(): String = when (type) {
+internal fun HexElfJniRegistrationHint.jniHintQueryName(): String = when (type) {
     HexElfJniRegistrationHintType.REGISTER_NATIVES_SYMBOL -> "register natives symbol dynamic"
     HexElfJniRegistrationHintType.REGISTER_NATIVES_STRING -> "register natives string dynamic registration"
     HexElfJniRegistrationHintType.JNI_ONLOAD_ENTRY -> "jni onload entrypoint"
@@ -6313,7 +4651,7 @@ private fun HexElfJniRegistrationHint.jniHintQueryName(): String = when (type) {
     HexElfJniRegistrationHintType.JNI_METHOD_SIGNATURE -> "jni method signature descriptor"
 }
 
-private fun HexElfNativeApiHint.matchesQuery(query: String): Boolean {
+internal fun HexElfNativeApiHint.matchesQuery(query: String): Boolean {
     if (query.isEmpty()) return true
     val normalizedHexQuery = query.removePrefix("0x").removePrefix("0X")
     return symbolName.contains(query, ignoreCase = true) ||
@@ -6323,7 +4661,7 @@ private fun HexElfNativeApiHint.matchesQuery(query: String): Boolean {
         evidenceFileOffset?.matchesQuery(query, normalizedHexQuery) == true
 }
 
-private fun HexElfNativeApiHint.nativeApiQueryName(): String = when (category) {
+internal fun HexElfNativeApiHint.nativeApiQueryName(): String = when (category) {
     HexElfNativeApiCategory.DYNAMIC_LOADING -> "dynamic loading dlopen dlsym loader"
     HexElfNativeApiCategory.MEMORY_PROTECTION -> "memory protection mmap mprotect executable"
     HexElfNativeApiCategory.PROCESS_CONTROL -> "process control anti debug ptrace prctl syscall"
@@ -6334,7 +4672,7 @@ private fun HexElfNativeApiHint.nativeApiQueryName(): String = when (category) {
     HexElfNativeApiCategory.LOGGING -> "logging log print printf"
 }
 
-private fun DexMapEntryFilter.matches(entry: HexDexMapEntry): Boolean = when (this) {
+internal fun DexMapEntryFilter.matches(entry: HexDexMapEntry): Boolean = when (this) {
     DexMapEntryFilter.ALL -> true
     DexMapEntryFilter.IDS -> entry.type in DEX_MAP_ID_TYPES
     DexMapEntryFilter.CLASS_DATA -> entry.type == DEX_MAP_TYPE_CLASS_DATA_ITEM
@@ -6345,7 +4683,7 @@ private fun DexMapEntryFilter.matches(entry: HexDexMapEntry): Boolean = when (th
             entry.type != DEX_MAP_TYPE_CODE_ITEM
 }
 
-private fun HexDexStringEntry.matchesQuery(query: String): Boolean {
+internal fun HexDexStringEntry.matchesQuery(query: String): Boolean {
     if (query.isEmpty()) return true
     val normalizedHexQuery = query.removePrefix("0x").removePrefix("0X")
     return value.contains(query, ignoreCase = true) ||
@@ -6354,7 +4692,7 @@ private fun HexDexStringEntry.matchesQuery(query: String): Boolean {
         dataOffset.matchesQuery(query, normalizedHexQuery)
 }
 
-private fun HexDexTypeEntry.matchesQuery(query: String): Boolean {
+internal fun HexDexTypeEntry.matchesQuery(query: String): Boolean {
     if (query.isEmpty()) return true
     val normalizedHexQuery = query.removePrefix("0x").removePrefix("0X")
     return descriptor.contains(query, ignoreCase = true) ||
@@ -6363,7 +4701,7 @@ private fun HexDexTypeEntry.matchesQuery(query: String): Boolean {
         typeIdOffset.matchesQuery(query, normalizedHexQuery)
 }
 
-private fun HexDexProtoEntry.matchesQuery(query: String): Boolean {
+internal fun HexDexProtoEntry.matchesQuery(query: String): Boolean {
     if (query.isEmpty()) return true
     val normalizedHexQuery = query.removePrefix("0x").removePrefix("0X")
     return shorty.contains(query, ignoreCase = true) ||
@@ -6377,7 +4715,7 @@ private fun HexDexProtoEntry.matchesQuery(query: String): Boolean {
         parametersOffset.matchesQuery(query, normalizedHexQuery)
 }
 
-private fun HexDexFieldEntry.matchesQuery(query: String): Boolean {
+internal fun HexDexFieldEntry.matchesQuery(query: String): Boolean {
     if (query.isEmpty()) return true
     val normalizedHexQuery = query.removePrefix("0x").removePrefix("0X")
     return name.contains(query, ignoreCase = true) ||
@@ -6390,7 +4728,7 @@ private fun HexDexFieldEntry.matchesQuery(query: String): Boolean {
         fieldIdOffset.matchesQuery(query, normalizedHexQuery)
 }
 
-private fun HexDexMethodEntry.matchesQuery(query: String): Boolean {
+internal fun HexDexMethodEntry.matchesQuery(query: String): Boolean {
     if (query.isEmpty()) return true
     val normalizedHexQuery = query.removePrefix("0x").removePrefix("0X")
     return name.contains(query, ignoreCase = true) ||
@@ -6404,7 +4742,7 @@ private fun HexDexMethodEntry.matchesQuery(query: String): Boolean {
         methodIdOffset.matchesQuery(query, normalizedHexQuery)
 }
 
-private fun HexDexClassDefEntry.matchesQuery(query: String): Boolean {
+internal fun HexDexClassDefEntry.matchesQuery(query: String): Boolean {
     if (query.isEmpty()) return true
     val normalizedHexQuery = query.removePrefix("0x").removePrefix("0X")
     return classDescriptor.contains(query, ignoreCase = true) ||
@@ -6418,7 +4756,7 @@ private fun HexDexClassDefEntry.matchesQuery(query: String): Boolean {
         classDataOffset.matchesQuery(query, normalizedHexQuery)
 }
 
-private fun HexDexClassDataMethodEntry.matchesQuery(query: String): Boolean {
+internal fun HexDexClassDataMethodEntry.matchesQuery(query: String): Boolean {
     if (query.isEmpty()) return true
     val normalizedHexQuery = query.removePrefix("0x").removePrefix("0X")
     return classDescriptor.contains(query, ignoreCase = true) ||
@@ -6437,14 +4775,14 @@ private fun HexDexClassDataMethodEntry.matchesQuery(query: String): Boolean {
         codeOffset.matchesQuery(query, normalizedHexQuery)
 }
 
-private fun HexDexClassDataMethodExecutionKind.dexClassDataMethodExecutionQueryName(): String = when (this) {
+internal fun HexDexClassDataMethodExecutionKind.dexClassDataMethodExecutionQueryName(): String = when (this) {
     HexDexClassDataMethodExecutionKind.CODE -> "code method has code code item bytecode"
     HexDexClassDataMethodExecutionKind.NATIVE -> "native method jni no code acc_native"
     HexDexClassDataMethodExecutionKind.ABSTRACT -> "abstract method no code acc_abstract"
     HexDexClassDataMethodExecutionKind.NO_CODE -> "no code method missing code offset"
 }
 
-private fun HexDexCodeItemEntry.matchesQuery(query: String): Boolean {
+internal fun HexDexCodeItemEntry.matchesQuery(query: String): Boolean {
     if (query.isEmpty()) return true
     val normalizedHexQuery = query.removePrefix("0x").removePrefix("0X")
     return methodClassDescriptor.contains(query, ignoreCase = true) ||
@@ -6465,7 +4803,7 @@ private fun HexDexCodeItemEntry.matchesQuery(query: String): Boolean {
         codeOffset.matchesQuery(query, normalizedHexQuery)
 }
 
-private fun HexDexCallReferenceEntry.matchesQuery(query: String): Boolean {
+internal fun HexDexCallReferenceEntry.matchesQuery(query: String): Boolean {
     if (query.isEmpty()) return true
     val normalizedHexQuery = query.removePrefix("0x").removePrefix("0X")
     return callerClassDescriptor.contains(query, ignoreCase = true) ||
@@ -6485,7 +4823,7 @@ private fun HexDexCallReferenceEntry.matchesQuery(query: String): Boolean {
         targetMethodIdOffset?.matchesQuery(query, normalizedHexQuery) == true
 }
 
-private fun HexDexStringReferenceEntry.matchesQuery(query: String): Boolean {
+internal fun HexDexStringReferenceEntry.matchesQuery(query: String): Boolean {
     if (query.isEmpty()) return true
     val normalizedHexQuery = query.removePrefix("0x").removePrefix("0X")
     return callerClassDescriptor.contains(query, ignoreCase = true) ||
@@ -6504,7 +4842,7 @@ private fun HexDexStringReferenceEntry.matchesQuery(query: String): Boolean {
         stringDataOffset?.matchesQuery(query, normalizedHexQuery) == true
 }
 
-private fun HexDexFieldReferenceEntry.matchesQuery(query: String): Boolean {
+internal fun HexDexFieldReferenceEntry.matchesQuery(query: String): Boolean {
     if (query.isEmpty()) return true
     val normalizedHexQuery = query.removePrefix("0x").removePrefix("0X")
     return callerClassDescriptor.contains(query, ignoreCase = true) ||
@@ -6524,7 +4862,7 @@ private fun HexDexFieldReferenceEntry.matchesQuery(query: String): Boolean {
         fieldIdOffset?.matchesQuery(query, normalizedHexQuery) == true
 }
 
-private fun HexDexMapEntry.matchesQuery(query: String): Boolean {
+internal fun HexDexMapEntry.matchesQuery(query: String): Boolean {
     if (query.isEmpty()) return true
     val normalizedHexQuery = query.removePrefix("0x").removePrefix("0X")
     return typeName.contains(query, ignoreCase = true) ||
@@ -6535,7 +4873,7 @@ private fun HexDexMapEntry.matchesQuery(query: String): Boolean {
         entryFileOffset.matchesQuery(query, normalizedHexQuery)
 }
 
-private fun ArchiveEntryFilter.matches(entry: HexArchiveEntry): Boolean = when (this) {
+internal fun ArchiveEntryFilter.matches(entry: HexArchiveEntry): Boolean = when (this) {
     ArchiveEntryFilter.ALL -> true
     ArchiveEntryFilter.DEX -> entry.name.endsWith(".dex", ignoreCase = true)
     ArchiveEntryFilter.NATIVE_LIBRARIES -> entry.name.startsWith("lib/", ignoreCase = true) &&
@@ -6546,7 +4884,7 @@ private fun ArchiveEntryFilter.matches(entry: HexArchiveEntry): Boolean = when (
     ArchiveEntryFilter.SIGNATURE -> entry.name.startsWith("META-INF/", ignoreCase = true)
 }
 
-private fun ArchiveNativeLibraryLoadModeFilter.matches(entry: HexArchiveNativeLibrarySummary): Boolean = when (this) {
+internal fun ArchiveNativeLibraryLoadModeFilter.matches(entry: HexArchiveNativeLibrarySummary): Boolean = when (this) {
     ArchiveNativeLibraryLoadModeFilter.ALL -> true
     ArchiveNativeLibraryLoadModeFilter.DIRECT_MMAP_READY -> entry.loadMode == HexArchiveNativeLoadMode.DIRECT_MMAP_READY
     ArchiveNativeLibraryLoadModeFilter.STORED_UNALIGNED -> entry.loadMode == HexArchiveNativeLoadMode.STORED_UNALIGNED
@@ -6554,7 +4892,7 @@ private fun ArchiveNativeLibraryLoadModeFilter.matches(entry: HexArchiveNativeLi
     ArchiveNativeLibraryLoadModeFilter.UNKNOWN -> entry.loadMode == HexArchiveNativeLoadMode.UNKNOWN
 }
 
-private fun HexArchiveEntry.matchesQuery(query: String): Boolean {
+internal fun HexArchiveEntry.matchesQuery(query: String): Boolean {
     if (query.isEmpty()) return true
     val normalizedHexQuery = query.removePrefix("0x").removePrefix("0X")
     return name.contains(query, ignoreCase = true) ||
@@ -6578,7 +4916,7 @@ private fun HexArchiveEntry.matchesQuery(query: String): Boolean {
         dataEndOffset?.matchesQuery(query, normalizedHexQuery) == true
 }
 
-private fun HexArchiveNativeLibrarySummary.matchesQuery(query: String): Boolean {
+internal fun HexArchiveNativeLibrarySummary.matchesQuery(query: String): Boolean {
     if (query.isEmpty()) return true
     val normalizedHexQuery = query.removePrefix("0x").removePrefix("0X")
     return entryName.contains(query, ignoreCase = true) ||
@@ -6600,13 +4938,13 @@ private fun HexArchiveNativeLibrarySummary.matchesQuery(query: String): Boolean 
         }
 }
 
-private fun archiveEntryCompressionQueryName(compressionMethod: Int): String = when (compressionMethod) {
+internal fun archiveEntryCompressionQueryName(compressionMethod: Int): String = when (compressionMethod) {
     ZIP_COMPRESSION_METHOD_STORED -> "stored uncompressed no compression method 0"
     ZIP_COMPRESSION_METHOD_DEFLATED -> "deflated compressed zip compression method 8"
     else -> "compressed zip compression method $compressionMethod"
 }
 
-private fun archiveEntryNativeLoadModeQueryName(entry: HexArchiveEntry): String {
+internal fun archiveEntryNativeLoadModeQueryName(entry: HexArchiveEntry): String {
     if (!entry.name.startsWith("lib/", ignoreCase = true) || !entry.name.endsWith(".so", ignoreCase = true)) {
         return ""
     }
@@ -6616,21 +4954,21 @@ private fun archiveEntryNativeLoadModeQueryName(entry: HexArchiveEntry): String 
     ).archiveNativeLoadModeQueryName()
 }
 
-private fun HexArchiveNativeLoadMode.archiveNativeLoadModeQueryName(): String = when (this) {
+internal fun HexArchiveNativeLoadMode.archiveNativeLoadModeQueryName(): String = when (this) {
     HexArchiveNativeLoadMode.DIRECT_MMAP_READY -> "direct mmap ready stored uncompressed page aligned 4096"
     HexArchiveNativeLoadMode.STORED_UNALIGNED -> "stored uncompressed page unaligned needs extraction"
     HexArchiveNativeLoadMode.NEEDS_DECOMPRESSION -> "compressed deflated needs decompression extraction"
     HexArchiveNativeLoadMode.UNKNOWN -> "unknown native load mode"
 }
 
-private fun HexArchiveEntryDataRangeStatus.archiveEntryDataRangeStatusQueryName(): String = when (this) {
+internal fun HexArchiveEntryDataRangeStatus.archiveEntryDataRangeStatusQueryName(): String = when (this) {
     HexArchiveEntryDataRangeStatus.OK -> "valid data range ok"
     HexArchiveEntryDataRangeStatus.UNKNOWN -> "unknown data range"
     HexArchiveEntryDataRangeStatus.OUT_OF_FILE -> "out of file truncated invalid data range"
     HexArchiveEntryDataRangeStatus.OVERLAPS_CENTRAL_DIRECTORY -> "overlaps central directory invalid data range"
 }
 
-private fun HexArchiveEntryLocalHeaderConsistency.archiveEntryLocalHeaderConsistencyQueryName(): String = when (this) {
+internal fun HexArchiveEntryLocalHeaderConsistency.archiveEntryLocalHeaderConsistencyQueryName(): String = when (this) {
     HexArchiveEntryLocalHeaderConsistency.OK -> "local header consistent ok matches central directory"
     HexArchiveEntryLocalHeaderConsistency.UNKNOWN -> "local header unknown unreadable missing"
     HexArchiveEntryLocalHeaderConsistency.NAME_MISMATCH ->
@@ -6641,12 +4979,12 @@ private fun HexArchiveEntryLocalHeaderConsistency.archiveEntryLocalHeaderConsist
         "local mismatch local header multiple mismatches name method flags central directory"
 }
 
-private fun Set<HexArchiveEntryNameRisk>.archiveEntryNameRiskQueryName(): String {
+internal fun Set<HexArchiveEntryNameRisk>.archiveEntryNameRiskQueryName(): String {
     if (isEmpty()) return "entry name ok safe"
     return joinToString(separator = " ") { risk -> risk.archiveEntryNameRiskQueryName() }
 }
 
-private fun HexArchiveEntryNameRisk.archiveEntryNameRiskQueryName(): String = when (this) {
+internal fun HexArchiveEntryNameRisk.archiveEntryNameRiskQueryName(): String = when (this) {
     HexArchiveEntryNameRisk.EMPTY_NAME -> "name risk empty entry name"
     HexArchiveEntryNameRisk.DUPLICATE_NAME -> "name risk duplicate entry duplicate name"
     HexArchiveEntryNameRisk.ABSOLUTE_PATH -> "name risk absolute path rooted path"
@@ -6655,7 +4993,7 @@ private fun HexArchiveEntryNameRisk.archiveEntryNameRiskQueryName(): String = wh
     HexArchiveEntryNameRisk.BACKSLASH_SEPARATOR -> "name risk backslash separator windows separator"
 }
 
-private fun HexArchiveDexSummary.matchesQuery(query: String): Boolean {
+internal fun HexArchiveDexSummary.matchesQuery(query: String): Boolean {
     if (query.isEmpty()) return true
     val normalizedHexQuery = query.removePrefix("0x").removePrefix("0X")
     return entryName.contains(query, ignoreCase = true) ||
@@ -6668,7 +5006,7 @@ private fun HexArchiveDexSummary.matchesQuery(query: String): Boolean {
         localHeaderOffset.matchesQuery(query, normalizedHexQuery)
 }
 
-private fun HexArchiveSigningBlockEntry.matchesQuery(query: String): Boolean {
+internal fun HexArchiveSigningBlockEntry.matchesQuery(query: String): Boolean {
     if (query.isEmpty()) return true
     val normalizedHexQuery = query.removePrefix("0x").removePrefix("0X")
     return idName.contains(query, ignoreCase = true) ||
@@ -6681,7 +5019,7 @@ private fun HexArchiveSigningBlockEntry.matchesQuery(query: String): Boolean {
         valueOffset.matchesQuery(query, normalizedHexQuery)
 }
 
-private fun HexElfSymbol.matchesQuery(query: String): Boolean {
+internal fun HexElfSymbol.matchesQuery(query: String): Boolean {
     if (query.isEmpty()) return true
     val normalizedHexQuery = query.removePrefix("0x").removePrefix("0X")
     return name.contains(query, ignoreCase = true) ||
@@ -6692,7 +5030,7 @@ private fun HexElfSymbol.matchesQuery(query: String): Boolean {
         sectionSize?.matchesQuery(query, normalizedHexQuery) == true
 }
 
-private fun StringEntryEncodingFilter.matches(encoding: HexStringEncoding): Boolean = when (this) {
+internal fun StringEntryEncodingFilter.matches(encoding: HexStringEncoding): Boolean = when (this) {
     StringEntryEncodingFilter.ALL -> true
     StringEntryEncodingFilter.ASCII -> encoding == HexStringEncoding.ASCII
     StringEntryEncodingFilter.UTF_8 -> encoding == HexStringEncoding.UTF_8
@@ -6700,7 +5038,7 @@ private fun StringEntryEncodingFilter.matches(encoding: HexStringEncoding): Bool
     StringEntryEncodingFilter.UTF_16BE -> encoding == HexStringEncoding.UTF_16BE
 }
 
-private fun HexStringEntry.matchesQuery(query: String): Boolean {
+internal fun HexStringEntry.matchesQuery(query: String): Boolean {
     if (query.isEmpty()) return true
     val normalizedHexQuery = query.removePrefix("0x").removePrefix("0X")
     return value.contains(query, ignoreCase = true) ||
@@ -6708,7 +5046,7 @@ private fun HexStringEntry.matchesQuery(query: String): Boolean {
         offset.toString(16).contains(normalizedHexQuery, ignoreCase = true)
 }
 
-private val HexStringEncoding.exportLabel: String
+internal val HexStringEncoding.exportLabel: String
     get() = when (this) {
         HexStringEncoding.ASCII -> "ASCII"
         HexStringEncoding.UTF_8 -> "UTF-8"
@@ -6716,12 +5054,12 @@ private val HexStringEncoding.exportLabel: String
         HexStringEncoding.UTF_16BE -> "UTF-16BE"
     }
 
-private fun String.escapeForTabSeparatedExport(): String = replace("\\", "\\\\")
+internal fun String.escapeForTabSeparatedExport(): String = replace("\\", "\\\\")
     .replace("\t", "\\t")
     .replace("\r", "\\r")
     .replace("\n", "\\n")
 
-private fun String.isLikelyJavaClassDescriptor(): Boolean {
+internal fun String.isLikelyJavaClassDescriptor(): Boolean {
     if (length !in 3..256 || any { it.isWhitespace() }) return false
     val className = if (startsWith("L") && endsWith(";")) {
         substring(1, length - 1)
@@ -6737,7 +5075,7 @@ private fun String.isLikelyJavaClassDescriptor(): Boolean {
     }
 }
 
-private fun String.isLikelyJniMethodSignature(): Boolean {
+internal fun String.isLikelyJniMethodSignature(): Boolean {
     if (length !in 4..256 || !startsWith("(")) return false
     val closeIndex = indexOf(')')
     if (closeIndex <= 0 || closeIndex == lastIndex) return false
@@ -6753,7 +5091,7 @@ private fun String.isLikelyJniMethodSignature(): Boolean {
     }
 }
 
-private fun dexMapTypeName(type: Int): String = when (type) {
+internal fun dexMapTypeName(type: Int): String = when (type) {
     DEX_MAP_TYPE_HEADER_ITEM -> "header_item"
     DEX_MAP_TYPE_STRING_ID_ITEM -> "string_id_item"
     DEX_MAP_TYPE_TYPE_ID_ITEM -> "type_id_item"
@@ -6775,7 +5113,7 @@ private fun dexMapTypeName(type: Int): String = when (type) {
     else -> "type_0x%04X".format(type)
 }
 
-private fun dexOpcodeName(opcode: Int): String = when (opcode) {
+internal fun dexOpcodeName(opcode: Int): String = when (opcode) {
     0x00 -> "nop"
     0x01 -> "move"
     0x02 -> "move/from16"
@@ -6846,36 +5184,36 @@ private fun dexOpcodeName(opcode: Int): String = when (opcode) {
     else -> "opcode_0x%02X".format(opcode)
 }
 
-private fun Long.hasElfFlag(flag: Long): Boolean = (this and flag) != 0L
+internal fun Long.hasElfFlag(flag: Long): Boolean = (this and flag) != 0L
 
-private fun Int.hasElfProgramFlag(flag: Int): Boolean = (this and flag) != 0
+internal fun Int.hasElfProgramFlag(flag: Int): Boolean = (this and flag) != 0
 
-private fun Long.matchesQuery(query: String, normalizedHexQuery: String): Boolean = toString().contains(query) || toString(16).contains(normalizedHexQuery, ignoreCase = true)
+internal fun Long.matchesQuery(query: String, normalizedHexQuery: String): Boolean = toString().contains(query) || toString(16).contains(normalizedHexQuery, ignoreCase = true)
 
-private fun Long.floorMod(divisor: Long): Long {
+internal fun Long.floorMod(divisor: Long): Long {
     val remainder = this % divisor
     return if (remainder >= 0L) remainder else remainder + divisor
 }
 
-private fun Long.coerceToInt(): Int = coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+internal fun Long.coerceToInt(): Int = coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
 
-private fun Long.dexOptionalIndex(): Long? = takeUnless { value -> value == DEX_NO_INDEX }
+internal fun Long.dexOptionalIndex(): Long? = takeUnless { value -> value == DEX_NO_INDEX }
 
-private fun dexIndexFallback(index: Long): String = "#$index"
+internal fun dexIndexFallback(index: Long): String = "#$index"
 
-private fun apkSigningBlockIdName(id: Long): String = when (id) {
+internal fun apkSigningBlockIdName(id: Long): String = when (id) {
     APK_SIGNATURE_SCHEME_V2_BLOCK_ID -> "APK Signature Scheme v2"
     APK_SIGNATURE_SCHEME_V3_BLOCK_ID -> "APK Signature Scheme v3"
     APK_SIGNATURE_VERITY_PADDING_BLOCK_ID -> "APK verity padding"
     else -> "id_0x%08X".format(id)
 }
 
-private fun ByteArray.regionMatches(offset: Int, expected: ByteArray): Boolean {
+internal fun ByteArray.regionMatches(offset: Int, expected: ByteArray): Boolean {
     if (offset < 0 || offset + expected.size > size) return false
     return expected.indices.all { index -> this[offset + index] == expected[index] }
 }
 
-private fun ByteArray.shannonEntropy(): Double {
+internal fun ByteArray.shannonEntropy(): Double {
     if (isEmpty()) return 0.0
     val counts = IntArray(256)
     forEach { counts[it.toInt() and 0xFF]++ }
@@ -6887,7 +5225,7 @@ private fun ByteArray.shannonEntropy(): Double {
         }
 }
 
-private fun RandomAccessFile.readAt(offset: Long, byteCount: Int): ByteArray {
+internal fun RandomAccessFile.readAt(offset: Long, byteCount: Int): ByteArray {
     if (byteCount <= 0 || offset < 0L || offset >= length()) return ByteArray(0)
     val safeByteCount = minOf(byteCount.toLong(), length() - offset).toInt()
     val buffer = ByteArray(safeByteCount)
@@ -6896,14 +5234,14 @@ private fun RandomAccessFile.readAt(offset: Long, byteCount: Int): ByteArray {
     return if (bytesRead <= 0) ByteArray(0) else buffer.copyOf(bytesRead)
 }
 
-private fun ByteArray.readAt(offset: Long, byteCount: Int): ByteArray {
+internal fun ByteArray.readAt(offset: Long, byteCount: Int): ByteArray {
     if (byteCount <= 0 || offset < 0L || offset >= size) return ByteArray(0)
     val startIndex = offset.toInt()
     val endIndex = (offset + byteCount).coerceAtMost(size.toLong()).toInt()
     return copyOfRange(startIndex, endIndex)
 }
 
-private fun InputStream.readAtMost(maxBytes: Int): ByteArray {
+internal fun InputStream.readAtMost(maxBytes: Int): ByteArray {
     if (maxBytes <= 0) return ByteArray(0)
     val buffer = ByteArray(maxBytes)
     var totalBytesRead = 0
@@ -6915,17 +5253,17 @@ private fun InputStream.readAtMost(maxBytes: Int): ByteArray {
     return buffer.copyOf(totalBytesRead)
 }
 
-private fun ByteArray.startsWith(vararg values: Int): Boolean {
+internal fun ByteArray.startsWith(vararg values: Int): Boolean {
     if (size < values.size) return false
     return values.indices.all { index -> (this[index].toInt() and 0xFF) == values[index] }
 }
 
-private data class DexUleb128Value(
+internal data class DexUleb128Value(
     val value: Long,
     val nextOffset: Int
 )
 
-private fun ByteArray.readDexUleb128(offset: Int): DexUleb128Value? {
+internal fun ByteArray.readDexUleb128(offset: Int): DexUleb128Value? {
     var cursor = offset
     var result = 0L
     var shift = 0
@@ -6940,9 +5278,9 @@ private fun ByteArray.readDexUleb128(offset: Int): DexUleb128Value? {
     return null
 }
 
-private fun ByteArray.dexUleb128Size(): Int? = readDexUleb128(0)?.nextOffset
+internal fun ByteArray.dexUleb128Size(): Int? = readDexUleb128(0)?.nextOffset
 
-private fun ByteArray.findLastZipSignature(signature: Long): Int? {
+internal fun ByteArray.findLastZipSignature(signature: Long): Int? {
     if (size < 4) return null
     for (index in size - 4 downTo 0) {
         if (u32(index, HexEndian.LITTLE) == signature) return index
@@ -6950,14 +5288,14 @@ private fun ByteArray.findLastZipSignature(signature: Long): Int? {
     return null
 }
 
-private fun ByteArray.u16(offset: Int, endian: HexEndian): Int {
+internal fun ByteArray.u16(offset: Int, endian: HexEndian): Int {
     if (offset + 2 > size) return 0
     val b0 = this[offset].toInt() and 0xFF
     val b1 = this[offset + 1].toInt() and 0xFF
     return if (endian == HexEndian.LITTLE) b0 or (b1 shl 8) else (b0 shl 8) or b1
 }
 
-private fun ByteArray.u32(offset: Int, endian: HexEndian): Long {
+internal fun ByteArray.u32(offset: Int, endian: HexEndian): Long {
     if (offset + 4 > size) return 0L
     val values = IntArray(4) { index -> this[offset + index].toInt() and 0xFF }
     return if (endian == HexEndian.LITTLE) {
@@ -6973,7 +5311,7 @@ private fun ByteArray.u32(offset: Int, endian: HexEndian): Long {
     }
 }
 
-private fun ByteArray.u64(offset: Int, endian: HexEndian): Long {
+internal fun ByteArray.u64(offset: Int, endian: HexEndian): Long {
     if (offset + 8 > size) return 0L
     val values = LongArray(8) { index -> this[offset + index].toLong() and 0xFFL }
     return if (endian == HexEndian.LITTLE) {
@@ -6983,7 +5321,7 @@ private fun ByteArray.u64(offset: Int, endian: HexEndian): Long {
     }
 }
 
-private fun ByteArray.readNullTerminatedAscii(offset: Int): String {
+internal fun ByteArray.readNullTerminatedAscii(offset: Int): String {
     if (offset !in indices) return ""
     var endOffset = offset
     while (endOffset < size && this[endOffset] != 0.toByte()) {
@@ -6992,7 +5330,7 @@ private fun ByteArray.readNullTerminatedAscii(offset: Int): String {
     return copyOfRange(offset, endOffset).toString(Charsets.US_ASCII)
 }
 
-private fun ByteArray.readElfNoteName(offset: Int, byteCount: Int): String {
+internal fun ByteArray.readElfNoteName(offset: Int, byteCount: Int): String {
     if (byteCount <= 0 || offset !in indices) return ""
     val endLimit = (offset + byteCount).coerceAtMost(size)
     var endOffset = offset
@@ -7002,14 +5340,14 @@ private fun ByteArray.readElfNoteName(offset: Int, byteCount: Int): String {
     return copyOfRange(offset, endOffset).toString(Charsets.US_ASCII)
 }
 
-private fun ByteArray.readElfNoteDescription(offset: Int, byteCount: Int): ByteArray {
+internal fun ByteArray.readElfNoteDescription(offset: Int, byteCount: Int): ByteArray {
     if (byteCount <= 0 || offset !in indices) return ByteArray(0)
     val safeByteCount = byteCount.coerceAtMost(MAX_ELF_NOTE_DESCRIPTION_BYTES)
     val endOffset = (offset + safeByteCount).coerceAtMost(size)
     return copyOfRange(offset, endOffset)
 }
 
-private fun readElfGnuPropertyEntries(
+internal fun readElfGnuPropertyEntries(
     noteFileOffset: Long,
     descriptionOffset: Long,
     descriptionBytes: ByteArray,
@@ -7053,13 +5391,13 @@ private fun readElfGnuPropertyEntries(
     return entries
 }
 
-private fun elfGnuPropertyTypeName(type: Long): String = when (type) {
+internal fun elfGnuPropertyTypeName(type: Long): String = when (type) {
     ELF_GNU_PROPERTY_X86_FEATURE_1_AND -> "X86_FEATURE_1_AND"
     ELF_GNU_PROPERTY_AARCH64_FEATURE_1_AND -> "AARCH64_FEATURE_1_AND"
     else -> "0x%X".format(type)
 }
 
-private fun elfGnuPropertyFeatures(
+internal fun elfGnuPropertyFeatures(
     machine: Int,
     propertyType: Long,
     propertyBytes: ByteArray,
@@ -7096,29 +5434,29 @@ private fun elfGnuPropertyFeatures(
     }
 }
 
-private fun ByteArray.toLowerHexString(): String = joinToString(separator = "") { byte -> "%02x".format(byte.toInt() and 0xFF) }
+internal fun ByteArray.toLowerHexString(): String = joinToString(separator = "") { byte -> "%02x".format(byte.toInt() and 0xFF) }
 
-private fun ByteArray.toUpperHexByteString(): String = joinToString(separator = " ") { byte ->
+internal fun ByteArray.toUpperHexByteString(): String = joinToString(separator = " ") { byte ->
     "%02X".format(byte.toInt() and 0xFF)
 }
 
-private fun ByteArray.toPrintableAsciiStringOrNull(): String? {
+internal fun ByteArray.toPrintableAsciiStringOrNull(): String? {
     if (isEmpty()) return null
     if (!all { byte -> (byte.toInt() and 0xFF) in PRINTABLE_ASCII_RANGE }) return null
     return toString(Charsets.US_ASCII)
 }
 
-private fun Long.alignElfNoteFieldSize(): Long {
+internal fun Long.alignElfNoteFieldSize(): Long {
     if (this <= 0L) return 0L
     return ((this + ELF_NOTE_ALIGNMENT - 1) / ELF_NOTE_ALIGNMENT) * ELF_NOTE_ALIGNMENT
 }
 
-private fun Long.alignElfPropertyFieldSize(): Long {
+internal fun Long.alignElfPropertyFieldSize(): Long {
     if (this <= 0L) return 0L
     return ((this + ELF_GNU_PROPERTY_ALIGNMENT - 1) / ELF_GNU_PROPERTY_ALIGNMENT) * ELF_GNU_PROPERTY_ALIGNMENT
 }
 
-private fun ByteArray.readUnsignedLong(endian: HexEndian): Long = when {
+internal fun ByteArray.readUnsignedLong(endian: HexEndian): Long = when {
     isEmpty() -> 0L
     size >= Long.SIZE_BYTES -> u64(0, endian)
     size >= Int.SIZE_BYTES -> u32(0, endian)
@@ -7126,15 +5464,15 @@ private fun ByteArray.readUnsignedLong(endian: HexEndian): Long = when {
     else -> first().toLong() and 0xFFL
 }
 
-private fun isElfBuildIdNote(sectionName: String, noteName: String, type: Long): Boolean = sectionName.contains(
+internal fun isElfBuildIdNote(sectionName: String, noteName: String, type: Long): Boolean = sectionName.contains(
     "build-id",
     ignoreCase = true,
 ) ||
     (noteName == ELF_NOTE_NAME_GNU && type == ELF_NOTE_TYPE_GNU_BUILD_ID)
 
-private fun isElfGnuPropertyNote(noteName: String, type: Long): Boolean = noteName == ELF_NOTE_NAME_GNU && type == ELF_NOTE_TYPE_GNU_PROPERTY
+internal fun isElfGnuPropertyNote(noteName: String, type: Long): Boolean = noteName == ELF_NOTE_NAME_GNU && type == ELF_NOTE_TYPE_GNU_PROPERTY
 
-private fun elfMachineName(machine: Int): String = when (machine) {
+internal fun elfMachineName(machine: Int): String = when (machine) {
     ELF_MACHINE_386 -> "x86"
     ELF_MACHINE_ARM -> "ARM"
     ELF_MACHINE_X86_64 -> "x86_64"
@@ -7143,8 +5481,8 @@ private fun elfMachineName(machine: Int): String = when (machine) {
     else -> "0x%X".format(machine)
 }
 
-private val PRINTABLE_ASCII_RANGE = 0x20..0x7E
-private val DEX_MAP_ID_TYPES = setOf(
+internal val PRINTABLE_ASCII_RANGE = 0x20..0x7E
+internal val DEX_MAP_ID_TYPES = setOf(
     DEX_MAP_TYPE_STRING_ID_ITEM,
     DEX_MAP_TYPE_TYPE_ID_ITEM,
     DEX_MAP_TYPE_PROTO_ID_ITEM,
@@ -7152,10 +5490,10 @@ private val DEX_MAP_ID_TYPES = setOf(
     DEX_MAP_TYPE_METHOD_ID_ITEM,
     DEX_MAP_TYPE_CLASS_DEF_ITEM
 )
-private val NATIVE_DYNAMIC_LOADING_SYMBOLS = setOf("dlopen", "android_dlopen_ext", "dlsym", "dlclose", "dlerror")
-private val NATIVE_MEMORY_PROTECTION_SYMBOLS = setOf("mmap", "mmap64", "mprotect", "munmap", "mremap")
-private val NATIVE_PROCESS_CONTROL_SYMBOLS = setOf("ptrace", "prctl", "fork", "vfork", "execve", "kill", "tgkill", "syscall")
-private val NATIVE_FILE_IO_SYMBOLS = setOf(
+internal val NATIVE_DYNAMIC_LOADING_SYMBOLS = setOf("dlopen", "android_dlopen_ext", "dlsym", "dlclose", "dlerror")
+internal val NATIVE_MEMORY_PROTECTION_SYMBOLS = setOf("mmap", "mmap64", "mprotect", "munmap", "mremap")
+internal val NATIVE_PROCESS_CONTROL_SYMBOLS = setOf("ptrace", "prctl", "fork", "vfork", "execve", "kill", "tgkill", "syscall")
+internal val NATIVE_FILE_IO_SYMBOLS = setOf(
     "open",
     "openat",
     "fopen",
@@ -7175,7 +5513,7 @@ private val NATIVE_FILE_IO_SYMBOLS = setOf(
     "opendir",
     "readdir"
 )
-private val NATIVE_NETWORK_SYMBOLS = setOf(
+internal val NATIVE_NETWORK_SYMBOLS = setOf(
     "socket",
     "connect",
     "bind",
@@ -7188,7 +5526,7 @@ private val NATIVE_NETWORK_SYMBOLS = setOf(
     "getaddrinfo",
     "inet_addr"
 )
-private val NATIVE_THREADING_SYMBOLS = setOf(
+internal val NATIVE_THREADING_SYMBOLS = setOf(
     "pthread_create",
     "pthread_join",
     "pthread_mutex_lock",
@@ -7196,7 +5534,7 @@ private val NATIVE_THREADING_SYMBOLS = setOf(
     "pthread_once",
     "clone"
 )
-private val NATIVE_LOGGING_SYMBOLS = setOf(
+internal val NATIVE_LOGGING_SYMBOLS = setOf(
     "__android_log_print",
     "android_log_print",
     "printf",
@@ -7204,7 +5542,7 @@ private val NATIVE_LOGGING_SYMBOLS = setOf(
     "snprintf",
     "puts"
 )
-private val NATIVE_CRYPTO_SYMBOL_PREFIXES = listOf(
+internal val NATIVE_CRYPTO_SYMBOL_PREFIXES = listOf(
     "AES_",
     "RSA_",
     "EVP_",
@@ -7215,7 +5553,7 @@ private val NATIVE_CRYPTO_SYMBOL_PREFIXES = listOf(
     "TLS_",
     "CRYPTO_"
 )
-private val ANDROID_PROTECTOR_PACKER_KEYWORDS = arrayOf(
+internal val ANDROID_PROTECTOR_PACKER_KEYWORDS = arrayOf(
     "360jiagu",
     "jiagu",
     "libjiagu",
@@ -7233,250 +5571,250 @@ private val ANDROID_PROTECTOR_PACKER_KEYWORDS = arrayOf(
     "vmprotect",
     "arxan"
 )
-private const val ELF_MACHINE_386 = 0x03
-private const val ELF_MACHINE_ARM = 0x28
-private const val ELF_MACHINE_X86_64 = 0x3E
-private const val ELF_MACHINE_AARCH64 = 0xB7
-private const val ELF_MACHINE_RISCV = 0xF3
-private const val ELF_AARCH64_PLT_RESOLVER_STUB_SIZE = 32
-private const val ELF_AARCH64_PLT_ENTRY_SIZE = 16
-private const val ELF_X86_64_PLT_RESOLVER_STUB_SIZE = 16
-private const val ELF_X86_64_PLT_ENTRY_SIZE = 16
-private const val AARCH64_ADRP_X16_MASK = 0x9F00001FL
-private const val AARCH64_ADRP_X16_VALUE = 0x90000010L
-private const val AARCH64_LDR_X17_FROM_X16_MASK = 0xFFC003FFL
-private const val AARCH64_LDR_X17_FROM_X16_VALUE = 0xF9400211L
-private const val AARCH64_ADD_X16_FROM_X16_MASK = 0xFFC003FFL
-private const val AARCH64_ADD_X16_FROM_X16_VALUE = 0x91000210L
-private const val AARCH64_BR_X17_VALUE = 0xD61F0220L
-private const val UTF8_PRINTABLE_NON_ASCII_MIN = 0xA0
-private const val ELF_IDENT_SIZE = 16
-private const val ELF_CLASS_OFFSET = 4
-private const val ELF_DATA_OFFSET = 5
-private const val ELF_CLASS_32 = 1
-private const val ELF_CLASS_64 = 2
-private const val ELF_DATA_LITTLE = 1
-private const val ELF_DATA_BIG = 2
-private const val ELF_TYPE_DYN = 3
-private const val ELF32_HEADER_SIZE = 52
-private const val ELF64_HEADER_SIZE = 64
-private const val ELF_PROGRAM_TYPE_NULL = 0L
-private const val ELF_PROGRAM_TYPE_LOAD = 1
-private const val ELF_PROGRAM_TYPE_DYNAMIC = 2L
-private const val ELF_PROGRAM_TYPE_INTERP = 3L
-private const val ELF_PROGRAM_TYPE_NOTE = 4L
-private const val ELF_PROGRAM_TYPE_PHDR = 6L
-private const val ELF_PROGRAM_TYPE_TLS = 7L
-private const val ELF_PROGRAM_TYPE_GNU_EH_FRAME = 0x6474E550L
-private const val ELF_PROGRAM_TYPE_GNU_STACK = 0x6474E551L
-private const val ELF_PROGRAM_TYPE_GNU_RELRO = 0x6474E552L
-private const val ELF_PROGRAM_FLAG_EXECUTE = 0x1
-private const val ELF_PROGRAM_FLAG_WRITE = 0x2
-private const val ELF_PROGRAM_FLAG_READ = 0x4
-private const val ELF_SECTION_FLAG_WRITE = 0x1L
-private const val ELF_SECTION_FLAG_ALLOC = 0x2L
-private const val ELF_SECTION_FLAG_EXECINSTR = 0x4L
-private const val ELF_SECTION_TYPE_SYMBOL_TABLE = 2
-private const val ELF_SECTION_TYPE_STRING_TABLE = 3
-private const val ELF_SECTION_TYPE_RELOCATION_WITH_ADDEND = 4
-private const val ELF_SECTION_TYPE_DYNAMIC = 6
-private const val ELF_SECTION_TYPE_NOTE = 7
-private const val ELF_SECTION_TYPE_NOBITS = 8
-private const val ELF_SECTION_TYPE_RELOCATION = 9
-private const val ELF_SECTION_TYPE_DYNAMIC_SYMBOLS = 11
-private const val ELF_SECTION_TYPE_INIT_ARRAY = 14
-private const val ELF_NOTE_ALIGNMENT = 4L
-private const val ELF_GNU_PROPERTY_ALIGNMENT = 8L
-private const val ELF_GNU_PROPERTY_HEADER_SIZE = 8
-private const val ELF_NOTE_HEADER_SIZE = 12
-private const val ELF_NOTE_TYPE_GNU_PROPERTY = 5L
-private const val ELF_NOTE_TYPE_GNU_BUILD_ID = 3L
-private const val ELF_NOTE_NAME_GNU = "GNU"
-private const val ELF_GNU_PROPERTY_X86_FEATURE_1_AND = 0xC0000002L
-private const val ELF_GNU_PROPERTY_X86_FEATURE_1_IBT = 0x1L
-private const val ELF_GNU_PROPERTY_X86_FEATURE_1_SHSTK = 0x2L
-private const val ELF_GNU_PROPERTY_AARCH64_FEATURE_1_AND = 0xC0000000L
-private const val ELF_GNU_PROPERTY_AARCH64_FEATURE_1_BTI = 0x1L
-private const val ELF_GNU_PROPERTY_AARCH64_FEATURE_1_PAC = 0x2L
-private const val MAX_ELF_NOTE_PROPERTIES = 64
-private const val ELF_DYNAMIC_TAG_NULL = 0L
-private const val ELF_DYNAMIC_TAG_NEEDED = 1L
-private const val ELF_DYNAMIC_TAG_SONAME = 14L
-private const val ELF_DYNAMIC_TAG_RPATH = 15L
-private const val ELF_DYNAMIC_TAG_BIND_NOW = 24L
-private const val ELF_DYNAMIC_TAG_RUNPATH = 29L
-private const val ELF_DYNAMIC_TAG_FLAGS = 30L
-private const val ELF_DYNAMIC_TAG_FLAGS_1 = 0x6FFFFFFBL
-private const val ELF_DYNAMIC_FLAG_BIND_NOW = 0x8L
-private const val ELF_DYNAMIC_FLAG_1_NOW = 0x1L
-private const val ELF_SYMBOL_SECTION_UNDEFINED = 0
-private const val ELF_SYMBOL_BIND_LOCAL = 0
-private const val ELF_SYMBOL_BIND_GLOBAL = 1
-private const val ELF_SYMBOL_BIND_WEAK = 2
-private const val ELF_SYMBOL_TYPE_NOTYPE = 0
-private const val ELF_SYMBOL_TYPE_OBJECT = 1
-private const val ELF_SYMBOL_TYPE_FUNC = 2
-private const val ELF_SYMBOL_TYPE_SECTION = 3
-private const val ELF_SYMBOL_TYPE_FILE = 4
-private const val ELF_SYMBOL_TYPE_TLS = 6
-private const val ELF32_SYMBOL_ENTRY_SIZE = 16
-private const val ELF64_SYMBOL_ENTRY_SIZE = 24
-private const val ELF32_DYNAMIC_ENTRY_SIZE = 8
-private const val ELF64_DYNAMIC_ENTRY_SIZE = 16
-private const val ELF32_RELOCATION_ENTRY_SIZE = 8
-private const val ELF64_RELOCATION_ENTRY_SIZE = 16
-private const val ELF32_RELOCATION_ADDEND_ENTRY_SIZE = 12
-private const val ELF64_RELOCATION_ADDEND_ENTRY_SIZE = 24
-private const val ELF32_RELOCATION_SYMBOL_SHIFT = 8
-private const val ELF64_RELOCATION_SYMBOL_SHIFT = 32
-private const val ELF32_RELOCATION_TYPE_MASK = 0xFFL
-private const val ELF64_RELOCATION_TYPE_MASK = 0xFFFFFFFFL
-private const val ELF_HEADER_READ_LIMIT = 512
-private const val FINGERPRINT_BUFFER_BYTES = 64 * 1024
-private const val BYTE_VALUE_COUNT = 256
-private const val MAX_BYTE_FREQUENCY_ENTRIES = 12
-private const val MIN_REPEATED_BYTE_RUN_LENGTH = 16L
-private const val MAX_REPEATED_BYTE_RUN_ENTRIES = 16
-private const val MAX_REPEATED_BYTE_RUN_CANDIDATES = 64
-private const val MAX_MAGIC_SIGNATURE_MATCHES = 64
-private const val ASCII_SPACE = 0x20
-private const val ASCII_DELETE = 0x7F
-private const val MAX_ELF_PROGRAM_HEADERS = 128
-private const val MAX_ELF_SECTION_HEADERS = 256
-private const val MAX_ELF_SECTION_SEGMENT_MAPPINGS = 256
-private const val MAX_ELF_SECTION_ENTROPY_ENTRIES = 256
-private const val MAX_ELF_SYMBOLS = 512
-private const val MAX_ELF_DYNAMIC_ENTRIES = 128
-private const val MAX_ELF_INIT_ARRAY_ENTRIES = 128
-private const val MAX_ELF_NOTES = 128
-private const val MAX_ELF_NOTE_SECTION_BYTES = 256 * 1024
-private const val MAX_ELF_NOTE_DESCRIPTION_BYTES = 64
-private const val MAX_ELF_RELOCATIONS = 512
-private const val MAX_ELF_LINKAGE_ENTRIES = 512
-private const val MAX_ELF_DYNAMIC_LINKER_STEPS = 32
-private const val MAX_ELF_RISK_FINDINGS = 128
-private const val MAX_ELF_NATIVE_API_HINTS = 128
-private const val MAX_ELF_JNI_HINTS = 128
-private const val DYNAMIC_LINKER_STEP_DETAIL_LIMIT = 3
-private const val MAX_ELF_STRING_TABLE_BYTES = 64 * 1024
-private const val DEX_HEADER_SIZE = 0x70
-private const val DEX_STRING_ID_ENTRY_SIZE = 4
-private const val DEX_TYPE_ID_ENTRY_SIZE = 4
-private const val DEX_PROTO_ID_ENTRY_SIZE = 12
-private const val DEX_FIELD_ID_ENTRY_SIZE = 8
-private const val DEX_METHOD_ID_ENTRY_SIZE = 8
-private const val DEX_CLASS_DEF_ENTRY_SIZE = 32
-private const val DEX_TYPE_ITEM_ENTRY_SIZE = 2
-private const val DEX_MAP_ENTRY_SIZE = 12
-private const val DEX_CODE_ITEM_HEADER_SIZE = 16
-private const val DEX_CODE_UNIT_SIZE = 2
-private const val MAX_DEX_STRING_ENTRIES = 128
-private const val MAX_DEX_TYPE_ENTRIES = 128
-private const val MAX_DEX_PROTO_ENTRIES = 128
-private const val MAX_DEX_FIELD_ENTRIES = 128
-private const val MAX_DEX_METHOD_ENTRIES = 128
-private const val MAX_DEX_CLASS_DEF_ENTRIES = 128
-private const val MAX_DEX_CLASS_DATA_METHOD_ENTRIES = 256
-private const val MAX_DEX_CLASS_DATA_METHODS_PER_CLASS = 128
-private const val MAX_DEX_CLASS_DATA_FIELDS_TO_SKIP = 256L
-private const val MAX_DEX_CLASS_DATA_BYTES = 8 * 1024
-private const val MAX_DEX_CODE_ITEM_ENTRIES = 256
-private const val MAX_DEX_CODE_ITEM_PREVIEW_UNITS = 8
-private const val MAX_DEX_CALL_REFERENCE_ENTRIES = 512
-private const val MAX_DEX_CALL_SCAN_CODE_UNITS = 4096
-private const val MAX_DEX_STRING_REFERENCE_ENTRIES = 512
-private const val MAX_DEX_FIELD_REFERENCE_ENTRIES = 512
-private const val MAX_DEX_DATA_REFERENCE_SCAN_CODE_UNITS = 4096
-private const val MAX_DEX_PROTO_PARAMETERS = 32
-private const val MAX_DEX_STRING_DATA_BYTES = 256
-private const val MAX_DEX_MAP_ENTRIES = 128
-private const val DEX_NO_INDEX = 0xFFFFFFFFL
-private const val DEX_MAP_TYPE_HEADER_ITEM = 0x0000
-private const val DEX_MAP_TYPE_STRING_ID_ITEM = 0x0001
-private const val DEX_MAP_TYPE_TYPE_ID_ITEM = 0x0002
-private const val DEX_MAP_TYPE_PROTO_ID_ITEM = 0x0003
-private const val DEX_MAP_TYPE_FIELD_ID_ITEM = 0x0004
-private const val DEX_MAP_TYPE_METHOD_ID_ITEM = 0x0005
-private const val DEX_MAP_TYPE_CLASS_DEF_ITEM = 0x0006
-private const val DEX_MAP_TYPE_MAP_LIST = 0x1000
-private const val DEX_MAP_TYPE_TYPE_LIST = 0x1001
-private const val DEX_MAP_TYPE_ANNOTATION_SET_REF_LIST = 0x1002
-private const val DEX_MAP_TYPE_ANNOTATION_SET_ITEM = 0x1003
-private const val DEX_MAP_TYPE_CLASS_DATA_ITEM = 0x2000
-private const val DEX_MAP_TYPE_CODE_ITEM = 0x2001
-private const val DEX_MAP_TYPE_STRING_DATA_ITEM = 0x2002
-private const val DEX_MAP_TYPE_DEBUG_INFO_ITEM = 0x2003
-private const val DEX_MAP_TYPE_ANNOTATION_ITEM = 0x2004
-private const val DEX_MAP_TYPE_ENCODED_ARRAY_ITEM = 0x2005
-private const val DEX_MAP_TYPE_ANNOTATIONS_DIRECTORY_ITEM = 0x2006
-private const val DEX_ACCESS_FLAG_NATIVE = 0x0100L
-private const val DEX_ACCESS_FLAG_ABSTRACT = 0x0400L
-private const val ZIP_END_OF_CENTRAL_DIRECTORY_SIGNATURE = 0x06054B50L
-private const val ZIP_LOCAL_FILE_HEADER_SIGNATURE = 0x04034B50L
-private const val ZIP_CENTRAL_DIRECTORY_SIGNATURE = 0x02014B50L
-private const val ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_SIGNATURE = 0x07064B50L
-private const val ZIP_END_OF_CENTRAL_DIRECTORY_SIZE = 22
-private const val ZIP_LOCAL_FILE_HEADER_SIZE = 30
-private const val ZIP_CENTRAL_DIRECTORY_HEADER_SIZE = 46
-private const val ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_SIZE = 20
-private const val ZIP_MAX_EOCD_SCAN_BYTES = 65_557
-private const val ZIP_GENERAL_PURPOSE_DATA_DESCRIPTOR_FLAG = 0x0008
-private const val ZIP_COMPRESSION_METHOD_STORED = 0
-private const val ZIP_COMPRESSION_METHOD_DEFLATED = 8
-private const val APK_NATIVE_LIBRARY_PAGE_ALIGNMENT = 4096L
-private const val ANDROID_RES_STRING_POOL_TYPE = 0x0001
-private const val ANDROID_RES_TABLE_TYPE = 0x0002
-private const val ANDROID_RES_XML_TYPE = 0x0003
-private const val ANDROID_RES_TABLE_PACKAGE_TYPE = 0x0200
-private const val ANDROID_RES_TABLE_TYPE_TYPE = 0x0201
-private const val ANDROID_RES_TABLE_TYPE_SPEC_TYPE = 0x0202
-private const val ANDROID_RES_XML_START_ELEMENT_TYPE = 0x0102
-private const val ANDROID_CHUNK_HEADER_SIZE = 8
-private const val ANDROID_RESOURCE_TABLE_HEADER_SIZE = 12
-private const val ANDROID_STRING_POOL_HEADER_SIZE = 28
-private const val ANDROID_STRING_POOL_UTF8_FLAG = 0x00000100L
-private const val ANDROID_RESOURCE_PACKAGE_HEADER_SIZE = 288
-private const val ANDROID_RESOURCE_PACKAGE_NAME_CHARS = 128
-private const val ANDROID_XML_START_ELEMENT_HEADER_SIZE = 36
-private const val ANDROID_XML_ATTRIBUTE_EXTENSION_OFFSET = 16
-private const val ANDROID_XML_ATTRIBUTE_SIZE = 20
-private const val ANDROID_TYPED_VALUE_STRING = 0x03
-private const val ANDROID_NO_INDEX = 0xFFFFFFFFL
-private const val ANDROID_MANIFEST_PACKAGE_ATTRIBUTE = "package"
-private const val ANDROID_MANIFEST_NAME_ATTRIBUTE = "name"
-private const val APK_SIGNING_BLOCK_SIZE_FIELD_SIZE = 8
-private const val APK_SIGNING_BLOCK_ID_SIZE = 4
-private const val APK_SIGNING_BLOCK_PAIR_HEADER_SIZE = APK_SIGNING_BLOCK_SIZE_FIELD_SIZE + APK_SIGNING_BLOCK_ID_SIZE
-private const val APK_SIGNING_BLOCK_FOOTER_SIZE = 24
-private const val APK_SIGNATURE_SCHEME_V2_BLOCK_ID = 0x7109871AL
-private const val APK_SIGNATURE_SCHEME_V3_BLOCK_ID = 0xF05368C0L
-private const val APK_SIGNATURE_VERITY_PADDING_BLOCK_ID = 0x42726577L
-private const val MAX_APK_SIGNING_BLOCK_BYTES = 16 * 1024 * 1024L
-private const val MAX_ARCHIVE_ENTRIES = 512
-private const val MAX_ARCHIVE_DEX_SUMMARIES = 8
-private const val MAX_ARCHIVE_NATIVE_LIBRARY_SUMMARIES = 16
-private const val MAX_ARCHIVE_SIGNING_BLOCK_ENTRIES = 32
-private const val MAX_ARCHIVE_DEX_ANALYSIS_BYTES = 2 * 1024 * 1024
-private const val MAX_ARCHIVE_NATIVE_ANALYSIS_BYTES = 512 * 1024
-private const val MAX_ARCHIVE_MANIFEST_ANALYSIS_BYTES = 512 * 1024
-private const val MAX_ARCHIVE_RESOURCES_ANALYSIS_BYTES = 2 * 1024 * 1024
-private const val MAX_ARCHIVE_NATIVE_OBFUSCATION_MARKERS = 8
-private const val MAX_ARCHIVE_MANIFEST_STRINGS = 512
-private const val MAX_ARCHIVE_MANIFEST_PERMISSIONS = 64
-private const val MAX_STRING_SCAN_BYTES = 8 * 1024 * 1024
-private const val MAX_STRING_RESULTS = 200
-private const val MIN_STRING_LENGTH = 4
-private const val ENTROPY_BUCKET_COUNT = 32
-private const val ENTROPY_SAMPLE_BYTES = 64 * 1024
-private const val MAX_SHANNON_ENTROPY = 8.0
-private const val HIGH_ENTROPY_THRESHOLD = 7.5
-private const val MEDIUM_ENTROPY_THRESHOLD = 5.0
-private const val MIN_ENTROPY_BAR_HEIGHT = 0.12
-private const val LOW_STRING_COUNT_THRESHOLD = 3
-private const val MIN_OBFUSCATION_HEURISTIC_FILE_SIZE = 4096
-private const val MAX_OBFUSCATION_FINDINGS = 8
+internal const val ELF_MACHINE_386 = 0x03
+internal const val ELF_MACHINE_ARM = 0x28
+internal const val ELF_MACHINE_X86_64 = 0x3E
+internal const val ELF_MACHINE_AARCH64 = 0xB7
+internal const val ELF_MACHINE_RISCV = 0xF3
+internal const val ELF_AARCH64_PLT_RESOLVER_STUB_SIZE = 32
+internal const val ELF_AARCH64_PLT_ENTRY_SIZE = 16
+internal const val ELF_X86_64_PLT_RESOLVER_STUB_SIZE = 16
+internal const val ELF_X86_64_PLT_ENTRY_SIZE = 16
+internal const val AARCH64_ADRP_X16_MASK = 0x9F00001FL
+internal const val AARCH64_ADRP_X16_VALUE = 0x90000010L
+internal const val AARCH64_LDR_X17_FROM_X16_MASK = 0xFFC003FFL
+internal const val AARCH64_LDR_X17_FROM_X16_VALUE = 0xF9400211L
+internal const val AARCH64_ADD_X16_FROM_X16_MASK = 0xFFC003FFL
+internal const val AARCH64_ADD_X16_FROM_X16_VALUE = 0x91000210L
+internal const val AARCH64_BR_X17_VALUE = 0xD61F0220L
+internal const val UTF8_PRINTABLE_NON_ASCII_MIN = 0xA0
+internal const val ELF_IDENT_SIZE = 16
+internal const val ELF_CLASS_OFFSET = 4
+internal const val ELF_DATA_OFFSET = 5
+internal const val ELF_CLASS_32 = 1
+internal const val ELF_CLASS_64 = 2
+internal const val ELF_DATA_LITTLE = 1
+internal const val ELF_DATA_BIG = 2
+internal const val ELF_TYPE_DYN = 3
+internal const val ELF32_HEADER_SIZE = 52
+internal const val ELF64_HEADER_SIZE = 64
+internal const val ELF_PROGRAM_TYPE_NULL = 0L
+internal const val ELF_PROGRAM_TYPE_LOAD = 1
+internal const val ELF_PROGRAM_TYPE_DYNAMIC = 2L
+internal const val ELF_PROGRAM_TYPE_INTERP = 3L
+internal const val ELF_PROGRAM_TYPE_NOTE = 4L
+internal const val ELF_PROGRAM_TYPE_PHDR = 6L
+internal const val ELF_PROGRAM_TYPE_TLS = 7L
+internal const val ELF_PROGRAM_TYPE_GNU_EH_FRAME = 0x6474E550L
+internal const val ELF_PROGRAM_TYPE_GNU_STACK = 0x6474E551L
+internal const val ELF_PROGRAM_TYPE_GNU_RELRO = 0x6474E552L
+internal const val ELF_PROGRAM_FLAG_EXECUTE = 0x1
+internal const val ELF_PROGRAM_FLAG_WRITE = 0x2
+internal const val ELF_PROGRAM_FLAG_READ = 0x4
+internal const val ELF_SECTION_FLAG_WRITE = 0x1L
+internal const val ELF_SECTION_FLAG_ALLOC = 0x2L
+internal const val ELF_SECTION_FLAG_EXECINSTR = 0x4L
+internal const val ELF_SECTION_TYPE_SYMBOL_TABLE = 2
+internal const val ELF_SECTION_TYPE_STRING_TABLE = 3
+internal const val ELF_SECTION_TYPE_RELOCATION_WITH_ADDEND = 4
+internal const val ELF_SECTION_TYPE_DYNAMIC = 6
+internal const val ELF_SECTION_TYPE_NOTE = 7
+internal const val ELF_SECTION_TYPE_NOBITS = 8
+internal const val ELF_SECTION_TYPE_RELOCATION = 9
+internal const val ELF_SECTION_TYPE_DYNAMIC_SYMBOLS = 11
+internal const val ELF_SECTION_TYPE_INIT_ARRAY = 14
+internal const val ELF_NOTE_ALIGNMENT = 4L
+internal const val ELF_GNU_PROPERTY_ALIGNMENT = 8L
+internal const val ELF_GNU_PROPERTY_HEADER_SIZE = 8
+internal const val ELF_NOTE_HEADER_SIZE = 12
+internal const val ELF_NOTE_TYPE_GNU_PROPERTY = 5L
+internal const val ELF_NOTE_TYPE_GNU_BUILD_ID = 3L
+internal const val ELF_NOTE_NAME_GNU = "GNU"
+internal const val ELF_GNU_PROPERTY_X86_FEATURE_1_AND = 0xC0000002L
+internal const val ELF_GNU_PROPERTY_X86_FEATURE_1_IBT = 0x1L
+internal const val ELF_GNU_PROPERTY_X86_FEATURE_1_SHSTK = 0x2L
+internal const val ELF_GNU_PROPERTY_AARCH64_FEATURE_1_AND = 0xC0000000L
+internal const val ELF_GNU_PROPERTY_AARCH64_FEATURE_1_BTI = 0x1L
+internal const val ELF_GNU_PROPERTY_AARCH64_FEATURE_1_PAC = 0x2L
+internal const val MAX_ELF_NOTE_PROPERTIES = 64
+internal const val ELF_DYNAMIC_TAG_NULL = 0L
+internal const val ELF_DYNAMIC_TAG_NEEDED = 1L
+internal const val ELF_DYNAMIC_TAG_SONAME = 14L
+internal const val ELF_DYNAMIC_TAG_RPATH = 15L
+internal const val ELF_DYNAMIC_TAG_BIND_NOW = 24L
+internal const val ELF_DYNAMIC_TAG_RUNPATH = 29L
+internal const val ELF_DYNAMIC_TAG_FLAGS = 30L
+internal const val ELF_DYNAMIC_TAG_FLAGS_1 = 0x6FFFFFFBL
+internal const val ELF_DYNAMIC_FLAG_BIND_NOW = 0x8L
+internal const val ELF_DYNAMIC_FLAG_1_NOW = 0x1L
+internal const val ELF_SYMBOL_SECTION_UNDEFINED = 0
+internal const val ELF_SYMBOL_BIND_LOCAL = 0
+internal const val ELF_SYMBOL_BIND_GLOBAL = 1
+internal const val ELF_SYMBOL_BIND_WEAK = 2
+internal const val ELF_SYMBOL_TYPE_NOTYPE = 0
+internal const val ELF_SYMBOL_TYPE_OBJECT = 1
+internal const val ELF_SYMBOL_TYPE_FUNC = 2
+internal const val ELF_SYMBOL_TYPE_SECTION = 3
+internal const val ELF_SYMBOL_TYPE_FILE = 4
+internal const val ELF_SYMBOL_TYPE_TLS = 6
+internal const val ELF32_SYMBOL_ENTRY_SIZE = 16
+internal const val ELF64_SYMBOL_ENTRY_SIZE = 24
+internal const val ELF32_DYNAMIC_ENTRY_SIZE = 8
+internal const val ELF64_DYNAMIC_ENTRY_SIZE = 16
+internal const val ELF32_RELOCATION_ENTRY_SIZE = 8
+internal const val ELF64_RELOCATION_ENTRY_SIZE = 16
+internal const val ELF32_RELOCATION_ADDEND_ENTRY_SIZE = 12
+internal const val ELF64_RELOCATION_ADDEND_ENTRY_SIZE = 24
+internal const val ELF32_RELOCATION_SYMBOL_SHIFT = 8
+internal const val ELF64_RELOCATION_SYMBOL_SHIFT = 32
+internal const val ELF32_RELOCATION_TYPE_MASK = 0xFFL
+internal const val ELF64_RELOCATION_TYPE_MASK = 0xFFFFFFFFL
+internal const val ELF_HEADER_READ_LIMIT = 512
+internal const val FINGERPRINT_BUFFER_BYTES = 64 * 1024
+internal const val BYTE_VALUE_COUNT = 256
+internal const val MAX_BYTE_FREQUENCY_ENTRIES = 12
+internal const val MIN_REPEATED_BYTE_RUN_LENGTH = 16L
+internal const val MAX_REPEATED_BYTE_RUN_ENTRIES = 16
+internal const val MAX_REPEATED_BYTE_RUN_CANDIDATES = 64
+internal const val MAX_MAGIC_SIGNATURE_MATCHES = 64
+internal const val ASCII_SPACE = 0x20
+internal const val ASCII_DELETE = 0x7F
+internal const val MAX_ELF_PROGRAM_HEADERS = 128
+internal const val MAX_ELF_SECTION_HEADERS = 256
+internal const val MAX_ELF_SECTION_SEGMENT_MAPPINGS = 256
+internal const val MAX_ELF_SECTION_ENTROPY_ENTRIES = 256
+internal const val MAX_ELF_SYMBOLS = 512
+internal const val MAX_ELF_DYNAMIC_ENTRIES = 128
+internal const val MAX_ELF_INIT_ARRAY_ENTRIES = 128
+internal const val MAX_ELF_NOTES = 128
+internal const val MAX_ELF_NOTE_SECTION_BYTES = 256 * 1024
+internal const val MAX_ELF_NOTE_DESCRIPTION_BYTES = 64
+internal const val MAX_ELF_RELOCATIONS = 512
+internal const val MAX_ELF_LINKAGE_ENTRIES = 512
+internal const val MAX_ELF_DYNAMIC_LINKER_STEPS = 32
+internal const val MAX_ELF_RISK_FINDINGS = 128
+internal const val MAX_ELF_NATIVE_API_HINTS = 128
+internal const val MAX_ELF_JNI_HINTS = 128
+internal const val DYNAMIC_LINKER_STEP_DETAIL_LIMIT = 3
+internal const val MAX_ELF_STRING_TABLE_BYTES = 64 * 1024
+internal const val DEX_HEADER_SIZE = 0x70
+internal const val DEX_STRING_ID_ENTRY_SIZE = 4
+internal const val DEX_TYPE_ID_ENTRY_SIZE = 4
+internal const val DEX_PROTO_ID_ENTRY_SIZE = 12
+internal const val DEX_FIELD_ID_ENTRY_SIZE = 8
+internal const val DEX_METHOD_ID_ENTRY_SIZE = 8
+internal const val DEX_CLASS_DEF_ENTRY_SIZE = 32
+internal const val DEX_TYPE_ITEM_ENTRY_SIZE = 2
+internal const val DEX_MAP_ENTRY_SIZE = 12
+internal const val DEX_CODE_ITEM_HEADER_SIZE = 16
+internal const val DEX_CODE_UNIT_SIZE = 2
+internal const val MAX_DEX_STRING_ENTRIES = 128
+internal const val MAX_DEX_TYPE_ENTRIES = 128
+internal const val MAX_DEX_PROTO_ENTRIES = 128
+internal const val MAX_DEX_FIELD_ENTRIES = 128
+internal const val MAX_DEX_METHOD_ENTRIES = 128
+internal const val MAX_DEX_CLASS_DEF_ENTRIES = 128
+internal const val MAX_DEX_CLASS_DATA_METHOD_ENTRIES = 256
+internal const val MAX_DEX_CLASS_DATA_METHODS_PER_CLASS = 128
+internal const val MAX_DEX_CLASS_DATA_FIELDS_TO_SKIP = 256L
+internal const val MAX_DEX_CLASS_DATA_BYTES = 8 * 1024
+internal const val MAX_DEX_CODE_ITEM_ENTRIES = 256
+internal const val MAX_DEX_CODE_ITEM_PREVIEW_UNITS = 8
+internal const val MAX_DEX_CALL_REFERENCE_ENTRIES = 512
+internal const val MAX_DEX_CALL_SCAN_CODE_UNITS = 4096
+internal const val MAX_DEX_STRING_REFERENCE_ENTRIES = 512
+internal const val MAX_DEX_FIELD_REFERENCE_ENTRIES = 512
+internal const val MAX_DEX_DATA_REFERENCE_SCAN_CODE_UNITS = 4096
+internal const val MAX_DEX_PROTO_PARAMETERS = 32
+internal const val MAX_DEX_STRING_DATA_BYTES = 256
+internal const val MAX_DEX_MAP_ENTRIES = 128
+internal const val DEX_NO_INDEX = 0xFFFFFFFFL
+internal const val DEX_MAP_TYPE_HEADER_ITEM = 0x0000
+internal const val DEX_MAP_TYPE_STRING_ID_ITEM = 0x0001
+internal const val DEX_MAP_TYPE_TYPE_ID_ITEM = 0x0002
+internal const val DEX_MAP_TYPE_PROTO_ID_ITEM = 0x0003
+internal const val DEX_MAP_TYPE_FIELD_ID_ITEM = 0x0004
+internal const val DEX_MAP_TYPE_METHOD_ID_ITEM = 0x0005
+internal const val DEX_MAP_TYPE_CLASS_DEF_ITEM = 0x0006
+internal const val DEX_MAP_TYPE_MAP_LIST = 0x1000
+internal const val DEX_MAP_TYPE_TYPE_LIST = 0x1001
+internal const val DEX_MAP_TYPE_ANNOTATION_SET_REF_LIST = 0x1002
+internal const val DEX_MAP_TYPE_ANNOTATION_SET_ITEM = 0x1003
+internal const val DEX_MAP_TYPE_CLASS_DATA_ITEM = 0x2000
+internal const val DEX_MAP_TYPE_CODE_ITEM = 0x2001
+internal const val DEX_MAP_TYPE_STRING_DATA_ITEM = 0x2002
+internal const val DEX_MAP_TYPE_DEBUG_INFO_ITEM = 0x2003
+internal const val DEX_MAP_TYPE_ANNOTATION_ITEM = 0x2004
+internal const val DEX_MAP_TYPE_ENCODED_ARRAY_ITEM = 0x2005
+internal const val DEX_MAP_TYPE_ANNOTATIONS_DIRECTORY_ITEM = 0x2006
+internal const val DEX_ACCESS_FLAG_NATIVE = 0x0100L
+internal const val DEX_ACCESS_FLAG_ABSTRACT = 0x0400L
+internal const val ZIP_END_OF_CENTRAL_DIRECTORY_SIGNATURE = 0x06054B50L
+internal const val ZIP_LOCAL_FILE_HEADER_SIGNATURE = 0x04034B50L
+internal const val ZIP_CENTRAL_DIRECTORY_SIGNATURE = 0x02014B50L
+internal const val ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_SIGNATURE = 0x07064B50L
+internal const val ZIP_END_OF_CENTRAL_DIRECTORY_SIZE = 22
+internal const val ZIP_LOCAL_FILE_HEADER_SIZE = 30
+internal const val ZIP_CENTRAL_DIRECTORY_HEADER_SIZE = 46
+internal const val ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_SIZE = 20
+internal const val ZIP_MAX_EOCD_SCAN_BYTES = 65_557
+internal const val ZIP_GENERAL_PURPOSE_DATA_DESCRIPTOR_FLAG = 0x0008
+internal const val ZIP_COMPRESSION_METHOD_STORED = 0
+internal const val ZIP_COMPRESSION_METHOD_DEFLATED = 8
+internal const val APK_NATIVE_LIBRARY_PAGE_ALIGNMENT = 4096L
+internal const val ANDROID_RES_STRING_POOL_TYPE = 0x0001
+internal const val ANDROID_RES_TABLE_TYPE = 0x0002
+internal const val ANDROID_RES_XML_TYPE = 0x0003
+internal const val ANDROID_RES_TABLE_PACKAGE_TYPE = 0x0200
+internal const val ANDROID_RES_TABLE_TYPE_TYPE = 0x0201
+internal const val ANDROID_RES_TABLE_TYPE_SPEC_TYPE = 0x0202
+internal const val ANDROID_RES_XML_START_ELEMENT_TYPE = 0x0102
+internal const val ANDROID_CHUNK_HEADER_SIZE = 8
+internal const val ANDROID_RESOURCE_TABLE_HEADER_SIZE = 12
+internal const val ANDROID_STRING_POOL_HEADER_SIZE = 28
+internal const val ANDROID_STRING_POOL_UTF8_FLAG = 0x00000100L
+internal const val ANDROID_RESOURCE_PACKAGE_HEADER_SIZE = 288
+internal const val ANDROID_RESOURCE_PACKAGE_NAME_CHARS = 128
+internal const val ANDROID_XML_START_ELEMENT_HEADER_SIZE = 36
+internal const val ANDROID_XML_ATTRIBUTE_EXTENSION_OFFSET = 16
+internal const val ANDROID_XML_ATTRIBUTE_SIZE = 20
+internal const val ANDROID_TYPED_VALUE_STRING = 0x03
+internal const val ANDROID_NO_INDEX = 0xFFFFFFFFL
+internal const val ANDROID_MANIFEST_PACKAGE_ATTRIBUTE = "package"
+internal const val ANDROID_MANIFEST_NAME_ATTRIBUTE = "name"
+internal const val APK_SIGNING_BLOCK_SIZE_FIELD_SIZE = 8
+internal const val APK_SIGNING_BLOCK_ID_SIZE = 4
+internal const val APK_SIGNING_BLOCK_PAIR_HEADER_SIZE = APK_SIGNING_BLOCK_SIZE_FIELD_SIZE + APK_SIGNING_BLOCK_ID_SIZE
+internal const val APK_SIGNING_BLOCK_FOOTER_SIZE = 24
+internal const val APK_SIGNATURE_SCHEME_V2_BLOCK_ID = 0x7109871AL
+internal const val APK_SIGNATURE_SCHEME_V3_BLOCK_ID = 0xF05368C0L
+internal const val APK_SIGNATURE_VERITY_PADDING_BLOCK_ID = 0x42726577L
+internal const val MAX_APK_SIGNING_BLOCK_BYTES = 16 * 1024 * 1024L
+internal const val MAX_ARCHIVE_ENTRIES = 512
+internal const val MAX_ARCHIVE_DEX_SUMMARIES = 8
+internal const val MAX_ARCHIVE_NATIVE_LIBRARY_SUMMARIES = 16
+internal const val MAX_ARCHIVE_SIGNING_BLOCK_ENTRIES = 32
+internal const val MAX_ARCHIVE_DEX_ANALYSIS_BYTES = 2 * 1024 * 1024
+internal const val MAX_ARCHIVE_NATIVE_ANALYSIS_BYTES = 512 * 1024
+internal const val MAX_ARCHIVE_MANIFEST_ANALYSIS_BYTES = 512 * 1024
+internal const val MAX_ARCHIVE_RESOURCES_ANALYSIS_BYTES = 2 * 1024 * 1024
+internal const val MAX_ARCHIVE_NATIVE_OBFUSCATION_MARKERS = 8
+internal const val MAX_ARCHIVE_MANIFEST_STRINGS = 512
+internal const val MAX_ARCHIVE_MANIFEST_PERMISSIONS = 64
+internal const val MAX_STRING_SCAN_BYTES = 8 * 1024 * 1024
+internal const val MAX_STRING_RESULTS = 200
+internal const val MIN_STRING_LENGTH = 4
+internal const val ENTROPY_BUCKET_COUNT = 32
+internal const val ENTROPY_SAMPLE_BYTES = 64 * 1024
+internal const val MAX_SHANNON_ENTROPY = 8.0
+internal const val HIGH_ENTROPY_THRESHOLD = 7.5
+internal const val MEDIUM_ENTROPY_THRESHOLD = 5.0
+internal const val MIN_ENTROPY_BAR_HEIGHT = 0.12
+internal const val LOW_STRING_COUNT_THRESHOLD = 3
+internal const val MIN_OBFUSCATION_HEURISTIC_FILE_SIZE = 4096
+internal const val MAX_OBFUSCATION_FINDINGS = 8
 
-private val MAGIC_SIGNATURE_DEFINITIONS = listOf(
+internal val MAGIC_SIGNATURE_DEFINITIONS = listOf(
     HexMagicSignatureDefinition(
         kind = HexMagicSignatureKind.ELF,
         bytes = intArrayOf(0x7F, 'E'.code, 'L'.code, 'F'.code)
@@ -7518,6 +5856,6 @@ private val MAGIC_SIGNATURE_DEFINITIONS = listOf(
     )
 )
 
-private val MAX_MAGIC_SIGNATURE_LENGTH = MAGIC_SIGNATURE_DEFINITIONS.maxOf { it.bytes.size }
-private val APK_SIGNING_BLOCK_MAGIC = "APK Sig Block 42".toByteArray(Charsets.US_ASCII)
-private val ANDROID_MANIFEST_PERMISSION_ELEMENTS = setOf("uses-permission", "uses-permission-sdk-23")
+internal val MAX_MAGIC_SIGNATURE_LENGTH = MAGIC_SIGNATURE_DEFINITIONS.maxOf { it.bytes.size }
+internal val APK_SIGNING_BLOCK_MAGIC = "APK Sig Block 42".toByteArray(Charsets.US_ASCII)
+internal val ANDROID_MANIFEST_PERMISSION_ELEMENTS = setOf("uses-permission", "uses-permission-sdk-23")
