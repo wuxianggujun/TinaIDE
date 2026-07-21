@@ -58,11 +58,8 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.eclipse.lsp4j.CompletionContext
@@ -158,12 +155,26 @@ class LspEditorManager(
     private val stateLock = Any()
     private val tabRequestTracker = LspTabRequestTracker(stateLock)
     private val lspScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private val sharedCxxSessionMutex = Mutex()
     private val compileSetupCache = LspCompileSetupCache(
         scope = lspScope,
         linuxEnvironmentProvider = linuxEnvironmentProvider,
         resolveRunMode = ::resolveClangdRunMode,
         resolveLanguageId = ::languageIdForFile,
+    )
+    private val sharedCxxSessions = SharedCxxSessionController(
+        scope = lspScope,
+        stateLock = stateLock,
+        idleShutdownMs = SHARED_CXX_IDLE_SHUTDOWN_MS,
+        hasActiveCxxBindings = {
+            tabBindings.values.any { it.kind == SessionKind.CXX }
+        },
+        onIdleReleased = {
+            val projectIsStillIdle = stopFileWatcherIfCxxIdle()
+            if (projectIsStillIdle && isUsingRemoteLsp) {
+                RemoteLspConfigManager.updateConnectionState(RemoteLspConnectionState.DISCONNECTED)
+            }
+        },
+        createSession = ::createLspClientSession,
     )
 
     private var lspProjectRoot: String? = null
@@ -182,8 +193,6 @@ class LspEditorManager(
     private val builtinDiagnosticsRequestTokens = mutableMapOf<String, Any>()
     private val builtinDiagnosticsJobs = mutableMapOf<String, Job>()
     private val completionWarmupTabIds = mutableSetOf<String>()
-    private var sharedCxxSession: LspClientSession? = null
-    private var sharedCxxShutdownJob: Job? = null
 
     @Volatile
     private var foldingRangeEnabled: Boolean = false
@@ -1453,59 +1462,11 @@ class LspEditorManager(
     }
 
     private fun cancelPendingSharedCxxShutdown() {
-        synchronized(stateLock) {
-            sharedCxxShutdownJob?.cancel()
-            sharedCxxShutdownJob = null
-        }
+        sharedCxxSessions.cancelPendingShutdown()
     }
 
     private fun scheduleSharedCxxShutdownIfIdle() {
-        val session = synchronized(stateLock) {
-            if (tabBindings.values.any { it.kind == SessionKind.CXX }) {
-                sharedCxxShutdownJob?.cancel()
-                sharedCxxShutdownJob = null
-                return
-            }
-            val current = sharedCxxSession ?: return
-            sharedCxxShutdownJob?.cancel()
-            current
-        }
-
-        val job = lspScope.launch {
-            delay(SHARED_CXX_IDLE_SHUTDOWN_MS)
-            val sessionToClose = synchronized(stateLock) {
-                if (tabBindings.values.any { it.kind == SessionKind.CXX }) {
-                    sharedCxxShutdownJob = null
-                    null
-                } else if (sharedCxxSession === session) {
-                    sharedCxxSession = null
-                    sharedCxxShutdownJob = null
-                    session
-                } else {
-                    sharedCxxShutdownJob = null
-                    null
-                }
-            } ?: return@launch
-
-            runCatchingPreservingCancellation {
-                withContext(Dispatchers.IO) { sessionToClose.close() }
-            }.onFailure { error ->
-                Timber.tag(TAG).d(error, "shared clangd idle shutdown failed")
-            }
-            Timber.tag(TAG).i("shared clangd released after %dms idle", SHARED_CXX_IDLE_SHUTDOWN_MS)
-            val projectIsStillIdle = stopFileWatcherIfCxxIdle()
-            if (projectIsStillIdle && isUsingRemoteLsp) {
-                RemoteLspConfigManager.updateConnectionState(RemoteLspConnectionState.DISCONNECTED)
-            }
-        }
-
-        synchronized(stateLock) {
-            if (sharedCxxSession === session && !tabBindings.values.any { it.kind == SessionKind.CXX }) {
-                sharedCxxShutdownJob = job
-            } else {
-                job.cancel()
-            }
-        }
+        sharedCxxSessions.scheduleIdleShutdownIfNeeded()
     }
 
     private fun nextRequestGeneration(tabId: String): List<CompletableFuture<*>> =
@@ -1568,41 +1529,15 @@ class LspEditorManager(
             runCatchingPreservingCancellation {
                 val snapshot = runCatching { textProvider() }.getOrDefault("")
                 val documentUri = file.toURI().toString()
-                sharedCxxSessionMutex.withLock {
-                    val existing = synchronized(stateLock) { sharedCxxSession }
-                    if (existing != null && existing.isConnected) {
-                        Timber.tag(TAG).d("startSharedCxxAttach: reusing shared clangd for %s", file.name)
-                        withContext(Dispatchers.IO) {
-                            existing.connect(
-                                documentUri = documentUri,
-                                languageId = languageId,
-                                initialText = snapshot,
-                                initializationOptions = initializationOptions
-                            ).getOrThrow()
-                        }
-                        existing
-                    } else {
-                        Timber.tag(TAG).d("startSharedCxxAttach: creating shared clangd session...")
-                        val provider = providerFactory()
-                        val session = createLspClientSession(provider, workspaceRoot, file)
-                        try {
-                            withContext(Dispatchers.IO) {
-                                session.connect(
-                                    languageId = languageId,
-                                    initialText = snapshot,
-                                    initializationOptions = initializationOptions,
-                                ).getOrThrow()
-                            }
-                        } catch (error: Throwable) {
-                            withContext(NonCancellable + Dispatchers.IO) {
-                                runCatching { session.close() }
-                            }
-                            throw error
-                        }
-                        synchronized(stateLock) { sharedCxxSession = session }
-                        session
-                    }
-                }
+                sharedCxxSessions.obtainOrCreate(
+                    file = file,
+                    workspaceRoot = workspaceRoot,
+                    documentUri = documentUri,
+                    languageId = languageId,
+                    initialText = snapshot,
+                    initializationOptions = initializationOptions,
+                    providerFactory = providerFactory,
+                )
             }.onSuccess { session ->
                 val committed = synchronized(stateLock) {
                     if (attachTokenCache[tabId] !== token) {
@@ -1856,7 +1791,7 @@ class LspEditorManager(
                 onDiagnosticsChanged?.invoke(tabSession.documentUri, emptyList())
             }
             Triple(
-                sharedCxxSession,
+                sharedCxxSessions.currentSession(),
                 builtinDiagnosticsJobs.remove(tabId).also {
                     builtinDiagnosticsRequestTokens.remove(tabId)
                 },
@@ -1894,18 +1829,17 @@ class LspEditorManager(
             builtinDiagnosticsJobs.values.toList().also { builtinDiagnosticsJobs.clear() }
         }
         diagnosticsJobs.forEach { job -> job.cancel() }
-        val (sessions, sharedSession, inflightRequests) = synchronized(stateLock) {
+        val sharedSession = sharedCxxSessions.takeForDispose()
+        val (sessions, inflightRequests) = synchronized(stateLock) {
             attachTokenCache.clear()
             semanticTokensCache.clear()
             documentVersions.clear()
             completionWarmupTabIds.clear()
             val inflight = tabRequestTracker.drainAll()
-            val shared = sharedCxxSession
-            sharedCxxSession = null
             if (clearBindings) tabBindings.clear()
             val all = tabSessions.values.toList()
             tabSessions.clear()
-            Triple(all, shared, inflight)
+            all to inflight
         }
         inflightRequests.forEach { future -> future.cancel(true) }
         val uniqueLspSessions = buildSet {
@@ -2193,7 +2127,7 @@ class LspEditorManager(
         val sessions = synchronized(stateLock) {
             buildSet {
                 tabSessions.values.mapNotNullTo(this) { it.lspSession }
-                sharedCxxSession?.let { add(it) }
+                sharedCxxSessions.currentSession()?.let { add(it) }
             }
         }.toList()
         sessions.forEach { session ->
@@ -2217,7 +2151,7 @@ class LspEditorManager(
 
     private fun stopFileWatcherIfCxxIdle(): Boolean {
         val registration = synchronized(stateLock) {
-            if (sharedCxxSession != null || tabBindings.values.any { it.kind == SessionKind.CXX }) {
+            if (sharedCxxSessions.currentSession() != null || tabBindings.values.any { it.kind == SessionKind.CXX }) {
                 return false
             }
             watchedPatterns.clear()

@@ -19,6 +19,7 @@ import com.wuxianggujun.tinaide.core.compile.RunConfigurationManager
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.core.lsp.LocationItem
+import com.wuxianggujun.tinaide.core.config.IConfigManager
 import com.wuxianggujun.tinaide.core.packages.PackageManagerImpl
 import com.wuxianggujun.tinaide.core.packages.api.PackageApiClient
 import com.wuxianggujun.tinaide.core.packages.model.GUIPackage
@@ -533,13 +534,14 @@ internal fun MainActivityApkPackageDialog(
     if (!state.showApkPackageDialog) return
 
     val context = LocalContext.current
+    val configManager: IConfigManager = koinInject()
     val pluginLogManager = remember(context) {
         com.wuxianggujun.tinaide.plugin.PluginLogManager.getInstance(context.applicationContext)
     }
     val pluginManager = remember(context) { PluginManager.getInstance(context.applicationContext) }
-    val packageManager = remember(context) {
+    val packageManager = remember(context, configManager) {
+        // packagesModule 以 factory 注册 PackageManager；此处按需构造，避免 Compose 层硬取 GlobalContext。
         val appContext = context.applicationContext
-        val configManager = org.koin.core.context.GlobalContext.get().get<com.wuxianggujun.tinaide.core.config.IConfigManager>()
         PackageManagerImpl(
             context = appContext,
             apiClient = PackageApiClient.getInstance(appContext),

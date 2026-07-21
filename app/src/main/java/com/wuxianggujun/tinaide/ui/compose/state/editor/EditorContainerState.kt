@@ -71,7 +71,7 @@ import java.nio.charset.Charset
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.sync.Mutex
 import org.eclipse.lsp4j.WorkspaceEdit
-import org.koin.core.context.GlobalContext
+import org.koin.compose.koinInject
 import timber.log.Timber
 
 private const val DEFAULT_SPLIT_EDITOR_PRIMARY_RATIO = 0.5f
@@ -2152,8 +2152,18 @@ fun rememberEditorContainerState(
     onLspDiagnosticsChanged: ((fileUri: String, diagnostics: List<Diagnostic>) -> Unit)? = null
 ): EditorContainerState {
     val context = LocalContext.current
-    val state = remember(editorManager, snippetManager, pluginThemeRegistry, projectSymbolIndexServiceProvider) {
-        val koin = GlobalContext.getOrNull()
+    val fileWatchService: IFileWatchService = koinInject()
+    val linuxEnvironmentProvider: LinuxEnvironmentProvider = koinInject()
+    val lspPluginManager: LspPluginManager = koinInject()
+    val state = remember(
+        editorManager,
+        snippetManager,
+        pluginThemeRegistry,
+        projectSymbolIndexServiceProvider,
+        fileWatchService,
+        linuxEnvironmentProvider,
+        lspPluginManager,
+    ) {
         EditorContainerState(
             context = context,
             editorManager = editorManager,
@@ -2161,10 +2171,9 @@ fun rememberEditorContainerState(
             pluginThemeRegistry = pluginThemeRegistry,
             projectSymbolIndexServiceProvider = projectSymbolIndexServiceProvider,
             projectRootPathProvider = projectRootPathProvider,
-            fileWatchService = koin?.getOrNull<IFileWatchService>(),
-            linuxEnvironmentProvider = koin?.getOrNull<LinuxEnvironmentProvider>()
-                ?: UnavailableLinuxEnvironmentProvider,
-            lspPluginManager = koin?.getOrNull<LspPluginManager>(),
+            fileWatchService = fileWatchService,
+            linuxEnvironmentProvider = linuxEnvironmentProvider,
+            lspPluginManager = lspPluginManager,
         )
     }
 
