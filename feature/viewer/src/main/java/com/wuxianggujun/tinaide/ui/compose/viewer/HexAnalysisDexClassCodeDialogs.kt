@@ -79,23 +79,23 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * DEX analysis dialogs.
+ * DEX classes/class-data/code-item dialogs.
  */
 
 @Composable
-internal fun DexStringsDialog(
-    entries: List<HexDexStringEntry>,
+internal fun DexClassesDialog(
+    entries: List<HexDexClassDefEntry>,
     onDismiss: () -> Unit,
     onGotoOffset: (Long) -> Unit
 ) {
     var query by remember(entries) { mutableStateOf("") }
     val filteredEntries = remember(entries, query) {
-        filterDexStringEntries(entries = entries, query = query)
+        filterDexClassDefEntries(entries = entries, query = query)
     }
 
     TinaAlertDialog(
         onDismissRequest = onDismiss,
-        title = { TinaDialogTitleText(stringResource(Strings.hex_dex_strings_dialog_title)) },
+        title = { TinaDialogTitleText(stringResource(Strings.hex_dex_classes_dialog_title)) },
         text = {
             TinaDialogContentColumn {
                 TinaDialogCard {
@@ -106,13 +106,13 @@ internal fun DexStringsDialog(
                         OutlinedTextField(
                             value = query,
                             onValueChange = { query = it },
-                            label = { Text(stringResource(Strings.hex_dex_strings_filter_label)) },
+                            label = { Text(stringResource(Strings.hex_dex_classes_filter_label)) },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
                         Text(
                             text = stringResource(
-                                Strings.hex_dex_strings_filter_count,
+                                Strings.hex_dex_classes_filter_count,
                                 filteredEntries.size,
                                 entries.size
                             ),
@@ -124,7 +124,7 @@ internal fun DexStringsDialog(
                 TinaDialogCard {
                     if (filteredEntries.isEmpty()) {
                         Text(
-                            text = stringResource(Strings.hex_dex_strings_empty),
+                            text = stringResource(Strings.hex_dex_classes_empty),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.fillMaxWidth()
@@ -140,10 +140,10 @@ internal fun DexStringsDialog(
                                 count = filteredEntries.size,
                                 key = { index ->
                                     val entry = filteredEntries[index]
-                                    "${entry.index}-${entry.dataOffset}-${entry.value}"
+                                    "${entry.index}-${entry.classDefOffset}-${entry.classDescriptor}"
                                 }
                             ) { index ->
-                                DexStringEntryRow(
+                                DexClassDefEntryRow(
                                     entry = filteredEntries[index],
                                     onGotoOffset = onGotoOffset
                                 )
@@ -164,12 +164,13 @@ internal fun DexStringsDialog(
 }
 
 @Composable
-internal fun DexStringEntryRow(
-    entry: HexDexStringEntry,
+internal fun DexClassDefEntryRow(
+    entry: HexDexClassDefEntry,
     onGotoOffset: (Long) -> Unit
 ) {
+    val superclassLabel = entry.superclassDescriptor ?: stringResource(Strings.hex_dex_index_none)
     Surface(
-        onClick = { onGotoOffset(entry.dataOffset) },
+        onClick = { onGotoOffset(entry.classDefOffset) },
         shape = MaterialTheme.shapes.small,
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
         modifier = Modifier.fillMaxWidth()
@@ -179,7 +180,7 @@ internal fun DexStringEntryRow(
             verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             Text(
-                text = entry.value,
+                text = entry.classDescriptor,
                 style = MaterialTheme.typography.bodySmall,
                 fontFamily = FontFamily.Monospace,
                 maxLines = 1,
@@ -187,393 +188,44 @@ internal fun DexStringEntryRow(
             )
             Text(
                 text = stringResource(
-                    Strings.hex_dex_string_meta,
+                    Strings.hex_dex_class_meta,
                     entry.index,
-                    entry.stringIdOffset,
-                    entry.dataOffset
-                ),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-@Composable
-internal fun DexTypesDialog(
-    entries: List<HexDexTypeEntry>,
-    onDismiss: () -> Unit,
-    onGotoOffset: (Long) -> Unit
-) {
-    var query by remember(entries) { mutableStateOf("") }
-    val filteredEntries = remember(entries, query) {
-        filterDexTypeEntries(entries = entries, query = query)
-    }
-
-    TinaAlertDialog(
-        onDismissRequest = onDismiss,
-        title = { TinaDialogTitleText(stringResource(Strings.hex_dex_types_dialog_title)) },
-        text = {
-            TinaDialogContentColumn {
-                TinaDialogCard {
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedTextField(
-                            value = query,
-                            onValueChange = { query = it },
-                            label = { Text(stringResource(Strings.hex_dex_types_filter_label)) },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Text(
-                            text = stringResource(
-                                Strings.hex_dex_types_filter_count,
-                                filteredEntries.size,
-                                entries.size
-                            ),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-                TinaDialogCard {
-                    if (filteredEntries.isEmpty()) {
-                        Text(
-                            text = stringResource(Strings.hex_dex_types_empty),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(320.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            items(
-                                count = filteredEntries.size,
-                                key = { index ->
-                                    val entry = filteredEntries[index]
-                                    "${entry.index}-${entry.typeIdOffset}-${entry.descriptor}"
-                                }
-                            ) { index ->
-                                DexTypeEntryRow(
-                                    entry = filteredEntries[index],
-                                    onGotoOffset = onGotoOffset
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TinaTextButton(
-                text = stringResource(Strings.btn_close),
-                onClick = onDismiss
-            )
-        }
-    )
-}
-
-@Composable
-internal fun DexTypeEntryRow(
-    entry: HexDexTypeEntry,
-    onGotoOffset: (Long) -> Unit
-) {
-    Surface(
-        onClick = { onGotoOffset(entry.typeIdOffset) },
-        shape = MaterialTheme.shapes.small,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp)
-        ) {
-            Text(
-                text = entry.descriptor,
-                style = MaterialTheme.typography.bodySmall,
-                fontFamily = FontFamily.Monospace,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = stringResource(
-                    Strings.hex_dex_type_meta,
-                    entry.index,
-                    entry.typeIdOffset,
-                    entry.descriptorStringIndex
-                ),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-@Composable
-internal fun DexProtosDialog(
-    entries: List<HexDexProtoEntry>,
-    onDismiss: () -> Unit,
-    onGotoOffset: (Long) -> Unit
-) {
-    var query by remember(entries) { mutableStateOf("") }
-    val filteredEntries = remember(entries, query) {
-        filterDexProtoEntries(entries = entries, query = query)
-    }
-
-    TinaAlertDialog(
-        onDismissRequest = onDismiss,
-        title = { TinaDialogTitleText(stringResource(Strings.hex_dex_protos_dialog_title)) },
-        text = {
-            TinaDialogContentColumn {
-                TinaDialogCard {
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedTextField(
-                            value = query,
-                            onValueChange = { query = it },
-                            label = { Text(stringResource(Strings.hex_dex_protos_filter_label)) },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Text(
-                            text = stringResource(
-                                Strings.hex_dex_protos_filter_count,
-                                filteredEntries.size,
-                                entries.size
-                            ),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-                TinaDialogCard {
-                    if (filteredEntries.isEmpty()) {
-                        Text(
-                            text = stringResource(Strings.hex_dex_protos_empty),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(320.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            items(
-                                count = filteredEntries.size,
-                                key = { index ->
-                                    val entry = filteredEntries[index]
-                                    "${entry.index}-${entry.protoIdOffset}-${entry.signature}"
-                                }
-                            ) { index ->
-                                DexProtoEntryRow(
-                                    entry = filteredEntries[index],
-                                    onGotoOffset = onGotoOffset
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TinaTextButton(
-                text = stringResource(Strings.btn_close),
-                onClick = onDismiss
-            )
-        }
-    )
-}
-
-@Composable
-internal fun DexProtoEntryRow(
-    entry: HexDexProtoEntry,
-    onGotoOffset: (Long) -> Unit
-) {
-    Surface(
-        onClick = { onGotoOffset(entry.protoIdOffset) },
-        shape = MaterialTheme.shapes.small,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp)
-        ) {
-            Text(
-                text = entry.signature,
-                style = MaterialTheme.typography.bodySmall,
-                fontFamily = FontFamily.Monospace,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = stringResource(
-                    Strings.hex_dex_proto_meta,
-                    entry.index,
-                    entry.protoIdOffset,
-                    entry.shorty,
-                    entry.shortyStringIndex,
-                    entry.returnTypeIndex,
-                    entry.parametersOffset
-                ),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-@Composable
-internal fun DexFieldsDialog(
-    entries: List<HexDexFieldEntry>,
-    onDismiss: () -> Unit,
-    onGotoOffset: (Long) -> Unit
-) {
-    var query by remember(entries) { mutableStateOf("") }
-    val filteredEntries = remember(entries, query) {
-        filterDexFieldEntries(entries = entries, query = query)
-    }
-
-    TinaAlertDialog(
-        onDismissRequest = onDismiss,
-        title = { TinaDialogTitleText(stringResource(Strings.hex_dex_fields_dialog_title)) },
-        text = {
-            TinaDialogContentColumn {
-                TinaDialogCard {
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedTextField(
-                            value = query,
-                            onValueChange = { query = it },
-                            label = { Text(stringResource(Strings.hex_dex_fields_filter_label)) },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Text(
-                            text = stringResource(
-                                Strings.hex_dex_fields_filter_count,
-                                filteredEntries.size,
-                                entries.size
-                            ),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-                TinaDialogCard {
-                    if (filteredEntries.isEmpty()) {
-                        Text(
-                            text = stringResource(Strings.hex_dex_fields_empty),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(320.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            items(
-                                count = filteredEntries.size,
-                                key = { index ->
-                                    val entry = filteredEntries[index]
-                                    "${entry.index}-${entry.fieldIdOffset}-${entry.name}"
-                                }
-                            ) { index ->
-                                DexFieldEntryRow(
-                                    entry = filteredEntries[index],
-                                    onGotoOffset = onGotoOffset
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TinaTextButton(
-                text = stringResource(Strings.btn_close),
-                onClick = onDismiss
-            )
-        }
-    )
-}
-
-@Composable
-internal fun DexFieldEntryRow(
-    entry: HexDexFieldEntry,
-    onGotoOffset: (Long) -> Unit
-) {
-    Surface(
-        onClick = { onGotoOffset(entry.fieldIdOffset) },
-        shape = MaterialTheme.shapes.small,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp)
-        ) {
-            Text(
-                text = stringResource(
-                    Strings.hex_dex_field_display,
-                    entry.classDescriptor,
-                    entry.name,
-                    entry.typeDescriptor
-                ),
-                style = MaterialTheme.typography.bodySmall,
-                fontFamily = FontFamily.Monospace,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = stringResource(
-                    Strings.hex_dex_field_meta,
-                    entry.index,
-                    entry.fieldIdOffset,
+                    entry.classDefOffset,
                     entry.classIndex,
-                    entry.typeIndex,
-                    entry.nameStringIndex
+                    entry.accessFlags,
+                    superclassLabel,
+                    entry.classDataOffset
                 ),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            entry.sourceFile?.let { sourceFile ->
+                Text(
+                    text = stringResource(Strings.hex_dex_class_source, sourceFile),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
     }
 }
 
 @Composable
-internal fun DexMethodsDialog(
-    entries: List<HexDexMethodEntry>,
+internal fun DexClassDataMethodsDialog(
+    entries: List<HexDexClassDataMethodEntry>,
     onDismiss: () -> Unit,
     onGotoOffset: (Long) -> Unit
 ) {
     var query by remember(entries) { mutableStateOf("") }
     val filteredEntries = remember(entries, query) {
-        filterDexMethodEntries(entries = entries, query = query)
+        filterDexClassDataMethodEntries(entries = entries, query = query)
     }
 
     TinaAlertDialog(
         onDismissRequest = onDismiss,
-        title = { TinaDialogTitleText(stringResource(Strings.hex_dex_methods_dialog_title)) },
+        title = { TinaDialogTitleText(stringResource(Strings.hex_dex_class_data_methods_dialog_title)) },
         text = {
             TinaDialogContentColumn {
                 TinaDialogCard {
@@ -584,13 +236,13 @@ internal fun DexMethodsDialog(
                         OutlinedTextField(
                             value = query,
                             onValueChange = { query = it },
-                            label = { Text(stringResource(Strings.hex_dex_methods_filter_label)) },
+                            label = { Text(stringResource(Strings.hex_dex_class_data_methods_filter_label)) },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
                         Text(
                             text = stringResource(
-                                Strings.hex_dex_methods_filter_count,
+                                Strings.hex_dex_class_data_methods_filter_count,
                                 filteredEntries.size,
                                 entries.size
                             ),
@@ -602,7 +254,7 @@ internal fun DexMethodsDialog(
                 TinaDialogCard {
                     if (filteredEntries.isEmpty()) {
                         Text(
-                            text = stringResource(Strings.hex_dex_methods_empty),
+                            text = stringResource(Strings.hex_dex_class_data_methods_empty),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.fillMaxWidth()
@@ -618,10 +270,10 @@ internal fun DexMethodsDialog(
                                 count = filteredEntries.size,
                                 key = { index ->
                                     val entry = filteredEntries[index]
-                                    "${entry.index}-${entry.methodIdOffset}-${entry.name}"
+                                    "${entry.index}-${entry.entryOffset}-${entry.codeOffset}-${entry.methodName}"
                                 }
                             ) { index ->
-                                DexMethodEntryRow(
+                                DexClassDataMethodEntryRow(
                                     entry = filteredEntries[index],
                                     onGotoOffset = onGotoOffset
                                 )
@@ -642,12 +294,13 @@ internal fun DexMethodsDialog(
 }
 
 @Composable
-internal fun DexMethodEntryRow(
-    entry: HexDexMethodEntry,
+internal fun DexClassDataMethodEntryRow(
+    entry: HexDexClassDataMethodEntry,
     onGotoOffset: (Long) -> Unit
 ) {
+    val targetOffset = if (entry.codeOffset > 0L) entry.codeOffset else entry.entryOffset
     Surface(
-        onClick = { onGotoOffset(entry.methodIdOffset) },
+        onClick = { onGotoOffset(targetOffset) },
         shape = MaterialTheme.shapes.small,
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
         modifier = Modifier.fillMaxWidth()
@@ -658,9 +311,9 @@ internal fun DexMethodEntryRow(
         ) {
             Text(
                 text = stringResource(
-                    Strings.hex_dex_method_display,
-                    entry.classDescriptor,
-                    entry.name,
+                    Strings.hex_dex_class_data_method_display,
+                    entry.methodClassDescriptor,
+                    entry.methodName,
                     entry.protoSignature
                 ),
                 style = MaterialTheme.typography.bodySmall,
@@ -670,16 +323,162 @@ internal fun DexMethodEntryRow(
             )
             Text(
                 text = stringResource(
-                    Strings.hex_dex_method_meta,
+                    Strings.hex_dex_class_data_method_meta,
                     entry.index,
-                    entry.methodIdOffset,
-                    entry.classIndex,
-                    entry.protoIndex,
-                    entry.protoShorty,
-                    entry.nameStringIndex
+                    dexClassDataMethodKindLabel(entry.kind),
+                    entry.methodIndex,
+                    entry.accessFlags,
+                    entry.entryOffset,
+                    entry.codeOffset,
+                    dexClassDataMethodExecutionKindLabel(entry.executionKind)
                 ),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+internal fun DexCodeItemsDialog(
+    entries: List<HexDexCodeItemEntry>,
+    onDismiss: () -> Unit,
+    onGotoOffset: (Long) -> Unit
+) {
+    var query by remember(entries) { mutableStateOf("") }
+    val filteredEntries = remember(entries, query) {
+        filterDexCodeItemEntries(entries = entries, query = query)
+    }
+
+    TinaAlertDialog(
+        onDismissRequest = onDismiss,
+        title = { TinaDialogTitleText(stringResource(Strings.hex_dex_code_items_dialog_title)) },
+        text = {
+            TinaDialogContentColumn {
+                TinaDialogCard {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = query,
+                            onValueChange = { query = it },
+                            label = { Text(stringResource(Strings.hex_dex_code_items_filter_label)) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Text(
+                            text = stringResource(
+                                Strings.hex_dex_code_items_filter_count,
+                                filteredEntries.size,
+                                entries.size
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                TinaDialogCard {
+                    if (filteredEntries.isEmpty()) {
+                        Text(
+                            text = stringResource(Strings.hex_dex_code_items_empty),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(320.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            items(
+                                count = filteredEntries.size,
+                                key = { index ->
+                                    val entry = filteredEntries[index]
+                                    "${entry.index}-${entry.codeOffset}-${entry.methodName}-${entry.firstOpcode}"
+                                }
+                            ) { index ->
+                                DexCodeItemEntryRow(
+                                    entry = filteredEntries[index],
+                                    onGotoOffset = onGotoOffset
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TinaTextButton(
+                text = stringResource(Strings.btn_close),
+                onClick = onDismiss
+            )
+        }
+    )
+}
+
+@Composable
+internal fun DexCodeItemEntryRow(
+    entry: HexDexCodeItemEntry,
+    onGotoOffset: (Long) -> Unit
+) {
+    val previewText = if (entry.previewCodeUnitsHex.isEmpty()) {
+        stringResource(Strings.hex_dex_code_item_preview_empty)
+    } else {
+        entry.previewCodeUnitsHex
+    }
+    Surface(
+        onClick = { onGotoOffset(entry.codeOffset) },
+        shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(
+                text = stringResource(
+                    Strings.hex_dex_code_item_display,
+                    entry.methodClassDescriptor,
+                    entry.methodName,
+                    entry.protoSignature
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = stringResource(
+                    Strings.hex_dex_code_item_meta,
+                    entry.index,
+                    entry.methodIndex,
+                    entry.registersSize,
+                    entry.insSize,
+                    entry.outsSize,
+                    entry.triesSize,
+                    entry.debugInfoOffset,
+                    entry.insnsSize,
+                    entry.firstOpcodeName,
+                    entry.firstOpcode
+                ),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = stringResource(
+                    Strings.hex_dex_code_item_preview,
+                    previewText
+                ),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }
