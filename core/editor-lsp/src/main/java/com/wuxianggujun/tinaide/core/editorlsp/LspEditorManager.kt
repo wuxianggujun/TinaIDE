@@ -1,15 +1,8 @@
-package com.wuxianggujun.tinaide.ui.compose.state.editor
+﻿package com.wuxianggujun.tinaide.core.editorlsp
 
 import android.content.Context
 import com.wuxianggujun.tinaide.core.config.LspAssistSettings
 import com.wuxianggujun.tinaide.core.config.Prefs
-import com.wuxianggujun.tinaide.core.editorlsp.CompletionFetchResult
-import com.wuxianggujun.tinaide.core.editorlsp.CompletionItem
-import com.wuxianggujun.tinaide.core.editorlsp.CompletionItemKind
-import com.wuxianggujun.tinaide.core.editorlsp.CompletionSource
-import com.wuxianggujun.tinaide.core.editorlsp.CompletionTextEdit
-import com.wuxianggujun.tinaide.core.editorlsp.SemanticToken
-import com.wuxianggujun.tinaide.core.editorlsp.SignatureHelpResult
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.str
 import com.wuxianggujun.tinaide.core.lang.CxxFileSupport
@@ -54,7 +47,6 @@ import com.wuxianggujun.tinaide.plugin.lsp.LspServerConfig
 import com.wuxianggujun.tinaide.plugin.lsp.PluginLspConnectionProvider
 import com.wuxianggujun.tinaide.project.CppStandard
 import com.wuxianggujun.tinaide.project.ProjectMetadataStore
-import com.wuxianggujun.tinaide.ui.compose.components.EditorStatus
 import java.io.File
 import java.net.URI
 import java.util.concurrent.CompletableFuture
@@ -107,13 +99,14 @@ data class PluginLspDependencyNotReadyEvent(
     val message: String
 )
 
-internal sealed interface SemanticTokensRequestResult {
+sealed interface SemanticTokensRequestResult {
     data class Success(val tokens: List<SemanticToken>) : SemanticTokensRequestResult
     data object Unavailable : SemanticTokensRequestResult
 }
 
 class LspEditorManager(
     private val fileWatchService: IFileWatchService? = null,
+    private val linuxEnvironmentProvider: LinuxEnvironmentProvider = UnavailableLinuxEnvironmentProvider,
 ) {
 
     companion object {
@@ -217,11 +210,6 @@ class LspEditorManager(
     private var workspaceFileWatcher: FileWatchRegistration? = null
     private val watchedPatterns = mutableListOf<Pair<String, List<LspFileWatchPattern>>>()
 
-    private val linuxEnvironmentProvider: LinuxEnvironmentProvider by lazy {
-        runCatching { org.koin.core.context.GlobalContext.get().getOrNull<LinuxEnvironmentProvider>() }
-            .getOrNull() ?: UnavailableLinuxEnvironmentProvider
-    }
-
     @Volatile
     private var assistSettings: LspAssistSettings = LspAssistSettings(
         signatureHelpEnabled = true,
@@ -242,7 +230,7 @@ class LspEditorManager(
         lspPluginManager = manager
     }
 
-    internal fun isDocumentVersionCurrent(tabId: String, expectedVersion: Int): Boolean {
+    fun isDocumentVersionCurrent(tabId: String, expectedVersion: Int): Boolean {
         val tabSession = synchronized(stateLock) { tabSessions[tabId] } ?: return false
         return tabSession.lspSession?.currentDocumentVersion(tabSession.documentUri) == expectedVersion
     }
@@ -400,7 +388,7 @@ class LspEditorManager(
         }
     }
 
-    internal suspend fun requestSemanticTokens(
+    suspend fun requestSemanticTokens(
         tabId: String,
         visibleLines: IntRange,
         documentVersion: Long
@@ -1100,13 +1088,9 @@ class LspEditorManager(
         projectRootPath: String?,
         textProvider: () -> String,
     ): Boolean {
+        // resolveClangdRunMode() 已在 Linux 环境不可用时回退 NATIVE，与编译链路一致。
         val runMode = resolveClangdRunMode()
         Timber.tag(TAG).i("attachLocalCxxLsp: file=%s, runMode=%s, projectRoot=%s", file.name, runMode, projectRootPath)
-        if (runMode == LinuxRunModePolicy.RunMode.PROOT && !linuxEnvironmentProvider.get().isAvailable()) {
-            Timber.tag(TAG).w("attachLocalCxxLsp: PRoot linux environment unavailable, setting NoLsp")
-            updateLspStatus(tabId, EditorStatus.NoLsp)
-            return false
-        }
         if (runMode == LinuxRunModePolicy.RunMode.NATIVE) {
             val toolchain = AndroidNativeToolchainManager(context)
             val sysroot = AndroidSysrootManager(context)

@@ -45,6 +45,7 @@ class PathValidator(private val context: Context) {
          */
         private val PROOT_GUEST_ALLOWED_PREFIXES = listOf(
             "/workspace", // 工作空间（主要工作目录）
+            "/projects", // 私有项目目录（PRootManager 映射）
             "/tmp", // 临时文件
             "/home" // 用户目录
         )

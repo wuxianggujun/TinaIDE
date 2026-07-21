@@ -30,6 +30,7 @@ import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.wuxianggujun.tinaide.core.editorlsp.EditorStatus
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.logging.GestureTrace
 import com.wuxianggujun.tinaide.core.lsp.ProjectSyncManager
@@ -295,13 +296,4 @@ fun EditorStatusBar(
     }
 }
 
-/**
- * 编辑器状态枚举
- */
-enum class EditorStatus {
-    Ready,
-    Connecting,
-    Busy,
-    NoLsp,
-    Error
-}
+

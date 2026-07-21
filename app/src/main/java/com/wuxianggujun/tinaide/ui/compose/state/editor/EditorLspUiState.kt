@@ -5,7 +5,8 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
-import com.wuxianggujun.tinaide.ui.compose.components.EditorStatus
+import com.wuxianggujun.tinaide.core.editorlsp.EditorStatus
+import com.wuxianggujun.tinaide.core.editorlsp.PluginLspDependencyNotReadyEvent
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 

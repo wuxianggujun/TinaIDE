@@ -27,9 +27,7 @@ import java.io.File
 class CodeFormatter(
     private val context: Context,
     private val prootManager: PRootManager? = null,
-    private val linuxEnvironmentProvider: LinuxEnvironmentProvider = runCatching {
-        org.koin.core.context.GlobalContext.get().getOrNull<LinuxEnvironmentProvider>()
-    }.getOrNull() ?: UnavailableLinuxEnvironmentProvider,
+    private val linuxEnvironmentProvider: LinuxEnvironmentProvider = UnavailableLinuxEnvironmentProvider,
 ) {
     companion object {
         private const val TAG = "CodeFormatter"

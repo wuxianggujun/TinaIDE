@@ -1,4 +1,4 @@
-package com.wuxianggujun.tinaide.ui.compose.state.editor
+﻿package com.wuxianggujun.tinaide.core.editorlsp
 
 import com.google.common.truth.Truth.assertThat
 import com.wuxianggujun.tinaide.core.editorlsp.CompletionFetchResult

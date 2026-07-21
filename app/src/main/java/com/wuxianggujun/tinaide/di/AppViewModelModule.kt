@@ -49,7 +49,16 @@ val appViewModelModule = module {
     viewModel { MainViewModel(androidApplication(), get()) }
     viewModel { DebugViewModel(androidApplication(), get(), get()) }
     viewModel { GitViewModel(get()) }
-    viewModel { MainActivityActionsViewModel(androidApplication(), get(), get(), get(), get()) }
+    viewModel {
+        MainActivityActionsViewModel(
+            application = androidApplication(),
+            editorManager = get(),
+            projectContext = get(),
+            projectSession = get(),
+            bookmarkRepository = get(),
+            linuxEnvironmentProvider = get(),
+        )
+    }
     viewModel { ProjectManagerViewModel(androidApplication(), get(), get(), get(), get()) }
     viewModel { FavoritesViewModel(get()) }
     viewModel { DownloadHistoryViewModel(get()) }

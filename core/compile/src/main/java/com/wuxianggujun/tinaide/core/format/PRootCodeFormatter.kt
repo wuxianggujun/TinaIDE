@@ -2,11 +2,13 @@ package com.wuxianggujun.tinaide.core.format
 
 import android.content.Context
 import com.wuxianggujun.tinaide.core.config.Prefs
+import com.wuxianggujun.tinaide.core.exception.TinaIDEException
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.core.lang.CxxFileSupport
 import com.wuxianggujun.tinaide.core.proot.PRootManager
 import com.wuxianggujun.tinaide.core.proot.ToolchainPathResolver
+import com.wuxianggujun.tinaide.core.security.PathValidator
 import java.io.File
 import timber.log.Timber
 
@@ -25,7 +27,8 @@ import timber.log.Timber
  */
 class PRootCodeFormatter(
     private val context: Context,
-    private val prootManager: PRootManager
+    private val prootManager: PRootManager,
+    private val pathValidator: PathValidator = PathValidator(context),
 ) {
     companion object {
         private const val TAG = "PRootCodeFormatter"
@@ -114,6 +117,8 @@ class PRootCodeFormatter(
         style: FormatStyle? = null,
         options: FormatOptions = FormatOptions()
     ): FormatResult {
+        validateGuestPathOrError(fileName)?.let { return it }
+
         val effectiveStyle = style ?: resolveFormatStyle(fileName)
         val command = buildFormatCommand(fileName, effectiveStyle, options)
 
@@ -155,6 +160,8 @@ class PRootCodeFormatter(
         options: FormatOptions = FormatOptions(),
         inPlace: Boolean = false
     ): FormatResult {
+        validateGuestPathOrError(guestFilePath)?.let { return it }
+
         val effectiveStyle = style ?: resolveFormatStyle(guestFilePath)
         val command = buildFormatCommand(guestFilePath, effectiveStyle, options).toMutableList()
 
@@ -298,6 +305,17 @@ class PRootCodeFormatter(
     fun getAvailableConfigs(): List<ClangFormatConfigManager.ConfigInfo> = configManager.availableConfigs
 
     // ========== 私有方法 ==========
+
+    private fun validateGuestPathOrError(guestPath: String): FormatResult.Error? = try {
+        pathValidator.validateGuestPath(guestPath)
+        null
+    } catch (e: TinaIDEException.PathValidationException) {
+        Timber.tag(TAG).w("Rejected guest path for format: %s", guestPath)
+        FormatResult.Error(
+            message = e.userMessage.ifBlank { e.message ?: Strings.format_failed_simple.strOr(context) },
+            exitCode = -1,
+        )
+    }
 
     /**
      * 从 guest 路径提取父目录

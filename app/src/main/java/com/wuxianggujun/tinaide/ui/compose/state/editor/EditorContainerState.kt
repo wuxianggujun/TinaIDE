@@ -29,6 +29,8 @@ import com.wuxianggujun.tinaide.core.editorview.EditorState
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.core.lang.CxxFileSupport
+import com.wuxianggujun.tinaide.core.linux.LinuxEnvironmentProvider
+import com.wuxianggujun.tinaide.core.linux.UnavailableLinuxEnvironmentProvider
 import com.wuxianggujun.tinaide.core.lsp.Diagnostic
 import com.wuxianggujun.tinaide.core.lsp.DocumentSymbolItem
 import com.wuxianggujun.tinaide.core.lsp.LocationItem
@@ -56,7 +58,10 @@ import com.wuxianggujun.tinaide.plugin.script.api.EditorSelectionPayload
 import com.wuxianggujun.tinaide.plugin.script.api.PluginHostEventDispatcher
 import com.wuxianggujun.tinaide.search.CodeSearchResult
 import com.wuxianggujun.tinaide.search.SearchOptions
-import com.wuxianggujun.tinaide.ui.compose.components.EditorStatus
+import com.wuxianggujun.tinaide.core.editorlsp.EditorStatus
+import com.wuxianggujun.tinaide.core.editorlsp.LspEditorManager
+import com.wuxianggujun.tinaide.core.editorlsp.SemanticTokensRequestResult
+import com.wuxianggujun.tinaide.core.editorlsp.resolveEditorLanguageId
 import com.wuxianggujun.tinaide.ui.compose.components.editor.ContentType
 import com.wuxianggujun.tinaide.ui.compose.components.editor.EditorTabState
 import com.wuxianggujun.tinaide.ui.compose.components.editor.EditorToolBarState
@@ -447,6 +452,9 @@ class EditorContainerState(
 
     private val lspEditorManager = LspEditorManager(
         fileWatchService = GlobalContext.getOrNull()?.getOrNull<IFileWatchService>(),
+        linuxEnvironmentProvider = GlobalContext.getOrNull()
+            ?.getOrNull<LinuxEnvironmentProvider>()
+            ?: UnavailableLinuxEnvironmentProvider,
     )
     private val searchStateManager = SearchStateManager()
     private val tabManager = EditorTabManager(context, editorManager)

@@ -1,8 +1,8 @@
-package com.wuxianggujun.tinaide.ui.compose.state.editor
+﻿package com.wuxianggujun.tinaide.core.editorlsp
 
 import java.io.File
 
-internal enum class LspAttachmentRoute {
+enum class LspAttachmentRoute {
     NONE,
     CXX,
     PLUGIN,
@@ -10,7 +10,7 @@ internal enum class LspAttachmentRoute {
     BUILTIN_MAKE
 }
 
-internal object LspRoutingSupport {
+object LspRoutingSupport {
     fun resolveAttachmentRoute(
         file: File,
         editorLspEnabled: Boolean,

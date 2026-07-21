@@ -1,4 +1,4 @@
-package com.wuxianggujun.tinaide.ui.compose.state.editor
+﻿package com.wuxianggujun.tinaide.core.editorlsp
 
 import com.wuxianggujun.tinaide.core.editorlsp.CompletionItem
 import com.wuxianggujun.tinaide.core.editorlsp.CompletionItemKind
@@ -13,7 +13,7 @@ import java.io.File
 import java.util.ArrayDeque
 import kotlin.math.max
 
-internal object MakeLanguageSupport {
+object MakeLanguageSupport {
 
     private const val MAX_PARSE_SIZE = 500_000
 

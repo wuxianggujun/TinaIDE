@@ -1,4 +1,4 @@
-package com.wuxianggujun.tinaide.ui.compose.state.editor
+﻿package com.wuxianggujun.tinaide.core.editorlsp
 
 import com.wuxianggujun.tinaide.core.editorlsp.CompletionFetchResult
 import com.wuxianggujun.tinaide.core.editorlsp.SemanticToken
@@ -12,7 +12,7 @@ import com.wuxianggujun.tinaide.core.textengine.TextChange
 /**
  * 内建语言服务统一抽象，避免不同语言在 LSP 管理器里继续复制分支逻辑。
  */
-internal interface BuiltinLanguageServiceSession {
+interface BuiltinLanguageServiceSession {
     val isConnected: Boolean
 
     fun didChange(change: TextChange)

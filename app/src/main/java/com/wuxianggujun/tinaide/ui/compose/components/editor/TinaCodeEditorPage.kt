@@ -69,11 +69,11 @@ import com.wuxianggujun.tinaide.editor.session.DocumentSession
 import com.wuxianggujun.tinaide.editor.session.EditorViewState
 import com.wuxianggujun.tinaide.search.CodeSearchEngine
 import com.wuxianggujun.tinaide.search.CodeSearchResult
-import com.wuxianggujun.tinaide.ui.compose.components.EditorStatus
-import com.wuxianggujun.tinaide.ui.compose.state.editor.CMakeLanguageSupport
+import com.wuxianggujun.tinaide.core.editorlsp.CMakeLanguageSupport
+import com.wuxianggujun.tinaide.core.editorlsp.EditorStatus
+import com.wuxianggujun.tinaide.core.editorlsp.MakeLanguageSupport
+import com.wuxianggujun.tinaide.core.editorlsp.SemanticTokensRequestResult
 import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState
-import com.wuxianggujun.tinaide.ui.compose.state.editor.MakeLanguageSupport
-import com.wuxianggujun.tinaide.ui.compose.state.editor.SemanticTokensRequestResult
 import com.wuxianggujun.tinaide.ui.compose.state.editor.TinaTextContentProvider
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger

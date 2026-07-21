@@ -1,4 +1,4 @@
-package com.wuxianggujun.tinaide.ui.compose.state.editor
+﻿package com.wuxianggujun.tinaide.core.editorlsp
 
 import com.wuxianggujun.tinaide.core.lang.CxxFileSupport
 import java.io.File
@@ -32,16 +32,16 @@ private fun File.resolveKnownEditorLanguageId(cHeaderLanguageId: String): String
     }
 }
 
-internal fun File.resolveEditorLanguageId(
+fun File.resolveEditorLanguageId(
     cHeaderLanguageId: String = "cpp",
     fallbackLanguageId: String = "plaintext"
 ): String = resolveKnownEditorLanguageId(cHeaderLanguageId)
     ?: extension.lowercase().ifBlank { fallbackLanguageId }
 
-internal fun File.resolveLspLanguageId(fallbackLanguageId: String = "plaintext"): String = resolveKnownEditorLanguageId(cHeaderLanguageId = "cpp")
+fun File.resolveLspLanguageId(fallbackLanguageId: String = "plaintext"): String = resolveKnownEditorLanguageId(cHeaderLanguageId = "cpp")
     ?: extension.lowercase().ifBlank { fallbackLanguageId }
 
-internal fun File.resolveCodeAnalysisLanguageLabel(unknownLanguageId: String = "unknown"): String {
+fun File.resolveCodeAnalysisLanguageLabel(unknownLanguageId: String = "unknown"): String {
     val ext = extension.lowercase()
     if (ext in CxxFileSupport.headerExtensions) {
         return "c/c++ header"

@@ -16,7 +16,7 @@ import com.wuxianggujun.tinaide.editor.session.SaveResult
 import com.wuxianggujun.tinaide.editor.session.SaveTarget
 import com.wuxianggujun.tinaide.editor.theme.PluginEditorThemeRegistry
 import com.wuxianggujun.tinaide.plugin.PluginSnippetManager
-import com.wuxianggujun.tinaide.ui.compose.components.EditorStatus
+import com.wuxianggujun.tinaide.core.editorlsp.EditorStatus
 import com.wuxianggujun.tinaide.ui.compose.components.editor.ContentType
 import com.wuxianggujun.tinaide.ui.compose.components.editor.EditorToolBarState
 import io.mockk.every

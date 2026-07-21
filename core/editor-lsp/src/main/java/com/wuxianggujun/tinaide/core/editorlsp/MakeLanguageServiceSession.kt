@@ -1,4 +1,4 @@
-package com.wuxianggujun.tinaide.ui.compose.state.editor
+﻿package com.wuxianggujun.tinaide.core.editorlsp
 
 import com.wuxianggujun.tinaide.core.editorlsp.CompletionFetchResult
 import com.wuxianggujun.tinaide.core.editorlsp.CompletionSource
@@ -10,16 +10,14 @@ import com.wuxianggujun.tinaide.core.textengine.Position
 import com.wuxianggujun.tinaide.core.textengine.TextChange
 import java.io.File
 
-internal class CMakeLanguageServiceSession(
+class MakeLanguageServiceSession(
     val file: File,
     val documentUri: String,
-    private val textProvider: () -> String
+    private val textProvider: () -> String,
+    private val caseSensitiveProvider: () -> Boolean = { false }
 ) : BuiltinLanguageServiceSession {
     @Volatile
     private var closed: Boolean = false
-
-    @Volatile
-    private var semanticSnapshot: SemanticSnapshot? = null
 
     @Volatile
     private var diagnosticsSnapshot: DiagnosticsSnapshot? = null
@@ -31,13 +29,11 @@ internal class CMakeLanguageServiceSession(
         get() = !closed
 
     override fun didChange(@Suppress("UNUSED_PARAMETER") change: TextChange) {
-        semanticSnapshot = null
         diagnosticsSnapshot = null
         documentSymbolsSnapshot = null
     }
 
     override fun didSave(@Suppress("UNUSED_PARAMETER") fullText: String?) {
-        semanticSnapshot = null
         diagnosticsSnapshot = null
         documentSymbolsSnapshot = null
     }
@@ -51,11 +47,12 @@ internal class CMakeLanguageServiceSession(
         }
 
         val source = currentSource()
-        val offset = CMakeLanguageSupport.positionToOffset(source, position)
-        val prefix = CMakeLanguageSupport.extractWordPrefix(source, offset)
-        val items = CMakeLanguageSupport.buildCompletionItems(
+        val offset = MakeLanguageSupport.positionToOffset(source, position)
+        val prefix = MakeLanguageSupport.extractWordPrefix(source, offset)
+        val items = MakeLanguageSupport.buildCompletionItems(
             source = source,
             prefix = prefix,
+            caseSensitive = caseSensitiveProvider(),
             completionSource = CompletionSource.LSP
         )
         return CompletionFetchResult.Success(items)
@@ -63,14 +60,7 @@ internal class CMakeLanguageServiceSession(
 
     override suspend fun requestSemanticTokens(): List<SemanticToken> {
         if (closed) return emptyList()
-        val source = currentSource()
-        val cached = semanticSnapshot
-        if (cached != null && cached.source == source) {
-            return cached.tokens
-        }
-        val tokens = CMakeLanguageSupport.buildSemanticTokens(source)
-        semanticSnapshot = SemanticSnapshot(source = source, tokens = tokens)
-        return tokens
+        return MakeLanguageSupport.buildSemanticTokens(currentSource())
     }
 
     override fun currentDiagnostics(): List<Diagnostic> {
@@ -80,7 +70,7 @@ internal class CMakeLanguageServiceSession(
         if (cached != null && cached.source == source) {
             return cached.diagnostics
         }
-        val diagnostics = CMakeLanguageSupport.buildDiagnostics(
+        val diagnostics = MakeLanguageSupport.buildDiagnostics(
             file = file,
             documentUri = documentUri,
             source = source
@@ -96,7 +86,7 @@ internal class CMakeLanguageServiceSession(
         if (cached != null && cached.source == source) {
             return cached.symbols
         }
-        val symbols = CMakeLanguageSupport.buildDocumentSymbols(
+        val symbols = MakeLanguageSupport.buildDocumentSymbols(
             file = file,
             documentUri = documentUri,
             source = source
@@ -107,50 +97,41 @@ internal class CMakeLanguageServiceSession(
 
     override fun gotoDefinition(position: Position): List<LocationItem> {
         if (closed) return emptyList()
-        val source = currentSource()
-        return CMakeLanguageSupport.buildDefinitionLocations(
+        return MakeLanguageSupport.buildDefinitionLocations(
             file = file,
             documentUri = documentUri,
-            source = source,
+            source = currentSource(),
             position = position
         )
     }
 
     override fun findReferences(position: Position): List<LocationItem> {
         if (closed) return emptyList()
-        val source = currentSource()
-        return CMakeLanguageSupport.buildReferenceLocations(
+        return MakeLanguageSupport.buildReferenceLocations(
             file = file,
             documentUri = documentUri,
-            source = source,
+            source = currentSource(),
             position = position
         )
     }
 
     override fun hover(position: Position): String? {
         if (closed) return null
-        val source = currentSource()
-        return CMakeLanguageSupport.buildHoverMarkdown(
+        return MakeLanguageSupport.buildHoverMarkdown(
             file = file,
             documentUri = documentUri,
-            source = source,
+            source = currentSource(),
             position = position
         )
     }
 
     override fun close() {
         closed = true
-        semanticSnapshot = null
         diagnosticsSnapshot = null
         documentSymbolsSnapshot = null
     }
 
     private fun currentSource(): String = runCatching(textProvider).getOrDefault("")
-
-    private data class SemanticSnapshot(
-        val source: String,
-        val tokens: List<SemanticToken>
-    )
 
     private data class DiagnosticsSnapshot(
         val source: String,

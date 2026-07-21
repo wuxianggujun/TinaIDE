@@ -1,10 +1,10 @@
-package com.wuxianggujun.tinaide.ui.compose.state.editor
+﻿package com.wuxianggujun.tinaide.core.editorlsp
 
 import java.io.File
 import java.net.URI
 import org.eclipse.lsp4j.FileSystemWatcher
 
-internal class LspFileWatchPattern private constructor(
+class LspFileWatchPattern private constructor(
     private val basePath: String?,
     val glob: String,
     private val eventMask: Int,

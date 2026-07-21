@@ -45,6 +45,7 @@ fun mayNeedTreeSitterComposite(taskName: String): Boolean {
     return isTaskUnderModule(taskName, ":app") ||
         isTaskUnderModule(taskName, ":core:tree-sitter") ||
         isTaskUnderModule(taskName, ":core:editor-view") ||
+        isTaskUnderModule(taskName, ":core:editor-lsp") ||
         isTaskUnderModule(taskName, ":feature:editor")
 }
 

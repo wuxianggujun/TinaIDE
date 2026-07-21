@@ -1,4 +1,4 @@
-package com.wuxianggujun.tinaide.ui.compose.state.editor
+﻿package com.wuxianggujun.tinaide.core.editorlsp
 
 import com.wuxianggujun.tinaide.cmake.CMake
 import com.wuxianggujun.tinaide.cmake.CMakeDoc
@@ -22,7 +22,7 @@ import java.io.File
 import java.util.ArrayDeque
 import kotlin.math.max
 
-internal object CMakeLanguageSupport {
+object CMakeLanguageSupport {
 
     private const val MAX_PARSE_SIZE = 500_000
 

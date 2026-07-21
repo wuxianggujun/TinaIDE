@@ -59,13 +59,8 @@ class MainActivityActionsViewModel(
     private val projectContext: IProjectContext,
     private val projectSession: IProjectSession,
     private val bookmarkRepository: IBookmarkRepository,
+    private val linuxEnvironmentProvider: LinuxEnvironmentProvider = UnavailableLinuxEnvironmentProvider,
 ) : AndroidViewModel(application) {
-
-    private val linuxEnvironmentProvider: LinuxEnvironmentProvider by lazy {
-        runCatching {
-            org.koin.core.context.GlobalContext.get().getOrNull<LinuxEnvironmentProvider>()
-        }.getOrNull() ?: UnavailableLinuxEnvironmentProvider
-    }
 
     /**
      * UI 事件（Toast 消息等）

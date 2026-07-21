@@ -1,8 +1,8 @@
-package com.wuxianggujun.tinaide.ui.compose.state.editor
+﻿package com.wuxianggujun.tinaide.core.editorlsp
 
 import com.wuxianggujun.tinaide.core.editorlsp.SemanticToken
 
-internal object LspSemanticTokenDecoder {
+object LspSemanticTokenDecoder {
     private const val TOKEN_STEP = 5
     private const val FALLBACK_TOKEN_TYPE = "variable"
 

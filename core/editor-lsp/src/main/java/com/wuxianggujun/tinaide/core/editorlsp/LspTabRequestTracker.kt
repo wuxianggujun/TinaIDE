@@ -1,19 +1,19 @@
-package com.wuxianggujun.tinaide.ui.compose.state.editor
+﻿package com.wuxianggujun.tinaide.core.editorlsp
 
 import java.util.concurrent.CompletableFuture
 
-internal data class LspTabRequestTicket(
+data class LspTabRequestTicket(
     val tabId: String,
     val generation: Long,
     val documentUri: String,
 )
 
-internal data class LspTrackedTabRequestState(
+data class LspTrackedTabRequestState(
     val documentUri: String,
     val isConnected: Boolean,
 )
 
-internal class LspTabRequestTracker(
+class LspTabRequestTracker(
     private val stateLock: Any = Any(),
 ) {
     private val tabRequestGenerations = mutableMapOf<String, Long>()

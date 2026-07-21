@@ -3,7 +3,7 @@ package com.wuxianggujun.tinaide.ui
 import android.content.Context
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
-import com.wuxianggujun.tinaide.ui.compose.components.EditorStatus
+import com.wuxianggujun.tinaide.core.editorlsp.EditorStatus
 import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorActionsState
 import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState
 import kotlinx.coroutines.CoroutineScope
