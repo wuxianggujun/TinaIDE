@@ -74,9 +74,6 @@ import org.eclipse.lsp4j.WorkspaceEdit
 import org.eclipse.lsp4j.jsonrpc.messages.Either
 import timber.log.Timber
 
-@Suppress("DEPRECATION", "TYPEALIAS_EXPANSION_DEPRECATION")
-private typealias ProtocolMarkedString = org.eclipse.lsp4j.MarkedString
-
 data class PluginLspDependencyNotReadyEvent(
     val pluginId: String,
     val pluginName: String,
@@ -1997,37 +1994,6 @@ class LspEditorManager(
     private fun elapsedMillis(startedAt: Long): Long = (System.nanoTime() - startedAt) / 1_000_000L
 
     private fun fileNameForLog(file: File): String = file.name.ifBlank { file.absolutePath }
-
-    private fun Hover.toMarkdown(): String? {
-        val payload = contents ?: return null
-        return when {
-            payload.isRight -> payload.right?.value?.trim().takeIf { !it.isNullOrBlank() }
-            else -> payload.left.orEmpty()
-                .mapNotNull { it.toMarkdownSection() }
-                .joinToString("\n\n")
-                .trim()
-                .takeIf { it.isNotBlank() }
-        }
-    }
-
-    @Suppress("DEPRECATION", "TYPEALIAS_EXPANSION_DEPRECATION")
-    private fun Either<String, ProtocolMarkedString>.toMarkdownSection(): String? = if (isLeft) {
-        left?.trim().takeIf { !it.isNullOrBlank() }
-    } else {
-        right?.toMarkdownSection()
-    }
-
-    @Suppress("DEPRECATION", "TYPEALIAS_EXPANSION_DEPRECATION")
-    private fun ProtocolMarkedString.toMarkdownSection(): String? {
-        val body = value?.trim().orEmpty()
-        if (body.isBlank()) return null
-        val safeLanguage = language?.trim().orEmpty()
-        return if (safeLanguage.isBlank()) {
-            body
-        } else {
-            "```$safeLanguage\n$body\n```"
-        }
-    }
 
     private fun startFileWatcher(workspaceRoot: String) {
         workspaceFileWatcher.start(workspaceRoot)
