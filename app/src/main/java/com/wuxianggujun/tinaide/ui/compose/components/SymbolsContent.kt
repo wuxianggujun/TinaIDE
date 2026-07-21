@@ -54,6 +54,7 @@ import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState
 import java.io.File
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveWorkspaceSymbolsTargetResult
 
 @Composable
 fun SymbolsContent(
@@ -74,7 +75,7 @@ fun SymbolsContent(
 
     val workspaceSymbolsTarget = editorContainerState.getActiveWorkspaceSymbolsTargetResult()
     val workspaceSymbolsTabId =
-        (workspaceSymbolsTarget as? EditorContainerState.ActiveWorkspaceSymbolsTargetResult.Available)?.tabId
+        (workspaceSymbolsTarget as? ActiveWorkspaceSymbolsTargetResult.Available)?.tabId
     val isWorkspaceSymbolsAvailable = workspaceSymbolsTabId != null
 
     var useLspSearch by remember { mutableStateOf(true) }

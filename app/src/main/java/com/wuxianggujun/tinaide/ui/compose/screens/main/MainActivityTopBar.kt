@@ -43,7 +43,7 @@ import com.wuxianggujun.tinaide.ui.compose.components.TinaDropdownMenu
 import com.wuxianggujun.tinaide.ui.compose.components.TinaDropdownMenuDivider
 import com.wuxianggujun.tinaide.ui.compose.components.TinaDropdownMenuItem
 import com.wuxianggujun.tinaide.ui.compose.icons.rememberTinaPainter
-import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState.SplitEditorLayout
+import com.wuxianggujun.tinaide.ui.compose.state.editor.SplitEditorLayout
 
 internal class TopBarCallbacks(
     val onOpenDrawer: () -> Unit,

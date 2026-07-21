@@ -23,6 +23,7 @@ import com.wuxianggujun.tinaide.plugin.script.api.PluginCommandRegistry
 import com.wuxianggujun.tinaide.project.ProjectApkExportType
 import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState
 import java.io.File
+import com.wuxianggujun.tinaide.ui.compose.state.editor.SplitEditorLayout
 
 private const val COMMAND_REBUILD_RUN = "project.rebuildRun"
 private const val COMMAND_RUN_TERMINAL = "project.runTerminal"
@@ -52,7 +53,7 @@ internal data class MainActivityCommandAvailability(
     val canNavigateBack: Boolean,
     val canNavigateForward: Boolean,
     val isSplitEditorEnabled: Boolean,
-    val splitEditorLayout: EditorContainerState.SplitEditorLayout,
+    val splitEditorLayout: SplitEditorLayout,
     val canMoveTabToSecondaryPane: Boolean,
     val canCopyTabToSecondaryPane: Boolean,
     val currentBuildSystem: BuildSystem,
@@ -303,19 +304,19 @@ private fun buildMainActivityCommands(
             titleRes = Strings.menu_split_editor_horizontal,
             category = MainActivityCommandCategory.VIEW,
             keywords = listOf("split", "horizontal"),
-            execute = { callbacks.onSetSplitEditorLayout(EditorContainerState.SplitEditorLayout.HORIZONTAL) }
+            execute = { callbacks.onSetSplitEditorLayout(SplitEditorLayout.HORIZONTAL) }
         )
         addBuiltInCommand(
             id = "view.split.vertical",
             titleRes = Strings.menu_split_editor_vertical,
             category = MainActivityCommandCategory.VIEW,
             keywords = listOf("split", "vertical"),
-            execute = { callbacks.onSetSplitEditorLayout(EditorContainerState.SplitEditorLayout.VERTICAL) }
+            execute = { callbacks.onSetSplitEditorLayout(SplitEditorLayout.VERTICAL) }
         )
     }
     addBuiltInCommand(
         id = "view.split.moveTab",
-        titleRes = if (availability.splitEditorLayout == EditorContainerState.SplitEditorLayout.VERTICAL) {
+        titleRes = if (availability.splitEditorLayout == SplitEditorLayout.VERTICAL) {
             Strings.menu_move_tab_to_lower_pane
         } else {
             Strings.menu_move_tab_to_secondary_pane
@@ -327,7 +328,7 @@ private fun buildMainActivityCommands(
     )
     addBuiltInCommand(
         id = "view.split.copyTab",
-        titleRes = if (availability.splitEditorLayout == EditorContainerState.SplitEditorLayout.VERTICAL) {
+        titleRes = if (availability.splitEditorLayout == SplitEditorLayout.VERTICAL) {
             Strings.menu_copy_tab_to_lower_pane
         } else {
             Strings.menu_copy_tab_to_secondary_pane

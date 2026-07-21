@@ -4,14 +4,14 @@ import com.wuxianggujun.tinaide.editor.session.SaveResult
 import com.wuxianggujun.tinaide.ui.compose.components.editor.EditorTabState
 
 internal class EditorSaveAllNotificationTracker {
-    private var pendingTargets: List<EditorContainerState.ActiveSaveTarget> = emptyList()
+    private var pendingTargets: List<ActiveSaveTarget> = emptyList()
 
     fun rememberDirtyTabs(tabs: List<EditorTabState>) {
         pendingTargets = tabs
             .asSequence()
             .filter { it.isDirty }
             .map { tab ->
-                EditorContainerState.ActiveSaveTarget(
+                ActiveSaveTarget(
                     tabId = tab.id,
                     file = tab.file
                 )
@@ -21,10 +21,10 @@ internal class EditorSaveAllNotificationTracker {
 
     fun resolveSuccessfulTargets(
         results: List<SaveResult>
-    ): List<EditorContainerState.ActiveSaveTarget> {
+    ): List<ActiveSaveTarget> {
         val resultTargets = results.mapNotNull { result ->
             val target = (result as? SaveResult.Success)?.target ?: return@mapNotNull null
-            EditorContainerState.ActiveSaveTarget(
+            ActiveSaveTarget(
                 tabId = target.tabId,
                 file = target.file
             )

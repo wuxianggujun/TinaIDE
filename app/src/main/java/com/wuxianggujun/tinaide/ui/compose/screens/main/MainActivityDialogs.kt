@@ -76,6 +76,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.koin.compose.koinInject
 import timber.log.Timber
+import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveEditorCommandResult
+import com.wuxianggujun.tinaide.ui.compose.state.editor.ReplaceAllInActiveEditorResult
 
 private const val BUILTIN_APK_TEMPLATE_NATIVE = "builtin:native_activity"
 private const val BUILTIN_APK_TEMPLATE_SDL3 = "builtin:sdl3"
@@ -389,12 +391,12 @@ internal fun MainActivityFileDialogs(
             onGoToLine = { lineNumber ->
                 dialogState.closeGotoLineDialog()
                 when (editorContainerState.requestGoToPositionInActiveEditableEditor(lineNumber - 1, 0)) {
-                    EditorContainerState.ActiveEditorCommandResult.SUCCESS -> Unit
-                    EditorContainerState.ActiveEditorCommandResult.NO_OPEN_FILE -> {
+                    ActiveEditorCommandResult.SUCCESS -> Unit
+                    ActiveEditorCommandResult.NO_OPEN_FILE -> {
                         context.toastInfo(Strings.toast_no_open_file.strOr(context))
                     }
 
-                    EditorContainerState.ActiveEditorCommandResult.UNSUPPORTED_EDITOR -> {
+                    ActiveEditorCommandResult.UNSUPPORTED_EDITOR -> {
                         context.toastInfo(Strings.toast_file_not_support_format.strOr(context))
                     }
                 }
@@ -411,19 +413,19 @@ internal fun MainActivityFileDialogs(
                 dialogState.closeReplaceDialog()
                 if (findText.isEmpty()) return@ReplaceDialog
                 when (val result = editorContainerState.requestReplaceAllInActiveEditor(findText, replaceText)) {
-                    EditorContainerState.ReplaceAllInActiveEditorResult.NoOpenFile -> {
+                    ReplaceAllInActiveEditorResult.NoOpenFile -> {
                         context.toastInfo(Strings.toast_no_open_file.strOr(context))
                     }
 
-                    EditorContainerState.ReplaceAllInActiveEditorResult.UnsupportedEditor -> {
+                    ReplaceAllInActiveEditorResult.UnsupportedEditor -> {
                         context.toastInfo(Strings.toast_file_not_support_format.strOr(context))
                     }
 
-                    EditorContainerState.ReplaceAllInActiveEditorResult.NoMatches -> {
+                    ReplaceAllInActiveEditorResult.NoMatches -> {
                         context.toastInfo(Strings.toast_no_matches.strOr(context))
                     }
 
-                    is EditorContainerState.ReplaceAllInActiveEditorResult.Success -> {
+                    is ReplaceAllInActiveEditorResult.Success -> {
                         context.toastSuccess(Strings.toast_replaced.strOr(context, result.count))
                     }
                 }

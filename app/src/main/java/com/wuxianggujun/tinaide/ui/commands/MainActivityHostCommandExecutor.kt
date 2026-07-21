@@ -26,6 +26,7 @@ import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveEditorCommandResult
 
 @Composable
 fun rememberMainActivityHostCommandExecutor(
@@ -389,15 +390,15 @@ class MainActivityHostCommandExecutor(
     }
 
     private fun openDialogForActiveEditableEditor(onSupported: () -> Unit): Boolean = when (editorContainerState.getActiveEditableEditorCommandAvailability()) {
-        EditorContainerState.ActiveEditorCommandResult.SUCCESS -> {
+        ActiveEditorCommandResult.SUCCESS -> {
             onSupported()
             true
         }
-        EditorContainerState.ActiveEditorCommandResult.NO_OPEN_FILE -> {
+        ActiveEditorCommandResult.NO_OPEN_FILE -> {
             toastInfo(Strings.toast_no_open_file.strOr(activity))
             true
         }
-        EditorContainerState.ActiveEditorCommandResult.UNSUPPORTED_EDITOR -> {
+        ActiveEditorCommandResult.UNSUPPORTED_EDITOR -> {
             toastInfo(Strings.toast_file_not_support_format.strOr(activity))
             true
         }

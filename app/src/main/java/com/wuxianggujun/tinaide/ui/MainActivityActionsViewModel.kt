@@ -1,4 +1,4 @@
-﻿package com.wuxianggujun.tinaide.ui
+package com.wuxianggujun.tinaide.ui
 
 import android.app.Application
 import android.content.ClipData
@@ -39,6 +39,15 @@ import kotlinx.coroutines.withContext
 import org.eclipse.lsp4j.TextEdit
 import org.eclipse.lsp4j.WorkspaceEdit
 import timber.log.Timber
+import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveBookmarkCursorContext
+import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveBookmarkCursorContextResult
+import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveBookmarkTarget
+import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveBookmarkTargetResult
+import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveEditableEditorSnapshot
+import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveEditableEditorSnapshotResult
+import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveEditorCommandResult
+import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveSaveTarget
+import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveSaveTargetResult
 
 /**
  * MainActivity 动作处理 ViewModel
@@ -104,12 +113,12 @@ class MainActivityActionsViewModel(
      */
     fun saveCurrentFile(editorContainerState: EditorContainerState) {
         val saveTarget = when (val result = editorContainerState.getActiveSaveTargetResult()) {
-            EditorContainerState.ActiveSaveTargetResult.NoOpenFile -> {
+            ActiveSaveTargetResult.NoOpenFile -> {
                 showToast(Strings.toast_no_open_file.strOr(context), ToastType.INFO)
                 return
             }
 
-            is EditorContainerState.ActiveSaveTargetResult.Available -> result.target
+            is ActiveSaveTargetResult.Available -> result.target
         }
         viewModelScope.launch {
             val result = editorManager.save(saveTarget.tabId, SaveReason.MANUAL)
@@ -135,18 +144,18 @@ class MainActivityActionsViewModel(
         }
 
         val bookmarkTarget = when (val result = editorContainerState.getActiveBookmarkTargetResult()) {
-            EditorContainerState.ActiveBookmarkTargetResult.NoOpenFile,
-            EditorContainerState.ActiveBookmarkTargetResult.UnsupportedEditor -> {
+            ActiveBookmarkTargetResult.NoOpenFile,
+            ActiveBookmarkTargetResult.UnsupportedEditor -> {
                 showToast(Strings.toast_no_open_file.strOr(context), ToastType.INFO)
                 return
             }
 
-            EditorContainerState.ActiveBookmarkTargetResult.NoBookmarkableLine -> {
+            ActiveBookmarkTargetResult.NoBookmarkableLine -> {
                 showToast(Strings.toast_bookmark_ignored_blank_line.strOr(context), ToastType.INFO)
                 return
             }
 
-            is EditorContainerState.ActiveBookmarkTargetResult.Success -> result.target
+            is ActiveBookmarkTargetResult.Success -> result.target
         }
 
         viewModelScope.launch {
@@ -180,13 +189,13 @@ class MainActivityActionsViewModel(
         }
 
         val bookmarkContext = when (val result = editorContainerState.getActiveBookmarkCursorContextResult()) {
-            EditorContainerState.ActiveBookmarkCursorContextResult.NoOpenFile,
-            EditorContainerState.ActiveBookmarkCursorContextResult.UnsupportedEditor -> {
+            ActiveBookmarkCursorContextResult.NoOpenFile,
+            ActiveBookmarkCursorContextResult.UnsupportedEditor -> {
                 showToast(Strings.toast_no_open_file.strOr(context), ToastType.INFO)
                 return
             }
 
-            is EditorContainerState.ActiveBookmarkCursorContextResult.Success -> result.context
+            is ActiveBookmarkCursorContextResult.Success -> result.context
         }
         val currentLine = bookmarkContext.line
         val currentFilePath = bookmarkContext.file.absolutePath
@@ -310,12 +319,12 @@ class MainActivityActionsViewModel(
                 guessLineCommentToken(file.extension.lowercase())
             }
         ) {
-            EditorContainerState.ActiveEditorCommandResult.SUCCESS -> Unit
-            EditorContainerState.ActiveEditorCommandResult.NO_OPEN_FILE -> {
+            ActiveEditorCommandResult.SUCCESS -> Unit
+            ActiveEditorCommandResult.NO_OPEN_FILE -> {
                 showToast(Strings.toast_no_open_file.strOr(context), ToastType.INFO)
             }
 
-            EditorContainerState.ActiveEditorCommandResult.UNSUPPORTED_EDITOR -> {
+            ActiveEditorCommandResult.UNSUPPORTED_EDITOR -> {
                 showToast(Strings.toast_file_not_support_format.strOr(context), ToastType.INFO)
             }
         }
@@ -328,17 +337,17 @@ class MainActivityActionsViewModel(
      */
     fun formatCode(editorContainerState: EditorContainerState) {
         val formatTarget = when (val result = editorContainerState.snapshotActiveEditableEditorContent()) {
-            EditorContainerState.ActiveEditableEditorSnapshotResult.NoOpenFile -> {
+            ActiveEditableEditorSnapshotResult.NoOpenFile -> {
                 showToast(Strings.toast_no_open_file.strOr(context), ToastType.INFO)
                 return
             }
 
-            EditorContainerState.ActiveEditableEditorSnapshotResult.UnsupportedEditor -> {
+            ActiveEditableEditorSnapshotResult.UnsupportedEditor -> {
                 showToast(Strings.toast_file_not_support_format.strOr(context), ToastType.INFO)
                 return
             }
 
-            is EditorContainerState.ActiveEditableEditorSnapshotResult.Success -> result.snapshot
+            is ActiveEditableEditorSnapshotResult.Success -> result.snapshot
         }
         val file = formatTarget.file
         val content = formatTarget.text

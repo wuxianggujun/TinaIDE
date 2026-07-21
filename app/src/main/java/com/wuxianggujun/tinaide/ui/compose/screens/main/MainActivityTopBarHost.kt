@@ -17,6 +17,8 @@ import com.wuxianggujun.tinaide.ui.compose.components.DebugStatus
 import com.wuxianggujun.tinaide.ui.compose.components.SwipeableDrawerState
 import com.wuxianggujun.tinaide.ui.compose.state.DialogState
 import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState
+import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveEditorCommandResult
+import com.wuxianggujun.tinaide.ui.compose.state.editor.SplitEditorLayout
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -191,15 +193,15 @@ private fun rememberMainActivityTopBarCallbacks(
         onCopyTabToSecondaryPane = { editorContainerState.copyActiveTabToSecondaryPane() },
         onGotoLine = {
             when (editorContainerState.getActiveEditableEditorCommandAvailability()) {
-                EditorContainerState.ActiveEditorCommandResult.SUCCESS -> {
+                ActiveEditorCommandResult.SUCCESS -> {
                     dialogState.openGotoLineDialog()
                 }
 
-                EditorContainerState.ActiveEditorCommandResult.NO_OPEN_FILE -> {
+                ActiveEditorCommandResult.NO_OPEN_FILE -> {
                     screenCallbacks.onNoOpenFile()
                 }
 
-                EditorContainerState.ActiveEditorCommandResult.UNSUPPORTED_EDITOR -> {
+                ActiveEditorCommandResult.UNSUPPORTED_EDITOR -> {
                     screenCallbacks.onUnsupportedEditor()
                 }
             }

@@ -14,10 +14,10 @@ internal class EditorDocumentSessionCoordinator(
     private val editorManager: IEditorManager,
     private val activeTabProvider: () -> EditorTabState?,
 ) {
-    fun getTabToolbarStateFlow(tabId: String): Flow<EditorContainerState.TabToolbarState>? =
+    fun getTabToolbarStateFlow(tabId: String): Flow<TabToolbarState>? =
         editorManager.getSessionState(tabId)
             ?.map { docState ->
-                EditorContainerState.TabToolbarState(
+                TabToolbarState(
                     isDirty = docState.isDirty,
                     canUndo = docState.canUndo,
                     canRedo = docState.canRedo,
@@ -31,11 +31,11 @@ internal class EditorDocumentSessionCoordinator(
             ?.map { it.lastEditAt }
             ?.distinctUntilChanged()
 
-    fun getActiveEditorSessionAlertFlow(): Flow<EditorContainerState.ActiveEditorSessionAlertState>? {
+    fun getActiveEditorSessionAlertFlow(): Flow<ActiveEditorSessionAlertState>? {
         val activeTab = activeTabProvider() ?: return null
         return editorManager.getSessionState(activeTab.id)
             ?.map { docState ->
-                EditorContainerState.ActiveEditorSessionAlertState(
+                ActiveEditorSessionAlertState(
                     tabId = activeTab.id,
                     file = activeTab.file,
                     hasExternalModification = docState.hasExternalModification,

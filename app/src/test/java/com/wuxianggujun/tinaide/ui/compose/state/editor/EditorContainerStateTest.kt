@@ -1,4 +1,4 @@
-﻿package com.wuxianggujun.tinaide.ui.compose.state.editor
+package com.wuxianggujun.tinaide.ui.compose.state.editor
 
 import com.wuxianggujun.tinaide.ui.compose.state.editor.CodeEditorCallback
 import com.wuxianggujun.tinaide.ui.compose.state.editor.CursorSnapshot
@@ -84,14 +84,14 @@ class EditorContainerStateTest {
     @Test
     fun getActiveSaveTargetResult_shouldDistinguishOpenStateAndExposeTarget() {
         assertThat(state.getActiveSaveTargetResult())
-            .isEqualTo(EditorContainerState.ActiveSaveTargetResult.NoOpenFile)
+            .isEqualTo(ActiveSaveTargetResult.NoOpenFile)
 
         setActiveTab()
 
         assertThat(state.getActiveSaveTargetResult())
             .isEqualTo(
-                EditorContainerState.ActiveSaveTargetResult.Available(
-                    EditorContainerState.ActiveSaveTarget(
+                ActiveSaveTargetResult.Available(
+                    ActiveSaveTarget(
                         tabId = "tab-1",
                         file = File(context.cacheDir, "EditorContainerStateTest.kt")
                     )
@@ -214,7 +214,7 @@ class EditorContainerStateTest {
         val toolbarState = state.getTabToolbarStateFlow("tab-1")?.first()
 
         assertThat(toolbarState).isEqualTo(
-            EditorContainerState.TabToolbarState(
+            TabToolbarState(
                 isDirty = true,
                 canUndo = true,
                 canRedo = false,
@@ -257,7 +257,7 @@ class EditorContainerStateTest {
         val alertState = state.getActiveEditorSessionAlertFlow()?.first()
 
         assertThat(alertState).isEqualTo(
-            EditorContainerState.ActiveEditorSessionAlertState(
+            ActiveEditorSessionAlertState(
                 tabId = "tab-1",
                 file = file,
                 hasExternalModification = true,
@@ -269,27 +269,27 @@ class EditorContainerStateTest {
     @Test
     fun activeTabSemanticResults_shouldExposeOutlineAndSymbolsTargets() {
         assertThat(state.getActiveDocumentSymbolsTargetResult())
-            .isEqualTo(EditorContainerState.ActiveDocumentSymbolsTargetResult.NoOpenFile)
+            .isEqualTo(ActiveDocumentSymbolsTargetResult.NoOpenFile)
         assertThat(state.getActiveWorkspaceSymbolsTargetResult())
-            .isEqualTo(EditorContainerState.ActiveWorkspaceSymbolsTargetResult.NoOpenFile)
+            .isEqualTo(ActiveWorkspaceSymbolsTargetResult.NoOpenFile)
 
         setActiveTab()
         assertThat(state.getActiveDocumentSymbolsTargetResult())
-            .isEqualTo(EditorContainerState.ActiveDocumentSymbolsTargetResult.Unavailable)
+            .isEqualTo(ActiveDocumentSymbolsTargetResult.Unavailable)
         assertThat(state.getActiveWorkspaceSymbolsTargetResult())
-            .isEqualTo(EditorContainerState.ActiveWorkspaceSymbolsTargetResult.Unavailable)
+            .isEqualTo(ActiveWorkspaceSymbolsTargetResult.Unavailable)
         setLspStatus(tabId = "tab-1", status = EditorStatus.Ready)
 
         assertThat(state.getActiveDocumentSymbolsTargetResult())
-            .isEqualTo(EditorContainerState.ActiveDocumentSymbolsTargetResult.Available("tab-1"))
+            .isEqualTo(ActiveDocumentSymbolsTargetResult.Available("tab-1"))
         assertThat(state.getActiveWorkspaceSymbolsTargetResult())
-            .isEqualTo(EditorContainerState.ActiveWorkspaceSymbolsTargetResult.Available("tab-1"))
+            .isEqualTo(ActiveWorkspaceSymbolsTargetResult.Available("tab-1"))
 
         setLspStatus(tabId = "tab-1", status = EditorStatus.Busy)
         assertThat(state.getActiveDocumentSymbolsTargetResult())
-            .isEqualTo(EditorContainerState.ActiveDocumentSymbolsTargetResult.Available("tab-1"))
+            .isEqualTo(ActiveDocumentSymbolsTargetResult.Available("tab-1"))
         assertThat(state.getActiveWorkspaceSymbolsTargetResult())
-            .isEqualTo(EditorContainerState.ActiveWorkspaceSymbolsTargetResult.Available("tab-1"))
+            .isEqualTo(ActiveWorkspaceSymbolsTargetResult.Available("tab-1"))
     }
 
     @Test
@@ -307,9 +307,9 @@ class EditorContainerStateTest {
     @Test
     fun activeEditableEditorAvailability_shouldDistinguishEditableAndReadonlyTabs() {
         assertThat(state.getActiveEditableEditorCommandAvailability())
-            .isEqualTo(EditorContainerState.ActiveEditorCommandResult.NO_OPEN_FILE)
+            .isEqualTo(ActiveEditorCommandResult.NO_OPEN_FILE)
         assertThat(state.snapshotActiveEditableEditorContent())
-            .isEqualTo(EditorContainerState.ActiveEditableEditorSnapshotResult.NoOpenFile)
+            .isEqualTo(ActiveEditableEditorSnapshotResult.NoOpenFile)
 
         state.openFileWithType(
             file = File(context.cacheDir, "Preview.png"),
@@ -317,14 +317,14 @@ class EditorContainerStateTest {
         )
 
         assertThat(state.getActiveEditableEditorCommandAvailability())
-            .isEqualTo(EditorContainerState.ActiveEditorCommandResult.UNSUPPORTED_EDITOR)
+            .isEqualTo(ActiveEditorCommandResult.UNSUPPORTED_EDITOR)
         assertThat(state.snapshotActiveEditableEditorContent())
-            .isEqualTo(EditorContainerState.ActiveEditableEditorSnapshotResult.UnsupportedEditor)
+            .isEqualTo(ActiveEditableEditorSnapshotResult.UnsupportedEditor)
 
         setActiveTab()
         state.selectTab(0)
         assertThat(state.getActiveEditableEditorCommandAvailability())
-            .isEqualTo(EditorContainerState.ActiveEditorCommandResult.UNSUPPORTED_EDITOR)
+            .isEqualTo(ActiveEditorCommandResult.UNSUPPORTED_EDITOR)
         state.registerCodeEditorCallback(
             tabId = "tab-1",
             callback = CodeEditorCallback(
@@ -346,11 +346,11 @@ class EditorContainerStateTest {
         )
 
         assertThat(state.getActiveEditableEditorCommandAvailability())
-            .isEqualTo(EditorContainerState.ActiveEditorCommandResult.SUCCESS)
+            .isEqualTo(ActiveEditorCommandResult.SUCCESS)
         assertThat(state.snapshotActiveEditableEditorContent())
             .isEqualTo(
-                EditorContainerState.ActiveEditableEditorSnapshotResult.Success(
-                    EditorContainerState.ActiveEditableEditorSnapshot(
+                ActiveEditableEditorSnapshotResult.Success(
+                    ActiveEditableEditorSnapshot(
                         file = File(context.cacheDir, "EditorContainerStateTest.kt"),
                         text = ""
                     )
@@ -361,9 +361,9 @@ class EditorContainerStateTest {
     @Test
     fun activeBookmarkResults_shouldDistinguishOpenStateAndUnsupportedEditor() {
         assertThat(state.getActiveBookmarkCursorContextResult())
-            .isEqualTo(EditorContainerState.ActiveBookmarkCursorContextResult.NoOpenFile)
+            .isEqualTo(ActiveBookmarkCursorContextResult.NoOpenFile)
         assertThat(state.getActiveBookmarkTargetResult())
-            .isEqualTo(EditorContainerState.ActiveBookmarkTargetResult.NoOpenFile)
+            .isEqualTo(ActiveBookmarkTargetResult.NoOpenFile)
 
         state.openFileWithType(
             file = File(context.cacheDir, "Preview.png"),
@@ -371,9 +371,9 @@ class EditorContainerStateTest {
         )
 
         assertThat(state.getActiveBookmarkCursorContextResult())
-            .isEqualTo(EditorContainerState.ActiveBookmarkCursorContextResult.UnsupportedEditor)
+            .isEqualTo(ActiveBookmarkCursorContextResult.UnsupportedEditor)
         assertThat(state.getActiveBookmarkTargetResult())
-            .isEqualTo(EditorContainerState.ActiveBookmarkTargetResult.UnsupportedEditor)
+            .isEqualTo(ActiveBookmarkTargetResult.UnsupportedEditor)
     }
 
     @Test
@@ -401,8 +401,8 @@ class EditorContainerStateTest {
 
         assertThat(state.getActiveBookmarkCursorContextResult())
             .isEqualTo(
-                EditorContainerState.ActiveBookmarkCursorContextResult.Success(
-                    EditorContainerState.ActiveBookmarkCursorContext(
+                ActiveBookmarkCursorContextResult.Success(
+                    ActiveBookmarkCursorContext(
                         file = File(context.cacheDir, "EditorContainerStateTest.kt"),
                         line = 1
                     )
@@ -410,8 +410,8 @@ class EditorContainerStateTest {
             )
         assertThat(state.getActiveBookmarkTargetResult())
             .isEqualTo(
-                EditorContainerState.ActiveBookmarkTargetResult.Success(
-                    EditorContainerState.ActiveBookmarkTarget(
+                ActiveBookmarkTargetResult.Success(
+                    ActiveBookmarkTarget(
                         file = File(context.cacheDir, "EditorContainerStateTest.kt"),
                         line = 0
                     )
@@ -439,7 +439,7 @@ class EditorContainerStateTest {
         )
 
         assertThat(state.getActiveBookmarkTargetResult())
-            .isEqualTo(EditorContainerState.ActiveBookmarkTargetResult.NoBookmarkableLine)
+            .isEqualTo(ActiveBookmarkTargetResult.NoBookmarkableLine)
     }
 
     @Test
@@ -482,11 +482,11 @@ class EditorContainerStateTest {
     @Test
     fun requestGoToPositionInActiveEditableEditor_shouldExposeDialogFriendlyResults() {
         assertThat(state.requestGoToPositionInActiveEditableEditor(2, 0))
-            .isEqualTo(EditorContainerState.ActiveEditorCommandResult.NO_OPEN_FILE)
+            .isEqualTo(ActiveEditorCommandResult.NO_OPEN_FILE)
 
         setActiveTab()
         assertThat(state.requestGoToPositionInActiveEditableEditor(2, 0))
-            .isEqualTo(EditorContainerState.ActiveEditorCommandResult.UNSUPPORTED_EDITOR)
+            .isEqualTo(ActiveEditorCommandResult.UNSUPPORTED_EDITOR)
 
         state.registerCodeEditorCallback(
             tabId = "tab-1",
@@ -509,17 +509,17 @@ class EditorContainerStateTest {
         )
 
         assertThat(state.requestGoToPositionInActiveEditableEditor(2, 0))
-            .isEqualTo(EditorContainerState.ActiveEditorCommandResult.SUCCESS)
+            .isEqualTo(ActiveEditorCommandResult.SUCCESS)
     }
 
     @Test
     fun requestReplaceAllInActiveEditor_shouldExposeCapabilityAndMatchResults() {
         assertThat(state.requestReplaceAllInActiveEditor("foo", "bar"))
-            .isEqualTo(EditorContainerState.ReplaceAllInActiveEditorResult.NoOpenFile)
+            .isEqualTo(ReplaceAllInActiveEditorResult.NoOpenFile)
 
         setActiveTab()
         assertThat(state.requestReplaceAllInActiveEditor("foo", "bar"))
-            .isEqualTo(EditorContainerState.ReplaceAllInActiveEditorResult.UnsupportedEditor)
+            .isEqualTo(ReplaceAllInActiveEditorResult.UnsupportedEditor)
 
         state.registerCodeEditorCallback(
             tabId = "tab-1",
@@ -542,7 +542,7 @@ class EditorContainerStateTest {
         )
 
         assertThat(state.requestReplaceAllInActiveEditor("foo", "bar"))
-            .isEqualTo(EditorContainerState.ReplaceAllInActiveEditorResult.NoMatches)
+            .isEqualTo(ReplaceAllInActiveEditorResult.NoMatches)
 
         state.registerCodeEditorCallback(
             tabId = "tab-1",
@@ -565,19 +565,19 @@ class EditorContainerStateTest {
         )
 
         assertThat(state.requestReplaceAllInActiveEditor("foo", "bar"))
-            .isEqualTo(EditorContainerState.ReplaceAllInActiveEditorResult.Success(3))
+            .isEqualTo(ReplaceAllInActiveEditorResult.Success(3))
     }
 
     @Test
     fun requestToggleLineCommentInActiveEditor_shouldExposeCapabilityAndResolvedToken() {
         assertThat(
             state.requestToggleLineCommentInActiveEditor { "//" }
-        ).isEqualTo(EditorContainerState.ActiveEditorCommandResult.NO_OPEN_FILE)
+        ).isEqualTo(ActiveEditorCommandResult.NO_OPEN_FILE)
 
         setActiveTab()
         assertThat(
             state.requestToggleLineCommentInActiveEditor { "//" }
-        ).isEqualTo(EditorContainerState.ActiveEditorCommandResult.UNSUPPORTED_EDITOR)
+        ).isEqualTo(ActiveEditorCommandResult.UNSUPPORTED_EDITOR)
 
         var resolvedToken: String? = null
         var resolvedFileName: String? = null
@@ -609,7 +609,7 @@ class EditorContainerStateTest {
                 resolvedFileName = file.name
                 "//"
             }
-        ).isEqualTo(EditorContainerState.ActiveEditorCommandResult.SUCCESS)
+        ).isEqualTo(ActiveEditorCommandResult.SUCCESS)
         assertThat(resolvedToken).isEqualTo("//")
         assertThat(resolvedFileName).isEqualTo("EditorContainerStateTest.kt")
     }
@@ -617,11 +617,11 @@ class EditorContainerStateTest {
     @Test
     fun snapshotActiveEditableEditorContent_shouldExposeCapabilityAndText() {
         assertThat(state.snapshotActiveEditableEditorContent())
-            .isEqualTo(EditorContainerState.ActiveEditableEditorSnapshotResult.NoOpenFile)
+            .isEqualTo(ActiveEditableEditorSnapshotResult.NoOpenFile)
 
         setActiveTab()
         assertThat(state.snapshotActiveEditableEditorContent())
-            .isEqualTo(EditorContainerState.ActiveEditableEditorSnapshotResult.UnsupportedEditor)
+            .isEqualTo(ActiveEditableEditorSnapshotResult.UnsupportedEditor)
 
         state.registerCodeEditorCallback(
             tabId = "tab-1",
@@ -645,8 +645,8 @@ class EditorContainerStateTest {
 
         assertThat(state.snapshotActiveEditableEditorContent())
             .isEqualTo(
-                EditorContainerState.ActiveEditableEditorSnapshotResult.Success(
-                    snapshot = EditorContainerState.ActiveEditableEditorSnapshot(
+                ActiveEditableEditorSnapshotResult.Success(
+                    snapshot = ActiveEditableEditorSnapshot(
                         file = File(context.cacheDir, "EditorContainerStateTest.kt"),
                         text = "fun test() = Unit"
                     )
@@ -1026,10 +1026,10 @@ class EditorContainerStateTest {
         assertThat(state.pendingCloseTab?.id).isEqualTo("tab-2")
         assertThat(state.confirmSaveAndClose()).isTrue()
         assertThat(state.pendingCloseTab).isNull()
-        assertThat(state.focusedPane).isEqualTo(EditorContainerState.EditorPaneId.PRIMARY)
-        assertThat(state.getTabsForPane(EditorContainerState.EditorPaneId.PRIMARY).map { it.id })
+        assertThat(state.focusedPane).isEqualTo(EditorPaneId.PRIMARY)
+        assertThat(state.getTabsForPane(EditorPaneId.PRIMARY).map { it.id })
             .containsExactly("tab-1")
-        assertThat(state.getTabsForPane(EditorContainerState.EditorPaneId.SECONDARY)).isEmpty()
+        assertThat(state.getTabsForPane(EditorPaneId.SECONDARY)).isEmpty()
         assertThat(state.snapshotActivePluginEditorContextOrNull()?.tabId).isEqualTo("tab-1")
     }
 
@@ -1168,18 +1168,18 @@ class EditorContainerStateTest {
         state.toggleSplitEditor()
 
         assertThat(state.isSplitEditorEnabled).isTrue()
-        assertThat(state.focusedPane).isEqualTo(EditorContainerState.EditorPaneId.PRIMARY)
-        assertThat(state.getTabsForPane(EditorContainerState.EditorPaneId.PRIMARY).map { it.id })
+        assertThat(state.focusedPane).isEqualTo(EditorPaneId.PRIMARY)
+        assertThat(state.getTabsForPane(EditorPaneId.PRIMARY).map { it.id })
             .containsExactly("tab-1", "tab-2")
-        assertThat(state.getTabsForPane(EditorContainerState.EditorPaneId.SECONDARY)).isEmpty()
+        assertThat(state.getTabsForPane(EditorPaneId.SECONDARY)).isEmpty()
 
         state.toggleSplitEditor()
 
         assertThat(state.isSplitEditorEnabled).isFalse()
-        assertThat(state.focusedPane).isEqualTo(EditorContainerState.EditorPaneId.PRIMARY)
-        assertThat(state.getTabsForPane(EditorContainerState.EditorPaneId.PRIMARY).map { it.id })
+        assertThat(state.focusedPane).isEqualTo(EditorPaneId.PRIMARY)
+        assertThat(state.getTabsForPane(EditorPaneId.PRIMARY).map { it.id })
             .containsExactly("tab-1", "tab-2")
-        assertThat(state.getTabsForPane(EditorContainerState.EditorPaneId.SECONDARY)).isEmpty()
+        assertThat(state.getTabsForPane(EditorPaneId.SECONDARY)).isEmpty()
     }
 
     @Test
@@ -1196,10 +1196,10 @@ class EditorContainerStateTest {
         state.toggleSplitEditor()
 
         assertThat(state.isSplitEditorEnabled).isFalse()
-        assertThat(state.focusedPane).isEqualTo(EditorContainerState.EditorPaneId.PRIMARY)
-        assertThat(state.getTabsForPane(EditorContainerState.EditorPaneId.PRIMARY).map { it.id })
+        assertThat(state.focusedPane).isEqualTo(EditorPaneId.PRIMARY)
+        assertThat(state.getTabsForPane(EditorPaneId.PRIMARY).map { it.id })
             .containsExactly("tab-1", "tab-2")
-        assertThat(state.getTabsForPane(EditorContainerState.EditorPaneId.SECONDARY)).isEmpty()
+        assertThat(state.getTabsForPane(EditorPaneId.SECONDARY)).isEmpty()
         assertThat(state.snapshotActivePluginEditorContextOrNull()?.tabId).isEqualTo("tab-2")
     }
 
@@ -1216,12 +1216,12 @@ class EditorContainerStateTest {
         assertThat(state.moveActiveTabToSecondaryPane()).isTrue()
 
         assertThat(state.isSplitEditorEnabled).isTrue()
-        assertThat(state.focusedPane).isEqualTo(EditorContainerState.EditorPaneId.SECONDARY)
-        assertThat(state.getTabsForPane(EditorContainerState.EditorPaneId.PRIMARY).map { it.id })
+        assertThat(state.focusedPane).isEqualTo(EditorPaneId.SECONDARY)
+        assertThat(state.getTabsForPane(EditorPaneId.PRIMARY).map { it.id })
             .containsExactly("tab-1")
-        assertThat(state.getTabsForPane(EditorContainerState.EditorPaneId.SECONDARY).map { it.id })
+        assertThat(state.getTabsForPane(EditorPaneId.SECONDARY).map { it.id })
             .containsExactly("tab-2")
-        assertThat(state.getActiveIndexForPane(EditorContainerState.EditorPaneId.SECONDARY)).isEqualTo(1)
+        assertThat(state.getActiveIndexForPane(EditorPaneId.SECONDARY)).isEqualTo(1)
         assertThat(state.canMoveActiveTabToSecondaryPane()).isFalse()
     }
 
@@ -1238,13 +1238,13 @@ class EditorContainerStateTest {
         assertThat(state.copyActiveTabToSecondaryPane()).isTrue()
 
         assertThat(state.isSplitEditorEnabled).isTrue()
-        assertThat(state.focusedPane).isEqualTo(EditorContainerState.EditorPaneId.SECONDARY)
-        assertThat(state.getTabsForPane(EditorContainerState.EditorPaneId.PRIMARY).map { it.id })
+        assertThat(state.focusedPane).isEqualTo(EditorPaneId.SECONDARY)
+        assertThat(state.getTabsForPane(EditorPaneId.PRIMARY).map { it.id })
             .containsExactly("tab-1", "tab-2")
-        assertThat(state.getTabsForPane(EditorContainerState.EditorPaneId.SECONDARY).map { it.id })
+        assertThat(state.getTabsForPane(EditorPaneId.SECONDARY).map { it.id })
             .containsExactly("tab-1")
-        assertThat(state.getActiveIndexForPane(EditorContainerState.EditorPaneId.PRIMARY)).isEqualTo(0)
-        assertThat(state.getActiveIndexForPane(EditorContainerState.EditorPaneId.SECONDARY)).isEqualTo(0)
+        assertThat(state.getActiveIndexForPane(EditorPaneId.PRIMARY)).isEqualTo(0)
+        assertThat(state.getActiveIndexForPane(EditorPaneId.SECONDARY)).isEqualTo(0)
         assertThat(state.canCopyActiveTabToSecondaryPane()).isFalse()
     }
 
@@ -1259,7 +1259,7 @@ class EditorContainerStateTest {
             ),
             activeTabId = "old-tab-2"
         )
-        state.updateSplitEditorLayout(EditorContainerState.SplitEditorLayout.VERTICAL)
+        state.updateSplitEditorLayout(SplitEditorLayout.VERTICAL)
         state.updateSplitEditorPrimaryRatio(0.7f)
         state.moveActiveTabToSecondaryPane()
 
@@ -1276,12 +1276,12 @@ class EditorContainerStateTest {
         restored.restoreSplitEditorStateSnapshot(snapshot)
 
         assertThat(restored.isSplitEditorEnabled).isTrue()
-        assertThat(restored.focusedPane).isEqualTo(EditorContainerState.EditorPaneId.SECONDARY)
-        assertThat(restored.splitEditorLayout).isEqualTo(EditorContainerState.SplitEditorLayout.VERTICAL)
+        assertThat(restored.focusedPane).isEqualTo(EditorPaneId.SECONDARY)
+        assertThat(restored.splitEditorLayout).isEqualTo(SplitEditorLayout.VERTICAL)
         assertThat(restored.splitEditorPrimaryRatio).isWithin(0.0001f).of(0.7f)
-        assertThat(restored.getTabsForPane(EditorContainerState.EditorPaneId.PRIMARY).map { it.id })
+        assertThat(restored.getTabsForPane(EditorPaneId.PRIMARY).map { it.id })
             .containsExactly("new-tab-1")
-        assertThat(restored.getTabsForPane(EditorContainerState.EditorPaneId.SECONDARY).map { it.id })
+        assertThat(restored.getTabsForPane(EditorPaneId.SECONDARY).map { it.id })
             .containsExactly("new-tab-2")
     }
 
@@ -1297,7 +1297,7 @@ class EditorContainerStateTest {
             activeTabId = "old-tab-1"
         )
         state.copyActiveTabToSecondaryPane()
-        state.updateSplitEditorLayout(EditorContainerState.SplitEditorLayout.VERTICAL)
+        state.updateSplitEditorLayout(SplitEditorLayout.VERTICAL)
         state.updateSplitEditorPrimaryRatio(0.65f)
 
         val restoredEditorManager = mockk<IEditorManager>(relaxed = true)
@@ -1311,12 +1311,12 @@ class EditorContainerStateTest {
         restored.restoreFromManager()
 
         assertThat(restored.isSplitEditorEnabled).isTrue()
-        assertThat(restored.focusedPane).isEqualTo(EditorContainerState.EditorPaneId.SECONDARY)
-        assertThat(restored.splitEditorLayout).isEqualTo(EditorContainerState.SplitEditorLayout.VERTICAL)
+        assertThat(restored.focusedPane).isEqualTo(EditorPaneId.SECONDARY)
+        assertThat(restored.splitEditorLayout).isEqualTo(SplitEditorLayout.VERTICAL)
         assertThat(restored.splitEditorPrimaryRatio).isWithin(0.0001f).of(0.65f)
-        assertThat(restored.getTabsForPane(EditorContainerState.EditorPaneId.PRIMARY).map { it.id })
+        assertThat(restored.getTabsForPane(EditorPaneId.PRIMARY).map { it.id })
             .containsExactly("new-tab-1", "new-tab-2")
-        assertThat(restored.getTabsForPane(EditorContainerState.EditorPaneId.SECONDARY).map { it.id })
+        assertThat(restored.getTabsForPane(EditorPaneId.SECONDARY).map { it.id })
             .containsExactly("new-tab-1")
     }
 
@@ -1333,7 +1333,7 @@ class EditorContainerStateTest {
 
         assertThat(state.copyActiveTabToSecondaryPane()).isFalse()
 
-        assertThat(state.getTabsForPane(EditorContainerState.EditorPaneId.SECONDARY).map { it.id })
+        assertThat(state.getTabsForPane(EditorPaneId.SECONDARY).map { it.id })
             .containsExactly("tab-1")
     }
 
@@ -1351,10 +1351,10 @@ class EditorContainerStateTest {
         state.closeSecondaryPane()
 
         assertThat(state.isSplitEditorEnabled).isFalse()
-        assertThat(state.focusedPane).isEqualTo(EditorContainerState.EditorPaneId.PRIMARY)
-        assertThat(state.getTabsForPane(EditorContainerState.EditorPaneId.PRIMARY).map { it.id })
+        assertThat(state.focusedPane).isEqualTo(EditorPaneId.PRIMARY)
+        assertThat(state.getTabsForPane(EditorPaneId.PRIMARY).map { it.id })
             .containsExactly("tab-1", "tab-2")
-        assertThat(state.getTabsForPane(EditorContainerState.EditorPaneId.SECONDARY)).isEmpty()
+        assertThat(state.getTabsForPane(EditorPaneId.SECONDARY)).isEmpty()
         assertThat(state.canCopyActiveTabToSecondaryPane()).isTrue()
     }
 
@@ -1365,25 +1365,25 @@ class EditorContainerStateTest {
 
     @Test
     fun splitEditorLayout_shouldDefaultToHorizontal() {
-        assertThat(state.splitEditorLayout).isEqualTo(EditorContainerState.SplitEditorLayout.HORIZONTAL)
+        assertThat(state.splitEditorLayout).isEqualTo(SplitEditorLayout.HORIZONTAL)
     }
 
     @Test
     fun updateSplitEditorLayout_shouldUpdateLayout() {
-        state.updateSplitEditorLayout(EditorContainerState.SplitEditorLayout.VERTICAL)
+        state.updateSplitEditorLayout(SplitEditorLayout.VERTICAL)
 
-        assertThat(state.splitEditorLayout).isEqualTo(EditorContainerState.SplitEditorLayout.VERTICAL)
+        assertThat(state.splitEditorLayout).isEqualTo(SplitEditorLayout.VERTICAL)
     }
 
     @Test
     fun toggleSplitEditor_shouldKeepSelectedLayoutForNextOpen() {
-        state.updateSplitEditorLayout(EditorContainerState.SplitEditorLayout.VERTICAL)
+        state.updateSplitEditorLayout(SplitEditorLayout.VERTICAL)
         state.toggleSplitEditor()
         state.toggleSplitEditor()
         state.toggleSplitEditor()
 
         assertThat(state.isSplitEditorEnabled).isTrue()
-        assertThat(state.splitEditorLayout).isEqualTo(EditorContainerState.SplitEditorLayout.VERTICAL)
+        assertThat(state.splitEditorLayout).isEqualTo(SplitEditorLayout.VERTICAL)
     }
 
     @Test
@@ -1421,14 +1421,14 @@ class EditorContainerStateTest {
             activeTabId = "tab-2"
         )
         state.moveActiveTabToSecondaryPane()
-        state.selectTabInPane(EditorContainerState.EditorPaneId.PRIMARY, 0)
+        state.selectTabInPane(EditorPaneId.PRIMARY, 0)
 
-        assertThat(state.focusedPane).isEqualTo(EditorContainerState.EditorPaneId.PRIMARY)
+        assertThat(state.focusedPane).isEqualTo(EditorPaneId.PRIMARY)
         assertThat(state.snapshotActivePluginEditorContextOrNull()?.tabId).isEqualTo("tab-1")
 
-        state.selectTabInPane(EditorContainerState.EditorPaneId.SECONDARY, 1)
+        state.selectTabInPane(EditorPaneId.SECONDARY, 1)
 
-        assertThat(state.focusedPane).isEqualTo(EditorContainerState.EditorPaneId.SECONDARY)
+        assertThat(state.focusedPane).isEqualTo(EditorPaneId.SECONDARY)
         assertThat(state.snapshotActivePluginEditorContextOrNull()?.tabId).isEqualTo("tab-2")
     }
 
@@ -1443,12 +1443,12 @@ class EditorContainerStateTest {
         )
         state.moveActiveTabToSecondaryPane()
 
-        state.selectTabInPane(EditorContainerState.EditorPaneId.PRIMARY, 1)
+        state.selectTabInPane(EditorPaneId.PRIMARY, 1)
 
-        assertThat(state.focusedPane).isEqualTo(EditorContainerState.EditorPaneId.SECONDARY)
-        assertThat(state.getTabsForPane(EditorContainerState.EditorPaneId.PRIMARY).map { it.id })
+        assertThat(state.focusedPane).isEqualTo(EditorPaneId.SECONDARY)
+        assertThat(state.getTabsForPane(EditorPaneId.PRIMARY).map { it.id })
             .containsExactly("tab-1")
-        assertThat(state.getTabsForPane(EditorContainerState.EditorPaneId.SECONDARY).map { it.id })
+        assertThat(state.getTabsForPane(EditorPaneId.SECONDARY).map { it.id })
             .containsExactly("tab-2")
         assertThat(state.snapshotActivePluginEditorContextOrNull()?.tabId).isEqualTo("tab-2")
     }
@@ -1467,10 +1467,10 @@ class EditorContainerStateTest {
         assertThat(state.requestCloseActiveTab()).isTrue()
 
         assertThat(state.isSplitEditorEnabled).isTrue()
-        assertThat(state.focusedPane).isEqualTo(EditorContainerState.EditorPaneId.PRIMARY)
-        assertThat(state.getTabsForPane(EditorContainerState.EditorPaneId.PRIMARY).map { it.id })
+        assertThat(state.focusedPane).isEqualTo(EditorPaneId.PRIMARY)
+        assertThat(state.getTabsForPane(EditorPaneId.PRIMARY).map { it.id })
             .containsExactly("tab-1")
-        assertThat(state.getTabsForPane(EditorContainerState.EditorPaneId.SECONDARY)).isEmpty()
+        assertThat(state.getTabsForPane(EditorPaneId.SECONDARY)).isEmpty()
         assertThat(state.snapshotActivePluginEditorContextOrNull()?.tabId).isEqualTo("tab-1")
     }
 
@@ -1486,21 +1486,21 @@ class EditorContainerStateTest {
         state.moveActiveTabToSecondaryPane()
 
         val primaryPreview = File(context.cacheDir, "PrimaryPreview.png")
-        state.focusEditorPane(EditorContainerState.EditorPaneId.PRIMARY)
+        state.focusEditorPane(EditorPaneId.PRIMARY)
         state.openFileWithType(primaryPreview, ContentType.IMAGE)
 
-        assertThat(state.focusedPane).isEqualTo(EditorContainerState.EditorPaneId.PRIMARY)
-        assertThat(state.getTabsForPane(EditorContainerState.EditorPaneId.PRIMARY).map { it.file.name })
+        assertThat(state.focusedPane).isEqualTo(EditorPaneId.PRIMARY)
+        assertThat(state.getTabsForPane(EditorPaneId.PRIMARY).map { it.file.name })
             .containsExactly("First.kt", "PrimaryPreview.png")
-        assertThat(state.getTabsForPane(EditorContainerState.EditorPaneId.SECONDARY).map { it.id })
+        assertThat(state.getTabsForPane(EditorPaneId.SECONDARY).map { it.id })
             .containsExactly("tab-2")
 
         val secondaryPreview = File(context.cacheDir, "SecondaryPreview.png")
-        state.focusEditorPane(EditorContainerState.EditorPaneId.SECONDARY)
+        state.focusEditorPane(EditorPaneId.SECONDARY)
         state.openFileWithType(secondaryPreview, ContentType.IMAGE)
 
-        assertThat(state.focusedPane).isEqualTo(EditorContainerState.EditorPaneId.SECONDARY)
-        assertThat(state.getTabsForPane(EditorContainerState.EditorPaneId.SECONDARY).map { it.file.name })
+        assertThat(state.focusedPane).isEqualTo(EditorPaneId.SECONDARY)
+        assertThat(state.getTabsForPane(EditorPaneId.SECONDARY).map { it.file.name })
             .containsExactly("Second.kt", "SecondaryPreview.png")
     }
 

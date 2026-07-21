@@ -4,12 +4,12 @@ internal class EditorSplitSessionCoordinator(
     private val storage: SplitEditorSessionStorage,
     private val projectPathProvider: () -> String?,
     private val hasTabs: () -> Boolean,
-    private val createSnapshot: () -> EditorContainerState.SplitEditorStateSnapshot,
-    private val restoreSnapshot: (EditorContainerState.SplitEditorStateSnapshot) -> Unit,
+    private val createSnapshot: () -> SplitEditorStateSnapshot,
+    private val restoreSnapshot: (SplitEditorStateSnapshot) -> Unit,
     private val normalizePaneState: () -> Unit,
     private val clearInMemory: () -> Unit,
 ) {
-    private var pendingSnapshot: EditorContainerState.SplitEditorStateSnapshot? = null
+    private var pendingSnapshot: SplitEditorStateSnapshot? = null
     private var restoredProjectPath: String? = null
     private var lastProjectPath: String? = null
 

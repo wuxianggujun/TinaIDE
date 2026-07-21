@@ -8,12 +8,12 @@ import org.json.JSONObject
 internal class SplitEditorSessionStorage(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    fun load(projectPath: String): EditorContainerState.SplitEditorStateSnapshot? {
+    fun load(projectPath: String): SplitEditorStateSnapshot? {
         val raw = prefs.getString(keyForProject(projectPath), null) ?: return null
         return runCatching { decodeSnapshot(JSONObject(raw)) }.getOrNull()
     }
 
-    fun save(projectPath: String, snapshot: EditorContainerState.SplitEditorStateSnapshot) {
+    fun save(projectPath: String, snapshot: SplitEditorStateSnapshot) {
         prefs.edit()
             .putString(keyForProject(projectPath), encodeSnapshot(snapshot.normalized()).toString())
             .apply()
@@ -25,7 +25,7 @@ internal class SplitEditorSessionStorage(context: Context) {
             .apply()
     }
 
-    private fun encodeSnapshot(snapshot: EditorContainerState.SplitEditorStateSnapshot): JSONObject = JSONObject()
+    private fun encodeSnapshot(snapshot: SplitEditorStateSnapshot): JSONObject = JSONObject()
         .put(KEY_VERSION, SNAPSHOT_VERSION)
         .put(KEY_ENABLED, snapshot.isEnabled)
         .put(KEY_FOCUSED_PANE, snapshot.focusedPane.name)
@@ -35,7 +35,7 @@ internal class SplitEditorSessionStorage(context: Context) {
         .put(KEY_MIRRORED_PATHS, encodePanePathSets(snapshot.mirroredFilePathsByPane))
         .put(KEY_ACTIVE_PATHS, encodeActivePaths(snapshot.activeFilePathByPane))
 
-    private fun decodeSnapshot(json: JSONObject): EditorContainerState.SplitEditorStateSnapshot = EditorContainerState.SplitEditorStateSnapshot(
+    private fun decodeSnapshot(json: JSONObject): SplitEditorStateSnapshot = SplitEditorStateSnapshot(
         isEnabled = json.optBoolean(KEY_ENABLED, false),
         focusedPane = parsePane(json.optString(KEY_FOCUSED_PANE)),
         layout = parseLayout(json.optString(KEY_LAYOUT)),
@@ -48,7 +48,7 @@ internal class SplitEditorSessionStorage(context: Context) {
         activeFilePathByPane = decodeActivePaths(json.optJSONArray(KEY_ACTIVE_PATHS))
     ).normalized()
 
-    private fun encodeAssignments(assignments: Map<String, EditorContainerState.EditorPaneId>): JSONArray {
+    private fun encodeAssignments(assignments: Map<String, EditorPaneId>): JSONArray {
         val array = JSONArray()
         assignments.forEach { (path, pane) ->
             array.put(
@@ -60,9 +60,9 @@ internal class SplitEditorSessionStorage(context: Context) {
         return array
     }
 
-    private fun decodeAssignments(array: JSONArray?): Map<String, EditorContainerState.EditorPaneId> {
+    private fun decodeAssignments(array: JSONArray?): Map<String, EditorPaneId> {
         if (array == null) return emptyMap()
-        val result = linkedMapOf<String, EditorContainerState.EditorPaneId>()
+        val result = linkedMapOf<String, EditorPaneId>()
         for (index in 0 until array.length()) {
             val item = array.optJSONObject(index) ?: continue
             val path = item.optString(KEY_PATH).takeIf { it.isNotBlank() } ?: continue
@@ -71,7 +71,7 @@ internal class SplitEditorSessionStorage(context: Context) {
         return result
     }
 
-    private fun encodePanePathSets(pathsByPane: Map<EditorContainerState.EditorPaneId, Set<String>>): JSONArray {
+    private fun encodePanePathSets(pathsByPane: Map<EditorPaneId, Set<String>>): JSONArray {
         val array = JSONArray()
         pathsByPane.forEach { (pane, paths) ->
             array.put(
@@ -83,9 +83,9 @@ internal class SplitEditorSessionStorage(context: Context) {
         return array
     }
 
-    private fun decodePanePathSets(array: JSONArray?): Map<EditorContainerState.EditorPaneId, Set<String>> {
+    private fun decodePanePathSets(array: JSONArray?): Map<EditorPaneId, Set<String>> {
         if (array == null) return emptyMap()
-        val result = linkedMapOf<EditorContainerState.EditorPaneId, Set<String>>()
+        val result = linkedMapOf<EditorPaneId, Set<String>>()
         for (index in 0 until array.length()) {
             val item = array.optJSONObject(index) ?: continue
             val paths = item.optJSONArray(KEY_PATHS) ?: continue
@@ -100,7 +100,7 @@ internal class SplitEditorSessionStorage(context: Context) {
         return result
     }
 
-    private fun encodeActivePaths(pathsByPane: Map<EditorContainerState.EditorPaneId, String>): JSONArray {
+    private fun encodeActivePaths(pathsByPane: Map<EditorPaneId, String>): JSONArray {
         val array = JSONArray()
         pathsByPane.forEach { (pane, path) ->
             array.put(
@@ -112,9 +112,9 @@ internal class SplitEditorSessionStorage(context: Context) {
         return array
     }
 
-    private fun decodeActivePaths(array: JSONArray?): Map<EditorContainerState.EditorPaneId, String> {
+    private fun decodeActivePaths(array: JSONArray?): Map<EditorPaneId, String> {
         if (array == null) return emptyMap()
-        val result = linkedMapOf<EditorContainerState.EditorPaneId, String>()
+        val result = linkedMapOf<EditorPaneId, String>()
         for (index in 0 until array.length()) {
             val item = array.optJSONObject(index) ?: continue
             val path = item.optString(KEY_PATH).takeIf { it.isNotBlank() } ?: continue
@@ -123,13 +123,13 @@ internal class SplitEditorSessionStorage(context: Context) {
         return result
     }
 
-    private fun parsePane(value: String?): EditorContainerState.EditorPaneId = runCatching {
-        EditorContainerState.EditorPaneId.valueOf(value.orEmpty())
-    }.getOrDefault(EditorContainerState.EditorPaneId.PRIMARY)
+    private fun parsePane(value: String?): EditorPaneId = runCatching {
+        EditorPaneId.valueOf(value.orEmpty())
+    }.getOrDefault(EditorPaneId.PRIMARY)
 
-    private fun parseLayout(value: String?): EditorContainerState.SplitEditorLayout = runCatching {
-        EditorContainerState.SplitEditorLayout.valueOf(value.orEmpty())
-    }.getOrDefault(EditorContainerState.SplitEditorLayout.HORIZONTAL)
+    private fun parseLayout(value: String?): SplitEditorLayout = runCatching {
+        SplitEditorLayout.valueOf(value.orEmpty())
+    }.getOrDefault(SplitEditorLayout.HORIZONTAL)
 
     private fun keyForProject(projectPath: String): String = "$KEY_PROJECT_PREFIX${projectPath.sha256Hex()}"
 

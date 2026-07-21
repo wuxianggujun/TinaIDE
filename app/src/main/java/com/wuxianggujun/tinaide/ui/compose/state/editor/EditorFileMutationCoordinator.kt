@@ -1,4 +1,4 @@
-﻿package com.wuxianggujun.tinaide.ui.compose.state.editor
+package com.wuxianggujun.tinaide.ui.compose.state.editor
 
 import com.wuxianggujun.tinaide.ui.compose.state.editor.CodeEditorCallback
 
@@ -18,8 +18,8 @@ internal class EditorFileMutationCoordinator(
     private val editorManager: IEditorManager,
     private val tabManager: EditorTabManager,
     private val tabs: SnapshotStateList<EditorTabState>,
-    private val navigationBackStack: SnapshotStateList<EditorContainerState.NavigationHistoryEntry>,
-    private val navigationForwardStack: SnapshotStateList<EditorContainerState.NavigationHistoryEntry>,
+    private val navigationBackStack: SnapshotStateList<NavigationHistoryEntry>,
+    private val navigationForwardStack: SnapshotStateList<NavigationHistoryEntry>,
     private val splitPaneState: EditorSplitPaneState,
     private val codeRuntimeCache: EditorCodeRuntimeCache,
     private val codeEditorCallbacks: MutableMap<String, CodeEditorCallback>,
@@ -110,7 +110,7 @@ internal class EditorFileMutationCoordinator(
     }
 
     private fun retargetNavigationStack(
-        stack: SnapshotStateList<EditorContainerState.NavigationHistoryEntry>,
+        stack: SnapshotStateList<NavigationHistoryEntry>,
         oldPath: File,
         newPath: File
     ) {

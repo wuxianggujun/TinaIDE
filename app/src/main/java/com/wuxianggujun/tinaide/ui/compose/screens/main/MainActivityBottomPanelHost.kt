@@ -36,6 +36,7 @@ import com.wuxianggujun.tinaide.ui.compose.state.DialogState
 import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState
 import com.wuxianggujun.tinaide.ui.compose.state.git.GitUiState
 import org.koin.compose.koinInject
+import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveEditorCommandResult
 
 @Composable
 internal fun MainActivityBottomPanelHost(
@@ -150,15 +151,15 @@ internal fun MainActivityBottomPanelHost(
                     fileEncoding = fileEncoding,
                     onCursorPositionClick = {
                         when (editorContainerState.getActiveEditableEditorCommandAvailability()) {
-                            EditorContainerState.ActiveEditorCommandResult.SUCCESS -> {
+                            ActiveEditorCommandResult.SUCCESS -> {
                                 dialogState.openGotoLineDialog()
                             }
 
-                            EditorContainerState.ActiveEditorCommandResult.NO_OPEN_FILE -> {
+                            ActiveEditorCommandResult.NO_OPEN_FILE -> {
                                 callbacks.onNoOpenFile()
                             }
 
-                            EditorContainerState.ActiveEditorCommandResult.UNSUPPORTED_EDITOR -> {
+                            ActiveEditorCommandResult.UNSUPPORTED_EDITOR -> {
                                 callbacks.onUnsupportedEditor()
                             }
                         }

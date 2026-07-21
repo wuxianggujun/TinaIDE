@@ -14,7 +14,7 @@ internal class EditorLspUiState {
     private val statusesByTabId = mutableStateMapOf<String, EditorStatus>()
     private var pluginDependencyAlertSequence: Long = 0L
 
-    var pluginDependencyAlert by mutableStateOf<EditorContainerState.PluginLspDependencyAlert?>(null)
+    var pluginDependencyAlert by mutableStateOf<PluginLspDependencyAlert?>(null)
         private set
 
     fun handleStatusChanged(tabId: String, status: EditorStatus) {
@@ -39,7 +39,7 @@ internal class EditorLspUiState {
 
     fun handlePluginDependencyNotReady(event: PluginLspDependencyNotReadyEvent) {
         pluginDependencyAlertSequence += 1
-        pluginDependencyAlert = EditorContainerState.PluginLspDependencyAlert(
+        pluginDependencyAlert = PluginLspDependencyAlert(
             sequence = pluginDependencyAlertSequence,
             pluginId = event.pluginId,
             pluginName = event.pluginName,
@@ -47,7 +47,7 @@ internal class EditorLspUiState {
         )
     }
 
-    fun consumePluginDependencyAlert(): EditorContainerState.PluginLspDependencyAlert? {
+    fun consumePluginDependencyAlert(): PluginLspDependencyAlert? {
         val alert = pluginDependencyAlert
         pluginDependencyAlert = null
         return alert
