@@ -41,10 +41,14 @@ class CoreServiceRegistrar(private val context: Context) : KoinComponent {
         )
         KeyboardShortcutManager.initialize(AppPreferences.get(appContext))
         RemoteLspConfigManager.install(configManager)
+        val installLogManager = get<InstallLogManager>()
         PRootBootstrap.bindDependencies(
-            installLogManager = get<InstallLogManager>(),
+            installLogManager = installLogManager,
             configManager = configManager,
         )
+        com.wuxianggujun.tinaide.core.logging.LogExportUtils.bindInstallLogTextProvider {
+            installLogManager.getFullLogText()
+        }
 
         // 注入 GestureTrace 启用判断逻辑
         com.wuxianggujun.tinaide.core.logging.GestureTrace.enabledProvider = {

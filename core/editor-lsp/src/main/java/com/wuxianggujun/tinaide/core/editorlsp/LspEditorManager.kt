@@ -10,9 +10,6 @@ import com.wuxianggujun.tinaide.core.linux.LinuxEnvironmentProvider
 import com.wuxianggujun.tinaide.core.linux.LinuxRunModePolicy
 import com.wuxianggujun.tinaide.core.linux.UnavailableLinuxEnvironmentProvider
 import com.wuxianggujun.tinaide.core.lsp.CompileDatabaseProvider
-import com.wuxianggujun.tinaide.core.lsp.ConnectionEvent
-import com.wuxianggujun.tinaide.core.lsp.ConnectionState
-import com.wuxianggujun.tinaide.core.lsp.ConnectionStateListener
 import com.wuxianggujun.tinaide.core.lsp.Diagnostic
 import com.wuxianggujun.tinaide.core.lsp.DocumentSymbolItem
 import com.wuxianggujun.tinaide.core.lsp.LocationItem
@@ -25,9 +22,7 @@ import com.wuxianggujun.tinaide.core.lsp.NativeClangdConnectionProvider
 import com.wuxianggujun.tinaide.core.lsp.PRootClangdConnectionProvider
 import com.wuxianggujun.tinaide.core.lsp.ProjectSyncManager
 import com.wuxianggujun.tinaide.core.lsp.RemoteLspConfigManager
-import com.wuxianggujun.tinaide.core.lsp.RemoteLspConnectionProvider
 import com.wuxianggujun.tinaide.core.lsp.RemoteLspConnectionState
-import com.wuxianggujun.tinaide.core.lsp.RemoteLspSyncMethod
 import com.wuxianggujun.tinaide.core.lsp.RemoteLspSyncMode
 import com.wuxianggujun.tinaide.core.lsp.WorkspaceSymbolItem
 import com.wuxianggujun.tinaide.core.ndk.AndroidNativeToolchainManager
@@ -1187,32 +1182,26 @@ class LspEditorManager(
             textProvider = textProvider,
             remote = true
         ) {
-            val provider = createRemoteProvider(
-                cfg.getNormalizedHostForConnection(),
-                cfg.port,
-                file.extension.lowercase()
+            val provider = RemoteLspAttachSupport.createProvider(
+                host = cfg.getNormalizedHostForConnection(),
+                port = cfg.port,
+                ext = file.extension.lowercase(),
             )
             provider.setClientWorkspaceRootUri(File(projectRoot).toURI().toString())
             provider.setRemoteWorkspaceRootUri(cfg.remoteWorkspaceRootUri.takeIf { it.isNotBlank() })
 
-            val effectiveMode = when (cfg.syncMode) {
-                RemoteLspSyncMode.AUTO -> {
-                    val (mode, reason) = ProjectSyncManager.detectSyncMode(File(projectRoot))
-                    RemoteLspConfigManager.updateDetectedSyncMode(mode, reason)
-                    mode
-                }
-
-                else -> cfg.syncMode
-            }
+            val projectRootFile = File(projectRoot)
+            val effectiveMode = RemoteLspAttachSupport.resolveEffectiveSyncMode(cfg.syncMode, projectRootFile)
             currentSyncMode = effectiveMode
 
-            if (effectiveMode == RemoteLspSyncMode.PROJECT &&
-                cfg.syncMethod == RemoteLspSyncMethod.BUILTIN &&
-                synchronized(stateLock) { projectRoot !in remoteSyncedProjects }
-            ) {
-                val started = provider.startAsync()
-                if (started.isFailure) error(started.exceptionOrNull()?.message ?: "remote start failed")
-                syncProjectToRemote(File(projectRoot), provider)
+            val alreadySynced = synchronized(stateLock) { projectRoot in remoteSyncedProjects }
+            val synced = RemoteLspAttachSupport.syncProjectIfNeeded(
+                projectRoot = projectRootFile,
+                provider = provider,
+                syncMode = effectiveMode,
+                alreadySynced = alreadySynced,
+            )
+            if (synced && !alreadySynced) {
                 synchronized(stateLock) { remoteSyncedProjects.add(projectRoot) }
             }
             provider
@@ -1714,48 +1703,6 @@ class LspEditorManager(
             }
         }
         return true
-    }
-
-    private fun createRemoteProvider(host: String, port: Int, ext: String): RemoteLspConnectionProvider = RemoteLspConnectionProvider(host, port, autoReconnect = true, maxReconnectAttempts = 5)
-        .also { provider ->
-            provider.addStateListener(object : ConnectionStateListener {
-                override fun onStateChanged(state: ConnectionState) {
-                    val mapped = when (state) {
-                        ConnectionState.DISCONNECTED -> RemoteLspConnectionState.DISCONNECTED
-                        ConnectionState.CONNECTING, ConnectionState.RECONNECTING ->
-                            RemoteLspConnectionState.CONNECTING
-
-                        ConnectionState.CONNECTED -> RemoteLspConnectionState.CONNECTED
-                        ConnectionState.FAILED -> RemoteLspConnectionState.ERROR
-                    }
-                    RemoteLspConfigManager.updateConnectionState(mapped)
-                }
-
-                override fun onEvent(event: ConnectionEvent) {
-                    when (event) {
-                        is ConnectionEvent.Connected -> Timber.tag(TAG).i("Remote connected: $ext")
-                        is ConnectionEvent.Disconnected -> Timber.tag(TAG).i("Remote disconnected: $ext")
-                        is ConnectionEvent.Reconnecting ->
-                            RemoteLspConfigManager.updateReconnectAttempt(event.attempt)
-
-                        is ConnectionEvent.Error ->
-                            RemoteLspConfigManager.updateConnectionState(
-                                RemoteLspConnectionState.ERROR,
-                                event.message
-                            )
-
-                        is ConnectionEvent.LatencyUpdate ->
-                            RemoteLspConfigManager.updateLatency(event.latencyMs)
-                    }
-                }
-            })
-        }
-
-    private suspend fun syncProjectToRemote(projectRoot: File, provider: RemoteLspConnectionProvider) {
-        if (RemoteLspConfigManager.config.syncMethod != RemoteLspSyncMethod.BUILTIN) return
-        val files = ProjectSyncManager.scanProject(projectRoot)
-        if (files.isEmpty()) return
-        provider.syncProject(projectRoot.name, files) { _, _ -> }
     }
 
     private inline fun <T> runCatchingPreservingCancellation(block: () -> T): Result<T> = try {

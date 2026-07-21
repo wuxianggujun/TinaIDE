@@ -8,7 +8,6 @@ import android.os.Process
 import com.wuxianggujun.tinaide.core.common.AppVersionInfoReader
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
-import com.wuxianggujun.tinaide.core.proot.InstallLogManager
 import com.wuxianggujun.tinaide.core.proot.PRootBootstrap
 import com.wuxianggujun.tinaide.core.util.CrashLogPrivacyClassifier
 import com.wuxianggujun.tinaide.storage.ExternalFileIntents
@@ -24,7 +23,6 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.koin.core.context.GlobalContext
 import timber.log.Timber
 
 /**
@@ -34,6 +32,16 @@ import timber.log.Timber
 object LogExportUtils {
     private const val TAG = "LogExportUtils"
     private const val USER_RUNTIME_TOMBSTONE_SCAN_BYTES = 64 * 1024
+
+    @Volatile
+    private var installLogTextProvider: (() -> String?)? = null
+
+    /**
+     * HOST 启动后注入安装日志快照来源，避免 object 内 GlobalContext 取服务。
+     */
+    fun bindInstallLogTextProvider(provider: (() -> String?)?) {
+        installLogTextProvider = provider
+    }
 
     /**
      * 导出日志到ZIP文件
@@ -384,7 +392,10 @@ object LogExportUtils {
                 appendLine("=== TinaIDE Install Log Snapshot ===")
                 appendLine("This file is a snapshot generated at export time.")
                 appendLine()
-                appendLine(GlobalContext.getOrNull()?.getOrNull<InstallLogManager>()?.getFullLogText() ?: "(InstallLogManager not available)")
+                appendLine(
+                    installLogTextProvider?.invoke()
+                        ?: "(InstallLogManager not available)"
+                )
                 appendLine()
                 appendLine("--- End of Snapshot ---")
             }
