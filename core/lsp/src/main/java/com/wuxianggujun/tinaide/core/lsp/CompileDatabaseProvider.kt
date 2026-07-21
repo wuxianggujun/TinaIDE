@@ -32,7 +32,10 @@ import timber.log.Timber
  * - compile_commands.json 统一保留在项目构建目录内，便于用户直接查看。
  * - clangd 使用的版本直接在项目构建目录内归一化，不再复制到额外的私有构建目录。
  */
-class CompileDatabaseProvider(context: Context) {
+class CompileDatabaseProvider(
+    context: Context,
+    private val linuxEnvironmentProvider: LinuxEnvironmentProvider = UnavailableLinuxEnvironmentProvider,
+) {
 
     companion object {
         private const val TAG = "CompileDbProvider"
@@ -73,11 +76,6 @@ class CompileDatabaseProvider(context: Context) {
     }
 
     private val appContext = context.applicationContext
-    private val linuxEnvironmentProvider: LinuxEnvironmentProvider by lazy {
-        runCatching {
-            org.koin.core.context.GlobalContext.get().getOrNull<LinuxEnvironmentProvider>()
-        }.getOrNull() ?: UnavailableLinuxEnvironmentProvider
-    }
 
     enum class ProjectType {
         CMAKE_PROJECT,

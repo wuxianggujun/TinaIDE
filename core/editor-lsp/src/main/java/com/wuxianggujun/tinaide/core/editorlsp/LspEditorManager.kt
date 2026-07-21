@@ -45,8 +45,6 @@ import com.wuxianggujun.tinaide.plugin.lsp.LspPluginManager
 import com.wuxianggujun.tinaide.plugin.lsp.LspPluginReadinessDiagnostic
 import com.wuxianggujun.tinaide.plugin.lsp.LspServerConfig
 import com.wuxianggujun.tinaide.plugin.lsp.PluginLspConnectionProvider
-import com.wuxianggujun.tinaide.project.CppStandard
-import com.wuxianggujun.tinaide.project.ProjectMetadataStore
 import java.io.File
 import java.net.URI
 import java.util.concurrent.CompletableFuture
@@ -59,7 +57,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -158,26 +155,16 @@ class LspEditorManager(
         val regions: List<FoldRegion>
     )
 
-    private data class CompileSetupKey(
-        val projectHint: String,
-        val languageId: String,
-        val runMode: LinuxRunModePolicy.RunMode,
-        val toolchainId: String,
-        val sysrootProfileId: String?,
-        val sysrootApiLevel: Int,
-        val cppStandardFlag: String,
-    )
-
-    private data class CompileSetup(
-        val prepared: CompileDatabaseProvider.Prepared,
-        val compileCommandsDir: File,
-    )
-
     private val stateLock = Any()
     private val tabRequestTracker = LspTabRequestTracker(stateLock)
     private val lspScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val sharedCxxSessionMutex = Mutex()
-    private val compileSetupMutex = Mutex()
+    private val compileSetupCache = LspCompileSetupCache(
+        scope = lspScope,
+        linuxEnvironmentProvider = linuxEnvironmentProvider,
+        resolveRunMode = ::resolveClangdRunMode,
+        resolveLanguageId = ::languageIdForFile,
+    )
 
     private var lspProjectRoot: String? = null
     private var lspCompileCommandsDirOverride: String? = null
@@ -197,13 +184,10 @@ class LspEditorManager(
     private val completionWarmupTabIds = mutableSetOf<String>()
     private var sharedCxxSession: LspClientSession? = null
     private var sharedCxxShutdownJob: Job? = null
-    private val compileSetupCache = mutableMapOf<CompileSetupKey, CompileSetup>()
-    private val compileSetupTasks = mutableMapOf<CompileSetupKey, kotlinx.coroutines.Deferred<CompileSetup?>>()
 
     @Volatile
     private var foldingRangeEnabled: Boolean = false
 
-    private var compileDatabaseProvider: CompileDatabaseProvider? = null
     private var lspPluginManager: LspPluginManager? = null
 
     // 文件监听（workspace/didChangeWatchedFiles）
@@ -367,9 +351,8 @@ class LspEditorManager(
                 val binding = synchronized(stateLock) {
                     tabBindings.values.firstOrNull { it.kind == SessionKind.CXX }
                 } ?: return@launch
-                val compileProvider = compileDatabaseProvider
-                    ?: CompileDatabaseProvider(context).also { compileDatabaseProvider = it }
-                invalidateCompileSetupsForProject(binding.file, binding.projectRootPath)
+                val compileProvider = compileSetupCache.getProvider(context)
+                compileSetupCache.invalidateForProject(binding.file, binding.projectRootPath)
                 if (isCompileCommandsFile) {
                     compileProvider.prepareProvidedCompileCommandsForLsp(file, binding.projectRootPath)
                         ?: return@launch
@@ -1036,13 +1019,13 @@ class LspEditorManager(
      * 避免复用过时的 compile_commands.json 导致头文件假错。
      */
     fun invalidateCompileSetupCache() {
-        clearCompileSetupCache()
+        compileSetupCache.clear()
     }
 
     fun refreshLspConnection(context: Context) {
         val bindings = synchronized(stateLock) { tabBindings.toMap() }
         if (bindings.isEmpty()) return
-        clearCompileSetupCache()
+        compileSetupCache.clear()
         disposeProject()
         bindings.values.forEach { binding ->
             attachTinaLsp(
@@ -1525,54 +1508,6 @@ class LspEditorManager(
         }
     }
 
-    private fun getCompileDatabaseProvider(context: Context): CompileDatabaseProvider = synchronized(stateLock) {
-        compileDatabaseProvider ?: CompileDatabaseProvider(context).also { compileDatabaseProvider = it }
-    }
-
-    private fun buildCompileSetupKey(
-        file: File,
-        projectRootPath: String?,
-        provider: CompileDatabaseProvider,
-    ): CompileSetupKey {
-        val workspaceRoot = resolveCompileWorkspaceRoot(file, projectRootPath)
-        val projectHint = resolveCompileProjectHint(file, projectRootPath)
-        val runtimeIdentity = provider.resolveRuntimeIdentity(workspaceRoot)
-        return CompileSetupKey(
-            projectHint = projectHint,
-            languageId = languageIdForFile(file),
-            runMode = resolveClangdRunMode(),
-            toolchainId = runtimeIdentity.toolchainId,
-            sysrootProfileId = runtimeIdentity.sysrootProfileId,
-            sysrootApiLevel = runtimeIdentity.sysrootApiLevel,
-            cppStandardFlag = resolveCppStandardFlag(workspaceRoot),
-        )
-    }
-
-    private fun clearCompileSetupCache() {
-        synchronized(stateLock) {
-            compileSetupCache.clear()
-        }
-    }
-
-    private fun invalidateCompileSetupsForProject(file: File, projectRootPath: String?) {
-        val projectHint = resolveCompileProjectHint(file, projectRootPath)
-        synchronized(stateLock) {
-            compileSetupCache.keys.removeAll { key -> key.projectHint == projectHint }
-        }
-    }
-
-    private fun resolveCompileProjectHint(file: File, projectRootPath: String?): String {
-        val workspaceRoot = resolveCompileWorkspaceRoot(file, projectRootPath)
-        return workspaceRoot?.stablePath()
-            ?: projectRootPath
-                ?.takeIf { it.isNotBlank() }
-                ?.let { File(it).stablePath() }
-            ?: file.parentFile?.stablePath()
-            ?: file.stablePath()
-    }
-
-    private fun File.stablePath(): String = runCatching { canonicalPath }.getOrDefault(absolutePath)
-
     private fun nextRequestGeneration(tabId: String): List<CompletableFuture<*>> =
         tabRequestTracker.invalidateTab(tabId)
 
@@ -1601,116 +1536,7 @@ class LspEditorManager(
         context: Context,
         file: File,
         projectRootPath: String?,
-    ): CompileSetup? {
-        val startedAt = System.nanoTime()
-        val compileProvider = getCompileDatabaseProvider(context)
-        val key = buildCompileSetupKey(file, projectRootPath, compileProvider)
-        synchronized(stateLock) {
-            compileSetupCache[key]
-        }?.let { cached ->
-            // 自愈：缓存命中时再校验一次包指纹。即使某条路径漏掉了显式失效（见
-            // invalidateCompileSetupCache），只要已安装包发生变化就丢弃旧缓存重算，
-            // 避免返回过时的 compile_commands 目录导致头文件假错。
-            if (isCompileSetupStillFresh(context, cached)) {
-                Timber.tag(TAG).d(
-                    "compile setup cache hit for %s (%s) in %dms",
-                    file.name,
-                    key.projectHint,
-                    elapsedMillis(startedAt)
-                )
-                return cached
-            }
-            Timber.tag(TAG).i(
-                "compile setup cache stale for %s (%s): package fingerprint changed, recomputing",
-                file.name,
-                key.projectHint
-            )
-            synchronized(stateLock) {
-                if (compileSetupCache[key] === cached) {
-                    compileSetupCache.remove(key)
-                }
-            }
-        }
-
-        val task = compileSetupMutex.withLock {
-            synchronized(stateLock) {
-                compileSetupCache[key]
-            }?.let { cached -> return cached }
-
-            compileSetupTasks[key]?.takeIf { it.isActive } ?: lspScope.async(Dispatchers.IO) {
-                val prepared = compileProvider.prepare(file, projectRootPath) ?: return@async null
-                val ensured = compileProvider.ensureWithResult(prepared) ?: return@async null
-                CompileSetup(
-                    prepared = prepared,
-                    compileCommandsDir = ensured.compileCommandsDir
-                )
-            }.also { deferred ->
-                synchronized(stateLock) { compileSetupTasks[key] = deferred }
-            }
-        }
-
-        return try {
-            task.await()?.also { setup ->
-                synchronized(stateLock) { compileSetupCache[key] = setup }
-                Timber.tag(TAG).d(
-                    "compile setup ready for %s (%s) in %dms",
-                    file.name,
-                    key.projectHint,
-                    elapsedMillis(startedAt)
-                )
-            }
-        } finally {
-            compileSetupMutex.withLock {
-                synchronized(stateLock) {
-                    if (compileSetupTasks[key] === task) {
-                        compileSetupTasks.remove(key)
-                    }
-                }
-            }
-        }
-    }
-
-    /**
-     * 校验缓存的 compile setup 是否仍然有效：比对当前已安装包的指纹与生成时的指纹。
-     *
-     * 指纹计算会扫描磁盘（installed-packages 目录），必须在 IO 线程执行。
-     * 计算失败时保守视为“仍然有效”，避免因偶发 IO 错误反复重建拖慢 attach。
-     */
-    private suspend fun isCompileSetupStillFresh(context: Context, cached: CompileSetup): Boolean = withContext(Dispatchers.IO) {
-        runCatching {
-            val provider = getCompileDatabaseProvider(context)
-            val currentFingerprint = provider.computePackageFingerprint(cached.prepared.workspaceRoot)
-            val currentRuntimeIdentity = provider.resolveRuntimeIdentity(cached.prepared.workspaceRoot)
-            currentFingerprint == cached.prepared.packageFingerprint &&
-                currentRuntimeIdentity.toolchainId == cached.prepared.toolchainId &&
-                currentRuntimeIdentity.sysrootProfileId == cached.prepared.sysrootProfileId &&
-                currentRuntimeIdentity.sysrootApiLevel == cached.prepared.sysrootApiLevel &&
-                resolveCppStandardFlag(cached.prepared.workspaceRoot) == cached.prepared.desiredCppStandard.flag
-        }.getOrDefault(true)
-    }
-
-    private fun resolveCompileWorkspaceRoot(file: File, projectRootPath: String?): File? {
-        val candidate = projectRootPath
-            ?.takeIf { it.isNotBlank() }
-            ?.let { File(it) }
-            ?.takeIf { it.isDirectory }
-
-        if (candidate != null) {
-            val candidatePath = runCatching { candidate.canonicalPath }.getOrNull()
-            val filePath = runCatching { file.canonicalPath }.getOrNull()
-            if (candidatePath != null && filePath != null) {
-                val inProject = filePath == candidatePath || filePath.startsWith(candidatePath + File.separator)
-                if (inProject) return candidate
-            }
-        }
-
-        return file.parentFile?.takeIf { it.isDirectory }
-    }
-
-    private fun resolveCppStandardFlag(projectRoot: File?): String =
-        projectRoot
-            ?.let { root -> runCatching { ProjectMetadataStore.read(root)?.getCppStandard()?.flag }.getOrNull() }
-            ?: CppStandard.DEFAULT.flag
+    ): LspCompileSetupCache.Setup? = compileSetupCache.resolve(context, file, projectRootPath)
 
     private fun startSharedCxxAttach(
         tabId: String,

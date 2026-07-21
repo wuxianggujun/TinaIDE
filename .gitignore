@@ -118,6 +118,9 @@ temp/
 
 .ace-tool/
 
+# Local Kilo CLI config (do not commit)
+.kilo/
+
 # Prevent committing huge offline bundle
 /tina-server.tar.gz
 
