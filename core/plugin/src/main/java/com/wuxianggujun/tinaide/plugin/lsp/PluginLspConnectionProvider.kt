@@ -9,6 +9,7 @@ import java.io.InputStream
 import java.io.OutputStream
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import timber.log.Timber
 
@@ -161,7 +162,8 @@ class PluginLspConnectionProvider(
         guestWorkingDir: String,
         env: Map<String, String>,
     ) {
-        val probeResult = runBlocking {
+        // start() 为同步 API；探测必须在 IO 调度器上，避免误占主线程。
+        val probeResult = runBlocking(Dispatchers.IO) {
             linuxEnvironment.execute(
                 command = listOf("/bin/sh", "-lc", "command -v $escapedCommand >/dev/null 2>&1"),
                 workDir = guestWorkingDir,

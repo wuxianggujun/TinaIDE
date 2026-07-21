@@ -30,8 +30,6 @@ import com.wuxianggujun.tinaide.core.ndk.AndroidSysrootManager
 import com.wuxianggujun.tinaide.core.textengine.Position
 import com.wuxianggujun.tinaide.core.textengine.TextChange
 import com.wuxianggujun.tinaide.core.treesitter.TreeSitterFoldingProvider.FoldRegion
-import com.wuxianggujun.tinaide.file.FileChangeListener
-import com.wuxianggujun.tinaide.file.FileWatchRegistration
 import com.wuxianggujun.tinaide.file.IFileWatchService
 import com.wuxianggujun.tinaide.plugin.PluginLogLevel
 import com.wuxianggujun.tinaide.plugin.PluginLogManager
@@ -60,10 +58,6 @@ import kotlinx.coroutines.withTimeout
 import org.eclipse.lsp4j.CompletionContext
 import org.eclipse.lsp4j.CompletionParams
 import org.eclipse.lsp4j.CompletionTriggerKind
-import org.eclipse.lsp4j.DidChangeWatchedFilesRegistrationOptions
-import org.eclipse.lsp4j.FileChangeType
-import org.eclipse.lsp4j.FileEvent
-import org.eclipse.lsp4j.FoldingRangeRequestParams
 import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.HoverParams
 import org.eclipse.lsp4j.InsertReplaceEdit
@@ -194,9 +188,25 @@ class LspEditorManager(
 
     private var lspPluginManager: LspPluginManager? = null
 
-    // 文件监听（workspace/didChangeWatchedFiles）
-    private var workspaceFileWatcher: FileWatchRegistration? = null
-    private val watchedPatterns = mutableListOf<Pair<String, List<LspFileWatchPattern>>>()
+    private val workspaceFileWatcher = LspWorkspaceFileWatcher(
+        stateLock = stateLock,
+        fileWatchService = fileWatchService,
+        projectRootProvider = { lspProjectRoot },
+        collectSessions = {
+            synchronized(stateLock) {
+                buildSet {
+                    tabSessions.values.mapNotNullTo(this) { it.lspSession }
+                    sharedCxxSessions.currentSession()?.let { add(it) }
+                }.toList()
+            }
+        },
+        hasActiveCxxBindings = {
+            tabBindings.values.any { it.kind == SessionKind.CXX }
+        },
+        hasSharedCxxSession = {
+            sharedCxxSessions.currentSession() != null
+        },
+    )
 
     @Volatile
     private var assistSettings: LspAssistSettings = LspAssistSettings(
@@ -2018,118 +2028,24 @@ class LspEditorManager(
         }
     }
 
-    // ========== 文件监听（workspace/didChangeWatchedFiles）==========
-
     private fun startFileWatcher(workspaceRoot: String) {
-        val watchService = fileWatchService
-        if (watchService == null) {
-            Timber.tag(TAG).w("Workspace file watcher unavailable for: %s", workspaceRoot)
-            return
-        }
-        val rootFile = File(workspaceRoot)
-        if (!rootFile.isDirectory) return
-
-        val registration = runCatching {
-            watchService.addFileWatcher(workspaceRoot, object : FileChangeListener {
-                override fun onFileCreated(file: File) {
-                    notifyWorkspaceFileChange(file, FileChangeType.Created)
-                }
-
-                override fun onFileModified(file: File) {
-                    notifyWorkspaceFileChange(file, FileChangeType.Changed)
-                }
-
-                override fun onFileDeleted(file: File) {
-                    notifyWorkspaceFileChange(file, FileChangeType.Deleted)
-                }
-
-                override fun onFileRenamed(oldFile: File, newFile: File) {
-                    notifyWorkspaceFileChange(oldFile, FileChangeType.Deleted)
-                    notifyWorkspaceFileChange(newFile, FileChangeType.Created)
-                }
-            })
-        }.onFailure { error ->
-            Timber.tag(TAG).w(error, "Workspace file watcher failed to start for: %s", workspaceRoot)
-        }.getOrNull() ?: return
-
-        val previous = synchronized(stateLock) {
-            workspaceFileWatcher.also { workspaceFileWatcher = registration }
-        }
-        previous?.dispose()
-        Timber.tag(TAG).i("Workspace file watcher started for: %s", workspaceRoot)
+        workspaceFileWatcher.start(workspaceRoot)
     }
 
-    private fun notifyWorkspaceFileChange(file: File, eventType: FileChangeType) {
-        val path = file.absolutePath
-        val patterns = synchronized(stateLock) { watchedPatterns.toList() }
-        val eventMask = when (eventType) {
-            FileChangeType.Created -> LspFileWatchPattern.CREATE_EVENT
-            FileChangeType.Changed -> LspFileWatchPattern.CHANGE_EVENT
-            FileChangeType.Deleted -> LspFileWatchPattern.DELETE_EVENT
-        }
-        val matched = patterns.any { (_, globs) -> globs.any { it.matches(path, eventMask) } }
-        if (!matched) return
-
-        val changes = listOf(FileEvent(file.toURI().toString(), eventType))
-        val sessions = synchronized(stateLock) {
-            buildSet {
-                tabSessions.values.mapNotNullTo(this) { it.lspSession }
-                sharedCxxSessions.currentSession()?.let { add(it) }
-            }
-        }.toList()
-        sessions.forEach { session ->
-            runCatching { session.didChangeWatchedFiles(changes) }
-                .onFailure { error -> Timber.tag(TAG).w(error, "didChangeWatchedFiles failed: %s", path) }
-        }
-        Timber.tag(TAG).d("didChangeWatchedFiles: %s (%s)", path, eventType)
-    }
-
-    private fun hasWorkspaceFileWatcher(): Boolean = synchronized(stateLock) {
-        workspaceFileWatcher != null
-    }
+    private fun hasWorkspaceFileWatcher(): Boolean = workspaceFileWatcher.isActive()
 
     private fun stopFileWatcher() {
-        val registration = synchronized(stateLock) {
-            watchedPatterns.clear()
-            workspaceFileWatcher.also { workspaceFileWatcher = null }
-        }
-        registration?.dispose()
+        workspaceFileWatcher.stop()
     }
 
-    private fun stopFileWatcherIfCxxIdle(): Boolean {
-        val registration = synchronized(stateLock) {
-            if (sharedCxxSessions.currentSession() != null || tabBindings.values.any { it.kind == SessionKind.CXX }) {
-                return false
-            }
-            watchedPatterns.clear()
-            workspaceFileWatcher.also { workspaceFileWatcher = null }
-        }
-        registration?.dispose()
-        return true
-    }
+    private fun stopFileWatcherIfCxxIdle(): Boolean = workspaceFileWatcher.stopIfCxxIdle()
 
     private fun onCapabilityRegistered(registrations: List<Registration>) {
-        val fileWatcherRegs = registrations.filter { it.method == "workspace/didChangeWatchedFiles" }
-        if (fileWatcherRegs.isEmpty()) return
-        synchronized(stateLock) {
-            fileWatcherRegs.forEach { reg ->
-                val options = reg.registerOptions
-                if (options is DidChangeWatchedFilesRegistrationOptions) {
-                    val globs = options.watchers.mapNotNull { watcher ->
-                        LspFileWatchPattern.fromWatcher(watcher, lspProjectRoot)
-                    }
-                    if (globs.isNotEmpty()) {
-                        watchedPatterns.add(reg.id to globs)
-                        Timber.tag(TAG).i("Registered file watchers [%s]: %s", reg.id, globs)
-                    }
-                }
-            }
-        }
+        workspaceFileWatcher.onCapabilityRegistered(registrations)
     }
 
     private fun onCapabilityUnregistered(unregistrations: List<Unregistration>) {
-        val ids = unregistrations.map { it.id }.toSet()
-        synchronized(stateLock) { watchedPatterns.removeAll { (id, _) -> id in ids } }
+        workspaceFileWatcher.onCapabilityUnregistered(unregistrations)
     }
 
     private fun normalizeVisibleLines(visibleLines: IntRange): IntRange {

@@ -184,7 +184,8 @@ class RemoteLspConnectionProvider(
         if (!prepareForManualConnection()) throw closedConnectionException()
 
         // 同步连接（start() 可能被 LSP 框架重复调用，必须幂等）
-        runBlocking {
+        // 强制 IO 调度器，避免在主线程 runBlocking 卡死 UI。
+        runBlocking(Dispatchers.IO) {
             startMutex.withLock {
                 throwIfClosed()
                 ensurePipes()
