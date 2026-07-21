@@ -1118,67 +1118,6 @@ class FileTreeState(
         return normalizedPath.substring(0, separatorIndex)
     }
 
-    private data class CachedDirectoryEntry(
-        val absolutePath: String,
-        val isDirectory: Boolean,
-        val name: String,
-        val nameLower: String
-    )
-
-    private data class SelectedTarget(
-        val path: String,
-        val isDirectory: Boolean
-    )
-
-    private data class PendingAppendNode(
-        val path: String,
-        val level: Int,
-        val relativePath: String?,
-        val cachedName: String,
-        val cachedIsDirectory: Boolean
-    )
-
-    private data class NodeSliceRange(
-        val startIndex: Int,
-        val endIndexExclusive: Int
-    )
-
-    private data class RevealRefreshTarget(
-        val path: String,
-        val directoryIndex: Int?
-    )
-
-    private data class RootContext(
-        val rootPath: String,
-        val rootName: String,
-        val artifactsDirPath: String
-    )
-
-    private class VisibleNodeLookup(
-        private val nodes: List<FileTreeNode>
-    ) {
-        private val indexByPath = HashMap<String, Int>(nodes.size)
-
-        init {
-            nodes.forEachIndexed { index, node ->
-                indexByPath[node.absolutePath] = index
-            }
-        }
-
-        fun containsPath(path: String): Boolean = path in indexByPath
-
-        fun indexOfDirectory(path: String): Int? {
-            val index = indexByPath[path] ?: return null
-            return index.takeIf { nodes[it].isDirectory }
-        }
-
-        fun isDirectoryExpanded(path: String): Boolean? {
-            val index = indexByPath[path] ?: return null
-            val node = nodes[index]
-            return if (node.isDirectory) node.isExpanded else null
-        }
-    }
-
     private fun rootContextOf(rootFile: File): RootContext {
         val rootPath = rootFile.absolutePath
         return RootContext(
