@@ -97,8 +97,6 @@ class LspEditorManager(
         private const val SIGNATURE_HELP_TIMEOUT_SECONDS = 6L
         private const val SEMANTIC_TOKENS_TIMEOUT_SECONDS = 6L
         private const val FOLDING_RANGE_TIMEOUT_SECONDS = 6L
-        private const val SEMANTIC_PREFETCH_MARGIN_LINES = 80
-        private const val SEMANTIC_MAX_PREFETCH_SPAN_LINES = 480
         private const val SHARED_CXX_IDLE_SHUTDOWN_MS = 20_000L
     }
 
@@ -1991,9 +1989,6 @@ class LspEditorManager(
         continuation.invokeOnCancellation { cancel(true) }
     }
 
-    private fun elapsedMillis(startedAt: Long): Long = (System.nanoTime() - startedAt) / 1_000_000L
-
-    private fun fileNameForLog(file: File): String = file.name.ifBlank { file.absolutePath }
 
     private fun startFileWatcher(workspaceRoot: String) {
         workspaceFileWatcher.start(workspaceRoot)
@@ -2015,34 +2010,6 @@ class LspEditorManager(
         workspaceFileWatcher.onCapabilityUnregistered(unregistrations)
     }
 
-    private fun normalizeVisibleLines(visibleLines: IntRange): IntRange {
-        if (visibleLines.isEmpty()) return visibleLines
-        val start = visibleLines.first.coerceAtLeast(0)
-        val end = visibleLines.last.coerceAtLeast(start)
-        return start..end
-    }
-
-    private fun expandSemanticRequestLines(visibleLines: IntRange): IntRange {
-        val normalized = normalizeVisibleLines(visibleLines)
-        if (normalized.isEmpty()) return normalized
-        val start = (normalized.first - SEMANTIC_PREFETCH_MARGIN_LINES).coerceAtLeast(0)
-        val maxEnd = start + SEMANTIC_MAX_PREFETCH_SPAN_LINES
-        val targetEnd = normalized.last + SEMANTIC_PREFETCH_MARGIN_LINES
-        val end = targetEnd.coerceAtMost(maxEnd).coerceAtLeast(start)
-        return start..end
-    }
-
-    private fun IntRange.containsRange(other: IntRange): Boolean {
-        if (this.isEmpty() || other.isEmpty()) return false
-        return this.first <= other.first && this.last >= other.last
-    }
-
-    private fun List<SemanticToken>.filterToVisibleLines(visibleLines: IntRange): List<SemanticToken> {
-        if (isEmpty() || visibleLines.isEmpty()) return emptyList()
-        return asSequence()
-            .filter { token -> token.line in visibleLines && token.length > 0 }
-            .toList()
-    }
 
     private suspend fun <T> withLspTabSession(
         tabId: String,
@@ -2054,5 +2021,4 @@ class LspEditorManager(
         return block(tabSession, session)
     }
 
-    private fun languageIdForFile(file: File): String = file.resolveLspLanguageId()
 }
