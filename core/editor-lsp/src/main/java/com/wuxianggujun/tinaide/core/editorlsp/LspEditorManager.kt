@@ -58,6 +58,7 @@ import kotlinx.coroutines.withTimeout
 import org.eclipse.lsp4j.CompletionContext
 import org.eclipse.lsp4j.CompletionParams
 import org.eclipse.lsp4j.CompletionTriggerKind
+import org.eclipse.lsp4j.FoldingRangeRequestParams
 import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.HoverParams
 import org.eclipse.lsp4j.InsertReplaceEdit
