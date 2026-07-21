@@ -1,4 +1,4 @@
-package com.wuxianggujun.tinaide.ui
+﻿package com.wuxianggujun.tinaide.ui
 
 import android.app.Application
 import com.google.common.truth.Truth.assertThat
@@ -11,6 +11,9 @@ import com.wuxianggujun.tinaide.editor.IEditorManager
 import com.wuxianggujun.tinaide.editor.theme.PluginEditorThemeRegistry
 import com.wuxianggujun.tinaide.plugin.PluginSnippetManager
 import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState
+import com.wuxianggujun.tinaide.ui.compose.state.editor.CodeEditorCallback
+import com.wuxianggujun.tinaide.ui.compose.state.editor.TextEditOperation
+import com.wuxianggujun.tinaide.ui.compose.state.editor.CursorSnapshot
 import io.mockk.mockk
 import java.io.File
 import org.junit.Before
@@ -84,7 +87,7 @@ class TinaPluginEditorBridgeTest {
         )
         state.registerCodeEditorCallback(
             tabId = "tab-bridge",
-            callback = EditorContainerState.CodeEditorCallback(
+            callback = CodeEditorCallback(
                 goToPosition = { _, _ -> false },
                 selectAll = { false },
                 replaceSelection = { false },
@@ -95,7 +98,7 @@ class TinaPluginEditorBridgeTest {
                 undo = { false },
                 redo = { false },
                 insertTextAtCursor = {},
-                cursorPosition = { EditorContainerState.CursorSnapshot(7, 3) },
+                cursorPosition = { CursorSnapshot(7, 3) },
                 setSelectionRange = { _, _, _, _ -> false },
                 readAllText = { "" },
                 readSelection = { null }
@@ -122,10 +125,10 @@ class TinaPluginEditorBridgeTest {
             activeTabId = "tab-bridge"
         )
 
-        var appliedEdit: EditorContainerState.TextEditOperation? = null
+        var appliedEdit: TextEditOperation? = null
         state.registerCodeEditorCallback(
             tabId = "tab-bridge",
-            callback = EditorContainerState.CodeEditorCallback(
+            callback = CodeEditorCallback(
                 goToPosition = { _, _ -> false },
                 selectAll = { false },
                 replaceSelection = { false },
@@ -139,7 +142,7 @@ class TinaPluginEditorBridgeTest {
                 undo = { false },
                 redo = { false },
                 insertTextAtCursor = {},
-                cursorPosition = { EditorContainerState.CursorSnapshot(0, 0) },
+                cursorPosition = { CursorSnapshot(0, 0) },
                 setSelectionRange = { _, _, _, _ -> false },
                 readAllText = { "" },
                 readSelection = { null }
@@ -169,7 +172,7 @@ class TinaPluginEditorBridgeTest {
         var navigatedColumn = -1
         state.registerCodeEditorCallback(
             tabId = "tab-bridge",
-            callback = EditorContainerState.CodeEditorCallback(
+            callback = CodeEditorCallback(
                 goToPosition = { line, column ->
                     navigatedLine = line
                     navigatedColumn = column
@@ -184,7 +187,7 @@ class TinaPluginEditorBridgeTest {
                 undo = { false },
                 redo = { false },
                 insertTextAtCursor = {},
-                cursorPosition = { EditorContainerState.CursorSnapshot(0, 0) },
+                cursorPosition = { CursorSnapshot(0, 0) },
                 setSelectionRange = { _, _, _, _ -> false },
                 readAllText = { "" },
                 readSelection = { null }

@@ -1,4 +1,8 @@
-package com.wuxianggujun.tinaide.ui.compose.state.editor
+﻿package com.wuxianggujun.tinaide.ui.compose.state.editor
+
+import com.wuxianggujun.tinaide.ui.compose.state.editor.CodeEditorRuntime
+import com.wuxianggujun.tinaide.ui.compose.state.editor.CodeEditorDocumentBinding
+import com.wuxianggujun.tinaide.ui.compose.state.editor.CodeEditorStateBinding
 
 import com.google.common.truth.Truth.assertThat
 import com.wuxianggujun.tinaide.core.editorview.EditorState
@@ -12,7 +16,7 @@ class CodeEditorRuntimeTest {
     @Test
     fun documentBinding_shouldAttachOnceAcrossMirroredPanes() {
         val buffer = RopeTextBuffer("text")
-        val runtime = EditorContainerState.CodeEditorRuntime(
+        val runtime = CodeEditorRuntime(
             buffer = buffer,
             editorState = EditorState(buffer)
         )
@@ -36,7 +40,7 @@ class CodeEditorRuntimeTest {
     @Test
     fun dispose_shouldDetachActiveDocumentBinding() {
         val buffer = RopeTextBuffer("text")
-        val runtime = EditorContainerState.CodeEditorRuntime(
+        val runtime = CodeEditorRuntime(
             buffer = buffer,
             editorState = EditorState(buffer)
         )
@@ -53,7 +57,7 @@ class CodeEditorRuntimeTest {
     @Test
     fun stateBinding_shouldRemainAttachedUntilLastMirroredPaneReleasesIt() {
         val buffer = RopeTextBuffer("text")
-        val runtime = EditorContainerState.CodeEditorRuntime(
+        val runtime = CodeEditorRuntime(
             buffer = buffer,
             editorState = EditorState(buffer)
         )
@@ -73,7 +77,7 @@ class CodeEditorRuntimeTest {
 
     private class FakeDocumentBinding(
         private val buffer: RopeTextBuffer
-    ) : EditorContainerState.CodeEditorDocumentBinding {
+    ) : CodeEditorDocumentBinding {
         var attachCount = 0
         var detachCount = 0
 
@@ -115,7 +119,7 @@ class CodeEditorRuntimeTest {
         override fun currentViewState(): EditorViewState? = null
     }
 
-    private class FakeStateBinding : EditorContainerState.CodeEditorStateBinding {
+    private class FakeStateBinding : CodeEditorStateBinding {
         var attachCount = 0
         var detachCount = 0
 

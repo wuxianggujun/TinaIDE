@@ -1,4 +1,7 @@
-package com.wuxianggujun.tinaide.ui.compose.state.editor
+﻿package com.wuxianggujun.tinaide.ui.compose.state.editor
+
+import com.wuxianggujun.tinaide.ui.compose.state.editor.CodeEditorCallback
+import com.wuxianggujun.tinaide.ui.compose.state.editor.CursorSnapshot
 
 import android.app.Application
 import android.content.Context
@@ -109,7 +112,7 @@ class EditorContainerStateTest {
         var insertedText: String? = null
         state.registerCodeEditorCallback(
             tabId = "tab-1",
-            callback = EditorContainerState.CodeEditorCallback(
+            callback = CodeEditorCallback(
                 goToPosition = { _, _ -> false },
                 selectAll = { false },
                 replaceSelection = { false },
@@ -120,7 +123,7 @@ class EditorContainerStateTest {
                 undo = { false },
                 redo = { false },
                 insertTextAtCursor = { text -> insertedText = text },
-                cursorPosition = { EditorContainerState.CursorSnapshot(0, 0) },
+                cursorPosition = { CursorSnapshot(0, 0) },
                 setSelectionRange = { _, _, _, _ -> false },
                 readAllText = { "" },
                 readSelection = { null }
@@ -143,7 +146,7 @@ class EditorContainerStateTest {
         setActiveTab()
         state.registerCodeEditorCallback(
             tabId = "tab-1",
-            callback = EditorContainerState.CodeEditorCallback(
+            callback = CodeEditorCallback(
                 goToPosition = { _, _ -> false },
                 selectAll = { false },
                 replaceSelection = { false },
@@ -154,7 +157,7 @@ class EditorContainerStateTest {
                 undo = { false },
                 redo = { false },
                 insertTextAtCursor = {},
-                cursorPosition = { EditorContainerState.CursorSnapshot(0, 0) },
+                cursorPosition = { CursorSnapshot(0, 0) },
                 setSelectionRange = { _, _, _, _ -> false },
                 readAllText = { "" },
                 readSelection = { null }
@@ -324,7 +327,7 @@ class EditorContainerStateTest {
             .isEqualTo(EditorContainerState.ActiveEditorCommandResult.UNSUPPORTED_EDITOR)
         state.registerCodeEditorCallback(
             tabId = "tab-1",
-            callback = EditorContainerState.CodeEditorCallback(
+            callback = CodeEditorCallback(
                 goToPosition = { _, _ -> false },
                 selectAll = { false },
                 replaceSelection = { false },
@@ -335,7 +338,7 @@ class EditorContainerStateTest {
                 undo = { false },
                 redo = { false },
                 insertTextAtCursor = {},
-                cursorPosition = { EditorContainerState.CursorSnapshot(0, 0) },
+                cursorPosition = { CursorSnapshot(0, 0) },
                 setSelectionRange = { _, _, _, _ -> false },
                 readAllText = { "" },
                 readSelection = { null }
@@ -378,7 +381,7 @@ class EditorContainerStateTest {
         setActiveTab()
         state.registerCodeEditorCallback(
             tabId = "tab-1",
-            callback = EditorContainerState.CodeEditorCallback(
+            callback = CodeEditorCallback(
                 goToPosition = { _, _ -> false },
                 selectAll = { false },
                 replaceSelection = { false },
@@ -389,7 +392,7 @@ class EditorContainerStateTest {
                 undo = { false },
                 redo = { false },
                 insertTextAtCursor = {},
-                cursorPosition = { EditorContainerState.CursorSnapshot(1, 0) },
+                cursorPosition = { CursorSnapshot(1, 0) },
                 setSelectionRange = { _, _, _, _ -> false },
                 readAllText = { "fun demo() {\n\n}\nvalue = 1" },
                 readSelection = { null }
@@ -417,7 +420,7 @@ class EditorContainerStateTest {
 
         state.registerCodeEditorCallback(
             tabId = "tab-1",
-            callback = EditorContainerState.CodeEditorCallback(
+            callback = CodeEditorCallback(
                 goToPosition = { _, _ -> false },
                 selectAll = { false },
                 replaceSelection = { false },
@@ -428,7 +431,7 @@ class EditorContainerStateTest {
                 undo = { false },
                 redo = { false },
                 insertTextAtCursor = {},
-                cursorPosition = { EditorContainerState.CursorSnapshot(1, 0) },
+                cursorPosition = { CursorSnapshot(1, 0) },
                 setSelectionRange = { _, _, _, _ -> false },
                 readAllText = { "{\n\n}" },
                 readSelection = { null }
@@ -449,7 +452,7 @@ class EditorContainerStateTest {
         var navigatedColumn = -1
         state.registerCodeEditorCallback(
             tabId = "tab-1",
-            callback = EditorContainerState.CodeEditorCallback(
+            callback = CodeEditorCallback(
                 goToPosition = { line, column ->
                     navigatedLine = line
                     navigatedColumn = column
@@ -464,7 +467,7 @@ class EditorContainerStateTest {
                 undo = { false },
                 redo = { false },
                 insertTextAtCursor = {},
-                cursorPosition = { EditorContainerState.CursorSnapshot(0, 0) },
+                cursorPosition = { CursorSnapshot(0, 0) },
                 setSelectionRange = { _, _, _, _ -> false },
                 readAllText = { "" },
                 readSelection = { null }
@@ -487,7 +490,7 @@ class EditorContainerStateTest {
 
         state.registerCodeEditorCallback(
             tabId = "tab-1",
-            callback = EditorContainerState.CodeEditorCallback(
+            callback = CodeEditorCallback(
                 goToPosition = { _, _ -> true },
                 selectAll = { false },
                 replaceSelection = { false },
@@ -498,7 +501,7 @@ class EditorContainerStateTest {
                 undo = { false },
                 redo = { false },
                 insertTextAtCursor = {},
-                cursorPosition = { EditorContainerState.CursorSnapshot(0, 0) },
+                cursorPosition = { CursorSnapshot(0, 0) },
                 setSelectionRange = { _, _, _, _ -> false },
                 readAllText = { "" },
                 readSelection = { null }
@@ -520,7 +523,7 @@ class EditorContainerStateTest {
 
         state.registerCodeEditorCallback(
             tabId = "tab-1",
-            callback = EditorContainerState.CodeEditorCallback(
+            callback = CodeEditorCallback(
                 goToPosition = { _, _ -> false },
                 selectAll = { false },
                 replaceSelection = { false },
@@ -531,7 +534,7 @@ class EditorContainerStateTest {
                 undo = { false },
                 redo = { false },
                 insertTextAtCursor = {},
-                cursorPosition = { EditorContainerState.CursorSnapshot(0, 0) },
+                cursorPosition = { CursorSnapshot(0, 0) },
                 setSelectionRange = { _, _, _, _ -> false },
                 readAllText = { "" },
                 readSelection = { null }
@@ -543,7 +546,7 @@ class EditorContainerStateTest {
 
         state.registerCodeEditorCallback(
             tabId = "tab-1",
-            callback = EditorContainerState.CodeEditorCallback(
+            callback = CodeEditorCallback(
                 goToPosition = { _, _ -> false },
                 selectAll = { false },
                 replaceSelection = { false },
@@ -554,7 +557,7 @@ class EditorContainerStateTest {
                 undo = { false },
                 redo = { false },
                 insertTextAtCursor = {},
-                cursorPosition = { EditorContainerState.CursorSnapshot(0, 0) },
+                cursorPosition = { CursorSnapshot(0, 0) },
                 setSelectionRange = { _, _, _, _ -> false },
                 readAllText = { "" },
                 readSelection = { null }
@@ -580,7 +583,7 @@ class EditorContainerStateTest {
         var resolvedFileName: String? = null
         state.registerCodeEditorCallback(
             tabId = "tab-1",
-            callback = EditorContainerState.CodeEditorCallback(
+            callback = CodeEditorCallback(
                 goToPosition = { _, _ -> false },
                 selectAll = { false },
                 replaceSelection = { false },
@@ -594,7 +597,7 @@ class EditorContainerStateTest {
                 undo = { false },
                 redo = { false },
                 insertTextAtCursor = {},
-                cursorPosition = { EditorContainerState.CursorSnapshot(0, 0) },
+                cursorPosition = { CursorSnapshot(0, 0) },
                 setSelectionRange = { _, _, _, _ -> false },
                 readAllText = { "" },
                 readSelection = { null }
@@ -622,7 +625,7 @@ class EditorContainerStateTest {
 
         state.registerCodeEditorCallback(
             tabId = "tab-1",
-            callback = EditorContainerState.CodeEditorCallback(
+            callback = CodeEditorCallback(
                 goToPosition = { _, _ -> false },
                 selectAll = { false },
                 replaceSelection = { false },
@@ -633,7 +636,7 @@ class EditorContainerStateTest {
                 undo = { false },
                 redo = { false },
                 insertTextAtCursor = {},
-                cursorPosition = { EditorContainerState.CursorSnapshot(0, 0) },
+                cursorPosition = { CursorSnapshot(0, 0) },
                 setSelectionRange = { _, _, _, _ -> false },
                 readAllText = { "fun test() = Unit" },
                 readSelection = { null }
@@ -666,7 +669,7 @@ class EditorContainerStateTest {
         var replacedText: String? = null
         state.registerCodeEditorCallback(
             tabId = "tab-1",
-            callback = EditorContainerState.CodeEditorCallback(
+            callback = CodeEditorCallback(
                 goToPosition = { _, _ -> false },
                 selectAll = { false },
                 replaceSelection = { false },
@@ -677,7 +680,7 @@ class EditorContainerStateTest {
                 undo = { false },
                 redo = { false },
                 insertTextAtCursor = {},
-                cursorPosition = { EditorContainerState.CursorSnapshot(0, 0) },
+                cursorPosition = { CursorSnapshot(0, 0) },
                 setSelectionRange = { _, _, _, _ -> false },
                 readAllText = { "first-text" },
                 readSelection = { null }
@@ -685,7 +688,7 @@ class EditorContainerStateTest {
         )
         state.registerCodeEditorCallback(
             tabId = "tab-2",
-            callback = EditorContainerState.CodeEditorCallback(
+            callback = CodeEditorCallback(
                 goToPosition = { _, _ -> false },
                 selectAll = { false },
                 replaceSelection = { false },
@@ -699,7 +702,7 @@ class EditorContainerStateTest {
                 undo = { false },
                 redo = { false },
                 insertTextAtCursor = {},
-                cursorPosition = { EditorContainerState.CursorSnapshot(0, 0) },
+                cursorPosition = { CursorSnapshot(0, 0) },
                 setSelectionRange = { _, _, _, _ -> false },
                 readAllText = { "second-text" },
                 readSelection = { null }
@@ -829,7 +832,7 @@ class EditorContainerStateTest {
         var navigateCalls = 0
         state.registerCodeEditorCallback(
             tabId = "tab-1",
-            callback = EditorContainerState.CodeEditorCallback(
+            callback = CodeEditorCallback(
                 goToPosition = { _, _ ->
                     navigateCalls++
                     true
@@ -843,7 +846,7 @@ class EditorContainerStateTest {
                 undo = { false },
                 redo = { false },
                 insertTextAtCursor = {},
-                cursorPosition = { EditorContainerState.CursorSnapshot(0, 0) },
+                cursorPosition = { CursorSnapshot(0, 0) },
                 setSelectionRange = { _, _, _, _ -> false },
                 readAllText = { "" },
                 readSelection = { null }
@@ -873,7 +876,7 @@ class EditorContainerStateTest {
         var navigatedColumn = -1
         state.registerCodeEditorCallback(
             tabId = "tab-1",
-            callback = EditorContainerState.CodeEditorCallback(
+            callback = CodeEditorCallback(
                 goToPosition = { line, column ->
                     navigatedLine = line
                     navigatedColumn = column
@@ -888,7 +891,7 @@ class EditorContainerStateTest {
                 undo = { false },
                 redo = { false },
                 insertTextAtCursor = {},
-                cursorPosition = { EditorContainerState.CursorSnapshot(0, 0) },
+                cursorPosition = { CursorSnapshot(0, 0) },
                 setSelectionRange = { _, _, _, _ -> false },
                 readAllText = { "" },
                 readSelection = { null }
@@ -920,7 +923,7 @@ class EditorContainerStateTest {
         var navigatedColumn = -1
         state.registerCodeEditorCallback(
             tabId = "tab-1",
-            callback = EditorContainerState.CodeEditorCallback(
+            callback = CodeEditorCallback(
                 goToPosition = { line, column ->
                     attempts++
                     if (attempts < 3) {
@@ -940,7 +943,7 @@ class EditorContainerStateTest {
                 undo = { false },
                 redo = { false },
                 insertTextAtCursor = {},
-                cursorPosition = { EditorContainerState.CursorSnapshot(0, 0) },
+                cursorPosition = { CursorSnapshot(0, 0) },
                 setSelectionRange = { _, _, _, _ -> false },
                 readAllText = { "" },
                 readSelection = { null }
@@ -1575,7 +1578,7 @@ class EditorContainerStateTest {
         setActiveTab()
         state.registerCodeEditorCallback(
             tabId = "tab-1",
-            callback = EditorContainerState.CodeEditorCallback(
+            callback = CodeEditorCallback(
                 goToPosition = { _, _ -> false },
                 selectAll = { false },
                 replaceSelection = { false },
@@ -1586,7 +1589,7 @@ class EditorContainerStateTest {
                 undo = { false },
                 redo = { false },
                 insertTextAtCursor = {},
-                cursorPosition = { EditorContainerState.CursorSnapshot(0, 0) },
+                cursorPosition = { CursorSnapshot(0, 0) },
                 setSelectionRange = { _, _, _, _ -> false },
                 readAllText = { "fun demo() {\n\n}\nvalue = 1" },
                 readSelection = { null }
@@ -1602,7 +1605,7 @@ class EditorContainerStateTest {
         setActiveTab()
         state.registerCodeEditorCallback(
             tabId = "tab-1",
-            callback = EditorContainerState.CodeEditorCallback(
+            callback = CodeEditorCallback(
                 goToPosition = { _, _ -> false },
                 selectAll = { false },
                 replaceSelection = { false },
@@ -1613,7 +1616,7 @@ class EditorContainerStateTest {
                 undo = { false },
                 redo = { false },
                 insertTextAtCursor = {},
-                cursorPosition = { EditorContainerState.CursorSnapshot(0, 0) },
+                cursorPosition = { CursorSnapshot(0, 0) },
                 setSelectionRange = { _, _, _, _ -> false },
                 readAllText = { "{\n\nvalue = 1" },
                 readSelection = { null }

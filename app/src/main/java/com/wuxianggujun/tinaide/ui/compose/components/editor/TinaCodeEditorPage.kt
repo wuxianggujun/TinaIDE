@@ -1,4 +1,4 @@
-package com.wuxianggujun.tinaide.ui.compose.components.editor
+﻿package com.wuxianggujun.tinaide.ui.compose.components.editor
 
 import android.os.SystemClock
 import androidx.compose.foundation.layout.Box
@@ -73,7 +73,14 @@ import com.wuxianggujun.tinaide.core.editorlsp.CMakeLanguageSupport
 import com.wuxianggujun.tinaide.core.editorlsp.EditorStatus
 import com.wuxianggujun.tinaide.core.editorlsp.MakeLanguageSupport
 import com.wuxianggujun.tinaide.core.editorlsp.SemanticTokensRequestResult
+import com.wuxianggujun.tinaide.ui.compose.state.editor.CodeEditorCallback
+import com.wuxianggujun.tinaide.ui.compose.state.editor.CodeEditorDocumentBinding
+import com.wuxianggujun.tinaide.ui.compose.state.editor.CodeEditorRuntime
+import com.wuxianggujun.tinaide.ui.compose.state.editor.CodeEditorStateBinding
+import com.wuxianggujun.tinaide.ui.compose.state.editor.CursorSnapshot
 import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState
+import com.wuxianggujun.tinaide.ui.compose.state.editor.SelectionSnapshot
+import com.wuxianggujun.tinaide.ui.compose.state.editor.TextEditOperation
 import com.wuxianggujun.tinaide.ui.compose.state.editor.TinaTextContentProvider
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
@@ -240,7 +247,7 @@ fun TinaCodeEditorPage(
     }
 
     DisposableEffect(tab.id, state, editorState, buffer, codeSearchEngine, callbackRegistrationId) {
-        val editorCallback = EditorContainerState.CodeEditorCallback(
+        val editorCallback = CodeEditorCallback(
             goToPosition = goToPosition@ { line, column ->
                 if (loading || loadError != null) {
                     return@goToPosition false
@@ -287,7 +294,7 @@ fun TinaCodeEditorPage(
             },
             cursorPosition = {
                 val cursor = editorState.cursorPosition
-                EditorContainerState.CursorSnapshot(
+                CursorSnapshot(
                     line = cursor.line,
                     column = cursor.column
                 )
@@ -305,13 +312,13 @@ fun TinaCodeEditorPage(
             readAllText = {
                 textSnapshot.readText()
             },
-            readSelection = fun(): EditorContainerState.SelectionSnapshot? {
+            readSelection = fun(): SelectionSnapshot? {
                 val range = editorState.selectionRange ?: return null
                 if (range.isEmpty) return null
                 val selectedText = editorState.selectedText() ?: return null
                 val startPos = buffer.offsetToPosition(range.start)
                 val endPos = buffer.offsetToPosition(range.end)
-                return EditorContainerState.SelectionSnapshot(
+                return SelectionSnapshot(
                     text = selectedText,
                     startLine = startPos.line,
                     startColumn = startPos.column,
@@ -754,7 +761,7 @@ fun TinaCodeEditorPage(
                 val selectedText = editorState.selectedText().orEmpty()
                 state.notifyTabSelectionChanged(
                     tabId = tab.id,
-                    selection = EditorContainerState.SelectionSnapshot(
+                    selection = SelectionSnapshot(
                         text = selectedText,
                         startLine = startPos.line,
                         startColumn = startPos.column,
@@ -923,7 +930,7 @@ private data class ActiveTabLspAttachmentState(
 private class RuntimeEditorStateBinding(
     private val onAttach: () -> Unit,
     private val onDetach: () -> Unit
-) : EditorContainerState.CodeEditorStateBinding {
+) : CodeEditorStateBinding {
     override fun attach() = onAttach()
 
     override fun detach() = onDetach()
@@ -941,7 +948,7 @@ private class TextBufferSessionBinding(
         documentVersion: Long,
         change: TextChange
     ) -> Unit
-) : EditorContainerState.CodeEditorDocumentBinding,
+) : CodeEditorDocumentBinding,
     TextChangeListener {
 
     private val suppressNotifyDepth = AtomicInteger()
@@ -1341,7 +1348,7 @@ internal fun String.toEditorSemanticTokenTypeOrNull(): SemanticTokenType? = when
 }
 
 private suspend fun ensureTreeSitterPrepared(
-    runtime: EditorContainerState.CodeEditorRuntime,
+    runtime: CodeEditorRuntime,
     editorState: EditorState,
     syntaxHighlighter: TreeSitterHighlighter?,
     textSnapshot: VersionedBufferTextSnapshot
@@ -1461,7 +1468,7 @@ private fun replaceWholeText(
 private fun applyTextEdits(
     buffer: RopeTextBuffer,
     editorState: EditorState,
-    edits: List<EditorContainerState.TextEditOperation>
+    edits: List<TextEditOperation>
 ): Boolean {
     if (edits.isEmpty()) return false
 
@@ -1496,11 +1503,11 @@ private data class ResolvedTextEdit(
 
 private fun resolveTextEdits(
     buffer: RopeTextBuffer,
-    edits: List<EditorContainerState.TextEditOperation>
+    edits: List<TextEditOperation>
 ): List<ResolvedTextEdit>? {
     if (edits.isEmpty()) return null
     val sortedEdits = edits.sortedWith(
-        compareByDescending<EditorContainerState.TextEditOperation> { it.startLine }
+        compareByDescending<TextEditOperation> { it.startLine }
             .thenByDescending { it.startColumn }
             .thenByDescending { it.endLine }
             .thenByDescending { it.endColumn }

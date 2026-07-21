@@ -1,4 +1,4 @@
-package com.wuxianggujun.tinaide.ui
+﻿package com.wuxianggujun.tinaide.ui
 
 import android.app.Application
 import com.google.common.truth.Truth.assertThat
@@ -6,6 +6,7 @@ import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.core.lsp.LocationItem
 import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState
+import com.wuxianggujun.tinaide.ui.compose.state.editor.CursorSnapshot
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -62,7 +63,7 @@ class LspNavigationDelegateTest {
     @Test
     fun `handleNavigationRequest should navigate immediately for single definition result`() = runTest {
         every { editorContainerState.getCursorPositionInActiveTab() } returns
-            EditorContainerState.CursorSnapshot(line = 10, column = 5)
+            CursorSnapshot(line = 10, column = 5)
         val targetFile = File(context.cacheDir, "DefinitionTarget.kt")
         val target = locationItem(targetFile, line = 4, column = 2)
         coEvery { editorContainerState.gotoDefinition("tab-1", 10, 5) } returns listOf(target)
@@ -97,7 +98,7 @@ class LspNavigationDelegateTest {
     @Test
     fun `handleNavigationRequest should show embedded peek panel without navigating`() = runTest {
         every { editorContainerState.getCursorPositionInActiveTab() } returns
-            EditorContainerState.CursorSnapshot(line = 10, column = 5)
+            CursorSnapshot(line = 10, column = 5)
         val targetFile = File(context.cacheDir, "PeekTarget.kt")
         val target = locationItem(targetFile, line = 4, column = 2)
         coEvery { editorContainerState.gotoDefinition("tab-1", 10, 5) } returns listOf(target)
@@ -128,7 +129,7 @@ class LspNavigationDelegateTest {
     @Test
     fun `handleNavigationRequest should surface call hierarchy incoming calls without auto navigation`() = runTest {
         every { editorContainerState.getCursorPositionInActiveTab() } returns
-            EditorContainerState.CursorSnapshot(line = 6, column = 3)
+            CursorSnapshot(line = 6, column = 3)
         val caller = locationItem(File(context.cacheDir, "Caller.kt"), line = 14, column = 8)
         coEvery { editorContainerState.callHierarchyIncomingCalls("tab-1", 6, 3) } returns listOf(caller)
         val delegate = LspNavigationDelegate(context = context, scope = this)
@@ -161,7 +162,7 @@ class LspNavigationDelegateTest {
     @Test
     fun `handleNavigationRequest should show call hierarchy empty toast without dialog`() = runTest {
         every { editorContainerState.getCursorPositionInActiveTab() } returns
-            EditorContainerState.CursorSnapshot(line = 6, column = 3)
+            CursorSnapshot(line = 6, column = 3)
         coEvery { editorContainerState.callHierarchyIncomingCalls("tab-1", 6, 3) } returns emptyList()
         val delegate = LspNavigationDelegate(context = context, scope = this)
         var dismissed = 0
@@ -187,7 +188,7 @@ class LspNavigationDelegateTest {
     @Test
     fun `handleNavigationRequest should surface call hierarchy failures as localized error toast`() = runTest {
         every { editorContainerState.getCursorPositionInActiveTab() } returns
-            EditorContainerState.CursorSnapshot(line = 6, column = 3)
+            CursorSnapshot(line = 6, column = 3)
         coEvery { editorContainerState.callHierarchyIncomingCalls("tab-1", 6, 3) } throws IllegalStateException("boom")
         val delegate = LspNavigationDelegate(context = context, scope = this)
         var dismissed = 0
@@ -210,7 +211,7 @@ class LspNavigationDelegateTest {
     @Test
     fun `handleNavigationRequest should surface multi reference results with dialog title`() = runTest {
         every { editorContainerState.getCursorPositionInActiveTab() } returns
-            EditorContainerState.CursorSnapshot(line = 3, column = 1)
+            CursorSnapshot(line = 3, column = 1)
         val first = locationItem(File(context.cacheDir, "RefOne.kt"), line = 8, column = 0)
         val second = locationItem(File(context.cacheDir, "RefTwo.kt"), line = 12, column = 4)
         coEvery { editorContainerState.findReferences("tab-1", 3, 1) } returns listOf(first, second)
@@ -244,7 +245,7 @@ class LspNavigationDelegateTest {
     @Test
     fun `handleNavigationRequest should reject directory header switch targets`() = runTest {
         every { editorContainerState.getCursorPositionInActiveTab() } returns
-            EditorContainerState.CursorSnapshot(line = 1, column = 1)
+            CursorSnapshot(line = 1, column = 1)
         val directory = File(context.cacheDir, "header-switch-dir").apply { mkdirs() }
         coEvery { editorContainerState.switchSourceHeader("tab-1") } returns directory.absolutePath
         val delegate = LspNavigationDelegate(context = context, scope = this)
@@ -269,7 +270,7 @@ class LspNavigationDelegateTest {
     @Test
     fun `handleNavigationRequest should surface navigation failures as localized error toast`() = runTest {
         every { editorContainerState.getCursorPositionInActiveTab() } returns
-            EditorContainerState.CursorSnapshot(line = 7, column = 9)
+            CursorSnapshot(line = 7, column = 9)
         coEvery { editorContainerState.gotoImplementation("tab-1", 7, 9) } throws IllegalStateException("boom")
         val delegate = LspNavigationDelegate(context = context, scope = this)
         var dismissed = 0

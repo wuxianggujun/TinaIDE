@@ -1,4 +1,6 @@
-package com.wuxianggujun.tinaide.ui.compose.state.editor
+﻿package com.wuxianggujun.tinaide.ui.compose.state.editor
+
+import com.wuxianggujun.tinaide.ui.compose.state.editor.CodeEditorCallback
 
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import com.wuxianggujun.tinaide.editor.IEditorManager
@@ -20,7 +22,7 @@ internal class EditorFileMutationCoordinator(
     private val navigationForwardStack: SnapshotStateList<EditorContainerState.NavigationHistoryEntry>,
     private val splitPaneState: EditorSplitPaneState,
     private val codeRuntimeCache: EditorCodeRuntimeCache,
-    private val codeEditorCallbacks: MutableMap<String, EditorContainerState.CodeEditorCallback>,
+    private val codeEditorCallbacks: MutableMap<String, CodeEditorCallback>,
     private val lspUiState: EditorLspUiState,
     private val diagnosticsState: EditorDiagnosticsState,
     private val isCodeEditableType: (ContentType) -> Boolean,

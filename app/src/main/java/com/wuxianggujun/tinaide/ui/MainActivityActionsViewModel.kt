@@ -1,4 +1,4 @@
-package com.wuxianggujun.tinaide.ui
+﻿package com.wuxianggujun.tinaide.ui
 
 import android.app.Application
 import android.content.ClipData
@@ -26,6 +26,7 @@ import com.wuxianggujun.tinaide.file.IProjectContext
 import com.wuxianggujun.tinaide.file.IProjectSession
 import com.wuxianggujun.tinaide.storage.ProjectDirStructure
 import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState
+import com.wuxianggujun.tinaide.ui.compose.state.editor.TextEditOperation
 import java.io.File
 import java.net.URI
 import java.nio.charset.Charset
@@ -78,7 +79,7 @@ class MainActivityActionsViewModel(
 
     private data class OpenWorkspaceEditPlan(
         val tabId: String,
-        val edits: List<EditorContainerState.TextEditOperation>,
+        val edits: List<TextEditOperation>,
         val originalText: String,
         val documentVersion: Long?,
         val expectedLspVersion: Int?
@@ -529,7 +530,7 @@ class MainActivityActionsViewModel(
                     return false
                 }
                 val mappedEdits = batch.edits.map { textEdit ->
-                    EditorContainerState.TextEditOperation(
+                    TextEditOperation(
                         startLine = textEdit.range.start.line,
                         startColumn = textEdit.range.start.character,
                         endLine = textEdit.range.end.line,

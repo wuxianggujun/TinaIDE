@@ -21,8 +21,6 @@ import com.wuxianggujun.tinaide.core.compile.strategy.BuildStrategyRegistry
 import com.wuxianggujun.tinaide.core.compile.strategy.CMakeStrategy
 import com.wuxianggujun.tinaide.core.compile.strategy.MakeStrategy
 import com.wuxianggujun.tinaide.core.compile.strategy.SingleFileStrategy
-import com.wuxianggujun.tinaide.core.linux.LinuxEnvironmentProvider
-import com.wuxianggujun.tinaide.core.linux.UnavailableLinuxEnvironmentProvider
 import org.koin.android.ext.koin.androidContext
 import org.koin.dsl.module
 
@@ -57,14 +55,14 @@ val compileModule = module {
     single {
         CMakeStrategy(
             context = androidContext(),
-            linuxEnvironmentProvider = getOrNull<LinuxEnvironmentProvider>() ?: UnavailableLinuxEnvironmentProvider,
+            linuxEnvironmentProvider = get(),
             timeoutConfig = get(),
         )
     }
     single {
         MakeStrategy(
             context = androidContext(),
-            linuxEnvironmentProvider = getOrNull<LinuxEnvironmentProvider>() ?: UnavailableLinuxEnvironmentProvider,
+            linuxEnvironmentProvider = get(),
             timeoutConfig = get(),
         )
     }
