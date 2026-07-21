@@ -6,6 +6,8 @@ import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.terminal.persistence.ProjectTerminalState
 import com.wuxianggujun.tinaide.terminal.persistence.TerminalSessionSnapshot
 import com.wuxianggujun.tinaide.terminal.persistence.TerminalStateStorage
+import com.wuxianggujun.tinaide.core.linux.LinuxEnvironmentProvider
+import com.wuxianggujun.tinaide.core.linux.UnavailableLinuxEnvironmentProvider
 import com.wuxianggujun.tinaide.terminal.shell.ShellResolveResult
 import com.wuxianggujun.tinaide.terminal.shell.TerminalBackend
 import com.wuxianggujun.tinaide.terminal.shell.TerminalShellResolver
@@ -39,9 +41,10 @@ import timber.log.Timber
  */
 class TerminalSessionManager(
     private val application: Application,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
+    private val linuxEnvironmentProvider: LinuxEnvironmentProvider = UnavailableLinuxEnvironmentProvider,
 ) {
-    private val shellResolver by lazy { TerminalShellResolver(application) }
+    private val shellResolver by lazy { TerminalShellResolver(application, linuxEnvironmentProvider) }
     private val stateStorage = TerminalStateStorage(application)
 
     // 会话列表

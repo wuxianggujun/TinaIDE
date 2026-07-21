@@ -166,6 +166,21 @@ class PathValidatorTest {
     }
 
     @Test
+    fun `guest workDir root and system paths are allowed`() {
+        assertThat(validator.isGuestWorkDirAllowed("/")).isTrue()
+        assertThat(validator.isGuestWorkDirAllowed("/usr/bin")).isTrue()
+        assertThat(validator.isGuestWorkDirAllowed("/bin")).isTrue()
+        assertThat(validator.isGuestWorkDirAllowed("/workspace/build")).isTrue()
+    }
+
+    @Test
+    fun `guest workDir rejects forbidden and unknown paths`() {
+        assertThat(validator.isGuestWorkDirAllowed("/etc/passwd")).isFalse()
+        assertThat(validator.isGuestWorkDirAllowed("/workspace/../etc/shadow")).isFalse()
+        assertThat(validator.isGuestWorkDirAllowed("/proc")).isFalse()
+    }
+
+    @Test
     fun `validateGuestPath exception contains the offending path`() {
         try {
             validator.validateGuestPath("/etc/passwd")

@@ -16,6 +16,7 @@ import com.wuxianggujun.tinaide.core.packages.model.InstallProgressEvent
 import com.wuxianggujun.tinaide.core.packages.model.InstallResult
 import com.wuxianggujun.tinaide.core.packages.model.PackageInstallState
 import com.wuxianggujun.tinaide.core.packages.store.LocalInstallStateStore
+import com.wuxianggujun.tinaide.core.config.IConfigManager
 import com.wuxianggujun.tinaide.core.proot.PRootEnvironment
 import com.wuxianggujun.tinaide.core.user.DownloadHistoryItem
 import com.wuxianggujun.tinaide.core.user.FavoritePlugin
@@ -41,7 +42,8 @@ import kotlinx.coroutines.launch
  */
 class MarketScreenViewModel(
     application: Application,
-    private val userContentRepository: UserContentRepository
+    private val userContentRepository: UserContentRepository,
+    private val configManager: IConfigManager,
 ) : AndroidViewModel(application) {
 
     private val appContext = application.applicationContext
@@ -51,7 +53,7 @@ class MarketScreenViewModel(
     init {
         val apiClient = PackageApiClient.getInstance(application)
         val installStateStore = LocalInstallStateStore(application)
-        val prootEnv = PRootEnvironment(application)
+        val prootEnv = PRootEnvironment(application, configManager)
         packageManager = PackageManagerImpl(application, apiClient, installStateStore, prootEnv = prootEnv)
     }
 

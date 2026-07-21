@@ -721,7 +721,9 @@ internal fun CompilerSettingsSection(viewModel: SettingsViewModel) {
             message = stringResource(Strings.dialog_message_redeploy),
             onConfirm = {
                 showReinstallDialog = false
-                val prootEnv = com.wuxianggujun.tinaide.core.proot.PRootEnvironment(context)
+                val configManager = org.koin.core.context.GlobalContext.get()
+                    .get<com.wuxianggujun.tinaide.core.config.IConfigManager>()
+                val prootEnv = com.wuxianggujun.tinaide.core.proot.PRootEnvironment(context, configManager)
                 kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
                     try {
                         Toast.makeText(context, toastRedeploying, Toast.LENGTH_SHORT).show()

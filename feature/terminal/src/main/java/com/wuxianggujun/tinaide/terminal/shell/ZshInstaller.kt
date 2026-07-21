@@ -16,9 +16,7 @@ import kotlinx.coroutines.withContext
 
 class ZshInstaller(
     private val context: Context,
-    private val linuxEnvironmentProvider: LinuxEnvironmentProvider = runCatching {
-        org.koin.core.context.GlobalContext.get().getOrNull<LinuxEnvironmentProvider>()
-    }.getOrNull() ?: UnavailableLinuxEnvironmentProvider,
+    private val linuxEnvironmentProvider: LinuxEnvironmentProvider = UnavailableLinuxEnvironmentProvider,
 ) : IShellInstaller {
 
     override suspend fun isInstalled(): Boolean = withContext(Dispatchers.IO) {

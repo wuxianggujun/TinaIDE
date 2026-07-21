@@ -13,6 +13,7 @@ android {
 dependencies {
     implementation(project.dependencies.project(":core:designsystem"))
     implementation(project.dependencies.project(":core:i18n"))
+    implementation(project.dependencies.project(":core:config"))
     implementation(project.dependencies.project(":core:packages"))
     implementation(project.dependencies.project(":core:proot"))
     implementation(libs.koin.android)

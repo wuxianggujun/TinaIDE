@@ -1144,10 +1144,10 @@ class LspEditorManager(
 
                     LinuxRunModePolicy.RunMode.PROOT ->
                         PRootClangdConnectionProvider(
-                            context,
-                            workspaceRoot,
-                            compileSetup.compileCommandsDir.absolutePath,
-                            linuxEnvironmentOverride = linuxEnvironmentProvider.get()
+                            context = context,
+                            workingDir = workspaceRoot,
+                            compileCommandsDir = compileSetup.compileCommandsDir.absolutePath,
+                            linuxEnvironment = linuxEnvironmentProvider.get(),
                         )
                 }
             }

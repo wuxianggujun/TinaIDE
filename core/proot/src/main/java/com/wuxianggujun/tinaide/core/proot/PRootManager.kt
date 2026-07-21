@@ -2,6 +2,7 @@ package com.wuxianggujun.tinaide.core.proot
 
 import android.content.Context
 import android.os.Build
+import com.wuxianggujun.tinaide.core.security.PathValidator
 import com.wuxianggujun.tinaide.exec.TinaExecPreloadMode
 import com.wuxianggujun.tinaide.exec.TinaExecRuntime
 import com.wuxianggujun.tinaide.exec.TinaExecSystemLinkerMode
@@ -35,6 +36,7 @@ class PRootManager(
 ) {
     private val compatLoggedOnce = AtomicBoolean(false)
     private val launchConfigLock = Any()
+    private val pathValidator by lazy { PathValidator(context) }
 
     /**
      * PRoot 兼容模式开关：
@@ -356,10 +358,11 @@ class PRootManager(
     ): PRootResult = withContext(Dispatchers.IO) {
         ensureSupportedRuntime()
         val startTime = System.currentTimeMillis()
+        val mappedWorkDir = validateAndMapWorkDir(workDir)
 
         val sessionLogger = PRootSessionLogger.create(context)
 
-        val prootCommand = buildPRootCommandLine(command, workDir)
+        val prootCommand = buildPRootCommandLine(command, mappedWorkDir)
 
         // 构建环境变量
         val envMap = mutableMapOf<String, String>()
@@ -369,7 +372,7 @@ class PRootManager(
             .joinToString(":")
         applyEnvironment(envMap, env)
         // 设置工作目录（init-proot.sh 需要）
-        envMap["WORK_DIR"] = toGuestPath(workDir)
+        envMap["WORK_DIR"] = mappedWorkDir
         // 不把 LD_PRELOAD 直接带进外层 /system/bin/sh，实际 preload 由 init-proot.sh
         // 在最终 exec proot/linker 前按启动模式注入。
         envMap.remove("LD_PRELOAD")
@@ -843,12 +846,13 @@ class PRootManager(
         extraEnv: Map<String, String> = emptyMap()
     ): InteractiveProcess {
         ensureSupportedRuntime()
-        val prootCommand = buildPRootCommandLine(command, workDir)
+        val mappedWorkDir = validateAndMapWorkDir(workDir)
+        val prootCommand = buildPRootCommandLine(command, mappedWorkDir)
 
         // 交互式进程和普通 execute() 共用同一套环境约定。
         val envMap = buildExecEnvironment(extraEnv).toMutableMap()
         // 设置工作目录（init-proot.sh 需要）
-        envMap["WORK_DIR"] = toGuestPath(workDir)
+        envMap["WORK_DIR"] = mappedWorkDir
 
         val envArray = envMap.map { "${it.key}=${it.value}" }.toTypedArray()
 
@@ -873,7 +877,8 @@ class PRootManager(
         val filesDir = context.filesDir.absolutePath
 
         File(rootfsPath, "projects").mkdirs()
-        val mappedWorkDir = toGuestPath(workDir)
+        // workDir 既可是 host 路径也可是 guest 路径；统一映射后做边界校验。
+        val mappedWorkDir = validateAndMapWorkDir(workDir)
         val kernelRelease = getEffectiveKernelRelease()
 
         // 构建 proot 参数
@@ -956,6 +961,15 @@ class PRootManager(
         // 注意：prootArgs 已经不需要了，因为 init-proot.sh 会自己构建参数
         // 我们只需要传递要执行的命令
         return listOf("/system/bin/sh", initProotScript.absolutePath) + command
+    }
+
+    /**
+     * 映射并校验 guest 工作目录，供 execute / startInteractive / buildPRootCommandLine 共用。
+     */
+    private fun validateAndMapWorkDir(workDir: String): String {
+        val mapped = toGuestPath(workDir)
+        pathValidator.validateGuestWorkDir(mapped)
+        return mapped
     }
 
     /**

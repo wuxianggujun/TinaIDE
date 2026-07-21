@@ -91,7 +91,8 @@ class PRootRuntimeSmokeTest {
 
     private fun requireReadyEnvironment(context: android.content.Context): PRootEnvironment {
         assumeTrue("proot environment not ready", PRootBootstrap.isEnvironmentReady(context))
-        val env = PRootEnvironment(context)
+        val configManager = com.wuxianggujun.tinaide.core.config.ConfigManager(context)
+        val env = PRootEnvironment(context, configManager)
         assumeTrue("proot environment not available", env.isAvailable())
         return env
     }

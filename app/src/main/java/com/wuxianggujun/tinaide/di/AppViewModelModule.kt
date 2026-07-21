@@ -47,7 +47,14 @@ val appViewModelModule = module {
     viewModel { BottomPanelViewModel(androidApplication(), get()) }
     viewModel { EditorStateViewModel() }
     viewModel { MainViewModel(androidApplication(), get()) }
-    viewModel { DebugViewModel(androidApplication(), get(), get()) }
+    viewModel {
+        DebugViewModel(
+            application = androidApplication(),
+            breakpointStore = get(),
+            debugSessionStore = get(),
+            configManager = get(),
+        )
+    }
     viewModel { GitViewModel(get()) }
     viewModel {
         MainActivityActionsViewModel(
@@ -62,7 +69,13 @@ val appViewModelModule = module {
     viewModel { ProjectManagerViewModel(androidApplication(), get(), get(), get(), get()) }
     viewModel { FavoritesViewModel(get()) }
     viewModel { DownloadHistoryViewModel(get()) }
-    viewModel { MarketScreenViewModel(androidApplication(), get()) }
+    viewModel {
+        MarketScreenViewModel(
+            application = androidApplication(),
+            userContentRepository = get(),
+            configManager = get(),
+        )
+    }
     viewModel { MultiTerminalViewModel(androidApplication(), get()) }
     viewModel { GlobalSearchViewModel(androidApplication()) }
 }

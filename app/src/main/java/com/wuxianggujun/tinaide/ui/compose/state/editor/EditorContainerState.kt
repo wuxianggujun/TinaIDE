@@ -102,7 +102,10 @@ class EditorContainerState(
     private val snippetManager: PluginSnippetManager,
     private val pluginThemeRegistry: PluginEditorThemeRegistry,
     private val projectSymbolIndexServiceProvider: () -> ProjectSymbolIndexService?,
-    private val projectRootPathProvider: () -> String?
+    private val projectRootPathProvider: () -> String?,
+    private val fileWatchService: IFileWatchService? = null,
+    private val linuxEnvironmentProvider: LinuxEnvironmentProvider = UnavailableLinuxEnvironmentProvider,
+    private val lspPluginManager: LspPluginManager? = null,
 ) {
     internal companion object {
         const val CODE_EDITOR_RUNTIME_CACHE_LIMIT = 16
@@ -451,10 +454,8 @@ class EditorContainerState(
     // ========== 子管理器 ==========
 
     private val lspEditorManager = LspEditorManager(
-        fileWatchService = GlobalContext.getOrNull()?.getOrNull<IFileWatchService>(),
-        linuxEnvironmentProvider = GlobalContext.getOrNull()
-            ?.getOrNull<LinuxEnvironmentProvider>()
-            ?: UnavailableLinuxEnvironmentProvider,
+        fileWatchService = fileWatchService,
+        linuxEnvironmentProvider = linuxEnvironmentProvider,
     )
     private val searchStateManager = SearchStateManager()
     private val tabManager = EditorTabManager(context, editorManager)
@@ -542,10 +543,7 @@ class EditorContainerState(
     )
 
     init {
-        // 注入 LspPluginManager 到 LspEditorManager
-        GlobalContext.getOrNull()?.getOrNull<LspPluginManager>()?.let {
-            lspEditorManager.setLspPluginManager(it)
-        }
+        lspPluginManager?.let { lspEditorManager.setLspPluginManager(it) }
 
         lspEditorManager.onDiagnosticsChanged = diagnosticsState::handleDiagnosticsChanged
 
@@ -2155,13 +2153,18 @@ fun rememberEditorContainerState(
 ): EditorContainerState {
     val context = LocalContext.current
     val state = remember(editorManager, snippetManager, pluginThemeRegistry, projectSymbolIndexServiceProvider) {
+        val koin = GlobalContext.getOrNull()
         EditorContainerState(
-            context,
-            editorManager,
-            snippetManager,
-            pluginThemeRegistry,
-            projectSymbolIndexServiceProvider,
-            projectRootPathProvider
+            context = context,
+            editorManager = editorManager,
+            snippetManager = snippetManager,
+            pluginThemeRegistry = pluginThemeRegistry,
+            projectSymbolIndexServiceProvider = projectSymbolIndexServiceProvider,
+            projectRootPathProvider = projectRootPathProvider,
+            fileWatchService = koin?.getOrNull<IFileWatchService>(),
+            linuxEnvironmentProvider = koin?.getOrNull<LinuxEnvironmentProvider>()
+                ?: UnavailableLinuxEnvironmentProvider,
+            lspPluginManager = koin?.getOrNull<LspPluginManager>(),
         )
     }
 

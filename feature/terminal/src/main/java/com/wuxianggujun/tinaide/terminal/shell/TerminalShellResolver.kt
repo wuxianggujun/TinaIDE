@@ -39,14 +39,10 @@ data class ShellAvailability(
 )
 
 class TerminalShellResolver(
-    private val context: Context
+    private val context: Context,
+    private val linuxEnvironmentProvider: LinuxEnvironmentProvider = UnavailableLinuxEnvironmentProvider,
 ) {
     private val terminalPrefs by lazy { TerminalPreferences.get(context) }
-    private val linuxEnvironmentProvider: LinuxEnvironmentProvider by lazy {
-        runCatching {
-            org.koin.core.context.GlobalContext.get().getOrNull<LinuxEnvironmentProvider>()
-        }.getOrNull() ?: UnavailableLinuxEnvironmentProvider
-    }
 
     private fun resolvePRootEnvironment(): PRootEnvironment? = linuxEnvironmentProvider.get() as? PRootEnvironment
 

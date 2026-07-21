@@ -27,22 +27,42 @@ object PRootBootstrap {
 
     private const val TAG = "PRootBootstrap"
 
-    private val installLogManager: InstallLogManager
-        get() = org.koin.core.context.GlobalContext.get().get()
+    @Volatile
+    private var installLogManagerOverride: InstallLogManager? = null
 
-    private val configManager: IConfigManager
-        get() = org.koin.core.context.GlobalContext.get().get()
+    @Volatile
+    private var configManagerOverride: IConfigManager? = null
+
+    /**
+     * HOST 进程在 Koin 启动后注入依赖，避免 object 内 GlobalContext 硬取。
+     * 未注入时回退到 GlobalContext（兼容测试与早期调用）。
+     */
+    fun bindDependencies(
+        installLogManager: InstallLogManager,
+        configManager: IConfigManager,
+    ) {
+        installLogManagerOverride = installLogManager
+        configManagerOverride = configManager
+    }
+
+    private fun installLogManager(): InstallLogManager =
+        installLogManagerOverride
+            ?: org.koin.core.context.GlobalContext.get().get()
+
+    private fun configManager(): IConfigManager =
+        configManagerOverride
+            ?: org.koin.core.context.GlobalContext.get().get()
 
     private fun defaultDistroId(): String = SelfHostedLinuxDistroRuntime.DEFAULT_DISTRO_ID
 
     private fun syncConfiguredRuntimeProfiles(context: Context) {
-        SelfHostedLinuxDistroRuntime.createForStartup(context, configManager).syncInstalledProfiles()
+        SelfHostedLinuxDistroRuntime.createForStartup(context, configManager()).syncInstalledProfiles()
     }
 
     fun getActiveProfile(context: Context): RootfsProfile {
         val appContext = context.applicationContext
         syncConfiguredRuntimeProfiles(appContext)
-        return RootfsProfileStore(appContext, configManager).getActiveProfile()
+        return RootfsProfileStore(appContext, configManager()).getActiveProfile()
     }
 
     fun getActiveRootfsPath(context: Context): String = getActiveProfile(context).rootfsPath
@@ -50,7 +70,7 @@ object PRootBootstrap {
     private fun getActiveProfileOrNull(context: Context): RootfsProfile? {
         val appContext = context.applicationContext
         syncConfiguredRuntimeProfiles(appContext)
-        return RootfsProfileStore(appContext, configManager).getActiveProfileOrNull()
+        return RootfsProfileStore(appContext, configManager()).getActiveProfileOrNull()
     }
 
     private fun hasProfileShell(profile: RootfsProfile): Boolean {
@@ -70,24 +90,24 @@ object PRootBootstrap {
 
     private fun logInfo(message: String) {
         runCatching { Timber.tag(TAG).i(message) }
-        installLogManager.info(message)
+        installLogManager().info(message)
     }
 
     private fun logSuccess(message: String) {
         runCatching { Timber.tag(TAG).i(message) }
-        installLogManager.success(message)
+        installLogManager().success(message)
     }
 
     private fun logWarning(message: String) {
         runCatching { Timber.tag(TAG).w(message) }
-        installLogManager.warning(message)
+        installLogManager().warning(message)
     }
 
     private fun logError(message: String, e: Throwable? = null) {
         runCatching {
             if (e != null) Timber.tag(TAG).e(e, message) else Timber.tag(TAG).e(message)
         }
-        installLogManager.error(message)
+        installLogManager().error(message)
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -226,7 +246,7 @@ object PRootBootstrap {
         lateinit var job: Job
         job = scope.launch(start = CoroutineStart.LAZY) {
             try {
-                installLogManager.clear()
+                installLogManager().clear()
                 logInfo(Strings.proot_install_begin.strOr(context))
                 installConfiguredDistro(context, distroId)
             } finally {
@@ -260,7 +280,7 @@ object PRootBootstrap {
                 currentPackage = PACKAGE_LINUX_DISTRO_RUNTIME,
             )
 
-            val runtime = SelfHostedLinuxDistroRuntime.createForExplicitInstall(context, configManager)
+            val runtime = SelfHostedLinuxDistroRuntime.createForExplicitInstall(context, configManager())
             runtime.installDistro(distroId) { progress ->
                 val stage = when (progress.phase) {
                     SelfHostedLinuxDistroRuntime.Phase.PREPARING,

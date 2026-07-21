@@ -21,9 +21,7 @@ import kotlinx.coroutines.withContext
  */
 class LocaleInstaller(
     private val context: Context,
-    private val linuxEnvironmentProvider: LinuxEnvironmentProvider = runCatching {
-        org.koin.core.context.GlobalContext.get().getOrNull<LinuxEnvironmentProvider>()
-    }.getOrNull() ?: UnavailableLinuxEnvironmentProvider,
+    private val linuxEnvironmentProvider: LinuxEnvironmentProvider = UnavailableLinuxEnvironmentProvider,
 ) : ILocaleInstaller {
 
     /**

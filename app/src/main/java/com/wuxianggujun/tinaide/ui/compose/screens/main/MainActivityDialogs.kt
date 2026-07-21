@@ -539,11 +539,12 @@ internal fun MainActivityApkPackageDialog(
     val pluginManager = remember(context) { PluginManager.getInstance(context.applicationContext) }
     val packageManager = remember(context) {
         val appContext = context.applicationContext
+        val configManager = org.koin.core.context.GlobalContext.get().get<com.wuxianggujun.tinaide.core.config.IConfigManager>()
         PackageManagerImpl(
             context = appContext,
             apiClient = PackageApiClient.getInstance(appContext),
             installStateStore = LocalInstallStateStore(appContext),
-            prootEnv = PRootEnvironment(appContext)
+            prootEnv = PRootEnvironment(appContext, configManager),
         )
     }
     var availablePackages by remember { mutableStateOf<List<GUIPackage>>(emptyList()) }

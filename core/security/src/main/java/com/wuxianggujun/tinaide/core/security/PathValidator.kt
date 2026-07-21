@@ -60,6 +60,26 @@ class PathValidator(private val context: Context) {
             "/etc/shadow",
             "/etc/sudoers"
         )
+
+        /**
+         * 允许作为 guest 工作目录的前缀。
+         * 比文件读写白名单更宽：包含工具链/系统路径（/usr、/bin 等），用于 execute/startInteractive。
+         */
+        private val PROOT_GUEST_WORKDIR_ALLOWED_PREFIXES = listOf(
+            "/workspace",
+            "/projects",
+            "/tmp",
+            "/home",
+            "/root",
+            "/usr",
+            "/bin",
+            "/sbin",
+            "/lib",
+            "/lib64",
+            "/opt",
+            "/var",
+            "/etc",
+        )
     }
 
     /**
@@ -127,6 +147,44 @@ class PathValidator(private val context: Context) {
                 )
             )
         }
+    }
+
+    /**
+     * 验证 guest 工作目录（execute / startInteractive 用）。
+     * 允许 `/` 与系统工具路径，但仍拦截 `..` 逃逸与敏感 forbidden 路径。
+     */
+    fun validateGuestWorkDir(path: String) {
+        val normalizedPath = normalizePath(path)
+        if (PROOT_GUEST_FORBIDDEN_PATHS.any { normalizedPath.startsWith(it) }) {
+            throw TinaIDEException.PathValidationException(
+                path = path,
+                message = "Forbidden guest workDir: $path",
+                userMessage = Strings.path_error_forbidden.strOr(context, path),
+                recoverySuggestion = Strings.path_error_forbidden_suggestion.strOr(context)
+            )
+        }
+        if (normalizedPath == "/") return
+        val isAllowed = PROOT_GUEST_WORKDIR_ALLOWED_PREFIXES.any { prefix ->
+            normalizedPath.isSameOrChildOf(prefix)
+        }
+        if (!isAllowed) {
+            throw TinaIDEException.PathValidationException(
+                path = path,
+                message = "Guest workDir not allowed: $path",
+                userMessage = Strings.path_error_not_allowed_guest.strOr(context, path),
+                recoverySuggestion = Strings.path_error_allowed_prefixes.strOr(
+                    context,
+                    PROOT_GUEST_WORKDIR_ALLOWED_PREFIXES.joinToString(", ")
+                )
+            )
+        }
+    }
+
+    fun isGuestWorkDirAllowed(path: String): Boolean = try {
+        validateGuestWorkDir(path)
+        true
+    } catch (_: TinaIDEException.PathValidationException) {
+        false
     }
 
     /**

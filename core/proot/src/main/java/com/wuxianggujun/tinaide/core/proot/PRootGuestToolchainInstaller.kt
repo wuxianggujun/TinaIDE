@@ -2,6 +2,8 @@ package com.wuxianggujun.tinaide.core.proot
 
 import android.content.Context
 import com.wuxianggujun.tinaide.core.compile.CompilerType
+import com.wuxianggujun.tinaide.core.config.ConfigManager
+import com.wuxianggujun.tinaide.core.config.IConfigManager
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
 import kotlinx.coroutines.Dispatchers
@@ -15,6 +17,7 @@ import kotlinx.coroutines.withContext
  */
 class PRootGuestToolchainInstaller(
     context: Context,
+    private val configManager: IConfigManager = ConfigManager(context.applicationContext),
 ) {
 
     data class InstallProgress(
@@ -33,7 +36,7 @@ class PRootGuestToolchainInstaller(
     )
 
     private val appContext = context.applicationContext
-    private val prootEnvironment by lazy { PRootEnvironment(appContext) }
+    private val prootEnvironment by lazy { PRootEnvironment(appContext, configManager) }
     private val pathResolver by lazy { ToolchainPathResolver(appContext) }
 
     suspend fun isInstalled(config: ToolchainConfig): Boolean = withContext(Dispatchers.IO) {

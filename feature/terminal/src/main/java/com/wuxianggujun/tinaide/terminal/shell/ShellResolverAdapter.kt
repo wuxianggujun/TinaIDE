@@ -1,6 +1,8 @@
 package com.wuxianggujun.tinaide.terminal.shell
 
 import android.content.Context
+import com.wuxianggujun.tinaide.core.linux.LinuxEnvironmentProvider
+import com.wuxianggujun.tinaide.core.linux.UnavailableLinuxEnvironmentProvider
 import com.wuxianggujun.tinaide.core.terminal.IShellResolver
 import com.wuxianggujun.tinaide.core.terminal.ShellAvailabilityInfo
 import com.wuxianggujun.tinaide.core.terminal.ShellType
@@ -13,10 +15,11 @@ import com.wuxianggujun.tinaide.terminal.preferences.TerminalPreferences
  * 将 TerminalShellResolver 适配为 IShellResolver 接口。
  */
 class ShellResolverAdapter(
-    private val context: Context
+    private val context: Context,
+    private val linuxEnvironmentProvider: LinuxEnvironmentProvider = UnavailableLinuxEnvironmentProvider,
 ) : IShellResolver {
 
-    private val resolver = TerminalShellResolver(context)
+    private val resolver = TerminalShellResolver(context, linuxEnvironmentProvider)
 
     override suspend fun isShellAvailable(shellType: String): Boolean {
         val type = TerminalPreferences.ShellType.fromValue(shellType)

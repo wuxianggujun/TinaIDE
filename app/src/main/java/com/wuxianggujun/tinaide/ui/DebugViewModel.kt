@@ -9,6 +9,7 @@ import com.wuxianggujun.tinaide.core.debug.DebugSessionStore
 import com.wuxianggujun.tinaide.core.debug.DebugState
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.str
+import com.wuxianggujun.tinaide.core.config.IConfigManager
 import com.wuxianggujun.tinaide.core.proot.PRootEnvironment
 import com.wuxianggujun.tinaide.ui.compose.components.BreakpointInfo
 import com.wuxianggujun.tinaide.ui.compose.components.DebugStatus
@@ -38,11 +39,12 @@ import kotlinx.coroutines.launch
 class DebugViewModel(
     application: Application,
     private val breakpointStore: BreakpointStore,
-    private val debugSessionStore: DebugSessionStore
+    private val debugSessionStore: DebugSessionStore,
+    private val configManager: IConfigManager,
 ) : AndroidViewModel(application) {
 
     // 调试服务实例
-    private val prootEnv by lazy { PRootEnvironment(getApplication()) }
+    private val prootEnv by lazy { PRootEnvironment(getApplication(), configManager) }
     private val debugSessionService = DebugSessionService(getApplication(), prootEnv, breakpointStore)
 
     // ============ UI 状态 ============

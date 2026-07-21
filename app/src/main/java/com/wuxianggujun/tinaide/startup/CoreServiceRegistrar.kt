@@ -9,6 +9,8 @@ import com.wuxianggujun.tinaide.core.config.MTFileProviderManager
 import com.wuxianggujun.tinaide.core.config.Prefs
 import com.wuxianggujun.tinaide.core.lsp.RemoteLspConfigManager
 import com.wuxianggujun.tinaide.core.network.server.TinaServerEnvironment
+import com.wuxianggujun.tinaide.core.proot.InstallLogManager
+import com.wuxianggujun.tinaide.core.proot.PRootBootstrap
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.get
 import timber.log.Timber
@@ -39,6 +41,10 @@ class CoreServiceRegistrar(private val context: Context) : KoinComponent {
         )
         KeyboardShortcutManager.initialize(AppPreferences.get(appContext))
         RemoteLspConfigManager.install(configManager)
+        PRootBootstrap.bindDependencies(
+            installLogManager = get<InstallLogManager>(),
+            configManager = configManager,
+        )
 
         // 注入 GestureTrace 启用判断逻辑
         com.wuxianggujun.tinaide.core.logging.GestureTrace.enabledProvider = {

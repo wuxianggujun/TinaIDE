@@ -21,13 +21,10 @@ import kotlinx.coroutines.withContext
  */
 class PRootEnvironment(
     context: Context,
+    private val configManager: IConfigManager,
 ) : LinuxEnvironment {
 
     val context: Context = context.applicationContext
-
-    private val configManager: IConfigManager by lazy {
-        org.koin.core.context.GlobalContext.get().get()
-    }
 
     private val rootfsProfileStore: RootfsProfileStore by lazy {
         RootfsProfileStore(this.context, configManager)
