@@ -1,4 +1,7 @@
-package com.wuxianggujun.tinaide.core.util
+﻿package com.wuxianggujun.tinaide.core.ndk
+
+import com.wuxianggujun.tinaide.core.util.AndroidSystemLinker
+import com.wuxianggujun.tinaide.core.util.NativeExecutableRunner
 
 import android.content.Context
 import java.io.File
