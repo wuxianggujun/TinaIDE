@@ -3,7 +3,7 @@ package com.wuxianggujun.tinaide.core.compile.action
 import com.wuxianggujun.tinaide.core.compile.OutputMode
 
 /**
- * 编译/启动请求,由 UI 或 AI 工具层构造,送入 `BuildOrchestrator.run(...)`。
+ * 编译/启动请求,由 UI 层构造,送入 `BuildOrchestrator.run(...)`。
  *
  * 将"构建意图"与"启动意图"正交分解,消除旧 `ExecutionMode` 的语义耦合。
  *

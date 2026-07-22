@@ -33,7 +33,7 @@ import org.koin.dsl.module
  * - 每次编译请求拿到独立的 [BuildOrchestrator],避免把无关项目全局串行化
  */
 val compileModule = module {
-    // 进程管理:供 UI 和 AI 执行工具控制当前运行进程
+    // 进程管理：供 UI/编译链路控制当前构建/运行进程（不含独立 Terminal 会话）
     single { ProcessManager() }
 
     // ---------- 产物层 ----------
@@ -76,7 +76,7 @@ val compileModule = module {
         )
     }
 
-    // ---------- Launcher(P3 stub;P4 接入真实启动逻辑) ----------
+    // ---------- Launcher：校验产物并生成 LaunchDescriptor，由 UI 层真正拉起终端/SDL/调试 ----------
     single { SdlLauncher() }
     single { DebugLauncher() }
     single { TerminalLauncher() }
