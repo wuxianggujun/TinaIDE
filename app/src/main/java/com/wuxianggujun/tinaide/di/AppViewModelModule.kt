@@ -51,7 +51,6 @@ val appViewModelModule = module {
         DebugViewModel(
             application = androidApplication(),
             breakpointStore = get(),
-            debugSessionStore = get(),
             configManager = get(),
         )
     }
