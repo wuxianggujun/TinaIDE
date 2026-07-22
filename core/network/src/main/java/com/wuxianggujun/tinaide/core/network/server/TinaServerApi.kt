@@ -163,8 +163,6 @@ class TinaServerApi private constructor(
 
     suspend fun healthCheck(): ApiResult<HealthResponse> = get("/health", expectEnvelope = false)
 
-    suspend fun getAiModels(): ApiResult<AiModelsListResponse> = get("/api/ai/models", expectEnvelope = false)
-
     private suspend inline fun <reified T> get(
         path: String,
         expectEnvelope: Boolean = true
@@ -314,18 +312,6 @@ data class HealthResponse(
 data class LogUploadResponse(
     val id: String,
     val message: String
-)
-
-@Serializable
-data class AiModelsListResponse(
-    @SerialName("object")
-    val objectType: String? = null,
-    val data: List<AiModelItem> = emptyList()
-)
-
-@Serializable
-data class AiModelItem(
-    val id: String
 )
 
 @Serializable
