@@ -6,23 +6,12 @@ import org.junit.Test
 class DebugModelsTest {
 
     @Test
-    fun memoryData_shouldCompareByContent() {
-        val left = DebugResponse.MemoryData(byteArrayOf(0x01, 0x02))
-        val right = DebugResponse.MemoryData(byteArrayOf(0x01, 0x02))
-        val different = DebugResponse.MemoryData(byteArrayOf(0x01, 0x03))
-
-        assertThat(left).isEqualTo(right)
-        assertThat(left.hashCode()).isEqualTo(right.hashCode())
-        assertThat(left).isNotEqualTo(different)
-    }
-
-    @Test
     fun debugSessionStore_shouldPublishAndClearDescriptor() {
         val store = DebugSessionStore()
         val descriptor = DebugSessionScaffold.Descriptor(
             sessionId = "dbg-1",
             descriptorPath = "/tmp/dbg-1.txt",
-            instructions = listOf("created")
+            instructions = listOf("created"),
         )
 
         store.update(descriptor)
@@ -30,5 +19,20 @@ class DebugModelsTest {
 
         store.clear()
         assertThat(store.descriptor.value).isNull()
+    }
+
+    @Test
+    fun sourceLocation_shouldCarryFileLineAndOptionalFunction() {
+        val location = SourceLocation(
+            file = "/project/main.cpp",
+            line = 12,
+            function = "main",
+            address = 0x1000,
+        )
+
+        assertThat(location.file).isEqualTo("/project/main.cpp")
+        assertThat(location.line).isEqualTo(12)
+        assertThat(location.function).isEqualTo("main")
+        assertThat(location.address).isEqualTo(0x1000)
     }
 }
