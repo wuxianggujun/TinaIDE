@@ -1,7 +1,7 @@
 package com.wuxianggujun.tinaide.core.config
 
 /**
- * 类型安全的配置键定义（按 AI 方案）
+ * 类型安全的配置键定义。
  */
 sealed class ConfigKey<T>(val key: String, val default: T) {
 
