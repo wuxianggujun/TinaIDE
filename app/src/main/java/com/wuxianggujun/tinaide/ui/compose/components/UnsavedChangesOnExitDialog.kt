@@ -1,21 +1,18 @@
 package com.wuxianggujun.tinaide.ui.compose.components
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.wuxianggujun.tinaide.core.i18n.Strings
 
 /**
- * 退出时未保存更改确认对话框
+ * 退出时未保存更改确认对话框。
  *
- * 当用户使用返回手势且有未保存的文件时显示此对话框
- *
- * @param unsavedCount 未保存文件的数量
- * @param onSaveAllAndExit 点击"全部保存并退出"
- * @param onDiscardAndExit 点击"不保存退出"
- * @param onDismiss 关闭对话框
+ * 三动作竖排（主 → 危险 → 取消），避免小屏横排三钮挤成一团。
  */
 @Composable
 fun UnsavedChangesOnExitDialog(
@@ -35,16 +32,26 @@ fun UnsavedChangesOnExitDialog(
             }
         },
         confirmButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TinaDangerOutlinedButton(
-                    text = stringResource(Strings.btn_discard_and_exit),
-                    onClick = onDiscardAndExit
-                )
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 TinaPrimaryButton(
                     text = stringResource(Strings.btn_save_all_and_exit),
-                    onClick = onSaveAllAndExit
+                    onClick = onSaveAllAndExit,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                TinaDangerOutlinedButton(
+                    text = stringResource(Strings.btn_discard_and_exit),
+                    onClick = onDiscardAndExit,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                TinaTextButton(
+                    text = stringResource(Strings.btn_cancel),
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
-        }
+        },
     )
 }
