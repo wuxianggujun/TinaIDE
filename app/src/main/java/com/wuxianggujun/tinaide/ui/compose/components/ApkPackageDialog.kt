@@ -936,11 +936,12 @@ fun ApkPackageDialog(
                     }
 
                     if (signingMode == ApkSigningMode.CUSTOM) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             TinaOutlinedButton(
                                 text = stringResource(Strings.apk_builder_import_keystore),
                                 onClick = { importLauncher.launch("*/*") },
-                                enabled = !isPreparingKeyStore
+                                enabled = !isPreparingKeyStore,
+                                modifier = Modifier.fillMaxWidth(),
                             )
                             TinaOutlinedButton(
                                 text = stringResource(Strings.apk_builder_generate_keystore),
@@ -948,7 +949,8 @@ fun ApkPackageDialog(
                                     generateError = null
                                     showGenerateDialog = true
                                 },
-                                enabled = !isPreparingKeyStore
+                                enabled = !isPreparingKeyStore,
+                                modifier = Modifier.fillMaxWidth(),
                             )
                         }
 
@@ -1027,7 +1029,10 @@ fun ApkPackageDialog(
         confirmButton = {
             when {
                 builtApkFile != null -> {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
                         TinaOutlinedButton(
                             text = stringResource(Strings.apk_builder_install),
                             onClick = {
@@ -1046,7 +1051,8 @@ fun ApkPackageDialog(
                                             }
                                     }
                                 }
-                            }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
                         )
                         TinaOutlinedButton(
                             text = stringResource(Strings.apk_builder_share),
@@ -1067,11 +1073,13 @@ fun ApkPackageDialog(
                                     }
                                 }
                             },
-                            leadingIcon = Icons.Default.Share
+                            leadingIcon = Icons.Default.Share,
+                            modifier = Modifier.fillMaxWidth(),
                         )
                         TinaTextButton(
                             text = stringResource(Strings.action_close),
-                            onClick = onDismiss
+                            onClick = onDismiss,
+                            modifier = Modifier.fillMaxWidth(),
                         )
                     }
                 }

@@ -239,31 +239,26 @@ fun GitSyncDialog(
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !isSyncing
                     )
-                    Row(
+                    TinaOutlinedButton(
+                        text = stringResource(Strings.git_action_fetch),
+                        onClick = {
+                            onFetch(resolvedRemote(), effectiveBranchOrNull(), prune)
+                        },
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        TinaOutlinedButton(
-                            text = stringResource(Strings.git_action_fetch),
-                            onClick = {
-                                onFetch(resolvedRemote(), effectiveBranchOrNull(), prune)
-                            },
-                            modifier = Modifier.weight(1f),
-                            enabled = !isSyncing
-                        )
-                        TinaSecondaryButton(
-                            text = stringResource(Strings.git_action_push),
-                            onClick = {
-                                if (force) {
-                                    showForceConfirm = true
-                                } else {
-                                    doPush()
-                                }
-                            },
-                            modifier = Modifier.weight(1f),
-                            enabled = !isSyncing
-                        )
-                    }
+                        enabled = !isSyncing
+                    )
+                    TinaSecondaryButton(
+                        text = stringResource(Strings.git_action_push),
+                        onClick = {
+                            if (force) {
+                                showForceConfirm = true
+                            } else {
+                                doPush()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isSyncing
+                    )
                 }
 
                 TinaDialogCard(

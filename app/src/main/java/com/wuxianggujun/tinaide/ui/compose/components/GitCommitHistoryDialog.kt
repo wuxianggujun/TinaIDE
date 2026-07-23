@@ -1,8 +1,8 @@
 package com.wuxianggujun.tinaide.ui.compose.components
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -62,17 +62,22 @@ fun GitCommitHistoryDialog(
             }
         },
         confirmButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 if (recentMessages.isNotEmpty()) {
                     TinaDangerOutlinedButton(
                         text = stringResource(Strings.action_clear_history),
                         onClick = onClearHistory,
-                        leadingIcon = Icons.Default.Delete
+                        leadingIcon = Icons.Default.Delete,
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
                 TinaTextButton(
                     text = stringResource(Strings.btn_close),
-                    onClick = onDismiss
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
         }
