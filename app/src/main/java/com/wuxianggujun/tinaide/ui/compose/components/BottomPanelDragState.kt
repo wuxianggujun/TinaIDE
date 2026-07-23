@@ -26,7 +26,8 @@ object PanelHeightPreset {
     const val COLLAPSED = 0f
 
     /** 默认展开高度（构建日志、诊断等） */
-    const val DEFAULT = 0.45f
+    /** 默认约 1/3 屏，给编辑器更多空间；仍可拖到半屏/全屏 */
+    const val DEFAULT = 0.34f
 
     /** 终端默认高度（较小，保持编辑器可见） */
     const val TERMINAL = 0.30f
@@ -213,7 +214,7 @@ class BottomPanelDragState(
     /**
      * 拖拽结束，根据速度和位置决定目标状态
      *
-     * 三个吸附目标：收起（0%）、默认（DEFAULT=45%）、全屏（100%）
+     * 三个吸附目标：收起（0%）、默认（DEFAULT≈34%）、全屏（100%）
      * - 快速向上/向下滑动：直接吸附到全屏/收起
      * - 慢速释放：吸附到距当前高度最近的预设点（收起、默认、全屏）
      */

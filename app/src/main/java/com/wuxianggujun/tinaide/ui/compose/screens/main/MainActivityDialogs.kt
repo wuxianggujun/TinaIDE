@@ -56,12 +56,11 @@ import com.wuxianggujun.tinaide.ui.compose.components.RenameDialog
 import com.wuxianggujun.tinaide.ui.compose.components.ReplaceDialog
 import com.wuxianggujun.tinaide.ui.compose.components.RunConfigDialog
 import com.wuxianggujun.tinaide.ui.compose.components.TinaAlertDialog
-import com.wuxianggujun.tinaide.ui.compose.components.TinaDangerOutlinedButton
 import com.wuxianggujun.tinaide.ui.compose.components.TinaDialogContentColumn
 import com.wuxianggujun.tinaide.ui.compose.components.TinaDialogMessageCard
 import com.wuxianggujun.tinaide.ui.compose.components.TinaDialogTitleText
-import com.wuxianggujun.tinaide.ui.compose.components.TinaPrimaryButton
 import com.wuxianggujun.tinaide.ui.compose.components.TinaTextButton
+import com.wuxianggujun.tinaide.ui.compose.components.TinaThreeActionDialog
 import com.wuxianggujun.tinaide.ui.compose.components.UnsavedChangesOnExitDialog
 import com.wuxianggujun.tinaide.ui.compose.state.DialogState
 import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorActionsState
@@ -441,40 +440,21 @@ internal fun MainActivityCloseProjectDialog(
 ) {
     if (!dialogState.showCloseProjectDialog) return
 
-    TinaAlertDialog(
-        onDismissRequest = { dialogState.closeCloseProjectDialog() },
-        title = { TinaDialogTitleText(stringResource(Strings.dialog_close_project_title)) },
-        text = {
-            TinaDialogContentColumn {
-                TinaDialogMessageCard(
-                    message = stringResource(Strings.dialog_close_project_message)
-                )
-            }
+    TinaThreeActionDialog(
+        title = stringResource(Strings.dialog_close_project_title),
+        message = stringResource(Strings.dialog_close_project_message),
+        primaryText = stringResource(Strings.btn_close_project),
+        secondaryText = stringResource(Strings.btn_close_and_forget),
+        onPrimary = {
+            dialogState.closeCloseProjectDialog()
+            onCloseProject(false)
         },
-        confirmButton = {
-            TinaPrimaryButton(
-                text = stringResource(Strings.btn_close_project),
-                onClick = {
-                    dialogState.closeCloseProjectDialog()
-                    onCloseProject(false)
-                },
-            )
+        onSecondary = {
+            dialogState.closeCloseProjectDialog()
+            onCloseProject(true)
         },
-        dismissButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TinaDangerOutlinedButton(
-                    text = stringResource(Strings.btn_close_and_forget),
-                    onClick = {
-                        dialogState.closeCloseProjectDialog()
-                        onCloseProject(true)
-                    }
-                )
-                TinaTextButton(
-                    text = stringResource(Strings.btn_cancel),
-                    onClick = { dialogState.closeCloseProjectDialog() }
-                )
-            }
-        }
+        onDismiss = { dialogState.closeCloseProjectDialog() },
+        secondaryIsDanger = true,
     )
 }
 
