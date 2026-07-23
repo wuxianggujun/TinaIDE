@@ -1069,7 +1069,7 @@
   <string name="settings_app_theme_desc">Choose the overall color scheme of the app</string>
   <string name="settings_cat_debug">Debug</string>
   <string name="settings_debug_toolbar_position">Debug Toolbar Position</string>
-  <string name="settings_debug_toolbar_desc">Set the display position of debug toolbar</string>
+  <string name="settings_debug_toolbar_desc">Recommended: Top (same slot as Run). Bottom or both optional.</string>
   <string name="dialog_title_select_theme">Select Theme</string>
   <string name="dialog_title_debug_toolbar">Debug Toolbar Position</string>
 
@@ -2067,13 +2067,13 @@
   <string name="menu_bookmark_next">Next Bookmark</string>
   <string name="menu_bookmark_list">View Bookmarks</string>
   <string name="menu_terminal">Terminal</string>
-  <string name="menu_exit_workspace">Exit Workspace</string>
+  <string name="menu_exit_workspace">Exit to project list</string>
   <string name="toast_saved">Saved</string>
   <string name="toast_save_failed">Save failed: %1$s</string>
   <string name="toast_git_branch_switched">Switched to branch: %1$s</string>
-  <string name="dialog_close_project_title">Close Project</string>
-  <string name="dialog_close_project_message">You can reopen it from the project home page. Session state is preserved by default.</string>
-  <string name="btn_close_project">Close</string>
+  <string name="dialog_close_project_title">Exit to project list?</string>
+  <string name="dialog_close_project_message">Return to the project home. You can reopen anytime; session state is kept by default.</string>
+  <string name="btn_close_project">Exit</string>
   <string name="btn_close_and_forget">Close and Forget</string>
   <string name="toast_run_config_saved">Run configuration saved</string>
   <string name="toast_git_init_success">Git repository initialized successfully</string>
@@ -2098,7 +2098,7 @@
   <string name="toast_save_failed_cancelled">Save failed, %1$s cancelled: %2$s</string>
   <string name="toast_auto_saved">Auto-saved %1$d files</string>
   <string name="action_close_and_forget">Close and forget project</string>
-  <string name="action_close_project">Close project</string>
+  <string name="action_close_project">Exit to project list</string>
   <string name="toast_no_files_to_save">No files to save</string>
   <string name="toast_some_files_save_failed">Some files failed to save</string>
   <string name="toast_files_saved">Saved %1$d files</string>
@@ -2290,7 +2290,7 @@ kept=%3$d bytes
 
   <!-- View Toggle -->
   <string name="cmd_view_toggle_file_tree">Toggle File Tree</string>
-  <string name="cmd_view_toggle_symbols">Toggle Symbols Panel</string>
+  <string name="cmd_view_toggle_symbols">Drawer symbols outline</string>
   <string name="cmd_view_toggle_terminal">Toggle Terminal</string>
 
   <!-- Log Management -->

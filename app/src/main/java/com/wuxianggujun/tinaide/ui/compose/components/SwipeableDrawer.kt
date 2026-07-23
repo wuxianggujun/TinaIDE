@@ -70,6 +70,12 @@ class SwipeableDrawerState(
         private set
 
     /**
+     * 当前侧栏内容 Tab（文件 / 符号 / Git / AI）。
+     * 由命令面板等外部入口写入，避免只改本地 state 打不开「符号」。
+     */
+    var selectedTab by mutableStateOf(DrawerTab.FILES)
+
+    /**
      * 是否打开
      */
     val isOpen: Boolean
@@ -97,6 +103,14 @@ class SwipeableDrawerState(
     }
 
     /**
+     * 打开侧栏并切到指定 Tab（命令「符号」等入口用）。
+     */
+    fun open(tab: DrawerTab) {
+        selectedTab = tab
+        open()
+    }
+
+    /**
      * 关闭侧滑栏
      */
     fun close() {
@@ -110,6 +124,17 @@ class SwipeableDrawerState(
      */
     fun toggle() {
         if (isOpen) close() else open()
+    }
+
+    /**
+     * 若已在目标 Tab 则关闭，否则打开并切 Tab。
+     */
+    fun toggleTab(tab: DrawerTab) {
+        if (isOpen && selectedTab == tab) {
+            close()
+        } else {
+            open(tab)
+        }
     }
 
     /**

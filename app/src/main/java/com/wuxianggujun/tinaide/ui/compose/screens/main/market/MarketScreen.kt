@@ -100,6 +100,7 @@ fun MarketScreen(
 ) {
     val context = LocalContext.current
     val permissionDeniedText = stringResource(Strings.toast_plugins_permission_denied)
+    // 默认「插件」；包管理为第二 Tab，不抢首屏
     var selectedTab by remember { mutableIntStateOf(0) }
     val pluginState by viewModel.pluginState.collectAsState()
     val packageState by viewModel.packageState.collectAsState()

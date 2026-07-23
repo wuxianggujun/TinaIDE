@@ -49,6 +49,8 @@ internal fun MainActivityDrawerContentHost(
         hostCommandExecutor = hostCommandExecutor,
         drawerOpen = drawerState.isOpen,
         editorContainerState = editorContainerState,
+        selectedDrawerTab = drawerState.selectedTab,
+        onDrawerTabSelected = { tab -> drawerState.selectedTab = tab },
         fileCallbacks = DrawerFileCallbacks(
             onFileClick = { file ->
                 editorContainerState.openFile(file)

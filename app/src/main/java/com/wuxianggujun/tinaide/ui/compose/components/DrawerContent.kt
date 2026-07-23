@@ -96,8 +96,19 @@ internal fun DrawerContent(
     modifier: Modifier = Modifier,
     hostCommandExecutor: HostCommandExecutor? = null,
     drawerOpen: Boolean = true,
+    selectedDrawerTab: DrawerTab? = null,
+    onDrawerTabSelected: ((DrawerTab) -> Unit)? = null,
 ) {
-    var drawerTab by remember { mutableStateOf(DrawerTab.FILES) }
+    // 未外部控制时保留本地 Tab，兼容预览/单测
+    var localDrawerTab by remember { mutableStateOf(DrawerTab.FILES) }
+    val drawerTab = selectedDrawerTab ?: localDrawerTab
+    val setDrawerTab: (DrawerTab) -> Unit = { tab ->
+        if (onDrawerTabSelected != null) {
+            onDrawerTabSelected(tab)
+        } else {
+            localDrawerTab = tab
+        }
+    }
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() }
     val density = LocalDensity.current
@@ -189,7 +200,7 @@ internal fun DrawerContent(
                             },
                             modifier = Modifier
                                 .align(Alignment.TopEnd)
-                                .padding(12.dp)
+                                .padding(8.dp)
                         )
                     }
                 }
@@ -201,7 +212,7 @@ internal fun DrawerContent(
 
             DrawerTabBar(
                 selectedTab = drawerTab,
-                onTabSelected = { tab -> drawerTab = tab }
+                onTabSelected = setDrawerTab,
             )
         }
     }
@@ -349,7 +360,9 @@ private fun DrawerTabBar(
     val selectedIconBackgroundShape = RoundedCornerShape(12.dp)
     CompositionLocalProvider(LocalRippleConfiguration provides null) {
         NavigationBar(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp),
             containerColor = MaterialTheme.colorScheme.surface,
             contentColor = MaterialTheme.colorScheme.onSurface,
             tonalElevation = 0.dp,
@@ -368,10 +381,11 @@ private fun DrawerTabBar(
                 NavigationBarItem(
                     selected = selected,
                     onClick = { onTabSelected(tab) },
+                    // 四 Tab 略收边距，避免挤；不搞单独「极窄布局」
                     icon = {
                         Box(
                             modifier = Modifier
-                                .size(44.dp)
+                                .size(40.dp)
                                 .clip(selectedIconBackgroundShape)
                                 .background(
                                     if (selected) {
@@ -385,14 +399,15 @@ private fun DrawerTabBar(
                             Icon(
                                 imageVector = icon,
                                 contentDescription = tabTitle,
-                                modifier = Modifier.size(24.dp)
+                                modifier = Modifier.size(22.dp)
                             )
                         }
                     },
                     label = {
                         Text(
                             text = tabTitle,
-                            style = MaterialTheme.typography.labelMedium
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1,
                         )
                     },
                     colors = NavigationBarItemDefaults.colors(
