@@ -122,10 +122,14 @@ fun BottomPanel(
     var showVariableDetailDialog by remember { mutableStateOf(false) }
     var selectedVariableForDetail by remember { mutableStateOf<DebugVariable?>(null) }
 
-    // 底部面板显示的标签页（构建日志、诊断、符号、Git）
+    // 默认底栏：问题 / 构建 / 输出；命令打开的次级 Tab 临时并入可见列表
     val normalModeTabs = resolveNormalModeBottomTabs(
         showEditorPerformanceTab = showEditorPerformanceTab,
         hasPluginPanels = pluginState.resolvedPanels.isNotEmpty(),
+    )
+    val visibleBottomTabs = resolveVisibleBottomPanelTabs(
+        normalModeTabs = normalModeTabs,
+        selectedBottomTab = selectedBottomTab,
     )
     val resolvedBottomTab = resolveSelectedBottomPanelTab(
         selectedBottomTab = selectedBottomTab,
@@ -226,10 +230,10 @@ fun BottomPanel(
                                     .weight(1f)
                             )
                         } else {
-                            // 普通模式：显示标签页（构建日志、诊断、Git）
+                            // 普通模式：问题 / 构建 / 输出（+ 按需性能/插件/命令打开的次级 Tab）
                             BottomPanelTabRow(
                                 selectedTab = resolvedBottomTab,
-                                tabs = normalModeTabs,
+                                tabs = visibleBottomTabs,
                                 badges = normalModeTabBadges,
                                 onTabSelected = { tab ->
                                     // 切换标签页时，如果面板未展开则展开

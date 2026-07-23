@@ -39,24 +39,24 @@ class BottomPanelTabResolutionTest {
     }
 
     @Test
-    fun `resolveNormalModeBottomTabs removes performance when gate is closed`() {
+    fun `resolveNormalModeBottomTabs keeps primary tabs and optional performance`() {
         val visibleTabs = resolveNormalModeBottomTabs(showEditorPerformanceTab = true)
         val hiddenTabs = resolveNormalModeBottomTabs(showEditorPerformanceTab = false)
 
         assertThat(visibleTabs).contains(BottomPanelTab.PERFORMANCE)
         assertThat(hiddenTabs).doesNotContain(BottomPanelTab.PERFORMANCE)
+        // 默认：问题 / 构建 / 输出；Git/符号不进默认条
         assertThat(hiddenTabs).containsExactly(
-            BottomPanelTab.BUILD_LOG,
             BottomPanelTab.DIAGNOSTICS,
-            BottomPanelTab.OUTLINE,
-            BottomPanelTab.SYMBOLS,
-            BottomPanelTab.BOOKMARKS,
-            BottomPanelTab.GIT
+            BottomPanelTab.BUILD_LOG,
+            BottomPanelTab.RUN_OUTPUT,
         ).inOrder()
+        assertThat(hiddenTabs).doesNotContain(BottomPanelTab.GIT)
+        assertThat(hiddenTabs).doesNotContain(BottomPanelTab.SYMBOLS)
     }
 
     @Test
-    fun `resolveSelectedBottomPanelTab falls back to build log when selected tab becomes unavailable`() {
+    fun `resolveSelectedBottomPanelTab falls back to diagnostics when selected tab becomes unavailable`() {
         val hiddenTabs = resolveNormalModeBottomTabs(showEditorPerformanceTab = false)
 
         assertThat(
@@ -64,12 +64,12 @@ class BottomPanelTabResolutionTest {
                 selectedBottomTab = BottomPanelTab.PERFORMANCE,
                 normalModeTabs = hiddenTabs
             )
-        ).isEqualTo(BottomPanelTab.BUILD_LOG)
+        ).isEqualTo(BottomPanelTab.DIAGNOSTICS)
     }
 
     @Test
-    fun `resolveSelectedBottomPanelTab keeps selected tab when it remains visible`() {
-        val visibleTabs = resolveNormalModeBottomTabs(showEditorPerformanceTab = true)
+    fun `resolveSelectedBottomPanelTab keeps secondary tab when opened by command`() {
+        val visibleTabs = resolveNormalModeBottomTabs(showEditorPerformanceTab = false)
 
         assertThat(
             resolveSelectedBottomPanelTab(
@@ -77,6 +77,12 @@ class BottomPanelTabResolutionTest {
                 normalModeTabs = visibleTabs
             )
         ).isEqualTo(BottomPanelTab.BOOKMARKS)
+        assertThat(
+            resolveVisibleBottomPanelTabs(
+                normalModeTabs = visibleTabs,
+                selectedBottomTab = BottomPanelTab.BOOKMARKS,
+            )
+        ).contains(BottomPanelTab.BOOKMARKS)
     }
 
     @Test

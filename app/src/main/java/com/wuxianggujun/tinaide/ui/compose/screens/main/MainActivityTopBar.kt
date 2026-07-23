@@ -21,7 +21,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
@@ -133,6 +132,8 @@ internal fun MainActivityTopBar(
                     )
                 } else if (!isDebugActive) {
                     val defaultRunConfigName = stringResource(Strings.run_config_default_name)
+                    // 手机：配置更短；平板/宽屏：配置名更宽。Build/Debug 默认进 Run 菜单，避免顶栏图标墙。
+                    val isWideTopBar = screenWidthPx >= with(LocalDensity.current) { 600.dp.toPx() }
                     RunConfigSelector(
                         configManager = runConfigManager,
                         onSelectConfig = { id ->
@@ -162,10 +163,16 @@ internal fun MainActivityTopBar(
                         isDebugEnabled = !isCompiling,
                         buildIconRes = Drawables.ic_build,
                         debugIconRes = Drawables.ic_debug,
-                        runTint = Color(0xFF4CAF50),
+                        runTint = MaterialTheme.colorScheme.primary,
                         disabledTint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                        configSegmentMaxWidth = if (useCompactTitleLayout) 72.dp else 110.dp,
-                        showBuildButton = true
+                        configSegmentMaxWidth = when {
+                            useCompactTitleLayout -> 72.dp
+                            isWideTopBar -> 140.dp
+                            else -> 110.dp
+                        },
+                        // 默认只常驻「配置 + Run」；平板也不默认铺 Build/Debug 图标，保持简洁
+                        showBuildButton = false,
+                        showDebugButton = false,
                     )
                 }
             }

@@ -380,8 +380,10 @@ fun VariablesHelpDialog(
 }
 
 /**
- * 运行配置选择器（CLion 风格，放在运行按钮左边）
- * 支持多配置选择、添加、复制、删除
+ * 运行配置选择器（编辑器优先：配置 + 主 Run，其余进菜单）。
+ *
+ * 常驻只保留配置名与运行主按钮，构建/调试/终端运行进入 Run 菜单，
+ * 以适配手机窄顶栏与平板略宽布局。
  */
 @Composable
 fun RunConfigSelector(
@@ -402,22 +404,25 @@ fun RunConfigSelector(
     isDebugEnabled: Boolean = true,
     buildIconRes: Int = 0,
     debugIconRes: Int = 0,
-    runTint: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color(0xFF4CAF50),
-    disabledTint: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color.Gray,
+    runTint: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.primary,
+    disabledTint: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
     configSegmentMaxWidth: Dp = 84.dp,
-    showBuildButton: Boolean = true
+    showBuildButton: Boolean = false,
+    showDebugButton: Boolean = false,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val currentConfig = configManager.selectedConfig
+    val showInlineBuild = showBuildButton && onBuild != null && buildIconRes != 0
+    val showInlineDebug = showDebugButton && debugIconRes != 0
 
     Box(modifier = modifier) {
-        // 配置 + 运行 + 构建 + 调试四段式工具条
+        // 配置 + Run（可选内联 Build/Debug，默认关闭以保持顶栏简洁）
         TinaOverlayPanelSurface(
             shape = MaterialTheme.shapes.small,
             containerColor = MaterialTheme.colorScheme.surfaceVariant,
             tonalElevation = 0.dp,
             shadowElevation = 0.dp,
-            modifier = Modifier.height(32.dp)
+            modifier = Modifier.height(36.dp)
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -426,9 +431,9 @@ fun RunConfigSelector(
                 TinaPanelSegmentButton(
                     onClick = { expanded = true },
                     modifier = Modifier
-                        .height(32.dp)
+                        .height(36.dp)
                         .widthIn(max = configSegmentMaxWidth),
-                    contentPadding = PaddingValues(start = 6.dp, end = 2.dp),
+                    contentPadding = PaddingValues(start = 8.dp, end = 2.dp),
                     contentAlignment = Alignment.CenterStart
                 ) {
                     Row(
@@ -458,7 +463,7 @@ fun RunConfigSelector(
                     color = MaterialTheme.colorScheme.outlineVariant
                 )
 
-                // 中间：运行按钮（▶）
+                // 主操作：运行（短按运行，长按/菜单含构建与调试）
                 RunActionButton(
                     enabled = isRunEnabled,
                     runTint = runTint,
@@ -466,21 +471,23 @@ fun RunConfigSelector(
                     onRun = onRun,
                     onRebuildAndRun = onRebuildAndRun,
                     onRunInTerminal = onRunInTerminal,
-                    onEditConfig = onEditConfig
+                    onEditConfig = onEditConfig,
+                    onBuild = onBuild,
+                    onDebug = onDebug,
+                    isBuildEnabled = isBuildEnabled,
+                    isDebugEnabled = isDebugEnabled,
                 )
 
-                // 分隔线
-                VerticalDivider(
-                    modifier = Modifier.height(20.dp),
-                    thickness = 1.dp,
-                    color = MaterialTheme.colorScheme.outlineVariant
-                )
-
-                if (showBuildButton && onBuild != null && buildIconRes != 0) {
+                if (showInlineBuild) {
+                    VerticalDivider(
+                        modifier = Modifier.height(20.dp),
+                        thickness = 1.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant
+                    )
                     TinaPanelSegmentButton(
-                        onClick = onBuild,
+                        onClick = onBuild!!,
                         enabled = isBuildEnabled,
-                        modifier = Modifier.size(32.dp),
+                        modifier = Modifier.size(36.dp),
                         contentPadding = PaddingValues(0.dp)
                     ) {
                         Icon(
@@ -494,25 +501,23 @@ fun RunConfigSelector(
                             modifier = Modifier.size(18.dp)
                         )
                     }
+                }
 
+                if (showInlineDebug) {
                     VerticalDivider(
                         modifier = Modifier.height(20.dp),
                         thickness = 1.dp,
                         color = MaterialTheme.colorScheme.outlineVariant
                     )
-                }
-
-                // 右侧：调试按钮（🪲）
-                TinaPanelSegmentButton(
-                    onClick = onDebug,
-                    enabled = isDebugEnabled,
-                    modifier = Modifier.size(32.dp),
-                    contentPadding = PaddingValues(0.dp)
-                ) {
-                    if (debugIconRes != 0) {
+                    TinaPanelSegmentButton(
+                        onClick = onDebug,
+                        enabled = isDebugEnabled,
+                        modifier = Modifier.size(36.dp),
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
                         Icon(
                             painter = rememberTinaPainter(debugIconRes),
-                            contentDescription = null,
+                            contentDescription = stringResource(Strings.content_desc_debug),
                             tint = if (isDebugEnabled) runTint else disabledTint,
                             modifier = Modifier.size(20.dp)
                         )
@@ -652,6 +657,10 @@ internal fun RunActionButton(
     onRebuildAndRun: () -> Unit,
     onRunInTerminal: () -> Unit,
     onEditConfig: () -> Unit,
+    onBuild: (() -> Unit)? = null,
+    onDebug: (() -> Unit)? = null,
+    isBuildEnabled: Boolean = true,
+    isDebugEnabled: Boolean = true,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     val interactionSource = remember { MutableInteractionSource() }
@@ -663,7 +672,7 @@ internal fun RunActionButton(
     }
 
     Box(
-        modifier = Modifier.size(32.dp)
+        modifier = Modifier.size(36.dp)
     ) {
         TinaPanelSegmentButton(
             onClick = {},
@@ -673,9 +682,9 @@ internal fun RunActionButton(
         ) {
             Icon(
                 imageVector = Icons.Default.PlayArrow,
-                contentDescription = null,
+                contentDescription = stringResource(Strings.action_run),
                 tint = if (enabled) runTint else disabledTint,
-                modifier = Modifier.size(20.dp)
+                modifier = Modifier.size(22.dp)
             )
         }
         Box(
@@ -697,12 +706,16 @@ internal fun RunActionButton(
             onRebuildAndRun = onRebuildAndRun,
             onRunInTerminal = onRunInTerminal,
             onEditConfig = onEditConfig,
+            onBuild = onBuild,
+            onDebug = onDebug,
+            isBuildEnabled = isBuildEnabled,
+            isDebugEnabled = isDebugEnabled,
         )
     }
 }
 
 /**
- * 运行菜单（长按运行按钮弹出）
+ * 运行菜单（长按运行按钮弹出）：运行变体 + 构建/调试
  */
 @Composable
 fun RunMenu(
@@ -712,6 +725,10 @@ fun RunMenu(
     onRebuildAndRun: () -> Unit,
     onRunInTerminal: () -> Unit,
     onEditConfig: () -> Unit,
+    onBuild: (() -> Unit)? = null,
+    onDebug: (() -> Unit)? = null,
+    isBuildEnabled: Boolean = true,
+    isDebugEnabled: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     TinaDropdownMenu(
@@ -740,6 +757,29 @@ fun RunMenu(
                 onRunInTerminal()
             }
         )
+        if (onBuild != null || onDebug != null) {
+            TinaDropdownMenuDivider()
+            if (onBuild != null) {
+                TinaDropdownMenuItem(
+                    text = { Text(stringResource(Strings.cmd_project_build)) },
+                    enabled = isBuildEnabled,
+                    onClick = {
+                        onDismiss()
+                        onBuild()
+                    }
+                )
+            }
+            if (onDebug != null) {
+                TinaDropdownMenuItem(
+                    text = { Text(stringResource(Strings.content_desc_debug)) },
+                    enabled = isDebugEnabled,
+                    onClick = {
+                        onDismiss()
+                        onDebug()
+                    }
+                )
+            }
+        }
         TinaDropdownMenuDivider()
         TinaDropdownMenuSectionHeader {
             TinaDropdownMenuSectionTitle(

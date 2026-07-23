@@ -15,6 +15,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.RectangleShape
@@ -44,20 +48,22 @@ fun EditorToolBar(
 ) {
     val scrollState = rememberScrollState()
 
-    // 默认符号列表
-    val defaultSymbols = listOf(
-        "{", "}", "(", ")", "[", "]",
-        ";", ":", "\"", "'", "<", ">",
+    // 默认只放 C/C++ 高频符号，完整列表点「更多」展开，减少对编辑器高度的挤压
+    val primarySymbols = listOf("{", "}", "(", ")", "[", "]", ";", "\"")
+    val secondarySymbols = listOf(
+        ":", "'", "<", ">",
         "=", "+", "-", "*", "/", "%",
         "&", "|", "^", "~", "!", "?",
         ".", ",", "#", "@", "\\", "$"
     )
+    var showMoreSymbols by remember { mutableStateOf(false) }
 
     // Tab 特殊符号（显示为 "TAB"，点击时插入 "\t"）
     val tabSymbol = "\t"
+    val symbols = if (showMoreSymbols) primarySymbols + secondarySymbols else primarySymbols
 
     TinaOverlayPanelSurface(
-        modifier = modifier.height(44.dp),
+        modifier = modifier.height(40.dp),
         shape = RectangleShape,
         containerColor = MaterialTheme.colorScheme.surfaceVariant,
         tonalElevation = 0.dp,
@@ -104,12 +110,18 @@ fun EditorToolBar(
             )
 
             // 符号按钮
-            defaultSymbols.forEach { symbol ->
+            symbols.forEach { symbol ->
                 SymbolButton(
                     symbol = symbol,
                     onClick = { onSymbolClick(symbol) }
                 )
             }
+
+            Spacer(modifier = Modifier.width(4.dp))
+            SymbolButton(
+                symbol = if (showMoreSymbols) "«" else "…",
+                onClick = { showMoreSymbols = !showMoreSymbols }
+            )
         }
     }
 }

@@ -25,15 +25,22 @@ data class BottomPanelTabMenuAction(
     val onClick: () -> Unit
 )
 
+/**
+ * 默认底栏：问题 / 构建 / 输出（Git 在侧栏，符号/大纲/书签走命令或侧栏导航）。
+ * PERFORMANCE / PLUGINS 按需附加；OUTLINE/SYMBOLS/BOOKMARKS/GIT 仍可通过命令打开，但不默认铺满 Tab。
+ */
 private val defaultNormalModeBottomTabs = listOf(
-    BottomPanelTab.BUILD_LOG,
     BottomPanelTab.DIAGNOSTICS,
-    BottomPanelTab.PERFORMANCE,
+    BottomPanelTab.BUILD_LOG,
+    BottomPanelTab.RUN_OUTPUT,
+)
+
+/** 仍可通过命令/代码打开，但不进默认 Tab 条，避免小屏底栏过载。 */
+private val secondaryBottomPanelTabs = setOf(
     BottomPanelTab.OUTLINE,
     BottomPanelTab.SYMBOLS,
     BottomPanelTab.BOOKMARKS,
-    BottomPanelTab.PLUGINS,
-    BottomPanelTab.GIT
+    BottomPanelTab.GIT,
 )
 
 internal fun shouldShowEditorPerformanceTab(
@@ -45,15 +52,37 @@ internal fun shouldShowEditorPerformanceTab(
 internal fun resolveNormalModeBottomTabs(
     showEditorPerformanceTab: Boolean,
     hasPluginPanels: Boolean = false,
-): List<BottomPanelTab> = defaultNormalModeBottomTabs.filter { tab ->
-    (tab != BottomPanelTab.PERFORMANCE || showEditorPerformanceTab) &&
-        (tab != BottomPanelTab.PLUGINS || hasPluginPanels)
+): List<BottomPanelTab> {
+    val tabs = defaultNormalModeBottomTabs.toMutableList()
+    if (showEditorPerformanceTab) {
+        tabs.add(BottomPanelTab.PERFORMANCE)
+    }
+    if (hasPluginPanels) {
+        tabs.add(BottomPanelTab.PLUGINS)
+    }
+    return tabs
 }
+
+/**
+ * 若用户通过命令打开了次级 Tab，则临时把它并入可见列表，便于 Tab 行高亮与切换。
+ */
+internal fun resolveVisibleBottomPanelTabs(
+    normalModeTabs: List<BottomPanelTab>,
+    selectedBottomTab: BottomPanelTab,
+): List<BottomPanelTab> =
+    if (selectedBottomTab in secondaryBottomPanelTabs && selectedBottomTab !in normalModeTabs) {
+        normalModeTabs + selectedBottomTab
+    } else {
+        normalModeTabs
+    }
 
 internal fun resolveSelectedBottomPanelTab(
     selectedBottomTab: BottomPanelTab,
     normalModeTabs: List<BottomPanelTab>
-): BottomPanelTab = selectedBottomTab.takeIf { it in normalModeTabs } ?: BottomPanelTab.BUILD_LOG
+): BottomPanelTab {
+    val visibleTabs = resolveVisibleBottomPanelTabs(normalModeTabs, selectedBottomTab)
+    return selectedBottomTab.takeIf { it in visibleTabs } ?: BottomPanelTab.DIAGNOSTICS
+}
 
 internal fun formatBottomPanelTabBadgeCount(count: Int): String? = when {
     count <= 0 -> null
