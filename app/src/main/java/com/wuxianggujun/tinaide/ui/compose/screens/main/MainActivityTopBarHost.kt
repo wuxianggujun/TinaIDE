@@ -63,6 +63,9 @@ internal fun MainActivityTopBarHost(
     val canNavigateForward = editorContainerState.canNavigateForward()
     val canMoveTabToSecondaryPane = editorContainerState.canMoveActiveTabToSecondaryPane()
     val canCopyTabToSecondaryPane = editorContainerState.canCopyActiveTabToSecondaryPane()
+    val editorToolBarState = editorContainerState.getActiveEditorToolBarState()
+    val canUndo = editorToolBarState.canUndo
+    val canRedo = editorToolBarState.canRedo
 
     val topBarCallbacks = rememberMainActivityTopBarCallbacks(
         drawerState = drawerState,
@@ -115,6 +118,8 @@ internal fun MainActivityTopBarHost(
     MainActivityTopBar(
         isCompiling = isCompiling,
         isDirty = isDirty,
+        canUndo = canUndo,
+        canRedo = canRedo,
         isDebugActive = isDebugActive,
         debugStatus = debugStatus,
         runConfigManager = buildUiState.runConfigManager,
@@ -175,6 +180,8 @@ private fun rememberMainActivityTopBarCallbacks(
         onDebug = { compileDelegate.onDebugProject() },
         onSave = { actionsDelegate.saveCurrentFile(editorContainerState) },
         onSaveAll = { actionsDelegate.saveAllFiles(editorContainerState) },
+        onUndo = { editorContainerState.undoInActiveTab() },
+        onRedo = { editorContainerState.redoInActiveTab() },
         onFormatCode = { actionsDelegate.formatCode(editorContainerState) },
         onNavigateBack = { editorContainerState.navigateBack() },
         onNavigateForward = { editorContainerState.navigateForward() },

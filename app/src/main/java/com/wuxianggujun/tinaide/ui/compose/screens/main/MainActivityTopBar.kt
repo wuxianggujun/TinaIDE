@@ -54,6 +54,8 @@ internal class TopBarCallbacks(
     val onDebug: () -> Unit,
     val onSave: () -> Unit,
     val onSaveAll: () -> Unit,
+    val onUndo: () -> Unit = {},
+    val onRedo: () -> Unit = {},
     val onFormatCode: () -> Unit,
     val onGotoLine: () -> Unit,
     val onNavigateBack: () -> Unit = {},
@@ -93,6 +95,8 @@ internal fun MainActivityTopBar(
     scrollBehavior: TopAppBarScrollBehavior? = null,
     isCompiling: Boolean,
     isDirty: Boolean,
+    canUndo: Boolean = false,
+    canRedo: Boolean = false,
     isDebugActive: Boolean,
     debugStatus: DebugStatus,
     runConfigManager: RunConfigurationManager,
@@ -188,6 +192,19 @@ internal fun MainActivityTopBar(
                 modifier = Modifier.padding(end = 0.dp)
             ) {
                 if (!isDebugActive) {
+                    // Run 区已瘦身，把高频编辑操作挪到顶栏，减少对底栏/符号条的依赖
+                    EditHistoryActionButton(
+                        iconRes = Drawables.ic_undo,
+                        contentDescription = stringResource(Strings.content_desc_undo),
+                        enabled = canUndo,
+                        onClick = callbacks.onUndo,
+                    )
+                    EditHistoryActionButton(
+                        iconRes = Drawables.ic_redo,
+                        contentDescription = stringResource(Strings.content_desc_redo),
+                        enabled = canRedo,
+                        onClick = callbacks.onRedo,
+                    )
                     SaveActionButton(
                         isDirty = isDirty,
                         onSave = callbacks.onSave
@@ -240,6 +257,27 @@ private fun MainActivityOverflowMenu(
 }
 
 private const val MAIN_ACTIVITY_OVERFLOW_PRIMARY_COMMAND_COUNT = 2
+
+@Composable
+private fun EditHistoryActionButton(
+    iconRes: Int,
+    contentDescription: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    IconButton(onClick = onClick, enabled = enabled) {
+        Icon(
+            painter = rememberTinaPainter(iconRes),
+            contentDescription = contentDescription,
+            tint = if (enabled) {
+                MaterialTheme.colorScheme.onSurface
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+            },
+            modifier = Modifier.size(20.dp)
+        )
+    }
+}
 
 @Composable
 private fun SaveActionButton(
