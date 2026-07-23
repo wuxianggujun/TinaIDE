@@ -40,6 +40,7 @@ class CompileActionsHelper(
         fun setCompiling(compiling: Boolean)
         fun clearBuildLogs()
         fun showBuildLog()
+        fun showDiagnostics()
         suspend fun expandBottomPanel()
         fun startDebugSession(
             programPath: String,
@@ -197,7 +198,8 @@ class CompileActionsHelper(
             event.message
         }
         emitToast(message, ToastType.ERROR)
-        showBuildLog()
+        // 失败优先展示诊断，便于点行跳转；同时展开底栏
+        showDiagnostics()
         finishCompileUi()
     }
 
@@ -444,6 +446,10 @@ class CompileActionsHelper(
         uiBridge.showBuildLog()
     }
 
+    private fun showDiagnostics() {
+        uiBridge.showDiagnostics()
+    }
+
     private suspend fun finishCompileUi() {
         uiBridge.expandBottomPanel()
     }
@@ -522,6 +528,12 @@ class ViewModelCompileUiBridge(
 
     override fun showBuildLog() {
         bottomPanelViewModel.setSelectedTab(com.wuxianggujun.tinaide.ui.compose.components.BottomPanelTab.BUILD_LOG)
+    }
+
+    override fun showDiagnostics() {
+        bottomPanelViewModel.setSelectedTab(
+            com.wuxianggujun.tinaide.ui.compose.components.BottomPanelTab.DIAGNOSTICS
+        )
     }
 
     override suspend fun expandBottomPanel() {

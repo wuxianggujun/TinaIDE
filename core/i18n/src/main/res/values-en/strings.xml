@@ -1968,6 +1968,7 @@
 
   <!-- DrawerTab -->
   <string name="drawer_tab_files_title">Files</string>
+  <string name="drawer_tab_symbols_title">Symbols</string>
   <string name="drawer_tab_git_title">Git</string>
   <string name="drawer_tab_rikkahub_title">AI</string>
 

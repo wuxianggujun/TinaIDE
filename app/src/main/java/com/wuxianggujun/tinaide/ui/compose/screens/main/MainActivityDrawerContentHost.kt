@@ -48,6 +48,7 @@ internal fun MainActivityDrawerContentHost(
         pluginManager = koinInject(),
         hostCommandExecutor = hostCommandExecutor,
         drawerOpen = drawerState.isOpen,
+        editorContainerState = editorContainerState,
         fileCallbacks = DrawerFileCallbacks(
             onFileClick = { file ->
                 editorContainerState.openFile(file)

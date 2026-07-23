@@ -9,7 +9,7 @@ sealed class ConfigKey<T>(val key: String, val default: T) {
     object Theme : ConfigKey<AppTheme>("ui.theme", AppTheme.DEFAULT)
     object DebugToolbarPositionMode : ConfigKey<String>(
         key = "ui.debug.toolbar.position",
-        default = "bottom"
+        default = "top"
     )
 
     // 面板可见性：ui.panel.<PANEL_NAME> -> Boolean

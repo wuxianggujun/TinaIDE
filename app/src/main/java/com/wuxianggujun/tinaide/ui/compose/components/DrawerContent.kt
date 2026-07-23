@@ -55,6 +55,7 @@ import com.wuxianggujun.tinaide.core.git.GitStatus
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.plugin.PluginManager
 import com.wuxianggujun.tinaide.ui.compose.icons.TinaTabIcons
+import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState
 import java.io.File
 import me.rerere.rikkahub.RikkaHubEmbeddedChatPane
 
@@ -91,6 +92,7 @@ internal fun DrawerContent(
     gitIsLoading: Boolean,
     gitStatusMap: Map<String, FileGitStatus>,
     gitCallbacks: DrawerGitCallbacks,
+    editorContainerState: EditorContainerState? = null,
     modifier: Modifier = Modifier,
     hostCommandExecutor: HostCommandExecutor? = null,
     drawerOpen: Boolean = true,
@@ -138,6 +140,20 @@ internal fun DrawerContent(
                     gitStatusMap = gitStatusMap,
                     modifier = Modifier.weight(1f)
                 )
+            }
+
+            DrawerTab.SYMBOLS -> {
+                if (editorContainerState != null) {
+                    OutlineContent(
+                        editorContainerState = editorContainerState,
+                        modifier = Modifier.weight(1f)
+                    )
+                } else {
+                    EmptyStateContent(
+                        message = stringResource(Strings.bottom_panel_outline),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
 
             DrawerTab.GIT -> {
@@ -273,6 +289,7 @@ private fun DrawerHeader(
 
         val headerTitle = when (drawerTab) {
             DrawerTab.FILES -> projectName
+            DrawerTab.SYMBOLS -> stringResource(Strings.drawer_tab_symbols_title)
             DrawerTab.GIT -> stringResource(Strings.drawer_title_source_control)
             DrawerTab.RIKKAHUB -> ""
         }
@@ -295,6 +312,8 @@ private fun DrawerHeader(
                     )
                 }
             }
+
+            DrawerTab.SYMBOLS -> Unit
 
             DrawerTab.GIT -> {
                 IconButton(
@@ -340,6 +359,7 @@ private fun DrawerTabBar(
                 val selected = selectedTab == tab
                 val icon = when (tab) {
                     DrawerTab.FILES -> TinaTabIcons.Files
+                    DrawerTab.SYMBOLS -> TinaTabIcons.Symbols
                     DrawerTab.GIT -> TinaTabIcons.Git
                     DrawerTab.RIKKAHUB -> TinaTabIcons.RikkaHub
                 }

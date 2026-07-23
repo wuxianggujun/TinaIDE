@@ -32,12 +32,21 @@ private const val COMMAND_PACKAGE_APK = "project.packageApk"
 private const val COMMAND_GLOBAL_SEARCH = "view.globalSearch"
 private const val COMMAND_WORKSPACE_EXIT = HostCommands.PROJECT_CLOSE
 
+/**
+ * 溢出菜单精选项（顺序即分组顺序：文件 → 视图 → 工程）。
+ */
 private val DEFAULT_OVERFLOW_MENU_COMMAND_IDS = listOf(
+    // 文件
+    HostCommands.EDITOR_SAVE_ALL,
+    HostCommands.EDITOR_FORMAT,
+    // 视图 / 导航
     HostCommands.VIEW_COMMAND_PALETTE,
     COMMAND_GLOBAL_SEARCH,
+    HostCommands.VIEW_BOOKMARKS,
     HostCommands.VIEW_TOGGLE_TERMINAL,
     HostCommands.VIEW_SETTINGS,
-    COMMAND_WORKSPACE_EXIT
+    // 工程
+    COMMAND_WORKSPACE_EXIT,
 )
 
 internal data class MainActivityCommandAvailability(

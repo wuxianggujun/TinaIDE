@@ -2,6 +2,7 @@ package com.wuxianggujun.tinaide.ui.compose.icons
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountTree
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -14,6 +15,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 object TinaTabIcons {
     val Files: ImageVector
         get() = Icons.Default.Folder
+
+    val Symbols: ImageVector
+        get() = Icons.Default.Code
 
     val Git: ImageVector
         get() = Icons.Default.AccountTree

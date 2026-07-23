@@ -710,6 +710,7 @@ private fun getFileStatusColor(status: FileStatus): Color = when (status) {
  */
 enum class DrawerTab(@param:StringRes val titleRes: Int) {
     FILES(Strings.drawer_tab_files_title),
+    SYMBOLS(Strings.drawer_tab_symbols_title),
     GIT(Strings.drawer_tab_git_title),
     RIKKAHUB(Strings.drawer_tab_rikkahub_title)
 }
