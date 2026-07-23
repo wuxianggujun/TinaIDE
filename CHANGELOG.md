@@ -31,46 +31,80 @@
 
 ## [Unreleased]
 
-### Changed
+### Added
 
-- 将 `script` / `hybrid` 插件的 Lua/LuaJava JNI 执行迁移到非导出的 isolated process，宿主通过有界 Binder 协议和 capability gateway 提供 API v1；危险 Lua 库、Java 反射、native module 和越界 `require()` 均被禁用。
-- 插件生命周期新增期望启用态、有效状态、持久化故障/执行 journal 和自动隔离；安装升级改为可恢复的 staging/backup/atomic rename，新装默认禁用，并统一 Zip、Lua、日志、Binder、Network 与 PSS 资源上限。
-- LSP session 增加插件 owner，插件禁用、隔离、升级或卸载时关闭对应进程和编辑器连接；设置页同步显示等待授权、自动隔离和 runtime 不可用状态。
-- `contributions.panels` 与 `tina.panels.*` 进入 apiVersion 1 稳定契约，脚本可向编辑器底部插件面板发布有界纯文本；`optionalPermissions` 支持详情页按需授权/撤销，`activationEvents` 收敛为 LSP 的 `onLanguage:<id>` 语义。
-- Host capability gateway 拆出数据能力、SQLite 与 Binder 大载荷存储边界，运行时死亡会统一清理数据库、限流器、临时载荷和面板内容。
-- 插件市场切换到 Registry v3 完整版本历史，按当前 IDE 版本和 Plugin API 选择最高兼容版本；Registry v2 保留为 `0.17.11 + API v1` 旧宿主兼容视图，v2/v3 共用不可变插件制品。
-- 插件教程目录和文章正文增加明确的加载、空、失败与重试状态，帮助全文搜索统一使用带语言维度的正文缓存；文章阅读进度不再显示没有计算依据的 `0%`。
-- `Dev Static Checks` 固定执行插件、教程目录、帮助资源/搜索和 App 教程文章状态回归；App 教程测试同时完成 Kotlin 编译，失败时统一上传各模块 XML/HTML 报告。
+### Changed
 
 ### Fixed
 
-- 修复插件加载或回调执行期间禁用/卸载仍可能晚到激活、runtime 空闲死亡后健康插件不恢复，以及启动/回调故障在重启后反复触发的问题。
-- 修复 Lua `tina.config.get(key, fallback)` fallback 语义丢失，并在 Binder 返回值超过 256 KiB 时返回可归因的 `RESOURCE_LIMIT`，避免超大 transaction 直接破坏 runtime 通道。
-- 修复 `tina.events.emit` 空实现、未知事件可注册、重复订阅和插件可伪造宿主事件的问题；自定义事件现在只定向派发给当前插件。
-- 修复 LSP owner 已停止后编辑器仍显示 `LSP Ready`，以及旧 attach callback 可能干扰新会话的问题。
-- 修复旧 IDE 仍可能看到不兼容插件更新、宿主刷新后保留不兼容插件启用态，以及卸载清理中断时过早删除降级安全禁用标记的问题。
-- 修复 `tina.workspace.findFiles()` 在未触及 50,000 项扫描上限时，因不同文件系统遍历顺序返回不同前 N 项的问题；结果现在统一按相对路径排序后再应用数量上限。
-- 修复插件状态与权限两个 `StateFlow` 首次回放导致同一 script 插件重复加载，以及 runtime 不可用状态可能短暂回退为 `LOADING` 的竞态；权限后续变更仍会触发一次同步。
-- 修复插件故障存储并发测试超时后遗留执行线程、污染后续运行时测试的问题，并让协程取消继续向上传播而不是记录为插件启动错误。
-- 修复帮助页正文加载失败后没有重试入口、切换文档失败仍可能显示上一篇正文，以及旧正文/旧搜索查询回写当前页面的问题。
-- 修复 CI 在官方仓库可用时仍查询 Aliyun 动态版本 metadata、镜像短暂 `502` 导致插件 JVM 门禁提前失败的问题；本地国内镜像策略保持不变。
+### Removed
 
 ### Tests
 
-- 新增面板内容隔离/UTF-8 上限、manifest panels/activationEvents 校验、optionalPermissions 显式授权、事件契约、LSP owner-stop 代际和底部面板可见性测试。
-- 新增 Registry v3 代理/详情/下载协议、Marketplace 兼容版本回退与宿主安装/启用兼容门禁测试。
-- 新增教程目录/文章状态与双语正文搜索缓存回归，并将帮助页失败重试、旧正文清理状态纳入 `feature:help` JVM/Compose 测试。
-- 插件模块新增 workspace 确定性排序、runtime unavailable 单次加载和等待权限后激活回归；当前 `core:plugin` 快照为 176 项 JVM 测试且无失败、错误或跳过。
+### Documentation
+
+## [0.18.12] - 2026-07-23
+
+### Added
+
+- 新增 `TinaThreeActionDialog`：三动作确认统一为竖排全宽按钮（主操作 / 次要或危险 / 取消），避免小屏横排挤成一团。
+- 工作区侧栏新增 **符号** Tab（文件 | 符号 | Git | AI），大纲与文件树同属侧栏导航。
+- 命令「符号大纲」改为打开侧栏符号页，不再占用底栏次级 Tab。
+- 顶栏溢出菜单按 **文件 / 视图 / 工程** 分组展示，并补充保存全部、格式化、书签等精选入口。
+- Run 区瘦身后，顶栏左侧提供撤销 / 重做（与右侧保存分离，降低误触）。
+
+### Changed
+
+#### 工作区信息架构与布局
+
+- 顶栏常驻收敛为 **配置 + Run**；构建 / 调试 / 终端运行进入 Run 菜单，小屏与平板统一简洁主操作。
+- 底栏默认 Tab 收敛为 **问题 / 构建 / 输出**；Git、大纲、符号、书签不再默认铺满底栏（命令仍可临时打开）。
+- 底栏默认展开高度由约 45% 调整为约 **34%**，给编辑器更多空间。
+- **移除底部符号快捷栏**（`EditorToolBar`），编辑操作统一到顶栏，交互更一致。
+- 调试工具栏默认位置改为 **顶部**（`DebugToolbarPosition.TOP`），设置说明推荐顶栏，减少顶/底双控件迷路。
+- 退出工作区相关文案统一为 **「退出到项目列表」**，对话框同步说明返回门户。
+- 侧栏 Tab 图标与标签略收边距；顶栏操作图标略缩小，避免挤布局（不做单独「极窄屏」分支）。
+
+#### 对话框与交互
+
+- 未保存退出、关闭未保存文件、外部修改冲突、退出项目列表等确认框统一竖排三动作。
+- Git 提交历史、合并冲突、同步（Pull/Fetch/Push）、APK 构建结果/证书操作等多按钮场景改为竖排全宽。
+- 构建失败时自动切换到底栏 **诊断** 并展开，便于点行跳转。
+
+#### 架构与依赖注入
+
+- 将 `LspEditorManager` 从 `app` 下沉到 `:core:editor-lsp`，并继续拆出 compile setup 缓存、共享 CXX 会话、Remote LSP 辅助、workspace 文件监视、补全/Hover 映射与纯工具函数。
+- 编辑器状态拆出 `CodeEditorRuntime`、`EditorLspNavigationFacade`、`EditorCodeCallbackRegistry`、`EditorContainerModels` 等，降低 `EditorContainerState` 体量。
+- 运行时链路统一构造注入 `LinuxEnvironmentProvider` / `IConfigManager`：终端、CodeFormatter、CompileDatabaseProvider、PRootClangd、PRootEnvironment、MainActivityActions 等去掉 `GlobalContext` 硬取；`PRootBootstrap` 启动时 `bindDependencies`。
+- Guest 路径：`PathValidator` 支持 `/projects`，并在 `PRootManager` execute/interactive 边界校验 guest workDir。
+- Hex 查看器与分析 UI 大文件拆分：chrome/content/keyboard、footer、workbench、分析面板，以及 ELF/DEX/Archive 对话框与解析/模型/过滤/IO 分层。
+- 设置/包管理/工作区/插件详情/安装页/FileTree 等超大 UI 继续按 composable 边界拆分。
+- CMake 命令模型按 find / list-string-file / target / install-export 分文件。
+- 忽略本地 `.kilo/` CLI 配置，避免误提交。
+
+### Fixed
+
+- 修复命令面板打开书签等路径展开底栏时，因协程缺少 `MonotonicFrameClock` 导致 `Animatable.animateTo` 崩溃的问题；无 FrameClock 时退化为 `snapTo`。
+- 修复 PROOT 不可用时 LSP 误设 `NoLsp` 的死分支语义，与 `LinuxRunModePolicy` 回退 native 对齐。
+- 修复/清理 RikkaHub 迁移后残留的 AI 模型列表 API 与孤儿测试，以及未使用的仓储与调试 stub 协议代码（见 Removed）。
+
+### Removed
+
+- 删除未使用的 `TinaServerApi.getAiModels` 与相关 DTO。
+- 删除孤儿测试 `AiConfigTest`（生产 `AiConfig`/`AiProvider` 源文件已不存在）。
+- 删除未使用的 `LocalUserContentRepository`（DI 仅使用 `HybridUserContentRepository`）。
+- 删除调试 stub：`DebugTransport`、`DebugCommand`/`DebugResponse`、`DebugSessionScaffold`/`DebugSessionStore` 及相关误导测试命名；生产调试保留 LLDB + `DebugSessionService`/`BreakpointStore`。
+- 将仅 androidTest 使用的 `AndroidElfExecutor` 从主 APK 源码移出到 `app` androidTest。
+- 移除底部 `EditorToolBar` 符号快捷栏实现。
 
 ### Documentation
 
-- 同步插件路线图、教程维护记录、端到端验收清单、测试入口、API 合同和中英文 App 内帮助，明确 JVM CI 已运行、设备 workflow 仍待默认分支注册与自托管设备 runner。
+- 清理编译/门户中过时的「AI 工具」「P3 stub」等注释，口径对齐当前 RikkaHub 嵌入与 native 默认链路。
 
-### Verification
+### Notes for Testers
 
-- 已执行 `./gradlew :core:plugin:testDebugUnitTest --no-daemon --console=plain`，39 个测试套件、176 项测试全部通过。
-- 已执行 `./gradlew :core:plugin:ktlintCheck --no-daemon --console=plain`。
-- GitHub Actions `Dev Static Checks` run `29691804039`（提交 `76173ebe4`）已通过插件、帮助、教程 JVM 回归、App 教程文章状态测试与最终 Gradle 进程清理。
+- 请重点验收：顶栏 Run 菜单与左侧撤销/重做、侧栏符号、溢出菜单分组、构建失败自动打开诊断、未保存/退出/冲突对话框竖排按钮、Git 同步与 APK 结果按钮布局、命令打开书签不再崩溃。
+- 已安装用户若曾手动将调试工具栏设为底部，设置项会保留原值；新装/重置后默认顶部。
 
 ## [0.18.11] - 2026-07-13
 
