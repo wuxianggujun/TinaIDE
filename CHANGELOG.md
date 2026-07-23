@@ -80,7 +80,6 @@
 - Hex 查看器与分析 UI 大文件拆分：chrome/content/keyboard、footer、workbench、分析面板，以及 ELF/DEX/Archive 对话框与解析/模型/过滤/IO 分层。
 - 设置/包管理/工作区/插件详情/安装页/FileTree 等超大 UI 继续按 composable 边界拆分。
 - CMake 命令模型按 find / list-string-file / target / install-export 分文件。
-- 忽略本地 `.kilo/` CLI 配置，避免误提交。
 
 ### Fixed
 
