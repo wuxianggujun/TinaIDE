@@ -182,17 +182,12 @@ internal fun MainActivityTopBar(
             }
         },
         navigationIcon = {
-            IconButton(onClick = callbacks.onOpenDrawer) {
-                Icon(Icons.Default.Menu, stringResource(Strings.content_desc_open_file_tree))
-            }
-        },
-        actions = {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(end = 0.dp)
-            ) {
+            // 左侧：文件树 + 撤销/重做（与右侧保存/溢出分开，降低误触）
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = callbacks.onOpenDrawer) {
+                    Icon(Icons.Default.Menu, stringResource(Strings.content_desc_open_file_tree))
+                }
                 if (!isDebugActive) {
-                    // Run 区已瘦身，把高频编辑操作挪到顶栏，减少对底栏/符号条的依赖
                     EditHistoryActionButton(
                         iconRes = Drawables.ic_undo,
                         contentDescription = stringResource(Strings.content_desc_undo),
@@ -205,6 +200,15 @@ internal fun MainActivityTopBar(
                         enabled = canRedo,
                         onClick = callbacks.onRedo,
                     )
+                }
+            }
+        },
+        actions = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(end = 0.dp)
+            ) {
+                if (!isDebugActive) {
                     SaveActionButton(
                         isDirty = isDirty,
                         onSave = callbacks.onSave

@@ -128,11 +128,6 @@ internal fun MainActivityBottomPanelHost(
                     debugViewModel = debugViewModel,
                     projectSymbolIndexService = projectSymbolIndexService,
                     modifier = Modifier.fillMaxWidth(),
-                    onUndoClick = { actionsDelegate.performUndo(editorContainerState) },
-                    onRedoClick = { actionsDelegate.performRedo(editorContainerState) },
-                    onSymbolClick = { symbol ->
-                        editorContainerState.insertTextAtCursor(symbol)
-                    },
                     onBookmarkNavigate = { filePath, line ->
                         actionsDelegate.navigateToBookmark(editorContainerState, filePath, line)
                     },

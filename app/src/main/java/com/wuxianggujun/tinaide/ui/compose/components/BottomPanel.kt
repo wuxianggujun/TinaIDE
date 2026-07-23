@@ -42,11 +42,11 @@ import org.koin.compose.koinInject
  * 底部面板组件
  *
  * 包含：
- * - 拖拽手柄
- * - 编辑器工具栏（底部面板未展开时显示）
- * - 底部面板内容（构建日志、诊断、Git）
+ * - 状态栏（带拖拽）
+ * - 调试工具栏（调试且工具栏位置为底部时）
+ * - 底部面板内容（问题 / 构建 / 输出 等）
  *
- * 注意：终端已移至独立的 TerminalActivity
+ * 注意：终端已移至独立 TerminalActivity；撤销/重做在顶栏左侧。
  */
 @Composable
 fun BottomPanel(
@@ -56,9 +56,6 @@ fun BottomPanel(
     editorStateViewModel: EditorStateViewModel,
     debugViewModel: DebugViewModel,
     projectSymbolIndexService: ProjectSymbolIndexService?,
-    onUndoClick: () -> Unit,
-    onRedoClick: () -> Unit,
-    onSymbolClick: (String) -> Unit,
     onBookmarkNavigate: (filePath: String, line: Int) -> Unit,
     onDiagnosticClick: (Diagnostic) -> Unit,
     modifier: Modifier = Modifier,
@@ -87,8 +84,6 @@ fun BottomPanel(
     // 直接读取状态层收口后的窄语义，避免外层自己拆 tabs/活动态。
     val editorToolBarState = editorContainerState.getActiveEditorToolBarState()
     val hasOpenFiles = editorToolBarState.hasFiles
-    val canUndo = editorToolBarState.canUndo
-    val canRedo = editorToolBarState.canRedo
 
     // 从 DebugViewModel 获取调试状态
     val isActive by debugViewModel.isActive.collectAsStateWithLifecycle()
@@ -103,7 +98,6 @@ fun BottomPanel(
         developerOptionsEnabled
     )
     val showDebugBarInBottom = isActive && debugToolbarPosition != DebugToolbarPosition.TOP
-    val showEditorToolBar = !isActive && hasOpenFiles && !bottomPanelState.isNearFullScreen
     val showEditorPerformanceTab = shouldShowEditorPerformanceTab(
         developerOptionsEnabled = developerOptionsEnabled,
         diagnosticsEnabled = diagnosticsSettings.diagnosticsEnabled,
@@ -178,28 +172,18 @@ fun BottomPanel(
                 )
             }
 
-            // 编辑器工具栏 / 调试工具栏
-            AnimatedVisibility(visible = showDebugBarInBottom || showEditorToolBar) {
-                if (showDebugBarInBottom) {
-                    DebugBar(
-                        debugStatus = debugStatus,
-                        onContinue = { debugViewModel.continueExecution() },
-                        onStepOver = { debugViewModel.stepOver() },
-                        onStepInto = { debugViewModel.stepInto() },
-                        onStepOut = { debugViewModel.stepOut() },
-                        onPause = { debugViewModel.pauseExecution() },
-                        onStop = { debugViewModel.stopSession() },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                } else {
-                    EditorToolBar(
-                        canUndo = canUndo,
-                        canRedo = canRedo,
-                        onUndoClick = onUndoClick,
-                        onRedoClick = onRedoClick,
-                        onSymbolClick = onSymbolClick
-                    )
-                }
+            // 调试工具栏（底栏位置）；撤销/重做在顶栏左侧，符号快捷栏已移除以统一交互
+            AnimatedVisibility(visible = showDebugBarInBottom) {
+                DebugBar(
+                    debugStatus = debugStatus,
+                    onContinue = { debugViewModel.continueExecution() },
+                    onStepOver = { debugViewModel.stepOver() },
+                    onStepInto = { debugViewModel.stepInto() },
+                    onStepOut = { debugViewModel.stepOut() },
+                    onPause = { debugViewModel.pauseExecution() },
+                    onStop = { debugViewModel.stopSession() },
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
 
             // 底部面板内容（使用动态高度，跟随拖拽）
