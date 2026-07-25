@@ -19,6 +19,17 @@ The wizard has two steps:
 
 Common options include project name, C++ standard, and the Native API level for NDK templates.
 
+## Source location and file access
+
+The wizard offers two source locations:
+
+- **Public directory** stores source code under `Documents/TinaIDE`. Files remain after TinaIDE is uninstalled and are directly accessible to file managers and other tools.
+- **Private directory** stores source code in TinaIDE's app data. It needs no file permission, but Android removes it when the app is uninstalled.
+
+Android 10 requires the storage read/write permission for public projects. Android 11 and later require **All files access** in system settings. Return to TinaIDE after granting access, then tap **Create project** again.
+
+If Android reports that access is granted but a public project still cannot be created, retry the same template in the private directory. A successful private project confirms that the template and toolchain are healthy; then check that external storage is mounted, has enough free space, and that Android or the device manager has not revoked TinaIDE's file access.
+
 ## Templates
 
 ### C++ single file

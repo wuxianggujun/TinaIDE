@@ -37,11 +37,17 @@
 
 ### Fixed
 
+- 修复 Android 10 平板已授予存储权限后，公共 `Documents/TinaIDE` 目录仍可能无法创建项目的问题；恢复 API 29 legacy storage 兼容，并确保已授权分支使用最新的 Compose 创建回调。
+
 ### Removed
 
 ### Tests
 
+- 新增 Android 10 公共存储 Manifest 契约测试，防止 `requestLegacyExternalStorage` 兼容配置再次丢失。
+
 ### Documentation
+
+- 补充公共/私有项目目录、Android 10/11+ 文件权限差异和“已授权仍创建失败”的排查步骤，并同步 App 内中英文帮助。
 
 ## [0.18.12] - 2026-07-23
 

@@ -82,10 +82,11 @@ jobs:
             -Dorg.gradle.internal.http.socketTimeout=120000 \
             -Dorg.gradle.internal.repository.max.retries=4
 
-      - name: Run app tutorial article JVM tests and compile app Kotlin
+      - name: Run app storage contract and tutorial JVM tests
         run: |
           ./gradlew -Ptina.devAbi=arm64 -Ptina.buildProotFromSource=false \
             :app:testArm64DebugUnitTest \
+            --tests "com.wuxianggujun.tinaide.storage.Android10StorageManifestContractTest" \
             --tests "com.wuxianggujun.tinaide.ui.compose.screens.main.tutorial.TutorialArticleLoadStateTest" \
             --tests "com.wuxianggujun.tinaide.ui.compose.screens.main.tutorial.TutorialRelatedLearningSupportTest" \
             --no-daemon --configure-on-demand \

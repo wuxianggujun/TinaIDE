@@ -6,6 +6,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import com.wuxianggujun.tinaide.storage.PermissionStatus
 import com.wuxianggujun.tinaide.storage.ProjectPaths
 import com.wuxianggujun.tinaide.storage.StorageManager
@@ -34,17 +35,20 @@ fun rememberStoragePermissionRequester(
     storageManager: StorageManager = koinInject(),
     onResult: (granted: Boolean) -> Unit
 ): StoragePermissionRequester {
+    val currentOnResult = rememberUpdatedState(onResult)
     val settingsLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) {
-        onResult(storageManager.refreshPermissionStatus() == PermissionStatus.GRANTED)
+        currentOnResult.value(storageManager.refreshPermissionStatus() == PermissionStatus.GRANTED)
     }
 
     val runtimeLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { grants ->
         val allGranted = grants.isNotEmpty() && grants.values.all { it }
-        onResult(allGranted && storageManager.refreshPermissionStatus() == PermissionStatus.GRANTED)
+        currentOnResult.value(
+            allGranted && storageManager.refreshPermissionStatus() == PermissionStatus.GRANTED
+        )
     }
 
     return remember(storageManager) {
@@ -52,7 +56,7 @@ fun rememberStoragePermissionRequester(
             storageManager = storageManager,
             launchSettings = { settingsLauncher.launch(it) },
             launchRuntime = { runtimeLauncher.launch(it) },
-            onResult = onResult
+            onResult = { granted -> currentOnResult.value(granted) }
         )
     }
 }

@@ -214,6 +214,17 @@ class NewProjectWizardViewModel(
                     onSuccess(result.projectDir)
                 }
                 is ProjectCreationResult.Failure -> {
+                    val projectRoot = File(projectPath)
+                    Timber.tag(TAG).w(
+                        "Project creation failed: reason=%s root=%s detail=%s " +
+                            "rootExists=%s rootIsDirectory=%s rootCanWrite=%s",
+                        result.reason,
+                        projectRoot.absolutePath,
+                        result.detail,
+                        projectRoot.exists(),
+                        projectRoot.isDirectory,
+                        projectRoot.canWrite(),
+                    )
                     val message = when (result.reason) {
                         ProjectCreationFailure.EMPTY_NAME -> Strings.error_project_name_empty.strOr(context)
                         ProjectCreationFailure.INVALID_NAME -> Strings.error_project_name_invalid_chars.strOr(context)
