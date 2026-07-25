@@ -37,19 +37,13 @@
 
 ### Fixed
 
-- 修复 Android 10 平板已授予存储权限后，公共 `Documents/TinaIDE` 目录仍可能无法创建项目的问题；恢复 API 29 legacy storage 兼容，并确保已授权分支使用最新的 Compose 创建回调。
-
 ### Removed
 
 ### Tests
 
-- 新增 Android 10 公共存储 Manifest 契约测试，防止 `requestLegacyExternalStorage` 兼容配置再次丢失。
-
 ### Documentation
 
-- 补充公共/私有项目目录、Android 10/11+ 文件权限差异和“已授权仍创建失败”的排查步骤，并同步 App 内中英文帮助。
-
-## [0.18.12] - 2026-07-23
+## [0.18.12] - 2026-07-25
 
 ### Added
 
@@ -89,6 +83,7 @@
 
 ### Fixed
 
+- 修复 Android 10 平板已授予存储权限后，公共 `Documents/TinaIDE` 目录仍可能无法创建项目的问题；恢复 API 29 legacy storage 兼容，并确保已授权分支使用最新的 Compose 创建回调。
 - 修复命令面板打开书签等路径展开底栏时，因协程缺少 `MonotonicFrameClock` 导致 `Animatable.animateTo` 崩溃的问题；无 FrameClock 时退化为 `snapTo`。
 - 修复 PROOT 不可用时 LSP 误设 `NoLsp` 的死分支语义，与 `LinuxRunModePolicy` 回退 native 对齐。
 - 修复/清理 RikkaHub 迁移后残留的 AI 模型列表 API 与孤儿测试，以及未使用的仓储与调试 stub 协议代码（见 Removed）。
@@ -102,8 +97,13 @@
 - 将仅 androidTest 使用的 `AndroidElfExecutor` 从主 APK 源码移出到 `app` androidTest。
 - 移除底部 `EditorToolBar` 符号快捷栏实现。
 
+### Tests
+
+- 新增 Android 10 公共存储 Manifest 契约测试，防止 `requestLegacyExternalStorage` 兼容配置再次丢失。
+
 ### Documentation
 
+- 补充公共/私有项目目录、Android 10/11+ 文件权限差异和“已授权仍创建失败”的排查步骤，并同步 App 内中英文帮助。
 - 清理编译/门户中过时的「AI 工具」「P3 stub」等注释，口径对齐当前 RikkaHub 嵌入与 native 默认链路。
 
 ### Notes for Testers
