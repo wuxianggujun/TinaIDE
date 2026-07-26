@@ -43,6 +43,71 @@ class EditorInputConnectionUtilsTest {
     }
 
     @Test
+    fun resolveImeSelectionRequest_shouldMapOnlyMatchingWindowRelativeSelection() {
+        val window = ImeExtractedTextWindow(
+            startOffset = 4_744,
+            endOffset = 5_256,
+            documentLength = 10_000,
+            textVersion = 7L
+        )
+
+        val echoed = resolveImeSelectionRequest(
+            start = 256,
+            end = 264,
+            documentLength = 10_000,
+            textVersion = 7L,
+            currentSelectionStart = 5_000,
+            currentSelectionEnd = 5_008,
+            extractedTextWindow = window
+        )
+        val absolute = resolveImeSelectionRequest(
+            start = 1,
+            end = 3,
+            documentLength = 10_000,
+            textVersion = 7L,
+            currentSelectionStart = 5_000,
+            currentSelectionEnd = 5_008,
+            extractedTextWindow = window
+        )
+
+        assertThat(echoed.start).isEqualTo(5_000)
+        assertThat(echoed.end).isEqualTo(5_008)
+        assertThat(echoed.usedExtractedTextCoordinates).isTrue()
+        assertThat(absolute.start).isEqualTo(1)
+        assertThat(absolute.end).isEqualTo(3)
+        assertThat(absolute.usedExtractedTextCoordinates).isFalse()
+    }
+
+    @Test
+    fun extractedTextWindowAfterEdit_shouldTrackInsertionInsideWindow() {
+        val window = ImeExtractedTextWindow(
+            startOffset = 4_744,
+            endOffset = 5_256,
+            documentLength = 10_000,
+            textVersion = 7L
+        )
+
+        val updated = window.afterEdit(
+            editStart = 5_000,
+            editEnd = 5_000,
+            replacementLength = 6,
+            oldDocumentLength = 10_000,
+            oldTextVersion = 7L,
+            newDocumentLength = 10_006,
+            newTextVersion = 8L
+        )
+
+        assertThat(updated).isEqualTo(
+            ImeExtractedTextWindow(
+                startOffset = 4_744,
+                endOffset = 5_262,
+                documentLength = 10_006,
+                textVersion = 8L
+            )
+        )
+    }
+
+    @Test
     fun extractedTextSelectionOffset_shouldReturnWindowRelativeOffset() {
         val offset = extractedTextSelectionOffset(
             documentOffset = 1_260,

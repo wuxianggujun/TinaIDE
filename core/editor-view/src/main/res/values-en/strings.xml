@@ -1,11 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="editor_context_menu_text_group">Text</string>
     <string name="editor_context_menu_copy">Copy</string>
     <string name="editor_context_menu_cut">Cut</string>
     <string name="editor_context_menu_paste">Paste</string>
     <string name="editor_context_menu_select_all">Select all</string>
-    <string name="editor_context_menu_code_group">Code</string>
+    <string name="editor_context_menu_more">More</string>
     <string name="editor_context_menu_peek_definition">Peek definition</string>
     <string name="editor_context_menu_goto_definition">Go to definition</string>
     <string name="editor_context_menu_find_references">Find references</string>

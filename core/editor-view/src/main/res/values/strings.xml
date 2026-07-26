@@ -1,11 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="editor_context_menu_text_group">文本</string>
     <string name="editor_context_menu_copy">复制</string>
     <string name="editor_context_menu_cut">剪切</string>
     <string name="editor_context_menu_paste">粘贴</string>
     <string name="editor_context_menu_select_all">全选</string>
-    <string name="editor_context_menu_code_group">代码</string>
+    <string name="editor_context_menu_more">更多</string>
     <string name="editor_context_menu_peek_definition">预览定义</string>
     <string name="editor_context_menu_goto_definition">跳转到定义</string>
     <string name="editor_context_menu_find_references">查找引用</string>

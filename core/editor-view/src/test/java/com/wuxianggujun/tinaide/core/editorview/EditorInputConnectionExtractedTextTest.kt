@@ -12,7 +12,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(manifest = Config.NONE)
+@Config(manifest = Config.NONE, sdk = [34])
 class EditorInputConnectionExtractedTextTest {
 
     @Test
@@ -36,7 +36,7 @@ class EditorInputConnectionExtractedTextTest {
     }
 
     @Test
-    fun setSelection_afterExtractedText_shouldKeepAbsoluteDocumentCoordinates() {
+    fun setSelection_whenImeSelectsWholeExtractedWindow_shouldSelectWholeDocument() {
         val text = largeText()
         val state = createState(text)
         val connection = createConnection(state)
@@ -48,8 +48,8 @@ class EditorInputConnectionExtractedTextTest {
 
         connection.setSelection(0, extracted.text.length)
 
-        assertThat(state.selectionRange).isEqualTo(OffsetRange(0, extracted.text.length))
-        assertThat(state.cursorOffset).isEqualTo(extracted.text.length)
+        assertThat(state.selectionRange).isEqualTo(OffsetRange(0, text.length))
+        assertThat(state.cursorOffset).isEqualTo(text.length)
     }
 
     @Test
@@ -67,6 +67,42 @@ class EditorInputConnectionExtractedTextTest {
 
         assertThat(state.selectionRange).isEqualTo(OffsetRange(1, 3))
         assertThat(state.cursorOffset).isEqualTo(3)
+    }
+
+    @Test
+    fun setSelection_whenImeEchoesWindowRelativeSelection_shouldPreserveDocumentSelection() {
+        val text = largeText()
+        val state = createState(text)
+        val connection = createConnection(state)
+        state.selectRange(startOffset = 4_992, endOffset = 5_008)
+        val extracted = connection.getExtractedText(
+            ExtractedTextRequest().apply { hintMaxChars = 512 },
+            0
+        )
+
+        connection.setSelection(extracted.selectionStart, extracted.selectionEnd)
+
+        assertThat(state.selectionRange).isEqualTo(OffsetRange(4_992, 5_008))
+        assertThat(state.cursorOffset).isEqualTo(5_008)
+    }
+
+    @Test
+    fun commitText_whenImeEchoesUpdatedWindowCursor_shouldKeepCursorAfterInsertedText() {
+        val text = largeText()
+        val state = createState(text)
+        val connection = createConnection(state)
+        state.moveCursorTo(5_000)
+        val extracted = connection.getExtractedText(
+            ExtractedTextRequest().apply { hintMaxChars = 512 },
+            0
+        )
+
+        connection.commitText("pasted", 1)
+        val relativeCursorAfterPaste = state.cursorOffset - extracted.startOffset
+        connection.setSelection(relativeCursorAfterPaste, relativeCursorAfterPaste)
+
+        assertThat(state.cursorOffset).isEqualTo(5_006)
+        assertThat(state.selectionRange).isNull()
     }
 
     @Test

@@ -86,6 +86,7 @@ internal class EditorInputConnection(
     private var afterCacheStart: Int = -1
     private var afterCacheEnd: Int = -1
     private var afterCacheText: String? = null
+    private var lastExtractedTextWindow: ImeExtractedTextWindow? = null
     private var pendingDeadKeyAccent: Int = 0
 
     override fun getTextBeforeCursor(n: Int, flags: Int): CharSequence {
@@ -169,9 +170,10 @@ internal class EditorInputConnection(
         val hintMaxChars = request?.hintMaxChars?.takeIf { it > 0 } ?: DEFAULT_EXTRACTED_WINDOW_CHARS
         val windowCap = hintMaxChars.coerceIn(MIN_EXTRACTED_WINDOW_CHARS, MAX_EXTRACTED_WINDOW_CHARS)
 
-        val selectionLength = (selEnd - selStart).coerceAtLeast(0)
+        val selectionStartOffset = minOf(selStart, selEnd)
+        val selectionLength = abs(selEnd - selStart)
         val paddingEachSide = (windowCap - selectionLength).coerceAtLeast(0) / 2
-        val windowStart = (selStart - paddingEachSide).coerceAtLeast(0)
+        val windowStart = (selectionStartOffset - paddingEachSide).coerceAtLeast(0)
         val windowEnd = minOf(documentLength, windowStart + windowCap).coerceAtLeast(windowStart)
 
         val extractedText = if (windowEnd > windowStart) {
@@ -180,6 +182,12 @@ internal class EditorInputConnection(
             ""
         }
         val windowLength = (windowEnd - windowStart).coerceAtLeast(0)
+        lastExtractedTextWindow = ImeExtractedTextWindow(
+            startOffset = windowStart,
+            endOffset = windowEnd,
+            documentLength = documentLength,
+            textVersion = state.textBuffer.version
+        )
         return ExtractedText().apply {
             text = extractedText
             // partialStart/End 只用于增量更新；getExtractedText 返回的是完整的当前窗口。
@@ -267,15 +275,22 @@ internal class EditorInputConnection(
     override fun setSelection(start: Int, end: Int): Boolean {
         val documentLength = state.textBuffer.length
         val before = imeSelectionOffsets()
-        val (mappedStart, mappedEnd) = mapImeSelectionToDocument(
+        val resolution = resolveImeSelectionRequest(
             start = start,
             end = end,
-            documentLength = documentLength
+            documentLength = documentLength,
+            textVersion = state.textBuffer.version,
+            currentSelectionStart = before.first,
+            currentSelectionEnd = before.second,
+            extractedTextWindow = lastExtractedTextWindow
         )
+        val mappedStart = resolution.start
+        val mappedEnd = resolution.end
         logIme(
             "setSelection request=($start,$end) mapped=($mappedStart,$mappedEnd) " +
                 "before=(${before.first},${before.second}) beforeLen=${abs(before.second - before.first)} " +
-                "docLen=$documentLength"
+                "windowRelative=${resolution.usedExtractedTextCoordinates} " +
+                "selectAll=${resolution.selectedEntireDocument} docLen=$documentLength"
         )
 
         if (mappedStart == mappedEnd) {
@@ -302,7 +317,9 @@ internal class EditorInputConnection(
         if (shouldDeferModifiedKeyEvent(event)) return false
         return when (event.keyCode) {
             KeyEvent.KEYCODE_DEL -> {
+                val oldTextVersion = state.textBuffer.version
                 state.backspace()
+                clearExtractedTextWindowAfterUntrackedEdit(oldTextVersion)
                 val cursor = cursorOffset()
                 clearComposingIfCollapsedOrOutside(
                     selectionStart = cursor,
@@ -313,7 +330,9 @@ internal class EditorInputConnection(
             }
 
             KeyEvent.KEYCODE_FORWARD_DEL -> {
+                val oldTextVersion = state.textBuffer.version
                 state.deleteForward()
+                clearExtractedTextWindowAfterUntrackedEdit(oldTextVersion)
                 val cursor = cursorOffset()
                 clearComposingIfCollapsedOrOutside(
                     selectionStart = cursor,
@@ -576,9 +595,20 @@ internal class EditorInputConnection(
                 } else {
                     val copied = copySelectedTextToClipboard()
                     if (copied) {
-                        state.replaceRange(startOffset = start, endOffset = end, replacement = "")
-                        clearComposingIfOverlapped(start, end)
-                        onNonInsertEdit()
+                        val oldDocumentLength = state.textBuffer.length
+                        val oldTextVersion = state.textBuffer.version
+                        val changed = state.replaceRange(startOffset = start, endOffset = end, replacement = "")
+                        if (changed) {
+                            updateExtractedTextWindowAfterEdit(
+                                editStart = start,
+                                editEnd = end,
+                                replacementLength = 0,
+                                oldDocumentLength = oldDocumentLength,
+                                oldTextVersion = oldTextVersion
+                            )
+                            clearComposingIfOverlapped(start, end)
+                            onNonInsertEdit()
+                        }
                     }
                     copied
                 }
@@ -658,12 +688,21 @@ internal class EditorInputConnection(
         val deleteRange = selectedRange ?: surroundingRange() ?: return true
         if (deleteRange.isEmpty) return true
 
+        val oldDocumentLength = state.textBuffer.length
+        val oldTextVersion = state.textBuffer.version
         val changed = state.replaceRange(
             startOffset = deleteRange.start,
             endOffset = deleteRange.end,
             replacement = ""
         )
         if (changed) {
+            updateExtractedTextWindowAfterEdit(
+                editStart = deleteRange.start,
+                editEnd = deleteRange.end,
+                replacementLength = 0,
+                oldDocumentLength = oldDocumentLength,
+                oldTextVersion = oldTextVersion
+            )
             clearComposingIfOverlapped(deleteRange.start, deleteRange.end)
             onNonInsertEdit()
             logIme("$reason deleteRange=(${deleteRange.start},${deleteRange.end})")
@@ -684,11 +723,22 @@ internal class EditorInputConnection(
             startOffset = startOffset,
             replacement = replacement
         )
+        val oldDocumentLength = state.textBuffer.length
+        val oldTextVersion = state.textBuffer.version
         val changed = state.replaceRange(
             startOffset = startOffset,
             endOffset = endOffset,
             replacement = resolved.replacement
         )
+        if (changed) {
+            updateExtractedTextWindowAfterEdit(
+                editStart = startOffset,
+                editEnd = endOffset,
+                replacementLength = resolved.replacement.length,
+                oldDocumentLength = oldDocumentLength,
+                oldTextVersion = oldTextVersion
+            )
+        }
         composingRange = nextComposingRange(
             editStart = startOffset,
             replacementLength = resolved.replacement.length,
@@ -710,6 +760,30 @@ internal class EditorInputConnection(
             insertedCallback(resolved.replacement)
         } else {
             onNonInsertEdit()
+        }
+    }
+
+    private fun updateExtractedTextWindowAfterEdit(
+        editStart: Int,
+        editEnd: Int,
+        replacementLength: Int,
+        oldDocumentLength: Int,
+        oldTextVersion: Long
+    ) {
+        lastExtractedTextWindow = lastExtractedTextWindow?.afterEdit(
+            editStart = editStart,
+            editEnd = editEnd,
+            replacementLength = replacementLength,
+            oldDocumentLength = oldDocumentLength,
+            oldTextVersion = oldTextVersion,
+            newDocumentLength = state.textBuffer.length,
+            newTextVersion = state.textBuffer.version
+        )
+    }
+
+    private fun clearExtractedTextWindowAfterUntrackedEdit(oldTextVersion: Long) {
+        if (state.textBuffer.version != oldTextVersion) {
+            lastExtractedTextWindow = null
         }
     }
 
