@@ -7,11 +7,13 @@ import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.core.packages.InstalledPackagePathResolver
 import com.wuxianggujun.tinaide.core.packages.model.Platform
 import com.wuxianggujun.tinaide.core.packages.store.LocalInstallStateStore
+import com.wuxianggujun.tinaide.project.ProjectMetadataStore
 import com.wuxianggujun.tinaide.ui.runtime.AndroidSystemLibraries
 import com.wuxianggujun.tinaide.ui.runtime.NativeLibraryDependencyHints
 import com.wuxianggujun.tinaide.ui.runtime.NativeLibraryDependencyReader
 import java.io.File
 import java.io.IOException
+import java.util.ArrayDeque
 import timber.log.Timber
 
 /**
@@ -23,9 +25,13 @@ import timber.log.Timber
 object SdlRuntimeResolver {
     private const val TAG = "SdlRuntimeResolver"
     private const val INSTALL_DIR_NAME = "installed-packages"
+    private const val MAX_DEPENDENCY_SCAN_FILES = 256
+    private const val BINARY_SCAN_BUFFER_SIZE = 64 * 1024
+    private const val SDL2_ANDROID_BRIDGE_MARKER = "org/libsdl2/app/SDLActivity"
+    private const val SDL3_ANDROID_BRIDGE_MARKER = "org/libsdl/app/SDLActivity"
 
-    private val sdl2NamePattern = Regex("""^libSDL2\.so(?:\..+)?$""")
-    private val sdl3NamePattern = Regex("""^libSDL3\.so(?:\..+)?$""")
+    private val sdlLibraryNamePattern =
+        Regex("""^libSDL([23])(?:-[0-9][0-9.]*)?\.so(?:\..+)?$""")
 
     private val systemLibraryNames = AndroidSystemLibraries.ndkProvided
 
@@ -63,6 +69,7 @@ object SdlRuntimeResolver {
         mainLibraryPath: String,
         extraRuntimeLibDirs: List<File> = emptyList(),
         allowUndetectedSdl: Boolean = false,
+        preferredSdlMajor: Int? = null,
     ): ResolveResult {
         if (mainLibraryPath.isBlank()) {
             return ResolveResult.Error(Strings.sdl_runtime_error_main_library_missing.strOr(context))
@@ -71,6 +78,17 @@ object SdlRuntimeResolver {
         val mainLibrary = File(mainLibraryPath)
 
         val projectRoot = resolveProjectRoot(mainLibrary.parentFile)
+        val configuredSdlMajor = preferredSdlMajor?.also { major ->
+            if (major != 2 && major != 3) {
+                return ResolveResult.Error(
+                    Strings.sdl_runtime_error_invalid_required_major.strOr(context, major)
+                )
+            }
+        }
+        val projectSdlMajor = projectRoot
+            ?.let(ProjectMetadataStore::read)
+            ?.getSdlVersionOrNull()
+            ?.major
         val packagePaths = InstalledPackagePathResolver.resolve(
             context = context.applicationContext,
             projectRoot = projectRoot
@@ -78,6 +96,17 @@ object SdlRuntimeResolver {
         val configuredRuntimeDirs = normalizeRuntimeDirs(
             extraRuntimeLibDirs + packagePaths.runtimeLibDirs
         )
+        val managedPackages = resolveManagedAndroidPackages(context.applicationContext)
+        val configuredExistingRuntimeDirs = configuredRuntimeDirs.filter { it.isDirectory }
+        val localRuntimeDirs = linkedSetOf<File>().apply {
+            mainLibrary.parentFile?.takeIf { it.isDirectory }?.let(::add)
+            addAll(configuredExistingRuntimeDirs)
+        }.toList()
+        val discoveryRuntimeDirs = linkedSetOf<File>().apply {
+            addAll(localRuntimeDirs)
+            managedPackages.flatMapTo(this) { it.runtimeLibDirs }
+        }.toList()
+        val discoveryRuntimeIndex = buildRuntimeLibraryIndex(discoveryRuntimeDirs)
 
         val neededLibraries = try {
             extractNeededLibraryNames(mainLibrary)
@@ -92,29 +121,40 @@ object SdlRuntimeResolver {
             )
         }
 
-        val requiresSdl2 = neededLibraries.any { sdl2NamePattern.matches(it) }
-        val requiresSdl3 = neededLibraries.any { sdl3NamePattern.matches(it) }
-        if (requiresSdl2 && requiresSdl3) {
+        val detectedSdlMajors = detectRequiredSdlMajors(
+            mainLibrary = mainLibrary,
+            neededLibraries = neededLibraries,
+            runtimeIndex = discoveryRuntimeIndex,
+        )
+        if (detectedSdlMajors.size > 1) {
             return ResolveResult.Error(Strings.sdl_runtime_error_conflicting_versions.strOr(context))
         }
 
-        val detectedSdlMajor = when {
-            requiresSdl3 -> 3
-            requiresSdl2 -> 2
-            else -> if (allowUndetectedSdl) null else return ResolveResult.NonSdl
+        val detectedSdlMajor = detectedSdlMajors.singleOrNull()
+        if (detectedSdlMajor == null && !allowUndetectedSdl) {
+            return ResolveResult.NonSdl
+        }
+        if (configuredSdlMajor != null && detectedSdlMajor != null && configuredSdlMajor != detectedSdlMajor) {
+            return ResolveResult.Error(
+                Strings.sdl_runtime_error_configured_version_mismatch.strOr(
+                    context,
+                    configuredSdlMajor,
+                    detectedSdlMajor,
+                )
+            )
         }
 
-        val managedPackages = resolveManagedAndroidPackages(context.applicationContext)
-        val configuredExistingRuntimeDirs = configuredRuntimeDirs.filter { it.isDirectory }
+        val fallbackSdlMajor = configuredSdlMajor ?: projectSdlMajor
         val selectedRuntime = selectSdlRuntime(
             managedPackages = managedPackages,
-            runtimeDirs = configuredExistingRuntimeDirs,
+            runtimeDirs = localRuntimeDirs,
             detectedSdlMajor = detectedSdlMajor,
+            fallbackSdlMajor = fallbackSdlMajor,
         ) ?: return ResolveResult.Error(
-            if (detectedSdlMajor != null) {
+            if (detectedSdlMajor != null || fallbackSdlMajor != null) {
                 buildMissingSdlRuntimeMessage(
                     context = context,
-                    requiredSdlMajor = detectedSdlMajor,
+                    requiredSdlMajor = detectedSdlMajor ?: fallbackSdlMajor!!,
                     managedPackages = managedPackages
                 )
             } else {
@@ -123,6 +163,33 @@ object SdlRuntimeResolver {
         )
         val requiredSdlMajor = selectedRuntime.first
         val selectedSdlLibrary = selectedRuntime.second
+        val expectedAndroidBridgeMarker = expectedAndroidBridgeMarker(requiredSdlMajor)
+        val isAndroidBridgeCompatible = try {
+            hasExpectedAndroidBridge(selectedSdlLibrary.libraryFile, requiredSdlMajor)
+        } catch (error: IOException) {
+            Timber.tag(TAG).e(
+                error,
+                "Failed to inspect SDL Android bridge: %s",
+                selectedSdlLibrary.libraryFile.absolutePath,
+            )
+            return ResolveResult.Error(
+                Strings.sdl_runtime_error_scan_failed.strOr(
+                    context,
+                    selectedSdlLibrary.libraryFile.absolutePath,
+                    error.message ?: "I/O error",
+                )
+            )
+        }
+        if (!isAndroidBridgeCompatible) {
+            return ResolveResult.Error(
+                Strings.sdl_runtime_error_incompatible_android_bridge.strOr(
+                    context,
+                    requiredSdlMajor,
+                    selectedSdlLibrary.libraryFile.absolutePath,
+                    expectedAndroidBridgeMarker,
+                )
+            )
+        }
 
         val runtimeDirs = linkedSetOf<File>().apply {
             mainLibrary.parentFile?.takeIf { it.isDirectory }?.let(::add)
@@ -171,14 +238,17 @@ object SdlRuntimeResolver {
         )
     }
 
-    private fun requiredSdlSoname(requiredSdlMajor: Int): String = if (requiredSdlMajor == 3) "libSDL3.so" else "libSDL2.so"
+    private fun requiredSdlSoname(requiredSdlMajor: Int): String = "libSDL$requiredSdlMajor.so"
 
     private fun selectSdlRuntime(
         managedPackages: List<ManagedAndroidPackage>,
         runtimeDirs: List<File>,
         detectedSdlMajor: Int?,
+        fallbackSdlMajor: Int?,
     ): Pair<Int, SdlLibrarySelection>? {
-        val candidateMajors = detectedSdlMajor?.let(::listOf) ?: listOf(3, 2)
+        val candidateMajors = detectedSdlMajor?.let(::listOf)
+            ?: fallbackSdlMajor?.let(::listOf)
+            ?: listOf(3, 2)
         candidateMajors.forEach { major ->
             val selection = selectSdlLibraryFromManagedPackages(managedPackages, major)
                 ?: selectSdlLibraryFromRuntimeDirs(runtimeDirs, major)
@@ -192,11 +262,10 @@ object SdlRuntimeResolver {
         requiredSdlMajor: Int,
     ): SdlLibrarySelection? {
         val requiredName = requiredSdlSoname(requiredSdlMajor)
-        val matcher = if (requiredSdlMajor == 3) sdl3NamePattern else sdl2NamePattern
 
         runtimeDirs.forEach { dir ->
             val candidates = dir.listFiles { file ->
-                file.isFile && matcher.matches(file.name)
+                file.isFile && sdlMajorFromLibraryName(file.name) == requiredSdlMajor
             }?.sortedWith(
                 compareBy<File>(
                     { it.name != requiredName },
@@ -221,11 +290,12 @@ object SdlRuntimeResolver {
         requiredSdlMajor: Int
     ): SdlLibrarySelection? {
         val requiredName = requiredSdlSoname(requiredSdlMajor)
-        val matcher = if (requiredSdlMajor == 3) sdl3NamePattern else sdl2NamePattern
         val candidates = buildList {
             managedPackages.forEach { pkg ->
                 pkg.runtimeLibDirs.forEach { dir ->
-                    val files = dir.listFiles { file -> file.isFile && matcher.matches(file.name) }
+                    val files = dir.listFiles { file ->
+                        file.isFile && sdlMajorFromLibraryName(file.name) == requiredSdlMajor
+                    }
                         ?.toList()
                         .orEmpty()
                     files.forEach { file ->
@@ -427,6 +497,65 @@ object SdlRuntimeResolver {
         return index
     }
 
+    internal fun detectRequiredSdlMajors(
+        mainLibrary: File,
+        neededLibraries: Set<String>,
+        runtimeIndex: Map<String, File>,
+        dependencyReader: (File) -> Set<String> = NativeLibraryDependencyReader::readNeededLibraryNames,
+    ): Set<Int> {
+        val detectedMajors = linkedSetOf<Int>()
+        val pendingLibraries = ArrayDeque<File>()
+        val visitedPaths = mutableSetOf(canonicalPath(mainLibrary))
+        var scannedFileCount = 1
+
+        fun inspectDependencies(dependencies: Set<String>) {
+            dependencies.sorted().forEach { needed ->
+                val sdlMajor = sdlMajorFromLibraryName(needed)
+                if (sdlMajor != null) {
+                    detectedMajors += sdlMajor
+                    return@forEach
+                }
+
+                val canonicalName = canonicalSoName(needed)
+                if (needed in systemLibraryNames || (canonicalName != null && canonicalName in systemLibraryNames)) {
+                    return@forEach
+                }
+
+                val dependencyFile = runtimeIndex[needed]
+                    ?: canonicalName?.let(runtimeIndex::get)
+                    ?: return@forEach
+                if (visitedPaths.add(canonicalPath(dependencyFile))) {
+                    pendingLibraries += dependencyFile
+                }
+            }
+        }
+
+        inspectDependencies(neededLibraries)
+        while (pendingLibraries.isNotEmpty() && scannedFileCount < MAX_DEPENDENCY_SCAN_FILES) {
+            val dependencyFile = pendingLibraries.removeFirst()
+            scannedFileCount++
+            val transitiveDependencies = runCatching { dependencyReader(dependencyFile) }
+                .onFailure { error ->
+                    Timber.tag(TAG).w(
+                        error,
+                        "Failed to inspect SDL version dependency: %s",
+                        dependencyFile.absolutePath,
+                    )
+                }
+                .getOrDefault(emptySet())
+            inspectDependencies(transitiveDependencies)
+        }
+
+        if (pendingLibraries.isNotEmpty()) {
+            Timber.tag(TAG).w(
+                "Stopped SDL dependency scan after %d files for %s",
+                MAX_DEPENDENCY_SCAN_FILES,
+                mainLibrary.absolutePath,
+            )
+        }
+        return detectedMajors
+    }
+
     private fun putRuntimeLibrary(
         index: MutableMap<String, File>,
         libraryName: String,
@@ -534,6 +663,69 @@ object SdlRuntimeResolver {
         if (markerIndex < 0) return null
         return name.substring(0, markerIndex + 3)
     }
+
+    private fun sdlMajorFromLibraryName(name: String): Int? = sdlLibraryNamePattern
+        .matchEntire(name)
+        ?.groupValues
+        ?.getOrNull(1)
+        ?.toIntOrNull()
+
+    @Throws(IOException::class)
+    internal fun hasExpectedAndroidBridge(
+        library: File,
+        requiredSdlMajor: Int,
+    ): Boolean = containsByteSequence(
+        library = library,
+        marker = expectedAndroidBridgeMarker(requiredSdlMajor).toByteArray(Charsets.US_ASCII),
+    )
+
+    private fun expectedAndroidBridgeMarker(requiredSdlMajor: Int): String = when (requiredSdlMajor) {
+        2 -> SDL2_ANDROID_BRIDGE_MARKER
+        3 -> SDL3_ANDROID_BRIDGE_MARKER
+        else -> error("Unsupported SDL major: $requiredSdlMajor")
+    }
+
+    @Throws(IOException::class)
+    private fun containsByteSequence(
+        library: File,
+        marker: ByteArray,
+    ): Boolean {
+        val overlapSize = marker.size - 1
+        val buffer = ByteArray(BINARY_SCAN_BUFFER_SIZE + overlapSize)
+        var retainedBytes = 0
+
+        library.inputStream().buffered().use { input ->
+            while (true) {
+                val readBytes = input.read(buffer, retainedBytes, buffer.size - retainedBytes)
+                if (readBytes < 0) return false
+                if (readBytes == 0) continue
+
+                val availableBytes = retainedBytes + readBytes
+                val lastStartIndex = availableBytes - marker.size
+                for (startIndex in 0..lastStartIndex) {
+                    var markerIndex = 0
+                    while (
+                        markerIndex < marker.size &&
+                        buffer[startIndex + markerIndex] == marker[markerIndex]
+                    ) {
+                        markerIndex++
+                    }
+                    if (markerIndex == marker.size) return true
+                }
+
+                retainedBytes = minOf(overlapSize, availableBytes)
+                buffer.copyInto(
+                    destination = buffer,
+                    destinationOffset = 0,
+                    startIndex = availableBytes - retainedBytes,
+                    endIndex = availableBytes,
+                )
+            }
+        }
+    }
+
+    private fun canonicalPath(file: File): String = runCatching { file.canonicalPath }
+        .getOrDefault(file.absolutePath)
 
     private fun resolveProjectRoot(startDir: File?): File? {
         var current = startDir

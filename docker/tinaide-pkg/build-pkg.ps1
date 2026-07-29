@@ -1,19 +1,19 @@
 <#
 .SYNOPSIS
-    TinaIDE Package Builder - Windows PowerShell 编排脚本
+    TinaIDE Package Builder - Windows PowerShell orchestration script
 .DESCRIPTION
-    构建 Android NDK 原生库（静态库/动态库）
-    支持指定库、架构、链接类型
+    Builds Android NDK native libraries (static or shared).
+    Supports selecting a library, architecture, and link type.
 .PARAMETER Library
-    要构建的库名称：zlib, openssl, curl, libssh2, libgit2, pcre2, sdl3, all
+    Library to build. Use -List to show all supported package IDs, or all for the complete matrix.
 .PARAMETER Arch
-    目标架构：arm64-v8a, armeabi-v7a, x86_64, x86, all
+    Target architecture: arm64-v8a, armeabi-v7a, x86_64, x86, all
 .PARAMETER LinkType
-    链接类型：static, shared, all
+    Link type: static, shared, all
 .PARAMETER Mode
-    构建模式：incremental (默认), rebuild, clean
+    Build mode: incremental (default), rebuild, clean
 .PARAMETER List
-    列出可用的库和已构建的包
+    Lists supported libraries and existing artifacts.
 .EXAMPLE
     .\build-pkg.ps1 -Library zlib -Arch arm64-v8a -LinkType static
 .EXAMPLE
@@ -24,7 +24,7 @@
 
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("zlib", "openssl", "curl", "libssh2", "libgit2", "pcre2", "sdl3", "all")]
+    [ValidateSet("zlib", "openssl", "curl", "libssh2", "libgit2", "pcre2", "sdl2", "sdl3", "sdl2-image", "sdl2-ttf", "sdl2-mixer", "sdl2-net", "sdl3-image", "sdl3-ttf", "sdl3-mixer", "sdl3-net", "raylib", "box2d", "all")]
     [string]$Library = "all",
 
     [Parameter(Position = 1)]
@@ -45,46 +45,79 @@ param(
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-# ===== 配置 =====
+# Keep this script ASCII-only so Windows PowerShell 5.1 can load it without a UTF-8 BOM.
+# ===== Configuration =====
 $IMAGE_NAME = "tinaide-pkg-builder"
 $CONTAINER_NAME = "tinaide-pkg-build"
 $SOURCE_VOLUME = "tinaide-pkg-source"
 $OUTPUT_DIR = Join-Path $ScriptDir "output"
 
-# 所有架构
+# Supported architectures
 $ALL_ARCHS = @("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
 
-# 所有库 (按依赖顺序)
-$ALL_LIBS = @("zlib", "openssl", "pcre2", "libssh2", "curl", "libgit2", "sdl3")
+# Libraries in dependency order
+$ALL_LIBS = @(
+    "zlib", "openssl", "pcre2", "libssh2", "curl", "libgit2",
+    "sdl2", "sdl3",
+    "sdl2-image", "sdl2-ttf", "sdl2-mixer", "sdl2-net",
+    "sdl3-image", "sdl3-ttf", "sdl3-mixer", "sdl3-net",
+    "raylib", "box2d"
+)
+$SHARED_ONLY_LIBS = @(
+    "sdl2-image", "sdl2-ttf", "sdl2-mixer", "sdl2-net",
+    "sdl3-image", "sdl3-ttf", "sdl3-mixer", "sdl3-net",
+    "raylib"
+)
+$STATIC_ONLY_LIBS = @("box2d")
 
-# ===== 辅助函数 =====
+# ===== Helpers =====
 function Write-Info { param($Message) Write-Host "[INFO] $Message" -ForegroundColor Cyan }
 function Write-Success { param($Message) Write-Host "[SUCCESS] $Message" -ForegroundColor Green }
 function Write-Warn { param($Message) Write-Host "[WARN] $Message" -ForegroundColor Yellow }
 function Write-Err { param($Message) Write-Host "[ERROR] $Message" -ForegroundColor Red }
 
+function Test-LibraryLinkType {
+    param(
+        [Parameter(Mandatory = $true)][string]$Lib,
+        [Parameter(Mandatory = $true)][string]$Link
+    )
+
+    if ($SHARED_ONLY_LIBS -contains $Lib) {
+        return $Link -eq "shared"
+    }
+    if ($STATIC_ONLY_LIBS -contains $Lib) {
+        return $Link -eq "static"
+    }
+    return $true
+}
+
 function Show-Help {
     Get-Help $MyInvocation.PSCommandPath -Detailed
     Write-Host ""
-    Write-Host "可用的库:" -ForegroundColor Yellow
+    Write-Host "Available libraries:" -ForegroundColor Yellow
     $ALL_LIBS | ForEach-Object { Write-Host "  - $_" }
     Write-Host ""
-    Write-Host "支持的架构:" -ForegroundColor Yellow
+    Write-Host "Supported architectures:" -ForegroundColor Yellow
     $ALL_ARCHS | ForEach-Object { Write-Host "  - $_" }
     Write-Host ""
-    Write-Host "依赖关系:" -ForegroundColor Yellow
+    Write-Host "Dependencies:" -ForegroundColor Yellow
     Write-Host "  libssh2  -> openssl, zlib"
     Write-Host "  libgit2  -> openssl, libssh2, zlib"
-    Write-Host "  curl     -> openssl (可选)"
-    Write-Host "  sdl3     -> 无依赖 (独立库)"
+    Write-Host "  curl     -> openssl (optional)"
+    Write-Host "  sdl2     -> none (standalone, relocated Android Java/JNI bridge)"
+    Write-Host "  sdl3     -> none (standalone)"
+    Write-Host "  sdl2-*   -> sdl2 (shared only)"
+    Write-Host "  sdl3-*   -> sdl3 (shared only)"
+    Write-Host "  raylib   -> none (shared only)"
+    Write-Host "  box2d    -> none (static only)"
 }
 
 function Show-List {
-    Write-Info "可用的库:"
+    Write-Info "Available libraries:"
     $ALL_LIBS | ForEach-Object { Write-Host "  - $_" }
 
     Write-Host ""
-    Write-Info "已构建的包:"
+    Write-Info "Existing artifacts:"
 
     if (Test-Path $OUTPUT_DIR) {
         Get-ChildItem -Path $OUTPUT_DIR -Recurse -Filter "*.tar.xz" | ForEach-Object {
@@ -94,28 +127,28 @@ function Show-List {
         }
     }
     else {
-        Write-Host "  (无)"
+        Write-Host "  (none)"
     }
 }
 
-# ===== Docker 操作 =====
+# ===== Docker operations =====
 function Ensure-DockerImage {
-    Write-Info "检查 Docker 镜像..."
+    Write-Info "Checking Docker image..."
 
     $imageExists = docker images -q $IMAGE_NAME 2>$null
 
     if ($Mode -eq "rebuild" -or -not $imageExists) {
-        Write-Info "构建 Docker 镜像 $IMAGE_NAME ..."
+        Write-Info "Building Docker image $IMAGE_NAME ..."
         docker build -t $IMAGE_NAME $ScriptDir
 
         if ($LASTEXITCODE -ne 0) {
-            Write-Err "Docker 镜像构建失败"
+            Write-Err "Docker image build failed"
             exit 1
         }
-        Write-Success "Docker 镜像构建完成"
+        Write-Success "Docker image build completed"
     }
     else {
-        Write-Info "使用已有镜像: $IMAGE_NAME"
+        Write-Info "Using existing image: $IMAGE_NAME"
     }
 }
 
@@ -123,12 +156,12 @@ function Ensure-SourceVolume {
     $volumeExists = docker volume ls -q --filter "name=$SOURCE_VOLUME"
 
     if ($Mode -eq "clean" -and $volumeExists) {
-        Write-Info "清理源码 volume..."
+        Write-Info "Removing source volume..."
         docker volume rm $SOURCE_VOLUME 2>$null
     }
 
     if (-not (docker volume ls -q --filter "name=$SOURCE_VOLUME")) {
-        Write-Info "创建源码 volume: $SOURCE_VOLUME"
+        Write-Info "Creating source volume: $SOURCE_VOLUME"
         docker volume create $SOURCE_VOLUME
     }
 }
@@ -141,16 +174,16 @@ function Run-Build {
     )
 
     Write-Info "=========================================="
-    Write-Info "构建: $Lib ($Architecture, $Link)"
+    Write-Info "Building: $Lib ($Architecture, $Link)"
     Write-Info "=========================================="
 
-    # 确保输出目录存在
-    $libOutputDir = Join-Path $OUTPUT_DIR $Lib $Architecture
+    # Ensure the output directory exists.
+    $libOutputDir = Join-Path (Join-Path $OUTPUT_DIR $Lib) $Architecture
     if (-not (Test-Path $libOutputDir)) {
         New-Item -ItemType Directory -Path $libOutputDir -Force | Out-Null
     }
 
-    # 运行容器
+    # Run the build container.
     $cmd = @(
         "docker", "run", "--rm",
         "-v", "${SOURCE_VOLUME}:/build/src",
@@ -159,20 +192,22 @@ function Run-Build {
         "/build/build.sh", $Lib, $Architecture, $Link
     )
 
-    Write-Info "执行: $($cmd -join ' ')"
+    Write-Info "Executing: $($cmd -join ' ')"
 
-    & $cmd[0] $cmd[1..($cmd.Length - 1)]
+    $dockerExe = $cmd[0]
+    $dockerArgs = $cmd[1..($cmd.Length - 1)]
+    & $dockerExe @dockerArgs
 
     if ($LASTEXITCODE -ne 0) {
-        Write-Err "构建失败: $Lib ($Architecture, $Link)"
+        Write-Err "Build failed: $Lib ($Architecture, $Link)"
         return $false
     }
 
-    Write-Success "构建完成: $Lib ($Architecture, $Link)"
+    Write-Success "Build completed: $Lib ($Architecture, $Link)"
     return $true
 }
 
-# ===== 主程序 =====
+# ===== Main =====
 function Main {
     if ($Help) {
         Show-Help
@@ -186,66 +221,89 @@ function Main {
 
     Write-Info "TinaIDE Package Builder"
     Write-Info "======================="
-    Write-Info "库: $Library"
-    Write-Info "架构: $Arch"
-    Write-Info "链接类型: $LinkType"
-    Write-Info "模式: $Mode"
+    Write-Info "Library: $Library"
+    Write-Info "Architecture: $Arch"
+    Write-Info "Link type: $LinkType"
+    Write-Info "Mode: $Mode"
 
-    # 清理模式
+    # Clean mode
     if ($Mode -eq "clean") {
-        Write-Info "执行清理..."
+        Write-Info "Cleaning..."
 
-        # 删除输出目录
+        # Remove artifacts.
         if (Test-Path $OUTPUT_DIR) {
             Remove-Item -Recurse -Force $OUTPUT_DIR
-            Write-Info "已删除输出目录"
+            Write-Info "Removed output directory"
         }
 
-        # 删除 Docker 资源
+        # Remove Docker resources.
         docker rm -f $CONTAINER_NAME 2>$null
         docker volume rm $SOURCE_VOLUME 2>$null
         docker rmi $IMAGE_NAME 2>$null
 
-        Write-Success "清理完成"
+        Write-Success "Cleanup completed"
         return
     }
 
-    # 确保 Docker 环境
+    # Prepare Docker.
     Ensure-DockerImage
     Ensure-SourceVolume
 
-    # 确保输出目录
+    # Ensure the output directory exists.
     if (-not (Test-Path $OUTPUT_DIR)) {
         New-Item -ItemType Directory -Path $OUTPUT_DIR -Force | Out-Null
     }
 
-    # 展开参数
+    # Expand aggregate parameters.
     $targetLibs = if ($Library -eq "all") { $ALL_LIBS } else { @($Library) }
     $targetArchs = if ($Arch -eq "all") { $ALL_ARCHS } else { @($Arch) }
     $targetLinks = if ($LinkType -eq "all") { @("static", "shared") } else { @($LinkType) }
 
-    # 计数
-    $total = $targetLibs.Count * $targetArchs.Count * $targetLinks.Count
+    $buildTargets = @(
+        foreach ($lib in $targetLibs) {
+            foreach ($arch in $targetArchs) {
+                foreach ($link in $targetLinks) {
+                    if (Test-LibraryLinkType -Lib $lib -Link $link) {
+                        [PSCustomObject]@{
+                            Library = $lib
+                            Architecture = $arch
+                            Link = $link
+                        }
+                    }
+                    else {
+                        Write-Warn "Skipping unsupported combination: $lib ($arch, $link)"
+                    }
+                }
+            }
+        }
+    )
+    if ($buildTargets.Count -eq 0) {
+        Write-Err "No supported build combinations were selected"
+        exit 1
+    }
+
+    # Counters
+    $total = $buildTargets.Count
     $current = 0
     $success = 0
     $failed = 0
 
     $startTime = Get-Date
 
-    # 构建循环
-    foreach ($lib in $targetLibs) {
-        foreach ($arch in $targetArchs) {
-            foreach ($link in $targetLinks) {
-                $current++
-                Write-Info "进度: $current / $total"
+    # Build loop
+    foreach ($buildTarget in $buildTargets) {
+        $current++
+        Write-Info "Progress: $current / $total"
 
-                if (Run-Build -Lib $lib -Architecture $arch -Link $link) {
-                    $success++
-                }
-                else {
-                    $failed++
-                }
-            }
+        if (Run-Build `
+            -Lib $buildTarget.Library `
+            -Architecture $buildTarget.Architecture `
+            -Link $buildTarget.Link
+        ) {
+            $success++
+        }
+        else {
+            $failed++
         }
     }
 
@@ -253,16 +311,20 @@ function Main {
 
     Write-Host ""
     Write-Info "=========================================="
-    Write-Info "构建完成"
+    Write-Info "Build completed"
     Write-Info "=========================================="
-    Write-Info "成功: $success"
-    Write-Info "失败: $failed"
-    Write-Info "耗时: $($elapsed.ToString('hh\:mm\:ss'))"
-    Write-Info "输出目录: $OUTPUT_DIR"
+    Write-Info "Succeeded: $success"
+    Write-Info "Failed: $failed"
+    Write-Info "Elapsed: $($elapsed.ToString('hh\:mm\:ss'))"
+    Write-Info "Output directory: $OUTPUT_DIR"
 
-    # 列出生成的包
+    # List generated artifacts.
     Write-Host ""
     Show-List
+
+    if ($failed -gt 0) {
+        exit 1
+    }
 }
 
 Main

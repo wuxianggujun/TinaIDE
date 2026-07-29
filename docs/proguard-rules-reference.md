@@ -107,7 +107,7 @@ R8 对代码执行三项操作：
 | **LuaJava** | 4.1.0 | JNI native 方法 + Lua↔Java 反射回调 | `core:plugin/consumer-rules.pro` | `-keep class` + `-keepclasseswithmembernames` native |
 | **zstd-jni** | 1.5.5-11 | JNI native 加载（`Zstd` 类名已由 R8 保留） | 无需额外（JNI 全局规则覆盖） | — |
 | **xcrash** | — | JNI 崩溃回调 (`crashCallback`/`traceCallback`) | `external/xcrash/proguard-rules.pro` | `-keep class` NativeHandler |
-| **SDL3** | — | JNI 从 native 侧通过硬编码类名反射调用 Java 层 | `app/proguard-rules.pro` | `-keep class org.libsdl.app.** { *; }` |
+| **SDL2 / SDL3** | — | JNI 从 native 侧通过硬编码类名调用 Java 层 | `app/proguard-rules.pro` | 保留 `org.libsdl2.app.**` 与 `org.libsdl.app.**` |
 | **Termux Terminal** | — | JNI + View XML 构造函数 | `feature:terminal/consumer-rules.pro` | `-keep class` JNI + View 构造 |
 | **JLatexMath** | 1.3 | 反射加载字体资源和符号映射配置文件 | `app/proguard-rules.pro` | `-keep class ru.noties.jlatexmath.** { *; }` |
 | **Jsoup** | 1.22.1 | 安全网（自带 consumer-rules，但保险起见保留核心类；其可选 `re2j` 依赖在 Android 未引入时需抑制 R8 告警） | `app/proguard-rules.pro` | `-keep class org.jsoup.** { *; }` + `-dontwarn com.google.re2j.**` |

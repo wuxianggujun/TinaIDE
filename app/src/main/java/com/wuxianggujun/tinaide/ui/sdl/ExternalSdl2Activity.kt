@@ -1,8 +1,6 @@
 package com.wuxianggujun.tinaide.ui.sdl
 
 import android.annotation.SuppressLint
-import android.app.Activity
-import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.os.Bundle
@@ -32,35 +30,19 @@ import com.wuxianggujun.tinaide.ui.compose.components.FloatingOverlay
 import com.wuxianggujun.tinaide.ui.runtime.NativeLaunchEnvironment
 import com.wuxianggujun.tinaide.ui.runtime.NativeStdStreamRedirect
 import com.wuxianggujun.tinaide.ui.theme.TinaIDETheme
-import java.io.File
-import org.libsdl.app.SDLActivity
+import org.libsdl2.app.SDLActivity
 import timber.log.Timber
 
-internal fun buildSdlLibraryLoadOrder(
-    preSdlLibraryPaths: List<String>,
-    sdlLibraryPath: String,
-    preloadLibraryPaths: List<String>,
-    mainLibraryPath: String
-): List<String> = linkedSetOf<String>().apply {
-    preSdlLibraryPaths.filterTo(this) { it.isNotBlank() }
-    sdlLibraryPath.takeIf { it.isNotBlank() }?.let(::add)
-    preloadLibraryPaths.filterTo(this) { it.isNotBlank() }
-    mainLibraryPath.takeIf { it.isNotBlank() }?.let(::add)
-}.toList()
-
-internal fun externalSdlActivityClass(requiredSdlMajor: Int): Class<out Activity> =
-    when (requiredSdlMajor) {
-        2 -> ExternalSdl2Activity::class.java
-        else -> ExternalSdlActivity::class.java
-    }
-
 /**
- * 外部 SDL 启动 Activity：
+ * 外部 SDL2 启动 Activity：
  * - 不使用 APK 内置 SDL so；
- * - 通过绝对路径加载包机制下载的 SDL2/SDL3 共享库；
+ * - 通过绝对路径加载包机制下载的 SDL2 共享库；
  * - 使用用户编译产物 .so 作为 SDL_main 所在主库。
+ *
+ * SDL2 和 SDL3 的 Java/JNI glue 不是同一套 ABI，因此不能共用 SDL3 的
+ * [org.libsdl.app.SDLActivity]。本 Activity 只承载 SDL2，并在独立进程中运行。
  */
-class ExternalSdlActivity :
+class ExternalSdl2Activity :
     SDLActivity(),
     LifecycleOwner,
     ViewModelStoreOwner,
@@ -77,59 +59,9 @@ class ExternalSdlActivity :
     override val viewModelStore: ViewModelStore get() = viewModelStoreField
 
     companion object {
-        private const val TAG = "ExternalSdlActivity"
+        private const val TAG = "ExternalSdl2Activity"
         private const val DOUBLE_BACK_EXIT_INTERVAL_MS = 2000L
         private const val NATIVE_QUIT_GRACE_PERIOD_MS = 800L
-        private const val SDL_RENDER_DRIVER_ENV = "SDL_RENDER_DRIVER"
-        private const val DEFAULT_ANDROID_SDL_RENDER_DRIVER = "opengles2"
-
-        const val EXTRA_SDL_LIBRARY_PATH = "extra_sdl_library_path"
-        const val EXTRA_MAIN_LIBRARY_PATH = "extra_main_library_path"
-        const val EXTRA_REQUIRED_SDL_MAJOR = "extra_required_sdl_major"
-        const val EXTRA_PRE_SDL_LIBRARY_PATHS = "extra_pre_sdl_library_paths"
-        const val EXTRA_PRELOAD_LIBRARY_PATHS = "extra_preload_library_paths"
-        const val EXTRA_SDL_ORIENTATION = "extra_sdl_orientation"
-        const val EXTRA_ENABLE_FLOATING_LOG = "extra_enable_floating_log"
-
-        fun createIntent(
-            context: Context,
-            sdlLibraryPath: String,
-            mainLibraryPath: String,
-            requiredSdlMajor: Int,
-            preSdlLibraryPaths: List<String>,
-            preloadLibraryPaths: List<String>,
-            sdlOrientation: SdlOrientation = SdlOrientation.AUTO,
-            enableFloatingLog: Boolean = false,
-            launchEnvironment: Map<String, String> = emptyMap(),
-        ): Intent = Intent(context, externalSdlActivityClass(requiredSdlMajor)).apply {
-            putExtra(EXTRA_SDL_LIBRARY_PATH, sdlLibraryPath)
-            putExtra(EXTRA_MAIN_LIBRARY_PATH, mainLibraryPath)
-            putExtra(EXTRA_REQUIRED_SDL_MAJOR, requiredSdlMajor)
-            putStringArrayListExtra(
-                EXTRA_PRE_SDL_LIBRARY_PATHS,
-                ArrayList(preSdlLibraryPaths)
-            )
-            putStringArrayListExtra(
-                EXTRA_PRELOAD_LIBRARY_PATHS,
-                ArrayList(preloadLibraryPaths)
-            )
-            putExtra(EXTRA_SDL_ORIENTATION, sdlOrientation.name)
-            putExtra(EXTRA_ENABLE_FLOATING_LOG, enableFloatingLog)
-            NativeLaunchEnvironment.putIntoIntent(
-                this,
-                withAndroidSdlDefaults(launchEnvironment)
-            )
-        }
-
-        private fun withAndroidSdlDefaults(environment: Map<String, String>): Map<String, String> {
-            if (environment.containsKey(SDL_RENDER_DRIVER_ENV)) return environment
-
-            return buildMap(environment.size + 1) {
-                // Android Vulkan renderer 在部分驱动的 Surface 恢复路径上不稳定，默认使用 OpenGL ES 保留后台恢复体验。
-                put(SDL_RENDER_DRIVER_ENV, DEFAULT_ANDROID_SDL_RENDER_DRIVER)
-                putAll(environment)
-            }
-        }
     }
 
     private var sdlLibraryPath: String = ""
@@ -166,25 +98,25 @@ class ExternalSdlActivity :
         // Must restore before super.onCreate (while lifecycle is INITIALIZED)
         savedStateRegistryController.performRestore(savedInstanceState)
 
-        sdlLibraryPath = intent.getStringExtra(EXTRA_SDL_LIBRARY_PATH).orEmpty()
-        mainLibraryPath = intent.getStringExtra(EXTRA_MAIN_LIBRARY_PATH).orEmpty()
-        requiredSdlMajor = intent.getIntExtra(EXTRA_REQUIRED_SDL_MAJOR, 0)
-        preSdlLibraryPaths = intent.getStringArrayListExtra(EXTRA_PRE_SDL_LIBRARY_PATHS)
+        sdlLibraryPath = intent.getStringExtra(ExternalSdlActivity.EXTRA_SDL_LIBRARY_PATH).orEmpty()
+        mainLibraryPath = intent.getStringExtra(ExternalSdlActivity.EXTRA_MAIN_LIBRARY_PATH).orEmpty()
+        requiredSdlMajor = intent.getIntExtra(ExternalSdlActivity.EXTRA_REQUIRED_SDL_MAJOR, 0)
+        preSdlLibraryPaths = intent.getStringArrayListExtra(ExternalSdlActivity.EXTRA_PRE_SDL_LIBRARY_PATHS)
             ?.map { it.trim() }
             ?.filter { it.isNotEmpty() }
             ?.distinct()
             .orEmpty()
-        preloadLibraryPaths = intent.getStringArrayListExtra(EXTRA_PRELOAD_LIBRARY_PATHS)
+        preloadLibraryPaths = intent.getStringArrayListExtra(ExternalSdlActivity.EXTRA_PRELOAD_LIBRARY_PATHS)
             ?.map { it.trim() }
             ?.filter { it.isNotEmpty() }
             ?.distinct()
             .orEmpty()
 
-        val orientationName = intent.getStringExtra(EXTRA_SDL_ORIENTATION)
+        val orientationName = intent.getStringExtra(ExternalSdlActivity.EXTRA_SDL_ORIENTATION)
         userOrientation = orientationName?.let {
             runCatching { SdlOrientation.valueOf(it) }.getOrDefault(SdlOrientation.AUTO)
         } ?: SdlOrientation.AUTO
-        enableFloatingLog = intent.getBooleanExtra(EXTRA_ENABLE_FLOATING_LOG, false)
+        enableFloatingLog = intent.getBooleanExtra(ExternalSdlActivity.EXTRA_ENABLE_FLOATING_LOG, false)
 
         val validationError = validateLaunchParams()
         if (validationError != null) {
@@ -346,15 +278,11 @@ class ExternalSdlActivity :
 
     override fun getMainSharedObject(): String = mainLibraryPath
 
-    override fun getExpectedSdlVersion(): String = if (requiredSdlMajor == 2 || requiredSdlMajor == 3) {
-        "$requiredSdlMajor.x"
-    } else {
-        super.getExpectedSdlVersion()
-    }
+    override fun getExpectedSdlVersion(): String = "2.x"
 
     override fun isNativeVersionCompatible(version: String): Boolean {
         val nativeMajor = version.substringBefore('.').toIntOrNull() ?: return false
-        return nativeMajor == requiredSdlMajor
+        return nativeMajor == 2
     }
 
     // endregion
@@ -467,7 +395,7 @@ class ExternalSdlActivity :
             return Strings.sdl_runtime_error_missing_launch_params.strOr(this)
         }
 
-        if (requiredSdlMajor != 2 && requiredSdlMajor != 3) {
+        if (requiredSdlMajor != 2) {
             return Strings.sdl_runtime_error_invalid_required_major.strOr(this, requiredSdlMajor)
         }
 

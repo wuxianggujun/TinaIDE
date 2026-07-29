@@ -68,13 +68,15 @@ object ProjectTemplateInstaller {
                 authorName = resolvedAuthorName,
             )
             copyStagedTemplate(staging, destDir)
+            val detectedSupport = ProjectApkExportSupportResolver.detectSupport(destDir)
             ProjectMetadataStore.ensure(
                 projectRoot = destDir,
                 displayNameFallback = projectName,
                 buildSystem = templateSpec.buildSystem,
                 cppStandard = cppStandard,
                 primaryLanguage = templateSpec.primaryLanguage,
-                apkExportType = ProjectApkExportSupportResolver.detect(destDir),
+                apkExportType = detectedSupport.apkExportType,
+                sdlVersion = detectedSupport.sdlVersion,
                 nativeApiLevel = templateNativeApiLevel,
                 defaultRunTargetName = resolvedDefaultRunTargetName,
                 defaultSdlTargetName = resolvedDefaultSdlTargetName,

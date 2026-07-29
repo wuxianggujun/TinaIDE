@@ -36,7 +36,8 @@ IFS=' ' read -ra ABIS <<< "$ABIS_INPUT"
 
 # 版本映射（根据实际编译版本调整）
 declare -A VERSIONS=(
-    ["sdl3"]="3.1.6"
+    ["sdl2"]="2.32.10"
+    ["sdl3"]="3.5.0"
     ["zlib"]="1.3.1"
     ["openssl"]="3.2.1"
 )

@@ -6,7 +6,7 @@ package com.wuxianggujun.tinaide.core.util
  * 规则集中在这里，避免 SDL / 普通 Native / NDK 的判断散落在上传、导出和进程初始化逻辑中。
  */
 object CrashLogPrivacyClassifier {
-    private val userRuntimeProcessSuffixes = setOf(":gui", ":sdl")
+    private val userRuntimeProcessSuffixes = setOf(":gui", ":sdl", ":sdl2")
 
     fun isHostAppProcess(packageName: String, processName: String): Boolean = packageName.isNotBlank() && processName == packageName
 

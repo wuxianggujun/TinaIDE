@@ -162,6 +162,10 @@ app/mappings/**/*.txt
 # Gradle user home cache (AI mode)
 .gradle-user-home-ai/
 org/
+!app/src/main/java/org/
+!app/src/main/java/org/libsdl2/
+!app/src/main/java/org/libsdl2/app/
+!app/src/main/java/org/libsdl2/app/**
 
 # mcp
 .mcp.json

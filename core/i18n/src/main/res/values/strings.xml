@@ -2213,6 +2213,13 @@
 
   <!-- SDL 图形运行选项 -->
   <string name="run_config_sdl_options">SDL 图形运行选项</string>
+  <string name="run_config_sdl_version">SDL 主版本</string>
+  <string name="run_config_sdl_version_auto">自动检测</string>
+  <string name="run_config_sdl_version_auto_desc">优先根据编译产物的 ELF 依赖选择 SDL2 或 SDL3，无法识别时使用项目元数据</string>
+  <string name="run_config_sdl_version_sdl2">SDL2</string>
+  <string name="run_config_sdl_version_sdl2_desc">固定使用 SDL2；若产物实际依赖 SDL3，将阻止启动并提示版本冲突</string>
+  <string name="run_config_sdl_version_sdl3">SDL3</string>
+  <string name="run_config_sdl_version_sdl3_desc">固定使用 SDL3；若产物实际依赖 SDL2，将阻止启动并提示版本冲突</string>
   <string name="run_config_sdl_orientation">屏幕方向</string>
   <string name="run_config_sdl_orientation_auto">自动旋转</string>
   <string name="run_config_sdl_orientation_auto_desc">跟随系统自动旋转设置</string>
@@ -2249,8 +2256,10 @@
   <string name="sdl_runtime_stage_failed">准备 SDL 图形运行时失败：%1$s</string>
   <string name="sdl_runtime_error_scan_failed">解析共享库失败：%1$s，原因：%2$s</string>
   <string name="sdl_runtime_error_conflicting_versions">检测到目标同时依赖 SDL2 和 SDL3，无法确定运行时版本。</string>
+  <string name="sdl_runtime_error_configured_version_mismatch">运行配置指定 SDL%1$d，但编译产物实际依赖 SDL%2$d。请修改 SDL 主版本设置或检查链接配置。</string>
   <string name="sdl_runtime_error_sdl_not_found">检测到 SDL%1$d 依赖，但未在包管理器已安装包运行库目录找到 %2$s。请先安装对应 SDL%1$d 包。</string>
   <string name="sdl_runtime_error_sdl_package_broken">检测到已安装的 SDL%1$d 包（%2$s）缺少 %3$s，请在包管理器中重装该包。</string>
+  <string name="sdl_runtime_error_incompatible_android_bridge">SDL%1$d Android JNI bridge 不兼容：%2$s 缺少 %3$s。请安装 TinaIDE 包仓库中的 sdl%1$d 包。</string>
   <string name="sdl_runtime_error_missing_launch_params">SDL 启动参数缺失，无法启动 SDL 运行界面。</string>
   <string name="sdl_runtime_error_invalid_required_major">SDL 主版本参数无效：%1$d（仅支持 2 或 3）</string>
   <string name="sdl_runtime_error_launch_failed">启动 SDL 运行界面失败：%1$s</string>

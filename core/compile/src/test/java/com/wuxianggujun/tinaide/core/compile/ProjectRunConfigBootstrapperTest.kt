@@ -3,6 +3,7 @@ package com.wuxianggujun.tinaide.core.compile
 import com.google.common.truth.Truth.assertThat
 import com.wuxianggujun.tinaide.project.ProjectApkExportType
 import com.wuxianggujun.tinaide.project.ProjectMetadataStore
+import com.wuxianggujun.tinaide.project.ProjectSdlVersion
 import java.io.File
 import java.nio.file.Files
 import org.junit.Test
@@ -28,6 +29,53 @@ class ProjectRunConfigBootstrapperTest {
             assertThat(manager.selectedConfig.name).isEqualTo("Debug")
             assertThat(manager.selectedConfig.outputMode).isEqualTo(OutputMode.SDL)
             assertThat(runConfigFile(projectRoot).readText()).contains("\"outputMode\": \"SDL\"")
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `initializeIfMissing writes explicit sdl config for sdl2 project`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            ProjectMetadataStore.ensure(
+                projectRoot = projectRoot,
+                displayNameFallback = projectRoot.name,
+                sdlVersion = ProjectSdlVersion.SDL2,
+            )
+
+            val initialized = ProjectRunConfigBootstrapper.initializeIfMissing(projectRoot)
+
+            assertThat(initialized).isTrue()
+            val manager = RunConfigurationManager.load(projectRoot.absolutePath)
+            assertThat(manager.selectedConfig.outputMode).isEqualTo(OutputMode.SDL)
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `initializeIfMissing detects sdl2 project before creating config`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            projectRoot.resolve("CMakeLists.txt").writeText(
+                """
+                add_library(main SHARED src/main.cpp)
+                target_link_libraries(main PRIVATE SDL2)
+                """.trimIndent()
+            )
+            ProjectMetadataStore.ensure(
+                projectRoot = projectRoot,
+                displayNameFallback = projectRoot.name,
+            )
+
+            val initialized = ProjectRunConfigBootstrapper.initializeIfMissing(projectRoot)
+
+            assertThat(initialized).isTrue()
+            assertThat(ProjectMetadataStore.read(projectRoot)?.sdlVersion)
+                .isEqualTo(ProjectSdlVersion.SDL2)
+            assertThat(RunConfigurationManager.load(projectRoot.absolutePath).selectedConfig.outputMode)
+                .isEqualTo(OutputMode.SDL)
         } finally {
             projectRoot.deleteRecursively()
         }
@@ -108,7 +156,7 @@ class ProjectRunConfigBootstrapperTest {
     }
 
     @Test
-    fun `initializeIfMissing skips non sdl3 project`() {
+    fun `initializeIfMissing skips project without graphical metadata or target`() {
         val projectRoot = createTempProjectRoot()
         try {
             ProjectMetadataStore.ensure(

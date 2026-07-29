@@ -3664,6 +3664,13 @@ kept=%3$d bytes
 
   <!-- SDL graphical runtime options -->
   <string name="run_config_sdl_options">SDL Graphical Runtime Options</string>
+  <string name="run_config_sdl_version">SDL Major Version</string>
+  <string name="run_config_sdl_version_auto">Auto Detect</string>
+  <string name="run_config_sdl_version_auto_desc">Choose SDL2 or SDL3 from compiled ELF dependencies first, then fall back to project metadata</string>
+  <string name="run_config_sdl_version_sdl2">SDL2</string>
+  <string name="run_config_sdl_version_sdl2_desc">Require SDL2; startup is blocked with a version conflict if the artifact depends on SDL3</string>
+  <string name="run_config_sdl_version_sdl3">SDL3</string>
+  <string name="run_config_sdl_version_sdl3_desc">Require SDL3; startup is blocked with a version conflict if the artifact depends on SDL2</string>
   <string name="run_config_sdl_orientation">Screen Orientation</string>
   <string name="run_config_sdl_orientation_auto">Auto Rotate</string>
   <string name="run_config_sdl_orientation_auto_desc">Follow system auto-rotation setting</string>
@@ -3700,8 +3707,10 @@ kept=%3$d bytes
   <string name="sdl_runtime_stage_failed">Failed to stage SDL graphical runtime: %1$s</string>
   <string name="sdl_runtime_error_scan_failed">Failed to scan shared library: %1$s, reason: %2$s</string>
   <string name="sdl_runtime_error_conflicting_versions">Detected dependencies on both SDL2 and SDL3; cannot determine runtime version.</string>
+  <string name="sdl_runtime_error_configured_version_mismatch">The run configuration selects SDL%1$d, but the compiled artifact depends on SDL%2$d. Change the SDL major version setting or check the link configuration.</string>
   <string name="sdl_runtime_error_sdl_not_found">Detected SDL%1$d dependency, but %2$s was not found in package-manager installed runtime library paths. Please install the SDL%1$d package first.</string>
   <string name="sdl_runtime_error_sdl_package_broken">Detected installed SDL%1$d package(s) (%2$s), but %3$s is missing. Please reinstall from the package manager.</string>
+  <string name="sdl_runtime_error_incompatible_android_bridge">Incompatible SDL%1$d Android JNI bridge: %2$s does not contain %3$s. Install the sdl%1$d package from the TinaIDE registry.</string>
   <string name="sdl_runtime_error_missing_launch_params">Missing SDL launch parameters; cannot start SDL runtime UI.</string>
   <string name="sdl_runtime_error_invalid_required_major">Invalid SDL major version parameter: %1$d (only 2 or 3 are supported)</string>
   <string name="sdl_runtime_error_launch_failed">Failed to launch SDL runtime UI: %1$s</string>

@@ -18,6 +18,34 @@ class NativeLibraryDependencyHintsTest {
     }
 
     @Test
+    fun `inferPackageIds maps versioned SDL2 ABI soname`() {
+        val packageIds = NativeLibraryDependencyHints.inferPackageIds(
+            listOf("libSDL2-2.0.so.0")
+        )
+
+        assertThat(packageIds).containsExactly("sdl2")
+    }
+
+    @Test
+    fun `inferPackageIds maps SDL2 extension sonames`() {
+        val packageIds = NativeLibraryDependencyHints.inferPackageIds(
+            listOf(
+                "libSDL2_image.so.0",
+                "libSDL2_mixer-2.0.so.0",
+                "libSDL2_net.so",
+                "libSDL2_ttf-2.0.so.0",
+            )
+        )
+
+        assertThat(packageIds).containsExactly(
+            "sdl2-image",
+            "sdl2-mixer",
+            "sdl2-net",
+            "sdl2-ttf",
+        ).inOrder()
+    }
+
+    @Test
     fun `inferPackageIds prefers available package index before fallback hints`() {
         val packageIds = NativeLibraryDependencyHints.inferPackageIds(
             libraryNames = listOf("libSkiaSharp.so", "libSDL3_image.so"),

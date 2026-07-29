@@ -48,6 +48,7 @@ import com.wuxianggujun.tinaide.core.ndk.displayLabel
 import com.wuxianggujun.tinaide.core.ndk.displayName
 import com.wuxianggujun.tinaide.core.ndk.displayVersionLabel
 import com.wuxianggujun.tinaide.project.CppStandard
+import com.wuxianggujun.tinaide.project.ProjectSdlVersion
 import com.wuxianggujun.tinaide.project.getDisplayName
 import com.wuxianggujun.tinaide.ui.compose.icons.rememberTinaPainter
 import java.io.File
@@ -201,6 +202,7 @@ fun RunConfigDialog(
         RunConfiguration.parseSingleFileCppStandard(singleFileCppStandard)
     }
     var singleFileCppStandardDropdownExpanded by remember { mutableStateOf(false) }
+    var sdlVersion by remember { mutableStateOf(config.sdlVersion) }
     var sdlOrientation by remember { mutableStateOf(config.sdlOrientation) }
     var enableFloatingLog by remember { mutableStateOf(config.enableFloatingLog) }
     var showLinkerWarnings by remember { mutableStateOf(config.showLinkerWarnings) }
@@ -312,6 +314,7 @@ fun RunConfigDialog(
                                     sysrootApiLevel = parsedSysrootApiLevel,
                                     singleFileCppStandard = RunConfiguration
                                         .normalizeSingleFileCppStandard(singleFileCppStandard),
+                                    sdlVersion = sdlVersion,
                                     sdlOrientation = sdlOrientation,
                                     enableFloatingLog = enableFloatingLog,
                                     showLinkerWarnings = showLinkerWarnings
@@ -1054,6 +1057,33 @@ fun RunConfigDialog(
                 RunConfigSectionCard(
                     title = stringResource(Strings.run_config_sdl_options)
                 ) {
+                    Text(
+                        text = stringResource(Strings.run_config_sdl_version),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    RunConfigOptionRow(
+                        selected = sdlVersion == null,
+                        onClick = { sdlVersion = null },
+                        title = stringResource(Strings.run_config_sdl_version_auto),
+                        description = stringResource(Strings.run_config_sdl_version_auto_desc)
+                    )
+                    RunConfigOptionRow(
+                        selected = sdlVersion == ProjectSdlVersion.SDL2,
+                        onClick = { sdlVersion = ProjectSdlVersion.SDL2 },
+                        title = stringResource(Strings.run_config_sdl_version_sdl2),
+                        description = stringResource(Strings.run_config_sdl_version_sdl2_desc)
+                    )
+                    RunConfigOptionRow(
+                        selected = sdlVersion == ProjectSdlVersion.SDL3,
+                        onClick = { sdlVersion = ProjectSdlVersion.SDL3 },
+                        title = stringResource(Strings.run_config_sdl_version_sdl3),
+                        description = stringResource(Strings.run_config_sdl_version_sdl3_desc)
+                    )
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
                     Text(
                         text = stringResource(Strings.run_config_sdl_orientation),
                         style = MaterialTheme.typography.labelSmall,

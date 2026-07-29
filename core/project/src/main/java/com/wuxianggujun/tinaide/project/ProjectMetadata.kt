@@ -8,7 +8,7 @@ import timber.log.Timber
 
 object ProjectMetadataStore {
     private const val TAG = "ProjectMetadataStore"
-    private const val PROJECT_METADATA_SCHEMA_CURRENT = 3
+    private const val PROJECT_METADATA_SCHEMA_CURRENT = 4
 
     private val json = JsonSerializer.pretty
 
@@ -35,7 +35,8 @@ object ProjectMetadataStore {
                 null
             } else {
                 val normalized = normalizeMetadata(
-                    decoded.copy(schemaVersion = PROJECT_METADATA_SCHEMA_CURRENT)
+                    migrateMissingSdlVersion(projectRoot, decoded)
+                        .copy(schemaVersion = PROJECT_METADATA_SCHEMA_CURRENT)
                 )
                 if (normalized != decoded) {
                     Timber.tag(TAG).i("Normalized project metadata for ${projectRoot.name}")
@@ -58,6 +59,7 @@ object ProjectMetadataStore {
         cppStandard: CppStandard? = null,
         primaryLanguage: ProjectLanguage? = null,
         apkExportType: ProjectApkExportType? = null,
+        sdlVersion: ProjectSdlVersion? = null,
         nativeApiLevel: Int? = null,
         defaultRunTargetName: String? = null,
         defaultSdlTargetName: String? = null
@@ -93,6 +95,11 @@ object ProjectMetadataStore {
                 needsUpdate = true
             }
 
+            if (sdlVersion != null && existing.sdlVersion != sdlVersion) {
+                updated = updated.copy(sdlVersion = sdlVersion)
+                needsUpdate = true
+            }
+
             if (
                 normalizedDefaultRunTargetName != null &&
                 existing.defaultRunTargetName != normalizedDefaultRunTargetName
@@ -125,6 +132,7 @@ object ProjectMetadataStore {
             cppStandard = cppStandard?.name,
             primaryLanguage = primaryLanguage?.name,
             apkExportType = apkExportType,
+            sdlVersion = sdlVersion,
             lastOpenedIdeVersion = currentIdeVersion,
             lastOpenedAt = System.currentTimeMillis(),
             nativeApiLevel = normalizedNativeApiLevel,
@@ -172,6 +180,12 @@ object ProjectMetadataStore {
         val existing = read(projectRoot) ?: return false
         if (existing.apkExportType == apkExportType) return true
         return write(projectRoot, existing.copy(apkExportType = apkExportType))
+    }
+
+    fun updateSdlVersion(projectRoot: File, sdlVersion: ProjectSdlVersion?): Boolean {
+        val existing = read(projectRoot) ?: return false
+        if (existing.sdlVersion == sdlVersion) return true
+        return write(projectRoot, existing.copy(sdlVersion = sdlVersion))
     }
 
     fun updateLastOpened(projectRoot: File): Boolean {
@@ -250,21 +264,51 @@ object ProjectMetadataStore {
         )
     }
 
-    private fun normalizeMetadata(metadata: ProjectMetadata): ProjectMetadata = metadata.copy(
-        schemaVersion = PROJECT_METADATA_SCHEMA_CURRENT,
-        cppStandard = metadata.normalizedCppStandardValue(),
-        nativeApiLevel = normalizeNativeApiLevel(metadata.nativeApiLevel),
-        nativeIncludeDirs = normalizePathEntries(metadata.nativeIncludeDirs),
-        nativeLibraryDirs = normalizePathEntries(metadata.nativeLibraryDirs),
-        nativeRuntimeDirs = normalizePathEntries(metadata.nativeRuntimeDirs),
-        nativeCFlags = normalizeFlagValue(metadata.nativeCFlags),
-        nativeCppFlags = normalizeFlagValue(metadata.nativeCppFlags),
-        nativeLdFlags = normalizeFlagValue(metadata.nativeLdFlags),
-        nativeLdLibs = normalizeFlagValue(metadata.nativeLdLibs),
-        nativeCMakeArgs = normalizePathEntries(metadata.nativeCMakeArgs),
-        defaultRunTargetName = normalizeTargetName(metadata.defaultRunTargetName),
-        defaultSdlTargetName = normalizeTargetName(metadata.defaultSdlTargetName)
-    )
+    private fun normalizeMetadata(metadata: ProjectMetadata): ProjectMetadata {
+        val normalizedSdlVersion = metadata.getSdlVersionOrNull()
+        val normalizedApkExportType = metadata.apkExportType.takeUnless {
+            normalizedSdlVersion == ProjectSdlVersion.SDL2 &&
+                (it == ProjectApkExportType.SDL3 || it == ProjectApkExportType.NATIVE_ACTIVITY)
+        }
+        return metadata.copy(
+            schemaVersion = PROJECT_METADATA_SCHEMA_CURRENT,
+            cppStandard = metadata.normalizedCppStandardValue(),
+            nativeApiLevel = normalizeNativeApiLevel(metadata.nativeApiLevel),
+            nativeIncludeDirs = normalizePathEntries(metadata.nativeIncludeDirs),
+            nativeLibraryDirs = normalizePathEntries(metadata.nativeLibraryDirs),
+            nativeRuntimeDirs = normalizePathEntries(metadata.nativeRuntimeDirs),
+            nativeCFlags = normalizeFlagValue(metadata.nativeCFlags),
+            nativeCppFlags = normalizeFlagValue(metadata.nativeCppFlags),
+            nativeLdFlags = normalizeFlagValue(metadata.nativeLdFlags),
+            nativeLdLibs = normalizeFlagValue(metadata.nativeLdLibs),
+            nativeCMakeArgs = normalizePathEntries(metadata.nativeCMakeArgs),
+            defaultRunTargetName = normalizeTargetName(metadata.defaultRunTargetName),
+            defaultSdlTargetName = normalizeTargetName(metadata.defaultSdlTargetName),
+            apkExportType = normalizedApkExportType,
+            sdlVersion = normalizedSdlVersion,
+        )
+    }
+
+    private fun migrateMissingSdlVersion(
+        projectRoot: File,
+        metadata: ProjectMetadata,
+    ): ProjectMetadata {
+        if (metadata.sdlVersion != null || metadata.apkExportType != ProjectApkExportType.SDL3) {
+            return metadata
+        }
+
+        // Older detection treated the SDL2/SDL3 shared SDLActivity class as SDL3.
+        // Re-scan version-specific build/source markers before preserving the legacy fallback.
+        return when (ProjectApkExportSupportResolver.detectSdlVersion(projectRoot)) {
+            ProjectSdlVersion.SDL2 -> metadata.copy(
+                apkExportType = null,
+                sdlVersion = ProjectSdlVersion.SDL2,
+            )
+            ProjectSdlVersion.SDL3,
+            null,
+            -> metadata.copy(sdlVersion = ProjectSdlVersion.SDL3)
+        }
+    }
 
     private fun normalizeNativeApiLevel(nativeApiLevel: Int?): Int? = nativeApiLevel?.takeIf { it in 21..35 }
 

@@ -12,8 +12,17 @@ import java.io.File
 object NativeLibraryDependencyHints {
     private const val INSTALL_DIR_NAME = "installed-packages"
 
+    private val sdlRuntimeLibraryPattern =
+        Regex("""^libSDL([23])(?:-[0-9][0-9.]*)?\.so$""")
+    private val sdlExtensionLibraryPattern =
+        Regex("""^libSDL([23])_(image|mixer|net|ttf)(?:-[0-9][0-9.]*)?\.so$""")
+
     private val libraryPackageHints = mapOf(
         "libSDL2.so" to "sdl2",
+        "libSDL2_image.so" to "sdl2-image",
+        "libSDL2_mixer.so" to "sdl2-mixer",
+        "libSDL2_net.so" to "sdl2-net",
+        "libSDL2_ttf.so" to "sdl2-ttf",
         "libSDL3.so" to "sdl3",
         "libSDL3_image.so" to "sdl3-image",
         "libSDL3_mixer.so" to "sdl3-mixer",
@@ -40,7 +49,7 @@ object NativeLibraryDependencyHints {
                 sequence {
                     packageIndex[libraryName]?.let { yield(it) }
                     inferFromAvailablePackages(libraryName, availablePackages).forEach { yield(it) }
-                    libraryPackageHints[libraryName]?.let { yield(it) }
+                    packageHintForLibrary(libraryName)?.let { yield(it) }
                 }
             }
             .distinct()
@@ -53,7 +62,7 @@ object NativeLibraryDependencyHints {
         current: File,
         candidate: File,
     ): Boolean {
-        val preferredPackageId = libraryPackageHints[normalizeLibraryName(libraryName)] ?: return false
+        val preferredPackageId = packageHintForLibrary(normalizeLibraryName(libraryName)) ?: return false
         val currentPackageId = installedPackageId(current) ?: return false
         val candidatePackageId = installedPackageId(candidate) ?: return false
         return !currentPackageId.equals(preferredPackageId, ignoreCase = true) &&
@@ -94,7 +103,7 @@ object NativeLibraryDependencyHints {
                         val normalizedName = normalizeLibraryName(library.name)
                         if (normalizedName.isNotBlank()) {
                             val currentPackageId = index[normalizedName]
-                            val preferredPackageId = libraryPackageHints[normalizedName]
+                            val preferredPackageId = packageHintForLibrary(normalizedName)
                             if (
                                 currentPackageId == null ||
                                 packageId.equals(preferredPackageId, ignoreCase = true)
@@ -221,6 +230,18 @@ object NativeLibraryDependencyHints {
         .distinct()
         .sorted()
         .toList()
+
+    private fun packageHintForLibrary(libraryName: String): String? {
+        libraryPackageHints[libraryName]?.let { return it }
+        sdlExtensionLibraryPattern.matchEntire(libraryName)?.let { match ->
+            return "sdl${match.groupValues[1]}-${match.groupValues[2]}"
+        }
+        val sdlMajor = sdlRuntimeLibraryPattern.matchEntire(libraryName)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?: return null
+        return "sdl$sdlMajor"
+    }
 
     internal fun normalizeLibraryName(name: String): String {
         val trimmed = name.trim()

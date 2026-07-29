@@ -106,6 +106,7 @@ class ContextCompileSdlLauncher(
                 mainLibraryPath = normalizedLibraryPath,
                 extraRuntimeLibDirs = launchRuntimeDirs(environment),
                 allowUndetectedSdl = true,
+                preferredSdlMajor = runConfig.sdlVersion?.major,
             )
         }
         when (runtime) {

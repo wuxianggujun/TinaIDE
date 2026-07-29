@@ -4,6 +4,11 @@ import java.io.File
 
 object ProjectApkExportSupportResolver {
 
+    internal data class Detection(
+        val apkExportType: ProjectApkExportType?,
+        val sdlVersion: ProjectSdlVersion?,
+    )
+
     private const val MAX_SCANNED_TEXT_FILES = 160
     private val terminalSourceExtensions = setOf("c", "cc", "cpp", "cxx")
     private val terminalMainEntryRegex = Regex("""(?m)^\s*(?:int|auto|void)\s+main\s*\(""")
@@ -22,20 +27,22 @@ object ProjectApkExportSupportResolver {
         "CMakeLists.txt",
         "Makefile",
         "makefile",
+        "GNUmakefile",
         "Android.mk",
         "Application.mk",
         "AndroidManifest.xml",
         "build.gradle",
         "build.gradle.kts"
     )
-    private val candidateExtensions = setOf("c", "cc", "cpp", "cxx", "h", "hh", "hpp", "hxx", "mk", "txt")
-    private val sdl3Markers = listOf(
-        "find_package(SDL3",
-        "SDL3::SDL3",
-        "#include <SDL3/",
-        "SDL_MAIN_USE_CALLBACKS",
-        "-lSDL3",
-        "org.libsdl.app.SDLActivity"
+    private val candidateExtensions = setOf(
+        "c", "cc", "cpp", "cxx",
+        "h", "hh", "hpp", "hxx",
+        "cmake", "mk", "txt",
+    )
+    private val sdl2MarkerPatterns = sdlMarkerPatterns(major = 2)
+    private val sdl3MarkerPatterns = sdlMarkerPatterns(major = 3) + listOf(
+        Regex("""\bSDL_MAIN_USE_CALLBACKS\b"""),
+        Regex("""\bSDL_App(?:Init|Iterate|Event|Quit)\b"""),
     )
     private val nativeActivityMarkers = listOf(
         "android.app.NativeActivity",
@@ -77,26 +84,62 @@ object ProjectApkExportSupportResolver {
 
     fun ensureDetected(projectRoot: File, buildDir: File? = null): ProjectApkExportType? {
         val metadata = ProjectMetadataStore.read(projectRoot)
-        metadata?.apkExportType?.let { return it }
-
-        val detected = detect(projectRoot, buildDir)
-        if (metadata != null && detected != null) {
-            ProjectMetadataStore.updateApkExportType(projectRoot, detected)
+        val knownSdlVersion = metadata?.getSdlVersionOrNull()
+        if (metadata?.apkExportType != null && metadata.sdlVersion != null) {
+            return metadata.apkExportType
         }
-        return detected
+
+        val detected = detectSupport(projectRoot, buildDir)
+        if (metadata == null) return detected.apkExportType
+
+        val resolvedSdlVersion = knownSdlVersion ?: detected.sdlVersion
+        val compatibleDetectedApkExportType = detected.apkExportType.takeUnless {
+            resolvedSdlVersion == ProjectSdlVersion.SDL2 &&
+                (it == ProjectApkExportType.SDL3 || it == ProjectApkExportType.NATIVE_ACTIVITY)
+        }
+        val resolvedApkExportType = metadata.apkExportType ?: compatibleDetectedApkExportType
+        if (
+            metadata.apkExportType != resolvedApkExportType ||
+            metadata.sdlVersion != resolvedSdlVersion
+        ) {
+            ProjectMetadataStore.write(
+                projectRoot,
+                metadata.copy(
+                    apkExportType = resolvedApkExportType,
+                    sdlVersion = resolvedSdlVersion,
+                )
+            )
+        }
+        return resolvedApkExportType
     }
 
-    internal fun detect(projectRoot: File, buildDir: File? = null): ProjectApkExportType? {
+    internal fun detect(projectRoot: File, buildDir: File? = null): ProjectApkExportType? =
+        detectSupport(projectRoot, buildDir).apkExportType
+
+    internal fun detectSdlVersion(projectRoot: File, buildDir: File? = null): ProjectSdlVersion? =
+        detectSupport(projectRoot, buildDir).sdlVersion
+
+    internal fun detectSupport(projectRoot: File, buildDir: File? = null): Detection {
         val textMatches = collectCandidateFiles(projectRoot)
             .mapNotNull(::readTextSafely)
 
         val hasLibMainMarker = containsAnyMarker(textMatches, libmainMarkers) || hasCompiledLibMain(projectRoot, buildDir)
-        val hasSdl3Marker = containsAnyMarker(textMatches, sdl3Markers)
-        if (hasLibMainMarker && hasSdl3Marker) {
-            return ProjectApkExportType.SDL3
+        val hasSdl2Marker = containsAnyPattern(textMatches, sdl2MarkerPatterns)
+        val hasSdl3Marker = containsAnyPattern(textMatches, sdl3MarkerPatterns)
+        val sdlVersion = when {
+            hasSdl2Marker == hasSdl3Marker -> null
+            hasSdl2Marker -> ProjectSdlVersion.SDL2
+            else -> ProjectSdlVersion.SDL3
         }
 
-        return if (hasLibMainMarker && containsAnyMarker(textMatches, nativeActivityMarkers)) {
+        val apkExportType = if (hasLibMainMarker && sdlVersion == ProjectSdlVersion.SDL3) {
+            ProjectApkExportType.SDL3
+        } else if (
+            hasLibMainMarker &&
+            !hasSdl2Marker &&
+            !hasSdl3Marker &&
+            containsAnyMarker(textMatches, nativeActivityMarkers)
+        ) {
             ProjectApkExportType.NATIVE_ACTIVITY
         } else if (!hasLibMainMarker &&
             (
@@ -108,6 +151,10 @@ object ProjectApkExportSupportResolver {
         } else {
             null
         }
+        return Detection(
+            apkExportType = apkExportType,
+            sdlVersion = sdlVersion,
+        )
     }
 
     private fun collectCandidateFiles(projectRoot: File): List<File> {
@@ -134,6 +181,27 @@ object ProjectApkExportSupportResolver {
     }.getOrNull()
 
     private fun containsAnyMarker(textMatches: List<CandidateText>, markers: List<String>): Boolean = textMatches.any { candidate -> markers.any(candidate.text::contains) }
+
+    private fun containsAnyPattern(
+        textMatches: List<CandidateText>,
+        patterns: List<Regex>,
+    ): Boolean = textMatches.any { candidate -> patterns.any { it.containsMatchIn(candidate.text) } }
+
+    private fun sdlMarkerPatterns(major: Int): List<Regex> = listOf(
+        Regex("""(?i)\bfind_package\s*\(\s*SDL$major\b"""),
+        Regex("""(?i)\bSDL$major::SDL$major[A-Za-z0-9_-]*\b"""),
+        Regex("""(?i)#\s*include\s*[<"]SDL$major/"""),
+        Regex("""(?im)(?:^|\s)-lSDL$major(?:\s|$)"""),
+        Regex("""(?i)\blibSDL$major(?:-[0-9][0-9.]*)?\.so(?:\.[0-9A-Za-z_.+-]+)?\b"""),
+        Regex("""(?i)\b(?:pkg_check_modules|pkg_search_module)\s*\([^)]*\bSDL$major\b"""),
+        Regex("""(?i)\bSDL$major-config\b"""),
+        Regex("""(?i)\bpkg-config\b[^\r\n]*\bSDL$major\b"""),
+        Regex("""(?is)\btarget_link_libraries\s*\([^)]*\bSDL$major\b"""),
+        Regex("""(?i)\bSDL${major}_(?:LIBRARIES|LIBRARY|INCLUDE_DIRS?|DIR)\b"""),
+        Regex(
+            """(?im)\b(?:LOCAL_SHARED_LIBRARIES|LOCAL_STATIC_LIBRARIES)\s*[:+?]?=[^\r\n]*\bSDL$major\b"""
+        ),
+    )
 
     private fun hasTerminalMainEntry(textMatches: List<CandidateText>): Boolean = textMatches.any { candidate ->
         candidate.file.extension.lowercase() in terminalSourceExtensions &&

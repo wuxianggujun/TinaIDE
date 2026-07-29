@@ -5,15 +5,17 @@ import com.wuxianggujun.tinaide.core.i18n.str
 import com.wuxianggujun.tinaide.core.lang.CxxFileSupport
 import com.wuxianggujun.tinaide.core.serialization.JsonSerializer
 import com.wuxianggujun.tinaide.project.CppStandard
+import com.wuxianggujun.tinaide.project.ProjectApkExportSupportResolver
 import com.wuxianggujun.tinaide.project.ProjectMetadata
 import com.wuxianggujun.tinaide.project.ProjectMetadataStore
+import com.wuxianggujun.tinaide.project.ProjectSdlVersion
 import java.io.File
 import java.util.UUID
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import timber.log.Timber
 
-private const val RUN_CONFIG_SCHEMA_CURRENT = 5
+private const val RUN_CONFIG_SCHEMA_CURRENT = 6
 
 /**
  * 源文件模式 - 决定编译哪个源文件
@@ -115,6 +117,12 @@ data class RunConfiguration(
      * - 非空: 作为单文件编译时的 `-std=...` 来源
      */
     val singleFileCppStandard: String? = null,
+
+    /**
+     * SDL 主版本覆盖项（仅 outputMode == SDL 时生效）。
+     * null 表示优先从 ELF 依赖和项目元数据自动检测。
+     */
+    val sdlVersion: ProjectSdlVersion? = null,
 
     /**
      * SDL 图形运行的屏幕方向（仅 outputMode == SDL 时生效）。
@@ -438,6 +446,7 @@ data class RunConfigurationManager(
                 ?.let(::File)
                 ?.takeIf { it.exists() }
                 ?: return null
+            ProjectApkExportSupportResolver.ensureDetected(projectRoot)
             return ProjectMetadataStore.read(projectRoot)
         }
 

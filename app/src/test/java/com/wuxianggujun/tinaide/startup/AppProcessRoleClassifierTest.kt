@@ -20,6 +20,8 @@ class AppProcessRoleClassifierTest {
             .isEqualTo(AppProcessRole.USER_RUNTIME)
         assertThat(AppProcessRoleClassifier.classify(packageName, "$packageName:sdl"))
             .isEqualTo(AppProcessRole.USER_RUNTIME)
+        assertThat(AppProcessRoleClassifier.classify(packageName, "$packageName:sdl2"))
+            .isEqualTo(AppProcessRole.USER_RUNTIME)
         assertThat(AppProcessRoleClassifier.classify(packageName, "$packageName:unexpected"))
             .isEqualTo(AppProcessRole.OTHER)
     }

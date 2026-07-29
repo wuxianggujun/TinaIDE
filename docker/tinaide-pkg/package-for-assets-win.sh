@@ -1,6 +1,6 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # package-for-assets-win.sh - Windows 版本（使用 PowerShell 创建 zip）
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUTPUT_DIR="${SCRIPT_DIR}/output"
@@ -10,7 +10,24 @@ PACKAGE_NAME=${1:-sdl3}
 ABIS_INPUT=${2:-arm64-v8a}
 IFS=' ' read -ra ABIS <<< "$ABIS_INPUT"
 
-VERSION="3.1.6"
+case "$PACKAGE_NAME" in
+    sdl2)
+        VERSION="2.32.10"
+        DISPLAY_NAME="SDL2"
+        DESCRIPTION="Simple DirectMedia Layer 2 Android runtime"
+        INCLUDE_SUBDIR="SDL2"
+        ;;
+    sdl3)
+        VERSION="3.5.0"
+        DISPLAY_NAME="SDL3"
+        DESCRIPTION="Simple DirectMedia Layer 3 Android runtime"
+        INCLUDE_SUBDIR="SDL3"
+        ;;
+    *)
+        echo "[ERROR] Windows assets packaging supports only sdl2 and sdl3: ${PACKAGE_NAME}" >&2
+        exit 1
+        ;;
+esac
 
 echo "[INFO] Creating ${PACKAGE_NAME} assets package..."
 echo "[INFO]   Version: ${VERSION}"
@@ -18,7 +35,7 @@ echo "[INFO]   ABIs: ${ABIS[*]}"
 
 # 创建临时目录
 TEMP_DIR=$(mktemp -d)
-trap "rm -rf $TEMP_DIR" EXIT
+trap 'rm -rf "$TEMP_DIR"' EXIT
 
 # 解压各架构
 for ABI in "${ABIS[@]}"; do
@@ -57,9 +74,9 @@ fi
 cat > "$TEMP_DIR/package.json" <<EOF
 {
   "id": "${PACKAGE_NAME}",
-  "name": "SDL3",
+  "name": "${DISPLAY_NAME}",
   "version": "${VERSION}",
-  "description": "Simple DirectMedia Layer 3 - Cross-platform multimedia library",
+  "description": "${DESCRIPTION}",
   "platform": "android",
   "installType": "download",
   "category": "library",
@@ -67,7 +84,7 @@ cat > "$TEMP_DIR/package.json" <<EOF
   "license": "Zlib",
   "installedAt": $(date +%s)000,
   "files": {
-    "include": "include/SDL3",
+    "include": "include/${INCLUDE_SUBDIR}",
     "lib": "lib",
     "pkgconfig": "pkgconfig/${PACKAGE_NAME}.pc"
   },
@@ -84,4 +101,3 @@ powershell.exe -Command "Compress-Archive -Path '${TEMP_DIR_WIN}\*' -Destination
 
 echo "[SUCCESS] Package created: ${ASSETS_DIR}/${PACKAGE_NAME}.zip"
 ls -lh "${ASSETS_DIR}/${PACKAGE_NAME}.zip"
-

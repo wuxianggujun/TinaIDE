@@ -101,6 +101,13 @@
             android:process=":sdl"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode" />
         <activity
+            android:name=".ui.sdl.ExternalSdl2Activity"
+            android:exported="false"
+            android:label="@string/sdl_host_title"
+            android:parentActivityName=".MainActivity"
+            android:process=":sdl2"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode" />
+        <activity
             android:name=".ui.GlobalSearchActivity"
             android:exported="false"
             android:label="@string/global_search_title"

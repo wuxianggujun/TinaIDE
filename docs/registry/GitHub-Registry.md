@@ -390,6 +390,46 @@ Android 仓库已经移除 `PluginRegistryIndex` / `PackageRegistryIndex` 生产
 
 `downloads` 的 key 保持 `<package-id>:<version-id>`，与 v1 全量索引一致。
 
+### SDL2 Android runtime
+
+SDL2 在仓库中的逻辑包 ID 固定为 `sdl2`。推荐发布字段如下：
+
+```json
+{
+  "id": "sdl2",
+  "name": "SDL2",
+  "description": "SDL2 Android runtime for TinaIDE",
+  "category": "library",
+  "android": {
+    "version": "2.32.10",
+    "artifact_type": "shared",
+    "install_type": "download",
+    "download_url": "packages/sdl2/2.32.10/sdl2.tar.xz",
+    "checksum": "sha256:<sha256>",
+    "abi": ["arm64-v8a", "x86_64"],
+    "is_latest": true
+  }
+}
+```
+
+归档必须包含：
+
+```text
+package.json
+LICENSE.txt
+include/SDL2/*.h
+lib/arm64-v8a/libSDL2.so
+lib/x86_64/libSDL2.so
+lib/cmake/SDL2/SDL2Config.cmake
+lib/cmake/SDL2/SDL2ConfigVersion.cmake
+pkgconfig/sdl2.pc
+```
+
+该 `.so` 必须由 `docker/tinaide-pkg/libs/build-sdl2.sh` 构建。脚本固定
+`release-2.32.10`，并把 SDL2 native 侧 JNI 类路径同步重定位为
+`org/libsdl2/app`；直接上传官方 `org/libsdl/app` 版本会与 APK 内的 SDL3
+Java glue 冲突，不能作为 TinaIDE SDL2 runtime 发布。
+
 ### 依赖包 v1 兼容索引（旧客户端）
 
 `packages/index.json` 支持简单结构。当前 Android 主干不再读取该文件；旧客户端需要时，
