@@ -2,6 +2,7 @@ package com.wuxianggujun.tinaide.core.editorview
 
 import com.wuxianggujun.tinaide.core.textengine.TextBuffer
 import com.wuxianggujun.tinaide.core.textengine.TextChange
+import com.wuxianggujun.tinaide.core.textengine.TextScanKernel
 
 /**
  * 视觉行映射器（folding + wordWrap）。
@@ -15,11 +16,11 @@ import com.wuxianggujun.tinaide.core.textengine.TextChange
  * 折叠版本号、wrap 布局缓存）以及折叠层产出的 [Host.lineMap]，因此通过 [Host] 接口注入，
  * 组合而非继承（D 依赖倒置）。
  *
- * 行为与原内联实现严格一致，**包括以下两个刻意保留的现状**：
+ * 对外映射行为与原内联实现一致，并保留以下缓存口径：
  * - epoch 在 `wordWrap` 关闭时把 textVersion 归零（`effectiveTextVersion`），使非 wordWrap 下
  *   纯文本编辑不重建视觉行映射；该失效口径与原实现逐行对应。
- * - [docSegmentCounts] 的失效/平移/重算时机与原实现逐行对应（[applyTextChangeToDocSegmentCounts]
- *   必须在宿主 wordWrapLayoutCache.applyTextChange 之后调用）。
+ * - [docSegmentCounts] 只缓存计数，不创建完整的 wrap starts 数组；参数变化和增量编辑通过
+ *   generation 精确失效，实际可见时才重算。
  */
 internal class EditorVisualLineMapper(
     private val host: Host
@@ -37,8 +38,6 @@ internal class EditorVisualLineMapper(
         val frozenWordWrapColumns: Int?
         val foldRegionsDocumentVersion: Long
         val foldDataVersion: Int
-        val wordWrapLayoutCache: EditorWordWrapLayoutCache
-
         /** 折叠层（[EditorFoldingManager]）产出的可见文档行映射。 */
         fun lineMap(): EditorFoldingManager.LineMap
     }
@@ -69,10 +68,11 @@ internal class EditorVisualLineMapper(
     private var visualLineMapCache: VisualLineMap? = null
     private var visualLineMapCacheEpoch: Long = Long.MIN_VALUE
 
-    // 按文档行缓存 wrap segmentCount（wordWrap 下每行视觉行数）。
-    // 替代原本每次 visualLineMap() 重算时对全部可见文档行做 getLine()+getWrapLayout() 的 O(N) 扫描；
-    // 文本变化时只重算编辑窗内的行，其余行直接从数组读。
+    // 按文档行缓存 wrap segmentCount（wordWrap 下每行视觉行数）。generation 不匹配的行按需重算：
+    // wrap 参数变化不再预扫全文，折叠隐藏行也不会为一次映射被无意义地 materialize。
     private var docSegmentCounts: IntArray? = null
+    private var docSegmentCountGenerations: IntArray? = null
+    private var docSegmentCountGeneration: Int = 1
     private var docSegmentCountsWrapColumns: Int = Int.MIN_VALUE
     private var docSegmentCountsTabSize: Int = Int.MIN_VALUE
     private var docSegmentCountsVersion: Long = Long.MIN_VALUE
@@ -218,7 +218,7 @@ internal class EditorVisualLineMapper(
             totalVisualLines = visibleCount
         } else {
             val safeWrapColumns = wrapColumns.coerceAtLeast(1)
-            val counts = ensureDocSegmentCounts(
+            ensureDocSegmentCountStorage(
                 wrapColumns = safeWrapColumns,
                 tabSize = tabSize,
                 docLineCount = docLineCount,
@@ -227,7 +227,7 @@ internal class EditorVisualLineMapper(
             for (i in 0 until visibleCount) {
                 firstVisual[i] = totalVisualLines
                 val docLine = visibleDocLines[i].coerceIn(0, docLineCount - 1)
-                val segments = if (docLine < counts.size) counts[docLine] else 1
+                val segments = segmentCountForLine(docLine, safeWrapColumns, tabSize)
                 visualCounts[i] = segments
                 totalVisualLines += segments
             }
@@ -248,97 +248,139 @@ internal class EditorVisualLineMapper(
     }
 
     /**
-     * 返回按文档行索引的 wrap segmentCount。
-     * 命中缓存直接返回；否则按 wrap/tabSize/docLineCount/textVersion 任一变化做全量重建。
- * 文本增量变化走 [applyTextChangeToDocSegmentCounts]（在 [EditorState.applyTextBufferChange] 内调用）。
+     * 准备按文档行索引的 wrap segmentCount 存储。参数或未增量同步的文本版本变化只推进
+     * generation，不在这里扫描全文；实际可见行由 [segmentCountForLine] 惰性计算。
+     * 文本增量变化走 [applyTextChangeToDocSegmentCounts]（在 [EditorState.applyTextBufferChange] 内调用）。
      */
-    private fun ensureDocSegmentCounts(
+    private fun ensureDocSegmentCountStorage(
         wrapColumns: Int,
         tabSize: Int,
         docLineCount: Int,
         textVersion: Long
-    ): IntArray {
-        val cached = docSegmentCounts
-        if (cached != null &&
-            docSegmentCountsWrapColumns == wrapColumns &&
-            docSegmentCountsTabSize == tabSize &&
-            docSegmentCountsVersion == textVersion &&
-            cached.size == docLineCount
+    ) {
+        val counts = docSegmentCounts
+        val generations = docSegmentCountGenerations
+        if (counts == null || generations == null || counts.size != docLineCount || generations.size != docLineCount) {
+            docSegmentCounts = IntArray(docLineCount)
+            docSegmentCountGenerations = IntArray(docLineCount)
+        }
+
+        if (docSegmentCountsWrapColumns != wrapColumns ||
+            docSegmentCountsTabSize != tabSize ||
+            docSegmentCountsVersion != textVersion
         ) {
-            return cached
+            advanceDocSegmentCountGeneration()
         }
-        val arr = IntArray(docLineCount)
-        for (i in 0 until docLineCount) {
-            arr[i] = computeSegmentCountForLine(i, wrapColumns, tabSize, textVersion)
-        }
-        docSegmentCounts = arr
         docSegmentCountsWrapColumns = wrapColumns
         docSegmentCountsTabSize = tabSize
         docSegmentCountsVersion = textVersion
-        return arr
+    }
+
+    private fun advanceDocSegmentCountGeneration() {
+        if (docSegmentCountGeneration == Int.MAX_VALUE) {
+            docSegmentCountGenerations?.fill(0)
+            docSegmentCountGeneration = 1
+        } else {
+            docSegmentCountGeneration++
+        }
+    }
+
+    private fun segmentCountForLine(docLine: Int, wrapColumns: Int, tabSize: Int): Int {
+        val counts = checkNotNull(docSegmentCounts)
+        val generations = checkNotNull(docSegmentCountGenerations)
+        if (generations[docLine] != docSegmentCountGeneration) {
+            counts[docLine] = computeSegmentCountForLine(docLine, wrapColumns, tabSize)
+            generations[docLine] = docSegmentCountGeneration
+        }
+        return counts[docLine].coerceAtLeast(1)
     }
 
     private fun computeSegmentCountForLine(
         docLine: Int,
         wrapColumns: Int,
-        tabSize: Int,
-        textVersion: Long
+        tabSize: Int
     ): Int {
         val lineText = textBuffer.getLine(docLine)
-        return host.wordWrapLayoutCache.getWrapLayout(
-            line = docLine,
+        return TextScanKernel.countWrapSegments(
             lineText = lineText,
-            textVersion = textVersion,
             wrapColumns = wrapColumns,
             tabSize = tabSize
-        ).segmentCount
+        )
     }
 
     /**
      * 将 [TextChange] 增量应用到 [docSegmentCounts]：
      * - head [0, startLine) 原样拷贝；
-     * - 编辑窗 [startLine, newChangedEndLine] 重算（调用 wordWrapLayoutCache，此时它已 applyTextChange 过）；
+     * - 编辑窗 [startLine, newChangedEndLine] 标记为失效，等实际可见时再重算；
      * - tail (oldEnd, oldDocCount) 按 lineDelta 平移到 (newEnd, newDocCount)。
      *
-     * 调用方必须在 [Host.wordWrapLayoutCache] 的 applyTextChange 之后调，保证编辑窗内各行的 wrap layout
-     * 可以正确重建（旧 cache entry 已被移除）。
+     * 若事件元数据与当前 buffer 行数不一致，则丢弃整份计数存储并在下一次映射中惰性重建，
+     * 避免用不可信的 lineDelta 做越界数组搬运。
      */
     fun applyTextChangeToDocSegmentCounts(change: TextChange, newVersion: Long) {
         val cached = docSegmentCounts ?: return
+        val cachedGenerations = docSegmentCountGenerations ?: run {
+            discardDocSegmentCountStorage(newVersion)
+            return
+        }
+        if (docSegmentCountsVersion + 1L != newVersion) {
+            // Transaction 会在全部编辑完成后逐条派发事件；监听器此时只能看到最终 version。
+            // 版本不连续也可能表示漏掉了事件，两种情况都不能安全搬运旧的逐行计数。
+            discardDocSegmentCountStorage(newVersion)
+            return
+        }
         val wrapColumns = docSegmentCountsWrapColumns
-        val tabSize = docSegmentCountsTabSize
-        if (wrapColumns <= 0) {
+        if (wrapColumns <= 0 || cached.size != cachedGenerations.size) {
             // 签名已经不再有效（wrapColumns 还没被初始化成合法值）。
-            docSegmentCounts = null
+            discardDocSegmentCountStorage(newVersion)
             return
         }
         val oldDocCount = cached.size
-        val startLine = change.startLine.coerceIn(0, oldDocCount)
-        val oldEnd = change.endLine.coerceIn(startLine, oldDocCount - 1)
-        val delta = change.lineDelta
-        val newDocCount = oldDocCount + delta
-        if (newDocCount <= 0) {
-            docSegmentCounts = null
+        if (oldDocCount <= 0) {
+            discardDocSegmentCountStorage(newVersion)
             return
         }
-        val newEnd = (oldEnd + delta).coerceIn(startLine, newDocCount - 1)
-        val arr = IntArray(newDocCount)
+
+        val delta = change.lineDelta
+        val actualNewDocCount = textBuffer.lineCount.coerceAtLeast(0)
+        val expectedNewDocCount = oldDocCount.toLong() + delta.toLong()
+        if (expectedNewDocCount != actualNewDocCount.toLong() || actualNewDocCount <= 0) {
+            discardDocSegmentCountStorage(newVersion)
+            return
+        }
+
+        val startLine = change.startLine.coerceIn(0, oldDocCount - 1)
+        val oldEnd = change.endLine.coerceIn(startLine, oldDocCount - 1)
+        val newEndLong = oldEnd.toLong() + delta.toLong()
+        if (newEndLong !in startLine.toLong() until actualNewDocCount.toLong()) {
+            discardDocSegmentCountStorage(newVersion)
+            return
+        }
+        val newEnd = newEndLong.toInt()
+        val arr = IntArray(actualNewDocCount)
+        val arrGenerations = IntArray(actualNewDocCount)
         // head: [0, startLine)
         val headLen = startLine.coerceAtMost(oldDocCount)
-        if (headLen > 0) System.arraycopy(cached, 0, arr, 0, headLen)
+        if (headLen > 0) {
+            System.arraycopy(cached, 0, arr, 0, headLen)
+            System.arraycopy(cachedGenerations, 0, arrGenerations, 0, headLen)
+        }
         // tail: old [oldEnd+1, oldDocCount) → new [newEnd+1, newDocCount)
         val tailSrc = (oldEnd + 1).coerceAtMost(oldDocCount)
-        val tailDst = (newEnd + 1).coerceIn(0, newDocCount)
-        val tailLen = minOf(oldDocCount - tailSrc, newDocCount - tailDst).coerceAtLeast(0)
-        if (tailLen > 0) System.arraycopy(cached, tailSrc, arr, tailDst, tailLen)
-        // edited window: [startLine, newEnd] 重算
-        var i = startLine
-        val limit = newEnd.coerceAtMost(newDocCount - 1)
-        while (i <= limit) {
-            arr[i] = computeSegmentCountForLine(i, wrapColumns, tabSize, newVersion)
-            i++
+        val tailDst = (newEnd + 1).coerceIn(0, actualNewDocCount)
+        val tailLen = minOf(oldDocCount - tailSrc, actualNewDocCount - tailDst).coerceAtLeast(0)
+        if (tailLen > 0) {
+            System.arraycopy(cached, tailSrc, arr, tailDst, tailLen)
+            System.arraycopy(cachedGenerations, tailSrc, arrGenerations, tailDst, tailLen)
         }
         docSegmentCounts = arr
+        docSegmentCountGenerations = arrGenerations
+        docSegmentCountsVersion = newVersion
+    }
+
+    private fun discardDocSegmentCountStorage(newVersion: Long) {
+        docSegmentCounts = null
+        docSegmentCountGenerations = null
         docSegmentCountsVersion = newVersion
     }
 }

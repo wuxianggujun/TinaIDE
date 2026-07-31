@@ -46,10 +46,14 @@ internal class EditorInteractionController(
     private var activeInputConnection: EditorInputConnection? = null
 
     fun bindInputHostView(host: EditorInputHostView) {
-        if (inputHostView !== host) {
+        val previousHost = inputHostView
+        if (previousHost !== host) {
+            activeInputConnection?.closeConnection()
             activeInputConnection = null
+            clearInputHostBindings(previousHost)
         }
         host.inputConnectionFactory = { outAttrs ->
+            activeInputConnection?.closeConnection()
             createInputConnection(host, outAttrs).also { connection ->
                 activeInputConnection = connection
             }
@@ -63,6 +67,10 @@ internal class EditorInteractionController(
                 }
                 connection.handleKeyEvent(event)
             }
+        }
+        host.onInputConnectionDetached = {
+            activeInputConnection?.closeConnection()
+            activeInputConnection = null
         }
         inputHostView = host
     }
@@ -132,19 +140,38 @@ internal class EditorInteractionController(
 
     fun restartInput() {
         val view = inputHostView ?: return
+        activeInputConnection?.closeConnection()
+        activeInputConnection = null
         inputMethodManager?.restartInput(view)
         logIme("restartInput")
     }
 
+    fun prepareForExternalEdit() {
+        val connection = activeInputConnection ?: return
+        connection.finishComposingText()
+        syncSelectionToIme()
+        logIme("finishComposingText before external edit")
+    }
+
     fun syncSelectionToIme() {
-        val view = inputHostView ?: return
-        val manager = inputMethodManager ?: return
-        val (selectionStart, selectionEnd) = imeSelectionOffsets()
-        manager.updateSelection(view, selectionStart, selectionEnd, -1, -1)
+        val connection = activeInputConnection
+        val (selectionStart, selectionEnd) = if (connection != null) {
+            connection.updateSelectionToIme()
+        } else {
+            val view = inputHostView ?: return
+            val manager = inputMethodManager ?: return
+            imeSelectionOffsets().also { selection ->
+                manager.updateSelection(view, selection.first, selection.second, -1, -1)
+            }
+        }
         logIme(
             "updateSelection selection=($selectionStart,$selectionEnd) " +
                 "selectionLen=${abs(selectionEnd - selectionStart)}"
         )
+    }
+
+    fun notifyCursorGeometryChanged() {
+        activeInputConnection?.onExternalCursorGeometryChanged()
     }
 
     fun requestManualCompletion() {
@@ -215,9 +242,18 @@ internal class EditorInteractionController(
         cancelPendingCompletionRequest()
         cancelPendingHoverRequest()
         cancelPendingSignatureHelpRequest()
-        hardwareKeyEventInterceptor = null
+        activeInputConnection?.closeConnection()
         activeInputConnection = null
+        clearInputHostBindings(inputHostView)
+        hardwareKeyEventInterceptor = null
         inputHostView = null
+    }
+
+    private fun clearInputHostBindings(host: EditorInputHostView?) {
+        host ?: return
+        host.inputConnectionFactory = null
+        host.keyEventHandler = null
+        host.onInputConnectionDetached = null
     }
 
     private fun scheduleCompletionRequest(trigger: Char?) {

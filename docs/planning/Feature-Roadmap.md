@@ -1,6 +1,6 @@
 # TinaIDE 功能路线图
 
-> 更新日期：2026-07-03
+> 更新日期：2026-07-31
 
 TinaIDE 是一个面向 Android 设备的轻量级 C/C++ IDE。本文档作为当前仓库“已实现功能总览 + 待实现规划”的主文档。
 
@@ -43,7 +43,7 @@ TinaIDE 是一个面向 Android 设备的轻量级 C/C++ IDE。本文档作为�
 | 全局搜索 | 跨文件搜索、正则表达式 | `ProjectSearchEngine.kt`, `GlobalSearchScreen.kt` |
 | LSP 集成 | clangd（native / PRoot / remote）+ CMake/Make 内建语言服务 | `LspEditorManager.kt`, `LspClientSession.kt` |
 | **智能补全增强** | 本地关键词/标识符候选、LSP 候选合并、参数提示、符号搜索 | [`DefaultCompletionProvider.kt`](../../core/editor-lsp/src/main/java/com/wuxianggujun/tinaide/core/editorlsp/CompletionProvider.kt), [`TinaCodeEditorPage.kt`](../../app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/editor/TinaCodeEditorPage.kt), [`ProjectSymbolIndexService.kt`](../../feature/editor/src/main/java/com/wuxianggujun/tinaide/editor/symbol/ProjectSymbolIndexService.kt) |
-| **参数提示** | 函数签名、当前参数高亮 | `CxxSignatureHelpProvider.kt`, `LocalSignatureHelpWindow.kt` |
+| **参数提示** | LSP 函数签名、当前参数高亮与多签名切换 | [`LspEditorManager.kt`](../../core/editor-lsp/src/main/java/com/wuxianggujun/tinaide/core/editorlsp/LspEditorManager.kt), [`EditorHoverSignatureController.kt`](../../core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorHoverSignatureController.kt), [`EditorSignatureHelpPopup.kt`](../../core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSignatureHelpPopup.kt) |
 | **插件主题** | 通过插件自定义编辑器主题（60+ 颜色项） | [`EditorColorScheme.kt`](../../core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorColorScheme.kt), [`PluginEditorThemeRegistry.kt`](../../feature/editor/src/main/java/com/wuxianggujun/tinaide/editor/theme/PluginEditorThemeRegistry.kt) |
 | **代码片段** | 插件系统实现，支持占位符和跳转 | [`PluginSnippetManager.kt`](../../core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/PluginSnippetManager.kt) |
 | 符号面板 | 底部面板符号 Tab，前缀搜索和跳转 | `SymbolsContent.kt` |
@@ -57,7 +57,7 @@ TinaIDE 是一个面向 Android 设备的轻量级 C/C++ IDE。本文档作为�
 | 运行配置 | 命令行参数、工作目录、终端联动 | `RunConfiguration.kt`, `RunConfigDialog.kt` |
 | LLDB 调试 | 断点、单步、变量查看、调用栈 | `DebugSessionService.kt`, `PRootDebugger.kt` |
 | 终端 | 多终端、状态持久化、Bash + Zsh | `TerminalSessionManager.kt`, `ZshInstaller.kt` |
-| 构建日志 | 底部面板构建输出 | `BuildOutputContent.kt` |
+| 构建日志 | 底部面板编译器与链接器输出 | [`BuildLogContent.kt`](../../app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/BuildLogContent.kt), [`BottomPanel.kt`](../../app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/BottomPanel.kt) |
 | **代码格式化** | clang-format 集成，支持自定义配置 | [`CodeFormatter.kt`](../../core/compile/src/main/java/com/wuxianggujun/tinaide/core/format/CodeFormatter.kt), [`ClangFormatConfigManager.kt`](../../core/compile/src/main/java/com/wuxianggujun/tinaide/core/format/ClangFormatConfigManager.kt) |
 | **PRoot 日志系统** | 会话日志记录、错误诊断、自动重试 | [`PRootSessionLogger.kt`](../../core/proot/src/main/java/com/wuxianggujun/tinaide/core/proot/PRootSessionLogger.kt), [`PRootLogActivity.kt`](../../feature/workspace/src/main/java/com/wuxianggujun/tinaide/ui/workspace/PRootLogActivity.kt) |
 
@@ -98,7 +98,7 @@ TinaIDE 是一个面向 Android 设备的轻量级 C/C++ IDE。本文档作为�
 | 开源版身份策略 | 不内置账号登录、第三方登录、激活码/许可证或会员入口 | `ProfileScreen.kt`, `app/build.gradle.kts`, `AndroidManifest.xml` |
 | 项目模板 | 单文件、CMake 可执行/CMake 库、Make 可执行、NDK Shared Library；插件可追加 Zip 模板 | `ProjectTemplateInstaller.kt` |
 | 文件树管理 | Compose UI + 上下文菜单 | `FileTree.kt`, `DrawerContent.kt` |
-| 底部面板 | 构建日志、诊断、调试、符号 | `BottomPanel.kt` |
+| 底部面板 | 默认显示诊断与构建日志；大纲、书签和 Git 提交日志从底部“更多”按需打开；项目符号可从“更多”或抽屉 Symbols 入口打开 | [`BottomPanel.kt`](../../app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/BottomPanel.kt), [`BottomPanelTypes.kt`](../../app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/BottomPanelTypes.kt) |
 | 后端服务 | 私有后端与管理端已迁出公开仓库 | `server/README.md` |
 | **服务器配置同步** | 客户端配置动态下发、后台定时同步 | [`ServerConfigManager.kt`](../../core/config/src/main/java/com/wuxianggujun/tinaide/core/config/ServerConfigManager.kt), `ServerConfigSyncWorker.kt` |
 | **Android 15+ 兼容** | 16KB 页面对齐支持（rsync/tree-sitter） | `docker/rsync-build/`, `external/android-rsync/` |
@@ -280,6 +280,7 @@ TinaIDE 是一个面向 Android 设备的轻量级 C/C++ IDE。本文档作为�
 
 | 日期 | 更新内容 |
 |------|----------|
+| 2026-07-31 | 对齐当前编辑器与工作台：修正参数提示和构建日志源码引用，明确底部面板默认/按需标签与运行输出去向 |
 | 2026-07-03 | 对齐插件系统现状：快捷键、编辑器工具栏与插件设置页已落地，后续重点收敛脚本 API / 权限 / 生命周期 |
 | 2026-05-21 | 同步开源版账号/激活移除口径；后端、管理端、账号/激活/会员源码迁出公开仓库 |
 | 2026-04-22 | 同步当前插件、登录与构建现状；移除“微信登录 / QuickJS 未来阶段”等已过时描述 |

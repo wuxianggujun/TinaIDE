@@ -32,7 +32,7 @@ class EditorStateEventTest {
     }
 
     @Test
-    fun replaceRange_shouldEmitTextChangedEvent() = runTest {
+    fun replaceRange_shouldEmitTextChangedBeforeCursorMoved() = runTest {
         val buffer = RopeTextBuffer()
         buffer.insert(0, "abc")
         val state = EditorState(buffer)
@@ -44,13 +44,22 @@ class EditorStateEventTest {
         }
 
         state.moveCursorTo(1)
+        advanceUntilIdle()
+        events.clear()
         state.replaceRange(startOffset = 1, endOffset = 2, replacement = "XYZ")
         advanceUntilIdle()
 
-        val textChanged = events.filterIsInstance<EditorEvent.TextChanged>().firstOrNull()
-        assertThat(textChanged).isNotNull()
-        assertThat(textChanged!!.reason).isEqualTo("replaceRange")
-        assertThat(textChanged.length).isEqualTo(state.textBuffer.length)
+        val editEvents = events.filter { event ->
+            event is EditorEvent.TextChanged || event is EditorEvent.CursorMoved
+        }
+        assertThat(editEvents).containsExactly(
+            EditorEvent.TextChanged(
+                reason = "replaceRange",
+                version = state.textBuffer.version,
+                length = state.textBuffer.length
+            ),
+            EditorEvent.CursorMoved(oldOffset = 1, newOffset = 4)
+        ).inOrder()
         job.cancel()
     }
 

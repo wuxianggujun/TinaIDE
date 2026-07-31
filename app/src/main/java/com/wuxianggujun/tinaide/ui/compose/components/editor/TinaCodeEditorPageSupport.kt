@@ -64,6 +64,7 @@ import com.wuxianggujun.tinaide.core.textengine.Position
 import com.wuxianggujun.tinaide.core.textengine.RopeTextBuffer
 import com.wuxianggujun.tinaide.core.textengine.TextChange
 import com.wuxianggujun.tinaide.core.textengine.TextChangeListener
+import com.wuxianggujun.tinaide.core.textengine.TextSelectionSnapshot
 import com.wuxianggujun.tinaide.core.treesitter.TreeSitterHighlighter
 import com.wuxianggujun.tinaide.editor.session.DocumentSession
 import com.wuxianggujun.tinaide.editor.session.EditorViewState
@@ -646,7 +647,9 @@ internal fun replaceWholeText(
     val cursorBefore = editorState.cursorPosition
     return buffer.editTransaction(
         cursorBefore = editorState.cursorOffset,
-        cursorAfter = { editorState.cursorOffset }
+        cursorAfter = { editorState.cursorOffset },
+        selectionBefore = editorState.textSelectionSnapshot(),
+        selectionAfter = { editorState.textSelectionSnapshot() }
     ) {
         buffer.replace(0, buffer.length, newText)
         restoreCursor(editorState, buffer, cursorBefore.line, cursorBefore.column)
@@ -667,7 +670,9 @@ internal fun applyTextEdits(
 
     return buffer.editTransaction(
         cursorBefore = editorState.cursorOffset,
-        cursorAfter = { editorState.cursorOffset }
+        cursorAfter = { editorState.cursorOffset },
+        selectionBefore = editorState.textSelectionSnapshot(),
+        selectionAfter = { editorState.textSelectionSnapshot() }
     ) {
         resolvedEdits.forEach { edit ->
             val oldText = buffer.substring(edit.startOffset, edit.endOffset)
@@ -683,6 +688,11 @@ internal fun applyTextEdits(
         changed
     }
 }
+
+private fun EditorState.textSelectionSnapshot(): TextSelectionSnapshot? =
+    selectionRange?.takeUnless { it.isEmpty }?.let { range ->
+        TextSelectionSnapshot(anchor = range.anchor, caret = range.caret)
+    }
 
 internal data class ResolvedTextEdit(
     val startOffset: Int,

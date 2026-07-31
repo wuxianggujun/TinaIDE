@@ -97,11 +97,14 @@ fun BottomPanel(
     val diagnosticsSettings = Prefs.devDiagnosticsSettingsFlow.collectAsStateWithLifecycleWhen(
         developerOptionsEnabled
     )
+    val activeTabHasCodeEditor = editorContainerState.activeTabHasAttachedCodeEditor()
     val showDebugBarInBottom = isActive && debugToolbarPosition != DebugToolbarPosition.TOP
+    val showEditorSymbolBar =
+        !isActive && activeTabHasCodeEditor && !bottomPanelState.isNearFullScreen
     val showEditorPerformanceTab = shouldShowEditorPerformanceTab(
         developerOptionsEnabled = developerOptionsEnabled,
         diagnosticsEnabled = diagnosticsSettings.diagnosticsEnabled,
-        activeTabSupportsEditorPerformancePanel = editorContainerState.activeTabSupportsEditorPerformancePanel()
+        activeTabSupportsEditorPerformancePanel = activeTabHasCodeEditor
     )
     val debugStatus = debugViewModel.debugStatus.collectAsStateWithLifecycleWhen(showDebugBarInBottom)
     val breakpoints = debugViewModel.breakpoints.collectAsStateWithLifecycleWhen(isActive)
@@ -116,7 +119,7 @@ fun BottomPanel(
     var showVariableDetailDialog by remember { mutableStateOf(false) }
     var selectedVariableForDetail by remember { mutableStateOf<DebugVariable?>(null) }
 
-    // 默认底栏：问题 / 构建 / 输出；命令打开的次级 Tab 临时并入可见列表
+    // 默认底栏：问题 / 构建；命令打开的次级 Tab 临时并入可见列表
     val normalModeTabs = resolveNormalModeBottomTabs(
         showEditorPerformanceTab = showEditorPerformanceTab,
         hasPluginPanels = pluginState.resolvedPanels.isNotEmpty(),
@@ -172,7 +175,7 @@ fun BottomPanel(
                 )
             }
 
-            // 调试工具栏（底栏位置）；撤销/重做在顶栏左侧，符号快捷栏已移除以统一交互
+            // 调试工具栏（底栏位置）
             AnimatedVisibility(visible = showDebugBarInBottom) {
                 DebugBar(
                     debugStatus = debugStatus,
@@ -183,6 +186,13 @@ fun BottomPanel(
                     onPause = { debugViewModel.pauseExecution() },
                     onStop = { debugViewModel.stopSession() },
                     modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            AnimatedVisibility(visible = showEditorSymbolBar) {
+                EditorSymbolBar(
+                    onSymbolClick = { symbol -> editorContainerState.insertTextAtCursor(symbol) },
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
 
@@ -214,11 +224,12 @@ fun BottomPanel(
                                     .weight(1f)
                             )
                         } else {
-                            // 普通模式：问题 / 构建 / 输出（+ 按需性能/插件/命令打开的次级 Tab）
+                            // 普通模式：问题 / 构建（+ 按需性能/插件/命令打开的次级 Tab）
                             BottomPanelTabRow(
                                 selectedTab = resolvedBottomTab,
                                 tabs = visibleBottomTabs,
                                 badges = normalModeTabBadges,
+                                overflowTabs = resolveOverflowBottomPanelTabs(visibleBottomTabs),
                                 onTabSelected = { tab ->
                                     // 切换标签页时，如果面板未展开则展开
                                     scope.launch {

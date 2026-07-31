@@ -31,8 +31,10 @@ internal object EditorSmartReplacement {
     fun resolve(
         state: EditorState,
         startOffset: Int,
-        replacement: String
+        replacement: String,
+        endOffset: Int = startOffset,
     ): EditorResolvedReplacement {
+        val hasSelection = endOffset != startOffset
         if (replacement == "\t" && state.config.insertSpacesForTabs) {
             val startPosition = runCatching { state.textBuffer.offsetToPosition(startOffset) }.getOrNull()
                 ?: return EditorResolvedReplacement(replacement, cursorOffsetAfterInsert = null)
@@ -52,7 +54,7 @@ internal object EditorSmartReplacement {
             if (closeChar != null) {
                 val charAfterCursor = charAfterOffset(state, startOffset)
                 if (ch == '"' || ch == '\'') {
-                    if (charAfterCursor == ch) {
+                    if (!hasSelection && charAfterCursor == ch) {
                         return EditorResolvedReplacement(
                             replacement = "",
                             cursorOffsetAfterInsert = startOffset + 1
@@ -71,7 +73,7 @@ internal object EditorSmartReplacement {
 
             if (ch in CLOSE_CHARS) {
                 val charAfterCursor = charAfterOffset(state, startOffset)
-                if (charAfterCursor == ch) {
+                if (!hasSelection && charAfterCursor == ch) {
                     return EditorResolvedReplacement(
                         replacement = "",
                         cursorOffsetAfterInsert = startOffset + 1

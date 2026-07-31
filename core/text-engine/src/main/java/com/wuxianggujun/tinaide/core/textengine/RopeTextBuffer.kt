@@ -4,6 +4,7 @@ import java.io.File
 import java.io.InputStreamReader
 import java.nio.charset.Charset
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
@@ -15,7 +16,7 @@ import timber.log.Timber
 
 class RopeTextBuffer(
     initialText: String = "",
-    override val history: EditHistory = DefaultEditHistory()
+    private val history: EditHistory = DefaultEditHistory()
 ) : TextBuffer {
     private companion object {
         private const val IO_CHAR_BUFFER_SIZE = 16 * 1024
@@ -43,6 +44,11 @@ class RopeTextBuffer(
     private val positionCacheColumns = IntArray(POSITION_CACHE_SIZE)
     private var positionCacheVersion: Long = -1L
     private var positionCacheWriteIndex: Int = 0
+    private var editTransactionDepth: Int = 0
+    private var deferredTransactionChanges: MutableList<TextChange>? = null
+    private val dispatchQueueLock = Any()
+    private val pendingDispatchChanges = ArrayDeque<TextChange>()
+    private val dispatchInProgress = AtomicBoolean(false)
 
     init {
         rope.setText(initialText)
@@ -58,60 +64,161 @@ class RopeTextBuffer(
     override val version: Long
         get() = versionCounter.get()
 
-    override fun insert(offset: Int, text: String) {
-        val change = lock.write { applyInsert(offset, text, recordHistory = true, fromUndoRedo = false) }
-        if (change != null) dispatchChange(change)
+    override fun insert(
+        offset: Int,
+        text: String,
+        historyCursor: TextEditCursorSnapshot?
+    ) {
+        val shouldDrain = lock.write {
+            applyInsert(
+                offset = offset,
+                text = text,
+                recordHistory = true,
+                fromUndoRedo = false,
+                historyCursor = historyCursor
+            ).queueForDispatch()
+        }
+        if (shouldDrain) drainDispatchQueue()
     }
 
-    override fun delete(start: Int, end: Int) {
-        val change = lock.write { applyDelete(start, end, recordHistory = true, fromUndoRedo = false) }
-        if (change != null) dispatchChange(change)
+    override fun delete(
+        start: Int,
+        end: Int,
+        historyCursor: TextEditCursorSnapshot?
+    ) {
+        val shouldDrain = lock.write {
+            applyDelete(
+                start = start,
+                end = end,
+                recordHistory = true,
+                fromUndoRedo = false,
+                historyCursor = historyCursor
+            ).queueForDispatch()
+        }
+        if (shouldDrain) drainDispatchQueue()
     }
 
-    override fun replace(start: Int, end: Int, text: String) {
-        val change = lock.write { applyReplace(start, end, text, recordHistory = true, fromUndoRedo = false) }
-        if (change != null) dispatchChange(change)
+    override fun replace(
+        start: Int,
+        end: Int,
+        text: String,
+        historyCursor: TextEditCursorSnapshot?
+    ) {
+        val shouldDrain = lock.write {
+            applyReplace(
+                start = start,
+                end = end,
+                text = text,
+                recordHistory = true,
+                fromUndoRedo = false,
+                historyCursor = historyCursor
+            ).queueForDispatch()
+        }
+        if (shouldDrain) drainDispatchQueue()
+    }
+
+    override fun beginCompoundEdit(
+        cursorBefore: Int?,
+        selectionBefore: TextSelectionSnapshot?
+    ): CompoundEditToken = lock.write {
+        history.beginCompoundEdit(cursorBefore, selectionBefore)
+    }
+
+    override fun endCompoundEdit(
+        token: CompoundEditToken,
+        cursorAfter: Int?,
+        selectionAfter: TextSelectionSnapshot?
+    ) {
+        lock.write {
+            history.endCompoundEdit(token, cursorAfter, selectionAfter)
+        }
+    }
+
+    override fun isCompoundEditActive(token: CompoundEditToken): Boolean = lock.read {
+        history.isCompoundEditActive(token)
     }
 
     override fun <T> editTransaction(
         cursorBefore: Int?,
         cursorAfter: (() -> Int?)?,
+        selectionBefore: TextSelectionSnapshot?,
+        selectionAfter: (() -> TextSelectionSnapshot?)?,
         block: TextBuffer.() -> T
-    ): T = lock.write {
-        history.beginCompoundEdit(cursorBefore)
-        var completed = false
-        try {
-            block(this@RopeTextBuffer).also { completed = true }
+    ): T {
+        var shouldDrain = false
+        return try {
+            lock.write {
+                val isOutermostTransaction = editTransactionDepth == 0
+                if (isOutermostTransaction) {
+                    deferredTransactionChanges = mutableListOf()
+                }
+                val compoundToken = try {
+                    history.beginCompoundEdit(cursorBefore, selectionBefore)
+                } catch (error: Throwable) {
+                    if (isOutermostTransaction) deferredTransactionChanges = null
+                    throw error
+                }
+                editTransactionDepth++
+
+                var completed = false
+                try {
+                    block(this@RopeTextBuffer).also { completed = true }
+                } finally {
+                    try {
+                        history.finishCompoundEdit(
+                            compoundToken,
+                            completed,
+                            cursorAfter,
+                            selectionAfter
+                        )
+                    } finally {
+                        editTransactionDepth--
+                        if (isOutermostTransaction) {
+                            val changes = deferredTransactionChanges?.toList().orEmpty()
+                            deferredTransactionChanges = null
+                            shouldDrain = queueChangesForDispatch(changes)
+                        }
+                    }
+                }
+            }
         } finally {
-            history.finishCompoundEdit(completed, cursorAfter)
+            if (shouldDrain) drainDispatchQueue()
         }
     }
 
     fun replaceAll(text: String) {
-        val change = lock.write {
-            val previous = rope.substring(0, rope.length)
+        val shouldDrain = lock.write {
+            val previousLength = rope.length
+            val contentUnchanged = rope.contentEquals(text)
             history.clear()
-            if (previous == text) {
+            if (contentUnchanged) {
                 null
             } else {
-                val previousEndPos = offsetToPositionInternal(previous.length)
+                val previousEndPos = offsetToPositionInternal(previousLength)
+                val previousLineBreakCount = (lineIndex.lineCount - 1).coerceAtLeast(0)
+                val previousEndsWithLineBreak =
+                    previousLength > 0 && rope.charAt(previousLength - 1) == '\n'
                 rope.setText(text)
                 lineIndex.rebuild(text)
                 versionCounter.incrementAndGet()
                 TextChange(
                     startOffset = 0,
-                    endOffset = previous.length,
-                    oldText = previous,
+                    endOffset = previousLength,
+                    oldText = "",
                     newText = text,
                     startLine = 0,
                     startColumn = 0,
                     endLine = previousEndPos.line,
                     endColumn = previousEndPos.column,
-                    fromUndoRedo = false
-                )
+                    fromUndoRedo = false,
+                    oldTextLength = previousLength,
+                    oldLineBreakCount = previousLineBreakCount,
+                    oldTextEndsWithLineBreak = previousEndsWithLineBreak,
+                    hasCompleteOldText = false
+                ).queueForDispatch()
             }
         }
-        if (change != null) dispatchChange(change)
+        if (shouldDrain) drainDispatchQueue()
     }
 
     override fun substring(start: Int, end: Int): String = lock.read {
@@ -128,7 +235,7 @@ class RopeTextBuffer(
 
     override fun getLine(line: Int): String = lock.read {
         val start = lineIndex.getLineStart(line)
-        val end = lineIndex.getLineEnd(line, rope.length)
+        val end = logicalLineEnd(line)
         rope.substring(start, end)
     }
 
@@ -137,7 +244,7 @@ class RopeTextBuffer(
     }
 
     override fun getLineEnd(line: Int): Int = lock.read {
-        lineIndex.getLineEnd(line, rope.length)
+        logicalLineEnd(line)
     }
 
     override fun offsetToLine(offset: Int): Int = lock.read {
@@ -145,7 +252,9 @@ class RopeTextBuffer(
     }
 
     override fun positionToOffset(line: Int, column: Int): Int = lock.read {
-        lineIndex.positionToOffset(line, column, rope.length)
+        val start = lineIndex.getLineStart(line)
+        val end = logicalLineEnd(line)
+        start + column.coerceIn(0, end - start)
     }
 
     override fun offsetToPosition(offset: Int): Position = lock.read {
@@ -188,40 +297,56 @@ class RopeTextBuffer(
 
     override fun canRedo(): Boolean = lock.read { history.canRedo() }
 
-    override fun undo(): UndoRedoResult? = lock.write {
-        val operation = history.undo() ?: return@write null
-        val changes = applyUndoOperation(operation)
-        UndoRedoResult(
-            changes = changes,
-            cursorOffset = operation.cursorBeforeOrDefault(changes)
-        )
+    override fun undo(): UndoRedoResult? {
+        val result = lock.write {
+            if (!history.canUndo()) return@write null
+            val operation = history.undo() ?: return@write null
+            val changes = applyUndoOperation(operation)
+            UndoRedoResult(
+                changes = changes,
+                cursorOffset = operation.cursorBeforeOrDefault(changes),
+                selection = (operation as? EditOperation.Compound)?.selectionBefore
+            ).also { queueChangesForDispatch(changes) }
+        }
+        if (result != null) drainDispatchQueue()
+        return result
     }
 
-    override fun redo(): UndoRedoResult? = lock.write {
-        val operation = history.redo() ?: return@write null
-        val changes = applyRedoOperation(operation)
-        UndoRedoResult(
-            changes = changes,
-            cursorOffset = operation.cursorAfterOrDefault(changes)
-        )
+    override fun redo(): UndoRedoResult? {
+        val result = lock.write {
+            if (!history.canRedo()) return@write null
+            val operation = history.redo() ?: return@write null
+            val changes = applyRedoOperation(operation)
+            UndoRedoResult(
+                changes = changes,
+                cursorOffset = operation.cursorAfterOrDefault(changes),
+                selection = (operation as? EditOperation.Compound)?.selectionAfter
+            ).also { queueChangesForDispatch(changes) }
+        }
+        if (result != null) drainDispatchQueue()
+        return result
     }
 
+    // A public edit may join two previously unpaired surrogate halves. Replaying that exact edit
+    // can therefore cross a boundary that is a valid pair only in the post-edit state.
     private fun applyUndoOperation(operation: EditOperation): List<TextChange> = when (operation) {
         is EditOperation.Insert -> listOfNotNull(
             applyDelete(
                 start = operation.offset,
                 end = operation.offset + operation.text.length,
                 recordHistory = false,
-                fromUndoRedo = true
-            ).also(::dispatchChangeIfPresent)
+                fromUndoRedo = true,
+                enforceCodePointBoundaries = false
+            )
         )
         is EditOperation.Delete -> listOfNotNull(
             applyInsert(
                 offset = operation.offset,
                 text = operation.text,
                 recordHistory = false,
-                fromUndoRedo = true
-            ).also(::dispatchChangeIfPresent)
+                fromUndoRedo = true,
+                enforceCodePointBoundaries = false
+            )
         )
         is EditOperation.Replace -> listOfNotNull(
             applyReplace(
@@ -229,8 +354,9 @@ class RopeTextBuffer(
                 end = operation.offset + operation.newText.length,
                 text = operation.oldText,
                 recordHistory = false,
-                fromUndoRedo = true
-            ).also(::dispatchChangeIfPresent)
+                fromUndoRedo = true,
+                enforceCodePointBoundaries = false
+            )
         )
         is EditOperation.Compound -> operation.operations.asReversed().flatMap(::applyUndoOperation)
     }
@@ -241,16 +367,18 @@ class RopeTextBuffer(
                 offset = operation.offset,
                 text = operation.text,
                 recordHistory = false,
-                fromUndoRedo = true
-            ).also(::dispatchChangeIfPresent)
+                fromUndoRedo = true,
+                enforceCodePointBoundaries = false
+            )
         )
         is EditOperation.Delete -> listOfNotNull(
             applyDelete(
                 start = operation.offset,
                 end = operation.offset + operation.text.length,
                 recordHistory = false,
-                fromUndoRedo = true
-            ).also(::dispatchChangeIfPresent)
+                fromUndoRedo = true,
+                enforceCodePointBoundaries = false
+            )
         )
         is EditOperation.Replace -> listOfNotNull(
             applyReplace(
@@ -258,29 +386,36 @@ class RopeTextBuffer(
                 end = operation.offset + operation.oldText.length,
                 text = operation.newText,
                 recordHistory = false,
-                fromUndoRedo = true
-            ).also(::dispatchChangeIfPresent)
+                fromUndoRedo = true,
+                enforceCodePointBoundaries = false
+            )
         )
         is EditOperation.Compound -> operation.operations.flatMap(::applyRedoOperation)
     }
 
     private fun EditOperation.cursorBeforeOrDefault(changes: List<TextChange>): Int {
-        val recordedCursor = (this as? EditOperation.Compound)?.cursorBefore
+        val recordedCursor = when (this) {
+            is EditOperation.Insert -> cursorSnapshot?.cursorBefore
+            is EditOperation.Delete -> cursorSnapshot?.cursorBefore
+            is EditOperation.Replace -> cursorSnapshot?.cursorBefore
+            is EditOperation.Compound -> cursorBefore
+        }
         return recordedCursor ?: changes.defaultCursorOffset()
     }
 
     private fun EditOperation.cursorAfterOrDefault(changes: List<TextChange>): Int {
-        val recordedCursor = (this as? EditOperation.Compound)?.cursorAfter
+        val recordedCursor = when (this) {
+            is EditOperation.Insert -> cursorSnapshot?.cursorAfter
+            is EditOperation.Delete -> cursorSnapshot?.cursorAfter
+            is EditOperation.Replace -> cursorSnapshot?.cursorAfter
+            is EditOperation.Compound -> cursorAfter
+        }
         return recordedCursor ?: changes.defaultCursorOffset()
     }
 
     private fun List<TextChange>.defaultCursorOffset(): Int {
         val lastChange = lastOrNull() ?: return 0
         return lastChange.startOffset + lastChange.newText.length
-    }
-
-    private fun dispatchChangeIfPresent(change: TextChange?) {
-        if (change != null) dispatchChange(change)
     }
 
     override suspend fun loadFromFile(file: File, charset: Charset): Result<Unit> {
@@ -335,17 +470,20 @@ class RopeTextBuffer(
         offset: Int,
         text: String,
         recordHistory: Boolean,
-        fromUndoRedo: Boolean
+        fromUndoRedo: Boolean,
+        historyCursor: TextEditCursorSnapshot? = null,
+        enforceCodePointBoundaries: Boolean = true
     ): TextChange? {
         if (text.isEmpty()) return null
 
         require(offset in 0..rope.length) { "Invalid offset: $offset" }
+        if (enforceCodePointBoundaries) requireCodePointBoundary(offset)
         val startPos = offsetToPositionInternal(offset)
 
         rope.insert(offset, text)
         lineIndex.applyChange(offset, oldText = "", newText = text)
         if (recordHistory) {
-            history.record(EditOperation.Insert(offset, text))
+            history.record(EditOperation.Insert(offset, text, historyCursor))
         }
         versionCounter.incrementAndGet()
 
@@ -366,11 +504,17 @@ class RopeTextBuffer(
         start: Int,
         end: Int,
         recordHistory: Boolean,
-        fromUndoRedo: Boolean
+        fromUndoRedo: Boolean,
+        historyCursor: TextEditCursorSnapshot? = null,
+        enforceCodePointBoundaries: Boolean = true
     ): TextChange? {
         if (start == end) return null
         require(start in 0..rope.length && end in start..rope.length) {
             "Invalid range: [$start, $end)"
+        }
+        if (enforceCodePointBoundaries) {
+            requireCodePointBoundary(start)
+            requireCodePointBoundary(end)
         }
 
         val oldText = rope.substring(start, end)
@@ -382,7 +526,7 @@ class RopeTextBuffer(
         rope.delete(start, end)
         lineIndex.applyChange(start, oldText = oldText, newText = "")
         if (recordHistory) {
-            history.record(EditOperation.Delete(start, oldText))
+            history.record(EditOperation.Delete(start, oldText, historyCursor))
         }
         versionCounter.incrementAndGet()
 
@@ -404,11 +548,17 @@ class RopeTextBuffer(
         end: Int,
         text: String,
         recordHistory: Boolean,
-        fromUndoRedo: Boolean
+        fromUndoRedo: Boolean,
+        historyCursor: TextEditCursorSnapshot? = null,
+        enforceCodePointBoundaries: Boolean = true
     ): TextChange? {
         require(start in 0..rope.length) { "start out of bounds: $start (length=${rope.length})" }
         require(end in start..rope.length) { "end out of bounds: $end (start=$start, length=${rope.length})" }
         if (start == end && text.isEmpty()) return null
+        if (enforceCodePointBoundaries) {
+            requireCodePointBoundary(start)
+            requireCodePointBoundary(end)
+        }
 
         val oldText = if (start < end) rope.substring(start, end) else ""
         if (oldText == text) return null
@@ -427,9 +577,14 @@ class RopeTextBuffer(
             // 原子记录一条 Replace：undo 一次即可恢复原文。
             // 保持对纯删除 / 纯插入的降级：避免往 undoStack 里塞无意义的空字符串 op。
             val op: EditOperation = when {
-                oldText.isEmpty() -> EditOperation.Insert(start, text)
-                text.isEmpty() -> EditOperation.Delete(start, oldText)
-                else -> EditOperation.Replace(offset = start, oldText = oldText, newText = text)
+                oldText.isEmpty() -> EditOperation.Insert(start, text, historyCursor)
+                text.isEmpty() -> EditOperation.Delete(start, oldText, historyCursor)
+                else -> EditOperation.Replace(
+                    offset = start,
+                    oldText = oldText,
+                    newText = text,
+                    cursorSnapshot = historyCursor
+                )
             }
             history.record(op)
         }
@@ -451,10 +606,66 @@ class RopeTextBuffer(
     private fun offsetToPositionInternal(offset: Int): Position {
         val line = lineIndex.offsetToLine(offset)
         val lineStart = lineIndex.getLineStart(line)
-        return Position(line, offset - lineStart)
+        return Position(line, offset.coerceAtMost(logicalLineEnd(line)) - lineStart)
     }
 
-    private fun dispatchChange(change: TextChange) {
+    private fun logicalLineEnd(line: Int): Int {
+        val start = lineIndex.getLineStart(line)
+        val indexedEnd = lineIndex.getLineEnd(line, rope.length)
+        val followedByLineFeed = indexedEnd < rope.length && rope.charAt(indexedEnd) == '\n'
+        return if (followedByLineFeed && indexedEnd > start && rope.charAt(indexedEnd - 1) == '\r') {
+            indexedEnd - 1
+        } else {
+            indexedEnd
+        }
+    }
+
+    private fun requireCodePointBoundary(offset: Int) {
+        if (offset <= 0 || offset >= rope.length) return
+        require(!(rope.charAt(offset - 1).isHighSurrogate() && rope.charAt(offset).isLowSurrogate())) {
+            "Offset $offset splits a UTF-16 surrogate pair"
+        }
+    }
+
+    private fun TextChange?.queueForDispatch(): Boolean {
+        val change = this ?: return false
+        if (editTransactionDepth > 0) {
+            checkNotNull(deferredTransactionChanges).add(change)
+            return false
+        }
+        return queueChangesForDispatch(listOf(change))
+    }
+
+    private fun queueChangesForDispatch(changes: List<TextChange>): Boolean {
+        if (changes.isEmpty()) return false
+        synchronized(dispatchQueueLock) {
+            pendingDispatchChanges.addAll(changes)
+        }
+        return true
+    }
+
+    private fun drainDispatchQueue() {
+        while (true) {
+            if (!dispatchInProgress.compareAndSet(false, true)) return
+            try {
+                while (true) {
+                    val change = synchronized(dispatchQueueLock) {
+                        pendingDispatchChanges.removeFirstOrNull()
+                    } ?: break
+                    dispatchChangeNow(change)
+                }
+            } finally {
+                dispatchInProgress.set(false)
+            }
+
+            val hasPendingChanges = synchronized(dispatchQueueLock) {
+                pendingDispatchChanges.isNotEmpty()
+            }
+            if (!hasPendingChanges) return
+        }
+    }
+
+    private fun dispatchChangeNow(change: TextChange) {
         // 主动推进 versionFlow —— 订阅方可以直接 collect 而不用自己维护 callbackFlow + addChangeListener。
         _versionFlow.value = versionCounter.get()
         listeners.forEach { listener ->

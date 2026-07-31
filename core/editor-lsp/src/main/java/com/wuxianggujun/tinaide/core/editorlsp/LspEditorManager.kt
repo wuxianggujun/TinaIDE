@@ -325,7 +325,7 @@ class LspEditorManager(
                     startColumn = change.startColumn,
                     endLine = change.endLine,
                     endColumn = change.endColumn,
-                    oldTextLength = change.oldText.length,
+                    oldTextLength = change.oldTextLength,
                     newText = change.newText
                 )
             }.onFailure { Timber.tag(TAG).d("didChange failed: ${it.message}") }

@@ -153,6 +153,14 @@ object TextScanKernel {
         )
     }
 
+    /** Counts wrap segments without allocating the segment-start array. */
+    fun countWrapSegments(lineText: String, wrapColumns: Int, tabSize: Int): Int =
+        countWrapSegmentsKotlin(
+            lineText = lineText,
+            wrapColumns = wrapColumns.coerceAtLeast(1),
+            tabSize = tabSize.coerceAtLeast(1)
+        )
+
     fun buildVisualColumnPrefix(lineText: String, tabSize: Int): IntArray {
         if (lineText.isEmpty()) return intArrayOf(0)
         return backend.buildVisualColumnPrefix(lineText, tabSize.coerceAtLeast(1))
@@ -1091,10 +1099,11 @@ private class KotlinTextScanBackend : TextScanBackend {
         var visualColumn = 0
         var index = 0
         while (index < length) {
+            val codeUnitLength = utf16CodePointLengthAt(lineText, index)
             val step = if (lineText[index] == '\t') {
                 safeTabSize - (visualColumn % safeTabSize)
             } else {
-                1
+                codeUnitLength
             }
 
             if (index > segmentStart && visualColumn + step > safeWrapColumns) {
@@ -1108,7 +1117,7 @@ private class KotlinTextScanBackend : TextScanBackend {
             }
 
             visualColumn += step
-            index++
+            index += codeUnitLength
 
             if (visualColumn >= safeWrapColumns && index < length) {
                 if (count >= starts.size) {
@@ -1186,6 +1195,65 @@ private class KotlinTextScanBackend : TextScanBackend {
         )
     }
 }
+
+private fun countWrapSegmentsKotlin(
+    lineText: String,
+    wrapColumns: Int,
+    tabSize: Int
+): Int {
+    val length = lineText.length
+    if (length <= 0) return 1
+    if (lineText.indexOf('\t') < 0 && !lineText.containsUtf16SurrogatePair()) {
+        return ((length - 1) / wrapColumns) + 1
+    }
+
+    var segmentCount = 1
+    var segmentStart = 0
+    var visualColumn = 0
+    var index = 0
+    while (index < length) {
+        val codeUnitLength = utf16CodePointLengthAt(lineText, index)
+        val step = if (lineText[index] == '\t') {
+            tabSize - (visualColumn % tabSize)
+        } else {
+            codeUnitLength
+        }
+
+        if (index > segmentStart && visualColumn + step > wrapColumns) {
+            segmentCount++
+            segmentStart = index
+            visualColumn = 0
+            continue
+        }
+
+        visualColumn += step
+        index += codeUnitLength
+        if (visualColumn >= wrapColumns && index < length) {
+            segmentCount++
+            segmentStart = index
+            visualColumn = 0
+        }
+    }
+    return segmentCount
+}
+
+private fun String.containsUtf16SurrogatePair(): Boolean {
+    for (index in 0 until lastIndex) {
+        if (this[index].isHighSurrogate() && this[index + 1].isLowSurrogate()) return true
+    }
+    return false
+}
+
+private fun utf16CodePointLengthAt(text: String, index: Int): Int =
+    if (
+        text[index].isHighSurrogate() &&
+        index + 1 < text.length &&
+        text[index + 1].isLowSurrogate()
+    ) {
+        2
+    } else {
+        1
+    }
 
 private fun encodeWhitespaceMarker(column: Int, isTab: Boolean): Int = (column shl 1) or if (isTab) WHITESPACE_MARKER_TAB_FLAG else 0
 

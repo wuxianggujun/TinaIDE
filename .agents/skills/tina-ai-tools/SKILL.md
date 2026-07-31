@@ -44,8 +44,8 @@ description: TinaIDE RikkaHub/AI 集成开发指南。用于修改内嵌 RikkaHu
 ## 验证
 
 ```powershell
-./gradlew :rikkahub:embedded:compileDebugKotlin --console=plain
-./gradlew :app:compileArm64DebugKotlin --console=plain
+./gradlew :rikkahub:embedded:compileDebugKotlin --no-daemon --console=plain
+./gradlew :app:compileArm64DebugKotlin --no-daemon --console=plain
 ```
 
 - 只改主仓库文档时至少检查 `git diff`、路径是否真实存在、帮助资产是否同步。

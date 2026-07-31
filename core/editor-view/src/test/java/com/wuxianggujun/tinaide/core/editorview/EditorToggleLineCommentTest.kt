@@ -47,6 +47,27 @@ class EditorToggleLineCommentTest {
     }
 
     @Test
+    fun toggleLineComment_withCrlfReverseSelection_shouldPreserveSeparatorsAndUndoRedoSelection() {
+        val state = createState("first\r\nsecond\r\nthird")
+        state.selectRange(startOffset = 13, endOffset = 1)
+
+        assertThat(state.toggleLineComment("//")).isTrue()
+        assertThat(state.textBuffer.toString()).isEqualTo("// first\r\n// second\r\nthird")
+        assertThat(state.selectionRange).isEqualTo(OffsetRange(anchor = 19, caret = 4))
+        assertThat(state.cursorOffset).isEqualTo(4)
+
+        assertThat(state.undo()).isTrue()
+        assertThat(state.textBuffer.toString()).isEqualTo("first\r\nsecond\r\nthird")
+        assertThat(state.selectionRange).isEqualTo(OffsetRange(anchor = 13, caret = 1))
+        assertThat(state.cursorOffset).isEqualTo(1)
+
+        assertThat(state.redo()).isTrue()
+        assertThat(state.textBuffer.toString()).isEqualTo("// first\r\n// second\r\nthird")
+        assertThat(state.selectionRange).isEqualTo(OffsetRange(anchor = 19, caret = 4))
+        assertThat(state.cursorOffset).isEqualTo(4)
+    }
+
+    @Test
     fun toggleLineComment_uncomment_shouldMoveCursorAfterRemovedPrefix() {
         val state = createState("// val answer = 42")
         state.moveCursorTo(7)

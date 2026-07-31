@@ -1,6 +1,7 @@
 package com.wuxianggujun.tinaide.ui.compose.state.editor
 
 import android.content.Context
+import androidx.compose.runtime.mutableStateMapOf
 import com.wuxianggujun.tinaide.core.config.Prefs
 import com.wuxianggujun.tinaide.core.editorview.EditorColorScheme
 import com.wuxianggujun.tinaide.search.CodeSearchResult
@@ -21,7 +22,9 @@ internal class EditorCodeCallbackRegistry(
         val editorCallback: CodeEditorCallback,
     )
 
-    private val callbacksByTabId = mutableMapOf<String, CodeEditorCallback>()
+    // BottomPanel 会在 composition 中读取注册状态；使用 snapshot map 让首次 attach/detach
+    // 能直接驱动符号栏可见性更新，而不依赖其它无关状态碰巧触发重组。
+    private val callbacksByTabId = mutableStateMapOf<String, CodeEditorCallback>()
     private val registrationsByTabId =
         mutableMapOf<String, LinkedHashMap<Any, Registration>>()
 

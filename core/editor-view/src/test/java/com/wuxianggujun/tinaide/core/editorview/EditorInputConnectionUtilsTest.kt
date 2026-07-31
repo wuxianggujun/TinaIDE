@@ -43,68 +43,39 @@ class EditorInputConnectionUtilsTest {
     }
 
     @Test
-    fun resolveImeSelectionRequest_shouldMapOnlyMatchingWindowRelativeSelection() {
-        val window = ImeExtractedTextWindow(
-            startOffset = 4_744,
-            endOffset = 5_256,
-            documentLength = 10_000,
-            textVersion = 7L
-        )
+    fun snapSelectionToEditorUnitBoundaries_shouldExpandSurrogateSelectionAndMoveCollapsedCaretAfterPair() {
+        val buffer = RopeTextBuffer("a\uD83D\uDE00b")
 
-        val echoed = resolveImeSelectionRequest(
-            start = 256,
-            end = 264,
-            documentLength = 10_000,
-            textVersion = 7L,
-            currentSelectionStart = 5_000,
-            currentSelectionEnd = 5_008,
-            extractedTextWindow = window
-        )
-        val absolute = resolveImeSelectionRequest(
-            start = 1,
-            end = 3,
-            documentLength = 10_000,
-            textVersion = 7L,
-            currentSelectionStart = 5_000,
-            currentSelectionEnd = 5_008,
-            extractedTextWindow = window
-        )
+        val forward = snapSelectionToEditorUnitBoundaries(buffer, start = 2, end = 3)
+        val backward = snapSelectionToEditorUnitBoundaries(buffer, start = 3, end = 2)
+        val collapsed = snapSelectionToEditorUnitBoundaries(buffer, start = 2, end = 2)
 
-        assertThat(echoed.start).isEqualTo(5_000)
-        assertThat(echoed.end).isEqualTo(5_008)
-        assertThat(echoed.usedExtractedTextCoordinates).isTrue()
-        assertThat(absolute.start).isEqualTo(1)
-        assertThat(absolute.end).isEqualTo(3)
-        assertThat(absolute.usedExtractedTextCoordinates).isFalse()
+        assertThat(forward).isEqualTo(1 to 3)
+        assertThat(backward).isEqualTo(3 to 1)
+        assertThat(collapsed).isEqualTo(3 to 3)
     }
 
     @Test
-    fun extractedTextWindowAfterEdit_shouldTrackInsertionInsideWindow() {
-        val window = ImeExtractedTextWindow(
-            startOffset = 4_744,
-            endOffset = 5_256,
-            documentLength = 10_000,
-            textVersion = 7L
-        )
+    fun snapSelectionToEditorUnitBoundaries_shouldKeepCrLfAtomic() {
+        val buffer = RopeTextBuffer("ab\r\ncd")
 
-        val updated = window.afterEdit(
-            editStart = 5_000,
-            editEnd = 5_000,
-            replacementLength = 6,
-            oldDocumentLength = 10_000,
-            oldTextVersion = 7L,
-            newDocumentLength = 10_006,
-            newTextVersion = 8L
-        )
+        val forward = snapSelectionToEditorUnitBoundaries(buffer, start = 2, end = 3)
+        val backward = snapSelectionToEditorUnitBoundaries(buffer, start = 4, end = 3)
+        val collapsed = snapSelectionToEditorUnitBoundaries(buffer, start = 3, end = 3)
 
-        assertThat(updated).isEqualTo(
-            ImeExtractedTextWindow(
-                startOffset = 4_744,
-                endOffset = 5_262,
-                documentLength = 10_006,
-                textVersion = 8L
-            )
-        )
+        assertThat(forward).isEqualTo(2 to 4)
+        assertThat(backward).isEqualTo(4 to 2)
+        assertThat(collapsed).isEqualTo(4 to 4)
+    }
+
+    @Test
+    fun expandToEditorUnitBoundaries_shouldExpandPartialCrLfDeletion() {
+        val buffer = RopeTextBuffer("ab\r\ncd")
+
+        assertThat(ImeDeleteRange(start = 3, end = 4).expandToEditorUnitBoundaries(buffer))
+            .isEqualTo(ImeDeleteRange(start = 2, end = 4))
+        assertThat(ImeDeleteRange(start = 2, end = 3).expandToEditorUnitBoundaries(buffer))
+            .isEqualTo(ImeDeleteRange(start = 2, end = 4))
     }
 
     @Test
@@ -176,6 +147,19 @@ class EditorInputConnectionUtilsTest {
     }
 
     @Test
+    fun nextComposingRange_shouldSaturateInsteadOfOverflowing() {
+        val composing = nextComposingRange(
+            editStart = Int.MAX_VALUE - 2,
+            replacementLength = 10,
+            keepComposing = true
+        )
+
+        assertThat(composing).isEqualTo(
+            ComposingRange(start = Int.MAX_VALUE - 2, end = Int.MAX_VALUE)
+        )
+    }
+
+    @Test
     fun imeDeleteSurroundingCharRange_shouldClampAroundCursor() {
         val range = imeDeleteSurroundingCharRange(
             cursorOffset = 2,
@@ -185,6 +169,18 @@ class EditorInputConnectionUtilsTest {
         )
 
         assertThat(range).isEqualTo(ImeDeleteRange(start = 0, end = 4))
+    }
+
+    @Test
+    fun imeDeleteSurroundingCharRange_shouldNotOverflowAtDocumentEnd() {
+        val range = imeDeleteSurroundingCharRange(
+            cursorOffset = Int.MAX_VALUE,
+            beforeLength = Int.MAX_VALUE,
+            afterLength = Int.MAX_VALUE,
+            documentLength = Int.MAX_VALUE
+        )
+
+        assertThat(range).isEqualTo(ImeDeleteRange(start = 0, end = Int.MAX_VALUE))
     }
 
     @Test
@@ -206,5 +202,19 @@ class EditorInputConnectionUtilsTest {
 
         assertThat(beforeRange).isEqualTo(ImeDeleteRange(start = 1, end = 3))
         assertThat(afterRange).isEqualTo(ImeDeleteRange(start = 1, end = 3))
+    }
+
+    @Test
+    fun charDeleteRange_shouldExpandAcrossSurrogatePair() {
+        val buffer = RopeTextBuffer("a\uD83D\uDE00b")
+        val rawRange = imeDeleteSurroundingCharRange(
+            cursorOffset = 3,
+            beforeLength = 1,
+            afterLength = 0,
+            documentLength = buffer.length
+        )
+
+        assertThat(rawRange!!.expandToEditorUnitBoundaries(buffer))
+            .isEqualTo(ImeDeleteRange(start = 1, end = 3))
     }
 }

@@ -18,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -46,11 +47,13 @@ fun BottomPanelTabRow(
     tabs: List<BottomPanelTab> = BottomPanelTab.entries,
     badges: Map<BottomPanelTab, Int> = emptyMap(),
     actions: Map<BottomPanelTab, List<BottomPanelTabMenuAction>> = emptyMap(),
+    overflowTabs: List<BottomPanelTab> = emptyList(),
     isNearFullScreen: Boolean = false,
     onToggleFullScreen: (() -> Unit)? = null,
     onClose: (() -> Unit)? = null
 ) {
     val selectedTabIndex = tabs.indexOf(selectedTab).let { if (it >= 0) it else 0 }
+    var overflowExpanded by remember { mutableStateOf(false) }
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -94,8 +97,45 @@ fun BottomPanelTabRow(
             }
         }
 
-        if (onToggleFullScreen != null || onClose != null) {
+        if (overflowTabs.isNotEmpty() || onToggleFullScreen != null || onClose != null) {
             Spacer(modifier = Modifier.width(6.dp))
+        }
+
+        if (overflowTabs.isNotEmpty()) {
+            Box {
+                TinaPanelSegmentButton(
+                    onClick = { overflowExpanded = true },
+                    modifier = Modifier.size(32.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
+                    contentPadding = PaddingValues(0.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.MoreVert,
+                        contentDescription = stringResource(Strings.content_desc_more_options),
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                TinaDropdownMenu(
+                    expanded = overflowExpanded,
+                    onDismissRequest = { overflowExpanded = false },
+                ) {
+                    overflowTabs.forEach { tab ->
+                        TinaDropdownMenuItem(
+                            text = { Text(stringResource(tab.titleRes)) },
+                            onClick = {
+                                overflowExpanded = false
+                                onTabSelected(tab)
+                            },
+                        )
+                    }
+                }
+            }
+
+            if (onToggleFullScreen != null || onClose != null) {
+                Spacer(modifier = Modifier.width(4.dp))
+            }
         }
 
         if (onToggleFullScreen != null) {

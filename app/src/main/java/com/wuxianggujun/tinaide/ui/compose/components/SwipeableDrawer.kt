@@ -16,12 +16,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,6 +39,7 @@ import com.wuxianggujun.tinaide.core.logging.GestureTrace
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 /**
@@ -44,18 +47,23 @@ import kotlinx.coroutines.launch
  *
  * 专为解决 AndroidView（如 CodeEditor）与 Compose 手势冲突而设计。
  * 支持边缘滑动打开、拖拽关闭、点击遮罩关闭等交互。
- * 宽度在创建状态时确定，由调用方通过 `drawerWidth` 控制。
+ * 宽度由调用方通过 `drawerWidth` 控制；尺寸变化时会保留当前打开进度。
  */
 @Stable
 class SwipeableDrawerState(
     initialOpen: Boolean = false,
+    initialSelectedTab: DrawerTab = DrawerTab.FILES,
     initialDrawerWidthPx: Float,
     private val coroutineScope: CoroutineScope
 ) {
+    private var animationJob: Job? = null
+    private var animationTargetOpen: Boolean? = null
+
     /**
      * 当前侧滑栏宽度（像素）
      */
-    val drawerWidthPx: Float = initialDrawerWidthPx
+    var drawerWidthPx by mutableFloatStateOf(initialDrawerWidthPx)
+        private set
 
     /**
      * 侧滑栏偏移量（0 = 完全关闭，drawerWidthPx = 完全打开）
@@ -73,7 +81,7 @@ class SwipeableDrawerState(
      * 当前侧栏内容 Tab（文件 / 符号 / Git / AI）。
      * 由命令面板等外部入口写入，避免只改本地 state 打不开「符号」。
      */
-    var selectedTab by mutableStateOf(DrawerTab.FILES)
+    var selectedTab by mutableStateOf(initialSelectedTab)
 
     /**
      * 是否打开
@@ -97,9 +105,7 @@ class SwipeableDrawerState(
      * 打开侧滑栏
      */
     fun open() {
-        coroutineScope.launch {
-            animateTo(drawerWidthPx)
-        }
+        animateToOpenState(targetOpen = true)
     }
 
     /**
@@ -114,9 +120,7 @@ class SwipeableDrawerState(
      * 关闭侧滑栏
      */
     fun close() {
-        coroutineScope.launch {
-            animateTo(0f)
-        }
+        animateToOpenState(targetOpen = false)
     }
 
     /**
@@ -138,9 +142,36 @@ class SwipeableDrawerState(
     }
 
     /**
+     * 同步窗口尺寸变化，同时保留当前打开进度。
+     * MainActivity 自行处理 screenSize 配置变化，旋转时不会重建此状态对象。
+     */
+    internal fun updateDrawerWidth(newDrawerWidthPx: Float) {
+        if (
+            !newDrawerWidthPx.isFinite() ||
+            newDrawerWidthPx <= 0f ||
+            newDrawerWidthPx == drawerWidthPx
+        ) {
+            return
+        }
+
+        val previousProgress = progress
+        val activeAnimationTarget = if (animationJob?.isActive == true) {
+            animationTargetOpen
+        } else {
+            null
+        }
+        animationJob?.cancel()
+        drawerWidthPx = newDrawerWidthPx
+        offsetX = newDrawerWidthPx * previousProgress
+        activeAnimationTarget?.let(::animateToOpenState)
+    }
+
+    /**
      * 开始拖拽
      */
     internal fun startDrag() {
+        animationJob?.cancel()
+        animationTargetOpen = null
         isDragging = true
     }
 
@@ -156,15 +187,20 @@ class SwipeableDrawerState(
      */
     internal fun endDrag(velocity: Float) {
         isDragging = false
-        coroutineScope.launch {
-            // 根据速度和位置决定最终状态
-            val targetOffset = when {
-                // 快速滑动：根据速度方向决定
-                abs(velocity) > 500f -> if (velocity > 0) drawerWidthPx else 0f
-                // 慢速滑动：根据当前位置决定
-                else -> if (offsetX > drawerWidthPx * 0.5f) drawerWidthPx else 0f
-            }
-            animateTo(targetOffset)
+        val targetOpen = when {
+            // 快速滑动：根据速度方向决定
+            abs(velocity) > 500f -> velocity > 0
+            // 慢速滑动：根据当前位置决定
+            else -> offsetX > drawerWidthPx * 0.5f
+        }
+        animateToOpenState(targetOpen)
+    }
+
+    private fun animateToOpenState(targetOpen: Boolean) {
+        animationJob?.cancel()
+        animationTargetOpen = targetOpen
+        animationJob = coroutineScope.launch {
+            animateTo(if (targetOpen) drawerWidthPx else 0f)
         }
     }
 
@@ -197,13 +233,32 @@ fun rememberSwipeableDrawerState(
     val drawerWidthPx = with(density) { drawerWidth.toPx() }
     val scope = rememberCoroutineScope()
 
-    return remember {
+    val saver = listSaver<SwipeableDrawerState, Any>(
+        save = { state -> listOf(state.isOpen, state.selectedTab.name) },
+        restore = { saved ->
+            val restoredTab = (saved.getOrNull(1) as? String)
+                ?.let { name -> DrawerTab.entries.firstOrNull { it.name == name } }
+                ?: DrawerTab.FILES
+            SwipeableDrawerState(
+                initialOpen = saved.firstOrNull() as? Boolean ?: initialOpen,
+                initialSelectedTab = restoredTab,
+                initialDrawerWidthPx = drawerWidthPx,
+                coroutineScope = scope,
+            )
+        },
+    )
+
+    val state = rememberSaveable(saver = saver) {
         SwipeableDrawerState(
             initialOpen = initialOpen,
             initialDrawerWidthPx = drawerWidthPx,
-            coroutineScope = scope
+            coroutineScope = scope,
         )
     }
+    SideEffect {
+        state.updateDrawerWidth(drawerWidthPx)
+    }
+    return state
 }
 
 /**

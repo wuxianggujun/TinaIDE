@@ -184,6 +184,15 @@ fun TinaCodeEditorPage(
     var performanceSnapshotReader by remember(tab.id) {
         mutableStateOf<(() -> EditorRenderPerformanceSnapshot)?>(null)
     }
+    var externalEditPreparer by remember(tab.id) {
+        mutableStateOf<(() -> Unit)?>(null)
+    }
+    val updatePerformanceSnapshotReader = remember(tab.id) {
+        { reader: (() -> EditorRenderPerformanceSnapshot)? -> performanceSnapshotReader = reader }
+    }
+    val updateExternalEditPreparer = remember(tab.id) {
+        { preparer: (() -> Unit)? -> externalEditPreparer = preparer }
+    }
     val callbackRegistrationId = remember(tab.id, runtime) { Any() }
 
     LaunchedEffect(tab.id, editorState, buffer, foldingProvider) {
@@ -252,20 +261,25 @@ fun TinaCodeEditorPage(
                 if (loading || loadError != null) {
                     return@goToPosition false
                 }
+                externalEditPreparer?.invoke()
                 editorState.gotoLine(line, column)
                 true
             },
             selectAll = {
+                externalEditPreparer?.invoke()
                 editorState.selectAll()
                 true
             },
             replaceSelection = { replacement ->
+                externalEditPreparer?.invoke()
                 editorState.replaceSelection(replacement)
             },
             replaceWholeText = { newText ->
+                externalEditPreparer?.invoke()
                 replaceWholeText(buffer, editorState, textSnapshot, newText)
             },
             applyTextEdits = { edits ->
+                externalEditPreparer?.invoke()
                 applyTextEdits(buffer, editorState, edits)
             },
             validateTextEdits = { edits ->
@@ -273,9 +287,11 @@ fun TinaCodeEditorPage(
             },
             documentVersion = { buffer.version },
             toggleLineComment = { commentToken ->
+                externalEditPreparer?.invoke()
                 editorState.toggleLineComment(commentToken)
             },
             replaceAll = { findText, replaceText, caseSensitive, useRegex ->
+                externalEditPreparer?.invoke()
                 editorState.replaceAll(
                     findText = findText,
                     replaceText = replaceText,
@@ -284,13 +300,16 @@ fun TinaCodeEditorPage(
                 )
             },
             undo = {
+                externalEditPreparer?.invoke()
                 editorState.undo()
             },
             redo = {
+                externalEditPreparer?.invoke()
                 editorState.redo()
             },
             insertTextAtCursor = { text ->
-                editorState.insert(text)
+                externalEditPreparer?.invoke()
+                editorState.insertUserInput(text)
             },
             cursorPosition = {
                 val cursor = editorState.cursorPosition
@@ -303,6 +322,7 @@ fun TinaCodeEditorPage(
                 val startOffset = buffer.strictOffset(startLine, startColumn) ?: return@selection false
                 val endOffset = buffer.strictOffset(endLine, endColumn) ?: return@selection false
                 if (endOffset < startOffset) return@selection false
+                externalEditPreparer?.invoke()
                 editorState.selectRange(
                     startOffset = startOffset,
                     endOffset = endOffset
@@ -354,6 +374,7 @@ fun TinaCodeEditorPage(
                 codeSearchEngine.search(query, options).filterIsInstance<CodeSearchResult>()
             },
             goToMatch = { hit ->
+                externalEditPreparer?.invoke()
                 editorState.selectRange(
                     startOffset = hit.range.startIndex,
                     endOffset = hit.range.endIndex
@@ -802,9 +823,8 @@ fun TinaCodeEditorPage(
         TinaEditor(
             state = editorState,
             modifier = Modifier.fillMaxSize(),
-            onPerformanceSnapshotReaderChanged = { reader ->
-                performanceSnapshotReader = reader
-            }
+            onPerformanceSnapshotReaderChanged = updatePerformanceSnapshotReader,
+            onExternalEditPreparerChanged = updateExternalEditPreparer
         )
 
         state.peekDefinitionPanelState

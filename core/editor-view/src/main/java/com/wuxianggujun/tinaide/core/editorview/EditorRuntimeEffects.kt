@@ -97,6 +97,33 @@ internal fun EditorRuntimeEffects(
             }
     }
 
+    LaunchedEffect(interactionController, state) {
+        snapshotFlow {
+            val cursorPosition = state.cursorPosition
+            val visualLine = state.visualLineForPosition(cursorPosition.line, cursorPosition.column)
+            CursorAnchorGeometrySnapshot(
+                visualLine = visualLine,
+                segmentStartColumn = state.visualLineStartColumn(visualLine),
+                scrollOffsetX = state.scrollOffsetXPx,
+                scrollOffsetY = state.scrollOffsetPx,
+                viewportWidth = state.viewportWidthPx,
+                viewportHeight = state.viewportHeightPx,
+                contentStartX = state.contentStartXPx,
+                lineHeight = state.lineHeightPx,
+                charWidth = state.charWidthPx,
+                fontSizeSp = state.fontSizeSp,
+                typeface = state.typeface,
+                tabSize = state.config.tabSize
+            )
+        }
+            .distinctUntilChanged()
+            .collectLatest {
+                if (state.isFocused) {
+                    interactionController.notifyCursorGeometryChanged()
+                }
+            }
+    }
+
     LaunchedEffect(interactionController, state, isTransformInProgress, isHandleDragging) {
         state.events.collectLatest { event ->
             interactionController.onEditorEvent(
@@ -142,4 +169,19 @@ private data class GestureExclusionSnapshot(
     val canvasHeightPx: Float,
     val maxVertical: Float,
     val maxHorizontal: Float
+)
+
+private data class CursorAnchorGeometrySnapshot(
+    val visualLine: Int,
+    val segmentStartColumn: Int,
+    val scrollOffsetX: Float,
+    val scrollOffsetY: Float,
+    val viewportWidth: Float,
+    val viewportHeight: Float,
+    val contentStartX: Float,
+    val lineHeight: Float,
+    val charWidth: Float,
+    val fontSizeSp: Float,
+    val typeface: android.graphics.Typeface,
+    val tabSize: Int
 )

@@ -47,6 +47,36 @@ internal val LocalEditorPopupViewportMetricsOverride =
 
 internal val LocalEditorPopupLayoutProbe = compositionLocalOf<EditorPopupLayoutProbe?> { null }
 
+internal fun calculateSignatureHelpPreferredContentHeightPx(
+    chromeHeightPx: Float,
+    navigationHeightPx: Float,
+    bodyHeightPx: Float,
+    loadingHeightPx: Float
+): Float = chromeHeightPx +
+    navigationHeightPx +
+    bodyHeightPx +
+    loadingHeightPx
+
+internal fun estimateSignatureHelpTextLineCount(
+    signatureLength: Int,
+    estimatedCharsPerLine: Int,
+    maxLines: Int
+): Int = ceil(
+    signatureLength.coerceAtLeast(1).toFloat() /
+        estimatedCharsPerLine.coerceAtLeast(1).toFloat()
+).toInt().coerceIn(1, maxLines.coerceAtLeast(1))
+
+internal fun calculateSignatureHelpBodyHeightPx(
+    rowHeightsPx: List<Float>,
+    rowSpacingPx: Float,
+    overflowBlockCount: Int,
+    overflowBlockHeightPx: Float,
+    bottomPaddingPx: Float
+): Float = rowHeightsPx.sum() +
+    rowSpacingPx.coerceAtLeast(0f) * (rowHeightsPx.size - 1).coerceAtLeast(0) +
+    overflowBlockHeightPx.coerceAtLeast(0f) * overflowBlockCount.coerceAtLeast(0) +
+    bottomPaddingPx.coerceAtLeast(0f)
+
 @Composable
 internal fun EditorSelectionContextMenuOverlay(
     session: TinaEditorSession
@@ -336,6 +366,7 @@ internal fun EditorCompletionOverlay(
         isLoading = completionState is CompletionUiState.Loading,
         onSelectedIndexChange = { index -> state.setCompletionSelectedIndex(index) },
         onSelect = { item ->
+            session.interactionController.prepareForExternalEdit()
             state.applyCompletion(item)
         },
         onDismiss = { state.dismissCompletion() }
@@ -367,32 +398,84 @@ internal fun EditorSignatureHelpOverlay(
     val popupCursorGapPx = with(density) { 10.dp.toPx() }
     val popupNarrowEditorThresholdPx = with(density) { 500.dp.toPx() }
     val displayedSignatureIndex = state.resolveDisplayedSignatureHelpIndex(resolvedResult)
-    val activeSignatureIndex = resolvedResult?.let {
-        displayedSignatureIndex.coerceIn(0, it.signatures.lastIndex.coerceAtLeast(0))
-    } ?: 0
-    val activeSignature = resolvedResult?.signatures
-        ?.getOrNull(activeSignatureIndex)
-        .orEmpty()
+    val visibleSlice = resolvedResult?.let {
+        resolveSignatureHelpVisibleSlice(
+            totalCount = it.signatures.size,
+            selectedIndex = displayedSignatureIndex,
+            maxVisibleItems = 3
+        )
+    } ?: SignatureHelpVisibleSlice(
+        startIndex = 0,
+        endExclusive = 0,
+        hiddenBefore = 0,
+        hiddenAfter = 0
+    )
+    val compactMode = visibleSlice.hiddenBefore > 0 || visibleSlice.hiddenAfter > 0
     val estimatedCharsPerLine = (preferredPopupWidthPx / state.charWidthPx.coerceAtLeast(1f))
         .toInt()
-        .coerceAtLeast(24)
-    val estimatedLineCountPerSignature = ceil(
-        activeSignature.length.coerceAtLeast(1).toFloat() / estimatedCharsPerLine.toFloat()
-    ).toInt().coerceIn(1, 4)
-    val visibleSignatureCount = resolvedResult?.signatures?.size?.coerceIn(1, 3) ?: 1
-    val preferredContentHeightPx = (
-        with(density) { 18.dp.toPx() } +
-            if ((resolvedResult?.signatures?.size ?: 0) > 1) {
-                with(density) { 34.dp.toPx() }
+        .coerceIn(8, 24)
+    val navigationHeightPx = if ((resolvedResult?.signatures?.size ?: 0) > 1) {
+        with(density) { 34.dp.toPx() }
+    } else {
+        0f
+    }
+    val signatureLineHeightPx = with(density) { 19.sp.toPx() }
+    val regularRowVerticalPaddingPx = with(density) { 16.dp.toPx() }
+    val compactRowVerticalPaddingPx = with(density) { 12.dp.toPx() }
+    val previewBlockHeightPx = with(density) { 15.sp.toPx() + 14.dp.toPx() }
+    val rowHeightsPx = resolvedResult?.let { result ->
+        val serverActiveSignatureIndex = result.activeSignature
+            .coerceIn(0, result.signatures.lastIndex.coerceAtLeast(0))
+        (visibleSlice.startIndex until visibleSlice.endExclusive).map { index ->
+            val signature = result.signatures[index]
+            val isSelected = index == displayedSignatureIndex
+            val presentation = resolveSignatureHelpRowPresentation(
+                isSelected = isSelected,
+                isServerActive = index == serverActiveSignatureIndex,
+                compactMode = compactMode
+            )
+            val textLineCount = estimateSignatureHelpTextLineCount(
+                signatureLength = signature.length,
+                estimatedCharsPerLine = estimatedCharsPerLine,
+                maxLines = presentation.maxLines
+            )
+            val verticalPaddingPx = if (compactMode && !isSelected) {
+                compactRowVerticalPaddingPx
             } else {
-                0f +
-                    (
-                        state.lineHeightPx * estimatedLineCountPerSignature * 1.1f +
-                            with(density) { 18.dp.toPx() }
-                        ) * visibleSignatureCount +
-                    if (signatureState is SignatureHelpUiState.Loading) with(density) { 20.dp.toPx() } else 0f
+                regularRowVerticalPaddingPx
             }
-        ).coerceAtLeast(popupMinHeightPx)
+            val hasActiveParameterPreview = presentation.showActiveParameterPreview &&
+                resolveSignatureActiveParameterPreview(
+                    signature = signature,
+                    activeParameter = result.activeParameter
+                ) != null
+            signatureLineHeightPx * textLineCount +
+                verticalPaddingPx +
+                if (hasActiveParameterPreview) previewBlockHeightPx else 0f
+        }
+    }.orEmpty()
+    val bodyHeightPx = if (resolvedResult == null) {
+        with(density) { 10.dp.toPx() }
+    } else {
+        calculateSignatureHelpBodyHeightPx(
+            rowHeightsPx = rowHeightsPx,
+            rowSpacingPx = with(density) { 4.dp.toPx() },
+            overflowBlockCount = listOf(
+                visibleSlice.hiddenBefore,
+                visibleSlice.hiddenAfter
+            ).count { it > 0 },
+            overflowBlockHeightPx = with(density) { 32.dp.toPx() },
+            bottomPaddingPx = with(density) { 8.dp.toPx() }
+        )
+    }
+    val loadingHeightPx =
+        if (signatureState is SignatureHelpUiState.Loading) with(density) { 20.dp.toPx() } else 0f
+    val preferredContentHeightPx = calculateSignatureHelpPreferredContentHeightPx(
+        chromeHeightPx = with(density) { 18.dp.toPx() },
+        navigationHeightPx = navigationHeightPx,
+        bodyHeightPx = bodyHeightPx,
+        loadingHeightPx = loadingHeightPx
+    ).coerceAtLeast(popupMinHeightPx)
     val cursorAnchor = resolveCursorPopupAnchor(session)
     val layout = SignatureHelpPopupLayoutResolver.resolve(
         cursorXInViewportPx = cursorAnchor.cursorXInViewportPx,

@@ -285,7 +285,7 @@ try {
     if (-not $SkipBuild) {
         Write-Section "Build instrumentation APK"
         Invoke-CapturedProcess -FilePath $gradle `
-            -Arguments @(":core:plugin:assembleDebugAndroidTest", "--console=plain") |
+            -Arguments @(":core:plugin:assembleDebugAndroidTest", "--no-daemon", "--console=plain") |
             Out-Null
     }
     if (-not (Test-Path -LiteralPath $TestApk -PathType Leaf)) {
@@ -381,14 +381,6 @@ try {
             }
         }
     }
-    if (-not $SkipBuild -and (Test-Path -LiteralPath $gradle -PathType Leaf)) {
-        try {
-            Invoke-CapturedProcess -FilePath $gradle -Arguments @("--stop") -AllowFailure | Out-Null
-        } catch {
-            Write-Warning "Unable to stop Gradle daemons: $($_.Exception.Message)"
-        }
-    }
-
     $instrumentationSummary = [System.Collections.Generic.List[string]]::new()
     $instrumentationSummary.Add("Status`tSelector`tDetails`tRawLog")
     foreach ($resultLine in $InstrumentationResults) {

@@ -562,7 +562,7 @@ class EditorContainerState(
         codeCallbackRegistry.unregister(tabId)
     }
 
-    internal fun activeTabSupportsEditorPerformancePanel(): Boolean {
+    internal fun activeTabHasAttachedCodeEditor(): Boolean {
         val tab = getActiveTab() ?: return false
         return hasAttachedCodeEditor(tab.id, tab.contentType)
     }

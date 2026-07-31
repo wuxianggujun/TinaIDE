@@ -1,4 +1,4 @@
 interface:
-  display_name: "Tina AI 工具"
-  short_description: "开发 TinaIDE AI 工具、渠道、BYOK、streaming 和 callbacks"
-  default_prompt: "使用 Tina AI 工具设计或检查这个 AI 工具/渠道改动。"
+  display_name: "TinaIDE RikkaHub 集成"
+  short_description: "维护 RikkaHub 宿主入口、嵌入容器和安全边界"
+  default_prompt: "使用 TinaIDE RikkaHub 集成指南判断改动属于宿主入口还是 external/rikkahub 内部能力，并按边界实现和验证。"

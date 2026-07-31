@@ -40,7 +40,6 @@ class CompileActionsHelper(
         fun setCompiling(compiling: Boolean)
         fun clearBuildLogs()
         fun showBuildLog()
-        fun showDiagnostics()
         suspend fun expandBottomPanel()
         fun startDebugSession(
             programPath: String,
@@ -53,12 +52,6 @@ class CompileActionsHelper(
     interface ProcessController {
         fun reset()
     }
-
-    /**
-     * 上次执行模式
-     */
-    var lastExecutionMode: CompileProjectUseCase.ExecutionMode = CompileProjectUseCase.ExecutionMode.RUN
-        private set
 
     /**
      * UI 事件流
@@ -198,8 +191,9 @@ class CompileActionsHelper(
             event.message
         }
         emitToast(message, ToastType.ERROR)
-        // 失败优先展示诊断，便于点行跳转；同时展开底栏
-        showDiagnostics()
+        // 编译器输出属于 BUILD 通道；LSP diagnostics 可能来自旧文件或上一次分析，
+        // 在没有本次构建来源标识时不能据此切走失败日志。
+        showBuildLog()
         finishCompileUi()
     }
 
@@ -213,11 +207,6 @@ class CompileActionsHelper(
             }
             ExecutionProcessState.RUNNING -> {
                 uiBridge.setCompiling(true)
-                // RUN 模式下：程序开始运行时切到"构建日志"页签
-                if (lastExecutionMode == CompileProjectUseCase.ExecutionMode.RUN) {
-                    uiBridge.showBuildLog()
-                    uiBridge.expandBottomPanel()
-                }
             }
             ExecutionProcessState.STOPPED -> {
                 uiBridge.setCompiling(false)
@@ -254,7 +243,6 @@ class CompileActionsHelper(
         }
 
         processController.reset()
-        lastExecutionMode = operation.mode
         prepareForCompile()
         uiBridge.setCompiling(true)
         progressToast?.let { emitToast(it, ToastType.INFO) }
@@ -446,10 +434,6 @@ class CompileActionsHelper(
         uiBridge.showBuildLog()
     }
 
-    private fun showDiagnostics() {
-        uiBridge.showDiagnostics()
-    }
-
     private suspend fun finishCompileUi() {
         uiBridge.expandBottomPanel()
     }
@@ -528,12 +512,6 @@ class ViewModelCompileUiBridge(
 
     override fun showBuildLog() {
         bottomPanelViewModel.setSelectedTab(com.wuxianggujun.tinaide.ui.compose.components.BottomPanelTab.BUILD_LOG)
-    }
-
-    override fun showDiagnostics() {
-        bottomPanelViewModel.setSelectedTab(
-            com.wuxianggujun.tinaide.ui.compose.components.BottomPanelTab.DIAGNOSTICS
-        )
     }
 
     override suspend fun expandBottomPanel() {

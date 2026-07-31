@@ -45,11 +45,10 @@ class BottomPanelTabResolutionTest {
 
         assertThat(visibleTabs).contains(BottomPanelTab.PERFORMANCE)
         assertThat(hiddenTabs).doesNotContain(BottomPanelTab.PERFORMANCE)
-        // 默认：问题 / 构建 / 输出；Git/符号不进默认条
+        // 默认仅展示有稳定生产数据的问题/构建；无 writer 的运行输出隐藏，导航工具走 overflow。
         assertThat(hiddenTabs).containsExactly(
             BottomPanelTab.DIAGNOSTICS,
             BottomPanelTab.BUILD_LOG,
-            BottomPanelTab.RUN_OUTPUT,
         ).inOrder()
         assertThat(hiddenTabs).doesNotContain(BottomPanelTab.GIT)
         assertThat(hiddenTabs).doesNotContain(BottomPanelTab.SYMBOLS)
@@ -83,6 +82,31 @@ class BottomPanelTabResolutionTest {
                 selectedBottomTab = BottomPanelTab.BOOKMARKS,
             )
         ).contains(BottomPanelTab.BOOKMARKS)
+    }
+
+    @Test
+    fun `resolveOverflowBottomPanelTabs exposes secondary tabs not already visible`() {
+        val visibleTabs = resolveNormalModeBottomTabs(showEditorPerformanceTab = false) + BottomPanelTab.OUTLINE
+
+        assertThat(resolveOverflowBottomPanelTabs(visibleTabs)).containsExactly(
+            BottomPanelTab.SYMBOLS,
+            BottomPanelTab.BOOKMARKS,
+            BottomPanelTab.GIT,
+        ).inOrder()
+    }
+
+    @Test
+    fun `resolveSelectedBottomPanelTab rejects run output without a production writer`() {
+        val visibleTabs = resolveNormalModeBottomTabs(showEditorPerformanceTab = false)
+
+        assertThat(
+            resolveSelectedBottomPanelTab(
+                selectedBottomTab = BottomPanelTab.RUN_OUTPUT,
+                normalModeTabs = visibleTabs,
+            )
+        ).isEqualTo(BottomPanelTab.DIAGNOSTICS)
+        assertThat(resolveOverflowBottomPanelTabs(visibleTabs))
+            .doesNotContain(BottomPanelTab.RUN_OUTPUT)
     }
 
     @Test

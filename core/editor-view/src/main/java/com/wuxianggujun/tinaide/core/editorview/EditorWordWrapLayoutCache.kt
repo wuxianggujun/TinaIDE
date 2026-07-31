@@ -17,7 +17,8 @@ import java.util.LinkedHashMap
  * - 该策略与编辑器现有 Tab stop / 视觉列宽计算保持一致，且不依赖 Paint（避免在 State 层引入渲染依赖）。
  */
 internal class EditorWordWrapLayoutCache(
-    private val maxEntries: Int = 512
+    private val maxEntries: Int = 512,
+    private val maxTotalChars: Int = 220_000
 ) {
     internal data class WrapLayout(
         val length: Int,
@@ -64,39 +65,48 @@ internal class EditorWordWrapLayoutCache(
     }
 
     private data class Entry(
-        var length: Int,
+        val lineText: String,
         var starts: IntArray
     )
 
     private val lru = LinkedHashMap<Int, Entry>(64, 0.75f, true)
+    private var totalChars: Int = 0
     private var cacheVersion: Long = Long.MIN_VALUE
-    private var signature: Int = 0
+    private var cachedWrapColumns: Int = Int.MIN_VALUE
+    private var cachedTabSize: Int = Int.MIN_VALUE
+
+    // TextChange listener 可在非主线程分发；accessOrder=true 的缓存命中也会修改链表，
+    // 因此读写必须共用同一把锁，避免与主线程布局查询并发时出现 CME 或脏读。
+    private val lock = Any()
 
     fun invalidateAll() {
-        lru.clear()
-        cacheVersion = Long.MIN_VALUE
+        synchronized(lock) {
+            invalidateAllInternal()
+        }
     }
 
     fun applyTextChange(change: TextChange, currentVersion: Long) {
-        val previousVersion = cacheVersion
-        if (previousVersion != Long.MIN_VALUE && previousVersion + 1L != currentVersion) {
-            // 版本不连续：作为安全网直接清空，避免错位。
-            invalidateAll()
+        synchronized(lock) {
+            val previousVersion = cacheVersion
+            if (previousVersion != Long.MIN_VALUE && previousVersion + 1L != currentVersion) {
+                // 版本不连续：作为安全网直接清空，避免错位。
+                invalidateAllInternal()
+                cacheVersion = currentVersion
+                return
+            }
+            // 对齐其它缓存策略：只失效受影响的行，并对后续行做 index shift。
+            val startLine = change.startLine.coerceAtLeast(0)
+            val lineDelta = change.lineDelta
+            val oldChangedEndLine = change.endLine.coerceAtLeast(startLine)
+            val shiftFromLine = (change.endLine + 1).coerceAtLeast(0)
+            val newChangedEndLine = maxOf(startLine, change.endLine + lineDelta)
+
+            invalidateRangeInternal(startLine, oldChangedEndLine)
+            shiftCacheInternal(shiftFromLine, lineDelta)
+            invalidateRangeInternal(startLine, newChangedEndLine)
+
             cacheVersion = currentVersion
-            return
         }
-        // 对齐其它缓存策略：只失效受影响的行，并对后续行做 index shift。
-        val startLine = change.startLine.coerceAtLeast(0)
-        val lineDelta = change.lineDelta
-        val oldChangedEndLine = change.endLine.coerceAtLeast(startLine)
-        val shiftFromLine = (change.endLine + 1).coerceAtLeast(0)
-        val newChangedEndLine = maxOf(startLine, change.endLine + lineDelta)
-
-        invalidateRangeInternal(startLine, oldChangedEndLine)
-        shiftCacheInternal(shiftFromLine, lineDelta)
-        invalidateRangeInternal(startLine, newChangedEndLine)
-
-        cacheVersion = currentVersion
     }
 
     fun getWrapLayout(
@@ -106,22 +116,24 @@ internal class EditorWordWrapLayoutCache(
         wrapColumns: Int,
         tabSize: Int
     ): WrapLayout {
-        ensureSignature(textVersion, wrapColumns, tabSize)
-        val entry = lru[line]
-        if (entry != null && entry.length == lineText.length) {
-            return WrapLayout(length = entry.length, starts = entry.starts)
-        }
+        synchronized(lock) {
+            ensureSignature(textVersion, wrapColumns, tabSize)
+            val entry = lru[line]
+            if (entry != null && entry.lineText == lineText) {
+                return WrapLayout(length = entry.lineText.length, starts = entry.starts)
+            }
 
-        val built = buildStarts(lineText, wrapColumns, tabSize)
-        putEntry(line, length = lineText.length, starts = built)
-        return WrapLayout(length = lineText.length, starts = built)
+            val built = buildStarts(lineText, wrapColumns, tabSize)
+            putEntry(line, lineText = lineText, starts = built)
+            return WrapLayout(length = lineText.length, starts = built)
+        }
     }
 
     private fun ensureSignature(textVersion: Long, wrapColumns: Int, tabSize: Int) {
-        val sig = 31 * wrapColumns + tabSize
-        if (sig != signature) {
-            invalidateAll()
-            signature = sig
+        if (cachedWrapColumns != wrapColumns || cachedTabSize != tabSize) {
+            invalidateAllInternal()
+            cachedWrapColumns = wrapColumns
+            cachedTabSize = tabSize
         }
         if (cacheVersion == Long.MIN_VALUE) {
             cacheVersion = textVersion
@@ -129,9 +141,15 @@ internal class EditorWordWrapLayoutCache(
         }
         if (cacheVersion != textVersion) {
             // 理论上 applyTextChange 会维护 cacheVersion；此处属于“安全网”。
-            invalidateAll()
+            invalidateAllInternal()
             cacheVersion = textVersion
         }
+    }
+
+    private fun invalidateAllInternal() {
+        lru.clear()
+        totalChars = 0
+        cacheVersion = Long.MIN_VALUE
     }
 
     private fun buildStarts(lineText: String, wrapColumns: Int, tabSize: Int): IntArray = TextScanKernel.findWrapSegmentStarts(lineText, wrapColumns, tabSize)
@@ -139,7 +157,7 @@ internal class EditorWordWrapLayoutCache(
     private fun invalidateRangeInternal(startLine: Int, endLine: Int) {
         if (startLine > endLine) return
         for (line in startLine..endLine) {
-            lru.remove(line)
+            totalChars -= lru.remove(line)?.lineText?.length ?: 0
         }
     }
 
@@ -152,21 +170,24 @@ internal class EditorWordWrapLayoutCache(
         affected.forEach { (line, entry) ->
             val target = line + delta
             if (target >= 0) {
-                lru[target] = entry
+                totalChars -= lru.put(target, entry)?.lineText?.length ?: 0
+            } else {
+                totalChars -= entry.lineText.length
             }
         }
     }
 
-    private fun putEntry(line: Int, length: Int, starts: IntArray) {
-        lru[line] = Entry(length = length, starts = starts)
+    private fun putEntry(line: Int, lineText: String, starts: IntArray) {
+        totalChars -= lru.put(line, Entry(lineText = lineText, starts = starts))?.lineText?.length ?: 0
+        totalChars += lineText.length
         trimIfNeeded()
     }
 
     private fun trimIfNeeded() {
-        while (lru.size > maxEntries) {
+        while (lru.size > maxEntries || totalChars > maxTotalChars) {
             val it = lru.entries.iterator()
             if (!it.hasNext()) return
-            it.next()
+            totalChars -= it.next().value.lineText.length
             it.remove()
         }
     }

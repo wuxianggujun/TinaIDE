@@ -7,32 +7,6 @@ internal data class ComposingRange(
     val end: Int
 )
 
-internal data class ImeExtractedTextWindow(
-    val startOffset: Int,
-    val endOffset: Int,
-    val documentLength: Int,
-    val textVersion: Long
-) {
-    val length: Int
-        get() = (endOffset - startOffset).coerceAtLeast(0)
-
-    val coversDocument: Boolean
-        get() = startOffset <= 0 && endOffset >= documentLength
-
-    fun isCurrent(documentLength: Int, textVersion: Long): Boolean =
-        this.documentLength == documentLength &&
-            this.textVersion == textVersion &&
-            startOffset in 0..documentLength &&
-            endOffset in startOffset..documentLength
-}
-
-internal data class ImeSelectionResolution(
-    val start: Int,
-    val end: Int,
-    val usedExtractedTextCoordinates: Boolean = false,
-    val selectedEntireDocument: Boolean = false
-)
-
 internal data class ImeDeleteRange(
     val start: Int,
     val end: Int
@@ -56,108 +30,6 @@ internal fun mapImeSelectionToDocument(
     return start.coerceIn(0, safeDocumentLength) to end.coerceIn(0, safeDocumentLength)
 }
 
-internal fun resolveImeSelectionRequest(
-    start: Int,
-    end: Int,
-    documentLength: Int,
-    textVersion: Long,
-    currentSelectionStart: Int,
-    currentSelectionEnd: Int,
-    extractedTextWindow: ImeExtractedTextWindow?
-): ImeSelectionResolution {
-    val absoluteSelection = mapImeSelectionToDocument(start, end, documentLength)
-    val currentWindow = extractedTextWindow
-        ?.takeIf { it.isCurrent(documentLength, textVersion) }
-        ?.takeUnless { it.coversDocument || it.length <= 0 }
-        ?: return ImeSelectionResolution(
-            start = absoluteSelection.first,
-            end = absoluteSelection.second
-        )
-
-    val safeCurrentStart = currentSelectionStart.coerceIn(0, documentLength)
-    val safeCurrentEnd = currentSelectionEnd.coerceIn(0, documentLength)
-    val reportedCurrentStart = extractedTextSelectionOffset(
-        documentOffset = safeCurrentStart,
-        windowStartOffset = currentWindow.startOffset,
-        windowLength = currentWindow.length
-    )
-    val reportedCurrentEnd = extractedTextSelectionOffset(
-        documentOffset = safeCurrentEnd,
-        windowStartOffset = currentWindow.startOffset,
-        windowLength = currentWindow.length
-    )
-
-    if (start == reportedCurrentStart && end == reportedCurrentEnd) {
-        return ImeSelectionResolution(
-            start = safeCurrentStart,
-            end = safeCurrentEnd,
-            usedExtractedTextCoordinates = true
-        )
-    }
-
-    return when {
-        start == 0 && end == currentWindow.length -> ImeSelectionResolution(
-            start = 0,
-            end = documentLength,
-            usedExtractedTextCoordinates = true,
-            selectedEntireDocument = true
-        )
-
-        start == currentWindow.length && end == 0 -> ImeSelectionResolution(
-            start = documentLength,
-            end = 0,
-            usedExtractedTextCoordinates = true,
-            selectedEntireDocument = true
-        )
-
-        else -> ImeSelectionResolution(
-            start = absoluteSelection.first,
-            end = absoluteSelection.second
-        )
-    }
-}
-
-internal fun ImeExtractedTextWindow.afterEdit(
-    editStart: Int,
-    editEnd: Int,
-    replacementLength: Int,
-    oldDocumentLength: Int,
-    oldTextVersion: Long,
-    newDocumentLength: Int,
-    newTextVersion: Long
-): ImeExtractedTextWindow? {
-    if (!isCurrent(oldDocumentLength, oldTextVersion)) return null
-
-    val safeEditStart = editStart.coerceIn(0, oldDocumentLength)
-    val safeEditEnd = editEnd.coerceIn(safeEditStart, oldDocumentLength)
-    val safeReplacementLength = replacementLength.coerceAtLeast(0)
-    val delta = safeReplacementLength - (safeEditEnd - safeEditStart)
-    if (newDocumentLength != oldDocumentLength + delta) return null
-
-    val isInsertion = safeEditStart == safeEditEnd
-    val updatedOffsets = when {
-        safeEditEnd <= startOffset && !(isInsertion && safeEditStart == startOffset) -> {
-            startOffset + delta to endOffset + delta
-        }
-
-        safeEditStart >= endOffset && !(isInsertion && safeEditStart == endOffset) -> {
-            startOffset to endOffset
-        }
-
-        safeEditStart < startOffset || safeEditEnd > endOffset -> return null
-        else -> startOffset to endOffset + delta
-    }
-
-    val updatedStart = updatedOffsets.first.coerceIn(0, newDocumentLength)
-    val updatedEnd = updatedOffsets.second.coerceIn(updatedStart, newDocumentLength)
-    return ImeExtractedTextWindow(
-        startOffset = updatedStart,
-        endOffset = updatedEnd,
-        documentLength = newDocumentLength,
-        textVersion = newTextVersion
-    )
-}
-
 internal fun imeDeleteSurroundingCharRange(
     cursorOffset: Int,
     beforeLength: Int,
@@ -166,8 +38,12 @@ internal fun imeDeleteSurroundingCharRange(
 ): ImeDeleteRange? {
     val safeDocumentLength = documentLength.coerceAtLeast(0)
     val safeCursor = cursorOffset.coerceIn(0, safeDocumentLength)
-    val start = (safeCursor - beforeLength.coerceAtLeast(0)).coerceAtLeast(0)
-    val end = (safeCursor + afterLength.coerceAtLeast(0)).coerceAtMost(safeDocumentLength)
+    val start = (safeCursor.toLong() - beforeLength.coerceAtLeast(0).toLong())
+        .coerceIn(0L, safeDocumentLength.toLong())
+        .toInt()
+    val end = (safeCursor.toLong() + afterLength.coerceAtLeast(0).toLong())
+        .coerceIn(0L, safeDocumentLength.toLong())
+        .toInt()
     return ImeDeleteRange(start, end).takeUnless { it.isEmpty }
 }
 
@@ -177,7 +53,11 @@ internal fun imeDeleteSurroundingCodePointRange(
     beforeLength: Int,
     afterLength: Int
 ): ImeDeleteRange? {
-    val safeCursor = cursorOffset.coerceIn(0, textBuffer.length)
+    val safeCursor = snapOffsetToEditorUnitBoundary(
+        textBuffer = textBuffer,
+        offset = cursorOffset,
+        preferAfter = true,
+    )
     val start = offsetBeforeByCodePoints(
         textBuffer = textBuffer,
         cursorOffset = safeCursor,
@@ -189,6 +69,60 @@ internal fun imeDeleteSurroundingCodePointRange(
         codePointCount = afterLength.coerceAtLeast(0)
     )
     return ImeDeleteRange(start, end).takeUnless { it.isEmpty }
+}
+
+internal fun ImeDeleteRange.expandToEditorUnitBoundaries(textBuffer: TextBuffer): ImeDeleteRange {
+    val safeStart = start.coerceIn(0, textBuffer.length)
+    val safeEnd = end.coerceIn(safeStart, textBuffer.length)
+    return ImeDeleteRange(
+        start = snapOffsetToEditorUnitBoundary(textBuffer, safeStart, preferAfter = false),
+        end = snapOffsetToEditorUnitBoundary(textBuffer, safeEnd, preferAfter = true),
+    )
+}
+
+internal fun snapSelectionToEditorUnitBoundaries(
+    textBuffer: TextBuffer,
+    start: Int,
+    end: Int,
+): Pair<Int, Int> {
+    val mapped = mapImeSelectionToDocument(start, end, textBuffer.length)
+    if (mapped.first == mapped.second) {
+        val cursor = snapOffsetToEditorUnitBoundary(textBuffer, mapped.first, preferAfter = true)
+        return cursor to cursor
+    }
+    return if (mapped.first < mapped.second) {
+        snapOffsetToEditorUnitBoundary(textBuffer, mapped.first, preferAfter = false) to
+            snapOffsetToEditorUnitBoundary(textBuffer, mapped.second, preferAfter = true)
+    } else {
+        snapOffsetToEditorUnitBoundary(textBuffer, mapped.first, preferAfter = true) to
+            snapOffsetToEditorUnitBoundary(textBuffer, mapped.second, preferAfter = false)
+    }
+}
+
+internal fun snapOffsetToCodePointBoundary(
+    textBuffer: TextBuffer,
+    offset: Int,
+    preferAfter: Boolean
+): Int {
+    val safeOffset = offset.coerceIn(0, textBuffer.length)
+    if (safeOffset <= 0 || safeOffset >= textBuffer.length) return safeOffset
+    val splitsPair = textBuffer.charAt(safeOffset - 1)?.let(Character::isHighSurrogate) == true &&
+        textBuffer.charAt(safeOffset)?.let(Character::isLowSurrogate) == true
+    if (!splitsPair) return safeOffset
+    return if (preferAfter) safeOffset + 1 else safeOffset - 1
+}
+
+internal fun snapOffsetToEditorUnitBoundary(
+    textBuffer: TextBuffer,
+    offset: Int,
+    preferAfter: Boolean,
+): Int {
+    val codePointBoundary = snapOffsetToCodePointBoundary(textBuffer, offset, preferAfter)
+    if (codePointBoundary <= 0 || codePointBoundary >= textBuffer.length) return codePointBoundary
+    val splitsCrLf = textBuffer.charAt(codePointBoundary - 1) == '\r' &&
+        textBuffer.charAt(codePointBoundary) == '\n'
+    if (!splitsCrLf) return codePointBoundary
+    return if (preferAfter) codePointBoundary + 1 else codePointBoundary - 1
 }
 
 internal fun resolveEditRange(
@@ -222,9 +156,12 @@ internal fun nextComposingRange(
     if (!keepComposing) return null
     val safeLength = replacementLength.coerceAtLeast(0)
     if (safeLength == 0) return null
+    val safeStart = editStart.coerceAtLeast(0)
     return ComposingRange(
-        start = editStart.coerceAtLeast(0),
-        end = (editStart + safeLength).coerceAtLeast(editStart.coerceAtLeast(0))
+        start = safeStart,
+        end = (safeStart.toLong() + safeLength.toLong())
+            .coerceAtMost(Int.MAX_VALUE.toLong())
+            .toInt()
     )
 }
 

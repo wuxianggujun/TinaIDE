@@ -7,6 +7,68 @@ import org.junit.Test
 class SignatureHelpPopupLayoutResolverTest {
 
     @Test
+    fun preferredContentHeight_shouldAddNavigationBodyAndLoadingChrome() {
+        val height = calculateSignatureHelpPreferredContentHeightPx(
+            chromeHeightPx = 18f,
+            navigationHeightPx = 34f,
+            bodyHeightPx = 80f,
+            loadingHeightPx = 20f
+        )
+
+        assertThat(height).isEqualTo(152f)
+    }
+
+    @Test
+    fun preferredBodyHeight_shouldMeasureEachVisibleOverloadAndOverflowBlock() {
+        val rowHeights = listOf(
+            estimateSignatureHelpTextLineCount(
+                signatureLength = 5,
+                estimatedCharsPerLine = 24,
+                maxLines = 1
+            ) * 19f + 12f,
+            estimateSignatureHelpTextLineCount(
+                signatureLength = 80,
+                estimatedCharsPerLine = 24,
+                maxLines = 3
+            ) * 19f + 16f + 29f,
+            estimateSignatureHelpTextLineCount(
+                signatureLength = 4,
+                estimatedCharsPerLine = 24,
+                maxLines = 1
+            ) * 19f + 12f
+        )
+
+        val height = calculateSignatureHelpBodyHeightPx(
+            rowHeightsPx = rowHeights,
+            rowSpacingPx = 4f,
+            overflowBlockCount = 2,
+            overflowBlockHeightPx = 32f,
+            bottomPaddingPx = 8f
+        )
+
+        assertThat(rowHeights).containsExactly(31f, 102f, 31f).inOrder()
+        assertThat(height).isEqualTo(244f)
+    }
+
+    @Test
+    fun estimatedTextLineCount_shouldClampInvalidInputsAndPresentationLimit() {
+        assertThat(
+            estimateSignatureHelpTextLineCount(
+                signatureLength = 0,
+                estimatedCharsPerLine = 0,
+                maxLines = 0
+            )
+        ).isEqualTo(1)
+        assertThat(
+            estimateSignatureHelpTextLineCount(
+                signatureLength = 200,
+                estimatedCharsPerLine = 24,
+                maxLines = 3
+            )
+        ).isEqualTo(3)
+    }
+
+    @Test
     fun resolve_prefersAboveWhenThereIsEnoughRoom() {
         val layout = SignatureHelpPopupLayoutResolver.resolve(
             cursorXInViewportPx = 120f,

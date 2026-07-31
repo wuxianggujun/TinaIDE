@@ -282,6 +282,10 @@ private fun EditorContextMenuMoreAction(
     onHover: () -> Unit
 ) {
     val moreTitle = stringResource(R.string.editor_context_menu_more)
+    val runOverflowAction: (() -> Unit) -> Unit = { action ->
+        onExpandedChange(false)
+        action()
+    }
     Box(
         modifier = modifier.fillMaxHeight(),
         contentAlignment = Alignment.Center
@@ -323,10 +327,7 @@ private fun EditorContextMenuMoreAction(
                 tag = SELECTION_CONTEXT_MENU_SELECT_ALL_ACTION_TAG,
                 keyboardSelected = keyboardSelectedAction == EditorContextMenuActionId.SelectAll,
                 popupColors = popupColors,
-                onClick = {
-                    onExpandedChange(false)
-                    onSelectAll()
-                }
+                onClick = { runOverflowAction(onSelectAll) }
             )
 
             if (hasCodeActions) {
@@ -338,7 +339,7 @@ private fun EditorContextMenuMoreAction(
                     tag = SELECTION_CONTEXT_MENU_PEEK_DEFINITION_ACTION_TAG,
                     keyboardSelected = keyboardSelectedAction == EditorContextMenuActionId.PeekDefinition,
                     popupColors = popupColors,
-                    onClick = onPeekDefinition
+                    onClick = { runOverflowAction(onPeekDefinition) }
                 )
             }
             if (gotoDefinitionEnabled) {
@@ -347,7 +348,7 @@ private fun EditorContextMenuMoreAction(
                     tag = SELECTION_CONTEXT_MENU_GOTO_DEFINITION_ACTION_TAG,
                     keyboardSelected = keyboardSelectedAction == EditorContextMenuActionId.GotoDefinition,
                     popupColors = popupColors,
-                    onClick = onGotoDefinition
+                    onClick = { runOverflowAction(onGotoDefinition) }
                 )
             }
             if (findReferencesEnabled) {
@@ -356,7 +357,7 @@ private fun EditorContextMenuMoreAction(
                     tag = SELECTION_CONTEXT_MENU_FIND_REFERENCES_ACTION_TAG,
                     keyboardSelected = keyboardSelectedAction == EditorContextMenuActionId.FindReferences,
                     popupColors = popupColors,
-                    onClick = onFindReferences
+                    onClick = { runOverflowAction(onFindReferences) }
                 )
             }
             if (gotoTypeDefinitionEnabled) {
@@ -365,7 +366,7 @@ private fun EditorContextMenuMoreAction(
                     tag = SELECTION_CONTEXT_MENU_GOTO_TYPE_DEFINITION_ACTION_TAG,
                     keyboardSelected = keyboardSelectedAction == EditorContextMenuActionId.GotoTypeDefinition,
                     popupColors = popupColors,
-                    onClick = onGotoTypeDefinition
+                    onClick = { runOverflowAction(onGotoTypeDefinition) }
                 )
             }
             if (gotoImplementationEnabled) {
@@ -374,7 +375,7 @@ private fun EditorContextMenuMoreAction(
                     tag = SELECTION_CONTEXT_MENU_GOTO_IMPLEMENTATION_ACTION_TAG,
                     keyboardSelected = keyboardSelectedAction == EditorContextMenuActionId.GotoImplementation,
                     popupColors = popupColors,
-                    onClick = onGotoImplementation
+                    onClick = { runOverflowAction(onGotoImplementation) }
                 )
             }
             if (codeActionsEnabled) {
@@ -383,7 +384,7 @@ private fun EditorContextMenuMoreAction(
                     tag = SELECTION_CONTEXT_MENU_CODE_ACTIONS_ACTION_TAG,
                     keyboardSelected = keyboardSelectedAction == EditorContextMenuActionId.CodeActions,
                     popupColors = popupColors,
-                    onClick = onCodeActions
+                    onClick = { runOverflowAction(onCodeActions) }
                 )
             }
             if (renameSymbolEnabled) {
@@ -392,7 +393,7 @@ private fun EditorContextMenuMoreAction(
                     tag = SELECTION_CONTEXT_MENU_RENAME_SYMBOL_ACTION_TAG,
                     keyboardSelected = keyboardSelectedAction == EditorContextMenuActionId.RenameSymbol,
                     popupColors = popupColors,
-                    onClick = onRenameSymbol
+                    onClick = { runOverflowAction(onRenameSymbol) }
                 )
             }
             if (switchHeaderSourceEnabled) {
@@ -401,7 +402,7 @@ private fun EditorContextMenuMoreAction(
                     tag = SELECTION_CONTEXT_MENU_SWITCH_HEADER_SOURCE_ACTION_TAG,
                     keyboardSelected = keyboardSelectedAction == EditorContextMenuActionId.SwitchHeaderSource,
                     popupColors = popupColors,
-                    onClick = onSwitchHeaderSource
+                    onClick = { runOverflowAction(onSwitchHeaderSource) }
                 )
             }
 
@@ -412,7 +413,7 @@ private fun EditorContextMenuMoreAction(
                     tag = SELECTION_CONTEXT_MENU_HOVER_ACTION_TAG,
                     keyboardSelected = keyboardSelectedAction == EditorContextMenuActionId.Hover,
                     popupColors = popupColors,
-                    onClick = onHover
+                    onClick = { runOverflowAction(onHover) }
                 )
             }
         }

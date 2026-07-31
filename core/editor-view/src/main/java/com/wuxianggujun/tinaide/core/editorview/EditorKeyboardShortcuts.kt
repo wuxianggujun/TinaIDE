@@ -28,7 +28,8 @@ internal fun handleEditorShortcut(
     onDismissSignatureHelp: () -> Unit,
     onIncreaseFont: () -> Unit,
     onDecreaseFont: () -> Unit,
-    onRequestContextMenu: () -> Unit = {}
+    onRequestContextMenu: () -> Unit = {},
+    onBeforeTextEdit: () -> Unit = {}
 ): Boolean {
     if (event.type != KeyEventType.KeyDown) return false
     val ctrlShortcutPressed = event.isCtrlPressed && !event.isAltPressed && !event.isMetaPressed
@@ -57,11 +58,17 @@ internal fun handleEditorShortcut(
         CompletionUiState.Hidden -> false
     }
     if (completionVisible) {
-        if (event.isEditorEnterKey()) return onApplySelectedCompletion()
+        if (event.isEditorEnterKey()) {
+            onBeforeTextEdit()
+            return onApplySelectedCompletion()
+        }
         when (event.key) {
             Key.DirectionDown -> return onCompletionNavigate(1)
             Key.DirectionUp -> return onCompletionNavigate(-1)
-            Key.Tab -> return onApplySelectedCompletion()
+            Key.Tab -> {
+                onBeforeTextEdit()
+                return onApplySelectedCompletion()
+            }
             Key.Escape -> {
                 onDismissCompletion()
                 return true
@@ -83,6 +90,7 @@ internal fun handleEditorShortcut(
 
     if (!event.isCtrlPressed && !event.isAltPressed && !event.isMetaPressed) {
         if (event.isEditorEnterKey()) {
+            onBeforeTextEdit()
             return applySmartInsertion(
                 state = state,
                 replacement = "\n",
@@ -103,6 +111,7 @@ internal fun handleEditorShortcut(
 
                 val hasSelection = state.selectionRange?.isEmpty == false
                 if (event.isShiftPressed) {
+                    onBeforeTextEdit()
                     val changed = editorIndentOrOutdentSelectionByTab(
                         state = state,
                         outdent = true
@@ -112,6 +121,7 @@ internal fun handleEditorShortcut(
                 }
 
                 if (hasSelection) {
+                    onBeforeTextEdit()
                     val changed = editorIndentOrOutdentSelectionByTab(
                         state = state,
                         outdent = false
@@ -120,6 +130,7 @@ internal fun handleEditorShortcut(
                     return true
                 }
 
+                onBeforeTextEdit()
                 return applySmartInsertion(
                     state = state,
                     replacement = "\t",
@@ -128,12 +139,14 @@ internal fun handleEditorShortcut(
             }
 
             Key.Backspace -> {
+                onBeforeTextEdit()
                 state.backspace()
                 onAfterTextEdit()
                 return true
             }
 
             Key.Delete -> {
+                onBeforeTextEdit()
                 state.deleteForward()
                 onAfterTextEdit()
                 return true
@@ -208,6 +221,7 @@ internal fun handleEditorShortcut(
     }
     return when {
         altShortcutPressed && event.key == Key.DirectionUp -> {
+            onBeforeTextEdit()
             val changed = moveSelectedLines(
                 state = state,
                 direction = -1
@@ -217,6 +231,7 @@ internal fun handleEditorShortcut(
         }
 
         altShortcutPressed && event.key == Key.DirectionDown -> {
+            onBeforeTextEdit()
             val changed = moveSelectedLines(
                 state = state,
                 direction = 1
@@ -266,6 +281,7 @@ internal fun handleEditorShortcut(
         }
 
         ctrlShortcutPressed && event.key == Key.Backspace -> {
+            onBeforeTextEdit()
             deleteWordRange(
                 state = state,
                 startOffset = previousWordBoundaryOffset(state),
@@ -276,6 +292,7 @@ internal fun handleEditorShortcut(
         }
 
         ctrlShortcutPressed && event.key == Key.Delete -> {
+            onBeforeTextEdit()
             deleteWordRange(
                 state = state,
                 startOffset = state.cursorOffset,
@@ -286,6 +303,7 @@ internal fun handleEditorShortcut(
         }
 
         ctrlShortcutPressed && event.isShiftPressed && event.key == Key.D -> {
+            onBeforeTextEdit()
             val changed = duplicateSelectedLines(state)
             if (changed) onAfterTextEdit()
             changed
@@ -304,6 +322,7 @@ internal fun handleEditorShortcut(
 
         ctrlShortcutPressed && event.key == Key.X -> {
             state.selectedText()?.let { selected ->
+                onBeforeTextEdit()
                 onCut(selected)
                 state.replaceSelection("")
                 onAfterTextEdit()
@@ -313,6 +332,7 @@ internal fun handleEditorShortcut(
 
         ctrlShortcutPressed && event.key == Key.V -> {
             readPasteText()?.let {
+                onBeforeTextEdit()
                 state.replaceSelection(it)
                 onAfterTextEdit()
             }
@@ -326,12 +346,14 @@ internal fun handleEditorShortcut(
         }
 
         ctrlShortcutPressed && event.key == Key.Z -> {
+            onBeforeTextEdit()
             state.undo()
             onAfterTextEdit()
             true
         }
 
         ctrlShortcutPressed && event.key == Key.Y -> {
+            onBeforeTextEdit()
             state.redo()
             onAfterTextEdit()
             true
@@ -771,21 +793,34 @@ private fun movePageByVisualLines(
     val currentVisualLine = state.visualLineForPosition(position.line, position.column)
     val pageLineCount = ((state.viewportHeightPx / state.lineHeightPx).toInt() - 1)
         .coerceAtLeast(1)
-    val targetVisualLine = (currentVisualLine + direction * pageLineCount)
-        .coerceIn(0, visualLineCount - 1)
+    val targetVisualLine = (
+        currentVisualLine.toLong() + direction.toLong() * pageLineCount.toLong()
+    ).coerceIn(0L, (visualLineCount - 1).toLong()).toInt()
     val targetLine = state.docLineForVisualLine(targetVisualLine)
     val targetLineText = state.textBuffer.getLine(targetLine)
-    val targetColumn = position.column
-        .coerceIn(
-            state.visualLineStartColumn(targetVisualLine),
-            state.visualLineEndColumn(targetVisualLine)
-        )
-        .coerceIn(0, targetLineText.length)
+    val targetColumn = coerceColumnToVisualLineBounds(
+        column = position.column,
+        startColumn = state.visualLineStartColumn(targetVisualLine),
+        endColumn = state.visualLineEndColumn(targetVisualLine),
+        lineLength = targetLineText.length
+    )
     moveCursorToWithOptionalSelection(
         state = state,
         targetOffset = state.textBuffer.positionToOffset(targetLine, targetColumn),
         extendSelection = extendSelection
     )
+}
+
+internal fun coerceColumnToVisualLineBounds(
+    column: Int,
+    startColumn: Int,
+    endColumn: Int,
+    lineLength: Int
+): Int {
+    val safeLineLength = lineLength.coerceAtLeast(0)
+    val minimumColumn = minOf(startColumn, endColumn).coerceIn(0, safeLineLength)
+    val maximumColumn = maxOf(startColumn, endColumn).coerceIn(minimumColumn, safeLineLength)
+    return column.coerceIn(minimumColumn, maximumColumn)
 }
 
 private fun moveCursorToWithOptionalSelection(
@@ -813,18 +848,17 @@ private fun applySmartInsertion(
     val resolved = EditorSmartReplacement.resolve(
         state = state,
         startOffset = startOffset,
-        replacement = replacement
+        replacement = replacement,
+        endOffset = endOffset,
     )
-    val changed = state.replaceRange(
+    val changed = editorReplaceRange(
+        state = state,
         startOffset = startOffset,
         endOffset = endOffset,
-        replacement = resolved.replacement
+        replacement = resolved.replacement,
+        cursorOffsetAfterEdit = resolved.cursorOffsetAfterInsert
     )
-    if (!changed) return true
-    if (resolved.cursorOffsetAfterInsert != null) {
-        state.moveCursorTo(resolved.cursorOffsetAfterInsert)
-    }
-    onAfterTextEdit()
+    if (changed) onAfterTextEdit()
     return true
 }
 

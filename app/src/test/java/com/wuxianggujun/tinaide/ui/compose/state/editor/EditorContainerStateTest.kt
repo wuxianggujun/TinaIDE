@@ -6,6 +6,8 @@ import com.wuxianggujun.tinaide.ui.compose.state.editor.CursorSnapshot
 import android.app.Application
 import android.content.Context
 import android.os.Looper
+import androidx.compose.runtime.snapshots.Snapshot
+import androidx.compose.runtime.snapshots.SnapshotStateObserver
 import com.google.common.truth.Truth.assertThat
 import com.wuxianggujun.tinaide.core.config.ConfigChangeListener
 import com.wuxianggujun.tinaide.core.config.ConfigKey
@@ -135,14 +137,14 @@ class EditorContainerStateTest {
     }
 
     @Test
-    fun activeTabSupportsEditorPerformancePanel_shouldReturnFalseWithoutActiveCallback() {
+    fun activeTabHasAttachedCodeEditor_shouldReturnFalseWithoutActiveCallback() {
         setActiveTab()
 
-        assertThat(state.activeTabSupportsEditorPerformancePanel()).isFalse()
+        assertThat(state.activeTabHasAttachedCodeEditor()).isFalse()
     }
 
     @Test
-    fun activeTabSupportsEditorPerformancePanel_shouldReturnTrueWhenCallbackRegistered() {
+    fun activeTabHasAttachedCodeEditor_shouldReturnTrueWhenCallbackRegistered() {
         setActiveTab()
         state.registerCodeEditorCallback(
             tabId = "tab-1",
@@ -164,7 +166,48 @@ class EditorContainerStateTest {
             )
         )
 
-        assertThat(state.activeTabSupportsEditorPerformancePanel()).isTrue()
+        assertThat(state.activeTabHasAttachedCodeEditor()).isTrue()
+    }
+
+    @Test
+    fun activeTabHasAttachedCodeEditor_registrationShouldInvalidateSnapshotRead() {
+        setActiveTab()
+        val observer = SnapshotStateObserver { callback -> callback() }
+        var invalidationCount = 0
+        observer.start()
+        try {
+            observer.observeReads(
+                scope = Unit,
+                onValueChangedForScope = { invalidationCount++ }
+            ) {
+                state.activeTabHasAttachedCodeEditor()
+            }
+
+            state.registerCodeEditorCallback(
+                tabId = "tab-1",
+                callback = CodeEditorCallback(
+                    goToPosition = { _, _ -> false },
+                    selectAll = { false },
+                    replaceSelection = { false },
+                    replaceWholeText = { false },
+                    applyTextEdits = { false },
+                    toggleLineComment = { false },
+                    replaceAll = { _, _, _, _ -> 0 },
+                    undo = { false },
+                    redo = { false },
+                    insertTextAtCursor = {},
+                    cursorPosition = { CursorSnapshot(0, 0) },
+                    setSelectionRange = { _, _, _, _ -> false },
+                    readAllText = { "" },
+                    readSelection = { null }
+                )
+            )
+            Snapshot.sendApplyNotifications()
+
+            assertThat(invalidationCount).isEqualTo(1)
+        } finally {
+            observer.stop()
+        }
     }
 
     @Test

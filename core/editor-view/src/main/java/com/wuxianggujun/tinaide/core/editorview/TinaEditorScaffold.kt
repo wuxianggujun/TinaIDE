@@ -52,7 +52,8 @@ internal fun TinaEditorScaffold(
                 onDismissSignatureHelp = { interactionController.dismissSignatureHelp() },
                 onIncreaseFont = { session.fontScaleCoordinator.apply(state.fontSizeSp + 1f) },
                 onDecreaseFont = { session.fontScaleCoordinator.apply(state.fontSizeSp - 1f) },
-                onRequestContextMenu = { session.showContextMenuAtCursor() }
+                onRequestContextMenu = { session.showContextMenuAtCursor() },
+                onBeforeTextEdit = { interactionController.prepareForExternalEdit() }
             )
         }
     }

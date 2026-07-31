@@ -1,8 +1,31 @@
 # TinaIDE 测试文档
 
-> 最后人工核验：2026-07-16
+> 最后人工核验：2026-07-31
 
 本目录只保留当前仍值得固定维护的测试入口说明。
+
+## 模块优先与共享会话约定
+
+- 先运行改动所属模块：Android library 使用 `:module:testDebugUnitTest` 或 `:module:compileDebugKotlin`；只有 `app` 宿主、ABI/flavor、打包或跨模块集成变化时才运行 `:app:*`。
+- 一次性本地 Gradle 命令统一带 `--no-daemon`，不为单次检查保留 daemon。
+- 若其他会话正在构建，本会话只做 `git diff --check`、路径/类名核对等静态检查，不启动或停止 Gradle。
+- 禁止执行 `gradlew --stop` 影响共享 daemon；清理时只终止本任务明确启动的进程。
+
+## 文本编辑与工作区定向回归
+
+以下测试类已于 2026-07-31 在对应 `src/test` 目录核对存在。按模块分别运行：
+
+```bash
+./gradlew :core:text-engine:testDebugUnitTest --tests "com.wuxianggujun.tinaide.core.textengine.EditHistoryTest" --tests "com.wuxianggujun.tinaide.core.textengine.LineIndexTest" --tests "com.wuxianggujun.tinaide.core.textengine.RopeTextBufferTest" --tests "com.wuxianggujun.tinaide.core.textengine.TextScanKernelTest" --no-daemon --console=plain
+```
+
+```bash
+./gradlew :core:editor-view:testDebugUnitTest --tests "com.wuxianggujun.tinaide.core.editorview.EditorClipboardBridgeTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorInputConnectionEditTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorInputConnectionExtractedTextTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorInputConnectionImeSelectionTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorInputConnectionUtilsTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorInputHostLayerTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorKeyboardShortcutsTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorLineLayoutCacheTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorSelectionContextMenuCoordinatorTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorStateEventTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorStateSemanticTokensTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorStateSurrogatePairTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorStateWordWrapTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorToggleLineCommentTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorUndoRedoCursorTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorUserInputTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorVisualLineMapperTest" --tests "com.wuxianggujun.tinaide.core.editorview.SignatureHelpPopupLayoutResolverTest" --no-daemon --console=plain
+```
+
+```bash
+./gradlew :app:testArm64DebugUnitTest --tests "com.wuxianggujun.tinaide.ui.CompileActionsHelperTest" --tests "com.wuxianggujun.tinaide.ui.compose.components.BottomPanelTabResolutionTest" --tests "com.wuxianggujun.tinaide.ui.compose.components.SwipeableDrawerStateTest" --tests "com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerStateTest" --no-daemon --console=plain
+```
 
 ## 文档一致性检查
 
@@ -19,11 +42,11 @@ py tools/checks/check_documentation.py
 编辑器 popup 的共享回归建议固定跑下面两组命令：
 
 ```bash
-./gradlew :core:editor-view:testDebugUnitTest --tests "com.wuxianggujun.tinaide.core.editorview.EditorPopupComposeSmokeTest" --tests "com.wuxianggujun.tinaide.core.editorview.PopupOverlaySharedAnchorIntegrationTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorOverlaysIntegrationTest"
+./gradlew :core:editor-view:testDebugUnitTest --tests "com.wuxianggujun.tinaide.core.editorview.EditorPopupComposeSmokeTest" --tests "com.wuxianggujun.tinaide.core.editorview.PopupOverlaySharedAnchorIntegrationTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorOverlaysIntegrationTest" --no-daemon --console=plain
 ```
 
 ```bash
-./gradlew :core:editor-view:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.wuxianggujun.tinaide.core.editorview.EditorCompletionPopupInstrumentationTest,com.wuxianggujun.tinaide.core.editorview.EditorSharedPopupInstrumentationTest
+./gradlew :core:editor-view:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.wuxianggujun.tinaide.core.editorview.EditorCompletionPopupInstrumentationTest,com.wuxianggujun.tinaide.core.editorview.EditorSharedPopupInstrumentationTest --no-daemon --console=plain
 ```
 
 其中：
@@ -97,7 +120,7 @@ pwsh ./tools/testing/plugin-device-gate.ps1
 - in-flight journal 恢复与 quarantine 状态；
 - `prepare -> adb force-stop -> verify` 两阶段真实进程重启后的 quarantine 持久化。
 
-脚本只操作 `com.wuxianggujun.tinaide.core.plugin.test` 测试包，不会清除 TinaIDE 主 App 数据；结束时默认 force-stop 并卸载测试包，同时停止本轮 Gradle daemon。已提前构建时可传 `-SkipBuild`，排查时可传 `-KeepTestApp` 保留测试包。多设备环境必须传 `-Serial <device>`。
+脚本只操作 `com.wuxianggujun.tinaide.core.plugin.test` 测试包，不会清除 TinaIDE 主 App 数据；结束时默认 force-stop 并卸载测试包。非 `-SkipBuild` 模式使用 `--no-daemon` 构建，不调用全局 `gradlew --stop`，因此不会主动终止其他会话的 Gradle daemon。已提前构建时可传 `-SkipBuild`，排查时可传 `-KeepTestApp` 保留测试包。多设备环境必须传 `-Serial <device>`。
 
 结果解析要求精确测试数；`0 tests`、ignored/assumption skip、instrumentation runner failure、阶段数量不匹配或 force-stop 后测试包进程仍存在均判定失败。手动 workflow 无论成功失败都会上传
 `plugin-device-gate-<run_id>-<run_attempt>`，保留 14 天，内容包括设备信息、原始 instrumentation 输出、logcat、阶段汇总和 verdict。

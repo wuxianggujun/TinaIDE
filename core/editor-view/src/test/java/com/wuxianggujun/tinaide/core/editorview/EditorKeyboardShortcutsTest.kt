@@ -11,7 +11,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(manifest = Config.NONE)
+@Config(manifest = Config.NONE, sdk = [34])
 class EditorKeyboardShortcutsTest {
 
     @Test
@@ -172,6 +172,40 @@ class EditorKeyboardShortcutsTest {
         assertThat(state.textBuffer.toString()).isEqualTo("a\nb")
         assertThat(state.cursorPosition.line).isEqualTo(1)
         assertThat(state.cursorPosition.column).isEqualTo(0)
+    }
+
+    @Test
+    fun handleEditorShortcut_shouldPrepareExternalEditBeforeBufferMutation() {
+        val state = createState("ab")
+        state.moveCursorTo(2)
+        var textObservedByPreparer: String? = null
+
+        val consumed = handleShortcut(
+            state = state,
+            event = keyDownEvent(keyCode = AndroidKeyEvent.KEYCODE_DEL),
+            onBeforeTextEdit = { textObservedByPreparer = state.textBuffer.toString() }
+        )
+
+        assertThat(consumed).isTrue()
+        assertThat(textObservedByPreparer).isEqualTo("ab")
+        assertThat(state.textBuffer.toString()).isEqualTo("a")
+    }
+
+    @Test
+    fun handleEditorShortcut_shouldNotPrepareExternalEditForCursorMovement() {
+        val state = createState("ab")
+        state.moveCursorTo(2)
+        var prepareCount = 0
+
+        val consumed = handleShortcut(
+            state = state,
+            event = keyDownEvent(keyCode = AndroidKeyEvent.KEYCODE_DPAD_LEFT),
+            onBeforeTextEdit = { prepareCount++ }
+        )
+
+        assertThat(consumed).isTrue()
+        assertThat(prepareCount).isEqualTo(0)
+        assertThat(state.cursorOffset).isEqualTo(1)
     }
 
     @Test
@@ -350,6 +384,17 @@ class EditorKeyboardShortcutsTest {
 
         assertThat(consumed).isTrue()
         assertThat(state.cursorPosition.line).isEqualTo(2)
+    }
+
+    @Test
+    fun coerceColumnToVisualLineBounds_shouldHandleReversedBounds() {
+        assertThat(
+            listOf(
+                coerceColumnToVisualLineBounds(2, startColumn = 10, endColumn = 4, lineLength = 12),
+                coerceColumnToVisualLineBounds(8, startColumn = 10, endColumn = 4, lineLength = 12),
+                coerceColumnToVisualLineBounds(20, startColumn = 10, endColumn = 4, lineLength = 12),
+            )
+        ).containsExactly(4, 8, 10).inOrder()
     }
 
     @Test
@@ -788,7 +833,8 @@ class EditorKeyboardShortcutsTest {
         state: EditorState,
         event: ComposeKeyEvent,
         onAfterTextEdit: () -> Unit = {},
-        onApplySelectedCompletion: () -> Boolean = { false }
+        onApplySelectedCompletion: () -> Boolean = { false },
+        onBeforeTextEdit: () -> Unit = {}
     ): Boolean = handleEditorShortcut(
         event = event,
         state = state,
@@ -804,7 +850,8 @@ class EditorKeyboardShortcutsTest {
         onDismissCompletion = {},
         onDismissSignatureHelp = {},
         onIncreaseFont = {},
-        onDecreaseFont = {}
+        onDecreaseFont = {},
+        onBeforeTextEdit = onBeforeTextEdit
     )
 
     private fun keyDownEvent(

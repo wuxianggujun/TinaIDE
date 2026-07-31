@@ -205,7 +205,7 @@
 建议验证：
 
 ```powershell
-.\gradlew :app:compileArm64DebugKotlin --console=plain
+.\gradlew :app:compileArm64DebugKotlin --no-daemon --console=plain
 ```
 
 回滚策略：
@@ -257,7 +257,7 @@
 建议验证：
 
 ```powershell
-.\gradlew :app:compileArm64DebugKotlin --console=plain
+.\gradlew :app:compileArm64DebugKotlin --no-daemon --console=plain
 ```
 
 涉及 core 模块时运行对应模块测试或编译任务。

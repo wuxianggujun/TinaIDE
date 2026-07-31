@@ -32,12 +32,15 @@ internal class EditorLineLayoutCache(
     private val slowBuildThresholdMs: Long = 4L
 ) {
     internal data class PrefixLayout(
-        val length: Int,
+        val lineText: String,
         val prefix: FloatArray
-    )
+    ) {
+        val length: Int
+            get() = lineText.length
+    }
 
     private data class Entry(
-        var length: Int,
+        val lineText: String,
         var prefix: FloatArray
     )
 
@@ -100,12 +103,12 @@ internal class EditorLineLayoutCache(
         synchronized(lock) {
             ensureSignature(textVersion, paint, tabSize)
             val entry = lru[line]
-            if (entry != null && entry.length == lineText.length) {
-                return PrefixLayout(length = entry.length, prefix = entry.prefix)
+            if (entry != null && entry.lineText == lineText) {
+                return PrefixLayout(lineText = entry.lineText, prefix = entry.prefix)
             }
 
             val built = buildPrefix(lineText, paint, tabSize)
-            putEntry(line, built.length, built.prefix)
+            putEntry(line, built.lineText, built.prefix)
             return built
         }
     }
@@ -131,7 +134,20 @@ internal class EditorLineLayoutCache(
         if (right == left) return right
         val leftAdvance = prefix[left]
         val rightAdvance = prefix[right]
-        return if ((targetX - leftAdvance) <= (rightAdvance - targetX)) left else right
+        val nearest = if ((targetX - leftAdvance) <= (rightAdvance - targetX)) left else right
+        if (
+            nearest <= 0 ||
+            nearest >= layout.length ||
+            !layout.lineText[nearest - 1].isHighSurrogate() ||
+            !layout.lineText[nearest].isLowSurrogate()
+        ) {
+            return nearest
+        }
+
+        val codePointStart = nearest - 1
+        val codePointEnd = nearest + 1
+        val codePointMidpoint = (prefix[codePointStart] + prefix[codePointEnd]) / 2f
+        return if (targetX <= codePointMidpoint) codePointStart else codePointEnd
     }
 
     private fun ensureSignature(textVersion: Long, paint: Paint, tabSize: Int) {
@@ -171,7 +187,7 @@ internal class EditorLineLayoutCache(
         val startMs = SystemClock.uptimeMillis()
         val length = lineText.length
         if (length <= 0) {
-            return PrefixLayout(length = 0, prefix = FloatArray(1))
+            return PrefixLayout(lineText = lineText, prefix = FloatArray(1))
         }
 
         if (scratchChars.size < length) {
@@ -232,11 +248,11 @@ internal class EditorLineLayoutCache(
             )
         }
 
-        return PrefixLayout(length = length, prefix = prefix)
+        return PrefixLayout(lineText = lineText, prefix = prefix)
     }
 
-    private fun putEntry(line: Int, length: Int, prefix: FloatArray) {
-        val existing = lru.put(line, Entry(length = length, prefix = prefix))
+    private fun putEntry(line: Int, lineText: String, prefix: FloatArray) {
+        val existing = lru.put(line, Entry(lineText = lineText, prefix = prefix))
         if (existing != null) {
             totalFloats -= existing.prefix.size
         }

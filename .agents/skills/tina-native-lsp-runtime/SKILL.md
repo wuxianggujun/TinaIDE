@@ -47,8 +47,8 @@ description: TinaIDE native 编译运行、Android sysroot、tina-toolchain asse
 ## 验证
 
 ```powershell
-./gradlew :app:compileArm64DebugKotlin --console=plain
-./gradlew :app:assembleArm64Debug --console=plain
+./gradlew :app:compileArm64DebugKotlin --no-daemon --console=plain
+./gradlew :app:assembleArm64Debug --no-daemon --console=plain
 pwsh ./tools/verify-tina-toolchain-package.ps1
 ```
 

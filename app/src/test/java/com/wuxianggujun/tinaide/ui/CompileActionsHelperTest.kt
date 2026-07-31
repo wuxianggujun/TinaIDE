@@ -248,7 +248,7 @@ class CompileActionsHelperTest {
     }
 
     @Test
-    fun `handleProcessStateChanged reopens build log when run process starts`() = runTest {
+    fun `handleProcessStateChanged keeps current output tab when run process starts`() = runTest {
         helper.runProject()
         clearMocks(uiBridge, answers = false, recordedCalls = true)
 
@@ -256,12 +256,12 @@ class CompileActionsHelperTest {
         advanceUntilIdle()
 
         verify(exactly = 1) { uiBridge.setCompiling(true) }
-        verify(exactly = 1) { uiBridge.showBuildLog() }
-        coVerify(exactly = 1) { uiBridge.expandBottomPanel() }
+        verify(exactly = 0) { uiBridge.showBuildLog() }
+        coVerify(exactly = 0) { uiBridge.expandBottomPanel() }
     }
 
     @Test
-    fun `handleProcessStateChanged keeps build mode from reopening build log`() = runTest {
+    fun `handleProcessStateChanged keeps current output tab in build mode`() = runTest {
         helper.buildProject()
         clearMocks(uiBridge, answers = false, recordedCalls = true)
 
@@ -328,6 +328,7 @@ class CompileActionsHelperTest {
                 workDir = "/tmp/build"
             )
         ).inOrder()
+        verify(exactly = 0) { uiBridge.showBuildLog() }
     }
 
     @Test
@@ -356,6 +357,7 @@ class CompileActionsHelperTest {
                 CompileActionsHelper.ToastType.INFO
             )
         )
+        verify(exactly = 0) { uiBridge.showBuildLog() }
     }
 
     @Test
@@ -459,6 +461,28 @@ class CompileActionsHelperTest {
         )
         verify(exactly = 1) { uiBridge.setCompiling(false) }
         verify(atLeast = 1) { uiBridge.showBuildLog() }
+        coVerify(exactly = 1) { uiBridge.expandBottomPanel() }
+    }
+
+    @Test
+    fun `handleCompileError keeps build log selected for build failures`() = runTest {
+        val events = captureUiEvents {
+            helper.handleCompileError(
+                CompileEvent.Error(
+                    action = CompileProjectUseCase.Action.BUILD,
+                    message = "compile failed",
+                    throwable = null
+                )
+            )
+        }
+
+        assertThat(events).containsExactly(
+            CompileActionsHelper.UiEvent.ShowToast(
+                "compile failed",
+                CompileActionsHelper.ToastType.ERROR
+            )
+        )
+        verify(exactly = 1) { uiBridge.showBuildLog() }
         coVerify(exactly = 1) { uiBridge.expandBottomPanel() }
     }
 

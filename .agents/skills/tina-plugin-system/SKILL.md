@@ -60,7 +60,7 @@ description: TinaIDE 插件系统、.tinaplug、manifest、权限、Lua script/h
 ## 验证
 
 ```powershell
-./gradlew :core:plugin:testDebugUnitTest --console=plain
+./gradlew :core:plugin:testDebugUnitTest --no-daemon --console=plain
 pwsh ./tools/plugin-starters/script-basic/validate.ps1
 pwsh ./tools/plugin-starters/lsp-basic/validate.ps1
 pwsh ../TinaIDE-Registry/scripts/build-registry.ps1

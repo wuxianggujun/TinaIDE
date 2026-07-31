@@ -17,6 +17,8 @@ TinaIDE supports single-file, CMake, Make, and NDK native-library workflows.
 4. Read the full compiler and linker output in **Build Log**.
 5. Review clangd errors and warnings in **Diagnostics**.
 
+After a build failure, the workspace remains on **Build Log** instead of forcing a switch to Diagnostics. LSP diagnostics can be empty or briefly older than the latest build, so treat the compiler and linker output in Build Log as authoritative.
+
 If the editor shows new code but execution still prints template output, verify that the file was saved and that the selected run target is the intended executable or shared library.
 
 ## NDK shared-library targets
@@ -56,6 +58,10 @@ or:
 
 For difficult incremental-build issues, enable build diagnostics under **Settings → Developer Options → Diagnostic Logs**. Logs can show save completion, target selection, build planner decisions, compile_commands.json fingerprints, and the final launched artifact. Source contents are not logged.
 
+## Where runtime output appears
+
+Console program output opens in the separate **Terminal**, while graphical programs use **SDL**. No current component writes to the bottom-panel Run Output model, so its empty tab remains hidden.
+
 ## Process and temporary-resource cleanup
 
 CMake, Make, and compiler processes have timeouts. Cancellation or timeout closes output streams, terminates remaining processes, and deletes the command-specific temporary directory. Persistent project build output, compile_commands.json, incremental caches, and registered artifacts are kept.
@@ -64,7 +70,7 @@ CMake, Make, and compiler processes have timeouts. Cancellation or timeout close
 
 ### The build fails but the editor shows no error
 
-Read Build Log. Configuration and linker failures may not appear as editor diagnostics.
+Read Build Log. Configuration and linker failures may not appear as editor diagnostics, and LSP diagnostics can be empty or briefly stale.
 
 ### Completion works but execution fails
 

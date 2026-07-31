@@ -9,7 +9,7 @@ The workspace normally contains:
 - top actions for save, run, build, and debug;
 - a project file-tree drawer;
 - an editor with multiple tabs;
-- bottom panels for build output, diagnostics, outline, symbols, bookmarks, and Git.
+- default bottom tabs for Diagnostics and Build Log; Outline, Symbols, Bookmarks, and Git are available on demand from the overflow menu or commands.
 
 The terminal is a separate screen, not a permanent bottom-panel tab.
 
@@ -39,9 +39,19 @@ If these features are missing, verify that:
 2. compile_commands.json exists and is current;
 3. local clangd or Remote LSP is configured correctly.
 
+## Bottom panel
+
+The bottom panel shows **Diagnostics** and **Build Log** by default. **Outline**, **Symbols**, **Bookmarks**, and **Git** can be opened from the panel overflow menu or their commands; an opened secondary tab is temporarily added to the tab row.
+
+- **Build Log** contains compiler and linker output. The workspace remains on this tab after a build failure.
+- **Diagnostics** contains LSP reports. They can be empty or briefly older than the latest build, so use Build Log as the source of truth for build failures.
+- **Outline** describes the current document, while **Symbols** searches project-wide symbols.
+- Bottom-panel **Git** shows commit history. Drawer **Git** shows working-tree changes and staging controls.
+- Runtime output goes to the separate **Terminal**, or to **SDL** for graphical programs. An empty Run Output tab is hidden while no component writes to it.
+
 ## Viewer types
 
-JSON, large text, images, and binary files can open in specialized viewers instead of the normal code editor.
+JSON and Markdown open in the code editor by default. Large text, images, and binary files use the dedicated large-text, image, and Hex viewers.
 
 ## When to use the terminal
 

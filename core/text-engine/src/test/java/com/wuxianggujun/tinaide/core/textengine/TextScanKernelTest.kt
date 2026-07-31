@@ -339,6 +339,45 @@ class TextScanKernelTest {
     }
 
     @Test
+    fun findWrapSegmentStarts_shouldNotSplitSurrogatePair() {
+        val starts = TextScanKernel.findWrapSegmentStarts(
+            lineText = "a\uD83D\uDE00b",
+            wrapColumns = 2,
+            tabSize = 4
+        )
+
+        assertThat(starts.asList()).containsExactly(0, 1, 3).inOrder()
+        assertThat(starts.asList()).doesNotContain(2)
+        assertThat(
+            TextScanKernel.countWrapSegments(
+                lineText = "a\uD83D\uDE00b",
+                wrapColumns = 2,
+                tabSize = 4
+            )
+        ).isEqualTo(starts.size)
+    }
+
+    @Test
+    fun countWrapSegments_shouldMatchFullLayout() {
+        val cases = listOf("", "abc", "abcdef", "ab\tcd", "\t\txyz", "a😀b")
+
+        cases.forEach { lineText ->
+            val fullLayout = TextScanKernel.findWrapSegmentStarts(
+                lineText = lineText,
+                wrapColumns = 4,
+                tabSize = 4
+            )
+            assertThat(
+                TextScanKernel.countWrapSegments(
+                    lineText = lineText,
+                    wrapColumns = 4,
+                    tabSize = 4
+                )
+            ).isEqualTo(fullLayout.size)
+        }
+    }
+
+    @Test
     fun buildVisualColumnPrefix_shouldTrackExpandedTabColumns() {
         assertThat(TextScanKernel.buildVisualColumnPrefix("a\tb", tabSize = 4).asList())
             .containsExactly(0, 1, 4, 5)

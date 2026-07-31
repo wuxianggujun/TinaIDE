@@ -8,7 +8,6 @@ interface TextBuffer {
     val length: Int
     val lineCount: Int
     val version: Long
-    val history: EditHistory
 
     /**
      * 版本号 StateFlow。每次文本变化（insert / delete / replace / undo / redo / load）都会 emit 最新 version。
@@ -18,9 +17,27 @@ interface TextBuffer {
      */
     val versionFlow: StateFlow<Long>
 
-    fun insert(offset: Int, text: String)
-    fun delete(start: Int, end: Int)
-    fun replace(start: Int, end: Int, text: String)
+    fun insert(offset: Int, text: String, historyCursor: TextEditCursorSnapshot? = null)
+    fun delete(start: Int, end: Int, historyCursor: TextEditCursorSnapshot? = null)
+    fun replace(
+        start: Int,
+        end: Int,
+        text: String,
+        historyCursor: TextEditCursorSnapshot? = null
+    )
+
+    fun beginCompoundEdit(
+        cursorBefore: Int? = null,
+        selectionBefore: TextSelectionSnapshot? = null
+    ): CompoundEditToken
+
+    fun endCompoundEdit(
+        token: CompoundEditToken,
+        cursorAfter: Int? = null,
+        selectionAfter: TextSelectionSnapshot? = null
+    )
+
+    fun isCompoundEditActive(token: CompoundEditToken): Boolean
 
     /**
      * 将多个底层编辑记录为一次可撤销的用户操作。
@@ -30,16 +47,10 @@ interface TextBuffer {
     fun <T> editTransaction(
         cursorBefore: Int? = null,
         cursorAfter: (() -> Int?)? = null,
+        selectionBefore: TextSelectionSnapshot? = null,
+        selectionAfter: (() -> TextSelectionSnapshot?)? = null,
         block: TextBuffer.() -> T
-    ): T {
-        history.beginCompoundEdit(cursorBefore)
-        var completed = false
-        return try {
-            block(this).also { completed = true }
-        } finally {
-            history.finishCompoundEdit(completed, cursorAfter)
-        }
-    }
+    ): T
 
     fun substring(start: Int, end: Int): String
     fun charAt(offset: Int): Char?
@@ -63,24 +74,39 @@ interface TextBuffer {
 }
 
 internal fun EditHistory.finishCompoundEdit(
+    token: CompoundEditToken,
     completed: Boolean,
-    cursorAfter: (() -> Int?)?
+    cursorAfter: (() -> Int?)?,
+    selectionAfter: (() -> TextSelectionSnapshot?)? = null
 ) {
     var resolvedCursorAfter: Int? = null
-    var cursorFailure: Throwable? = null
+    var resolvedSelectionAfter: TextSelectionSnapshot? = null
+    var resolutionFailure: Throwable? = null
     if (completed && cursorAfter != null) {
         try {
             resolvedCursorAfter = cursorAfter()
         } catch (throwable: Throwable) {
-            cursorFailure = throwable
+            resolutionFailure = throwable
+        }
+    }
+    if (completed && selectionAfter != null) {
+        try {
+            resolvedSelectionAfter = selectionAfter()
+        } catch (throwable: Throwable) {
+            val previousFailure = resolutionFailure
+            if (previousFailure == null) {
+                resolutionFailure = throwable
+            } else {
+                previousFailure.addSuppressed(throwable)
+            }
         }
     }
 
     try {
-        endCompoundEdit(resolvedCursorAfter)
+        endCompoundEdit(token, resolvedCursorAfter, resolvedSelectionAfter)
     } catch (endFailure: Throwable) {
-        cursorFailure?.let(endFailure::addSuppressed)
+        resolutionFailure?.let(endFailure::addSuppressed)
         throw endFailure
     }
-    cursorFailure?.let { throw it }
+    resolutionFailure?.let { throw it }
 }

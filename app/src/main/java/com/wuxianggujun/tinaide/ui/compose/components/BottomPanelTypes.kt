@@ -25,23 +25,21 @@ data class BottomPanelTabMenuAction(
     val onClick: () -> Unit
 )
 
-/**
- * 默认底栏：问题 / 构建 / 输出（Git 在侧栏，符号/大纲/书签走命令或侧栏导航）。
- * PERFORMANCE / PLUGINS 按需附加；OUTLINE/SYMBOLS/BOOKMARKS/GIT 仍可通过命令打开，但不默认铺满 Tab。
- */
+/** 默认底栏只保留有稳定生产数据的诊断与构建日志。 */
 private val defaultNormalModeBottomTabs = listOf(
     BottomPanelTab.DIAGNOSTICS,
     BottomPanelTab.BUILD_LOG,
-    BottomPanelTab.RUN_OUTPUT,
 )
 
-/** 仍可通过命令/代码打开，但不进默认 Tab 条，避免小屏底栏过载。 */
-private val secondaryBottomPanelTabs = setOf(
+private val secondaryBottomPanelTabs = listOf(
     BottomPanelTab.OUTLINE,
     BottomPanelTab.SYMBOLS,
     BottomPanelTab.BOOKMARKS,
     BottomPanelTab.GIT,
 )
+
+// Current run modes surface output in Terminal or SDL. Keep RUN_OUTPUT in the
+// model for compatibility, but do not expose an empty tab until it has a writer.
 
 internal fun shouldShowEditorPerformanceTab(
     developerOptionsEnabled: Boolean,
@@ -75,6 +73,10 @@ internal fun resolveVisibleBottomPanelTabs(
     } else {
         normalModeTabs
     }
+
+internal fun resolveOverflowBottomPanelTabs(
+    visibleTabs: List<BottomPanelTab>,
+): List<BottomPanelTab> = secondaryBottomPanelTabs.filterNot(visibleTabs::contains)
 
 internal fun resolveSelectedBottomPanelTab(
     selectedBottomTab: BottomPanelTab,

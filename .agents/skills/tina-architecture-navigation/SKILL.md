@@ -51,6 +51,6 @@ description: TinaIDE 项目架构导航。用于理解模块边界、启动入�
 
 ## 验证
 
-- 结构调整后运行目标模块编译，例如 `./gradlew :app:compileArm64DebugKotlin --console=plain`。
+- 结构调整后优先运行改动所属模块的最小编译，例如 `./gradlew :core:editor-view:compileDebugKotlin --no-daemon --console=plain`；只有 `app` 宿主或跨模块装配受影响时才运行 `./gradlew :app:compileArm64DebugKotlin --no-daemon --console=plain`。
 - 涉及模块边界时检查 `settings.gradle.kts` 和对应 `build.gradle.kts` 依赖方向。
 - 涉及主界面时优先跑相关 `src/test` 中的 Activity、navigation、settings 或 editor tests。

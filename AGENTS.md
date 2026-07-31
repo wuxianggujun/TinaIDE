@@ -95,7 +95,7 @@ TinaIDE 是 Android 上的 C/C++ IDE。当前默认运行链路是 **native tina
 
 - `app/`：启动、导航、DI 装配、跨模块协调；不要堆领域逻辑。
 - `core/`：无界面复用能力和运行时基础设施，如 i18n、designsystem、storage、security、database、compile、lsp、plugin、tree-sitter。
-- `feature/`：用户可见功能切片，如 AI、设置、工作区、编辑器、帮助。
+- `feature/`：用户可见功能切片，如设置、工作区、编辑器、帮助、教程。
 - `external/`：第三方源码或本地 fork；改动前先确认上游边界和子模块状态。
 - `tools/`：构建、i18n、toolchain、插件 starter、APK/R8 分析等脚本。
 - `build-logic/`：Gradle convention plugins；ABI 聚合、版本递增、toolchain assets 校验、Tree-sitter 生成、mapping 备份等已有能力不要重复实现。
@@ -103,16 +103,20 @@ TinaIDE 是 Android 上的 C/C++ IDE。当前默认运行链路是 **native tina
 **常用命令**：
 
 ```bash
-./gradlew :app:compileArm64DebugKotlin --console=plain
-./gradlew :app:assembleArm64Debug --console=plain
-./gradlew -Ptina.devAbi=x86_64 :app:assembleX86_64Debug --console=plain
-./gradlew :app:assembleDebugAllAbi --console=plain
-./gradlew ktlintCheck --console=plain
-./gradlew :rikkahub:embedded:compileDebugKotlin --console=plain
-./gradlew :core:editor-view:testDebugUnitTest --tests "com.wuxianggujun.tinaide.core.editorview.EditorPopupComposeSmokeTest" --tests "com.wuxianggujun.tinaide.core.editorview.PopupOverlaySharedAnchorIntegrationTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorOverlaysIntegrationTest" --console=plain
+./gradlew :core:text-engine:testDebugUnitTest --no-daemon --console=plain
+./gradlew :core:editor-view:compileDebugKotlin --no-daemon --console=plain
+./gradlew :core:editor-view:testDebugUnitTest --tests "com.wuxianggujun.tinaide.core.editorview.EditorPopupComposeSmokeTest" --tests "com.wuxianggujun.tinaide.core.editorview.PopupOverlaySharedAnchorIntegrationTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorOverlaysIntegrationTest" --no-daemon --console=plain
+./gradlew :app:compileArm64DebugKotlin --no-daemon --console=plain
+./gradlew :app:assembleArm64Debug --no-daemon --console=plain
+./gradlew -Ptina.devAbi=x86_64 :app:assembleX86_64Debug --no-daemon --console=plain
+./gradlew :app:assembleDebugAllAbi --no-daemon --console=plain
+./gradlew ktlintCheck --no-daemon --console=plain
+./gradlew :rikkahub:embedded:compileDebugKotlin --no-daemon --console=plain
 ```
 
-后台运行测试时设置最大超时时间 60s。`connectedDebugAndroidTest` 需要设备或模拟器；`app/src/androidTest` 的 native toolchain / PRoot smoke 依赖 ABI、设备和资产准备，`assumeTrue` 跳过不等于完整验证。
+- 验证从改动所属模块开始：Android library 优先运行 `:module:testDebugUnitTest` 或 `:module:compileDebugKotlin`；只有 `app` 宿主、ABI、打包或跨模块集成发生变化时才运行 `:app:*`。
+- 一次性本地 Gradle 命令统一带 `--no-daemon`。若其他会话正在构建，本会话只做静态检查，不启动或停止 Gradle；禁止用 `gradlew --stop` 终止共享 daemon，只回收本任务明确启动的进程。
+- 后台运行测试时设置最大超时时间 60s。`connectedDebugAndroidTest` 需要设备或模拟器；`app/src/androidTest` 的 native toolchain / PRoot smoke 依赖 ABI、设备和资产准备，`assumeTrue` 跳过不等于完整验证。
 
 **项目专属 skills 路由**：
 
@@ -150,7 +154,7 @@ TinaIDE 是 Android 上的 C/C++ IDE。当前默认运行链路是 **native tina
 **完成修改后的验证清单**：
 
 - 先运行与改动最贴近的模块测试；多数 `core/*`、`feature/*` 模块通过 `tina.android.library` 自动获得 JUnit、Truth、Robolectric、MockK、coroutines-test。
-- Kotlin/Android 改动至少运行目标模块 `compileArm64DebugKotlin` 或更小的 compile task。
+- Kotlin/Android library 改动至少运行目标模块 `testDebugUnitTest` 或 `compileDebugKotlin`；仅 `app` 宿主/集成改动使用 `compileArm64DebugKotlin` 等 `app` flavor task。
 - UI 文案变更同步 `values/strings.xml` 与 `values-en/strings.xml`，并运行 i18n 检查（Windows 可用 `py tools/i18n/check_all.py`）。
 - 新增依赖或反射/JNI/序列化能力时检查 `docs/proguard-rules-reference.md` 和对应模块 `consumer-rules.pro`。
 - 文档/skill 变更至少检查 `git diff`、Markdown frontmatter、引用路径是否真实存在。
@@ -303,8 +307,8 @@ TinaIDE 已移除自研 `feature:ai`、聊天仓储、渠道仓储和工具调�
 RikkaHub 集成相关静态验证优先使用：
 
 ```bash
-./gradlew :rikkahub:embedded:compileDebugKotlin --console=plain
-./gradlew :app:compileArm64DebugKotlin --console=plain
+./gradlew :rikkahub:embedded:compileDebugKotlin --no-daemon --console=plain
+./gradlew :app:compileArm64DebugKotlin --no-daemon --console=plain
 ```
 
 如果只改主仓库入口或文档，至少检查 `git diff`、相关路径是否真实存在，以及帮助资产中的 RikkaHub 说明是否同步。
