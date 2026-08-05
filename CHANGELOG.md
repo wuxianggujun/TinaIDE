@@ -50,6 +50,7 @@
 - 修复 SDL 的 `SDL_main` 入口约定污染 raylib 等图形库，导致共享库运行时找不到普通 `main` 的问题。
 - 修复版本化 SONAME 缺失时错误回退到其他主版本动态库，以及 CMake 重复注入 `$ORIGIN` RUNPATH 的问题。
 - 修复 ARM64 用户下载 native 依赖包时同时下载 x86_64 库的问题；ABI 独立源存在时不再回退到双 ABI 通用包。
+- 修复依赖包下载未校验 Registry 声明的制品大小、可能继续安装截断文件或错误制品的问题。
 - 修复下载归档成功安装后删除了错误缓存文件、实际归档仍残留的问题。
 - 修复 native clang-format 在主线程同步读取进程输出、超时无法生效的问题，并避免异步格式化结果覆盖已切换或继续编辑的文件。
 - 修复遗留 `FILE` 默认风格在项目缺少 `.clang-format` 时导致格式化失败，以及单次格式化跨 native/PRoot 模式执行的问题。
@@ -60,6 +61,7 @@
 
 - 新增格式化风格解析、图形运行协议、raylib NativeActivity 契约、动态库 SONAME 解析、ABI 下载源选择与 Registry 序列化回归测试。
 - 新增格式化进程 stdin/超时与编辑器条件回写回归测试。
+- 新增依赖包下载大小校验与相对 URL 补全后 ABI/大小/checksum/range 元数据保留测试。
 - Registry 校验新增 ABI 元数据一致性、单源大小与 SHA-256，以及独立归档不得夹带其他 ABI 库的检查。
 
 ### Documentation

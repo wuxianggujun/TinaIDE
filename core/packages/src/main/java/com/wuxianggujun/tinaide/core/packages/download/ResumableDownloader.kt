@@ -35,6 +35,7 @@ class ResumableDownloader(
         url: String,
         targetFile: File,
         checksum: String?,
+        expectedSize: Long? = null,
         supportsRange: Boolean = true,
         progress: (downloaded: Long, total: Long, speed: Long) -> Unit
     ): DownloadResult = withContext(Dispatchers.IO) {
@@ -126,6 +127,14 @@ class ResumableDownloader(
                 }
             }
 
+            val actualSize = tempFile.length()
+            if (expectedSize != null && actualSize != expectedSize) {
+                tempFile.delete()
+                return@withContext DownloadResult.Failed(
+                    DownloadError.SizeMismatch(expectedSize, actualSize)
+                )
+            }
+
             if (checksum != null) {
                 Timber.tag(TAG).d("Verifying checksum...")
                 val actualChecksum = calculateChecksum(tempFile, checksum)
@@ -193,11 +202,13 @@ sealed class DownloadResult {
 
 sealed class DownloadError {
     data class HttpError(val code: Int, val message: String) : DownloadError()
+    data class SizeMismatch(val expected: Long, val actual: Long) : DownloadError()
     data class ChecksumMismatch(val expected: String, val actual: String) : DownloadError()
     data class IOError(val message: String) : DownloadError()
 
     fun toDisplayMessage(): String = when (this) {
         is HttpError -> "HTTP $code: $message"
+        is SizeMismatch -> "Size mismatch: expected $expected bytes, got $actual bytes"
         is ChecksumMismatch -> "Checksum mismatch: expected $expected, got $actual"
         is IOError -> message
     }

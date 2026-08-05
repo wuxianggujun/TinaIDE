@@ -187,6 +187,27 @@ class PackageRegistryProtocolTest {
                             "is_latest": true
                           }
                         ]
+                      },
+                      "downloads": {
+                        "sdl3:2": {
+                          "package_id": "sdl3",
+                          "version": "3.2.0",
+                          "platform": "android",
+                          "install_type": "download",
+                          "size": 1024,
+                          "sources": [
+                            {
+                              "id": 7,
+                              "name": "Registry arm64-v8a",
+                              "url": "packages/sdl3/3.2.0/sdl3-arm64-v8a.tar.xz",
+                              "priority": 90,
+                              "supports_range": false,
+                              "abi": "arm64-v8a",
+                              "size": 768,
+                              "checksum": "sha256:arm64"
+                            }
+                          ]
+                        }
                       }
                     }
                     """.trimIndent()
@@ -202,7 +223,12 @@ class PackageRegistryProtocolTest {
         assertThat((versionsResult as ApiResult.Success).data.android?.single()?.version).isEqualTo("3.2.0")
         assertThat(downloadResult).isInstanceOf(ApiResult.Success::class.java)
         val downloadInfo = (downloadResult as ApiResult.Success).data
-        assertThat(downloadInfo.sources.first().url).isEqualTo("$baseUrl/packages/sdl3/3.2.0/sdl3.tar.xz")
+        val source = downloadInfo.sources.single()
+        assertThat(source.url).isEqualTo("$baseUrl/packages/sdl3/3.2.0/sdl3-arm64-v8a.tar.xz")
+        assertThat(source.abi).isEqualTo("arm64-v8a")
+        assertThat(source.size).isEqualTo(768)
+        assertThat(source.checksum).isEqualTo("sha256:arm64")
+        assertThat(source.supportsRange).isFalse()
         assertThat(interceptor.requestedUrls)
             .containsExactly(v2IndexUrl.url, detailUrl)
             .inOrder()

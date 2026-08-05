@@ -96,6 +96,7 @@ class DownloadPackageBackend(
                 url = source.url,
                 targetFile = archiveTarget.file,
                 checksum = source.checksum ?: downloadInfo.checksum,
+                expectedSize = source.size ?: downloadInfo.size,
                 supportsRange = source.supportsRange
             ) { downloaded, total, speed ->
                 progress(InstallProgressEvent.Downloading(downloaded, total, speed))
@@ -151,6 +152,7 @@ class DownloadPackageBackend(
 
         val error = when (lastError) {
             is DownloadError.HttpError -> InstallError.NetworkError("HTTP ${lastError.code}: ${lastError.message}")
+            is DownloadError.SizeMismatch -> InstallError.SizeMismatch(lastError.expected, lastError.actual)
             is DownloadError.ChecksumMismatch -> InstallError.ChecksumMismatch(lastError.expected, lastError.actual)
             is DownloadError.IOError -> InstallError.NetworkError(lastError.message)
             null -> InstallError.UnknownError("All download sources failed")

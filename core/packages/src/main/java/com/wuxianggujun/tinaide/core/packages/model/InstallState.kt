@@ -1,5 +1,8 @@
 package com.wuxianggujun.tinaide.core.packages.model
 
+import com.wuxianggujun.tinaide.core.i18n.Strings
+import com.wuxianggujun.tinaide.core.i18n.str
+
 data class PackageInstallState(
     val linux: PlatformInstallState = PlatformInstallState.NotInstalled,
     val android: PlatformInstallState = PlatformInstallState.NotInstalled
@@ -70,6 +73,7 @@ sealed class InstallResult {
 
 sealed class InstallError {
     data class NetworkError(val message: String) : InstallError()
+    data class SizeMismatch(val expected: Long, val actual: Long) : InstallError()
     data class ChecksumMismatch(val expected: String, val actual: String) : InstallError()
     data class DiskFull(val required: Long, val available: Long) : InstallError()
     data class ExtractionFailed(val message: String) : InstallError()
@@ -82,6 +86,7 @@ sealed class InstallError {
 
     fun toDisplayMessage(): String = when (this) {
         is NetworkError -> message
+        is SizeMismatch -> Strings.pkg_manager_error_download_size_mismatch.str(expected, actual)
         is ChecksumMismatch -> "Checksum mismatch: expected $expected, got $actual"
         is DiskFull -> "Disk full: need $required bytes, available $available bytes"
         is ExtractionFailed -> message
