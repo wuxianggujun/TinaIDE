@@ -192,7 +192,7 @@ class RopeTextBuffer(
             val contentUnchanged = rope.contentEquals(text)
             history.clear()
             if (contentUnchanged) {
-                null
+                false
             } else {
                 val previousEndPos = offsetToPositionInternal(previousLength)
                 val previousLineBreakCount = (lineIndex.lineCount - 1).coerceAtLeast(0)

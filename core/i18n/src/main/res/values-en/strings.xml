@@ -2076,6 +2076,7 @@
   <string name="btn_close_project">Exit</string>
   <string name="btn_close_and_forget">Close and Forget</string>
   <string name="toast_run_config_saved">Run configuration saved</string>
+  <string name="toast_run_config_save_failed">Failed to save run configuration</string>
   <string name="toast_git_init_success">Git repository initialized successfully</string>
   <string name="toast_debug_start_failed">Debug start failed: executable path not found</string>
   <string name="toast_compile_done_starting_debug">Compilation complete, starting debug...</string>

@@ -209,7 +209,7 @@ internal fun MainActivityDialogsSection(
     editorManager: IEditorManager,
     saveScope: CoroutineScope,
     onCloseProject: (forgetSession: Boolean) -> Unit,
-    onPersistRunConfigManager: (RunConfigurationManager) -> Unit,
+    onPersistRunConfigManager: (RunConfigurationManager) -> Boolean,
     onShowUnsavedExitDialogChange: (Boolean) -> Unit,
     onFinish: () -> Unit,
 ) {
@@ -461,7 +461,7 @@ internal fun MainActivityCloseProjectDialog(
 @Composable
 internal fun MainActivityRunConfigDialog(
     state: MainActivityBuildUiState,
-    onPersistRunConfigManager: (RunConfigurationManager) -> Unit,
+    onPersistRunConfigManager: (RunConfigurationManager) -> Boolean,
 ) {
     val context = LocalContext.current
     val currentConfig = state.editingConfig ?: return
@@ -478,10 +478,12 @@ internal fun MainActivityRunConfigDialog(
             } else {
                 state.runConfigManager.updateConfig(newConfig)
             }
-            state.updateRunConfigManager(updated)
-            onPersistRunConfigManager(updated)
-            state.closeRunConfigDialog()
-            context.toastSuccess(Strings.toast_run_config_saved.strOr(context))
+            if (state.commitRunConfigManager(updated, onPersistRunConfigManager)) {
+                state.closeRunConfigDialog()
+                context.toastSuccess(Strings.toast_run_config_saved.strOr(context))
+            } else {
+                context.toastError(Strings.toast_run_config_save_failed.strOr(context))
+            }
         },
         onDismiss = state::closeRunConfigDialog
     )

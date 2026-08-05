@@ -8,6 +8,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.wuxianggujun.tinaide.core.commands.HostCommandExecutor
+import com.wuxianggujun.tinaide.core.i18n.Strings
+import com.wuxianggujun.tinaide.core.i18n.strOr
+import com.wuxianggujun.tinaide.extensions.toastError
 import com.wuxianggujun.tinaide.plugin.PluginManager
 import com.wuxianggujun.tinaide.ui.DebugViewModel
 import com.wuxianggujun.tinaide.ui.MainActivityActionsDelegate
@@ -124,8 +127,9 @@ internal fun MainActivityTopBarHost(
         debugStatus = debugStatus,
         runConfigManager = buildUiState.runConfigManager,
         onRunConfigManagerChange = { updated ->
-            buildUiState.updateRunConfigManager(updated)
-            callbacks.onPersistRunConfigManager(updated)
+            if (!buildUiState.commitRunConfigManager(updated, callbacks.onPersistRunConfigManager)) {
+                context.toastError(Strings.toast_run_config_save_failed.strOr(context))
+            }
         },
         onEditConfig = buildUiState::startEditingConfig,
         onShowRunConfigDialog = buildUiState::openRunConfigDialog,

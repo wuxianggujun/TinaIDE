@@ -43,7 +43,7 @@ internal class MainActivityDialogsDependencies(
 
 internal class MainActivityDialogsCallbacks(
     val onCloseProject: (forgetSession: Boolean) -> Unit,
-    val onPersistRunConfigManager: (RunConfigurationManager) -> Unit,
+    val onPersistRunConfigManager: (RunConfigurationManager) -> Boolean,
     val onShowUnsavedExitDialogChange: (Boolean) -> Unit,
     val onFinish: () -> Unit,
 )
@@ -118,7 +118,7 @@ internal fun rememberMainActivityDialogsDependencies(
 @Composable
 internal fun rememberMainActivityDialogsCallbacks(
     onCloseProject: (forgetSession: Boolean) -> Unit,
-    onPersistRunConfigManager: (RunConfigurationManager) -> Unit,
+    onPersistRunConfigManager: (RunConfigurationManager) -> Boolean,
     onShowUnsavedExitDialogChange: (Boolean) -> Unit,
     onFinish: () -> Unit,
 ): MainActivityDialogsCallbacks = remember(

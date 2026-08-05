@@ -2680,6 +2680,7 @@
   <string name="btn_close_project">退出</string>
   <string name="btn_close_and_forget">关闭并忘记</string>
   <string name="toast_run_config_saved">运行配置已保存</string>
+  <string name="toast_run_config_save_failed">运行配置保存失败</string>
   <string name="toast_git_init_success">Git 仓库初始化成功</string>
   <string name="toast_debug_start_failed">调试启动失败：未获取到可执行文件路径</string>
   <string name="toast_compile_done_starting_debug">编译完成，正在启动调试...</string>

@@ -122,8 +122,13 @@ internal class MainActivityBuildUiState(
         editingConfig = config
     }
 
-    fun updateRunConfigManager(updated: RunConfigurationManager) {
+    fun commitRunConfigManager(
+        updated: RunConfigurationManager,
+        persist: (RunConfigurationManager) -> Boolean,
+    ): Boolean {
+        if (!persist(updated)) return false
         runConfigManager = updated
+        return true
     }
 
     fun openApkPackageDialog() {

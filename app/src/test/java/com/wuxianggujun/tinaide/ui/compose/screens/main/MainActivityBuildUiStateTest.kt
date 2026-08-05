@@ -57,4 +57,51 @@ class MainActivityBuildUiStateTest {
         state.closeApkPackageDialog()
         assertThat(state.showApkPackageDialog).isFalse()
     }
+
+    @Test
+    fun commitRunConfigManager_whenPersistenceSucceeds_shouldUpdateState() {
+        val initialManager = runConfigManagerWithSelectedName("Debug")
+        val updatedManager = runConfigManagerWithSelectedName("Release")
+        val state = MainActivityBuildUiState(initialManager)
+
+        val committed = state.commitRunConfigManager(updatedManager) { true }
+
+        assertThat(committed).isTrue()
+        assertThat(state.runConfigManager).isEqualTo(updatedManager)
+    }
+
+    @Test
+    fun commitRunConfigManager_whenPersistenceFails_shouldKeepPreviousState() {
+        val initialManager = runConfigManagerWithSelectedName("Debug")
+        val updatedManager = runConfigManagerWithSelectedName("Release")
+        val state = MainActivityBuildUiState(initialManager)
+
+        val committed = state.commitRunConfigManager(updatedManager) { false }
+
+        assertThat(committed).isFalse()
+        assertThat(state.runConfigManager).isEqualTo(initialManager)
+    }
+
+    @Test
+    fun commitRunConfigManager_whenPersistenceFails_shouldKeepPreviousSelection() {
+        val debugConfig = RunConfiguration(name = "Debug")
+        val releaseConfig = RunConfiguration(name = "Release")
+        val initialManager = RunConfigurationManager(
+            configurations = listOf(debugConfig, releaseConfig),
+            selectedId = debugConfig.id
+        )
+        val state = MainActivityBuildUiState(initialManager)
+
+        state.commitRunConfigManager(initialManager.selectConfig(releaseConfig.id)) { false }
+
+        assertThat(state.runConfigManager.selectedConfig).isEqualTo(debugConfig)
+    }
+
+    private fun runConfigManagerWithSelectedName(name: String): RunConfigurationManager {
+        val config = RunConfiguration(name = name)
+        return RunConfigurationManager(
+            configurations = listOf(config),
+            selectedId = config.id
+        )
+    }
 }
