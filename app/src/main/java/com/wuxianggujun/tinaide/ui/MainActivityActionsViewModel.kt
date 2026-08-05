@@ -31,11 +31,13 @@ import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveEditableEditorSnap
 import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveEditorCommandResult
 import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveSaveTarget
 import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveSaveTargetResult
+import com.wuxianggujun.tinaide.ui.compose.state.editor.ConditionalEditorTextReplaceResult
 import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState
 import com.wuxianggujun.tinaide.ui.compose.state.editor.TextEditOperation
 import java.io.File
 import java.net.URI
 import java.nio.charset.Charset
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.Channel
@@ -348,11 +350,13 @@ class MainActivityActionsViewModel(
         }
         val file = formatTarget.file
         val content = formatTarget.text
-
-        val extension = file.extension.lowercase()
+        val formatter = CodeFormatter(
+            context = context,
+            linuxEnvironmentProvider = linuxEnvironmentProvider
+        )
 
         // 检查是否支持格式化
-        if (extension !in CxxFileSupport.editorRelatedExtensions) {
+        if (!formatter.isSupported(file)) {
             showToast(Strings.toast_file_type_not_support_format.strOr(context), ToastType.INFO)
             return
         }
@@ -361,11 +365,6 @@ class MainActivityActionsViewModel(
             showToast(Strings.toast_formatting.strOr(context), ToastType.INFO)
 
             try {
-                val formatter = CodeFormatter(
-                    context = context,
-                    linuxEnvironmentProvider = linuxEnvironmentProvider
-                )
-
                 // 检查 clang-format 是否可用
                 if (!formatter.isAvailable()) {
                     showToast(Strings.toast_clang_format_not_available.strOr(context), ToastType.ERROR)
@@ -384,7 +383,7 @@ class MainActivityActionsViewModel(
                         withContext(Dispatchers.Main) {
                             applyFormattedContent(
                                 editorContainerState = editorContainerState,
-                                originalContent = content,
+                                formatTarget = formatTarget,
                                 formattedContent = result.formattedContent
                             )
                         }
@@ -393,6 +392,8 @@ class MainActivityActionsViewModel(
                         showToast(Strings.toast_format_failed.strOr(context, result.message), ToastType.ERROR)
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 showToast(Strings.toast_format_error.strOr(context, e.message ?: ""), ToastType.ERROR)
             }
@@ -404,17 +405,24 @@ class MainActivityActionsViewModel(
      */
     private fun applyFormattedContent(
         editorContainerState: EditorContainerState,
-        originalContent: String,
+        formatTarget: ActiveEditableEditorSnapshot,
         formattedContent: String
     ) {
-        if (formattedContent != originalContent) {
-            if (editorContainerState.replaceActiveTabText(formattedContent)) {
+        when (
+            editorContainerState.replaceTextInTabIfUnchanged(
+                tabId = formatTarget.tabId,
+                expectedText = formatTarget.text,
+                newText = formattedContent,
+            )
+        ) {
+            ConditionalEditorTextReplaceResult.REPLACED ->
                 showToast(Strings.toast_format_done.strOr(context), ToastType.SUCCESS)
-            } else {
+            ConditionalEditorTextReplaceResult.UNCHANGED ->
+                showToast(Strings.toast_code_already_formatted.strOr(context), ToastType.INFO)
+            ConditionalEditorTextReplaceResult.CONTENT_CHANGED ->
+                showToast(Strings.toast_format_source_changed.strOr(context), ToastType.INFO)
+            ConditionalEditorTextReplaceResult.TARGET_UNAVAILABLE ->
                 showToast(Strings.toast_file_not_support_format.strOr(context), ToastType.INFO)
-            }
-        } else {
-            showToast(Strings.toast_code_already_formatted.strOr(context), ToastType.INFO)
         }
     }
 

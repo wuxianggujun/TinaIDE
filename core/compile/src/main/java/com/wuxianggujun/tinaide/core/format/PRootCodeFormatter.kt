@@ -211,6 +211,8 @@ class PRootCodeFormatter(
         endLine: Int,
         style: FormatStyle? = null
     ): FormatResult {
+        validateGuestPathOrError(fileName)?.let { return it }
+
         val effectiveStyle = style ?: resolveFormatStyle(fileName)
         val command = buildFormatCommand(fileName, effectiveStyle, FormatOptions()).toMutableList()
         command.add("--lines=$startLine:$endLine")
@@ -253,7 +255,7 @@ class PRootCodeFormatter(
     /**
      * 检查指定目录或其父目录中是否存在 .clang-format 文件
      */
-    fun hasClangFormatFile(directory: File?, maxDepth: Int = 10): Boolean =
+    fun hasClangFormatFile(directory: File?, maxDepth: Int = Int.MAX_VALUE): Boolean =
         styleResolver.hasClangFormatFile(directory, maxDepth)
 
     // ========== 配置管理委托 ==========

@@ -38,6 +38,22 @@ class FormatStyleResolverTest {
     }
 
     @Test
+    fun resolve_withClangFormatAboveTenLevels_prefersProjectConfig() {
+        val projectDir = tempFolder.newFolder("deep-clang-format-project")
+        projectDir.resolve(".clang-format").writeText("BasedOnStyle: GNU")
+        var sourceDir = projectDir
+        repeat(12) { level ->
+            sourceDir = sourceDir.resolve("level-$level").apply { mkdir() }
+        }
+        val sourceFile = sourceDir.resolve("main.cpp").apply {
+            writeText("int main() { return 0; }")
+        }
+        val resolver = FormatStyleResolver { "GOOGLE" }
+
+        assertThat(resolver.resolve(sourceFile)).isSameInstanceAs(FormatStyle.FILE)
+    }
+
+    @Test
     fun resolve_withUnderscoreClangFormat_prefersProjectConfig() {
         val projectDir = tempFolder.newFolder("underscore-clang-format-project")
         projectDir.resolve("_clang-format").writeText("BasedOnStyle: WebKit")
@@ -53,6 +69,14 @@ class FormatStyleResolverTest {
     fun resolve_withUnknownUserValue_fallsBackToLlvm() {
         val sourceFile = tempFolder.newFile("main.cpp")
         val resolver = FormatStyleResolver { "unknown-style" }
+
+        assertThat(resolver.resolve(sourceFile)).isSameInstanceAs(FormatStyle.LLVM)
+    }
+
+    @Test
+    fun resolve_withoutProjectConfigAndLegacyFilePreference_fallsBackToLlvm() {
+        val sourceFile = tempFolder.newFile("legacy-file-style.cpp")
+        val resolver = FormatStyleResolver { "FILE" }
 
         assertThat(resolver.resolve(sourceFile)).isSameInstanceAs(FormatStyle.LLVM)
     }

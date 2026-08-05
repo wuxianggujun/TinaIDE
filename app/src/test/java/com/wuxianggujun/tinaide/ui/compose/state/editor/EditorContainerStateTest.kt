@@ -394,6 +394,7 @@ class EditorContainerStateTest {
             .isEqualTo(
                 ActiveEditableEditorSnapshotResult.Success(
                     ActiveEditableEditorSnapshot(
+                        tabId = "tab-1",
                         file = File(context.cacheDir, "EditorContainerStateTest.kt"),
                         text = ""
                     )
@@ -690,11 +691,68 @@ class EditorContainerStateTest {
             .isEqualTo(
                 ActiveEditableEditorSnapshotResult.Success(
                     snapshot = ActiveEditableEditorSnapshot(
+                        tabId = "tab-1",
                         file = File(context.cacheDir, "EditorContainerStateTest.kt"),
                         text = "fun test() = Unit"
                     )
                 )
             )
+    }
+
+    @Test
+    fun replaceTextInTabIfUnchanged_targetsSnapshotTabAndRejectsStaleContent() {
+        val firstFile = File(context.cacheDir, "First.kt")
+        val secondFile = File(context.cacheDir, "Second.kt")
+        setTabs(
+            managerTabs = listOf(
+                EditorTab(id = "tab-1", file = firstFile),
+                EditorTab(id = "tab-2", file = secondFile),
+            ),
+            activeTabId = "tab-2",
+        )
+        var firstText = "original"
+        var secondText = "second"
+        state.registerCodeEditorCallback(
+            tabId = "tab-1",
+            callback = testCodeEditorCallback(
+                readAllText = { firstText },
+                replaceWholeText = { text ->
+                    firstText = text
+                    true
+                },
+            ),
+        )
+        state.registerCodeEditorCallback(
+            tabId = "tab-2",
+            callback = testCodeEditorCallback(
+                readAllText = { secondText },
+                replaceWholeText = { text ->
+                    secondText = text
+                    true
+                },
+            ),
+        )
+
+        assertThat(
+            state.replaceTextInTabIfUnchanged(
+                tabId = "tab-1",
+                expectedText = "original",
+                newText = "formatted",
+            )
+        ).isEqualTo(ConditionalEditorTextReplaceResult.REPLACED)
+        assertThat(firstText).isEqualTo("formatted")
+        assertThat(secondText).isEqualTo("second")
+
+        firstText = "user edit"
+
+        assertThat(
+            state.replaceTextInTabIfUnchanged(
+                tabId = "tab-1",
+                expectedText = "formatted",
+                newText = "stale formatter result",
+            )
+        ).isEqualTo(ConditionalEditorTextReplaceResult.CONTENT_CHANGED)
+        assertThat(firstText).isEqualTo("user edit")
     }
 
     @Test
@@ -1695,6 +1753,26 @@ class EditorContainerStateTest {
             file = File(context.cacheDir, "File$index.kt")
         )
     }
+
+    private fun testCodeEditorCallback(
+        readAllText: () -> String,
+        replaceWholeText: (String) -> Boolean,
+    ): CodeEditorCallback = CodeEditorCallback(
+        goToPosition = { _, _ -> false },
+        selectAll = { false },
+        replaceSelection = { false },
+        replaceWholeText = replaceWholeText,
+        applyTextEdits = { false },
+        toggleLineComment = { false },
+        replaceAll = { _, _, _, _ -> 0 },
+        undo = { false },
+        redo = { false },
+        insertTextAtCursor = {},
+        cursorPosition = { CursorSnapshot(0, 0) },
+        setSelectionRange = { _, _, _, _ -> false },
+        readAllText = readAllText,
+        readSelection = { null },
+    )
 
     private fun newEditorContainerState(manager: IEditorManager = editorManager): EditorContainerState = EditorContainerState(
         context = context,

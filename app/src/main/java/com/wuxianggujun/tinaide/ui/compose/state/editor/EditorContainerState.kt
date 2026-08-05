@@ -112,6 +112,7 @@ class EditorContainerState(
         object NoOpenFile : ActiveEditableEditorBindingResult
         object UnsupportedEditor : ActiveEditableEditorBindingResult
         data class Available(
+            val tabId: String,
             val file: File,
             val callback: CodeEditorCallback
         ) : ActiveEditableEditorBindingResult
@@ -683,6 +684,7 @@ class EditorContainerState(
         ActiveEditableEditorBindingResult.UnsupportedEditor -> ActiveEditableEditorSnapshotResult.UnsupportedEditor
         is ActiveEditableEditorBindingResult.Available -> ActiveEditableEditorSnapshotResult.Success(
             ActiveEditableEditorSnapshot(
+                tabId = activeEditor.tabId,
                 file = activeEditor.file,
                 text = activeEditor.callback.readAllText()
             )
@@ -774,6 +776,31 @@ class EditorContainerState(
 
     internal fun replaceTextInTab(tabId: String, text: String): Boolean =
         codeCallbackRegistry.get(tabId)?.replaceWholeText?.invoke(text) ?: false
+
+    internal fun replaceTextInTabIfUnchanged(
+        tabId: String,
+        expectedText: String,
+        newText: String,
+    ): ConditionalEditorTextReplaceResult {
+        val tab = tabManager.findTab(tabId)
+            ?: return ConditionalEditorTextReplaceResult.TARGET_UNAVAILABLE
+        if (!isCodeEditableType(tab.contentType)) {
+            return ConditionalEditorTextReplaceResult.TARGET_UNAVAILABLE
+        }
+        val callback = codeCallbackRegistry.get(tabId)
+            ?: return ConditionalEditorTextReplaceResult.TARGET_UNAVAILABLE
+        if (callback.readAllText() != expectedText) {
+            return ConditionalEditorTextReplaceResult.CONTENT_CHANGED
+        }
+        if (newText == expectedText) {
+            return ConditionalEditorTextReplaceResult.UNCHANGED
+        }
+        return if (callback.replaceWholeText(newText)) {
+            ConditionalEditorTextReplaceResult.REPLACED
+        } else {
+            ConditionalEditorTextReplaceResult.TARGET_UNAVAILABLE
+        }
+    }
 
     fun applyTextEditsInActiveTab(edits: List<TextEditOperation>): Boolean {
         val activeTab = getActiveTab() ?: return false
@@ -1701,6 +1728,7 @@ class EditorContainerState(
         val callback = codeCallbackRegistry.get(activeTab.id)
             ?: return ActiveEditableEditorBindingResult.UnsupportedEditor
         return ActiveEditableEditorBindingResult.Available(
+            tabId = activeTab.id,
             file = activeTab.file,
             callback = callback
         )

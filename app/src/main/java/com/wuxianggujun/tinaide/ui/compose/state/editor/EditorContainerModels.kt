@@ -13,9 +13,17 @@ data class NavigationHistoryEntry(
 )
 
 data class ActiveEditableEditorSnapshot(
+    val tabId: String,
     val file: File,
     val text: String
 )
+
+enum class ConditionalEditorTextReplaceResult {
+    REPLACED,
+    UNCHANGED,
+    CONTENT_CHANGED,
+    TARGET_UNAVAILABLE,
+}
 
 data class ActivePluginEditorContext(
     val tabId: String,

@@ -1,13 +1,14 @@
 package com.wuxianggujun.tinaide.core.format
 
 import android.content.Context
+import com.wuxianggujun.tinaide.core.compile.BuildProcessRunner
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.core.lang.CxxFileSupport
 import com.wuxianggujun.tinaide.core.ndk.AndroidNativeToolchainManager
 import com.wuxianggujun.tinaide.core.util.NativeExecutableRunner
 import java.io.File
-import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CancellationException
 import timber.log.Timber
 
 /**
@@ -83,7 +84,12 @@ class NativeCodeFormatter(
                 timeout = VERSION_CHECK_TIMEOUT
             )
 
-            if (result.exitCode == 0) {
+            if (result.timedOut) {
+                AvailabilityResult.NotAvailable(
+                    path = clangFormatBinary.absolutePath,
+                    reason = formatTimeoutMessage(VERSION_CHECK_TIMEOUT),
+                )
+            } else if (result.exitCode == 0) {
                 val version = result.output.lines().firstOrNull()?.trim()
                 AvailabilityResult.Available(clangFormatBinary.absolutePath, version)
             } else {
@@ -92,6 +98,8 @@ class NativeCodeFormatter(
                     reason = result.output.take(200)
                 )
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Timber.tag(TAG).e(e, "Failed to check clang-format availability")
             AvailabilityResult.NotAvailable(
@@ -142,14 +150,8 @@ class NativeCodeFormatter(
             stdin = content
         )
 
-        return if (result.exitCode == 0) {
-            FormatResult.Success(result.output)
-        } else {
-            FormatResult.Error(
-                message = result.output.ifBlank { Strings.format_failed_simple.strOr(appContext) },
-                exitCode = result.exitCode
-            )
-        }
+        result.toFormatError(FORMAT_TIMEOUT)?.let { return it }
+        return FormatResult.Success(result.output)
     }
 
     /**
@@ -188,18 +190,12 @@ class NativeCodeFormatter(
             timeout = FORMAT_TIMEOUT
         )
 
-        return if (result.exitCode == 0) {
-            if (inPlace) {
-                // inPlace 模式下，clang-format 直接修改文件，stdout 为空
-                FormatResult.Success("")
-            } else {
-                FormatResult.Success(result.output)
-            }
+        result.toFormatError(FORMAT_TIMEOUT)?.let { return it }
+        return if (inPlace) {
+            // inPlace 模式下，clang-format 直接修改文件，stdout 为空
+            FormatResult.Success("")
         } else {
-            FormatResult.Error(
-                message = result.output.ifBlank { Strings.format_failed_simple.strOr(appContext) },
-                exitCode = result.exitCode
-            )
+            FormatResult.Success(result.output)
         }
     }
 
@@ -233,14 +229,8 @@ class NativeCodeFormatter(
             stdin = content
         )
 
-        return if (result.exitCode == 0) {
-            FormatResult.Success(result.output)
-        } else {
-            FormatResult.Error(
-                message = result.output.ifBlank { Strings.format_failed_simple.strOr(appContext) },
-                exitCode = result.exitCode
-            )
-        }
+        result.toFormatError(FORMAT_TIMEOUT)?.let { return it }
+        return FormatResult.Success(result.output)
     }
 
     // ========== 风格解析 ==========
@@ -262,7 +252,7 @@ class NativeCodeFormatter(
     /**
      * 检查指定目录或其父目录中是否存在 .clang-format 文件
      */
-    fun hasClangFormatFile(directory: File?, maxDepth: Int = 10): Boolean =
+    fun hasClangFormatFile(directory: File?, maxDepth: Int = Int.MAX_VALUE): Boolean =
         styleResolver.hasClangFormatFile(directory, maxDepth)
 
     // ========== 配置管理委托 ==========
@@ -347,47 +337,50 @@ class NativeCodeFormatter(
             redirectErrorStream(true)
         }
 
-        val process = processBuilder.start()
-        val output = StringBuilder()
-
-        // 写入 stdin（如果有）
-        if (stdin != null) {
-            process.outputStream.bufferedWriter().use { writer ->
-                writer.write(stdin)
-            }
-        }
-
-        // 读取输出
-        process.inputStream.bufferedReader().use { reader ->
-            reader.lineSequence().forEach { line ->
-                output.appendLine(line)
+        val result = BuildProcessRunner.run(
+            processBuilder = processBuilder,
+            commandLabel = "clang-format:${File(executable).name}",
+            timeoutMs = timeout,
+            stdin = stdin,
+            onOutputLine = { line ->
                 Timber.tag(TAG).v(line)
-            }
-        }
-
-        // 等待进程结束
-        val finished = process.waitFor(timeout, TimeUnit.MILLISECONDS)
-        val exitCode = if (finished) {
-            process.exitValue()
-        } else {
-            process.destroy()
-            -1
-        }
+            },
+        )
 
         CommandResult(
-            exitCode = exitCode,
-            output = output.toString()
+            exitCode = result.exitCode,
+            output = result.output,
+            timedOut = result.timedOut,
         )
+    } catch (e: CancellationException) {
+        throw e
     } catch (e: Exception) {
         Timber.tag(TAG).e(e, "Failed to execute native command")
         CommandResult(
             exitCode = -1,
-            output = "Exception: ${e.message}"
+            output = "Exception: ${e.message}",
+            timedOut = false,
         )
     }
 
+    private fun CommandResult.toFormatError(timeoutMs: Long): FormatResult.Error? = when {
+        timedOut -> FormatResult.Error(
+            message = formatTimeoutMessage(timeoutMs),
+            exitCode = exitCode,
+        )
+        exitCode != 0 -> FormatResult.Error(
+            message = output.ifBlank { Strings.format_failed_simple.strOr(appContext) },
+            exitCode = exitCode,
+        )
+        else -> null
+    }
+
+    private fun formatTimeoutMessage(timeoutMs: Long): String =
+        Strings.format_process_timed_out.strOr(appContext, timeoutMs / 1_000L)
+
     private data class CommandResult(
         val exitCode: Int,
-        val output: String
+        val output: String,
+        val timedOut: Boolean,
     )
 }

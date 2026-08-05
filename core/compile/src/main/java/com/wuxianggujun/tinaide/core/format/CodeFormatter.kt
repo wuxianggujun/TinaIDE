@@ -33,12 +33,13 @@ class CodeFormatter(
         private const val TAG = "CodeFormatter"
     }
 
-    // 根据配置选择执行器
-    private val useNativeMode: Boolean
-        get() = LinuxRunModePolicy.resolve(
+    // 每次格式化命令创建一个实例，并在首次使用时固定执行模式，避免同一命令跨后端执行。
+    private val useNativeMode: Boolean by lazy {
+        LinuxRunModePolicy.resolve(
             configuredMode = Prefs.clangFormatRunMode,
             linuxEnvironmentAvailable = linuxEnvironmentProvider.get().isAvailable()
         ) == LinuxRunModePolicy.RunMode.NATIVE
+    }
 
     private val styleResolver = FormatStyleResolver()
 
@@ -79,20 +80,12 @@ class CodeFormatter(
     /**
      * 检查文件是否支持格式化
      */
-    fun isSupported(file: File): Boolean = if (useNativeMode) {
-        nativeFormatter.isSupported(file)
-    } else {
-        prootFormatter.isSupported(file)
-    }
+    fun isSupported(file: File): Boolean = file.extension.lowercase() in supportedExtensions
 
     /**
      * 检查文件是否支持格式化（通过扩展名）
      */
-    fun isSupported(extension: String): Boolean = if (useNativeMode) {
-        nativeFormatter.isSupported(extension)
-    } else {
-        prootFormatter.isSupported(extension)
-    }
+    fun isSupported(extension: String): Boolean = extension.removePrefix(".").lowercase() in supportedExtensions
 
     /**
      * 检查 clang-format 是否可用
@@ -235,7 +228,7 @@ class CodeFormatter(
     /**
      * 检查指定目录或其父目录中是否存在 .clang-format 文件
      */
-    fun hasClangFormatFile(directory: File?, maxDepth: Int = 10): Boolean =
+    fun hasClangFormatFile(directory: File?, maxDepth: Int = Int.MAX_VALUE): Boolean =
         styleResolver.hasClangFormatFile(directory, maxDepth)
 
     // ========== 配置管理委托 ==========

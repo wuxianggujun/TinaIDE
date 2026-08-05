@@ -2107,10 +2107,12 @@
   <string name="toast_formatting">Formatting...</string>
   <string name="toast_clang_format_not_available">clang-format not available, please install compiler toolchain first</string>
   <string name="toast_format_done">Formatting complete</string>
+  <string name="toast_format_source_changed">The file changed while formatting; the latest content was preserved</string>
   <string name="toast_code_already_formatted">Code is already formatted</string>
   <string name="toast_format_failed">Format failed: %1$s</string>
   <string name="toast_format_error">Format error: %1$s</string>
   <string name="format_failed_simple">Format failed</string>
+  <string name="format_process_timed_out">clang-format timed out after %1$d seconds</string>
   <string name="toast_preparing_debug">Preparing debug session...</string>
   <string name="toast_compiling">Compiling...</string>
 

@@ -27,6 +27,41 @@ class BuildProcessRunnerTest {
     }
 
     @Test
+    fun `run writes stdin and captures output`() = runBlocking {
+        val command = stdinEchoCommand()
+        assumeTrue("No supported shell for stdin test", command.isNotEmpty())
+
+        val result = BuildProcessRunner.run(
+            processBuilder = ProcessBuilder(command).redirectErrorStream(true),
+            commandLabel = "stdin-test",
+            timeoutMs = 2_000L,
+            stdin = "formatter input",
+        )
+
+        assertThat(result.timedOut).isFalse()
+        assertThat(result.exitCode).isEqualTo(0)
+        assertThat(result.output).contains("formatter input")
+    }
+
+    @Test
+    fun `run times out when child does not consume stdin`() = runBlocking {
+        val command = timeoutCommand()
+        assumeTrue("No supported shell for stdin timeout test", command.isNotEmpty())
+
+        val result = BuildProcessRunner.run(
+            processBuilder = ProcessBuilder(command).redirectErrorStream(true),
+            commandLabel = "stdin-timeout-test",
+            timeoutMs = 250L,
+            stdin = "x".repeat(1_000_000),
+            forceKillGraceMs = 100L,
+            readerJoinTimeoutMs = 500L,
+        )
+
+        assertThat(result.timedOut).isTrue()
+        assertThat(result.exitCode).isEqualTo(-1)
+    }
+
+    @Test
     fun `command temp dir is removed safely`() {
         val cacheDir = Files.createTempDirectory("build-cache").toFile()
         val tempDir = BuildResourceCleaner.createCommandTempDir(cacheDir, "unit-test")
@@ -74,6 +109,20 @@ class BuildProcessRunnerTest {
             )
         } else {
             listOf("sh", "-c", "printf 'start\\n'; sleep 5; printf 'end\\n'")
+        }
+    }
+
+    private fun stdinEchoCommand(): List<String> {
+        val osName = System.getProperty("os.name").orEmpty().lowercase()
+        return if (osName.contains("windows")) {
+            listOf(
+                "powershell",
+                "-NoProfile",
+                "-Command",
+                "[Console]::Out.Write([Console]::In.ReadToEnd())",
+            )
+        } else {
+            listOf("sh", "-c", "cat")
         }
     }
 }

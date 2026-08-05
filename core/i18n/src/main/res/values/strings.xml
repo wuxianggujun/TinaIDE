@@ -2711,10 +2711,12 @@
   <string name="toast_formatting">正在格式化...</string>
   <string name="toast_clang_format_not_available">clang-format 不可用，请先安装编译工具链</string>
   <string name="toast_format_done">格式化完成</string>
+  <string name="toast_format_source_changed">文件在格式化期间已更改，已保留最新内容</string>
   <string name="toast_code_already_formatted">代码已是格式化状态</string>
   <string name="toast_format_failed">格式化失败: %1$s</string>
   <string name="toast_format_error">格式化出错: %1$s</string>
   <string name="format_failed_simple">格式化失败</string>
+  <string name="format_process_timed_out">clang-format 执行超时（%1$d 秒）</string>
   <string name="toast_preparing_debug">正在准备调试会话...</string>
   <string name="toast_compiling">正在编译...</string>
 

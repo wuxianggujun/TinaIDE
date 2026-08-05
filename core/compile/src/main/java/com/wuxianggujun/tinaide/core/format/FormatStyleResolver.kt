@@ -20,7 +20,10 @@ internal class FormatStyleResolver(
         }
     }
 
-    fun getUserDefaultStyle(): FormatStyle = FormatStyle.fromString(userStyleNameProvider())
+    fun getUserDefaultStyle(): FormatStyle = when (val style = FormatStyle.fromString(userStyleNameProvider())) {
+        FormatStyle.FILE -> FormatStyle.LLVM
+        else -> style
+    }
 
     fun hasClangFormatFile(directory: File?, maxDepth: Int = DEFAULT_SEARCH_DEPTH): Boolean {
         var currentDir = directory
@@ -45,7 +48,7 @@ internal class FormatStyleResolver(
 
     private companion object {
         private const val TAG = "FormatStyleResolver"
-        private const val DEFAULT_SEARCH_DEPTH = 10
+        private const val DEFAULT_SEARCH_DEPTH = Int.MAX_VALUE
         private val PROJECT_CONFIG_NAMES = listOf(".clang-format", "_clang-format")
     }
 }
