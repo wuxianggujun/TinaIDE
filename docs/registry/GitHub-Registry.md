@@ -75,7 +75,8 @@ Registry 默认不生成 v1 全量索引；确需服务更旧客户端时才显�
 Linux distro 使用独立的 `linux-distro/manifest.v1.json` 协议。它不是市场 v1 fallback：
 显式刷新时按新鲜缓存、Registry 多端点、过期缓存、内置 asset 的顺序回落；启动和普通列表读取不会隐式请求网络。manifest 中的 artifact 保留官方 URL，`mirrors` 只负责派生替代下载地址，最终内容仍必须通过 SHA-256 校验。
 
-`download_url` 和 `download_sources[].url` 支持两种写法：
+`download_url`、兼容模型中的 `download_sources[].url`，以及 v2 详情中的
+`downloads["<package-id>:<version-id>"].sources[].url` 支持两种写法：
 
 - 绝对 URL：客户端原样访问。
 - 相对路径：客户端会拼到本次成功加载索引的 Registry base 后面。
@@ -412,6 +413,20 @@ Android 仓库已经移除 `PluginRegistryIndex` / `PackageRegistryIndex` 生产
 
 `downloads` 的 key 保持 `<package-id>:<version-id>`，与 v1 全量索引一致。
 
+### 客户端下载源选择与完整性校验
+
+当前 Android 客户端按以下顺序处理依赖包下载：
+
+1. 从已安装 APK 的 native library 目录识别 App 实际 ABI；无法识别时才回落到设备报告的首选 ABI。这样在存在 native bridge 的设备上也不会仅凭 `Build.SUPPORTED_ABIS` 误选制品。
+2. 如果存在与当前 ABI 匹配的 source，只保留这些 source 并按 `priority` 降序尝试；不会因为无 ABI 通用源优先级更高而下载双 ABI 包。
+3. 没有匹配的 ABI source 时，只允许回落到未声明 `abi` 的旧通用 source；其他 ABI 的 source 永远不会进入候选列表。
+4. 相对 URL 展开为 Registry、CDN 或代理候选时，客户端会完整保留原 source 的 `abi`、`size`、`checksum` 和 `supports_range`。
+5. 每个候选优先使用 source 自己的 `size` 与 `checksum`，仅在字段缺失时回落到下载信息顶层值。ABI 独立 source 应始终写自己的值，不应依赖这个兼容回落。
+6. 下载先写入临时文件。接收完成后先比较压缩归档的实际字节数，再校验 checksum；两项都通过后才替换正式缓存文件并进入归档识别和解压。
+7. HTTP、大小、checksum 或归档识别失败时，客户端会尝试下一个已选候选。大小或 checksum 不匹配会删除无效临时文件，但不会覆盖已经存在的正式缓存文件；主动取消会保留临时文件，source 支持 Range 时后续下载可以继续使用。
+
+`supports_range` 只声明 source 是否支持断点续传，不会放宽大小或 checksum 校验。
+
 ### SDL2 Android runtime
 
 SDL2 在仓库中的逻辑包 ID 固定为 `sdl2`。推荐发布字段如下：
@@ -529,10 +544,19 @@ Android 依赖包不按 ABI 拆成多个逻辑包。一个库只保留一个 `pa
 - `source` / `header` 包不写 `abi`，表示所有 ABI 都可安装。
 - `static` / `shared` / `executable` 包必须写 `abi`。
 - 客户端以当前 APK 实际 native ABI 选择下载源，并在下载前拦截不匹配的 Android ABI。
-- `download_sources[].abi` 标识单个归档的 ABI；`size` 和 `checksum` 必须对应该归档本身。
+- `downloads["<package-id>:<version-id>"].sources[].abi` 标识单个归档的 ABI；source 的 `size` 必须是压缩归档的精确字节数，`checksum` 必须对应该归档本身。
 - 为兼容旧客户端，可以保留无 `abi` 的通用源并设置更高优先级；新客户端检测到匹配
   ABI 的源时只使用匹配源，不会回退下载通用双 ABI 包。
 - ABI 独立归档只包含自己的 `lib/<abi>/`。不得在 ARM64 独立归档中携带 `lib/x86_64/`。
+- source 缺少 `size` 或 `checksum` 时客户端虽然会回落顶层值，但 ABI 独立归档大小通常不同；发布端不能把通用包元数据复用于 ABI 独立 source。
+
+发布前必须在 Registry 仓库运行：
+
+```powershell
+pwsh ./scripts/validate-registry.ps1
+```
+
+对于 Registry 内的相对路径制品，该脚本会核对文件大小、SHA-256、声明 ABI 与 source ABI 集合，并检查 ABI 独立归档包含自己的 `lib/<abi>/` 且不夹带其他已声明 ABI 的库。绝对外部 URL 无法依赖仓库本地文件校验，发布者应在上传前完成同等检查。
 
 客户端会继续保留本地安装状态、下载历史、缓存与插件系统能力。
 需要账号系统的互动和审核能力不在公开客户端实现。

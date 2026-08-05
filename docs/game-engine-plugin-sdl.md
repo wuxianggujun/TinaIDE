@@ -1,6 +1,6 @@
 # 游戏引擎插件图形运行方案
 
-本文记录 TinaIDE 当前的原生图形运行支持。SDL2/SDL3 使用 SDL 图形宿主；raylib 等导出 `ANativeActivity_onCreate` 的共享库使用独立 NativeActivity 宿主。两条链路共享 `.so` 构建能力，但不共享入口约定。
+本文记录 TinaIDE 当前的原生图形运行支持。SDL2/SDL3 使用 SDL 图形宿主；raylib 等“用户共享库导出普通 `main`、图形 runtime 提供 `ANativeActivity_onCreate`”的项目使用独立 NativeActivity 宿主。两条链路共享 `.so` 构建能力和运行界面外壳，但不共享入口约定。
 
 ## 目标体验
 
@@ -9,14 +9,25 @@
   ↓
 新建项目中出现插件模板
   ↓
-模板生成 SDL/CMake 项目
+模板生成 SDL/CMake 或 NativeActivity/CMake 项目
   ↓
 点击运行
   ↓
-TinaIDE 通过 SDL 运行时打开运行界面
+TinaIDE 按运行配置选择 SDL2、SDL3 或 NativeActivity 宿主
+  ↓
+渲染界面保留统一的悬浮返回、退出确认和可选日志入口
 ```
 
-Android 依赖库不能像桌面程序一样自行创建窗口。插件应提供项目模板、构建配置和运行配置，实际图形窗口由 TinaIDE 的 SDL 或 NativeActivity 运行宿主承载。TinaIDE 不再暴露自研 GUI API 给插件或普通项目调用。
+Android 图形项目不能把桌面窗口创建流程直接搬到 App 中。插件应提供项目模板、构建配置和运行配置，Activity、窗口生命周期与图形表面由 TinaIDE 的 SDL 或 NativeActivity 运行宿主承载。TinaIDE 不再暴露自研 GUI API 给插件或普通项目调用。
+
+## 统一图形运行外壳
+
+SDL2、SDL3 与 NativeActivity Activity 都通过 `GraphicalRuntimeActivityHost` 接入同一套生命周期、stdout/stderr 重定向和返回编辑器逻辑，并把 `GraphicalRuntimeOverlay` 叠加在各自的渲染表面上方。
+
+- 可拖拽的悬浮返回按钮始终显示，点击后先弹出退出确认，不因渲染库变化而改变操作习惯。
+- `enableFloatingLog` 只控制额外的日志按钮和日志面板，不会隐藏返回按钮。
+- `ContextCompileGraphicalRuntimeLauncher` 根据 `GraphicalRuntimeLaunchRequest` 分派到 `ContextCompileSdlLauncher` 或 `ContextCompileNativeActivityLauncher`；两条分支分别解析和 staging 自己的运行时依赖。
+- 图形库只负责各自的入口协议和渲染，返回、日志、退出确认与回到编辑器由共享外壳负责。
 
 ## 当前支持
 
@@ -71,12 +82,12 @@ friend-engine-sdl3.zip
 
 关键实现：
 
+- `SdlLauncher` / `LaunchDispatcher`
+- `ContextCompileSdlLauncher`
 - `ExternalSdlActivity`
 - `ExternalSdl2Activity`
 - `SdlRuntimeResolver`
 - `SdlRuntimeLibraryStager`
-- `CompileUiEventObserver`
-- `SdlLauncher`
 
 运行前 TinaIDE 会准备构建产物：
 
@@ -96,6 +107,8 @@ raylib 项目使用 `OutputMode.NATIVE_ACTIVITY`，不能使用 `OutputMode.SDL`
 - TinaIDE 的 `libtina_native_activity_host.so` 先提供稳定的宿主 `main` 符号，再加载用户 `libmain.so`，最后把调用转发给用户的普通 `main`。
 - NativeActivity 依赖闭包中一旦出现 SDL2/SDL3，运行会被拒绝并提示改用 SDL 图形运行，避免 `main` 与 `SDL_main` 入口冲突。
 
+关键实现包括 `NativeActivityLauncher`、`ContextCompileNativeActivityLauncher`、`ExternalNativeActivity`、`NativeActivityRuntimeResolver`、`NativeActivityRuntimeStager` 和 `app/src/main/cpp/native_activity/native_activity_host.c`。
+
 raylib CMake 目标仍必须是共享库：
 
 ```cmake
@@ -105,6 +118,24 @@ target_link_libraries(main PRIVATE raylib::raylib)
 ```
 
 `src/main.c` 保持普通 `int main(void)`，不要包含 SDL 的 main 重定向头，也不要定义 `SDL_main`。旧版 run config 中误设为 `SDL` 的 raylib 项目会在 schema 7 加载时迁移到 `NATIVE_ACTIVITY`。
+
+对应运行配置只需要选择 NativeActivity，不应再填写 SDL 主版本：
+
+```json
+{
+  "schemaVersion": 7,
+  "configurations": [
+    {
+      "id": "raylib-debug",
+      "name": "raylib Debug",
+      "outputMode": "NATIVE_ACTIVITY",
+      "targetName": "main",
+      "enableFloatingLog": true
+    }
+  ],
+  "selectedId": "raylib-debug"
+}
+```
 
 ### SDL 主版本识别顺序
 

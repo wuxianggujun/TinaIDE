@@ -20,6 +20,7 @@
    - `docs/架构概览.md`
    - `docs/模块功能说明.md`
    - `docs/documentation-status.md`
+   - `docs/game-engine-plugin-sdl.md`
    - `docs/linux-distro-self-hosted-runtime.md`
    - `docs/registry/GitHub-Registry.md`
    - `docs/toolchain-build-guide.md`
@@ -50,7 +51,7 @@
 - App 内帮助：中文正文位于 `feature/help/src/main/assets/help/*.md`，英文正文位于 `feature/help/src/main/assets/help/en/*.md`；英文缺失或加载失败时回落到中文。
 - 远程 LSP：Android 客户端保留 WebSocket remote LSP 能力；当前仓库不内置 `tools/tina-lsp-proxy.py` 或 `tools/tina-lsp-proxy-kt` PC 代理实现。
 - Release 构建：可能递增 `version.properties` 并备份 R8 mapping；mapping 文件仅由公开构建逻辑做本地归档。
-- Registry：当前 Android 主干读取插件 `plugins/index.v3.json`、依赖包 `packages/index.v2.json` 与 `linux-distro/manifest.v1.json`；插件 `plugins/index.v2.json` 仅作为旧宿主兼容视图保留。
+- Registry：当前 Android 主干读取插件 `plugins/index.v3.json`、依赖包 `packages/index.v2.json` 与 `linux-distro/manifest.v1.json`；插件 `plugins/index.v2.json` 仅作为旧宿主兼容视图保留。Android 二进制依赖包按已安装 APK 的实际 ABI 选择 source，并在安装前校验 source 级大小与 checksum。
 - MT 管理器访问：默认开启；只暴露 TinaIDE 自己的 `data`、`Android/data`、`Android/obb` 和 `user_de_data`，可在设置中关闭。
 
 ### 设计参考

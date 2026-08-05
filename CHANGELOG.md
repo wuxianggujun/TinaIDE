@@ -66,7 +66,7 @@
 
 ### Documentation
 
-- 更新 SDL/raylib 图形运行说明、项目创建与构建帮助，以及 native 依赖包按 ABI 发布规范。
+- 更新 SDL/raylib 图形运行说明、统一悬浮返回外壳、项目创建与构建帮助，以及 native 依赖包按 ABI 发布、source 选择和大小/checksum 完整性校验规范。
 
 ## [0.18.12] - 2026-07-25
 

@@ -57,7 +57,7 @@
 - [Toolchain 构建与同步指南](toolchain-build-guide.md)
 - [ProGuard / R8 规则参考](proguard-rules-reference.md)
 - [自研 Linux 发行版运行时](linux-distro-self-hosted-runtime.md)
-- [游戏引擎插件 SDL 图形运行](game-engine-plugin-sdl.md)
+- [游戏引擎插件图形运行（SDL / NativeActivity）](game-engine-plugin-sdl.md)
 
 ### 使用指南
 
