@@ -31,6 +31,7 @@ import com.wuxianggujun.tinaide.file.Project
 import com.wuxianggujun.tinaide.output.IOutputManager
 import com.wuxianggujun.tinaide.project.ProjectBuildSystem
 import com.wuxianggujun.tinaide.project.ProjectMetadataStore
+import com.wuxianggujun.tinaide.project.ProjectSdlVersion
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
@@ -170,7 +171,12 @@ class CompileProjectUseCaseLaunchEnvironmentTest {
         val result = newUseCase(planner, dispatcher).execute(
             operation = CompileProjectUseCase.Operation.forRun(),
             onProgress = {},
-            runConfig = RunConfiguration(outputMode = OutputMode.SDL),
+            runConfig = RunConfiguration(
+                outputMode = OutputMode.SDL,
+                sdlVersion = ProjectSdlVersion.SDL3,
+                sdlOrientation = SdlOrientation.LANDSCAPE,
+                enableFloatingLog = true,
+            ),
             launchEnvironment = mapOf("LD_LIBRARY_PATH" to "/manual/lib"),
         )
 
@@ -179,10 +185,59 @@ class CompileProjectUseCaseLaunchEnvironmentTest {
         val ldLibraryPath = launch.environment["LD_LIBRARY_PATH"].orEmpty()
         val sysrootPath = sysrootRuntimeDir.absolutePath
         val runtimePath = runtimeDir.canonicalFile.absolutePath
+        assertThat(launch.preferredSdlMajor).isEqualTo(3)
+        assertThat(launch.orientation).isEqualTo(SdlOrientation.LANDSCAPE)
+        assertThat(launch.enableFloatingLog).isTrue()
         assertThat(ldLibraryPath).contains(sysrootPath)
         assertThat(ldLibraryPath).contains(runtimePath)
         assertThat(ldLibraryPath).contains("/manual/lib")
         assertThat(ldLibraryPath.indexOf(sysrootPath)).isLessThan(ldLibraryPath.indexOf(runtimePath))
+        assertThat(ldLibraryPath.indexOf(runtimePath)).isLessThan(ldLibraryPath.indexOf("/manual/lib"))
+    }
+
+    @Test
+    fun `native activity launch environment includes runtime library dirs`() = runTest {
+        val sysrootRuntimeDir = createInstalledSysrootRuntime()
+        val artifact = newArtifact(
+            file = File(buildDir, "libmain.so"),
+            kind = ArtifactKind.SHARED_LIBRARY,
+        )
+        val planner = mockk<BuildPlanner>()
+        val dispatcher = mockk<LaunchDispatcher>()
+        coEvery { planner.plan(any(), any()) } returns BuildPlan.Skip(
+            artifact,
+            "cached for NativeActivity launch environment test",
+        )
+        coEvery { dispatcher.dispatch(any(), artifact, true, any(), any()) } returns BuildReport.Success(
+            artifact = artifact,
+            descriptor = LaunchDescriptor.NativeActivity(
+                artifact = artifact,
+                libraryPath = artifact.absolutePath,
+            ),
+            summary = "native activity ready",
+        )
+
+        val result = newUseCase(planner, dispatcher).execute(
+            operation = CompileProjectUseCase.Operation.forRun(),
+            onProgress = {},
+            runConfig = RunConfiguration(
+                outputMode = OutputMode.NATIVE_ACTIVITY,
+                enableFloatingLog = true,
+            ),
+            launchEnvironment = mapOf("LD_LIBRARY_PATH" to "/manual/lib"),
+        )
+
+        val launch = (result as CompileProjectUseCase.Result.Success).report.launch
+            as CompileProjectUseCase.LaunchSpec.NativeActivity
+        val ldLibraryPath = launch.environment["LD_LIBRARY_PATH"].orEmpty()
+        val runtimePath = runtimeDir.canonicalFile.absolutePath
+        assertThat(launch.libraryPath).isEqualTo(artifact.absolutePath)
+        assertThat(launch.enableFloatingLog).isTrue()
+        assertThat(ldLibraryPath).contains(sysrootRuntimeDir.absolutePath)
+        assertThat(ldLibraryPath).contains(runtimePath)
+        assertThat(ldLibraryPath).contains("/manual/lib")
+        assertThat(ldLibraryPath.indexOf(sysrootRuntimeDir.absolutePath))
+            .isLessThan(ldLibraryPath.indexOf(runtimePath))
         assertThat(ldLibraryPath.indexOf(runtimePath)).isLessThan(ldLibraryPath.indexOf("/manual/lib"))
     }
 

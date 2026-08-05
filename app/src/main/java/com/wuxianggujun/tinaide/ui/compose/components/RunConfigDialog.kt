@@ -208,16 +208,16 @@ fun RunConfigDialog(
     var showLinkerWarnings by remember { mutableStateOf(config.showLinkerWarnings) }
     var showVariablesHelp by remember { mutableStateOf(false) }
 
-    // 目标过滤：SDL 图形运行只加载共享库，终端模式只运行可执行文件。
+    // 目标过滤：图形运行只加载共享库，终端模式只运行可执行文件。
     val selectableTargets = remember(availableTargets, outputMode) {
         availableTargets.filter { target ->
             when {
-                outputMode.isSdlGraphical() -> target.type == TargetInfo.Type.SHARED_LIBRARY
+                outputMode.isSharedLibraryGraphical() -> target.type == TargetInfo.Type.SHARED_LIBRARY
                 else -> target.type == TargetInfo.Type.EXECUTABLE
             }
         }
     }
-    val defaultTargetDescriptionRes = if (outputMode.isSdlGraphical()) {
+    val defaultTargetDescriptionRes = if (outputMode.isSharedLibraryGraphical()) {
         Strings.run_config_build_target_desc_sdl
     } else {
         Strings.run_config_build_target_desc
@@ -225,9 +225,9 @@ fun RunConfigDialog(
     LaunchedEffect(outputMode, buildSystem, availableTargets, targetName) {
         if (buildSystem != BuildSystem.CMAKE || targetName.isBlank()) return@LaunchedEffect
         val selectedTargetType = availableTargets.firstOrNull { it.name == targetName }?.type ?: return@LaunchedEffect
-        if (outputMode.isSdlGraphical() && selectedTargetType != TargetInfo.Type.SHARED_LIBRARY) {
+        if (outputMode.isSharedLibraryGraphical() && selectedTargetType != TargetInfo.Type.SHARED_LIBRARY) {
             targetName = ""
-        } else if (!outputMode.isSdlGraphical() && selectedTargetType == TargetInfo.Type.SHARED_LIBRARY) {
+        } else if (!outputMode.isSharedLibraryGraphical() && selectedTargetType == TargetInfo.Type.SHARED_LIBRARY) {
             targetName = ""
         }
     }
@@ -702,11 +702,17 @@ fun RunConfigDialog(
                 }
             } else if (
                 buildSystem == BuildSystem.CMAKE &&
-                outputMode.isSdlGraphical() &&
+                outputMode.isSharedLibraryGraphical() &&
                 availableTargets.isNotEmpty()
             ) {
                 Text(
-                    text = stringResource(Strings.sdl_runtime_no_shared_library_target),
+                    text = stringResource(
+                        if (outputMode.isSdlGraphical()) {
+                            Strings.sdl_runtime_no_shared_library_target
+                        } else {
+                            Strings.native_activity_runtime_no_shared_library_target
+                        }
+                    ),
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodySmall
                 )
@@ -1037,6 +1043,12 @@ fun RunConfigDialog(
                     title = stringResource(Strings.run_config_output_sdl),
                     description = stringResource(Strings.run_config_output_sdl_desc)
                 )
+                RunConfigOptionRow(
+                    selected = outputMode == OutputMode.NATIVE_ACTIVITY,
+                    onClick = { outputMode = OutputMode.NATIVE_ACTIVITY },
+                    title = stringResource(Strings.run_config_output_native_activity),
+                    description = stringResource(Strings.run_config_output_native_activity_desc)
+                )
             }
 
             if (outputMode == OutputMode.TERMINAL) {
@@ -1109,13 +1121,18 @@ fun RunConfigDialog(
                         description = stringResource(Strings.run_config_sdl_orientation_portrait_desc)
                     )
 
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                }
+            }
 
+            if (outputMode.isSharedLibraryGraphical()) {
+                RunConfigSectionCard(
+                    title = stringResource(Strings.run_config_graphical_options)
+                ) {
                     RunConfigSwitchRow(
                         checked = enableFloatingLog,
                         onCheckedChange = { enableFloatingLog = it },
-                        title = stringResource(Strings.run_config_sdl_floating_log),
-                        description = stringResource(Strings.run_config_sdl_floating_log_desc)
+                        title = stringResource(Strings.run_config_graphical_floating_log),
+                        description = stringResource(Strings.run_config_graphical_floating_log_desc)
                     )
                 }
             }

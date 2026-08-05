@@ -27,9 +27,10 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -47,6 +48,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
@@ -64,7 +66,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.isActive
 
 /**
- * SDL 图形运行时的悬浮覆盖层。
+ * Shared controls displayed over every fullscreen graphical runtime.
  *
  * 提供：
  * - 可拖拽的半透明小球（始终显示）
@@ -72,31 +74,44 @@ import kotlinx.coroutines.isActive
  * - 日志面板实时捕获 logcat 的 TINA_USER_OUTPUT 标签输出
  */
 @Composable
-fun FloatingOverlay(
+fun GraphicalRuntimeOverlay(
     enableFloatingLog: Boolean,
     onExit: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val density = LocalDensity.current
     val windowSize = LocalWindowInfo.current.containerSize
-    val ballSizePx = with(density) { 48.dp.toPx() }
+    val ballSizePx = with(density) { FloatingControlSize.toPx() }
+    val controlsHeightPx = with(density) {
+        if (enableFloatingLog) {
+            (FloatingControlSize * 2 + FloatingControlGap).toPx()
+        } else {
+            FloatingControlSize.toPx()
+        }
+    }
     val screenWidthPx = windowSize.width.toFloat().coerceAtLeast(ballSizePx)
-    val screenHeightPx = windowSize.height.toFloat().coerceAtLeast(ballSizePx)
+    val screenHeightPx = windowSize.height.toFloat().coerceAtLeast(controlsHeightPx)
     val maxOffsetX = (screenWidthPx - ballSizePx).coerceAtLeast(0f)
-    val maxOffsetY = (screenHeightPx - ballSizePx).coerceAtLeast(0f)
+    val maxOffsetY = (screenHeightPx - controlsHeightPx).coerceAtLeast(0f)
 
     var offsetX by remember { mutableFloatStateOf(screenWidthPx - with(density) { 60.dp.toPx() }) }
     var offsetY by remember { mutableFloatStateOf(screenHeightPx * 0.3f) }
     var expanded by remember { mutableStateOf(false) }
     var showExitDialog by remember { mutableStateOf(false) }
 
+    LaunchedEffect(maxOffsetX, maxOffsetY) {
+        offsetX = offsetX.coerceIn(0f, maxOffsetX)
+        offsetY = offsetY.coerceIn(0f, maxOffsetY)
+    }
+
     val logLines = remember { mutableStateListOf<LogEntry>() }
     val listState = rememberLazyListState()
+    val logCaptureFailureMessage = stringResource(Strings.floating_overlay_log_capture_failed)
 
     if (enableFloatingLog) {
         LaunchedEffect(Unit) {
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                captureLogcat(logLines)
+                captureLogcat(logLines, logCaptureFailureMessage)
             }
         }
 
@@ -124,30 +139,30 @@ fun FloatingOverlay(
             )
         }
 
-        // 可拖拽小球（日志面板展开时隐藏，否则始终可见）
-        AnimatedVisibility(
-            visible = !(expanded && enableFloatingLog),
-            enter = fadeIn() + scaleIn(),
-            exit = fadeOut() + scaleOut(),
-            modifier = Modifier.offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
+        // 返回和日志职责独立，避免启用日志后改变返回按钮的行为。
+        val onDrag: (androidx.compose.ui.geometry.Offset) -> Unit = { dragAmount ->
+            offsetX = (offsetX + dragAmount.x).coerceIn(0f, maxOffsetX)
+            offsetY = (offsetY + dragAmount.y).coerceIn(0f, maxOffsetY)
+        }
+        Column(
+            modifier = Modifier.offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) },
+            verticalArrangement = Arrangement.spacedBy(FloatingControlGap),
         ) {
-            FloatingBall(
-                hasLogs = enableFloatingLog && logLines.isNotEmpty(),
-                onTap = {
-                    if (enableFloatingLog) {
-                        expanded = true
-                    } else {
-                        // 无日志面板时直接弹退出确认
-                        showExitDialog = true
-                    }
-                },
-                onDrag = { dragAmount ->
-                    offsetX = (offsetX + dragAmount.x)
-                        .coerceIn(0f, maxOffsetX)
-                    offsetY = (offsetY + dragAmount.y)
-                        .coerceIn(0f, maxOffsetY)
-                }
+            FloatingControlButton(
+                icon = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = stringResource(Strings.floating_overlay_ball_desc),
+                onTap = { showExitDialog = true },
+                onDrag = onDrag,
             )
+            if (enableFloatingLog) {
+                FloatingControlButton(
+                    icon = Icons.Default.Terminal,
+                    contentDescription = stringResource(Strings.floating_overlay_log_title),
+                    active = logLines.isNotEmpty(),
+                    onTap = { expanded = !expanded },
+                    onDrag = onDrag,
+                )
+            }
         }
     }
 
@@ -167,15 +182,17 @@ fun FloatingOverlay(
 }
 
 @Composable
-private fun FloatingBall(
-    hasLogs: Boolean,
+private fun FloatingControlButton(
+    icon: ImageVector,
+    contentDescription: String,
     onTap: () -> Unit,
     onDrag: (androidx.compose.ui.geometry.Offset) -> Unit,
+    active: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     Surface(
         modifier = modifier
-            .size(48.dp)
+            .size(FloatingControlSize)
             .shadow(6.dp, CircleShape)
             .alpha(0.7f)
             .pointerInput(Unit) {
@@ -188,12 +205,12 @@ private fun FloatingBall(
                 detectTapGestures(onTap = { onTap() })
             },
         shape = CircleShape,
-        color = if (hasLogs) {
+        color = if (active) {
             MaterialTheme.colorScheme.primary
         } else {
             MaterialTheme.colorScheme.surfaceVariant
         },
-        contentColor = if (hasLogs) {
+        contentColor = if (active) {
             MaterialTheme.colorScheme.onPrimary
         } else {
             MaterialTheme.colorScheme.onSurfaceVariant
@@ -201,8 +218,8 @@ private fun FloatingBall(
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
-                imageVector = Icons.AutoMirrored.Filled.ExitToApp,
-                contentDescription = stringResource(Strings.floating_overlay_ball_desc),
+                imageVector = icon,
+                contentDescription = contentDescription,
                 modifier = Modifier.size(24.dp)
             )
         }
@@ -284,7 +301,7 @@ private fun FloatingLogPanel(
                 TinaOutlinedButton(
                     text = stringResource(Strings.floating_overlay_exit),
                     onClick = onExit,
-                    leadingIcon = Icons.AutoMirrored.Filled.ExitToApp
+                    leadingIcon = Icons.AutoMirrored.Filled.ArrowBack
                 )
             }
         }
@@ -400,6 +417,8 @@ private const val MAX_LOG_LINES = 500
 private const val LOGCAT_INITIAL_LINE_COUNT = 200
 private const val FLOATING_LOG_PANEL_WIDTH_FRACTION = 0.85f
 private const val FLOATING_LOG_PANEL_HEIGHT_FRACTION = 0.60f
+private val FloatingControlSize = 48.dp
+private val FloatingControlGap = 8.dp
 private val FloatingLogPanelEmptyHeight = 112.dp
 
 /**
@@ -423,7 +442,10 @@ private val LOG_TAGS = listOf(
  * `-s` 只保留 [LOG_TAGS] 中列出的标签。
  * 当行数超过 [MAX_LOG_LINES] 时移除最早的条目。
  */
-private suspend fun captureLogcat(logLines: MutableList<LogEntry>) = coroutineScope {
+private suspend fun captureLogcat(
+    logLines: MutableList<LogEntry>,
+    failureMessage: String,
+) = coroutineScope {
     val pid = android.os.Process.myPid()
     val tagFilters = LOG_TAGS.map { "$it:*" }
     val cmd = mutableListOf(
@@ -441,7 +463,7 @@ private suspend fun captureLogcat(logLines: MutableList<LogEntry>) = coroutineSc
             .redirectErrorStream(true)
             .start()
     } catch (e: Exception) {
-        logLines.add(LogEntry('E', "Failed to start logcat: ${e.message}"))
+        logLines.add(LogEntry('E', failureMessage))
         return@coroutineScope
     }
 

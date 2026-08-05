@@ -6,16 +6,13 @@ import android.content.ClipboardManager
 import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.wuxianggujun.tinaide.core.config.Prefs
 import com.wuxianggujun.tinaide.core.editor.IBookmarkRepository
 import com.wuxianggujun.tinaide.core.format.CodeFormatter
 import com.wuxianggujun.tinaide.core.format.FormatResult
-import com.wuxianggujun.tinaide.core.format.FormatStyle
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.core.lang.CxxFileSupport
 import com.wuxianggujun.tinaide.core.linux.LinuxEnvironmentProvider
-import com.wuxianggujun.tinaide.core.linux.LinuxRunModePolicy
 import com.wuxianggujun.tinaide.core.linux.UnavailableLinuxEnvironmentProvider
 import com.wuxianggujun.tinaide.editor.IEditorManager
 import com.wuxianggujun.tinaide.editor.io.AtomicTextFileWriter
@@ -25,6 +22,15 @@ import com.wuxianggujun.tinaide.editor.session.SaveResult
 import com.wuxianggujun.tinaide.file.IProjectContext
 import com.wuxianggujun.tinaide.file.IProjectSession
 import com.wuxianggujun.tinaide.storage.ProjectDirStructure
+import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveBookmarkCursorContext
+import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveBookmarkCursorContextResult
+import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveBookmarkTarget
+import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveBookmarkTargetResult
+import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveEditableEditorSnapshot
+import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveEditableEditorSnapshotResult
+import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveEditorCommandResult
+import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveSaveTarget
+import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveSaveTargetResult
 import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState
 import com.wuxianggujun.tinaide.ui.compose.state.editor.TextEditOperation
 import java.io.File
@@ -39,15 +45,6 @@ import kotlinx.coroutines.withContext
 import org.eclipse.lsp4j.TextEdit
 import org.eclipse.lsp4j.WorkspaceEdit
 import timber.log.Timber
-import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveBookmarkCursorContext
-import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveBookmarkCursorContextResult
-import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveBookmarkTarget
-import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveBookmarkTargetResult
-import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveEditableEditorSnapshot
-import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveEditableEditorSnapshotResult
-import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveEditorCommandResult
-import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveSaveTarget
-import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveSaveTargetResult
 
 /**
  * MainActivity 动作处理 ViewModel
@@ -375,24 +372,10 @@ class MainActivityActionsViewModel(
                     return@launch
                 }
 
-                val runMode = LinuxRunModePolicy.resolve(
-                    configuredMode = Prefs.clangFormatRunMode,
-                    linuxEnvironmentAvailable = linuxEnvironmentProvider.get().isAvailable()
-                )
-
-                val filePath = when (runMode) {
-                    LinuxRunModePolicy.RunMode.PROOT -> {
-                        linuxEnvironmentProvider.get().toGuestPath(file.absolutePath)
-                    }
-
-                    LinuxRunModePolicy.RunMode.NATIVE -> file.absolutePath
-                }
-
                 // 执行格式化
                 val result = formatter.format(
                     content = content,
-                    fileName = filePath,
-                    style = FormatStyle.FILE
+                    sourceFile = file,
                 )
 
                 when (result) {

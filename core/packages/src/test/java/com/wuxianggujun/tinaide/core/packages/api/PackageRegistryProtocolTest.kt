@@ -101,8 +101,11 @@ class PackageRegistryProtocolTest {
                     {
                       "id": 1,
                       "name": "GitHub",
-                      "url": "packages/sdl3/3.2.0/sdl3.tar.xz",
-                      "priority": 100
+                      "url": "packages/sdl3/3.2.0/sdl3-arm64-v8a.tar.xz",
+                      "priority": 100,
+                      "abi": "arm64-v8a",
+                      "size": 768,
+                      "checksum": "sha256:arm64"
                     }
                   ]
                 }
@@ -117,7 +120,11 @@ class PackageRegistryProtocolTest {
         assertThat(detail.pkg.id).isEqualTo("sdl3")
         assertThat(version?.platform).isEqualTo(Platform.ANDROID)
         assertThat(version?.downloadSize).isEqualTo(1024)
-        assertThat(download?.sources?.single()?.supportsRange).isTrue()
+        val source = download?.sources?.single()
+        assertThat(source?.supportsRange).isTrue()
+        assertThat(source?.abi).isEqualTo("arm64-v8a")
+        assertThat(source?.size).isEqualTo(768)
+        assertThat(source?.checksum).isEqualTo("sha256:arm64")
     }
 
     @Test

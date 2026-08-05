@@ -2,20 +2,13 @@ package com.wuxianggujun.tinaide.ui
 
 import android.content.Context
 import android.content.Intent
-import com.wuxianggujun.tinaide.core.compile.RunConfiguration
-import com.wuxianggujun.tinaide.core.i18n.Strings
-import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.core.terminal.TerminalBackend
-import com.wuxianggujun.tinaide.ui.runtime.SdlRuntimeLibraryStager
-import com.wuxianggujun.tinaide.ui.sdl.ExternalSdlActivity
-import com.wuxianggujun.tinaide.ui.sdl.SdlRuntimeResolver
+import com.wuxianggujun.tinaide.ui.runtime.GraphicalRuntimeLaunchRequest
 import java.io.File
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 class CompileUiEventObserver(
     private val toastPresenter: ToastPresenter,
-    private val sdlLauncher: SdlLauncher,
+    private val graphicalRuntimeLauncher: GraphicalRuntimeLauncher,
     private val terminalLauncher: TerminalLauncher,
     private val projectTreeRevealer: ProjectTreeRevealer,
 ) {
@@ -23,8 +16,8 @@ class CompileUiEventObserver(
         fun show(message: String, type: CompileActionsHelper.ToastType)
     }
 
-    fun interface SdlLauncher {
-        suspend fun open(libraryPath: String, environment: Map<String, String>)
+    fun interface GraphicalRuntimeLauncher {
+        suspend fun open(request: GraphicalRuntimeLaunchRequest)
     }
 
     interface TerminalLauncher {
@@ -41,8 +34,8 @@ class CompileUiEventObserver(
                 toastPresenter.show(event.message, event.type)
             }
 
-            is CompileActionsHelper.UiEvent.OpenSdl -> {
-                sdlLauncher.open(event.libraryPath, event.environment)
+            is CompileActionsHelper.UiEvent.OpenGraphicalRuntime -> {
+                graphicalRuntimeLauncher.open(event.request)
             }
 
             is CompileActionsHelper.UiEvent.OpenTerminal -> {
@@ -84,106 +77,5 @@ class ContextCompileTerminalLauncher(
             }
         }
         activityStarter(intent)
-    }
-}
-class ContextCompileSdlLauncher(
-    private val context: Context,
-    private val runConfigurationProvider: () -> RunConfiguration,
-    private val onError: (String) -> Unit,
-    private val activityStarter: (Intent) -> Unit = { intent -> context.startActivity(intent) },
-) : CompileUiEventObserver.SdlLauncher {
-    override suspend fun open(libraryPath: String, environment: Map<String, String>) {
-        val normalizedLibraryPath = libraryPath.trim()
-        validateSharedLibraryPath(normalizedLibraryPath)?.let { message ->
-            onError(message)
-            return
-        }
-
-        val runConfig = runConfigurationProvider()
-        val runtime = withContext(Dispatchers.IO) {
-            SdlRuntimeResolver.resolve(
-                context = context,
-                mainLibraryPath = normalizedLibraryPath,
-                extraRuntimeLibDirs = launchRuntimeDirs(environment),
-                allowUndetectedSdl = true,
-                preferredSdlMajor = runConfig.sdlVersion?.major,
-            )
-        }
-        when (runtime) {
-            is SdlRuntimeResolver.ResolveResult.Sdl -> launchSdlRuntime(
-                libraryPath = normalizedLibraryPath,
-                runtime = runtime,
-                runConfig = runConfig,
-                launchEnvironment = environment,
-            )
-
-            SdlRuntimeResolver.ResolveResult.NonSdl -> Unit
-
-            is SdlRuntimeResolver.ResolveResult.Error -> onError(runtime.message)
-        }
-    }
-
-    private fun launchRuntimeDirs(environment: Map<String, String>): List<File> = environment["LD_LIBRARY_PATH"]
-        .orEmpty()
-        .split(':')
-        .asSequence()
-        .map { it.trim() }
-        .filter { it.isNotBlank() }
-        .map(::File)
-        .toList()
-
-    private fun validateSharedLibraryPath(libraryPath: String): String? {
-        if (libraryPath.isBlank()) {
-            return Strings.sdl_runtime_error_main_library_missing.strOr(context)
-        }
-        if (!File(libraryPath).name.endsWith(".so", ignoreCase = true)) {
-            return Strings.sdl_runtime_invalid_shared_library.strOr(context, libraryPath)
-        }
-        return null
-    }
-
-    private suspend fun launchSdlRuntime(
-        libraryPath: String,
-        runtime: SdlRuntimeResolver.ResolveResult.Sdl,
-        runConfig: RunConfiguration,
-        launchEnvironment: Map<String, String>,
-    ) {
-        val staged = withContext(Dispatchers.IO) {
-            SdlRuntimeLibraryStager.stage(
-                context = context,
-                sdlLibraryPath = runtime.spec.sdlLibraryPath,
-                mainLibraryPath = libraryPath,
-                preSdlLibraryPaths = runtime.spec.preSdlLibraryPaths,
-                preloadLibraryPaths = runtime.spec.preloadLibraryPaths
-            )
-        }
-        when (staged) {
-            is SdlRuntimeLibraryStager.StageResult.Error -> {
-                onError(Strings.sdl_runtime_stage_failed.strOr(context, staged.message))
-            }
-
-            is SdlRuntimeLibraryStager.StageResult.Success -> {
-                val intent = ExternalSdlActivity.createIntent(
-                    context = context,
-                    sdlLibraryPath = staged.runtime.sdlLibraryPath,
-                    mainLibraryPath = staged.runtime.mainLibraryPath,
-                    requiredSdlMajor = runtime.spec.requiredSdlMajor,
-                    preSdlLibraryPaths = staged.runtime.preSdlLibraryPaths,
-                    preloadLibraryPaths = staged.runtime.preloadLibraryPaths,
-                    sdlOrientation = runConfig.sdlOrientation,
-                    enableFloatingLog = runConfig.enableFloatingLog,
-                    launchEnvironment = launchEnvironment,
-                )
-                runCatching { activityStarter(intent) }
-                    .onFailure { throwable ->
-                        onError(
-                            Strings.sdl_runtime_error_launch_failed.strOr(
-                                context,
-                                throwable.message ?: throwable.javaClass.simpleName
-                            )
-                        )
-                    }
-            }
-        }
     }
 }

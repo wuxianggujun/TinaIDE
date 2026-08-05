@@ -44,4 +44,13 @@ class CMakeLinkPolicyTest {
 
         assertThat(resolved).isEqualTo("-llog -lSDL3 -lEGL")
     }
+
+    @Test
+    fun `resolveAndroidSharedLinkerFlags adds origin runpath once`() {
+        val resolved = CMakeLinkPolicy.resolveAndroidSharedLinkerFlags(
+            "--target=aarch64-linux-android28 -Wl,-rpath,\$ORIGIN"
+        )
+
+        assertThat(resolved).isEqualTo("--target=aarch64-linux-android28 -Wl,-rpath,\$ORIGIN")
+    }
 }

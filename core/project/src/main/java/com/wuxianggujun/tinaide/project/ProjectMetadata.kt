@@ -8,7 +8,7 @@ import timber.log.Timber
 
 object ProjectMetadataStore {
     private const val TAG = "ProjectMetadataStore"
-    private const val PROJECT_METADATA_SCHEMA_CURRENT = 4
+    private const val PROJECT_METADATA_SCHEMA_CURRENT = 5
 
     private val json = JsonSerializer.pretty
 
@@ -35,7 +35,7 @@ object ProjectMetadataStore {
                 null
             } else {
                 val normalized = normalizeMetadata(
-                    migrateMissingSdlVersion(projectRoot, decoded)
+                    migrateGraphicalRuntimeMetadata(projectRoot, decoded)
                         .copy(schemaVersion = PROJECT_METADATA_SCHEMA_CURRENT)
                 )
                 if (normalized != decoded) {
@@ -289,24 +289,32 @@ object ProjectMetadataStore {
         )
     }
 
-    private fun migrateMissingSdlVersion(
+    private fun migrateGraphicalRuntimeMetadata(
         projectRoot: File,
         metadata: ProjectMetadata,
     ): ProjectMetadata {
-        if (metadata.sdlVersion != null || metadata.apkExportType != ProjectApkExportType.SDL3) {
+        if (
+            metadata.schemaVersion >= PROJECT_METADATA_SCHEMA_CURRENT ||
+            metadata.apkExportType != ProjectApkExportType.SDL3
+        ) {
             return metadata
         }
 
-        // Older detection treated the SDL2/SDL3 shared SDLActivity class as SDL3.
-        // Re-scan version-specific build/source markers before preserving the legacy fallback.
-        return when (ProjectApkExportSupportResolver.detectSdlVersion(projectRoot)) {
-            ProjectSdlVersion.SDL2 -> metadata.copy(
+        // Older versions could persist raylib or SDL2 projects as SDL3. Re-scan once while
+        // crossing the schema boundary, including metadata that already contains sdlVersion=SDL3.
+        val detected = ProjectApkExportSupportResolver.detectSupport(projectRoot)
+        return when {
+            detected.sdlVersion == ProjectSdlVersion.SDL2 -> metadata.copy(
                 apkExportType = null,
                 sdlVersion = ProjectSdlVersion.SDL2,
             )
-            ProjectSdlVersion.SDL3,
-            null,
-            -> metadata.copy(sdlVersion = ProjectSdlVersion.SDL3)
+            detected.apkExportType == ProjectApkExportType.NATIVE_ACTIVITY &&
+                detected.sdlVersion == null -> metadata.copy(
+                apkExportType = ProjectApkExportType.NATIVE_ACTIVITY,
+                sdlVersion = null,
+            )
+            metadata.sdlVersion == null -> metadata.copy(sdlVersion = ProjectSdlVersion.SDL3)
+            else -> metadata
         }
     }
 

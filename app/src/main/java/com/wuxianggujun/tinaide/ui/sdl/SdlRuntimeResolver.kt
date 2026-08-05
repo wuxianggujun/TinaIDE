@@ -5,12 +5,15 @@ import android.os.Build
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.core.packages.InstalledPackagePathResolver
+import com.wuxianggujun.tinaide.core.packages.PackageAbiCompatibility
 import com.wuxianggujun.tinaide.core.packages.model.Platform
 import com.wuxianggujun.tinaide.core.packages.store.LocalInstallStateStore
 import com.wuxianggujun.tinaide.project.ProjectMetadataStore
 import com.wuxianggujun.tinaide.ui.runtime.AndroidSystemLibraries
-import com.wuxianggujun.tinaide.ui.runtime.NativeLibraryDependencyHints
 import com.wuxianggujun.tinaide.ui.runtime.NativeLibraryDependencyReader
+import com.wuxianggujun.tinaide.ui.runtime.buildNativeRuntimeLibraryIndex
+import com.wuxianggujun.tinaide.ui.runtime.canonicalSharedLibraryName
+import com.wuxianggujun.tinaide.ui.runtime.resolveNativeRuntimeLibrary
 import java.io.File
 import java.io.IOException
 import java.util.ArrayDeque
@@ -106,7 +109,7 @@ object SdlRuntimeResolver {
             addAll(localRuntimeDirs)
             managedPackages.flatMapTo(this) { it.runtimeLibDirs }
         }.toList()
-        val discoveryRuntimeIndex = buildRuntimeLibraryIndex(discoveryRuntimeDirs)
+        val discoveryRuntimeIndex = buildNativeRuntimeLibraryIndex(discoveryRuntimeDirs)
 
         val neededLibraries = try {
             extractNeededLibraryNames(mainLibrary)
@@ -198,7 +201,7 @@ object SdlRuntimeResolver {
             addAll(configuredExistingRuntimeDirs)
         }.toList()
 
-        val runtimeIndex = buildRuntimeLibraryIndex(runtimeDirs)
+        val runtimeIndex = buildNativeRuntimeLibraryIndex(runtimeDirs)
         val preSdlLibraries = resolveSdlDependencyLibraries(
             runtimeIndex = runtimeIndex,
             mainLibrary = mainLibrary,
@@ -417,7 +420,10 @@ object SdlRuntimeResolver {
 
     private fun collectRuntimeLibraryDirs(packageRootDir: File): List<File> {
         val dirs = linkedSetOf<File>()
-        val deviceAbi = Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"
+        val deviceAbi = PackageAbiCompatibility.currentAppAbi(
+            nativeLibraryDir = appContext.applicationInfo.nativeLibraryDir,
+            supportedAbis = Build.SUPPORTED_ABIS,
+        )
         val libRoot = File(packageRootDir, "lib")
         val libsRoot = File(packageRootDir, "libs")
 
@@ -480,23 +486,6 @@ object SdlRuntimeResolver {
         }
     }
 
-    private fun buildRuntimeLibraryIndex(runtimeDirs: List<File>): Map<String, File> {
-        val index = linkedMapOf<String, File>()
-        runtimeDirs.forEach { dir ->
-            val files = dir.listFiles { file ->
-                file.isFile && file.name.contains(".so")
-            }?.sortedBy { it.name } ?: return@forEach
-
-            files.forEach { file ->
-                putRuntimeLibrary(index, file.name, file)
-                canonicalSoName(file.name)?.let { canonical ->
-                    putRuntimeLibrary(index, canonical, file)
-                }
-            }
-        }
-        return index
-    }
-
     internal fun detectRequiredSdlMajors(
         mainLibrary: File,
         neededLibraries: Set<String>,
@@ -516,13 +505,12 @@ object SdlRuntimeResolver {
                     return@forEach
                 }
 
-                val canonicalName = canonicalSoName(needed)
+                val canonicalName = canonicalSharedLibraryName(needed)
                 if (needed in systemLibraryNames || (canonicalName != null && canonicalName in systemLibraryNames)) {
                     return@forEach
                 }
 
-                val dependencyFile = runtimeIndex[needed]
-                    ?: canonicalName?.let(runtimeIndex::get)
+                val dependencyFile = resolveNativeRuntimeLibrary(runtimeIndex, needed)
                     ?: return@forEach
                 if (visitedPaths.add(canonicalPath(dependencyFile))) {
                     pendingLibraries += dependencyFile
@@ -556,24 +544,6 @@ object SdlRuntimeResolver {
         return detectedMajors
     }
 
-    private fun putRuntimeLibrary(
-        index: MutableMap<String, File>,
-        libraryName: String,
-        candidate: File,
-    ) {
-        val current = index[libraryName]
-        if (
-            current == null ||
-            NativeLibraryDependencyHints.shouldPreferInstalledPackageCandidate(
-                libraryName = libraryName,
-                current = current,
-                candidate = candidate,
-            )
-        ) {
-            index[libraryName] = candidate
-        }
-    }
-
     internal fun resolvePreloadLibraries(
         runtimeIndex: Map<String, File>,
         neededLibraries: Set<String>,
@@ -584,10 +554,10 @@ object SdlRuntimeResolver {
         val resolved = linkedSetOf<String>()
         val visited = mutableSetOf<String>()
         val visiting = mutableSetOf<String>()
-        val selectedSdlCanonicalName = canonicalSoName(sdlLibrary.name)
+        val selectedSdlCanonicalName = canonicalSharedLibraryName(sdlLibrary.name)
 
         fun visit(needed: String) {
-            val canonical = canonicalSoName(needed)
+            val canonical = canonicalSharedLibraryName(needed)
             if (
                 needed == mainLibrary.name ||
                 needed == sdlLibrary.name ||
@@ -599,8 +569,7 @@ object SdlRuntimeResolver {
                 return
             }
 
-            val resolvedFile = runtimeIndex[needed]
-                ?: canonical?.let { runtimeIndex[it] }
+            val resolvedFile = resolveNativeRuntimeLibrary(runtimeIndex, needed)
                 ?: return
 
             val absolutePath = resolvedFile.absolutePath
@@ -657,12 +626,6 @@ object SdlRuntimeResolver {
     @Throws(IOException::class)
     private fun extractNeededLibraryNames(library: File): Set<String> =
         NativeLibraryDependencyReader.readNeededLibraryNames(library)
-
-    private fun canonicalSoName(name: String): String? {
-        val markerIndex = name.indexOf(".so")
-        if (markerIndex < 0) return null
-        return name.substring(0, markerIndex + 3)
-    }
 
     private fun sdlMajorFromLibraryName(name: String): Int? = sdlLibraryNamePattern
         .matchEntire(name)

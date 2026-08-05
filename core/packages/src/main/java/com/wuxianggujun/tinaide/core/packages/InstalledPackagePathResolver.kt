@@ -65,8 +65,10 @@ object InstalledPackagePathResolver {
      * 扫描 installed-packages 目录，返回所有有效的 include/lib 路径。
      */
     fun resolve(context: Context, projectRoot: File? = null): PackagePaths {
-        // 获取当前设备的 ABI（优先使用主 ABI）
-        val deviceAbi = Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"
+        val deviceAbi = PackageAbiCompatibility.currentAppAbi(
+            nativeLibraryDir = context.applicationInfo.nativeLibraryDir,
+            supportedAbis = Build.SUPPORTED_ABIS,
+        )
 
         val installDir = File(context.filesDir, INSTALL_DIR_NAME)
         val packageDirs = if (installDir.isDirectory) {

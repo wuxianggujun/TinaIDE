@@ -1,5 +1,5 @@
 #!/bin/bash
-# Combine per-ABI SDL2 builds into one registry artifact.
+# Package each SDL2 ABI into an independent registry artifact.
 # Usage: ./package-sdl2.sh ["arm64-v8a x86_64"]
 
 set -euo pipefail
@@ -117,8 +117,12 @@ else()
 endif()
 EOF
 
-ABI_JSON="$(printf '"%s",' "${ABIS[@]}" | sed 's/,$//')"
-cat > "$PACKAGE_ROOT/package.json" <<EOF
+write_package_metadata() {
+    local package_root=$1
+    local abi_json=$2
+    local abi_list=$3
+
+    cat > "$package_root/package.json" <<EOF
 {
   "id": "sdl2",
   "name": "SDL2",
@@ -141,12 +145,12 @@ cat > "$PACKAGE_ROOT/package.json" <<EOF
     "cmake": "lib/cmake/SDL2",
     "pkgconfig": "pkgconfig/sdl2.pc"
   },
-  "abis": [${ABI_JSON}],
+  "abis": [${abi_json}],
   "dependencies": []
 }
 EOF
 
-cat > "$PACKAGE_ROOT/BUILD-INFO.txt" <<EOF
+    cat > "$package_root/BUILD-INFO.txt" <<EOF
 package_id=sdl2
 package_version=${SDL2_VERSION}
 package_revision=1
@@ -154,18 +158,40 @@ artifact_type=shared
 upstream_tag=${SDL2_TAG}
 upstream_commit=${SDL2_COMMIT}
 upstream_version=${SDL2_VERSION}
-abis=$(IFS=,; echo "${ABIS[*]}")
+abis=${abi_list}
 dependencies=
 android_jni_package=org/libsdl2/app
 EOF
+}
 
-FINAL_OUTPUT_DIR="${OUTPUT_DIR}/sdl2"
-FINAL_OUTPUT="${FINAL_OUTPUT_DIR}/sdl2-${SDL2_VERSION}-android.tar.xz"
+FINAL_OUTPUT_DIR="${OUTPUT_DIR}/registry/sdl2/${SDL2_VERSION}"
 mkdir -p "$FINAL_OUTPUT_DIR"
+ABI_JSON="$(printf '"%s",' "${ABIS[@]}" | sed 's/,$//')"
+ABI_LIST="$(IFS=,; echo "${ABIS[*]}")"
+write_package_metadata "$PACKAGE_ROOT" "$ABI_JSON" "$ABI_LIST"
 
-tar -C "$PACKAGE_ROOT" -cf - . | xz -9e --threads=0 > "$FINAL_OUTPUT"
-sha256sum "$FINAL_OUTPUT" > "${FINAL_OUTPUT}.sha256"
+LEGACY_OUTPUT="${FINAL_OUTPUT_DIR}/sdl2.tar.xz"
+tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner \
+    -C "$PACKAGE_ROOT" -cf - . | xz -9e --threads=0 > "$LEGACY_OUTPUT"
+sha256sum "$LEGACY_OUTPUT" > "${LEGACY_OUTPUT}.sha256"
+echo "[SUCCESS] Legacy universal SDL2 Registry artifact created: ${LEGACY_OUTPUT}"
+cat "${LEGACY_OUTPUT}.sha256"
 
-echo "[SUCCESS] SDL2 registry artifact created"
-echo "[INFO] ${FINAL_OUTPUT}"
-echo "[INFO] ${FINAL_OUTPUT}.sha256"
+for ABI in "${ABIS[@]}"; do
+    ABI_PACKAGE_ROOT="${TEMP_DIR}/package-${ABI}"
+    mkdir -p "$ABI_PACKAGE_ROOT/lib"
+    cp -R "$PACKAGE_ROOT/include" "$ABI_PACKAGE_ROOT/include"
+    cp -R "$PACKAGE_ROOT/pkgconfig" "$ABI_PACKAGE_ROOT/pkgconfig"
+    cp -R "$PACKAGE_ROOT/lib/cmake" "$ABI_PACKAGE_ROOT/lib/cmake"
+    cp -R "$PACKAGE_ROOT/lib/$ABI" "$ABI_PACKAGE_ROOT/lib/$ABI"
+    cp "$PACKAGE_ROOT/LICENSE.txt" "$ABI_PACKAGE_ROOT/LICENSE.txt"
+    write_package_metadata "$ABI_PACKAGE_ROOT" "\"$ABI\"" "$ABI"
+
+    FINAL_OUTPUT="${FINAL_OUTPUT_DIR}/sdl2-${ABI}.tar.xz"
+    tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner \
+        -C "$ABI_PACKAGE_ROOT" -cf - . | xz -9e --threads=0 > "$FINAL_OUTPUT"
+    sha256sum "$FINAL_OUTPUT" > "${FINAL_OUTPUT}.sha256"
+
+    echo "[SUCCESS] SDL2 registry artifact created: ${FINAL_OUTPUT}"
+    cat "${FINAL_OUTPUT}.sha256"
+done

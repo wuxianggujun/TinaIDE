@@ -161,6 +161,14 @@ class CompileProjectUseCase(
         data class Sdl(
             val libraryPath: String,
             val environment: Map<String, String> = emptyMap(),
+            val preferredSdlMajor: Int? = null,
+            val orientation: SdlOrientation = SdlOrientation.AUTO,
+            val enableFloatingLog: Boolean = false,
+        ) : LaunchSpec()
+        data class NativeActivity(
+            val libraryPath: String,
+            val environment: Map<String, String> = emptyMap(),
+            val enableFloatingLog: Boolean = false,
         ) : LaunchSpec()
         data class PluginInstalled(
             val pluginId: String,
@@ -258,7 +266,7 @@ class CompileProjectUseCase(
 
         val config = runConfig ?: getRunConfiguration()
         val runOutputMode = config.outputMode
-        val preferSharedLibraryForRun = mode == ExecutionMode.RUN && runOutputMode.isSdlGraphical()
+        val preferSharedLibraryForRun = mode == ExecutionMode.RUN && runOutputMode.isSharedLibraryGraphical()
         val activeOutputMode = if (mode == ExecutionMode.RUN) runOutputMode else OutputMode.TERMINAL
         val request = operation.resolveRequest(activeOutputMode)
         BuildDiagnosticsLog.i {
@@ -345,7 +353,7 @@ class CompileProjectUseCase(
             }
         }
 
-        // CMake + SDL must run a shared-library target; repair legacy executable selections.
+        // Graphical shared-library modes must run a shared-library target; repair legacy executable selections.
         if (buildSystem == BuildSystem.CMAKE && preferSharedLibraryForRun) {
             val targets = cmakeTargets ?: loadCMakeTargets(projectRoot, buildDir, buildSystem, options)
             val selectedTarget = effectiveTargetName
@@ -357,17 +365,31 @@ class CompileProjectUseCase(
                     "firstShared=${sharedTarget?.diagnosticsSummary().orEmpty()}"
             }
             if (sharedTarget == null) {
-                val errorMsg = Strings.sdl_runtime_no_shared_library_target.strOr(appContext)
-                BuildDiagnosticsLog.w { "cmake sdl target check failed: no shared-library target" }
+                val errorMsg = if (runOutputMode == OutputMode.NATIVE_ACTIVITY) {
+                    Strings.native_activity_runtime_no_shared_library_target.strOr(appContext)
+                } else {
+                    Strings.sdl_runtime_no_shared_library_target.strOr(appContext)
+                }
+                BuildDiagnosticsLog.w {
+                    "cmake graphical target check failed: mode=$runOutputMode no shared-library target"
+                }
                 log(errorMsg)
                 return@withContext Result.Error(action, errorMsg, null)
             }
             if (selectedTarget == null || selectedTarget.type != TargetInfo.Type.SHARED_LIBRARY) {
                 effectiveTargetName = sharedTarget.name
                 BuildDiagnosticsLog.i {
-                    "cmake sdl target auto-selected shared library target=${sharedTarget.name}"
+                    "cmake graphical target auto-selected shared library target=" +
+                        "${sharedTarget.name} mode=$runOutputMode"
                 }
-                log(Strings.sdl_runtime_auto_selected_shared_library_target.strOr(appContext, sharedTarget.name))
+                val autoSelectedMessage = if (runOutputMode == OutputMode.NATIVE_ACTIVITY) {
+                    Strings.native_activity_runtime_auto_selected_shared_library_target
+                        .strOr(appContext, sharedTarget.name)
+                } else {
+                    Strings.sdl_runtime_auto_selected_shared_library_target
+                        .strOr(appContext, sharedTarget.name)
+                }
+                log(autoSelectedMessage)
             }
         }
 
@@ -802,6 +824,14 @@ class CompileProjectUseCase(
             is LaunchDescriptor.Sdl -> LaunchSpec.Sdl(
                 libraryPath = descriptor.libraryPath,
                 environment = resolvedLaunchEnvironment,
+                preferredSdlMajor = config.sdlVersion?.major,
+                orientation = config.sdlOrientation,
+                enableFloatingLog = config.enableFloatingLog,
+            )
+            is LaunchDescriptor.NativeActivity -> LaunchSpec.NativeActivity(
+                libraryPath = descriptor.libraryPath,
+                environment = resolvedLaunchEnvironment,
+                enableFloatingLog = config.enableFloatingLog,
             )
             is LaunchDescriptor.Debug -> LaunchSpec.Debug(
                 programPath = descriptor.programPath,

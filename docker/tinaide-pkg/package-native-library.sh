@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Merge per-ABI native builds into a TinaIDE Registry package.
+# Package each native ABI into an independent TinaIDE Registry artifact.
 # Usage: ./package-native-library.sh <package-id> ["arm64-v8a x86_64"]
 
 set -euo pipefail
@@ -242,6 +242,33 @@ trap 'rm -rf "$TEMP_DIR"' EXIT
 PACKAGE_ROOT="${TEMP_DIR}/${PACKAGE_ID}"
 mkdir -p "$PACKAGE_ROOT/include" "$PACKAGE_ROOT/lib" "$PACKAGE_ROOT/pkgconfig"
 
+verify_raylib_runtime_contract() {
+    local library_path=$1
+
+    if ! readelf -dW "$library_path" | grep -Fq 'Library soname: [libraylib.so]'; then
+        echo "[ERROR] libraylib.so has an unexpected or missing SONAME" >&2
+        return 1
+    fi
+    if ! readelf -Ws "$library_path" | awk '
+        $7 != "UND" && $8 == "ANativeActivity_onCreate" { found = 1 }
+        END { exit found ? 0 : 1 }
+    '; then
+        echo "[ERROR] libraylib.so does not export ANativeActivity_onCreate" >&2
+        return 1
+    fi
+    if ! readelf -Ws "$library_path" | awk '
+        $7 == "UND" && $8 == "main" { found = 1 }
+        END { exit found ? 0 : 1 }
+    '; then
+        echo "[ERROR] libraylib.so does not retain the NativeActivity undefined main contract" >&2
+        return 1
+    fi
+    if readelf -dW "$library_path" | grep -Eq 'Shared library: \[libSDL[23]'; then
+        echo "[ERROR] libraylib.so must not depend on SDL" >&2
+        return 1
+    fi
+}
+
 for ABI in "${ABIS[@]}"; do
     BUILD_ARCHIVE="/output/${PACKAGE_ID}/${ABI}/${PACKAGE_ID}-${ABI}-${ARTIFACT_TYPE}.tar.xz"
     EXTRACT_DIR="${TEMP_DIR}/extract-${ABI}"
@@ -276,6 +303,9 @@ for ABI in "${ABIS[@]}"; do
                 exit 1
             fi
         done < <(readelf -lW "$PACKAGE_ROOT/lib/$ABI/$LIBRARY_FILE" | awk '$1 == "LOAD" { print $NF }')
+        if [ "$PACKAGE_ID" = "raylib" ]; then
+            verify_raylib_runtime_contract "$PACKAGE_ROOT/lib/$ABI/$LIBRARY_FILE"
+        fi
         if [ -n "$DEPENDENCY_CMAKE_PACKAGE" ] && ! readelf -dW "$PACKAGE_ROOT/lib/$ABI/$LIBRARY_FILE" | grep -Fq "Shared library: [lib${DEPENDENCY_CMAKE_PACKAGE}"; then
             echo "[ERROR] ${LIBRARY_FILE} is not linked to ${DEPENDENCY_CMAKE_PACKAGE}" >&2
             exit 1
@@ -392,8 +422,12 @@ else()
 endif()
 EOF
 
-ABI_JSON="$(printf '"%s",' "${ABIS[@]}" | sed 's/,$//')"
-cat > "$PACKAGE_ROOT/package.json" <<EOF
+write_package_metadata() {
+    local package_root=$1
+    local abi_json=$2
+    local abi_list=$3
+
+    cat > "$package_root/package.json" <<EOF
 {
   "id": "${PACKAGE_ID}",
   "name": "${NAME}",
@@ -416,12 +450,12 @@ cat > "$PACKAGE_ROOT/package.json" <<EOF
     "cmake": "lib/cmake/${CMAKE_PACKAGE}",
     "pkgconfig": "pkgconfig/${PACKAGE_ID}.pc"
   },
-  "abis": [${ABI_JSON}],
+  "abis": [${abi_json}],
   "dependencies": [${DEPENDENCIES_JSON}]
 }
 EOF
 
-cat > "$PACKAGE_ROOT/BUILD-INFO.txt" <<EOF
+    cat > "$package_root/BUILD-INFO.txt" <<EOF
 package_id=${PACKAGE_ID}
 package_version=${VERSION}
 package_revision=${PACKAGE_REVISION}
@@ -429,16 +463,39 @@ artifact_type=${ARTIFACT_TYPE}
 upstream_tag=${UPSTREAM_TAG}
 upstream_commit=${UPSTREAM_COMMIT}
 upstream_version=${VERSION}
-abis=$(IFS=,; echo "${ABIS[*]}")
+abis=${abi_list}
 dependencies=${DEPENDENCY_ID}
 EOF
+}
 
 FINAL_DIR="/output/registry/${PACKAGE_ID}/${VERSION}"
-FINAL_ARCHIVE="${FINAL_DIR}/${PACKAGE_ID}.tar.xz"
 mkdir -p "$FINAL_DIR"
-tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner \
-    -C "$PACKAGE_ROOT" -cf - . | xz -9e --threads=0 > "$FINAL_ARCHIVE"
-sha256sum "$FINAL_ARCHIVE" > "${FINAL_ARCHIVE}.sha256"
+ABI_JSON="$(printf '"%s",' "${ABIS[@]}" | sed 's/,$//')"
+ABI_LIST="$(IFS=,; echo "${ABIS[*]}")"
+write_package_metadata "$PACKAGE_ROOT" "$ABI_JSON" "$ABI_LIST"
 
-echo "[SUCCESS] Registry package created: ${FINAL_ARCHIVE}"
-cat "${FINAL_ARCHIVE}.sha256"
+LEGACY_ARCHIVE="${FINAL_DIR}/${PACKAGE_ID}.tar.xz"
+tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner \
+    -C "$PACKAGE_ROOT" -cf - . | xz -9e --threads=0 > "$LEGACY_ARCHIVE"
+sha256sum "$LEGACY_ARCHIVE" > "${LEGACY_ARCHIVE}.sha256"
+echo "[SUCCESS] Legacy universal Registry package created: ${LEGACY_ARCHIVE}"
+cat "${LEGACY_ARCHIVE}.sha256"
+
+for ABI in "${ABIS[@]}"; do
+    ABI_PACKAGE_ROOT="${TEMP_DIR}/package-${ABI}"
+    mkdir -p "$ABI_PACKAGE_ROOT/lib"
+    cp -R "$PACKAGE_ROOT/include" "$ABI_PACKAGE_ROOT/include"
+    cp -R "$PACKAGE_ROOT/pkgconfig" "$ABI_PACKAGE_ROOT/pkgconfig"
+    cp -R "$PACKAGE_ROOT/lib/cmake" "$ABI_PACKAGE_ROOT/lib/cmake"
+    cp -R "$PACKAGE_ROOT/lib/$ABI" "$ABI_PACKAGE_ROOT/lib/$ABI"
+    cp "$PACKAGE_ROOT/LICENSE.txt" "$ABI_PACKAGE_ROOT/LICENSE.txt"
+    write_package_metadata "$ABI_PACKAGE_ROOT" "\"$ABI\"" "$ABI"
+
+    FINAL_ARCHIVE="${FINAL_DIR}/${PACKAGE_ID}-${ABI}.tar.xz"
+    tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner \
+        -C "$ABI_PACKAGE_ROOT" -cf - . | xz -9e --threads=0 > "$FINAL_ARCHIVE"
+    sha256sum "$FINAL_ARCHIVE" > "${FINAL_ARCHIVE}.sha256"
+
+    echo "[SUCCESS] Registry package created: ${FINAL_ARCHIVE}"
+    cat "${FINAL_ARCHIVE}.sha256"
+done

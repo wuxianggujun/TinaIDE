@@ -16,6 +16,12 @@ sealed interface LaunchDescriptor {
         val libraryPath: String,
     ) : LaunchDescriptor
 
+    /** NativeActivity 图形运行时加载 .so 运行。 */
+    data class NativeActivity(
+        override val artifact: Artifact,
+        val libraryPath: String,
+    ) : LaunchDescriptor
+
     /** 启动调试会话(gdb / lldb)。 */
     data class Debug(
         override val artifact: Artifact,

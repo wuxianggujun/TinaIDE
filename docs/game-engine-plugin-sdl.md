@@ -1,6 +1,6 @@
 # 游戏引擎插件图形运行方案
 
-本文记录 TinaIDE 当前对游戏引擎插件的 SDL 图形运行支持。当前仅保留 SDL2/SDL3 运行链路，不再提供 TinaIDE 自研 GUI 头文件、绘制协议或非 SDL 图形宿主。
+本文记录 TinaIDE 当前的原生图形运行支持。SDL2/SDL3 使用 SDL 图形宿主；raylib 等导出 `ANativeActivity_onCreate` 的共享库使用独立 NativeActivity 宿主。两条链路共享 `.so` 构建能力，但不共享入口约定。
 
 ## 目标体验
 
@@ -16,7 +16,7 @@
 TinaIDE 通过 SDL 运行时打开运行界面
 ```
 
-Android 依赖库不能像桌面程序一样自行创建窗口。插件应提供项目模板、构建配置和运行配置，实际图形窗口由 TinaIDE 内置的 SDL 运行时承载。TinaIDE 不再暴露自研 GUI API 给插件或普通项目调用。
+Android 依赖库不能像桌面程序一样自行创建窗口。插件应提供项目模板、构建配置和运行配置，实际图形窗口由 TinaIDE 的 SDL 或 NativeActivity 运行宿主承载。TinaIDE 不再暴露自研 GUI API 给插件或普通项目调用。
 
 ## 当前支持
 
@@ -87,6 +87,25 @@ friend-engine-sdl3.zip
 
 普通原生可执行文件仍应切换到终端模式运行；SDL 图形运行只接受可由 linker 加载的 `.so` 主库。
 
+## raylib NativeActivity 运行链路
+
+raylib 项目使用 `OutputMode.NATIVE_ACTIVITY`，不能使用 `OutputMode.SDL`。两者的关键差异是：
+
+- SDL 主库导出 `SDL_main`，由 `SDLActivity` 调用。
+- raylib 用户主库导出普通 `main`；`libraylib.so` 导出 `ANativeActivity_onCreate` 并引用该 `main`。
+- TinaIDE 的 `libtina_native_activity_host.so` 先提供稳定的宿主 `main` 符号，再加载用户 `libmain.so`，最后把调用转发给用户的普通 `main`。
+- NativeActivity 依赖闭包中一旦出现 SDL2/SDL3，运行会被拒绝并提示改用 SDL 图形运行，避免 `main` 与 `SDL_main` 入口冲突。
+
+raylib CMake 目标仍必须是共享库：
+
+```cmake
+find_package(raylib CONFIG REQUIRED)
+add_library(main SHARED src/main.c)
+target_link_libraries(main PRIVATE raylib::raylib)
+```
+
+`src/main.c` 保持普通 `int main(void)`，不要包含 SDL 的 main 重定向头，也不要定义 `SDL_main`。旧版 run config 中误设为 `SDL` 的 raylib 项目会在 schema 7 加载时迁移到 `NATIVE_ACTIVITY`。
+
 ### SDL 主版本识别顺序
 
 项目首次生成默认运行配置时，TinaIDE 会扫描 `CMakeLists.txt`、`Android.mk` 和 C/C++ 源码中的 SDL 标记，例如 `find_package(SDL2)`、`SDL2::SDL2`、`target_link_libraries(... SDL2)`、`-lSDL2`、`#include <SDL2/...>` 及对应 SDL3 写法，并把结果写入 `.tinaide/project.json` 的 `sdlVersion` 字段。通用的 `org.libsdl.app.SDLActivity` 同时被 SDL2 和 SDL3 使用，不能单独作为版本依据。
@@ -135,7 +154,7 @@ target_link_libraries(friend_engine_game PRIVATE SDL3::SDL3)
 
 ```json
 {
-  "schemaVersion": 6,
+  "schemaVersion": 7,
   "configurations": [
     {
       "id": "sdl3-debug",
@@ -174,8 +193,8 @@ SDL2 已支持项目识别和 SDL 图形运行，但当前内置 APK 模板仍�
 
 - TinaIDE 自研 GUI 头文件。
 - 非 SDL 图形头文件。
-- 通用 `.so` 图形宿主。
+- 没有 SDL 或 NativeActivity 入口契约的通用 `.so` 图形宿主。
 - 通过自定义渲染回调输出帧缓冲的运行协议。
 - 面向该协议的开发者 GUI 预览页。
 
-后续图形能力只在 SDL 运行链路上迭代。
+后续图形能力只在 SDL 与 NativeActivity 两条明确入口契约的运行链路上迭代。

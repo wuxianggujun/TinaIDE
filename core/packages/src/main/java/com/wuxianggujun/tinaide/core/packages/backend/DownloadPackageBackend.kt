@@ -1,9 +1,14 @@
 package com.wuxianggujun.tinaide.core.packages.backend
 
 import android.content.Context
+import android.os.Build
 import com.wuxianggujun.tinaide.core.common.io.TarExtractor
+import com.wuxianggujun.tinaide.core.i18n.Strings
+import com.wuxianggujun.tinaide.core.i18n.str
 import com.wuxianggujun.tinaide.core.network.ApiResult
 import com.wuxianggujun.tinaide.core.network.registry.GitHubRegistryHttpClientFactory
+import com.wuxianggujun.tinaide.core.packages.PackageAbiCompatibility
+import com.wuxianggujun.tinaide.core.packages.PackageDownloadSourceSelector
 import com.wuxianggujun.tinaide.core.packages.api.PackageApiClient
 import com.wuxianggujun.tinaide.core.packages.download.DownloadError
 import com.wuxianggujun.tinaide.core.packages.download.DownloadResult
@@ -69,28 +74,28 @@ class DownloadPackageBackend(
         }
 
         val downloadInfo = downloadInfoResult.data
-        if (downloadInfo.sources.isEmpty()) {
-            val error = InstallError.UnknownError("No download sources available")
+        val targetAbi = PackageAbiCompatibility.currentAppAbi(
+            nativeLibraryDir = context.applicationInfo.nativeLibraryDir,
+            supportedAbis = Build.SUPPORTED_ABIS,
+        )
+        val sortedSources = PackageDownloadSourceSelector.select(downloadInfo.sources, targetAbi)
+        if (sortedSources.isEmpty()) {
+            val error = InstallError.UnknownError(Strings.pkg_manager_error_no_download_source_for_abi.str(targetAbi))
             progress(InstallProgressEvent.Failed(error))
             return InstallResult.Failure(packageId, error)
         }
 
-        val sortedSources = downloadInfo.sources
-            .filter { it.url.isNotBlank() }
-            .sortedByDescending { it.priority }
-
-        val targetFile = File(downloadDir, "$packageId-$version.zip")
         var lastError: DownloadError? = null
 
         for (source in sortedSources) {
-            val archiveTarget = buildArchiveTarget(packageId, version, source.url)
-            Timber.tag(TAG).d("Trying source: ${source.name} (${source.url})")
+            val archiveTarget = buildArchiveTarget(packageId, version, source.abi, source.url)
+            Timber.tag(TAG).d("Trying source: ${source.name}, abi=${source.abi ?: "legacy"} (${source.url})")
             progress(InstallProgressEvent.Preparing("Downloading from ${source.name}..."))
 
             val downloadResult = downloader.download(
                 url = source.url,
                 targetFile = archiveTarget.file,
-                checksum = downloadInfo.checksum,
+                checksum = source.checksum ?: downloadInfo.checksum,
                 supportsRange = source.supportsRange
             ) { downloaded, total, speed ->
                 progress(InstallProgressEvent.Downloading(downloaded, total, speed))
@@ -116,7 +121,7 @@ class DownloadPackageBackend(
                     )
 
                     if (extractResult.isSuccess) {
-                        targetFile.delete()
+                        downloadResult.file.delete()
                         progress(
                             InstallProgressEvent.Completed(
                                 InstallResult.Success(packageId, version, Platform.ANDROID)
@@ -217,7 +222,7 @@ class DownloadPackageBackend(
         }
     }
 
-    private fun buildArchiveTarget(packageId: String, version: String, url: String): ArchiveTarget {
+    private fun buildArchiveTarget(packageId: String, version: String, abi: String?, url: String): ArchiveTarget {
         val rawPath = runCatching { URI(url).path }.getOrNull().orEmpty()
         val decodedPath = runCatching {
             URLDecoder.decode(rawPath.ifBlank { url.substringBefore('?') }, StandardCharsets.UTF_8.name())
@@ -235,8 +240,15 @@ class DownloadPackageBackend(
             else -> ".pkg" to null
         }
 
+        val abiSuffix = abi
+            ?.trim()
+            ?.lowercase()
+            ?.replace(Regex("[^a-z0-9._-]"), "-")
+            ?.takeIf { it.isNotBlank() }
+            ?.let { "-$it" }
+            .orEmpty()
         return ArchiveTarget(
-            file = File(downloadDir, "$packageId-${version}${suffixAndFormat.first}"),
+            file = File(downloadDir, "$packageId-$version$abiSuffix${suffixAndFormat.first}"),
             formatHint = suffixAndFormat.second
         )
     }

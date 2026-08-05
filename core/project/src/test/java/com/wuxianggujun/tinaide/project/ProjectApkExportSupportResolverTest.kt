@@ -237,6 +237,56 @@ class ProjectApkExportSupportResolverTest {
     }
 
     @Test
+    fun `detect returns native activity for shared raylib project`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            projectRoot.resolve("CMakeLists.txt").writeText(
+                """
+                cmake_minimum_required(VERSION 3.22)
+                project(RaylibDemo)
+                find_package(raylib CONFIG REQUIRED)
+                add_library(main SHARED src/main.c)
+                target_link_libraries(main PRIVATE raylib::raylib)
+                """.trimIndent()
+            )
+            projectRoot.resolve("src").mkdirs()
+            projectRoot.resolve("src/main.c").writeText(
+                """
+                #include <raylib.h>
+                int main(void) { InitWindow(640, 480, "demo"); return 0; }
+                """.trimIndent()
+            )
+
+            val detected = ProjectApkExportSupportResolver.detectSupport(projectRoot)
+
+            assertThat(detected.apkExportType).isEqualTo(ProjectApkExportType.NATIVE_ACTIVITY)
+            assertThat(detected.sdlVersion).isNull()
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `detect does not classify raylib plus SDL as native activity`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            projectRoot.resolve("CMakeLists.txt").writeText(
+                """
+                add_library(main SHARED src/main.cpp)
+                target_link_libraries(main PRIVATE raylib SDL2::SDL2)
+                """.trimIndent()
+            )
+
+            val detected = ProjectApkExportSupportResolver.detectSupport(projectRoot)
+
+            assertThat(detected.apkExportType).isNull()
+            assertThat(detected.sdlVersion).isEqualTo(ProjectSdlVersion.SDL2)
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `detect returns terminal when project has main entry without libmain markers`() {
         val projectRoot = createTempProjectRoot()
         try {

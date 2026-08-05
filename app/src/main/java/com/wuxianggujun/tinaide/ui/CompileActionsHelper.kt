@@ -11,6 +11,7 @@ import com.wuxianggujun.tinaide.editor.session.SaveReason
 import com.wuxianggujun.tinaide.editor.session.SaveResult
 import com.wuxianggujun.tinaide.file.IProjectContext
 import com.wuxianggujun.tinaide.storage.ProjectDirStructure
+import com.wuxianggujun.tinaide.ui.runtime.GraphicalRuntimeLaunchRequest
 import java.io.File
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -59,9 +60,8 @@ class CompileActionsHelper(
     sealed class UiEvent {
         data class ShowToast(val message: String, val type: ToastType) : UiEvent()
         data class OpenTerminal(val command: String, val workDir: String?, val backend: TerminalBackend = TerminalBackend.HOST) : UiEvent()
-        data class OpenSdl(
-            val libraryPath: String,
-            val environment: Map<String, String> = emptyMap(),
+        data class OpenGraphicalRuntime(
+            val request: GraphicalRuntimeLaunchRequest,
         ) : UiEvent()
         data class RevealInProjectTree(val file: File, val selectTarget: Boolean = false) : UiEvent()
     }
@@ -343,6 +343,7 @@ class CompileActionsHelper(
     private fun handleRunLikeSuccess(report: CompileProjectUseCase.Report) {
         when (val launch = report.launch) {
             is CompileProjectUseCase.LaunchSpec.Sdl -> handleSdlLaunchSuccess(launch)
+            is CompileProjectUseCase.LaunchSpec.NativeActivity -> handleNativeActivityLaunchSuccess(launch)
             is CompileProjectUseCase.LaunchSpec.PluginInstalled -> handlePluginInstallSuccess(launch)
             is CompileProjectUseCase.LaunchSpec.Terminal -> {
                 handleTerminalLaunchSuccess(launch, report.artifact)
@@ -360,9 +361,32 @@ class CompileActionsHelper(
     private fun handleSdlLaunchSuccess(launch: CompileProjectUseCase.LaunchSpec.Sdl) {
         emitToast(Strings.toast_compile_done_opening_sdl.strOr(context), ToastType.SUCCESS)
         uiEventsChannel.trySend(
-            UiEvent.OpenSdl(
-                libraryPath = launch.libraryPath,
-                environment = launch.environment,
+            UiEvent.OpenGraphicalRuntime(
+                request = GraphicalRuntimeLaunchRequest.Sdl(
+                    libraryPath = launch.libraryPath,
+                    environment = launch.environment,
+                    preferredSdlMajor = launch.preferredSdlMajor,
+                    orientation = launch.orientation,
+                    enableFloatingLog = launch.enableFloatingLog,
+                ),
+            )
+        )
+    }
+
+    private fun handleNativeActivityLaunchSuccess(
+        launch: CompileProjectUseCase.LaunchSpec.NativeActivity,
+    ) {
+        emitToast(
+            Strings.toast_compile_done_opening_native_activity.strOr(context),
+            ToastType.SUCCESS,
+        )
+        uiEventsChannel.trySend(
+            UiEvent.OpenGraphicalRuntime(
+                request = GraphicalRuntimeLaunchRequest.NativeActivity(
+                    libraryPath = launch.libraryPath,
+                    environment = launch.environment,
+                    enableFloatingLog = launch.enableFloatingLog,
+                ),
             )
         )
     }

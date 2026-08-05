@@ -32,8 +32,8 @@ tinaide-pkg/
 │   ├── build-sdl-extension.sh
 │   ├── build-raylib.sh
 │   └── build-box2d.sh
-├── package-native-library.sh # 合并通用原生库 ABI 并生成 Registry 产物
-├── package-sdl2.sh     # 合并 SDL2 ABI 并生成 Registry 产物
+├── package-native-library.sh # 生成通用兼容包和按 ABI 拆分的 Registry 产物
+├── package-sdl2.sh     # 生成 SDL2 通用兼容包和按 ABI 拆分产物
 ├── package-for-assets.sh # 打包为 assets 格式
 └── output/              # 构建输出
     ├── zlib/
@@ -413,11 +413,13 @@ clang++ -I/data/data/.../sdl3/include \
 - **SDL2_mixer / SDL3_mixer**：WAV、Ogg、MP3、FLAC 音频混音，codec 静态内置
 - **SDL2_ttf / SDL3_ttf**：TrueType 字体渲染，FreeType 静态内置
 - **SDL2_net / SDL3_net**：TCP/UDP 网络能力
-- **raylib**：游戏开发动态库
+- **raylib**：游戏开发动态库；保持 shared 构建，必须导出 `ANativeActivity_onCreate`、保留未定义的普通 `main`，且不得依赖 SDL
 - **Box2D**：2D 物理引擎静态库
 
-Registry 包默认合并 `arm64-v8a` 与 `x86_64`，并生成头文件、
-`lib/<abi>`、CMake package、pkg-config 和 `package.json` 元数据：
+Registry 打包会保留一个供旧客户端使用的双 ABI 通用包，并为 `arm64-v8a` 与
+`x86_64` 分别生成独立归档。新客户端按当前 App ABI 下载独立归档，不再让 ARM64
+用户额外下载 x86_64 库；每个独立归档仍包含头文件、对应的 `lib/<abi>`、
+CMake package、pkg-config 和仅声明当前 ABI 的 `package.json`：
 
 ```powershell
 # 在构建镜像中运行，复用容器内的 readelf、tar 和 xz
@@ -425,6 +427,14 @@ docker run --rm --entrypoint /build/package-native-library.sh `
     -v "${PWD}\output:/output" tinaide-pkg-builder sdl2-image
 docker run --rm --entrypoint /build/package-native-library.sh `
     -v "${PWD}\output:/output" tinaide-pkg-builder box2d
+```
+
+以 `raylib` 为例，输出目录包含：
+
+```text
+output/registry/raylib/6.0/raylib.tar.xz              # 旧客户端兼容
+output/registry/raylib/6.0/raylib-arm64-v8a.tar.xz    # ARM64
+output/registry/raylib/6.0/raylib-x86_64.tar.xz       # x86_64
 ```
 
 ---

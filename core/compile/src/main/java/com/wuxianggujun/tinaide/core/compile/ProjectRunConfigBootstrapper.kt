@@ -22,7 +22,7 @@ object ProjectRunConfigBootstrapper {
         val metadata = ProjectMetadataStore.read(projectDir) ?: return false
         val defaultConfig = CMakeRunTargetResolver.createDefaultRunConfiguration(
             metadata = metadata,
-            requireTargetForNonSdl = true,
+            requireTargetForTerminal = true,
         ) ?: return false
 
         val defaultManager = RunConfigurationManager(

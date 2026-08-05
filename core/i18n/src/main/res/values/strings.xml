@@ -2210,6 +2210,8 @@
   <string name="run_config_output_terminal_desc">在独立终端中运行，支持交互输入</string>
   <string name="run_config_output_sdl">SDL 图形运行</string>
   <string name="run_config_output_sdl_desc">在 SDL 图形运行时中启动（输出需为 .so）</string>
+  <string name="run_config_output_native_activity">NativeActivity 图形运行</string>
+  <string name="run_config_output_native_activity_desc">运行 raylib 等 NativeActivity 共享库（入口为普通 main）</string>
 
   <!-- SDL 图形运行选项 -->
   <string name="run_config_sdl_options">SDL 图形运行选项</string>
@@ -2227,22 +2229,24 @@
   <string name="run_config_sdl_orientation_landscape_desc">强制横屏显示，适合大多数游戏和图形程序</string>
   <string name="run_config_sdl_orientation_portrait">竖屏</string>
   <string name="run_config_sdl_orientation_portrait_desc">强制竖屏显示</string>
-  <string name="run_config_sdl_floating_log">悬浮日志窗口</string>
-  <string name="run_config_sdl_floating_log_desc">在 SDL 图形全屏运行时显示可拖拽的实时日志窗口，方便查看 stdout/stderr 输出</string>
+  <string name="run_config_graphical_options">图形运行界面</string>
+  <string name="run_config_graphical_floating_log">悬浮日志窗口</string>
+  <string name="run_config_graphical_floating_log_desc">在图形全屏运行时显示可拖拽的实时日志窗口，用于查看 stdout/stderr 输出</string>
   <string name="run_config_terminal_options">终端运行选项</string>
   <string name="run_config_show_linker_warnings">显示动态链接器兼容性告警</string>
   <string name="run_config_show_linker_warnings_desc">默认隐藏旧 Android linker 对 AArch64 Auth RELR 标签产生的三类无害告警；开启后原样显示</string>
 
   <!-- 悬浮覆盖层 -->
-  <string name="floating_overlay_exit">退出</string>
-  <string name="floating_overlay_exit_confirm">确定退出 SDL 图形运行界面？</string>
-  <string name="floating_overlay_exit_confirm_yes">退出</string>
+  <string name="floating_overlay_exit">返回编辑器</string>
+  <string name="floating_overlay_exit_confirm">确定返回编辑器并结束当前图形程序？</string>
+  <string name="floating_overlay_exit_confirm_yes">返回</string>
   <string name="floating_overlay_exit_confirm_no">取消</string>
   <string name="floating_overlay_log_title">运行日志</string>
   <string name="floating_overlay_log_empty">暂无日志输出</string>
   <string name="floating_overlay_log_clear">清空</string>
-  <string name="floating_overlay_ball_desc">悬浮控制球</string>
+  <string name="floating_overlay_ball_desc">悬浮返回按钮</string>
   <string name="floating_overlay_double_back_hint">再按一次返回键退出，或点击悬浮球退出</string>
+  <string name="floating_overlay_log_capture_failed">无法读取当前图形程序的运行日志</string>
 
   <string name="sdl_host_title">SDL 运行界面</string>
   <string name="sdl_runtime_error_main_library_missing">缺少待启动的主共享库路径</string>
@@ -2263,6 +2267,23 @@
   <string name="sdl_runtime_error_missing_launch_params">SDL 启动参数缺失，无法启动 SDL 运行界面。</string>
   <string name="sdl_runtime_error_invalid_required_major">SDL 主版本参数无效：%1$d（仅支持 2 或 3）</string>
   <string name="sdl_runtime_error_launch_failed">启动 SDL 运行界面失败：%1$s</string>
+  <string name="native_activity_runtime_invalid_shared_library">NativeActivity 图形运行需要共享库（.so），当前目标不可加载：%1$s</string>
+  <string name="native_activity_runtime_no_shared_library_target">NativeActivity 图形运行需要 CMake 共享库目标（.so）。请使用 add_library(... SHARED ...)，并让目标导出普通 main。</string>
+  <string name="native_activity_runtime_auto_selected_shared_library_target">NativeActivity 图形模式已自动切换到共享库目标：%1$s</string>
+  <string name="native_activity_runtime_main_library_missing">缺少 NativeActivity 主共享库路径</string>
+  <string name="native_activity_runtime_dependency_scan_failed">解析 NativeActivity 共享库失败：%1$s</string>
+  <string name="native_activity_runtime_missing_dependencies">NativeActivity 运行依赖不完整：%1$s</string>
+  <string name="native_activity_runtime_sdl_conflict">当前目标依赖 SDL，不能通过 NativeActivity 运行。SDL 项目请选择 SDL 图形运行；raylib 项目不要把 main 重命名为 SDL_main。</string>
+  <string name="native_activity_runtime_stage_failed">准备 NativeActivity 运行库失败：%1$s</string>
+  <string name="native_activity_runtime_launch_failed">启动 NativeActivity 运行界面失败：%1$s</string>
+  <string name="native_activity_runtime_host_not_configured">NativeActivity 运行宿主尚未完成配置</string>
+  <string name="native_activity_runtime_dependency_load_failed">加载 NativeActivity 依赖失败：%1$s</string>
+  <string name="native_activity_runtime_main_load_failed">加载 NativeActivity 主共享库失败：%1$s</string>
+  <string name="native_activity_runtime_entry_missing">共享库未导出 ANativeActivity_onCreate：%1$s</string>
+  <string name="native_activity_runtime_main_entry_missing">raylib 目标未导出普通 main。请移除 SDL_main 宏重定向，或将运行模式切换为 SDL。</string>
+  <string name="native_activity_runtime_bridge_recursion">NativeActivity 入口错误地解析回宿主桥接库</string>
+  <string name="native_activity_runtime_multiple_entries">发现多个不同的 NativeActivity 入口，无法确定应启动哪一个：%1$s</string>
+  <string name="toast_compile_done_opening_native_activity">编译完成，正在打开 NativeActivity 图形界面</string>
   <string name="native_library_missing_libraries_title">缺少运行库</string>
   <string name="native_library_missing_libraries_message">缺少以下运行库：%1$s</string>
   <string name="native_library_missing_libraries_package_hint">建议在包管理器安装 Android 包：%1$s，然后重试。</string>
@@ -4190,6 +4211,7 @@ kept=%3$d bytes
   <string name="pkg_manager_error_package_not_found">未找到包：%1$s</string>
   <string name="pkg_manager_error_package_versions_not_found">未找到包版本：%1$s</string>
   <string name="pkg_manager_error_download_info_not_found">未找到包下载信息：%1$s/%2$d</string>
+  <string name="pkg_manager_error_no_download_source_for_abi">没有适用于当前 ABI（%1$s）的下载源</string>
   <string name="pkg_manager_retry">重试</string>
   <string name="pkg_manager_update_all">全部更新</string>
   <string name="pkg_manager_check_updates">检查更新</string>

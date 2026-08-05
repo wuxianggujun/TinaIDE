@@ -11,6 +11,16 @@ import org.junit.Test
 class RunConfigurationManagerNormalizationTest {
 
     @Test
+    fun `normalized clears stale SDL version outside SDL output mode`() {
+        val config = RunConfiguration(
+            outputMode = OutputMode.NATIVE_ACTIVITY,
+            sdlVersion = ProjectSdlVersion.SDL3,
+        )
+
+        assertThat(config.normalized().sdlVersion).isNull()
+    }
+
+    @Test
     fun `load normalizes current schema values and selected id`() {
         val projectRoot = createTempProjectRoot()
         try {
@@ -35,7 +45,7 @@ class RunConfigurationManagerNormalizationTest {
 
             val manager = RunConfigurationManager.load(projectRoot.absolutePath)
 
-            assertThat(manager.schemaVersion).isEqualTo(6)
+            assertThat(manager.schemaVersion).isEqualTo(7)
             assertThat(manager.selectedId).isEqualTo("cfg-current")
             assertThat(manager.selectedConfig.buildType).isEqualTo(BuildType.DEBUG)
             assertThat(manager.selectedConfig.singleFileCppStandard).isEqualTo("CPP_20")
@@ -43,7 +53,7 @@ class RunConfigurationManagerNormalizationTest {
             assertThat(manager.selectedConfig.customCppCompiler).isNull()
 
             val persisted = readRunConfig(projectRoot)
-            assertThat(persisted).contains("\"schemaVersion\": 6")
+            assertThat(persisted).contains("\"schemaVersion\": 7")
             assertThat(persisted).contains("\"selectedId\": \"cfg-current\"")
             assertThat(persisted).contains("\"singleFileCppStandard\": \"CPP_20\"")
             assertThat(persisted).contains("\"customCCompiler\": null")
@@ -163,10 +173,10 @@ class RunConfigurationManagerNormalizationTest {
 
             val manager = RunConfigurationManager.load(projectRoot.absolutePath)
 
-            assertThat(manager.schemaVersion).isEqualTo(6)
+            assertThat(manager.schemaVersion).isEqualTo(7)
             assertThat(manager.selectedConfig.sdlVersion).isEqualTo(ProjectSdlVersion.SDL2)
             val persisted = readRunConfig(projectRoot)
-            assertThat(persisted).contains("\"schemaVersion\": 6")
+            assertThat(persisted).contains("\"schemaVersion\": 7")
             assertThat(persisted).contains("\"sdlVersion\": \"SDL2\"")
         } finally {
             projectRoot.deleteRecursively()
@@ -205,6 +215,78 @@ class RunConfigurationManagerNormalizationTest {
             val manager = RunConfigurationManager.load(projectRoot.absolutePath)
 
             assertThat(manager.selectedConfig.name).isEqualTo("Debug")
+            assertThat(manager.selectedConfig.outputMode).isEqualTo(OutputMode.SDL)
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `load migrates legacy raylib sdl mode to native activity`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            ProjectMetadataStore.ensure(
+                projectRoot = projectRoot,
+                displayNameFallback = projectRoot.name,
+                apkExportType = ProjectApkExportType.NATIVE_ACTIVITY,
+                defaultRunTargetName = "main",
+            )
+            writeRunConfig(
+                projectRoot,
+                """
+                {
+                  "schemaVersion": 6,
+                  "configurations": [
+                    {
+                      "id": "cfg-raylib",
+                      "name": "Raylib Debug",
+                      "outputMode": "SDL",
+                      "targetName": "main"
+                    }
+                  ],
+                  "selectedId": "cfg-raylib"
+                }
+                """.trimIndent()
+            )
+
+            val manager = RunConfigurationManager.load(projectRoot.absolutePath)
+
+            assertThat(manager.schemaVersion).isEqualTo(7)
+            assertThat(manager.selectedConfig.outputMode).isEqualTo(OutputMode.NATIVE_ACTIVITY)
+            assertThat(readRunConfig(projectRoot)).contains("\"outputMode\": \"NATIVE_ACTIVITY\"")
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `load keeps current schema native project sdl choice explicit`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            ProjectMetadataStore.ensure(
+                projectRoot = projectRoot,
+                displayNameFallback = projectRoot.name,
+                apkExportType = ProjectApkExportType.NATIVE_ACTIVITY,
+            )
+            writeRunConfig(
+                projectRoot,
+                """
+                {
+                  "schemaVersion": 7,
+                  "configurations": [
+                    {
+                      "id": "cfg-explicit-sdl",
+                      "name": "Explicit SDL",
+                      "outputMode": "SDL"
+                    }
+                  ],
+                  "selectedId": "cfg-explicit-sdl"
+                }
+                """.trimIndent()
+            )
+
+            val manager = RunConfigurationManager.load(projectRoot.absolutePath)
+
             assertThat(manager.selectedConfig.outputMode).isEqualTo(OutputMode.SDL)
         } finally {
             projectRoot.deleteRecursively()

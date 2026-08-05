@@ -61,6 +61,10 @@ add_library(tina_log_redirect SHARED
     log_redirect/log_redirect_jni.c
 )
 
+add_library(tina_native_activity_host SHARED
+    native_activity/native_activity_host.c
+)
+
 target_include_directories(tina_native PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
@@ -73,6 +77,8 @@ find_library(log-lib log)
 target_link_libraries(tina_native PRIVATE c++_shared ${log-lib})
 target_link_libraries(tina_pty PRIVATE c++_shared ${log-lib})
 target_link_libraries(tina_log_redirect PRIVATE ${log-lib})
+target_link_libraries(tina_native_activity_host PRIVATE android dl ${log-lib})
+target_link_options(tina_native_activity_host PRIVATE "-Wl,-z,global")
 
 # ============================================================================
 # 注意：proot-loader (libproot-loader.so) 可以来自预编译 source set，

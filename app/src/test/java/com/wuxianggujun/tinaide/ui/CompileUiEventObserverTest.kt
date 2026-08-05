@@ -2,6 +2,7 @@ package com.wuxianggujun.tinaide.ui
 
 import android.app.Application
 import com.wuxianggujun.tinaide.core.terminal.TerminalBackend
+import com.wuxianggujun.tinaide.ui.runtime.GraphicalRuntimeLaunchRequest
 import io.mockk.coVerify
 import io.mockk.mockk
 import io.mockk.verify
@@ -21,12 +22,12 @@ class CompileUiEventObserverTest {
     @Test
     fun `handleUiEvent delegates toast events`() = runTest {
         val toastPresenter = mockk<CompileUiEventObserver.ToastPresenter>(relaxed = true)
-        val sdlLauncher = mockk<CompileUiEventObserver.SdlLauncher>(relaxed = true)
+        val graphicalRuntimeLauncher = mockk<CompileUiEventObserver.GraphicalRuntimeLauncher>(relaxed = true)
         val terminalLauncher = mockk<CompileUiEventObserver.TerminalLauncher>(relaxed = true)
         val projectTreeRevealer = mockk<CompileUiEventObserver.ProjectTreeRevealer>(relaxed = true)
         val observer = CompileUiEventObserver(
             toastPresenter = toastPresenter,
-            sdlLauncher = sdlLauncher,
+            graphicalRuntimeLauncher = graphicalRuntimeLauncher,
             terminalLauncher = terminalLauncher,
             projectTreeRevealer = projectTreeRevealer
         )
@@ -46,20 +47,22 @@ class CompileUiEventObserverTest {
     @Test
     fun `handleUiEvent delegates sdl and terminal launch events`() = runTest {
         val toastPresenter = mockk<CompileUiEventObserver.ToastPresenter>(relaxed = true)
-        val sdlLauncher = mockk<CompileUiEventObserver.SdlLauncher>(relaxed = true)
+        val graphicalRuntimeLauncher = mockk<CompileUiEventObserver.GraphicalRuntimeLauncher>(relaxed = true)
         val terminalLauncher = mockk<CompileUiEventObserver.TerminalLauncher>(relaxed = true)
         val projectTreeRevealer = mockk<CompileUiEventObserver.ProjectTreeRevealer>(relaxed = true)
         val observer = CompileUiEventObserver(
             toastPresenter = toastPresenter,
-            sdlLauncher = sdlLauncher,
+            graphicalRuntimeLauncher = graphicalRuntimeLauncher,
             terminalLauncher = terminalLauncher,
             projectTreeRevealer = projectTreeRevealer
         )
 
         observer.handleUiEvent(
-            CompileActionsHelper.UiEvent.OpenSdl(
-                libraryPath = "/tmp/libdemo.so",
-                environment = emptyMap(),
+            CompileActionsHelper.UiEvent.OpenGraphicalRuntime(
+                GraphicalRuntimeLaunchRequest.Sdl(
+                    libraryPath = "/tmp/libdemo.so",
+                    environment = emptyMap(),
+                )
             )
         )
         observer.handleUiEvent(
@@ -69,8 +72,31 @@ class CompileUiEventObserverTest {
                 backend = TerminalBackend.HOST
             )
         )
+        observer.handleUiEvent(
+            CompileActionsHelper.UiEvent.OpenGraphicalRuntime(
+                GraphicalRuntimeLaunchRequest.NativeActivity(
+                    libraryPath = "/tmp/libraylib-demo.so",
+                    environment = mapOf("LD_LIBRARY_PATH" to "/tmp/lib"),
+                )
+            )
+        )
 
-        coVerify(exactly = 1) { sdlLauncher.open("/tmp/libdemo.so", emptyMap()) }
+        coVerify(exactly = 1) {
+            graphicalRuntimeLauncher.open(
+                GraphicalRuntimeLaunchRequest.Sdl(
+                    libraryPath = "/tmp/libdemo.so",
+                    environment = emptyMap(),
+                )
+            )
+        }
+        coVerify(exactly = 1) {
+            graphicalRuntimeLauncher.open(
+                GraphicalRuntimeLaunchRequest.NativeActivity(
+                    libraryPath = "/tmp/libraylib-demo.so",
+                    environment = mapOf("LD_LIBRARY_PATH" to "/tmp/lib"),
+                )
+            )
+        }
         verify(exactly = 1) {
             terminalLauncher.open(
                 command = "cmake --build .",
@@ -83,12 +109,12 @@ class CompileUiEventObserverTest {
     @Test
     fun `handleUiEvent delegates reveal requests`() = runTest {
         val toastPresenter = mockk<CompileUiEventObserver.ToastPresenter>(relaxed = true)
-        val sdlLauncher = mockk<CompileUiEventObserver.SdlLauncher>(relaxed = true)
+        val graphicalRuntimeLauncher = mockk<CompileUiEventObserver.GraphicalRuntimeLauncher>(relaxed = true)
         val terminalLauncher = mockk<CompileUiEventObserver.TerminalLauncher>(relaxed = true)
         val projectTreeRevealer = mockk<CompileUiEventObserver.ProjectTreeRevealer>(relaxed = true)
         val observer = CompileUiEventObserver(
             toastPresenter = toastPresenter,
-            sdlLauncher = sdlLauncher,
+            graphicalRuntimeLauncher = graphicalRuntimeLauncher,
             terminalLauncher = terminalLauncher,
             projectTreeRevealer = projectTreeRevealer
         )

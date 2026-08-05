@@ -7,7 +7,7 @@ import com.wuxianggujun.tinaide.core.compile.LaunchEnvironment
 import timber.log.Timber
 
 /**
- * 管理 SDL 图形运行启动前对当前 App 进程环境变量的临时注入。
+ * 管理图形运行宿主启动前对当前 App 进程环境变量的临时注入。
  *
  * 环境变量是进程级全局状态，因此需要在启动结束后恢复，避免污染后续启动。
  */

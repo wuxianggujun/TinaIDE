@@ -1,7 +1,6 @@
 package com.wuxianggujun.tinaide.core.format
 
 import android.content.Context
-import com.wuxianggujun.tinaide.core.config.Prefs
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.core.lang.CxxFileSupport
@@ -32,6 +31,7 @@ class NativeCodeFormatter(
     private val toolchainManager = AndroidNativeToolchainManager(appContext)
     private val nativeLibDir = appContext.applicationInfo.nativeLibraryDir
     private val configManager by lazy { ClangFormatConfigManager(appContext) }
+    private val styleResolver = FormatStyleResolver()
 
     companion object {
         private const val TAG = "NativeCodeFormatter"
@@ -252,49 +252,18 @@ class NativeCodeFormatter(
      * 1. 如果项目目录中存在 .clang-format 文件，使用 FormatStyle.FILE
      * 2. 否则使用用户在设置中选择的默认风格
      */
-    fun resolveFormatStyle(filePath: String): FormatStyle {
-        val file = File(filePath)
-        val directory = if (file.isDirectory) file else file.parentFile
-
-        return if (hasClangFormatFile(directory)) {
-            Timber.tag(TAG).d("Using project .clang-format for: $filePath")
-            FormatStyle.FILE
-        } else {
-            val userStyle = getUserDefaultStyle()
-            Timber.tag(TAG).d("Using user default style ($userStyle) for: $filePath")
-            userStyle
-        }
-    }
+    fun resolveFormatStyle(filePath: String): FormatStyle = styleResolver.resolve(File(filePath))
 
     /**
      * 获取用户设置的默认格式化风格
      */
-    fun getUserDefaultStyle(): FormatStyle = FormatStyle.fromString(Prefs.codeFormatStyle)
+    fun getUserDefaultStyle(): FormatStyle = styleResolver.getUserDefaultStyle()
 
     /**
      * 检查指定目录或其父目录中是否存在 .clang-format 文件
      */
-    fun hasClangFormatFile(directory: File?, maxDepth: Int = 10): Boolean {
-        var currentDir = directory
-        var depth = 0
-
-        while (currentDir != null && depth < maxDepth) {
-            if (File(currentDir, ".clang-format").let { it.exists() && it.isFile }) {
-                Timber.tag(TAG).d("Found .clang-format at: ${currentDir.absolutePath}")
-                return true
-            }
-            // Windows 风格
-            if (File(currentDir, "_clang-format").let { it.exists() && it.isFile }) {
-                Timber.tag(TAG).d("Found _clang-format at: ${currentDir.absolutePath}")
-                return true
-            }
-
-            currentDir = currentDir.parentFile
-            depth++
-        }
-
-        return false
-    }
+    fun hasClangFormatFile(directory: File?, maxDepth: Int = 10): Boolean =
+        styleResolver.hasClangFormatFile(directory, maxDepth)
 
     // ========== 配置管理委托 ==========
 
@@ -329,7 +298,7 @@ class NativeCodeFormatter(
             add(clangFormatBinary.absolutePath)
 
             // 风格设置
-            add(buildStyleArgument(style))
+            add(style.toClangFormatArgument())
 
             // 假设文件名（用于推断语言）
             add("--assume-filename=$fileName")
@@ -341,27 +310,6 @@ class NativeCodeFormatter(
 
             // 额外参数
             addAll(options.extraArgs)
-        }
-    }
-
-    /**
-     * 构建 --style 参数
-     */
-    private fun buildStyleArgument(style: FormatStyle): String = when (style) {
-        FormatStyle.FILE -> "--style=file"
-        is FormatStyle.Custom -> "--style=${style.config}"
-        else -> {
-            val styleName = when (style) {
-                FormatStyle.LLVM -> "LLVM"
-                FormatStyle.GOOGLE -> "Google"
-                FormatStyle.CHROMIUM -> "Chromium"
-                FormatStyle.MOZILLA -> "Mozilla"
-                FormatStyle.WEBKIT -> "WebKit"
-                FormatStyle.MICROSOFT -> "Microsoft"
-                FormatStyle.GNU -> "GNU"
-                else -> "LLVM"
-            }
-            "--style=$styleName"
         }
     }
 

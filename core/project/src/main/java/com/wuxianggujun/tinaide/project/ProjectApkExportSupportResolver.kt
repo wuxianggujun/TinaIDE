@@ -44,6 +44,13 @@ object ProjectApkExportSupportResolver {
         Regex("""\bSDL_MAIN_USE_CALLBACKS\b"""),
         Regex("""\bSDL_App(?:Init|Iterate|Event|Quit)\b"""),
     )
+    private val raylibMarkerPatterns = listOf(
+        Regex("""(?i)\bfind_package\s*\(\s*raylib\b"""),
+        Regex("""(?i)#\s*include\s*[<\"]raylib\.h[>\"]"""),
+        Regex("""(?i)(?:^|\s)-lraylib(?:\s|$)""", RegexOption.MULTILINE),
+        Regex("""(?i)\blibraylib\.so(?:\.[0-9A-Za-z_.+-]+)?\b"""),
+        Regex("""(?is)\btarget_link_libraries\s*\([^)]*\braylib(?:::\w+)?\b"""),
+    )
     private val nativeActivityMarkers = listOf(
         "android.app.NativeActivity",
         "android.app.lib_name",
@@ -126,6 +133,7 @@ object ProjectApkExportSupportResolver {
         val hasLibMainMarker = containsAnyMarker(textMatches, libmainMarkers) || hasCompiledLibMain(projectRoot, buildDir)
         val hasSdl2Marker = containsAnyPattern(textMatches, sdl2MarkerPatterns)
         val hasSdl3Marker = containsAnyPattern(textMatches, sdl3MarkerPatterns)
+        val hasRaylibMarker = containsAnyPattern(textMatches, raylibMarkerPatterns)
         val sdlVersion = when {
             hasSdl2Marker == hasSdl3Marker -> null
             hasSdl2Marker -> ProjectSdlVersion.SDL2
@@ -138,7 +146,7 @@ object ProjectApkExportSupportResolver {
             hasLibMainMarker &&
             !hasSdl2Marker &&
             !hasSdl3Marker &&
-            containsAnyMarker(textMatches, nativeActivityMarkers)
+            (hasRaylibMarker || containsAnyMarker(textMatches, nativeActivityMarkers))
         ) {
             ProjectApkExportType.NATIVE_ACTIVITY
         } else if (!hasLibMainMarker &&

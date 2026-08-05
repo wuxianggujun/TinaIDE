@@ -33,15 +33,33 @@
 
 ### Added
 
+- 新增独立 `NativeActivity` 图形运行模式与宿主桥接库，raylib 等非 SDL 图形库可以继续使用普通 `main` 入口。
+- SDL2、SDL3 与 NativeActivity 运行界面共用悬浮返回、退出确认和可选日志面板，切换渲染库时保持一致操作习惯。
+- 依赖包 Registry 协议支持按 ABI 下载源及每个制品独立的大小、SHA-256 元数据。
+
 ### Changed
 
+- 图形运行调度拆分为 SDL2、SDL3、NativeActivity 三种明确协议，运行时装载、独立进程退出和动态库 staging 统一由共享宿主能力管理。
+- native 依赖库打包改为同时生成旧客户端通用包和 `arm64-v8a`、`x86_64` 独立归档；新客户端按当前 App 实际 native ABI 选择制品。
+
 ### Fixed
+
+- 修复格式化入口写死 `FormatStyle.FILE`，导致用户切换格式化配置后没有反应的问题；现在每次格式化都会实时读取设置，并向上查找 `.clang-format` 或 `_clang-format`。
+- 修复 SDL 的 `SDL_main` 入口约定污染 raylib 等图形库，导致共享库运行时找不到普通 `main` 的问题。
+- 修复版本化 SONAME 缺失时错误回退到其他主版本动态库，以及 CMake 重复注入 `$ORIGIN` RUNPATH 的问题。
+- 修复 ARM64 用户下载 native 依赖包时同时下载 x86_64 库的问题；ABI 独立源存在时不再回退到双 ABI 通用包。
+- 修复下载归档成功安装后删除了错误缓存文件、实际归档仍残留的问题。
 
 ### Removed
 
 ### Tests
 
+- 新增格式化风格解析、图形运行协议、raylib NativeActivity 契约、动态库 SONAME 解析、ABI 下载源选择与 Registry 序列化回归测试。
+- Registry 校验新增 ABI 元数据一致性、单源大小与 SHA-256，以及独立归档不得夹带其他 ABI 库的检查。
+
 ### Documentation
+
+- 更新 SDL/raylib 图形运行说明、项目创建与构建帮助，以及 native 依赖包按 ABI 发布规范。
 
 ## [0.18.12] - 2026-07-25
 

@@ -1023,10 +1023,14 @@ class NativeCMakeBuildExecutor(
                     linkerCompatibilityFlags,
                     "-fuse-ld=lld"
                 )
+                val executableLinkerFlags = mergeFlagSegments(linkerFlags, projectLdFlags)
+                val sharedLinkerFlags = CMakeLinkPolicy.resolveAndroidSharedLinkerFlags(
+                    executableLinkerFlags
+                )
                 add("-DCMAKE_C_FLAGS=${mergeFlagSegments(cCompileFlags, compilerExecutionFlags, projectCFlags)}")
                 add("-DCMAKE_CXX_FLAGS=${mergeFlagSegments(cxxCompileFlags, compilerExecutionFlags, projectCppFlags)}")
-                add("-DCMAKE_EXE_LINKER_FLAGS=${mergeFlagSegments(linkerFlags, projectLdFlags)}")
-                add("-DCMAKE_SHARED_LINKER_FLAGS=${mergeFlagSegments(linkerFlags, projectLdFlags)}")
+                add("-DCMAKE_EXE_LINKER_FLAGS=$executableLinkerFlags")
+                add("-DCMAKE_SHARED_LINKER_FLAGS=$sharedLinkerFlags")
             }
 
             // 指定 CMAKE_MAKE_PROGRAM（Make/Ninja 共用），避免 CMake 内部回退到错误路径。

@@ -52,6 +52,24 @@ if [ -z "$LIBRARY_PATH" ]; then
     exit 1
 fi
 "$STRIP" --strip-unneeded "$LIBRARY_PATH"
+if ! "$READELF" -Ws "$LIBRARY_PATH" | awk '
+    $7 != "UND" && $8 == "ANativeActivity_onCreate" { found = 1 }
+    END { exit found ? 0 : 1 }
+'; then
+    log_error "libraylib.so does not export ANativeActivity_onCreate"
+    exit 1
+fi
+if ! "$READELF" -Ws "$LIBRARY_PATH" | awk '
+    $7 == "UND" && $8 == "main" { found = 1 }
+    END { exit found ? 0 : 1 }
+'; then
+    log_error "libraylib.so no longer exposes the expected undefined main contract"
+    exit 1
+fi
+if "$READELF" -dW "$LIBRARY_PATH" | grep -Eq 'Shared library: \[libSDL[23]'; then
+    log_error "libraylib.so unexpectedly depends on SDL; NativeActivity and SDL entry contracts must stay separate"
+    exit 1
+fi
 while read -r LOAD_ALIGNMENT; do
     if (( LOAD_ALIGNMENT < 0x4000 )); then
         log_error "libraylib.so LOAD alignment is below 16 KB: ${LOAD_ALIGNMENT}"

@@ -289,13 +289,17 @@ class PackageManagerImpl(
         val packageId = descriptor.packageId
         val platform = descriptor.platform
         val platformPkg = descriptor.platformPackage
+        val currentAppAbi = PackageAbiCompatibility.currentAppAbi(
+            nativeLibraryDir = context.applicationInfo.nativeLibraryDir,
+            supportedAbis = Build.SUPPORTED_ABIS,
+        )
 
         if (
             platform == Platform.ANDROID &&
-            !PackageAbiCompatibility.isCompatible(platformPkg.abi, Build.SUPPORTED_ABIS)
+            !PackageAbiCompatibility.isCompatible(platformPkg.abi, arrayOf(currentAppAbi))
         ) {
             val error = InstallError.UnsupportedAbi(
-                currentAbi = PackageAbiCompatibility.currentAbiLabel(Build.SUPPORTED_ABIS),
+                currentAbi = currentAppAbi,
                 supportedAbis = platformPkg.abi.orEmpty()
             )
             progress(InstallProgressEvent.Failed(error))

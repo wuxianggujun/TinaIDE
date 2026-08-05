@@ -1,5 +1,6 @@
 package com.wuxianggujun.tinaide.core.compile
 
+import com.wuxianggujun.tinaide.project.ProjectApkExportType
 import com.wuxianggujun.tinaide.project.ProjectMetadata
 
 object CMakeRunTargetResolver {
@@ -16,30 +17,31 @@ object CMakeRunTargetResolver {
     )
 
     fun defaultOutputMode(metadata: ProjectMetadata?): OutputMode {
-        return if (metadata?.getSdlVersionOrNull() != null) {
-            OutputMode.SDL
-        } else {
-            OutputMode.TERMINAL
+        return when {
+            metadata?.getSdlVersionOrNull() != null -> OutputMode.SDL
+            metadata?.apkExportType == ProjectApkExportType.NATIVE_ACTIVITY -> OutputMode.NATIVE_ACTIVITY
+            else -> OutputMode.TERMINAL
         }
     }
 
     fun defaultTargetName(metadata: ProjectMetadata?, outputMode: OutputMode): String? {
         if (metadata == null) return null
-        return if (outputMode.isSdlGraphical()) {
-            metadata.normalizedDefaultSdlTargetName()
+        return when (outputMode) {
+            OutputMode.SDL -> metadata.normalizedDefaultSdlTargetName()
                 ?: metadata.normalizedDefaultRunTargetName()
-        } else {
-            metadata.normalizedDefaultRunTargetName()
+            OutputMode.NATIVE_ACTIVITY -> metadata.normalizedDefaultRunTargetName()
+                ?: metadata.normalizedDefaultSdlTargetName()
+            OutputMode.TERMINAL -> metadata.normalizedDefaultRunTargetName()
         }
     }
 
     fun createDefaultRunConfiguration(
         metadata: ProjectMetadata?,
-        requireTargetForNonSdl: Boolean = false,
+        requireTargetForTerminal: Boolean = false,
     ): RunConfiguration? {
         val outputMode = defaultOutputMode(metadata)
         val targetName = defaultTargetName(metadata, outputMode)
-        if (requireTargetForNonSdl && outputMode != OutputMode.SDL && targetName.isNullOrBlank()) {
+        if (requireTargetForTerminal && outputMode == OutputMode.TERMINAL && targetName.isNullOrBlank()) {
             return null
         }
         return RunConfiguration(

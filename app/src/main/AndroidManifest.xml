@@ -108,6 +108,18 @@
             android:process=":sdl2"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode" />
         <activity
+            android:name=".ui.nativeactivity.ExternalNativeActivity"
+            android:exported="false"
+            android:label="@string/run_config_output_native_activity"
+            android:parentActivityName=".MainActivity"
+            android:process=":gui"
+            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode">
+            <meta-data
+                android:name="android.app.lib_name"
+                android:value="tina_native_activity_host" />
+        </activity>
+        <activity
             android:name=".ui.GlobalSearchActivity"
             android:exported="false"
             android:label="@string/global_search_title"

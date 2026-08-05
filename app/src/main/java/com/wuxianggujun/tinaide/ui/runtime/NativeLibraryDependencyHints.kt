@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Build
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
+import com.wuxianggujun.tinaide.core.packages.PackageAbiCompatibility
 import com.wuxianggujun.tinaide.core.packages.model.GUIPackage
 import com.wuxianggujun.tinaide.core.packages.model.Platform
 import com.wuxianggujun.tinaide.core.packages.store.LocalInstallStateStore
@@ -85,7 +86,10 @@ object NativeLibraryDependencyHints {
         if (installedPackageIds.isEmpty()) return emptyMap()
 
         val index = linkedMapOf<String, String>()
-        val deviceAbi = Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"
+        val deviceAbi = PackageAbiCompatibility.currentAppAbi(
+            nativeLibraryDir = context.applicationInfo.nativeLibraryDir,
+            supportedAbis = Build.SUPPORTED_ABIS,
+        )
         installedPackageIds.sorted().forEach { packageId ->
             val packageDir = File(installRoot, packageId)
             if (!packageDir.isDirectory) return@forEach

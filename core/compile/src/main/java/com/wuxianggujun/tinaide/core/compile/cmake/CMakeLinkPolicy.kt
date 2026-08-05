@@ -12,6 +12,7 @@ package com.wuxianggujun.tinaide.core.compile.cmake
  */
 internal object CMakeLinkPolicy {
     private const val ANDROID_LOG_LIBRARY = "-llog"
+    private const val ANDROID_SHARED_LIBRARY_ORIGIN_RUNPATH = "-Wl,-rpath,\$ORIGIN"
 
     /**
      * 仅传播项目显式配置的链接库参数。
@@ -23,6 +24,23 @@ internal object CMakeLinkPolicy {
     fun resolveAndroidStandardLibraries(projectLdLibs: String): String {
         return normalizeLibraries(sequenceOf(ANDROID_LOG_LIBRARY) + projectLdLibs.lineSequence())
     }
+
+    /**
+     * Shared-library targets are staged with their dependencies before NativeActivity/SDL launch.
+     * An origin-relative RUNPATH lets Android's linker resolve that private, co-located dependency set.
+     */
+    fun resolveAndroidSharedLinkerFlags(linkerFlags: String): String {
+        val normalizedFlags = normalizeLibraries(linkerFlags.lineSequence())
+        return if (containsFlag(normalizedFlags, ANDROID_SHARED_LIBRARY_ORIGIN_RUNPATH)) {
+            normalizedFlags
+        } else {
+            normalizeLibraries(sequenceOf(normalizedFlags, ANDROID_SHARED_LIBRARY_ORIGIN_RUNPATH))
+        }
+    }
+
+    private fun containsFlag(flags: String, expected: String): Boolean = flags
+        .splitToSequence(Regex("""\s+"""))
+        .any { flag -> flag == expected }
 
     private fun normalizeLibraries(libraries: Sequence<String>): String {
         return libraries

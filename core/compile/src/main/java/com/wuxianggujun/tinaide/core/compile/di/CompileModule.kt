@@ -8,6 +8,7 @@ import com.wuxianggujun.tinaide.core.compile.artifact.JsonArtifactStore
 import com.wuxianggujun.tinaide.core.compile.event.BuildEventEmitter
 import com.wuxianggujun.tinaide.core.compile.event.SharedFlowBuildEventEmitter
 import com.wuxianggujun.tinaide.core.compile.launcher.DebugLauncher
+import com.wuxianggujun.tinaide.core.compile.launcher.NativeActivityLauncher
 import com.wuxianggujun.tinaide.core.compile.launcher.SdlLauncher
 import com.wuxianggujun.tinaide.core.compile.launcher.TerminalLauncher
 import com.wuxianggujun.tinaide.core.compile.pipeline.BuildContextFactory
@@ -78,6 +79,7 @@ val compileModule = module {
 
     // ---------- Launcher：校验产物并生成 LaunchDescriptor，由 UI 层真正拉起终端/SDL/调试 ----------
     single { SdlLauncher() }
+    single { NativeActivityLauncher() }
     single { DebugLauncher() }
     single { TerminalLauncher() }
 
@@ -89,6 +91,7 @@ val compileModule = module {
     factory {
         LaunchDispatcher(
             sdlLauncher = get(),
+            nativeActivityLauncher = get(),
             debugLauncher = get(),
             terminalLauncher = get(),
         )

@@ -92,7 +92,7 @@ data class ProjectMetadata(
      * - 新写入始终使用当前 schema
      * - 读取阶段由 ProjectMetadataStore 做当前 schema 的字段归一化
      */
-    val schemaVersion: Int = 4,
+    val schemaVersion: Int = 5,
     val id: String,
     val displayName: String,
     val createdAt: Long,

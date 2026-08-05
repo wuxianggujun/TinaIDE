@@ -33,7 +33,7 @@ class ProjectMetadataStoreNormalizationTest {
             val metadata = ProjectMetadataStore.read(projectRoot)
             requireNotNull(metadata)
 
-            assertThat(metadata.schemaVersion).isEqualTo(4)
+            assertThat(metadata.schemaVersion).isEqualTo(5)
             assertThat(metadata.sdlVersion).isEqualTo(ProjectSdlVersion.SDL3)
             assertThat(metadata.cppStandard).isEqualTo("CPP_20")
             assertThat(metadata.nativeApiLevel).isNull()
@@ -43,7 +43,7 @@ class ProjectMetadataStoreNormalizationTest {
             assertThat(metadata.defaultSdlTargetName).isEqualTo("demo")
 
             val persisted = readProjectMetadata(projectRoot)
-            assertThat(persisted).contains("\"schemaVersion\": 4")
+            assertThat(persisted).contains("\"schemaVersion\": 5")
             assertThat(persisted).contains("\"sdlVersion\": \"SDL3\"")
             assertThat(persisted).contains("\"cppStandard\": \"CPP_20\"")
             assertThat(persisted).contains("\"defaultRunTargetName\": \"demo_test\"")
@@ -68,7 +68,7 @@ class ProjectMetadataStoreNormalizationTest {
             assertThat(wrote).isTrue()
 
             val persisted = readProjectMetadata(projectRoot)
-            assertThat(persisted).contains("\"schemaVersion\": 4")
+            assertThat(persisted).contains("\"schemaVersion\": 5")
             assertThat(persisted).contains("\"cppStandard\": \"gnu++2b\"")
         } finally {
             projectRoot.deleteRecursively()
@@ -129,12 +129,101 @@ class ProjectMetadataStoreNormalizationTest {
 
             val metadata = ProjectMetadataStore.read(projectRoot)
 
-            assertThat(metadata?.schemaVersion).isEqualTo(4)
+            assertThat(metadata?.schemaVersion).isEqualTo(5)
             assertThat(metadata?.sdlVersion).isEqualTo(ProjectSdlVersion.SDL2)
             assertThat(metadata?.apkExportType).isNull()
             val persisted = readProjectMetadata(projectRoot)
             assertThat(persisted).contains("\"sdlVersion\": \"SDL2\"")
             assertThat(persisted).contains("\"apkExportType\": null")
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `read repairs legacy SDL3 export metadata when source uses raylib`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            File(projectRoot, "CMakeLists.txt").writeText(
+                """
+                find_package(raylib CONFIG REQUIRED)
+                add_library(main SHARED src/main.c)
+                target_link_libraries(main PRIVATE raylib::raylib)
+                """.trimIndent()
+            )
+            File(projectRoot, "src").mkdirs()
+            File(projectRoot, "src/main.c").writeText(
+                """
+                #include <raylib.h>
+                int main(void) { return 0; }
+                """.trimIndent()
+            )
+            writeProjectMetadata(
+                projectRoot,
+                """
+                {
+                  "schemaVersion": 3,
+                  "id": "legacy-raylib-misclassified-as-sdl3",
+                  "displayName": "Legacy Raylib Demo",
+                  "createdAt": 1700000000000,
+                  "apkExportType": "SDL3"
+                }
+                """.trimIndent()
+            )
+
+            val metadata = ProjectMetadataStore.read(projectRoot)
+
+            assertThat(metadata?.schemaVersion).isEqualTo(5)
+            assertThat(metadata?.sdlVersion).isNull()
+            assertThat(metadata?.apkExportType).isEqualTo(ProjectApkExportType.NATIVE_ACTIVITY)
+            val persisted = readProjectMetadata(projectRoot)
+            assertThat(persisted).contains("\"sdlVersion\": null")
+            assertThat(persisted).contains("\"apkExportType\": \"NATIVE_ACTIVITY\"")
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `read repairs legacy raylib metadata that already persisted SDL3 version`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            File(projectRoot, "CMakeLists.txt").writeText(
+                """
+                find_package(raylib CONFIG REQUIRED)
+                add_library(main SHARED src/main.c)
+                target_link_libraries(main PRIVATE raylib)
+                """.trimIndent()
+            )
+            File(projectRoot, "src").mkdirs()
+            File(projectRoot, "src/main.c").writeText(
+                """
+                #include <raylib.h>
+                int main(void) { return 0; }
+                """.trimIndent()
+            )
+            writeProjectMetadata(
+                projectRoot,
+                """
+                {
+                  "schemaVersion": 4,
+                  "id": "legacy-raylib-with-sdl3-version",
+                  "displayName": "Legacy Raylib Demo",
+                  "createdAt": 1700000000000,
+                  "apkExportType": "SDL3",
+                  "sdlVersion": "SDL3"
+                }
+                """.trimIndent()
+            )
+
+            val metadata = ProjectMetadataStore.read(projectRoot)
+
+            assertThat(metadata?.schemaVersion).isEqualTo(5)
+            assertThat(metadata?.sdlVersion).isNull()
+            assertThat(metadata?.apkExportType).isEqualTo(ProjectApkExportType.NATIVE_ACTIVITY)
+            val persisted = readProjectMetadata(projectRoot)
+            assertThat(persisted).contains("\"sdlVersion\": null")
+            assertThat(persisted).contains("\"apkExportType\": \"NATIVE_ACTIVITY\"")
         } finally {
             projectRoot.deleteRecursively()
         }

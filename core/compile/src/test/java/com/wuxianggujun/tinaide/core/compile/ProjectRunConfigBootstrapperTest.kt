@@ -133,6 +133,49 @@ class ProjectRunConfigBootstrapperTest {
     }
 
     @Test
+    fun `initializeIfMissing writes native activity config for raylib metadata`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            ProjectMetadataStore.ensure(
+                projectRoot = projectRoot,
+                displayNameFallback = projectRoot.name,
+                apkExportType = ProjectApkExportType.NATIVE_ACTIVITY,
+                defaultRunTargetName = "main",
+            )
+
+            val initialized = ProjectRunConfigBootstrapper.initializeIfMissing(projectRoot)
+
+            assertThat(initialized).isTrue()
+            val manager = RunConfigurationManager.load(projectRoot.absolutePath)
+            assertThat(manager.selectedConfig.outputMode).isEqualTo(OutputMode.NATIVE_ACTIVITY)
+            assertThat(manager.selectedConfig.targetName).isEqualTo("main")
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `initializeIfMissing allows native activity to auto select a shared target`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            ProjectMetadataStore.ensure(
+                projectRoot = projectRoot,
+                displayNameFallback = projectRoot.name,
+                apkExportType = ProjectApkExportType.NATIVE_ACTIVITY,
+            )
+
+            val initialized = ProjectRunConfigBootstrapper.initializeIfMissing(projectRoot)
+
+            assertThat(initialized).isTrue()
+            val manager = RunConfigurationManager.load(projectRoot.absolutePath)
+            assertThat(manager.selectedConfig.outputMode).isEqualTo(OutputMode.NATIVE_ACTIVITY)
+            assertThat(manager.selectedConfig.targetName).isEmpty()
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `initializeIfMissing writes sdl target when sdl3 metadata provides one`() {
         val projectRoot = createTempProjectRoot()
         try {

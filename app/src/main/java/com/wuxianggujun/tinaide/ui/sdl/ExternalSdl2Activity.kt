@@ -1,35 +1,19 @@
 package com.wuxianggujun.tinaide.ui.sdl
 
 import android.annotation.SuppressLint
-import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.Process
 import android.os.SystemClock
-import android.widget.FrameLayout
+import android.view.ViewGroup
 import android.widget.Toast
-import androidx.compose.ui.platform.ComposeView
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.LifecycleRegistry
-import androidx.lifecycle.ViewModelStore
-import androidx.lifecycle.ViewModelStoreOwner
-import androidx.lifecycle.setViewTreeLifecycleOwner
-import androidx.lifecycle.setViewTreeViewModelStoreOwner
-import androidx.savedstate.SavedStateRegistry
-import androidx.savedstate.SavedStateRegistryController
-import androidx.savedstate.SavedStateRegistryOwner
-import androidx.savedstate.setViewTreeSavedStateRegistryOwner
-import com.wuxianggujun.tinaide.MainActivity
 import com.wuxianggujun.tinaide.core.compile.SdlOrientation
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
-import com.wuxianggujun.tinaide.core.logging.LogProcessRegistry
-import com.wuxianggujun.tinaide.ui.compose.components.FloatingOverlay
-import com.wuxianggujun.tinaide.ui.runtime.NativeLaunchEnvironment
-import com.wuxianggujun.tinaide.ui.runtime.NativeStdStreamRedirect
-import com.wuxianggujun.tinaide.ui.theme.TinaIDETheme
+import com.wuxianggujun.tinaide.ui.runtime.GraphicalRuntimeActivityHost
+import com.wuxianggujun.tinaide.ui.runtime.GraphicalRuntimeIntentOptions
 import org.libsdl2.app.SDLActivity
 import timber.log.Timber
 
@@ -42,21 +26,7 @@ import timber.log.Timber
  * SDL2 和 SDL3 的 Java/JNI glue 不是同一套 ABI，因此不能共用 SDL3 的
  * [org.libsdl.app.SDLActivity]。本 Activity 只承载 SDL2，并在独立进程中运行。
  */
-class ExternalSdl2Activity :
-    SDLActivity(),
-    LifecycleOwner,
-    ViewModelStoreOwner,
-    SavedStateRegistryOwner {
-
-    // -- Lifecycle infrastructure (SDLActivity extends plain Activity, not ComponentActivity) --
-    private val lifecycleRegistry = LifecycleRegistry(this)
-    private val savedStateRegistryController = SavedStateRegistryController.create(this)
-    private val viewModelStoreField = ViewModelStore()
-
-    override val lifecycle: Lifecycle get() = lifecycleRegistry
-    override val savedStateRegistry: SavedStateRegistry
-        get() = savedStateRegistryController.savedStateRegistry
-    override val viewModelStore: ViewModelStore get() = viewModelStoreField
+class ExternalSdl2Activity : SDLActivity() {
 
     companion object {
         private const val TAG = "ExternalSdl2Activity"
@@ -72,8 +42,8 @@ class ExternalSdl2Activity :
 
     private var userOrientation: SdlOrientation = SdlOrientation.AUTO
     private var enableFloatingLog: Boolean = false
-    private var launchEnvironmentOwnerId: String? = null
     private var lastBackPressTime: Long = 0L
+    private val runtimeHost = GraphicalRuntimeActivityHost(this, TAG)
     private val finishHandler = Handler(Looper.getMainLooper())
     private val forceFinishAfterQuitTimeout = Runnable {
         if (isFinishing || isDestroyed) return@Runnable
@@ -84,20 +54,11 @@ class ExternalSdl2Activity :
         finish()
     }
 
-    @Volatile private var returnToParentOnFinish = false
-
     @Volatile private var nativeShutdownRequested = false
-
-    @Volatile private var parentNavigationStarted = false
 
     // region Lifecycle
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        LogProcessRegistry.recordCurrentProcess(this)
-
-        // Must restore before super.onCreate (while lifecycle is INITIALIZED)
-        savedStateRegistryController.performRestore(savedInstanceState)
-
         sdlLibraryPath = intent.getStringExtra(ExternalSdlActivity.EXTRA_SDL_LIBRARY_PATH).orEmpty()
         mainLibraryPath = intent.getStringExtra(ExternalSdlActivity.EXTRA_MAIN_LIBRARY_PATH).orEmpty()
         requiredSdlMajor = intent.getIntExtra(ExternalSdlActivity.EXTRA_REQUIRED_SDL_MAJOR, 0)
@@ -116,7 +77,7 @@ class ExternalSdl2Activity :
         userOrientation = orientationName?.let {
             runCatching { SdlOrientation.valueOf(it) }.getOrDefault(SdlOrientation.AUTO)
         } ?: SdlOrientation.AUTO
-        enableFloatingLog = intent.getBooleanExtra(ExternalSdlActivity.EXTRA_ENABLE_FLOATING_LOG, false)
+        enableFloatingLog = GraphicalRuntimeIntentOptions.readFloatingLogEnabled(intent)
 
         val validationError = validateLaunchParams()
         if (validationError != null) {
@@ -125,75 +86,58 @@ class ExternalSdl2Activity :
             return
         }
 
-        launchEnvironmentOwnerId = "${javaClass.simpleName}@${System.identityHashCode(this)}"
-        NativeLaunchEnvironment.apply(
-            ownerId = launchEnvironmentOwnerId!!,
-            environment = NativeLaunchEnvironment.readFromIntent(intent),
-        )
-        // 运行时成功启动后，任何正常 finish 都应回到 MainActivity，而不是回到启动器。
-        returnToParentOnFinish = true
         applySdlOrientation()
-        NativeStdStreamRedirect.start()
+        runtimeHost.onPreCreate(savedInstanceState, intent)
+        runtimeHost.requestReturnToParentOnFinish()
 
         super.onCreate(savedInstanceState)
-
-        // SDLActivity extends plain Activity, not ComponentActivity.
-        // ComposeView requires ViewTree owners — set them on decorView so the
-        // entire view hierarchy (including mLayout and its children) can find them.
-        window.decorView.let { decorView ->
-            decorView.setViewTreeLifecycleOwner(this)
-            decorView.setViewTreeViewModelStoreOwner(this)
-            decorView.setViewTreeSavedStateRegistryOwner(this)
-        }
-        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
-
-        addFloatingOverlay()
+        attachRuntimeOverlay()
     }
 
     override fun onStart() {
         super.onStart()
-        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)
+        runtimeHost.onStart()
     }
 
     override fun onResume() {
         super.onResume()
-        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
+        runtimeHost.onResume()
     }
 
     override fun onPause() {
-        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
+        runtimeHost.onPause()
         super.onPause()
     }
 
     override fun onStop() {
-        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
+        runtimeHost.onStop()
         super.onStop()
     }
 
     override fun onDestroy() {
+        val shouldTerminateRuntimeProcess = isFinishing && !isChangingConfigurations
         finishHandler.removeCallbacks(forceFinishAfterQuitTimeout)
-        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
-        viewModelStoreField.clear()
-        super.onDestroy()
-        NativeStdStreamRedirect.stop()
-        launchEnvironmentOwnerId?.let(NativeLaunchEnvironment::clear)
-        launchEnvironmentOwnerId = null
+        try {
+            super.onDestroy()
+        } finally {
+            try {
+                runtimeHost.onDestroy()
+            } finally {
+                // System.load keeps user libraries resident; each run needs a fresh process.
+                if (shouldTerminateRuntimeProcess) Process.killProcess(Process.myPid())
+            }
+        }
     }
 
     override fun finish() {
         finishHandler.removeCallbacks(forceFinishAfterQuitTimeout)
-        // 正常场景下 SDLActivity 是从 MainActivity 之上启动的，直接 finish 即可自然回退。
-        // 只有当 SDLActivity 意外成为当前 task 根节点时，才补拉 MainActivity，避免直接落回启动器。
-        if (returnToParentOnFinish && !parentNavigationStarted && isTaskRoot) {
-            parentNavigationStarted = true
-            navigateBackToParent()
-        }
+        runtimeHost.onFinish()
         super.finish()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        savedStateRegistryController.performSave(outState)
+        runtimeHost.onSaveInstanceState(outState)
     }
 
     // endregion
@@ -298,27 +242,22 @@ class ExternalSdl2Activity :
     private fun exitToParent() {
         requestNativeShutdown(
             reason = "returning to parent",
-            returnToParentAfterFinish = true
         )
     }
 
     private fun requestNativeShutdown(
         reason: String,
-        returnToParentAfterFinish: Boolean,
     ) {
         if (isFinishing) return
 
         val sdlThread = mSDLThread
         if (sdlThread == null || !sdlThread.isAlive) {
-            returnToParentOnFinish = returnToParentAfterFinish
             finish()
             return
         }
 
         if (nativeShutdownRequested) return
         nativeShutdownRequested = true
-        returnToParentOnFinish = returnToParentAfterFinish
-
         val quitRequested = runCatching {
             Timber.tag(TAG).i("Requesting SDL quit before %s", reason)
             nativeSendQuit()
@@ -338,20 +277,6 @@ class ExternalSdl2Activity :
         )
     }
 
-    /**
-     * 仅在 SDLActivity 已经成为 task 根节点时，兜底拉起 MainActivity。
-     */
-    private fun navigateBackToParent() {
-        try {
-            val intent = Intent(this, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-            }
-            startActivity(intent)
-        } catch (e: Exception) {
-            Timber.tag(TAG).w(e, "Failed to navigate back to parent")
-        }
-    }
-
     private fun applySdlOrientation() {
         requestedOrientation = when (userOrientation) {
             SdlOrientation.AUTO -> ActivityInfo.SCREEN_ORIENTATION_SENSOR
@@ -365,29 +290,17 @@ class ExternalSdl2Activity :
         )
     }
 
-    /**
-     * 在 SDL Surface 之上叠加 Compose 悬浮层（退出球 + 可选日志面板）。
-     *
-     * SDL 的 [mLayout] 是一个 RelativeLayout，这里在其上层添加一个透明 ComposeView。
-     * Compose 层仅拦截小球/面板区域的触摸事件，其余区域透传给 SDL Surface。
-     */
-    private fun addFloatingOverlay() {
-        val composeView = ComposeView(this).apply {
-            setContent {
-                TinaIDETheme {
-                    FloatingOverlay(
-                        enableFloatingLog = enableFloatingLog,
-                        onExit = { exitToParent() }
-                    )
-                }
-            }
+    private fun attachRuntimeOverlay() {
+        val container = mLayout ?: findViewById<ViewGroup>(android.R.id.content)
+        if (container == null) {
+            Timber.tag(TAG).e("No SDL2 view container is available for runtime controls")
+            return
         }
-        val overlayParams = FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT,
-            FrameLayout.LayoutParams.MATCH_PARENT
+        runtimeHost.attachOverlay(
+            container = container,
+            enableFloatingLog = enableFloatingLog,
+            onExit = ::exitToParent,
         )
-        mLayout?.addView(composeView, overlayParams)
-            ?: Timber.tag(TAG).w("mLayout is null, cannot add floating overlay")
     }
 
     private fun validateLaunchParams(): String? {
