@@ -1,8 +1,8 @@
 # LSP Snippet 占位符处理机制
 
-> 文档版本：2.1
+> 文档版本：2.2
 > 创建日期：2026-03-03
-> 最后更新：2026-03-08
+> 最后更新：2026-08-13
 
 ## 概述
 
@@ -41,7 +41,8 @@ void ${1:functionName}(${2:int} ${3:param}) {
 | [`EditorState.kt`](../../core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt) | 编辑器集成，占位符焦点/选区管理 |
 | [`EditorKeyboardShortcuts.kt`](../../core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorKeyboardShortcuts.kt) | Tab/Shift+Tab/Escape 快捷键处理 |
 | [`EditorStateEditOperations.kt`](../../core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorStateEditOperations.kt) | 编辑操作时同步 snippet 偏移 |
-| [`LspEditorManager.kt`](../../app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/LspEditorManager.kt) | LSP 补全项转换，snippet 文本透传给引擎 |
+| [`LspEditorManager.kt`](../../core/editor-lsp/src/main/java/com/wuxianggujun/tinaide/core/editorlsp/LspEditorManager.kt) | LSP 补全请求与结果装配 |
+| [`LspCompletionMapping.kt`](../../core/editor-lsp/src/main/java/com/wuxianggujun/tinaide/core/editorlsp/LspCompletionMapping.kt) | LSP 补全项转换，snippet 文本透传给引擎 |
 | [`PluginSnippetManager.kt`](../../core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/PluginSnippetManager.kt) | 插件 snippet 展开为纯文本 |
 
 ### SnippetParser 支持的语法
@@ -68,7 +69,7 @@ void ${1:functionName}(${2:int} ${3:param}) {
 
 ### LSP 补全流转
 
-位置：[`LspEditorManager.kt`](../../app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/LspEditorManager.kt)
+位置：[`LspEditorManager.kt`](../../core/editor-lsp/src/main/java/com/wuxianggujun/tinaide/core/editorlsp/LspEditorManager.kt) 与 [`LspCompletionMapping.kt`](../../core/editor-lsp/src/main/java/com/wuxianggujun/tinaide/core/editorlsp/LspCompletionMapping.kt)
 
 当 LSP 返回 `InsertTextFormat.Snippet` 格式的补全项时：
 
@@ -141,7 +142,8 @@ private fun normalizeCompletionPayloadText(
 - [`EditorState.kt`](../../core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt)：编辑器集成
 - [`EditorKeyboardShortcuts.kt`](../../core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorKeyboardShortcuts.kt)：快捷键
 - [`EditorStateEditOperations.kt`](../../core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorStateEditOperations.kt)：编辑操作偏移同步
-- [`LspEditorManager.kt`](../../app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/LspEditorManager.kt)：LSP 补全项转换
+- [`LspEditorManager.kt`](../../core/editor-lsp/src/main/java/com/wuxianggujun/tinaide/core/editorlsp/LspEditorManager.kt)：LSP 补全请求与结果装配
+- [`LspCompletionMapping.kt`](../../core/editor-lsp/src/main/java/com/wuxianggujun/tinaide/core/editorlsp/LspCompletionMapping.kt)：LSP 补全项转换
 - [`PluginSnippetManager.kt`](../../core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/PluginSnippetManager.kt)：插件 snippet 展开
 - [`Prefs.kt`](../../core/config/src/main/java/com/wuxianggujun/tinaide/core/config/Prefs.kt)：`clangdFunctionArgPlaceholders` 配置项
 
@@ -159,3 +161,4 @@ private fun normalizeCompletionPayloadText(
 | 2026-03-07 | 1.1 | Phase 1 MVP 完成：基础解析器 + Tab 跳转 + Escape 退出 |
 | 2026-03-08 | 2.0 | Phase 2 完成：Choice snippet、Shift+Tab 后退、偏移同步 |
 | 2026-03-08 | 2.1 | Bug 修复：补全偏移同步覆盖所有编辑路径、占位符长度追踪、破坏性操作取消会话、转义处理修正；文档与实际代码对齐（移除过时的模式 0/1/2 描述） |
+| 2026-08-13 | 2.2 | 更新 `LspEditorManager` 下沉到 `core:editor-lsp` 后的源码位置，并补充已拆出的 `LspCompletionMapping` 职责 |

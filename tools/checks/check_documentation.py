@@ -15,6 +15,7 @@ CURRENT_FACT_DOCUMENTS = (
     "docs/架构概览.md",
     "docs/模块功能说明.md",
     "docs/documentation-status.md",
+    "docs/game-engine-plugin-sdl.md",
     "docs/linux-distro-self-hosted-runtime.md",
     "docs/registry/GitHub-Registry.md",
     "docs/toolchain-build-guide.md",
@@ -46,6 +47,20 @@ MARKDOWN_LINK_PATTERN = re.compile(r"!?\[[^\]]*]\(([^)]+)\)")
 HELP_FILE_PATTERN = re.compile(r'fileName\s*=\s*"([^"]+\.md)"')
 SDK_ASSIGNMENT_PATTERN = re.compile(r"\b(compileSdk|minSdk|targetSdk)\s*=\s*(\d+)")
 SDK_DOCUMENT_PATTERN = re.compile(r"\b(compileSdk|minSdk|targetSdk)\s*[:=]\s*(\d+)")
+INLINE_REPOSITORY_PATH_PATTERN = re.compile(
+    r"`((?:app|core|feature|tools|build-logic|docs|server|docker|gradle|external)/[^`\r\n]+)`"
+)
+INLINE_PATH_EXCEPTIONS = {
+    "tools/tina-lsp-proxy.py",
+    "tools/tina-lsp-proxy-kt",
+}
+STALE_SOURCE_PATHS = (
+    "app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/LspEditorManager.kt",
+    "app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/BuiltinLanguageServiceSession.kt",
+    "app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/CMakeLanguageServiceSession.kt",
+    "app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/MakeLanguageServiceSession.kt",
+    "app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/LspSemanticTokenDecoder.kt",
+)
 
 
 def find_repo_root(start: Path) -> Path:
@@ -65,7 +80,8 @@ def markdown_target(raw_value: str) -> str:
 
 def check_markdown_links(root: Path) -> list[str]:
     failures: list[str] = []
-    documents = [root / relative_path for relative_path in CURRENT_FACT_DOCUMENTS]
+    documents = [root / "README.md", root / "README_EN.md"]
+    documents.extend(sorted((root / "docs").rglob("*.md")))
     documents.extend(sorted((root / HELP_ASSET_DIRECTORY).glob("*.md")))
     documents.extend(sorted((root / HELP_ENGLISH_ASSET_DIRECTORY).glob("*.md")))
 
@@ -107,6 +123,42 @@ def check_markdown_links(root: Path) -> list[str]:
                     f"broken local link: {document.relative_to(root)} -> {target}"
                 )
 
+    return failures
+
+
+def check_inline_repository_paths(root: Path) -> list[str]:
+    failures: list[str] = []
+    for relative_path in CURRENT_FACT_DOCUMENTS:
+        document = root / relative_path
+        if not document.is_file():
+            continue
+        content = document.read_text(encoding="utf-8")
+        for raw_path in INLINE_REPOSITORY_PATH_PATTERN.findall(content):
+            if raw_path in INLINE_PATH_EXCEPTIONS:
+                continue
+            if any(
+                marker in raw_path
+                for marker in ("*", "<", ">", "{", "}", "$", "...")
+            ):
+                continue
+            if any(character.isspace() for character in raw_path):
+                continue
+            if not (root / raw_path).exists():
+                failures.append(
+                    f"missing inline repository path: {relative_path} -> {raw_path}"
+                )
+
+    searchable_documents = sorted((root / "docs").rglob("*.md"))
+    skills_directory = root / ".agents" / "skills"
+    if skills_directory.is_dir():
+        searchable_documents.extend(sorted(skills_directory.rglob("*.md")))
+    for document in searchable_documents:
+        content = document.read_text(encoding="utf-8")
+        for stale_path in STALE_SOURCE_PATHS:
+            if stale_path in content:
+                failures.append(
+                    f"stale moved source path: {document.relative_to(root)} -> {stale_path}"
+                )
     return failures
 
 
@@ -200,6 +252,7 @@ def main() -> int:
     root = find_repo_root(Path(__file__).parent)
     failures = [
         *check_markdown_links(root),
+        *check_inline_repository_paths(root),
         *check_help_catalog(root),
         *check_sdk_facts(root),
         *check_registry_facts(root),

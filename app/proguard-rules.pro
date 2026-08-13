@@ -165,7 +165,7 @@
 # ============================================================================
 # 14. Tree-sitter（安全网 + 项目适配层）
 # ============================================================================
-# android-tree-sitter 的完整 JNI 规则由 external/tina-android-tree-sitter/consumer-rules.pro 提供
+# android-tree-sitter 的完整 JNI 规则由 external/tina-android-tree-sitter/android-tree-sitter/consumer-rules.pro 提供
 # （需在该模块 build.gradle.kts 中声明 consumerProguardFiles）。
 # grammar 绑定的 Class.forName 规则由 core:tree-sitter/consumer-rules.pro 提供。
 #

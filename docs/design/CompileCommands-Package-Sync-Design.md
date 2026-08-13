@@ -1,6 +1,7 @@
 # compile_commands 与依赖包同步机制
 
 > 创建日期：2026-06-12
+> 最后复核：2026-08-13
 > 适用范围：`CompileDatabaseProvider`、`LspEditorManager` 的 C/C++ compile_commands 生成与复用链路
 
 ## 概述
@@ -135,5 +136,5 @@ compileSetupCache[key]?.let { cached ->
 | [`CompileCommandsGenerator.kt`](../../core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/CompileCommandsGenerator.kt) | 兜底 DB 的实际生成（拼接 clang 编译参数） |
 | [`InstalledPackagePathResolver.kt`](../../core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/InstalledPackagePathResolver.kt) | 解析已安装包的 include/lib/prefix 路径 |
 | [`PackageDependencyEvents.kt`](../../core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/PackageDependencyEvents.kt) | 包安装/卸载事件广播 |
-| [`LspEditorManager.kt`](../../app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/LspEditorManager.kt) | `compileSetupCache` 管理、缓存失效与指纹自愈 |
+| [`LspEditorManager.kt`](../../core/editor-lsp/src/main/java/com/wuxianggujun/tinaide/core/editorlsp/LspEditorManager.kt) | `compileSetupCache` 管理、缓存失效与指纹自愈 |
 | [`EditorContainerState.kt`](../../app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerState.kt) | 订阅包变更事件并触发刷新 |
