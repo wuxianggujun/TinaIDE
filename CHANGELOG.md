@@ -31,14 +31,20 @@
 
 ## [Unreleased]
 
+## [0.18.18] - 2026-08-18
+
 ### Added
 
+- 新增 clangd/LSP Quick Fix：编辑器诊断和“问题”面板可查询、展示并执行服务器提供的修复操作，支持携带诊断上下文、延迟 resolve、`WorkspaceEdit` 与命令组合操作。
+- 新增编辑器 Inlay Hint 渲染，支持按文档版本更新参数名、类型等内联提示，避免旧请求结果覆盖新内容。
+- 恢复并扩展编辑器底部快捷符号栏，补充常用运算符与标点，支持从状态栏显隐，并为侧栏边缘手势预留安全区域。
 - 新增独立 `NativeActivity` 图形运行模式与宿主桥接库，raylib 等非 SDL 图形库可以继续使用普通 `main` 入口。
 - SDL2、SDL3 与 NativeActivity 运行界面共用悬浮返回、退出确认和可选日志面板，切换渲染库时保持一致操作习惯。
 - 依赖包 Registry 协议支持按 ABI 下载源及每个制品独立的大小、SHA-256 元数据。
 
 ### Changed
 
+- LSP 诊断按文档 URI、版本与请求世代过滤过期结果，共享 clangd 会话切换也会校验当前标签绑定，降低快速切换或关闭文件时的状态串扰。
 - 图形运行调度拆分为 SDL2、SDL3、NativeActivity 三种明确协议，运行时装载、独立进程退出和动态库 staging 统一由共享宿主能力管理。
 - native 依赖库打包改为同时生成旧客户端通用包和 `arm64-v8a`、`x86_64` 独立归档；新客户端按当前 App 实际 native ABI 选择制品。
 
@@ -62,6 +68,7 @@
 
 ### Tests
 
+- 新增 LSP Code Action、诊断 URI/版本桥接、共享 clangd 竞态、Inlay Hint 模型与渲染状态回归测试。
 - 新增格式化风格解析、图形运行协议、raylib NativeActivity 契约、动态库 SONAME 解析、ABI 下载源选择与 Registry 序列化回归测试。
 - 新增格式化进程 stdin/超时与编辑器条件回写回归测试。
 - 新增依赖包下载大小校验与相对 URL 补全后 ABI/大小/checksum/range 元数据保留测试。
