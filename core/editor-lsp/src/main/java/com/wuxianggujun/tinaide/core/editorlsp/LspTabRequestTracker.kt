@@ -35,12 +35,15 @@ class LspTabRequestTracker(
     fun isStillValid(
         ticket: LspTabRequestTicket,
         resolveTabState: (tabId: String) -> LspTrackedTabRequestState?,
-    ): Boolean = synchronized(stateLock) {
+    ): Boolean {
+        // The resolver may acquire an LSP session lock; do not invert it with stateLock.
         val tabState = resolveTabState(ticket.tabId)
-        (tabRequestGenerations[ticket.tabId] ?: 0L) == ticket.generation &&
-            tabState != null &&
-            tabState.documentUri == ticket.documentUri &&
-            tabState.isConnected
+        return synchronized(stateLock) {
+            (tabRequestGenerations[ticket.tabId] ?: 0L) == ticket.generation &&
+                tabState != null &&
+                tabState.documentUri == ticket.documentUri &&
+                tabState.isConnected
+        }
     }
 
     fun trackFuture(tabId: String, future: CompletableFuture<*>) {

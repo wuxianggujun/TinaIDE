@@ -46,11 +46,29 @@ class CMakeLinkPolicyTest {
     }
 
     @Test
+    fun `resolveAndroidSharedLinkerFlags adds shell-escaped origin runpath`() {
+        val resolved = CMakeLinkPolicy.resolveAndroidSharedLinkerFlags(
+            "--target=aarch64-linux-android28"
+        )
+
+        assertThat(resolved).isEqualTo("--target=aarch64-linux-android28 -Wl,-rpath,\\\$ORIGIN")
+    }
+
+    @Test
     fun `resolveAndroidSharedLinkerFlags adds origin runpath once`() {
+        val resolved = CMakeLinkPolicy.resolveAndroidSharedLinkerFlags(
+            "--target=aarch64-linux-android28 -Wl,-rpath,\\\$ORIGIN"
+        )
+
+        assertThat(resolved).isEqualTo("--target=aarch64-linux-android28 -Wl,-rpath,\\\$ORIGIN")
+    }
+
+    @Test
+    fun `resolveAndroidSharedLinkerFlags escapes legacy unescaped origin runpath`() {
         val resolved = CMakeLinkPolicy.resolveAndroidSharedLinkerFlags(
             "--target=aarch64-linux-android28 -Wl,-rpath,\$ORIGIN"
         )
 
-        assertThat(resolved).isEqualTo("--target=aarch64-linux-android28 -Wl,-rpath,\$ORIGIN")
+        assertThat(resolved).isEqualTo("--target=aarch64-linux-android28 -Wl,-rpath,\\\$ORIGIN")
     }
 }

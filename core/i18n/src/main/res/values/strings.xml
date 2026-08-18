@@ -2149,6 +2149,8 @@
   <string name="content_desc_undo">撤销</string>
   <string name="content_desc_redo">重做</string>
   <string name="content_desc_plugin_editor_toolbar">插件编辑器工具栏</string>
+  <string name="content_desc_show_editor_symbol_bar">显示编辑器快捷符号栏</string>
+  <string name="content_desc_hide_editor_symbol_bar">隐藏编辑器快捷符号栏</string>
   <string name="content_desc_toggle_bookmark">切换书签</string>
   <string name="content_desc_prev_bookmark">上一个书签</string>
   <string name="content_desc_next_bookmark">下一个书签</string>
@@ -2509,6 +2511,7 @@
   <string name="diagnostics_empty">没有诊断信息</string>
   <string name="diagnostics_location">行 %1$d:%2$d</string>
   <string name="diagnostic_copied">诊断信息已复制到剪贴板</string>
+  <string name="diagnostics_view_fixes">查看修复</string>
 
   <!-- DebugControls -->
   <string name="content_desc_continue">继续</string>
@@ -2520,6 +2523,7 @@
   <!-- CodeActionsMenu -->
   <string name="code_actions_title">代码操作</string>
   <string name="code_actions_empty">没有可用的代码操作</string>
+  <string name="code_actions_load_failed">获取代码操作失败</string>
 
   <!-- BuildLogContent -->
   <string name="build_log_empty">暂无构建日志</string>

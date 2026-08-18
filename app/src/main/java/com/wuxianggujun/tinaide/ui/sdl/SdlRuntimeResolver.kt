@@ -406,7 +406,7 @@ object SdlRuntimeResolver {
         return installedPackages.mapNotNull { installed ->
             val packageRootDir = File(installRootDir, installed.packageId)
             if (!packageRootDir.isDirectory) return@mapNotNull null
-            val runtimeLibDirs = collectRuntimeLibraryDirs(packageRootDir)
+            val runtimeLibDirs = collectRuntimeLibraryDirs(packageRootDir, context)
             if (runtimeLibDirs.isEmpty()) return@mapNotNull null
 
             ManagedAndroidPackage(
@@ -418,10 +418,10 @@ object SdlRuntimeResolver {
         }
     }
 
-    private fun collectRuntimeLibraryDirs(packageRootDir: File): List<File> {
+    private fun collectRuntimeLibraryDirs(packageRootDir: File, context: Context): List<File> {
         val dirs = linkedSetOf<File>()
         val deviceAbi = PackageAbiCompatibility.currentAppAbi(
-            nativeLibraryDir = appContext.applicationInfo.nativeLibraryDir,
+            nativeLibraryDir = context.applicationInfo.nativeLibraryDir,
             supportedAbis = Build.SUPPORTED_ABIS,
         )
         val libRoot = File(packageRootDir, "lib")

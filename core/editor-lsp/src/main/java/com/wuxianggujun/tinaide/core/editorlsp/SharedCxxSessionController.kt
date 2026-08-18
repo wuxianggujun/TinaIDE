@@ -3,6 +3,7 @@ package com.wuxianggujun.tinaide.core.editorlsp
 import com.wuxianggujun.tinaide.core.lsp.LspClientSession
 import com.wuxianggujun.tinaide.core.lsp.LspConnectionProvider
 import java.io.File
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -59,16 +60,22 @@ internal class SharedCxxSessionController(
         initialText: String,
         initializationOptions: Any?,
         providerFactory: suspend () -> LspConnectionProvider,
+        commitSessionIfCurrent: (
+            session: LspClientSession,
+            commit: () -> Unit,
+        ) -> Boolean,
     ): LspClientSession = sessionMutex.withLock {
         val existing = synchronized(stateLock) { sharedSession }
         if (existing != null && existing.isConnected) {
             Timber.tag(TAG).d("reusing shared clangd for %s", file.name)
             withContext(Dispatchers.IO) {
-                existing.connect(
+                existing.activateDocumentIfCurrent(
                     documentUri = documentUri,
                     languageId = languageId,
                     initialText = initialText,
-                    initializationOptions = initializationOptions,
+                    commitIfCurrent = { activate ->
+                        commitSessionIfCurrent(existing, activate)
+                    },
                 ).getOrThrow()
             }
             return@withLock existing
@@ -78,6 +85,9 @@ internal class SharedCxxSessionController(
         val provider = providerFactory()
         val session = createSession(provider, workspaceRoot, file)
         try {
+            if (!commitSessionIfCurrent(session, {})) {
+                throw CancellationException("Shared clangd attachment is no longer current")
+            }
             withContext(Dispatchers.IO) {
                 session.connect(
                     languageId = languageId,

@@ -1,25 +1,17 @@
 package com.wuxianggujun.tinaide.ui.compose.components
 
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ExpandLess
-import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material3.Icon
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.RectangleShape
@@ -29,18 +21,22 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.wuxianggujun.tinaide.core.i18n.Strings
 
-private val editorQuickSymbols = listOf("{", "}", "(", ")", "[", "]", ";", "#")
+private val editorQuickSymbols = listOf(
+    "{", "}", "(", ")", "[", "]", ";", "\"",
+    ":", "'", "<", ">", "=", "+", "-", "*", "/", "%",
+    "&", "|", "^", "~", "`", "!", "?", ".", ",", "#", "@", "\\", "\$", "_",
+)
+
+// 工作区左侧边缘由抽屉手势占用，固定留出安全区域，避免滚动后的快捷键进入手势层下方。
+private val drawerGestureSafeInset = 24.dp
 
 @Composable
 fun EditorSymbolBar(
     onSymbolClick: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var expanded by rememberSaveable { mutableStateOf(true) }
-    val barHeight = if (expanded) 40.dp else 32.dp
-
     TinaOverlayPanelSurface(
-        modifier = modifier.height(barHeight),
+        modifier = modifier.height(40.dp),
         shape = RectangleShape,
         containerColor = MaterialTheme.colorScheme.surfaceVariant,
         tonalElevation = 0.dp,
@@ -50,41 +46,33 @@ fun EditorSymbolBar(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            TinaPanelSegmentButton(
-                onClick = { expanded = !expanded },
-                modifier = Modifier.size(32.dp),
-                minHeight = 32.dp,
-                contentPadding = PaddingValues(0.dp),
+            Spacer(modifier = Modifier.width(drawerGestureSafeInset))
+            LazyRow(
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(
+                    start = 4.dp,
+                    top = 2.dp,
+                    end = 8.dp,
+                    bottom = 2.dp,
+                ),
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(
-                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = stringResource(
-                        if (expanded) Strings.content_desc_collapse else Strings.content_desc_expand
-                    ),
-                    modifier = Modifier.size(20.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-
-            if (expanded) {
-                Row(
-                    modifier = Modifier
-                        .weight(1f)
-                        .horizontalScroll(rememberScrollState())
-                        .padding(horizontal = 4.dp, vertical = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
+                item(key = "editor-tab") {
                     EditorQuickSymbolButton(
                         text = stringResource(Strings.editor_tab_button),
                         width = 44.dp,
                         onClick = { onSymbolClick("\t") },
                     )
-                    editorQuickSymbols.forEach { symbol ->
-                        EditorQuickSymbolButton(
-                            text = symbol,
-                            onClick = { onSymbolClick(symbol) },
-                        )
-                    }
+                }
+                items(
+                    items = editorQuickSymbols,
+                    key = { symbol -> symbol },
+                ) { symbol ->
+                    EditorQuickSymbolButton(
+                        text = symbol,
+                        onClick = { onSymbolClick(symbol) },
+                    )
                 }
             }
         }

@@ -47,6 +47,7 @@ import com.wuxianggujun.tinaide.core.lsp.Diagnostic
 fun DiagnosticsContent(
     diagnostics: List<Diagnostic>,
     onDiagnosticClick: (Diagnostic) -> Unit,
+    onDiagnosticCodeActionsClick: (Diagnostic) -> Unit,
     modifier: Modifier = Modifier
 ) {
     if (diagnostics.isEmpty()) {
@@ -75,7 +76,8 @@ fun DiagnosticsContent(
                 items(fileDiagnostics) { diagnostic ->
                     DiagnosticItem(
                         diagnostic = diagnostic,
-                        onClick = { onDiagnosticClick(diagnostic) }
+                        onClick = { onDiagnosticClick(diagnostic) },
+                        onCodeActionsClick = { onDiagnosticCodeActionsClick(diagnostic) },
                     )
                 }
             }
@@ -133,6 +135,7 @@ private fun DiagnosticFileHeader(
 private fun DiagnosticItem(
     diagnostic: Diagnostic,
     onClick: () -> Unit,
+    onCodeActionsClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -222,17 +225,29 @@ private fun DiagnosticItem(
             }
         }
 
-        TinaOverlayPanelSurface(
-            shape = MaterialTheme.shapes.small,
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
-            tonalElevation = 0.dp,
-            shadowElevation = 0.dp
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text(
-                text = stringResource(Strings.diagnostics_location, diagnostic.line + 1, diagnostic.column + 1),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 11.sp,
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+            TinaOverlayPanelSurface(
+                shape = MaterialTheme.shapes.small,
+                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+                tonalElevation = 0.dp,
+                shadowElevation = 0.dp
+            ) {
+                Text(
+                    text = stringResource(Strings.diagnostics_location, diagnostic.line + 1, diagnostic.column + 1),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+                )
+            }
+
+            TinaTextButton(
+                text = stringResource(Strings.diagnostics_view_fixes),
+                onClick = onCodeActionsClick,
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
             )
         }
     }

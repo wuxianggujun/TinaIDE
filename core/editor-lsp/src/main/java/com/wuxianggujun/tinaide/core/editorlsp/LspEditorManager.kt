@@ -25,6 +25,7 @@ import com.wuxianggujun.tinaide.core.lsp.RemoteLspConfigManager
 import com.wuxianggujun.tinaide.core.lsp.RemoteLspConnectionState
 import com.wuxianggujun.tinaide.core.lsp.RemoteLspSyncMode
 import com.wuxianggujun.tinaide.core.lsp.WorkspaceSymbolItem
+import com.wuxianggujun.tinaide.core.lsp.canonicalizeLspDocumentUri
 import com.wuxianggujun.tinaide.core.ndk.AndroidNativeToolchainManager
 import com.wuxianggujun.tinaide.core.ndk.AndroidSysrootManager
 import com.wuxianggujun.tinaide.core.textengine.Position
@@ -58,10 +59,12 @@ import kotlinx.coroutines.withTimeout
 import org.eclipse.lsp4j.CompletionContext
 import org.eclipse.lsp4j.CompletionParams
 import org.eclipse.lsp4j.CompletionTriggerKind
+import org.eclipse.lsp4j.Diagnostic as LspDiagnostic
 import org.eclipse.lsp4j.FoldingRangeRequestParams
 import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.HoverParams
 import org.eclipse.lsp4j.InsertReplaceEdit
+import org.eclipse.lsp4j.InlayHintParams
 import org.eclipse.lsp4j.MarkupContent
 import org.eclipse.lsp4j.Registration
 import org.eclipse.lsp4j.SemanticTokensParams
@@ -96,6 +99,7 @@ class LspEditorManager(
         private const val HOVER_TIMEOUT_SECONDS = 6L
         private const val SIGNATURE_HELP_TIMEOUT_SECONDS = 6L
         private const val SEMANTIC_TOKENS_TIMEOUT_SECONDS = 6L
+        private const val INLAY_HINTS_TIMEOUT_SECONDS = 6L
         private const val FOLDING_RANGE_TIMEOUT_SECONDS = 6L
         private const val SHARED_CXX_IDLE_SHUTDOWN_MS = 20_000L
     }
@@ -137,6 +141,18 @@ class LspEditorManager(
         val regions: List<FoldRegion>
     )
 
+    private data class InlayHintsCache(
+        val documentVersion: Long,
+        val cachedLines: IntRange,
+        val hints: List<InlayHint>,
+    )
+
+    private data class LspDiagnosticsCache(
+        val documentVersion: Int,
+        val documentGeneration: Long,
+        val diagnostics: List<LspDiagnostic>,
+    )
+
     private val stateLock = Any()
     private val tabRequestTracker = LspTabRequestTracker(stateLock)
     private val lspScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -171,8 +187,10 @@ class LspEditorManager(
     private val tabBindings = mutableMapOf<String, TabBinding>()
     private val attachTokenCache = mutableMapOf<String, Any>()
     private val lspKnownUris = mutableSetOf<String>()
+    private val lspDiagnosticsByUri = mutableMapOf<String, LspDiagnosticsCache>()
     private val remoteSyncedProjects = mutableSetOf<String>()
     private val semanticTokensCache = mutableMapOf<String, SemanticTokensCache>()
+    private val inlayHintsCache = mutableMapOf<String, InlayHintsCache>()
     private val foldingRangesCache = mutableMapOf<String, FoldingRangesCache>()
     private val documentVersions = mutableMapOf<String, Long>()
     private val builtinDiagnosticsRequestTokens = mutableMapOf<String, Any>()
@@ -309,15 +327,7 @@ class LspEditorManager(
     fun onTinaDocumentChanged(tabId: String, change: TextChange, documentVersion: Long) {
         val tabSession = synchronized(stateLock) { tabSessions[tabId] } ?: return
         if (!tabSession.isConnected) return
-        synchronized(stateLock) {
-            semanticTokensCache.remove(tabId)
-            foldingRangesCache.remove(tabId)
-            documentVersions[tabId] = maxOf(documentVersions[tabId] ?: Long.MIN_VALUE, documentVersion)
-        }
-        tabSession.builtinSession?.didChange(change)
-        if (tabSession.builtinSession != null) {
-            scheduleBuiltinDiagnostics(tabSession)
-        }
+        // Advance the protocol snapshot before a queued diagnostic can be committed on the main thread.
         tabSession.lspSession?.let { session ->
             runCatching {
                 session.didChange(
@@ -329,6 +339,17 @@ class LspEditorManager(
                     newText = change.newText
                 )
             }.onFailure { Timber.tag(TAG).d("didChange failed: ${it.message}") }
+        }
+        synchronized(stateLock) {
+            semanticTokensCache.remove(tabId)
+            inlayHintsCache.remove(tabId)
+            foldingRangesCache.remove(tabId)
+            lspDiagnosticsByUri.remove(canonicalizeLspDocumentUri(tabSession.documentUri))
+            documentVersions[tabId] = maxOf(documentVersions[tabId] ?: Long.MIN_VALUE, documentVersion)
+        }
+        tabSession.builtinSession?.didChange(change)
+        if (tabSession.builtinSession != null) {
+            scheduleBuiltinDiagnostics(tabSession)
         }
     }
 
@@ -515,6 +536,93 @@ class LspEditorManager(
         )
     }
 
+    suspend fun requestInlayHints(
+        tabId: String,
+        visibleLines: IntRange,
+        documentVersion: Long,
+    ): InlayHintsRequestResult = withContext(Dispatchers.IO) {
+        if (!assistSettings.inlayHintsEnabled) {
+            synchronized(stateLock) { inlayHintsCache.remove(tabId) }
+            return@withContext InlayHintsRequestResult.Success(emptyList())
+        }
+        if (visibleLines.isEmpty()) return@withContext InlayHintsRequestResult.Success(emptyList())
+
+        val versionAccepted = synchronized(stateLock) {
+            val latestVersion = documentVersions[tabId]
+            if (latestVersion != null && documentVersion < latestVersion) {
+                false
+            } else {
+                documentVersions[tabId] = documentVersion
+                true
+            }
+        }
+        if (!versionAccepted) return@withContext InlayHintsRequestResult.Unavailable
+
+        val normalizedVisibleLines = normalizeVisibleLines(visibleLines)
+        val cached = synchronized(stateLock) { inlayHintsCache[tabId] }
+        if (cached != null &&
+            cached.documentVersion == documentVersion &&
+            cached.cachedLines.containsRange(normalizedVisibleLines)
+        ) {
+            return@withContext InlayHintsRequestResult.Success(
+                cached.hints.filterToVisibleLines(normalizedVisibleLines)
+            )
+        }
+
+        val tabSession = synchronized(stateLock) { tabSessions[tabId] }
+            ?: return@withContext InlayHintsRequestResult.Unavailable
+        if (!tabSession.isConnected || tabSession.builtinSession != null) {
+            return@withContext InlayHintsRequestResult.Unavailable
+        }
+        val session = tabSession.lspSession
+            ?.takeIf { it.supportsInlayHints }
+            ?: return@withContext InlayHintsRequestResult.Unavailable
+        val requestTicket = createTabRequestTicket(tabId, tabSession.documentUri)
+        val requestedLines = expandInlayHintRequestLines(normalizedVisibleLines)
+        val params = InlayHintParams().apply {
+            textDocument = TextDocumentIdentifier(tabSession.documentUri)
+            range = org.eclipse.lsp4j.Range(
+                org.eclipse.lsp4j.Position(requestedLines.first, 0),
+                org.eclipse.lsp4j.Position(
+                    (requestedLines.last + 1).coerceAtLeast(requestedLines.first + 1),
+                    0,
+                ),
+            )
+        }
+        val raw = awaitTrackedTabFuture(
+            ticket = requestTicket,
+            future = session.inlayHint(params),
+            timeoutSeconds = INLAY_HINTS_TIMEOUT_SECONDS,
+            operation = "inlayHint(${fileNameForLog(tabSession.file)})",
+        ) ?: return@withContext InlayHintsRequestResult.Unavailable
+        if (!isTabRequestStillValid(requestTicket)) {
+            return@withContext InlayHintsRequestResult.Unavailable
+        }
+
+        val hints = raw.asSequence()
+            .mapNotNull { hint -> hint.toEditorInlayHintOrNull() }
+            .filter { hint -> hint.line in requestedLines }
+            .distinctBy { hint ->
+                listOf(hint.line, hint.column, hint.label, hint.kind, hint.paddingLeft, hint.paddingRight)
+            }
+            .sortedWith(compareBy(InlayHint::line, InlayHint::column, InlayHint::label))
+            .toList()
+        val cachedSuccessfully = synchronized(stateLock) {
+            if (documentVersions[tabId] != documentVersion || tabSessions[tabId] !== tabSession) {
+                false
+            } else {
+                inlayHintsCache[tabId] = InlayHintsCache(
+                    documentVersion = documentVersion,
+                    cachedLines = requestedLines,
+                    hints = hints,
+                )
+                true
+            }
+        }
+        if (!cachedSuccessfully) return@withContext InlayHintsRequestResult.Unavailable
+        InlayHintsRequestResult.Success(hints.filterToVisibleLines(normalizedVisibleLines))
+    }
+
     suspend fun requestCompletion(
         tabId: String,
         position: Position,
@@ -576,7 +684,10 @@ class LspEditorManager(
 
     fun releaseLspEditor(tabId: String) = releaseSession(tabId, true)
 
-    fun hasActiveLspConnection(tabId: String): Boolean = synchronized(stateLock) { tabSessions[tabId]?.isConnected == true }
+    fun hasActiveLspConnection(tabId: String): Boolean {
+        val tabSession = synchronized(stateLock) { tabSessions[tabId] }
+        return tabSession?.isConnected == true
+    }
 
     private fun hasTabBinding(tabId: String, file: File): Boolean = synchronized(stateLock) {
         tabBindings[tabId]?.file?.absolutePath == file.absolutePath
@@ -590,18 +701,32 @@ class LspEditorManager(
         endColumn: Int
     ): List<LspCodeActionService.CodeActionItem> = withLspTabSession(tabId) { tabSession, session ->
         val requestTicket = createTabRequestTicket(tabId, tabSession.documentUri)
+        val documentSnapshot = session.currentDocumentSnapshot(tabSession.documentUri)
+        val documentUriKey = canonicalizeLspDocumentUri(tabSession.documentUri)
+        val diagnostics = synchronized(stateLock) {
+            lspDiagnosticsByUri[documentUriKey]
+                ?.takeIf { cached ->
+                    documentSnapshot != null &&
+                        cached.documentVersion == documentSnapshot.version &&
+                        cached.documentGeneration == documentSnapshot.generation
+                }
+                ?.diagnostics
+                .orEmpty()
+        }
         val result = codeActionService.requestCodeActions(
             documentUri = tabSession.documentUri,
             startLine = startLine,
             startColumn = startColumn,
             endLine = endLine,
             endColumn = endColumn,
+            diagnostics = diagnostics,
             codeActionRequest = { params, timeoutSeconds ->
                 awaitTrackedTabFuture(
                     ticket = requestTicket,
                     future = session.codeAction(params),
                     timeoutSeconds = timeoutSeconds,
-                    operation = "codeAction(${fileNameForLog(tabSession.file)})"
+                    operation = "codeAction(${fileNameForLog(tabSession.file)})",
+                    propagateFailure = true,
                 )
             }
         )
@@ -954,6 +1079,9 @@ class LspEditorManager(
         assistSettings = settings
         if (previous.semanticTokensEnabled && !settings.semanticTokensEnabled) {
             synchronized(stateLock) { semanticTokensCache.clear() }
+        }
+        if (previous.inlayHintsEnabled && !settings.inlayHintsEnabled) {
+            synchronized(stateLock) { inlayHintsCache.clear() }
         }
     }
 
@@ -1437,16 +1565,49 @@ class LspEditorManager(
         file: File,
     ): LspClientSession {
         val diagnosticsBridge = LspDiagnosticsBridge { uri, diagnostics ->
-            synchronized(stateLock) { lspKnownUris.add(uri) }
             onDiagnosticsChanged?.invoke(uri, diagnostics)
         }
-        return LspClientSession(
+        lateinit var session: LspClientSession
+        session = LspClientSession(
             connectionProvider = provider,
             documentUri = file.toURI().toString(),
             workspaceRootUri = File(workspaceRoot).toURI().toString(),
-            diagnosticsConsumer = { uri, diagnostics ->
-                val fileName = runCatching { File(URI(uri)).name }.getOrElse { file.name }
-                diagnosticsBridge.publish(uri, fileName, diagnostics)
+            diagnosticsConsumer = { uri, _, currentDocumentUri, documentVersion, documentGeneration, diagnostics, sessionCommitIfCurrent ->
+                val canonicalUri = canonicalizeLspDocumentUri(uri)
+                val currentDocumentUriKey = canonicalizeLspDocumentUri(currentDocumentUri)
+                val fileName = runCatching { File(URI(canonicalUri)).name }.getOrElse { file.name }
+                diagnosticsBridge.publish(
+                    fileUri = canonicalUri,
+                    fileName = fileName,
+                    data = diagnostics,
+                    commitIfCurrent = { commit ->
+                        var committed = false
+                        val sessionIsCurrent = sessionCommitIfCurrent {
+                            synchronized(stateLock) {
+                                val isAttached = tabSessions.values.any { tabSession ->
+                                    tabSession.lspSession === session &&
+                                        canonicalizeLspDocumentUri(tabSession.documentUri) ==
+                                        currentDocumentUriKey
+                                }
+                                if (isAttached) {
+                                    commit()
+                                    committed = true
+                                }
+                            }
+                        }
+                        sessionIsCurrent && committed
+                    },
+                    onAccepted = {
+                        synchronized(stateLock) {
+                            lspKnownUris.add(canonicalUri)
+                            lspDiagnosticsByUri[canonicalUri] = LspDiagnosticsCache(
+                                documentVersion = documentVersion,
+                                documentGeneration = documentGeneration,
+                                diagnostics = diagnostics.toList(),
+                            )
+                        }
+                    },
+                )
             },
             registrationConsumer = { registrations -> onCapabilityRegistered(registrations) },
             unregistrationConsumer = { unregistrations -> onCapabilityUnregistered(unregistrations) },
@@ -1454,6 +1615,7 @@ class LspEditorManager(
                 (provider as? PluginLspConnectionProvider)?.reportProtocolFailure(error)
             },
         )
+        return session
     }
 
     private fun cancelPendingSharedCxxShutdown() {
@@ -1472,10 +1634,11 @@ class LspEditorManager(
 
     private fun isTabRequestStillValid(ticket: LspTabRequestTicket): Boolean =
         tabRequestTracker.isStillValid(ticket) { tabId ->
-            tabSessions[tabId]?.let { tabSession ->
+            val tabSession = synchronized(stateLock) { tabSessions[tabId] }
+            tabSession?.let {
                 LspTrackedTabRequestState(
-                    documentUri = tabSession.documentUri,
-                    isConnected = tabSession.isConnected
+                    documentUri = it.documentUri,
+                    isConnected = it.isConnected
                 )
             }
         }
@@ -1532,6 +1695,16 @@ class LspEditorManager(
                     initialText = snapshot,
                     initializationOptions = initializationOptions,
                     providerFactory = providerFactory,
+                    commitSessionIfCurrent = { session, commit ->
+                        registerPendingLspSession(
+                            tabId = tabId,
+                            token = token,
+                            file = file,
+                            kind = SessionKind.CXX,
+                            session = session,
+                            commit = commit,
+                        )
+                    },
                 )
             }.onSuccess { session ->
                 val committed = synchronized(stateLock) {
@@ -1642,9 +1815,19 @@ class LspEditorManager(
                 val provider = providerFactory(onOwnerStopped)
                 Timber.tag(TAG).d("startAttach: provider created: %s", provider.javaClass.simpleName)
                 val session = createLspClientSession(provider, workspaceRoot, file)
-                val snapshot = runCatching { textProvider() }.getOrDefault("")
-                Timber.tag(TAG).d("startAttach: calling session.connect(languageId=%s, textLen=%d)...", languageId, snapshot.length)
                 try {
+                    val registered = registerPendingLspSession(
+                        tabId = tabId,
+                        token = token,
+                        file = file,
+                        kind = kind,
+                        session = session,
+                    )
+                    if (!registered) {
+                        throw CancellationException("LSP attachment is no longer current")
+                    }
+                    val snapshot = runCatching { textProvider() }.getOrDefault("")
+                    Timber.tag(TAG).d("startAttach: calling session.connect(languageId=%s, textLen=%d)...", languageId, snapshot.length)
                     withContext(Dispatchers.IO) {
                         session.connect(languageId, snapshot, initializationOptions).getOrThrow()
                     }
@@ -1735,13 +1918,21 @@ class LspEditorManager(
             val requests = nextRequestGeneration(tabId)
             attachTokenCache.remove(tabId)
             semanticTokensCache.remove(tabId)
+            inlayHintsCache.remove(tabId)
             documentVersions.remove(tabId)
             completionWarmupTabIds.remove(tabId)
             if (clearBinding) tabBindings.remove(tabId)
             val removed = tabSessions.remove(tabId)
             removed?.let { tabSession ->
-                lspKnownUris.remove(tabSession.documentUri)
-                onDiagnosticsChanged?.invoke(tabSession.documentUri, emptyList())
+                val diagnosticUris = setOf(
+                    tabSession.documentUri,
+                    canonicalizeLspDocumentUri(tabSession.documentUri),
+                )
+                diagnosticUris.forEach { uri ->
+                    lspKnownUris.remove(uri)
+                    lspDiagnosticsByUri.remove(uri)
+                    onDiagnosticsChanged?.invoke(uri, emptyList())
+                }
             }
             Triple(
                 sharedCxxSessions.currentSession(),
@@ -1774,6 +1965,29 @@ class LspEditorManager(
         synchronized(stateLock) { tabBindings[binding.tabId] = binding }
     }
 
+    private fun registerPendingLspSession(
+        tabId: String,
+        token: Any,
+        file: File,
+        kind: SessionKind,
+        session: LspClientSession,
+        commit: () -> Unit = {},
+    ): Boolean = synchronized(stateLock) {
+        if (attachTokenCache[tabId] !== token) {
+            false
+        } else {
+            tabSessions[tabId] = TabSession(
+                tabId = tabId,
+                file = file,
+                kind = kind,
+                documentUri = file.toURI().toString(),
+                lspSession = session,
+            )
+            commit()
+            true
+        }
+    }
+
     private fun disposeProject(clearBindings: Boolean = true) {
         cancelPendingSharedCxxShutdown()
         clearDiagnosticsInUi()
@@ -1786,12 +2000,14 @@ class LspEditorManager(
         val (sessions, inflightRequests) = synchronized(stateLock) {
             attachTokenCache.clear()
             semanticTokensCache.clear()
+            inlayHintsCache.clear()
             documentVersions.clear()
             completionWarmupTabIds.clear()
             val inflight = tabRequestTracker.drainAll()
             if (clearBindings) tabBindings.clear()
             val all = tabSessions.values.toList()
             tabSessions.clear()
+            lspDiagnosticsByUri.clear()
             all to inflight
         }
         inflightRequests.forEach { future -> future.cancel(true) }
@@ -1928,21 +2144,27 @@ class LspEditorManager(
         ticket: LspTabRequestTicket,
         future: CompletableFuture<T>?,
         timeoutSeconds: Long,
-        operation: String
+        operation: String,
+        propagateFailure: Boolean = false,
     ): T? {
-        future ?: return null
+        if (future == null) {
+            if (propagateFailure) error("$operation is unavailable")
+            return null
+        }
         if (!isTabRequestStillValid(ticket)) {
             future.cancel(true)
+            if (propagateFailure) throw CancellationException("$operation was invalidated")
             return null
         }
 
         val startedAt = System.nanoTime()
         trackTabFuture(ticket.tabId, future)
         return try {
-            val result = awaitLspFuture(future, timeoutSeconds, operation)
+            val result = awaitLspFuture(future, timeoutSeconds, operation, propagateFailure)
             if (!isTabRequestStillValid(ticket)) {
                 future.cancel(true)
                 Timber.tag(TAG).d("%s discarded after tab switch", operation)
+                if (propagateFailure) throw CancellationException("$operation was invalidated")
                 null
             } else {
                 Timber.tag(TAG).d("%s finished in %dms", operation, elapsedMillis(startedAt))
@@ -1956,9 +2178,13 @@ class LspEditorManager(
     private suspend fun <T> awaitLspFuture(
         future: CompletableFuture<T>?,
         timeoutSeconds: Long,
-        operation: String
+        operation: String,
+        propagateFailure: Boolean = false,
     ): T? {
-        future ?: return null
+        if (future == null) {
+            if (propagateFailure) error("$operation is unavailable")
+            return null
+        }
         return try {
             withTimeout(timeoutSeconds * 1000L) {
                 future.awaitCancellable()
@@ -1966,6 +2192,7 @@ class LspEditorManager(
         } catch (timeout: TimeoutCancellationException) {
             future.cancel(true)
             Timber.tag(TAG).w("%s timed out after %ds", operation, timeoutSeconds)
+            if (propagateFailure) throw IllegalStateException("$operation timed out", timeout)
             null
         } catch (cancelled: CancellationException) {
             future.cancel(true)
@@ -1973,6 +2200,7 @@ class LspEditorManager(
         } catch (t: Throwable) {
             future.cancel(true)
             Timber.tag(TAG).w(t, "%s failed", operation)
+            if (propagateFailure) throw t
             null
         }
     }

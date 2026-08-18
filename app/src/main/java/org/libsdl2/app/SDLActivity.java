@@ -418,7 +418,15 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
 
         mClipboardHandler = new SDLClipboardHandler();
 
-        mHIDDeviceManager = HIDDeviceManager.acquire(this);
+        try {
+            mHIDDeviceManager = HIDDeviceManager.acquire(this);
+        } catch (UnsatisfiedLinkError error) {
+            // Older TinaIDE SDL2 packages relocated the core JNI bridge but missed
+            // HIDDeviceManager's exported JNI symbols. HIDAPI is optional, so keep
+            // the SDL runtime usable while the package is upgraded.
+            Log.w(TAG, "SDL HID bridge is unavailable; continuing without HIDAPI", error);
+            mHIDDeviceManager = null;
+        }
 
         // Set up the surface
         mSurface = createSDLSurface(this);

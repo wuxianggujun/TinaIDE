@@ -40,6 +40,8 @@ import com.wuxianggujun.tinaide.core.editorlsp.CompletionItemKind
 import com.wuxianggujun.tinaide.core.editorlsp.CompletionSource
 import com.wuxianggujun.tinaide.core.editorlsp.CompletionTextEdit
 import com.wuxianggujun.tinaide.core.editorlsp.DefaultCompletionProvider
+import com.wuxianggujun.tinaide.core.editorlsp.InlayHint as LspInlayHint
+import com.wuxianggujun.tinaide.core.editorlsp.InlayHintKind as LspInlayHintKind
 import com.wuxianggujun.tinaide.core.editorlsp.SemanticToken as LspSemanticToken
 import com.wuxianggujun.tinaide.core.editorview.DiagnosticSeverity
 import com.wuxianggujun.tinaide.core.editorview.EditorCompletionFetchResult
@@ -48,6 +50,8 @@ import com.wuxianggujun.tinaide.core.editorview.EditorCompletionKind
 import com.wuxianggujun.tinaide.core.editorview.EditorCompletionTextEdit
 import com.wuxianggujun.tinaide.core.editorview.EditorConfig
 import com.wuxianggujun.tinaide.core.editorview.EditorDiagnostic
+import com.wuxianggujun.tinaide.core.editorview.EditorInlayHint
+import com.wuxianggujun.tinaide.core.editorview.EditorInlayHintKind
 import com.wuxianggujun.tinaide.core.editorview.EditorRenderPerformanceSnapshot
 import com.wuxianggujun.tinaide.core.editorview.EditorState
 import com.wuxianggujun.tinaide.core.editorview.GutterDecoration
@@ -438,6 +442,14 @@ internal data class SemanticTokenRequestKey(
     val lspReady: Boolean,
 )
 
+internal data class InlayHintRequestKey(
+    val firstLine: Int,
+    val lastLine: Int,
+    val documentVersion: Long,
+    val enabled: Boolean,
+    val lspReady: Boolean,
+)
+
 internal fun resolveSelectedRangeOrCursor(
     buffer: RopeTextBuffer,
     editorState: EditorState
@@ -688,6 +700,30 @@ internal fun applyTextEdits(
         changed
     }
 }
+
+internal fun applyInlayHints(
+    editorState: EditorState,
+    hints: List<LspInlayHint>,
+    requestedVisibleLines: IntRange,
+    documentVersion: Long,
+): Boolean = editorState.replaceInlayHintsInLines(
+    lines = requestedVisibleLines,
+    hints = hints.map { hint ->
+        EditorInlayHint(
+            line = hint.line,
+            column = hint.column,
+            label = hint.label,
+            kind = when (hint.kind) {
+                LspInlayHintKind.PARAMETER -> EditorInlayHintKind.PARAMETER
+                LspInlayHintKind.TYPE -> EditorInlayHintKind.TYPE
+                LspInlayHintKind.OTHER -> EditorInlayHintKind.OTHER
+            },
+            paddingLeft = hint.paddingLeft,
+            paddingRight = hint.paddingRight,
+        )
+    },
+    documentVersion = documentVersion,
+)
 
 private fun EditorState.textSelectionSnapshot(): TextSelectionSnapshot? =
     selectionRange?.takeUnless { it.isEmpty }?.let { range ->

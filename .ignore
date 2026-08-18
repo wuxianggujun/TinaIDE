@@ -34,7 +34,6 @@ log/
 **/log/
 tmp/
 temp/
-.ace-tool/
 app/.local/
 app/src/*/assets/tina-toolchain/archive/
 external/llvm-build-libs/

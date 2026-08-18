@@ -8,6 +8,8 @@ import java.io.File
 
 internal const val SEMANTIC_PREFETCH_MARGIN_LINES = 80
 internal const val SEMANTIC_MAX_PREFETCH_SPAN_LINES = 480
+internal const val INLAY_HINT_PREFETCH_MARGIN_LINES = 24
+internal const val INLAY_HINT_MAX_PREFETCH_SPAN_LINES = 240
 
 internal fun elapsedMillis(startedAt: Long): Long = (System.nanoTime() - startedAt) / 1_000_000L
 
@@ -26,6 +28,16 @@ internal fun expandSemanticRequestLines(visibleLines: IntRange): IntRange {
     val start = (normalized.first - SEMANTIC_PREFETCH_MARGIN_LINES).coerceAtLeast(0)
     val maxEnd = start + SEMANTIC_MAX_PREFETCH_SPAN_LINES
     val targetEnd = normalized.last + SEMANTIC_PREFETCH_MARGIN_LINES
+    val end = targetEnd.coerceAtMost(maxEnd).coerceAtLeast(start)
+    return start..end
+}
+
+internal fun expandInlayHintRequestLines(visibleLines: IntRange): IntRange {
+    val normalized = normalizeVisibleLines(visibleLines)
+    if (normalized.isEmpty()) return normalized
+    val start = (normalized.first - INLAY_HINT_PREFETCH_MARGIN_LINES).coerceAtLeast(0)
+    val maxEnd = start + INLAY_HINT_MAX_PREFETCH_SPAN_LINES
+    val targetEnd = normalized.last + INLAY_HINT_PREFETCH_MARGIN_LINES
     val end = targetEnd.coerceAtMost(maxEnd).coerceAtLeast(start)
     return start..end
 }

@@ -72,6 +72,7 @@ import com.wuxianggujun.tinaide.search.CodeSearchResult
 import com.wuxianggujun.tinaide.core.editorlsp.CMakeLanguageSupport
 import com.wuxianggujun.tinaide.core.editorlsp.EditorStatus
 import com.wuxianggujun.tinaide.core.editorlsp.MakeLanguageSupport
+import com.wuxianggujun.tinaide.core.editorlsp.InlayHintsRequestResult
 import com.wuxianggujun.tinaide.core.editorlsp.SemanticTokensRequestResult
 import com.wuxianggujun.tinaide.ui.compose.state.editor.CodeEditorCallback
 import com.wuxianggujun.tinaide.ui.compose.state.editor.CodeEditorDocumentBinding
@@ -755,6 +756,57 @@ fun TinaCodeEditorPage(
                         editorState = editorState,
                         tokens = result.tokens,
                         requestedVisibleLines = key.firstLine..key.lastLine
+                    )
+                }
+            }
+    }
+
+    LaunchedEffect(tab.id, state, editorState, buffer) {
+        val visibleFlow = snapshotFlow { editorState.visibleDocumentLines }
+            .distinctUntilChanged()
+        val inlayHintsEnabledFlow = Prefs.lspAssistSettingsFlow
+            .map { it.inlayHintsEnabled }
+            .distinctUntilChanged()
+        val lspReadyFlow = state.getLspStatusFlow(tab.id)
+            .map { it == EditorStatus.Ready }
+            .distinctUntilChanged()
+
+        combine(
+            visibleFlow,
+            buffer.versionFlow,
+            inlayHintsEnabledFlow,
+            lspReadyFlow,
+        ) { visible, version, enabled, lspReady ->
+            InlayHintRequestKey(
+                firstLine = visible.first,
+                lastLine = visible.last,
+                documentVersion = version,
+                enabled = enabled,
+                lspReady = lspReady,
+            )
+        }
+            .distinctUntilChanged()
+            .collectLatest { key ->
+                if (!key.enabled || !key.lspReady || key.lastLine < key.firstLine) {
+                    editorState.clearInlayHints()
+                    return@collectLatest
+                }
+
+                // Scrolling and typing can emit in quick succession. Cancellation keeps only the latest viewport.
+                delay(140)
+                val requestedLines = key.firstLine..key.lastLine
+                val result = state.requestLspInlayHints(
+                    tabId = tab.id,
+                    visibleLines = requestedLines,
+                    documentVersion = key.documentVersion,
+                )
+                if (buffer.version != key.documentVersion) return@collectLatest
+                if (result is InlayHintsRequestResult.Success) {
+                    applyInlayHints(
+                        editorState = editorState,
+                        hints = result.hints,
+                        requestedVisibleLines = requestedLines,
+                        documentVersion = key.documentVersion,
                     )
                 }
             }

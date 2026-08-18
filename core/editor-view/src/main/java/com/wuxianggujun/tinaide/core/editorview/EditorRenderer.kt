@@ -33,6 +33,7 @@ internal class EditorRenderer(
     private val selectionRenderer = SelectionRenderer()
     private val cursorRenderer = CursorRenderer()
     private val diagnosticRenderer = DiagnosticRenderer()
+    private val inlayHintRenderer = InlayHintRenderer()
     private val bracketPairGuideRenderer = BracketPairGuideRenderer()
     private val matchingBracketRenderer = MatchingBracketHighlightRenderer()
     private val wordOccurrenceRenderer = WordOccurrenceHighlightRenderer()
@@ -138,6 +139,13 @@ internal class EditorRenderer(
                         textStartX = textStartX,
                         lineLayoutCache = lineLayoutCache
                     )
+                    inlayHintRenderer.draw(
+                        drawScope = this,
+                        frameContext = frameContext,
+                        textStartX = textStartX,
+                        textPaint = textPaint,
+                        lineLayoutCache = lineLayoutCache
+                    )
                     whitespaceRenderer.drawWhitespace(
                         drawScope = this,
                         frameContext = frameContext,
@@ -224,6 +232,13 @@ internal class EditorRenderer(
                         frameContext = frameContext,
                         textPaint = textPaint,
                         textStartX = textStartX,
+                        lineLayoutCache = lineLayoutCache
+                    )
+                    inlayHintRenderer.draw(
+                        drawScope = this,
+                        frameContext = frameContext,
+                        textStartX = textStartX,
+                        textPaint = textPaint,
                         lineLayoutCache = lineLayoutCache
                     )
                     whitespaceRenderer.drawWhitespace(

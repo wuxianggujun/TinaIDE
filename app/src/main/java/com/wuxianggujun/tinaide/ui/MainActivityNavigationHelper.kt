@@ -32,6 +32,16 @@ object MainActivityNavigationHelper {
         bottomPanelController: BottomPanelController?,
         scope: CoroutineScope
     ) {
+        val file = resolveDiagnosticFile(diagnostic)
+        editorContainerState.openFileAndGoToPosition(file, diagnostic.line, diagnostic.column)
+
+        // 收起底部面板
+        scope.launch {
+            bottomPanelController?.collapseImmediate()
+        }
+    }
+
+    internal fun resolveDiagnosticFile(diagnostic: Diagnostic): File {
         val filePath = try {
             diagnostic.fileUri.toUri().path ?: diagnostic.fileUri
         } catch (e: Exception) {
@@ -41,14 +51,7 @@ object MainActivityNavigationHelper {
                 diagnostic.fileUri
             }
         }
-
-        val file = File(filePath)
-        editorContainerState.openFileAndGoToPosition(file, diagnostic.line, diagnostic.column)
-
-        // 收起底部面板
-        scope.launch {
-            bottomPanelController?.collapseImmediate()
-        }
+        return File(filePath)
     }
 
     /**

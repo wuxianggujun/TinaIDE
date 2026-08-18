@@ -26,6 +26,7 @@ import com.wuxianggujun.tinaide.ui.EditorStateViewModel
 import com.wuxianggujun.tinaide.ui.MainActivityActionsDelegate
 import com.wuxianggujun.tinaide.ui.MainActivityBottomPanelActionBridge
 import com.wuxianggujun.tinaide.ui.MainActivityNavigationDelegate
+import com.wuxianggujun.tinaide.ui.MainActivityNavigationHelper
 import com.wuxianggujun.tinaide.ui.compose.components.BottomPanel
 import com.wuxianggujun.tinaide.ui.compose.components.BottomPanelSecondaryBarHeight
 import com.wuxianggujun.tinaide.ui.compose.components.EditorContainer
@@ -133,6 +134,28 @@ internal fun MainActivityBottomPanelHost(
                     },
                     onDiagnosticClick = { diagnostic ->
                         navigationDelegate.navigateToDiagnostic(editorContainerState, diagnostic)
+                    },
+                    onDiagnosticCodeActionsClick = { diagnostic ->
+                        val file = MainActivityNavigationHelper.resolveDiagnosticFile(diagnostic)
+                        val navigated = editorContainerState.openFileAndGoToPosition(
+                            file = file,
+                            line = diagnostic.line,
+                            column = diagnostic.column,
+                        )
+                        val tabId = if (navigated) {
+                            editorContainerState.findOpenTabIdByFileOrNull(file)
+                        } else {
+                            null
+                        }
+                        if (tabId != null) {
+                            editorContainerState.onLspCodeActionsRequested?.invoke(
+                                tabId,
+                                diagnostic.line,
+                                diagnostic.column,
+                                diagnostic.endLine,
+                                diagnostic.endColumn,
+                            )
+                        }
                     },
                     gitCurrentBranch = gitUiState.status.branch,
                     gitBranches = gitUiState.branches,

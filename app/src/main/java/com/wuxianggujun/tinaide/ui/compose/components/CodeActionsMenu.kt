@@ -95,6 +95,8 @@ private fun CodeActionItem(
     action: LspCodeActionService.CodeActionItem,
     onClick: () -> Unit
 ) {
+    val enabled = action.isEnabled
+    val disabledReason = action.disabledReason
     val icon = when {
         action.kind?.contains("quickfix") == true -> Icons.Default.Build
         action.kind?.contains("refactor") == true -> Icons.Default.Edit
@@ -105,23 +107,46 @@ private fun CodeActionItem(
     TinaDialogCard(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
+            .clickable(enabled = enabled, onClick = onClick),
         contentPadding = PaddingValues(0.dp),
         color = MaterialTheme.colorScheme.surface,
         verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
         ListItem(
-            headlineContent = { Text(action.title) },
-            supportingContent = if (action.diagnostics.isNotEmpty()) {
-                { Text(action.diagnostics.first(), maxLines = 1) }
-            } else {
-                null
+            headlineContent = {
+                Text(
+                    text = action.title,
+                    color = if (enabled) {
+                        MaterialTheme.colorScheme.onSurface
+                    } else {
+                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                    }
+                )
+            },
+            supportingContent = when {
+                disabledReason != null -> {
+                    {
+                        Text(
+                            text = disabledReason,
+                            color = MaterialTheme.colorScheme.error,
+                            maxLines = 2
+                        )
+                    }
+                }
+
+                action.diagnostics.isNotEmpty() -> {
+                    { Text(action.diagnostics.first(), maxLines = 1) }
+                }
+
+                else -> null
             },
             leadingContent = {
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = if (action.isPreferred) {
+                    tint = if (!enabled) {
+                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                    } else if (action.isPreferred) {
                         MaterialTheme.colorScheme.primary
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant

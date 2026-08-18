@@ -27,7 +27,7 @@ description: TinaIDE 项目架构导航。用于理解模块边界、启动入�
 
 ## 判断新代码位置
 
-1. 先用 `rg` 或 `ace-tool.search_context` 按意图搜索既有实现。
+1. 先用 FastCtx `grep` 或 `rg` 按意图搜索既有实现。
 2. 用户可见页面、ViewModel、功能流程优先放到对应 `feature/*`。
 3. 被多个 feature/app 共享且不依赖 UI 的能力放到 `core/*`。
 4. 只负责跨模块装配、Activity 入口、全局 DI 或主界面协调时才改 `app/`。

@@ -21,6 +21,8 @@ import com.wuxianggujun.tinaide.core.editorlsp.CompletionFetchResult
 import com.wuxianggujun.tinaide.core.editorlsp.CompletionItem
 import com.wuxianggujun.tinaide.core.editorlsp.CompletionItemKind
 import com.wuxianggujun.tinaide.core.editorlsp.CompletionSource
+import com.wuxianggujun.tinaide.core.editorlsp.InlayHint
+import com.wuxianggujun.tinaide.core.editorlsp.InlayHintsRequestResult
 import com.wuxianggujun.tinaide.core.editorlsp.SemanticToken
 import com.wuxianggujun.tinaide.core.editorlsp.SignatureHelpResult
 import com.wuxianggujun.tinaide.core.editorview.EditorColorScheme
@@ -358,6 +360,12 @@ class EditorContainerState(
 
     internal fun supportsLspRefactorActions(file: File): Boolean =
         lspNavigationFacade.supportsLspRefactorActions(file)
+
+    internal fun supportsLspRefactorActions(tabId: String): Boolean =
+        tabManager.findTab(tabId)?.file?.let(lspNavigationFacade::supportsLspRefactorActions) == true
+
+    internal fun hasActiveLspConnection(tabId: String): Boolean =
+        lspEditorManager.hasActiveLspConnection(tabId)
 
     internal fun supportsHeaderSourceSwitch(file: File): Boolean =
         lspNavigationFacade.supportsHeaderSourceSwitch(file)
@@ -1499,6 +1507,16 @@ class EditorContainerState(
         tabId = tabId,
         visibleLines = visibleLines,
         documentVersion = documentVersion
+    )
+
+    internal suspend fun requestLspInlayHints(
+        tabId: String,
+        visibleLines: IntRange,
+        documentVersion: Long,
+    ): InlayHintsRequestResult = lspEditorManager.requestInlayHints(
+        tabId = tabId,
+        visibleLines = visibleLines,
+        documentVersion = documentVersion,
     )
 
     suspend fun requestLspFoldingRanges(

@@ -15,7 +15,11 @@ data class Diagnostic(
     val message: String,
     val severity: Severity,
     val source: String? = null,
-    val code: String? = null
+    val code: String? = null,
+    val codeDescriptionUri: String? = null,
+    val tags: List<Tag> = emptyList(),
+    val relatedInformation: List<RelatedInformation> = emptyList(),
+    val data: Any? = null
 ) {
     enum class Severity {
         ERROR,
@@ -23,6 +27,20 @@ data class Diagnostic(
         INFO,
         HINT
     }
+
+    enum class Tag {
+        UNNECESSARY,
+        DEPRECATED
+    }
+
+    data class RelatedInformation(
+        val fileUri: String,
+        val line: Int,
+        val column: Int,
+        val endLine: Int = line,
+        val endColumn: Int = column + 1,
+        val message: String
+    )
 
     val displayLocation: String
         get() = "$fileName:${line + 1}:${column + 1}"

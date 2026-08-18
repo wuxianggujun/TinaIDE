@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -14,6 +15,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Keyboard
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -46,7 +50,7 @@ import kotlinx.coroutines.launch
  * 显示：
  * - 左侧：状态指示器（Ready/Busy）+ 远程 LSP 状态（如果启用）+ 文件编码（UTF-8）
  * - 中间：拖拽条图标
- * - 右侧：光标位置（Ln x, Col y）
+ * - 右侧：光标位置（Ln x, Col y）+ 可选的快捷符号栏开关
  *
  * 整个状态栏可以拖拽来展开/收起底部面板
  */
@@ -58,7 +62,9 @@ fun EditorStatusBar(
     line: Int = 1,
     column: Int = 1,
     bottomPanelState: BottomPanelDragState? = null,
-    onCursorPositionClick: (() -> Unit)? = null
+    onCursorPositionClick: (() -> Unit)? = null,
+    isEditorSymbolBarVisible: Boolean = false,
+    onToggleEditorSymbolBar: (() -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
     val velocityTracker = remember { VelocityTracker() }
@@ -278,7 +284,8 @@ fun EditorStatusBar(
             // 右侧：光标位置
             Row(
                 modifier = Modifier.weight(1f),
-                horizontalArrangement = Arrangement.End
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
                     text = stringResource(Strings.editor_cursor_position, line, column),
@@ -291,6 +298,33 @@ fun EditorStatusBar(
                         Modifier
                     }
                 )
+
+                if (onToggleEditorSymbolBar != null) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    TinaPanelSegmentButton(
+                        onClick = onToggleEditorSymbolBar,
+                        modifier = Modifier.size(32.dp),
+                        minHeight = 32.dp,
+                        contentPadding = PaddingValues(0.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Keyboard,
+                            contentDescription = stringResource(
+                                if (isEditorSymbolBarVisible) {
+                                    Strings.content_desc_hide_editor_symbol_bar
+                                } else {
+                                    Strings.content_desc_show_editor_symbol_bar
+                                }
+                            ),
+                            modifier = Modifier.size(19.dp),
+                            tint = if (isEditorSymbolBarVisible) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        )
+                    }
+                }
             }
         }
     }

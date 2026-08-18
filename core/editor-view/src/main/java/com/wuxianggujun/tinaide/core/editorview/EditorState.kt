@@ -176,6 +176,9 @@ class EditorState(
     internal var semanticTokensVersion by mutableStateOf(0L)
         private set
 
+    internal var inlayHintsVersion by mutableStateOf(0L)
+        private set
+
     /**
      * 统一的 styling 版本号：每次 syntax 或 semantic 更新都推进，最晚到达者负责递增。
      *
@@ -326,6 +329,12 @@ class EditorState(
     var highlighter by mutableStateOf<SyntaxHighlighter?>(null)
     var semanticTokens by mutableStateOf<List<SemanticToken>>(emptyList())
     var semanticTokensByLine by mutableStateOf<Map<Int, List<SemanticToken>>>(emptyMap())
+    var inlayHints by mutableStateOf<List<EditorInlayHint>>(emptyList())
+        private set
+    var inlayHintsByLine by mutableStateOf<Map<Int, List<EditorInlayHint>>>(emptyMap())
+        private set
+    var inlayHintsDocumentVersion by mutableStateOf(-1L)
+        private set
     var diagnostics by mutableStateOf<List<EditorDiagnostic>>(emptyList())
     var diagnosticsByLine by mutableStateOf<Map<Int, List<EditorDiagnostic>>>(emptyMap())
     private var diagnosticLinesSortedRef: Map<Int, List<EditorDiagnostic>>? = null
@@ -462,6 +471,47 @@ class EditorState(
         semanticTokens = updatedByLine.values.flatten()
         semanticTokensVersion++
         bumpStylingVersion()
+    }
+
+    fun clearInlayHints() {
+        if (inlayHints.isEmpty() && inlayHintsByLine.isEmpty() && inlayHintsDocumentVersion < 0L) return
+        inlayHints = emptyList()
+        inlayHintsByLine = emptyMap()
+        inlayHintsDocumentVersion = -1L
+        inlayHintsVersion++
+    }
+
+    fun replaceInlayHintsInLines(
+        lines: IntRange,
+        hints: List<EditorInlayHint>,
+        documentVersion: Long,
+    ): Boolean {
+        if (lines.isEmpty() || textBuffer.version != documentVersion) return false
+
+        val updatedByLine = if (inlayHintsDocumentVersion == documentVersion) {
+            inlayHintsByLine.toMutableMap()
+        } else {
+            mutableMapOf()
+        }
+        updatedByLine.keys
+            .filter { line -> line in lines }
+            .forEach(updatedByLine::remove)
+        hints.asSequence()
+            .filter { hint -> hint.line in lines && hint.line >= 0 && hint.column >= 0 && hint.label.isNotBlank() }
+            .groupBy { hint -> hint.line }
+            .forEach { (line, lineHints) ->
+                updatedByLine[line] = lineHints
+                    .distinct()
+                    .sortedWith(compareBy(EditorInlayHint::column, EditorInlayHint::label))
+            }
+
+        val normalizedByLine = updatedByLine.toSortedMap()
+        if (inlayHintsDocumentVersion == documentVersion && inlayHintsByLine == normalizedByLine) return true
+        inlayHintsByLine = normalizedByLine
+        inlayHints = normalizedByLine.values.flatten()
+        inlayHintsDocumentVersion = documentVersion
+        inlayHintsVersion++
+        return true
     }
 
     private fun applySingleLineTextChangeToSemanticTokens(
@@ -1538,6 +1588,7 @@ class EditorState(
     fun applyTextBufferChange(change: TextChange) {
         val currentVersion = textBuffer.version
         textVersion = currentVersion
+        clearInlayHints()
         applyTextChangeToSemanticTokens(change)
         foldingManager.adjustFoldRegionsAfterTextChange(change, currentVersion)
         applyWidthSnapshotChange(change, currentVersion)

@@ -44,6 +44,9 @@
 
 ### Fixed
 
+- 修复 Android 16/edge-to-edge 场景下编辑器底部符号栏未可靠避让输入法、可能被 IME 遮挡的问题；主工作区明确使用 `adjustResize`，并保留 RikkaHub 抽屉的独立 `ADJUST_NOTHING` 行为。
+- 修复 SDL2 运行时的 HID JNI 导出仍指向未重定位的 `org.libsdl.app`、导致启动时在 `HIDDeviceRegisterCallback()` 崩溃的问题；旧运行时包会降级禁用可选 HIDAPI，新构建包会校验全部 HID JNI 导出。
+- 修复 SDL2/SDL3 共享库目标全部链接失败（`ld.lld: error: cannot open libmain.so`）的问题：注入的 `-Wl,-rpath,$ORIGIN` 未做 shell 转义，Ninja 经 `/bin/sh -c` 执行链接命令时 `$ORIGIN` 被展开为空串，clang 的 `-Wl` 逗号拆分丢弃空段后裸 `-rpath` 吞掉 `-soname`，使 `libmain.so` 变成链接器输入文件。现改为注入 `-Wl,-rpath,\$ORIGIN` 并自动修正历史未转义形态，同时通过 `TINA_LINK_POLICY_VERSION` 缓存键强制旧构建目录重新 configure。
 - 修复格式化入口写死 `FormatStyle.FILE`，导致用户切换格式化配置后没有反应的问题；现在每次格式化都会实时读取设置，并向上查找 `.clang-format` 或 `_clang-format`。
 - 修复运行配置保存失败时界面仍切换并提示成功、实际编译继续读取旧配置的问题；配置现仅在持久化成功后提交到界面状态。
 - 修复文本缓冲区相同内容替换分支返回可空派发状态，导致 `core:text-engine` 无法通过 Kotlin 编译的问题。

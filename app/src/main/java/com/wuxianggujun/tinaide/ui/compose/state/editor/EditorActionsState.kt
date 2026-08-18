@@ -36,7 +36,7 @@ internal class EditorActionsState {
     }
 
     fun dismissCodeActions() {
-        if (!codeActionsLoading) showCodeActionsMenu = false
+        showCodeActionsMenu = false
     }
 
     fun openRename(tabId: String, line: Int, column: Int, currentName: String) {

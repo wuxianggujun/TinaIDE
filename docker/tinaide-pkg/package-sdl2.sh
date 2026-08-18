@@ -9,6 +9,7 @@ OUTPUT_DIR="${SCRIPT_DIR}/output"
 SDL2_VERSION="2.32.10"
 SDL2_TAG="release-${SDL2_VERSION}"
 SDL2_COMMIT="5d249570393f7a37e037abf22cd6012a4cc56a71"
+SDL2_HID_JNI_SYMBOL_PREFIX="Java_org_libsdl2_app_HIDDeviceManager_"
 ABIS_INPUT=${1:-"arm64-v8a x86_64"}
 IFS=' ' read -r -a ABIS <<< "$ABIS_INPUT"
 
@@ -55,6 +56,24 @@ for ABI in "${ABIS[@]}"; do
     done
     if grep -a -Fq 'org/libsdl/app/SDLActivity' "$SDL_LIBRARY"; then
         echo "[ERROR] ${TARBALL} contains the unrelocated SDL Android bridge" >&2
+        exit 1
+    fi
+    for HID_CALLBACK in \
+        HIDDeviceRegisterCallback \
+        HIDDeviceReleaseCallback \
+        HIDDeviceConnected \
+        HIDDeviceOpenPending \
+        HIDDeviceOpenResult \
+        HIDDeviceDisconnected \
+        HIDDeviceInputReport \
+        HIDDeviceFeatureReport; do
+        if ! grep -a -Fq "${SDL2_HID_JNI_SYMBOL_PREFIX}${HID_CALLBACK}" "$SDL_LIBRARY"; then
+            echo "[ERROR] ${TARBALL} is missing relocated SDL2 HID JNI callback: ${HID_CALLBACK}" >&2
+            exit 1
+        fi
+    done
+    if grep -a -Fq 'Java_org_libsdl_app_HIDDeviceManager_' "$SDL_LIBRARY"; then
+        echo "[ERROR] ${TARBALL} contains the unrelocated SDL2 HID JNI bridge" >&2
         exit 1
     fi
 
@@ -127,7 +146,7 @@ write_package_metadata() {
   "id": "sdl2",
   "name": "SDL2",
   "version": "${SDL2_VERSION}",
-  "packageRevision": 1,
+  "packageRevision": 2,
   "upstreamName": "SDL",
   "upstreamVersion": "${SDL2_VERSION}",
   "upstreamTag": "${SDL2_TAG}",
@@ -153,7 +172,7 @@ EOF
     cat > "$package_root/BUILD-INFO.txt" <<EOF
 package_id=sdl2
 package_version=${SDL2_VERSION}
-package_revision=1
+package_revision=2
 artifact_type=shared
 upstream_tag=${SDL2_TAG}
 upstream_commit=${SDL2_COMMIT}

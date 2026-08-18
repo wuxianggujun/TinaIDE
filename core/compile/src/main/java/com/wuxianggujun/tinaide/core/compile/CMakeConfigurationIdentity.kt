@@ -23,6 +23,7 @@ data class CMakeConfigurationIdentity(
     val cmakeArgs: String,
 ) {
     fun asCMakeCacheEntries(): Map<String, String> = linkedMapOf(
+        CMAKE_LINK_POLICY_VERSION_KEY to LINK_POLICY_VERSION,
         CMAKE_RUN_MODE_KEY to runMode,
         CMAKE_COMPILER_TYPE_KEY to compilerType,
         CMAKE_TOOLCHAIN_ID_KEY to toolchainId,
@@ -37,6 +38,12 @@ data class CMakeConfigurationIdentity(
     )
 
     companion object {
+        /**
+         * 链接策略版本。修复共享库 $ORIGIN runpath 的 shell 转义后递增，
+         * 强制旧构建目录重新 configure，刷新缓存里损坏的 CMAKE_SHARED_LINKER_FLAGS。
+         */
+        const val CMAKE_LINK_POLICY_VERSION_KEY = "TINA_LINK_POLICY_VERSION"
+        const val LINK_POLICY_VERSION = "2"
         const val CMAKE_RUN_MODE_KEY = "TINA_RUN_MODE"
         const val CMAKE_COMPILER_TYPE_KEY = "TINA_COMPILER_TYPE"
         const val CMAKE_TOOLCHAIN_ID_KEY = "TINA_TOOLCHAIN_ID"

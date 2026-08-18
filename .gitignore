@@ -116,7 +116,6 @@ temp/
 *.ilk
 *.hprof
 
-.ace-tool/
 
 # Local Kilo CLI config (do not commit)
 .kilo/

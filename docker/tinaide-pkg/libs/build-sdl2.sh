@@ -12,6 +12,7 @@ SDL2_TAG="release-${SDL2_VERSION}"
 SDL2_COMMIT="5d249570393f7a37e037abf22cd6012a4cc56a71"
 SDL2_REPO="libsdl-org/SDL"
 SDL2_JAVA_PACKAGE_PATH="org/libsdl2/app"
+SDL2_HID_JNI_SYMBOL_PREFIX="Java_org_libsdl2_app_HIDDeviceManager_"
 ANDROID_API=28
 
 ARCH=${1:-arm64-v8a}
@@ -49,6 +50,35 @@ if [ "$RELOCATED_PATH_COUNT" -ne 4 ]; then
     log_error "Expected 4 relocated SDL2 JNI class paths, found ${RELOCATED_PATH_COUNT}"
     exit 1
 fi
+
+# SDL2's HID backend uses exported JNI function names instead of the class-path
+# strings above, so it must be relocated independently.
+HIDAPI_ANDROID_SOURCE="${SRC_DIR}/src/hidapi/android/hid.cpp"
+if grep -Fq 'Java_org_libsdl_app_HIDDeviceManager_' "$HIDAPI_ANDROID_SOURCE"; then
+    sed -i \
+        's#Java_org_libsdl_app_HIDDeviceManager_#Java_org_libsdl2_app_HIDDeviceManager_#g' \
+        "$HIDAPI_ANDROID_SOURCE"
+fi
+
+if grep -Fq 'Java_org_libsdl_app_HIDDeviceManager_' "$HIDAPI_ANDROID_SOURCE"; then
+    log_error "SDL2 HID JNI source still references org.libsdl.app.HIDDeviceManager"
+    exit 1
+fi
+
+for HID_CALLBACK in \
+    HIDDeviceRegisterCallback \
+    HIDDeviceReleaseCallback \
+    HIDDeviceConnected \
+    HIDDeviceOpenPending \
+    HIDDeviceOpenResult \
+    HIDDeviceDisconnected \
+    HIDDeviceInputReport \
+    HIDDeviceFeatureReport; do
+    if ! grep -Fq "${SDL2_HID_JNI_SYMBOL_PREFIX}${HID_CALLBACK}" "$HIDAPI_ANDROID_SOURCE"; then
+        log_error "SDL2 HID JNI source is missing relocated callback: ${HID_CALLBACK}"
+        exit 1
+    fi
+done
 
 BUILD_DIR="/build/build/sdl2-${ARCH}-${LINK_TYPE}"
 INSTALL_DIR="/build/install/sdl2-${ARCH}-${LINK_TYPE}"
@@ -107,6 +137,25 @@ if [ "$LINK_TYPE" = "shared" ]; then
     done
     if grep -a -Fq 'org/libsdl/app/SDLActivity' "$INSTALL_DIR/lib/libSDL2.so"; then
         log_error "Built libSDL2.so still contains the unrelocated SDL Android bridge"
+        exit 1
+    fi
+    SDL2_DYNAMIC_SYMBOLS="$("$READELF" --dyn-syms --wide "$INSTALL_DIR/lib/libSDL2.so")"
+    for HID_CALLBACK in \
+        HIDDeviceRegisterCallback \
+        HIDDeviceReleaseCallback \
+        HIDDeviceConnected \
+        HIDDeviceOpenPending \
+        HIDDeviceOpenResult \
+        HIDDeviceDisconnected \
+        HIDDeviceInputReport \
+        HIDDeviceFeatureReport; do
+        if ! grep -Fq "${SDL2_HID_JNI_SYMBOL_PREFIX}${HID_CALLBACK}" <<< "$SDL2_DYNAMIC_SYMBOLS"; then
+            log_error "Built libSDL2.so is missing relocated HID JNI callback: ${HID_CALLBACK}"
+            exit 1
+        fi
+    done
+    if grep -Fq 'Java_org_libsdl_app_HIDDeviceManager_' <<< "$SDL2_DYNAMIC_SYMBOLS"; then
+        log_error "Built libSDL2.so still exports the unrelocated HID JNI bridge"
         exit 1
     fi
     if ! "$READELF" -dW "$INSTALL_DIR/lib/libSDL2.so" | grep -Fq 'Library soname: [libSDL2.so]'; then

@@ -12,6 +12,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.RectangleShape
@@ -43,6 +44,7 @@ import org.koin.compose.koinInject
  *
  * 包含：
  * - 状态栏（带拖拽）
+ * - 可显隐的编辑器快捷符号栏
  * - 调试工具栏（调试且工具栏位置为底部时）
  * - 底部面板内容（问题 / 构建 / 输出 等）
  *
@@ -58,6 +60,7 @@ fun BottomPanel(
     projectSymbolIndexService: ProjectSymbolIndexService?,
     onBookmarkNavigate: (filePath: String, line: Int) -> Unit,
     onDiagnosticClick: (Diagnostic) -> Unit,
+    onDiagnosticCodeActionsClick: (Diagnostic) -> Unit,
     modifier: Modifier = Modifier,
     // Git 相关参数
     gitCurrentBranch: String? = null,
@@ -99,8 +102,11 @@ fun BottomPanel(
     )
     val activeTabHasCodeEditor = editorContainerState.activeTabHasAttachedCodeEditor()
     val showDebugBarInBottom = isActive && debugToolbarPosition != DebugToolbarPosition.TOP
-    val showEditorSymbolBar =
+    var isEditorSymbolBarVisible by rememberSaveable { mutableStateOf(true) }
+    val canToggleEditorSymbolBar =
         !isActive && activeTabHasCodeEditor && !bottomPanelState.isNearFullScreen
+    val showEditorSymbolBar =
+        canToggleEditorSymbolBar && isEditorSymbolBarVisible
     val showEditorPerformanceTab = shouldShowEditorPerformanceTab(
         developerOptionsEnabled = developerOptionsEnabled,
         diagnosticsEnabled = diagnosticsSettings.diagnosticsEnabled,
@@ -171,7 +177,13 @@ fun BottomPanel(
                     line = cursorLine,
                     column = cursorColumn,
                     bottomPanelState = bottomPanelState,
-                    onCursorPositionClick = onCursorPositionClick
+                    onCursorPositionClick = onCursorPositionClick,
+                    isEditorSymbolBarVisible = isEditorSymbolBarVisible,
+                    onToggleEditorSymbolBar = if (canToggleEditorSymbolBar) {
+                        { isEditorSymbolBarVisible = !isEditorSymbolBarVisible }
+                    } else {
+                        null
+                    },
                 )
             }
 
@@ -291,7 +303,8 @@ fun BottomPanel(
                                     }
                                     BottomPanelTab.DIAGNOSTICS -> DiagnosticsContent(
                                         diagnostics = diagnostics,
-                                        onDiagnosticClick = onDiagnosticClick
+                                        onDiagnosticClick = onDiagnosticClick,
+                                        onDiagnosticCodeActionsClick = onDiagnosticCodeActionsClick,
                                     )
                                     BottomPanelTab.PERFORMANCE -> EditorPerformanceContent(
                                         snapshotProvider = if (showEditorPerformanceTab) {

@@ -42,14 +42,24 @@ class SdlAndroidBridgeContractTest {
             "docker/tinaide-pkg/libs/build-sdl2.sh",
             "../docker/tinaide-pkg/libs/build-sdl2.sh",
         ).readText(Charsets.UTF_8)
+        val packageScript = projectFile(
+            "docker/tinaide-pkg/package-sdl2.sh",
+            "../docker/tinaide-pkg/package-sdl2.sh",
+        ).readText(Charsets.UTF_8)
 
         assertThat(activitySource).contains("package org.libsdl2.app;")
         assertThat(activitySource).contains("SDL_MAJOR_VERSION = 2")
         assertThat(activitySource).contains("SDL_MINOR_VERSION = 32")
         assertThat(activitySource).contains("SDL_MICRO_VERSION = 10")
+        assertThat(activitySource).contains("catch (UnsatisfiedLinkError error)")
+        assertThat(activitySource).contains("continuing without HIDAPI")
         assertThat(buildScript).contains("SDL2_VERSION=\"2.32.10\"")
         assertThat(buildScript).contains("5d249570393f7a37e037abf22cd6012a4cc56a71")
         assertThat(buildScript).contains("org/libsdl2/app")
+        assertThat(buildScript).contains("src/hidapi/android/hid.cpp")
+        assertThat(buildScript).contains("Java_org_libsdl2_app_HIDDeviceManager_")
+        assertThat(packageScript).contains("Java_org_libsdl2_app_HIDDeviceManager_")
+        assertThat(packageScript).contains("\"packageRevision\": 2")
     }
 
     private fun parseXml(file: File) = DocumentBuilderFactory.newInstance().apply {
