@@ -202,6 +202,7 @@ class EditorState(
             override val visibleLines: IntRange get() = this@EditorState.visibleLines
             override val wordWrapEnabled: Boolean get() = this@EditorState.config.wordWrap
             override val isWordWrapLayoutFrozen: Boolean get() = this@EditorState.isWordWrapLayoutFrozen()
+            override val inlayHintsVersion: Long get() = this@EditorState.inlayHintsVersion
 
             override fun lineVisualColumns(lineText: String): Int = lineVisualColumnsForWidth(lineText)
 
@@ -211,11 +212,14 @@ class EditorState(
                 map: EditorVisualLineMapper.VisualLineMap,
                 visualLine: Int
             ): Int = this@EditorState.resolveVisibleIndexForVisualLine(map, visualLine)
+
+            override fun maxInlayExpandedLineVisualColumns(): Int =
+                this@EditorState.maxInlayExpandedLineVisualColumns()
         }
     )
 
     // 视觉行映射（folding + wordWrap）委托给 [EditorVisualLineMapper]：该类维护视觉行映射缓存与
-    // 按文档行的 wrap segmentCount 缓存，行为与原内联实现严格一致（见该类文档说明的两处刻意保留现状）。
+    // 按文档行的 wrap segmentCount 缓存，并在原有行为上纳入 Inlay Hint 虚拟宽度。
     // 折叠层产出的 lineMap() 经 Host 注入，转接到 [EditorFoldingManager]。
     private val visualLineMapper = EditorVisualLineMapper(
         object : EditorVisualLineMapper.Host {
@@ -228,6 +232,9 @@ class EditorState(
             override val frozenWordWrapColumns: Int? get() = this@EditorState.frozenWordWrapColumns
             override val foldRegionsDocumentVersion: Long get() = foldingManager.foldRegionsDocumentVersion
             override val foldDataVersion: Int get() = foldingManager.foldDataVersion
+            override val inlayHintsVersion: Long get() = this@EditorState.inlayHintsVersion
+            override fun inlayHintsForLine(line: Int): List<EditorInlayHint> =
+                activeInlayHintsForLine(line)
             override fun lineMap(): EditorFoldingManager.LineMap = foldingManager.lineMap()
         }
     )
@@ -481,6 +488,13 @@ class EditorState(
         inlayHintsVersion++
     }
 
+    private fun activeInlayHintsForLine(line: Int): List<EditorInlayHint> =
+        if (inlayHintsDocumentVersion == textBuffer.version) {
+            inlayHintsByLine[line].orEmpty()
+        } else {
+            emptyList()
+        }
+
     fun replaceInlayHintsInLines(
         lines: IntRange,
         hints: List<EditorInlayHint>,
@@ -659,7 +673,8 @@ class EditorState(
             lineText = lineText,
             textVersion = textBuffer.version,
             wrapColumns = map.wrapColumns,
-            tabSize = config.tabSize
+            tabSize = config.tabSize,
+            inlayHints = activeInlayHintsForLine(docLine),
         )
         val segmentIndex = layout.segmentIndexForColumn(safeColumn)
         return (firstVisual + segmentIndex).coerceIn(0, map.visualLineCount - 1)
@@ -679,7 +694,8 @@ class EditorState(
             lineText = lineText,
             textVersion = textBuffer.version,
             wrapColumns = map.wrapColumns,
-            tabSize = config.tabSize
+            tabSize = config.tabSize,
+            inlayHints = activeInlayHintsForLine(docLine),
         )
         return layout.startColumnForSegment(segmentIndex).coerceIn(0, lineText.length)
     }
@@ -701,7 +717,8 @@ class EditorState(
             lineText = lineText,
             textVersion = textBuffer.version,
             wrapColumns = map.wrapColumns,
-            tabSize = config.tabSize
+            tabSize = config.tabSize,
+            inlayHints = activeInlayHintsForLine(docLine),
         )
         return layout.endColumnForSegment(segmentIndex).coerceIn(0, lineText.length)
     }
@@ -1539,6 +1556,24 @@ class EditorState(
     }
 
     private fun lineVisualColumnsForWidth(lineText: String): Int = TextScanKernel.measureVisualColumns(lineText, config.tabSize)
+
+    private fun maxInlayExpandedLineVisualColumns(): Int {
+        if (inlayHintsDocumentVersion != textBuffer.version || inlayHintsByLine.isEmpty()) return 0
+        val maxLineIndex = textBuffer.lineCount - 1
+        var maxColumns = 0
+        inlayHintsByLine.forEach { (line, hints) ->
+            if (line !in 0..maxLineIndex || hints.isEmpty()) return@forEach
+            val expandedColumns = EditorInlayHintColumnLayout.expandedLineColumns(
+                lineText = textBuffer.getLine(line),
+                tabSize = config.tabSize,
+                hints = hints,
+            )
+            if (expandedColumns > maxColumns) {
+                maxColumns = expandedColumns
+            }
+        }
+        return maxColumns
+    }
 
     internal fun isWordChar(c: Char): Boolean = TextScanKernel.isWordChar(c)
 

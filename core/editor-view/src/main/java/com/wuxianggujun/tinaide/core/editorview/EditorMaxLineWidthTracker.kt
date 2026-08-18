@@ -11,7 +11,8 @@ import com.wuxianggujun.tinaide.core.textengine.TextChange
  * 只需要从宿主读取少量只读量（文本、字宽、可见视觉行、光标行、视觉行映射），
  * 因此通过 [Host] 接口注入，组合而非继承（D 依赖倒置）。
  *
- * 行为与原内联实现严格一致，**包括以下两个刻意保留的现状**：
+ * 源码行宽行为与原内联实现一致，并在结果上叠加 Inlay Hint 的保守预留宽度。
+ * 原有逻辑仍**包括以下两个刻意保留的现状**：
  * - 大文件增量扫描（[ensureMaxLineWidthPx] 的分批 while 循环）按 `getLine().length`（UTF-16 字符数）累计，
  *   而全量/采样/可见行口径走 [Host.lineVisualColumns]（视觉列数，Tab 展开）。两者口径不同是原代码现状，
  *   这里**不抹平**，仅做结构搬运。
@@ -31,6 +32,8 @@ internal class EditorMaxLineWidthTracker(
         val visibleLines: IntRange
         val wordWrapEnabled: Boolean
         val isWordWrapLayoutFrozen: Boolean
+        val inlayHintsVersion: Long
+            get() = 0L
 
         /** 某文档行的视觉列数（Tab 展开），等价于原 lineVisualColumnsForWidth。 */
         fun lineVisualColumns(lineText: String): Int
@@ -40,6 +43,9 @@ internal class EditorMaxLineWidthTracker(
 
         /** 在视觉行映射里，把视觉行索引解析为“可见文档行列表”的下标。 */
         fun resolveVisibleIndexForVisualLine(map: EditorVisualLineMapper.VisualLineMap, visualLine: Int): Int
+
+        /** 含 Inlay Hint 保守预留宽度的最大行视觉列数。 */
+        fun maxInlayExpandedLineVisualColumns(): Int = 0
     }
 
     private companion object {
@@ -60,6 +66,9 @@ internal class EditorMaxLineWidthTracker(
     private var widthLineSnapshotVersion = -1L
     private var widthLineMaxChars = 0
     private var widthLineLengths = IntArray(0)
+    private var cachedInlayMaxTextVersion = Long.MIN_VALUE
+    private var cachedInlayHintsVersion = Long.MIN_VALUE
+    private var cachedInlayMaxColumns = 0
 
     private val textBuffer: TextBuffer get() = host.textBuffer
 
@@ -157,7 +166,21 @@ internal class EditorMaxLineWidthTracker(
                 -1L
             }
         }
-        return cachedMaxLineChars * host.charWidthPx
+        return maxOf(cachedMaxLineChars, ensureInlayMaxColumns()) * host.charWidthPx
+    }
+
+    private fun ensureInlayMaxColumns(): Int {
+        val textVersion = textBuffer.version
+        val hintsVersion = host.inlayHintsVersion
+        if (
+            cachedInlayMaxTextVersion != textVersion ||
+            cachedInlayHintsVersion != hintsVersion
+        ) {
+            cachedInlayMaxColumns = host.maxInlayExpandedLineVisualColumns().coerceAtLeast(0)
+            cachedInlayMaxTextVersion = textVersion
+            cachedInlayHintsVersion = hintsVersion
+        }
+        return cachedInlayMaxColumns
     }
 
     private fun visibleAndCursorMaxLineChars(): Int {
@@ -256,6 +279,9 @@ internal class EditorMaxLineWidthTracker(
         widthScanMaxChars = 0
         widthScanLineLengths = IntArray(0)
         cachedMaxLineCharsVersion = -1L
+        cachedInlayMaxTextVersion = Long.MIN_VALUE
+        cachedInlayHintsVersion = Long.MIN_VALUE
+        cachedInlayMaxColumns = 0
     }
 
     fun applyWidthSnapshotChange(change: TextChange, currentVersion: Long) {

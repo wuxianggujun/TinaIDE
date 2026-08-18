@@ -43,9 +43,14 @@ class EditorVisualLineMapperTest {
         override var frozenWordWrapColumns: Int? = null,
         override var foldRegionsDocumentVersion: Long = -1L,
         override var foldDataVersion: Int = 0,
+        override var inlayHintsVersion: Long = 0L,
+        var inlayHintsByLine: Map<Int, List<EditorInlayHint>> = emptyMap(),
         private var lineMapValue: EditorFoldingManager.LineMap
     ) : EditorVisualLineMapper.Host {
         override fun lineMap(): EditorFoldingManager.LineMap = lineMapValue
+
+        override fun inlayHintsForLine(line: Int): List<EditorInlayHint> =
+            inlayHintsByLine[line].orEmpty()
 
         fun setLineMap(map: EditorFoldingManager.LineMap) {
             lineMapValue = map
@@ -196,6 +201,27 @@ class EditorVisualLineMapperTest {
         assertThat(map.visualLineCountByVisibleIndex.toList()).containsExactly(2, 1).inOrder()
         assertThat(map.firstVisualLineByVisibleIndex.toList()).containsExactly(0, 2).inOrder()
         assertThat(map.visualLineCount).isEqualTo(3)
+    }
+
+    @Test
+    fun visualLineMap_inlayHintUpdateRebuildsWordWrapSegments() {
+        val buffer = RopeTextBuffer().apply { insert(0, "call(1)") }
+        val host = FakeMapperHost(
+            textBuffer = buffer,
+            wordWrapEnabled = true,
+            frozenWordWrapColumns = 8,
+            lineMapValue = identityLineMap(1),
+        )
+        val mapper = EditorVisualLineMapper(host)
+        val withoutHints = mapper.visualLineMap()
+
+        host.inlayHintsByLine = mapOf(0 to listOf(EditorInlayHint(0, 5, "v:")))
+        host.inlayHintsVersion++
+        val withHints = mapper.visualLineMap()
+
+        assertThat(withoutHints.visualLineCount).isEqualTo(1)
+        assertThat(withHints).isNotSameInstanceAs(withoutHints)
+        assertThat(withHints.visualLineCount).isEqualTo(2)
     }
 
     @Test

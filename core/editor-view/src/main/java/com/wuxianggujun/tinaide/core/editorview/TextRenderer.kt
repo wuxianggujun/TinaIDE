@@ -57,6 +57,7 @@ internal class TextRenderer {
 
     private companion object {
         private const val DEFAULT_MAX_CACHE_SIZE = 512
+        private val EMPTY_INLAY_HINT_COLUMNS = IntArray(0)
 
         // 预取窗口调到 200 行：与 IncrementalTreeSitterHighlightState 的 lineCache 预热配合，
         // 快速滚动时远距离行也能在到达可见区之前就命中缓存，消除"滚动追指"。
@@ -178,18 +179,22 @@ internal class TextRenderer {
                 } else {
                     -1
                 }
+                val hasInlayHints =
+                    state.inlayHintsDocumentVersion == frameContext.textVersion &&
+                        state.inlayHintsByLine[line].isNullOrEmpty().not()
                 val needsPrefix = containsTab ||
                     segments.isNotEmpty() ||
                     semanticSegments.isNotEmpty() ||
                     rainbowEnabled ||
-                    foldEndLine >= 0
+                    foldEndLine >= 0 ||
+                    hasInlayHints
                 val prefixLayout = if (needsPrefix) {
                     lineLayoutCache.getPrefixLayout(
+                        state = state,
                         line = line,
                         lineText = lookup.text,
                         textVersion = state.textBuffer.version,
                         paint = textPaint,
-                        tabSize = state.config.tabSize
                     )
                 } else {
                     null
@@ -203,7 +208,7 @@ internal class TextRenderer {
                 val segmentStartAdvance = if (prefixLayout == null) {
                     0f
                 } else {
-                    prefixAdvance(visualStartColumn)
+                    prefixLayout.segmentStartAdvance(visualStartColumn)
                 }
                 val baseX = xPos - segmentStartAdvance
 
@@ -224,7 +229,8 @@ internal class TextRenderer {
                             baselineY = baselineY,
                             paint = textPaint,
                             prefixAdvance = ::prefixAdvance,
-                            tabColumns = tabColumns
+                            tabColumns = tabColumns,
+                            inlayHintColumns = prefixLayout?.inlayHintColumns ?: EMPTY_INLAY_HINT_COLUMNS,
                         )
                     } else {
                         drawClampedTextRange(
@@ -236,7 +242,8 @@ internal class TextRenderer {
                             baselineY = baselineY,
                             paint = textPaint,
                             prefixAdvance = ::prefixAdvance,
-                            segmentStartAdvance = segmentStartAdvance
+                            segmentStartAdvance = segmentStartAdvance,
+                            inlayHintColumns = prefixLayout?.inlayHintColumns ?: EMPTY_INLAY_HINT_COLUMNS,
                         )
                     }
                 } else {
@@ -303,7 +310,8 @@ internal class TextRenderer {
                                 baselineY = baselineY,
                                 paint = textPaint,
                                 prefixAdvance = ::prefixAdvance,
-                                tabColumns = tabColumns
+                                tabColumns = tabColumns,
+                                inlayHintColumns = prefixLayout?.inlayHintColumns ?: EMPTY_INLAY_HINT_COLUMNS,
                             )
                         } else {
                             drawClampedTextRange(
@@ -315,7 +323,8 @@ internal class TextRenderer {
                                 baselineY = baselineY,
                                 paint = textPaint,
                                 prefixAdvance = ::prefixAdvance,
-                                segmentStartAdvance = segmentStartAdvance
+                                segmentStartAdvance = segmentStartAdvance,
+                                inlayHintColumns = prefixLayout?.inlayHintColumns ?: EMPTY_INLAY_HINT_COLUMNS,
                             )
                         }
                     }
@@ -457,7 +466,52 @@ internal class TextRenderer {
         baselineY: Float,
         paint: Paint,
         prefixAdvance: (Int) -> Float,
-        tabColumns: IntArray
+        tabColumns: IntArray,
+        inlayHintColumns: IntArray,
+    ) {
+        if (startColumn >= endColumn) return
+        val safeStart = startColumn.coerceAtLeast(0)
+        val safeEnd = endColumn.coerceIn(safeStart, lineText.length)
+        var segmentStart = safeStart
+        for (inlayColumn in inlayHintColumns) {
+            if (inlayColumn <= segmentStart) continue
+            if (inlayColumn >= safeEnd) break
+            drawTextRangeWithTabStopsSegment(
+                canvas = canvas,
+                lineText = lineText,
+                startColumn = segmentStart,
+                endColumn = inlayColumn,
+                textStartX = textStartX,
+                baselineY = baselineY,
+                paint = paint,
+                prefixAdvance = prefixAdvance,
+                tabColumns = tabColumns,
+            )
+            segmentStart = inlayColumn
+        }
+        drawTextRangeWithTabStopsSegment(
+            canvas = canvas,
+            lineText = lineText,
+            startColumn = segmentStart,
+            endColumn = safeEnd,
+            textStartX = textStartX,
+            baselineY = baselineY,
+            paint = paint,
+            prefixAdvance = prefixAdvance,
+            tabColumns = tabColumns,
+        )
+    }
+
+    private fun drawTextRangeWithTabStopsSegment(
+        canvas: android.graphics.Canvas,
+        lineText: String,
+        startColumn: Int,
+        endColumn: Int,
+        textStartX: Float,
+        baselineY: Float,
+        paint: Paint,
+        prefixAdvance: (Int) -> Float,
+        tabColumns: IntArray,
     ) {
         if (startColumn >= endColumn) return
         val safeStart = startColumn.coerceAtLeast(0)
@@ -492,26 +546,66 @@ internal class TextRenderer {
         baselineY: Float,
         paint: Paint,
         prefixAdvance: (Int) -> Float,
-        segmentStartAdvance: Float
+        segmentStartAdvance: Float,
+        inlayHintColumns: IntArray,
     ) {
         val safeRange = clampTextDrawRange(
             textLength = lineText.length,
             startColumn = startColumn,
             endColumn = endColumn
         ) ?: return
-        if (safeRange.startColumn == 0 && safeRange.endColumn == lineText.length) {
+        if (
+            safeRange.startColumn == 0 &&
+            safeRange.endColumn == lineText.length &&
+            inlayHintColumns.isEmpty()
+        ) {
             canvas.drawText(lineText, fallbackX, baselineY, paint)
             return
         }
-        val runX = fallbackX + (prefixAdvance(safeRange.startColumn) - segmentStartAdvance)
-        canvas.drawText(
-            lineText,
-            safeRange.startColumn,
-            safeRange.endColumn,
-            runX,
-            baselineY,
-            paint
+        var segmentStart = safeRange.startColumn
+        for (inlayColumn in inlayHintColumns) {
+            if (inlayColumn <= segmentStart) continue
+            if (inlayColumn >= safeRange.endColumn) break
+            drawTextSegment(
+                canvas = canvas,
+                lineText = lineText,
+                startColumn = segmentStart,
+                endColumn = inlayColumn,
+                fallbackX = fallbackX,
+                baselineY = baselineY,
+                paint = paint,
+                prefixAdvance = prefixAdvance,
+                segmentStartAdvance = segmentStartAdvance,
+            )
+            segmentStart = inlayColumn
+        }
+        drawTextSegment(
+            canvas = canvas,
+            lineText = lineText,
+            startColumn = segmentStart,
+            endColumn = safeRange.endColumn,
+            fallbackX = fallbackX,
+            baselineY = baselineY,
+            paint = paint,
+            prefixAdvance = prefixAdvance,
+            segmentStartAdvance = segmentStartAdvance,
         )
+    }
+
+    private fun drawTextSegment(
+        canvas: android.graphics.Canvas,
+        lineText: String,
+        startColumn: Int,
+        endColumn: Int,
+        fallbackX: Float,
+        baselineY: Float,
+        paint: Paint,
+        prefixAdvance: (Int) -> Float,
+        segmentStartAdvance: Float,
+    ) {
+        if (endColumn <= startColumn) return
+        val runX = fallbackX + (prefixAdvance(startColumn) - segmentStartAdvance)
+        canvas.drawText(lineText, startColumn, endColumn, runX, baselineY, paint)
     }
 
     fun lineText(state: EditorState, line: Int): String {

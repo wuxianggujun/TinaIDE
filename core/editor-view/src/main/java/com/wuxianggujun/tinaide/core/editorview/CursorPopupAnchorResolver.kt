@@ -97,21 +97,21 @@ internal fun resolveCursorContentX(
     return if (foldEndLineInfo != null) {
         val startLineText = foldEndLineInfo.foldStartLineText
         val startPrefixLayout = lineLayoutCache.getPrefixLayout(
+            state = state,
             line = foldEndLineInfo.foldStartLine,
             lineText = startLineText,
             textVersion = state.textBuffer.version,
             paint = textPaint,
-            tabSize = state.config.tabSize
         )
         val safeTrimmedEndCol =
             foldEndLineInfo.foldStartLineTrimmedEndCol.coerceIn(0, startPrefixLayout.length)
         val startLineEndX = startPrefixLayout.prefix[safeTrimmedEndCol]
         val endPrefixLayout = lineLayoutCache.getPrefixLayout(
+            state = state,
             line = line,
             lineText = lineText,
             textVersion = state.textBuffer.version,
             paint = textPaint,
-            tabSize = state.config.tabSize
         )
         val safeTrimStartCol =
             foldEndLineInfo.endLineTrimStartCol.coerceIn(0, endPrefixLayout.length)
@@ -134,17 +134,17 @@ internal fun resolveCursorContentX(
             trailingWidth
     } else {
         val prefixLayout = lineLayoutCache.getPrefixLayout(
+            state = state,
             line = line,
             lineText = lineText,
             textVersion = state.textBuffer.version,
             paint = textPaint,
-            tabSize = safeTabSize
         )
         val segmentStartColumn =
             state.visualLineStartColumn(visualLine).coerceIn(0, prefixLayout.length)
         val safeColumn = column.coerceIn(segmentStartColumn, prefixLayout.length)
-        val segmentStartXInText = prefixLayout.prefix[segmentStartColumn]
-        val beforeCursorWidth = prefixLayout.prefix[safeColumn]
+        val segmentStartXInText = prefixLayout.segmentStartAdvance(segmentStartColumn)
+        val beforeCursorWidth = prefixLayout.textStartAdvance(safeColumn)
         val segmentWidth = resolveMeasuredOrFallbackWidth(
             measuredWidthPx = beforeCursorWidth - segmentStartXInText,
             line = line,

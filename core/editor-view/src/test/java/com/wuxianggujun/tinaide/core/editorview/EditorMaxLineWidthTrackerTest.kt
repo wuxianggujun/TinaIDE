@@ -26,7 +26,9 @@ class EditorMaxLineWidthTrackerTest {
         override var cursorLine: Int = 0,
         override var visibleLines: IntRange = 0..0,
         override var wordWrapEnabled: Boolean = false,
-        override var isWordWrapLayoutFrozen: Boolean = false
+        override var isWordWrapLayoutFrozen: Boolean = false,
+        override var inlayHintsVersion: Long = 0L,
+        var inlayExpandedLineColumns: Int = 0,
     ) : EditorMaxLineWidthTracker.Host {
 
         override fun lineVisualColumns(lineText: String): Int = lineText.length
@@ -49,6 +51,8 @@ class EditorMaxLineWidthTrackerTest {
             map: EditorVisualLineMapper.VisualLineMap,
             visualLine: Int
         ): Int = visualLine.coerceIn(0, (map.visibleDocLineCount - 1).coerceAtLeast(0))
+
+        override fun maxInlayExpandedLineVisualColumns(): Int = inlayExpandedLineColumns
     }
 
     @Test
@@ -129,6 +133,24 @@ class EditorMaxLineWidthTrackerTest {
         val tracker = EditorMaxLineWidthTracker(host)
 
         assertThat(tracker.maxScrollXPx()).isEqualTo(0f)
+    }
+
+    @Test
+    fun maxScrollXPx_inlayHintWidthUpdatesScrollLimitWithoutTextEdit() {
+        val host = FakeTrackerHost(
+            textBuffer = RopeTextBuffer().apply { insert(0, "ab") },
+            charWidthPx = 1f,
+            viewportWidthPx = 20f,
+            inlayExpandedLineColumns = 40,
+        )
+        val tracker = EditorMaxLineWidthTracker(host)
+
+        assertThat(tracker.maxScrollXPx()).isEqualTo(30f)
+
+        host.inlayExpandedLineColumns = 60
+        host.inlayHintsVersion++
+
+        assertThat(tracker.maxScrollXPx()).isEqualTo(50f)
     }
 
     @Test

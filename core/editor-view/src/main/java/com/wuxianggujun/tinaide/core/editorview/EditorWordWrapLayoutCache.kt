@@ -1,7 +1,6 @@
 package com.wuxianggujun.tinaide.core.editorview
 
 import com.wuxianggujun.tinaide.core.textengine.TextChange
-import com.wuxianggujun.tinaide.core.textengine.TextScanKernel
 import java.util.LinkedHashMap
 
 /**
@@ -13,7 +12,8 @@ import java.util.LinkedHashMap
  * - 某段的 endColumn = 下一段 startColumn；最后一段 endColumn = lineLength
  *
  * 说明：
- * - 分段依据“视觉列数”而非像素：每个普通字符记 1 列，Tab 按 tabSize 展开为若干列。
+ * - 分段依据“视觉列数”而非像素：每个普通字符记 1 列，Tab 按 tabSize 展开为若干列，
+ *   Inlay Hint 按 [EditorInlayHintColumnLayout] 的保守列宽估算参与换行。
  * - 该策略与编辑器现有 Tab stop / 视觉列宽计算保持一致，且不依赖 Paint（避免在 State 层引入渲染依赖）。
  */
 internal class EditorWordWrapLayoutCache(
@@ -66,6 +66,7 @@ internal class EditorWordWrapLayoutCache(
 
     private data class Entry(
         val lineText: String,
+        val inlayHints: List<EditorInlayHint>,
         var starts: IntArray
     )
 
@@ -114,17 +115,18 @@ internal class EditorWordWrapLayoutCache(
         lineText: String,
         textVersion: Long,
         wrapColumns: Int,
-        tabSize: Int
+        tabSize: Int,
+        inlayHints: List<EditorInlayHint> = emptyList(),
     ): WrapLayout {
         synchronized(lock) {
             ensureSignature(textVersion, wrapColumns, tabSize)
             val entry = lru[line]
-            if (entry != null && entry.lineText == lineText) {
+            if (entry != null && entry.lineText == lineText && entry.inlayHints == inlayHints) {
                 return WrapLayout(length = entry.lineText.length, starts = entry.starts)
             }
 
-            val built = buildStarts(lineText, wrapColumns, tabSize)
-            putEntry(line, lineText = lineText, starts = built)
+            val built = buildStarts(lineText, wrapColumns, tabSize, inlayHints)
+            putEntry(line, lineText = lineText, inlayHints = inlayHints, starts = built)
             return WrapLayout(length = lineText.length, starts = built)
         }
     }
@@ -152,7 +154,17 @@ internal class EditorWordWrapLayoutCache(
         cacheVersion = Long.MIN_VALUE
     }
 
-    private fun buildStarts(lineText: String, wrapColumns: Int, tabSize: Int): IntArray = TextScanKernel.findWrapSegmentStarts(lineText, wrapColumns, tabSize)
+    private fun buildStarts(
+        lineText: String,
+        wrapColumns: Int,
+        tabSize: Int,
+        inlayHints: List<EditorInlayHint>,
+    ): IntArray = EditorInlayHintColumnLayout.findWrapSegmentStarts(
+        lineText = lineText,
+        wrapColumns = wrapColumns,
+        tabSize = tabSize,
+        hints = inlayHints,
+    )
 
     private fun invalidateRangeInternal(startLine: Int, endLine: Int) {
         if (startLine > endLine) return
@@ -177,8 +189,16 @@ internal class EditorWordWrapLayoutCache(
         }
     }
 
-    private fun putEntry(line: Int, lineText: String, starts: IntArray) {
-        totalChars -= lru.put(line, Entry(lineText = lineText, starts = starts))?.lineText?.length ?: 0
+    private fun putEntry(
+        line: Int,
+        lineText: String,
+        inlayHints: List<EditorInlayHint>,
+        starts: IntArray,
+    ) {
+        totalChars -= lru.put(
+            line,
+            Entry(lineText = lineText, inlayHints = inlayHints, starts = starts),
+        )?.lineText?.length ?: 0
         totalChars += lineText.length
         trimIfNeeded()
     }

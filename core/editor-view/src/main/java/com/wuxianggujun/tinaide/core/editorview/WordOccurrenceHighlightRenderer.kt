@@ -70,7 +70,6 @@ internal class WordOccurrenceHighlightRenderer {
         val word = cursorWordInfo.word
         if (word.length < 2) return emptyList()
 
-        val tabSize = state.config.tabSize
         val textVersion = frameContext.textVersion
         val visibleRange = state.visibleDocumentLines
         if (visibleRange.isEmpty()) return emptyList()
@@ -95,20 +94,20 @@ internal class WordOccurrenceHighlightRenderer {
             if (matches.isEmpty()) continue
 
             val prefixLayout = lineLayoutCache.getPrefixLayout(
+                state = state,
                 line = line,
                 lineText = lineText,
                 textVersion = textVersion,
                 paint = textPaint,
-                tabSize = tabSize
             )
-            val prefix = prefixLayout.prefix
             val visualLine = state.visualLineForDocLine(line)
             val top = state.visualLineTopInViewport(visualLine)
             for (idx in matches) {
                 val safeStartColumn = idx.coerceIn(0, prefixLayout.length)
                 val safeEndColumn = (idx + word.length).coerceIn(safeStartColumn, prefixLayout.length)
-                val left = textStartX + prefix[safeStartColumn]
-                val width = (prefix[safeEndColumn] - prefix[safeStartColumn]).coerceAtLeast(0f)
+                val startAdvance = prefixLayout.textStartAdvance(safeStartColumn)
+                val left = textStartX + startAdvance
+                val width = (prefixLayout.textEndAdvance(safeEndColumn) - startAdvance).coerceAtLeast(0f)
                 rects += HighlightRect(
                     left = left,
                     top = top,

@@ -84,36 +84,36 @@ internal fun resolveSelectionHandleLayout(
     val endLineBottom = state.visualLineTopInViewport(endVisualLine) + state.lineHeightPx
     val textVersion = state.textBuffer.version
     val startPrefixLayout = lineLayoutCache.getPrefixLayout(
+        state = state,
         line = startLine,
         lineText = startLineText,
         textVersion = textVersion,
         paint = textPaint,
-        tabSize = state.config.tabSize
     )
     val startSegmentStartColumn =
         state.visualLineStartColumn(startVisualLine).coerceIn(0, startPrefixLayout.length)
     val safeStartColumn = startColumn.coerceIn(startSegmentStartColumn, startPrefixLayout.length)
     val startX = textStartX + (
-        startPrefixLayout.prefix[safeStartColumn] -
-            startPrefixLayout.prefix[startSegmentStartColumn]
+        startPrefixLayout.textStartAdvance(safeStartColumn) -
+            startPrefixLayout.segmentStartAdvance(startSegmentStartColumn)
         )
     val endPrefixLayout = if (endLine == startLine) {
         startPrefixLayout
     } else {
         lineLayoutCache.getPrefixLayout(
+            state = state,
             line = endLine,
             lineText = endLineText,
             textVersion = textVersion,
             paint = textPaint,
-            tabSize = state.config.tabSize
         )
     }
     val endSegmentStartColumn =
         state.visualLineStartColumn(endVisualLine).coerceIn(0, endPrefixLayout.length)
     val safeEndColumn = endColumn.coerceIn(endSegmentStartColumn, endPrefixLayout.length)
     val endX = textStartX + (
-        endPrefixLayout.prefix[safeEndColumn] -
-            endPrefixLayout.prefix[endSegmentStartColumn]
+        endPrefixLayout.textStartAdvance(safeEndColumn) -
+            endPrefixLayout.segmentStartAdvance(endSegmentStartColumn)
         )
     val startCenter = Offset(
         x = startX,

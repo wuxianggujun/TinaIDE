@@ -137,14 +137,16 @@ internal fun EditorSelectionContextMenuOverlay(
             session.textPaint.typeface = state.typeface
             session.textPaint.textSize = with(density) { state.fontSizeSp.sp.toPx() }
             val prefixLayout = session.lineLayoutCache.getPrefixLayout(
+                state = state,
                 line = anchorLine,
                 lineText = lineText,
                 textVersion = state.textBuffer.version,
                 paint = session.textPaint,
-                tabSize = state.config.tabSize
             )
-            val segmentStartXInTextPx = prefixLayout.prefix[segmentStartColumn.coerceIn(0, prefixLayout.length)]
-            val cursorXInTextPx = prefixLayout.prefix[anchorColumn.coerceIn(segmentStartColumn, prefixLayout.length)]
+            val segmentStartXInTextPx =
+                prefixLayout.segmentStartAdvance(segmentStartColumn.coerceIn(0, prefixLayout.length))
+            val cursorXInTextPx =
+                prefixLayout.textStartAdvance(anchorColumn.coerceIn(segmentStartColumn, prefixLayout.length))
             val cursorAnchorX =
                 ui.contentStartXPx + (cursorXInTextPx - segmentStartXInTextPx) - state.scrollOffsetXPx
             val cursorAnchorY =

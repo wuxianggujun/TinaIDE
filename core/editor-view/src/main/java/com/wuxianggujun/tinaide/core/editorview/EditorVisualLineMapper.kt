@@ -13,10 +13,10 @@ import com.wuxianggujun.tinaide.core.textengine.TextScanKernel
  * - 按文档行的 wrap segmentCount 缓存（[docSegmentCounts]），支持文本增量更新。
  *
  * 该块只依赖宿主的少量只读量（文本、字宽、视口宽、wordWrap/tab/折叠开关、冻结列数、
- * 折叠版本号、wrap 布局缓存）以及折叠层产出的 [Host.lineMap]，因此通过 [Host] 接口注入，
+ * 折叠版本号、Inlay Hint 版本与数据）以及折叠层产出的 [Host.lineMap]，因此通过 [Host] 接口注入，
  * 组合而非继承（D 依赖倒置）。
  *
- * 对外映射行为与原内联实现一致，并保留以下缓存口径：
+ * 未包含 Inlay Hint 时对外映射行为与原内联实现一致，并保留以下缓存口径：
  * - epoch 在 `wordWrap` 关闭时把 textVersion 归零（`effectiveTextVersion`），使非 wordWrap 下
  *   纯文本编辑不重建视觉行映射；该失效口径与原实现逐行对应。
  * - [docSegmentCounts] 只缓存计数，不创建完整的 wrap starts 数组；参数变化和增量编辑通过
@@ -38,6 +38,11 @@ internal class EditorVisualLineMapper(
         val frozenWordWrapColumns: Int?
         val foldRegionsDocumentVersion: Long
         val foldDataVersion: Int
+        val inlayHintsVersion: Long
+            get() = 0L
+
+        fun inlayHintsForLine(line: Int): List<EditorInlayHint> = emptyList()
+
         /** 折叠层（[EditorFoldingManager]）产出的可见文档行映射。 */
         fun lineMap(): EditorFoldingManager.LineMap
     }
@@ -76,6 +81,7 @@ internal class EditorVisualLineMapper(
     private var docSegmentCountsWrapColumns: Int = Int.MIN_VALUE
     private var docSegmentCountsTabSize: Int = Int.MIN_VALUE
     private var docSegmentCountsVersion: Long = Long.MIN_VALUE
+    private var docSegmentCountsInlayHintsVersion: Long = Long.MIN_VALUE
 
     private var visualLineMapEpochCounter: Long = 0L
     private var vlmEpochTextVersion: Long = Long.MIN_VALUE
@@ -85,6 +91,7 @@ internal class EditorVisualLineMapper(
     private var vlmEpochWrapColumns: Int = Int.MIN_VALUE
     private var vlmEpochTabSize: Int = Int.MIN_VALUE
     private var vlmEpochDocLineCount: Int = Int.MIN_VALUE
+    private var vlmEpochInlayHintsVersion: Long = Long.MIN_VALUE
 
     private fun visualLineMapEpoch(
         textVersion: Long,
@@ -93,16 +100,19 @@ internal class EditorVisualLineMapper(
         wordWrap: Boolean,
         wrapColumns: Int,
         tabSize: Int,
-        docLineCount: Int
+        docLineCount: Int,
+        inlayHintsVersion: Long,
     ): Long {
         val effectiveTextVersion = if (wordWrap) textVersion else 0L
+        val effectiveInlayHintsVersion = if (wordWrap) inlayHintsVersion else 0L
         if (effectiveTextVersion == vlmEpochTextVersion &&
             foldDataVersion == vlmEpochFoldDataVersion &&
             foldingEnabled == vlmEpochFoldingEnabled &&
             wordWrap == vlmEpochWordWrap &&
             wrapColumns == vlmEpochWrapColumns &&
             tabSize == vlmEpochTabSize &&
-            docLineCount == vlmEpochDocLineCount
+            docLineCount == vlmEpochDocLineCount &&
+            effectiveInlayHintsVersion == vlmEpochInlayHintsVersion
         ) {
             return visualLineMapEpochCounter
         }
@@ -113,6 +123,7 @@ internal class EditorVisualLineMapper(
         vlmEpochWrapColumns = wrapColumns
         vlmEpochTabSize = tabSize
         vlmEpochDocLineCount = docLineCount
+        vlmEpochInlayHintsVersion = effectiveInlayHintsVersion
         return ++visualLineMapEpochCounter
     }
 
@@ -181,7 +192,8 @@ internal class EditorVisualLineMapper(
             wordWrapEnabled,
             wrapColumns,
             tabSize,
-            docLineCount
+            docLineCount,
+            host.inlayHintsVersion,
         )
         val cached = visualLineMapCache
         if (cached != null && epoch == visualLineMapCacheEpoch) {
@@ -222,7 +234,8 @@ internal class EditorVisualLineMapper(
                 wrapColumns = safeWrapColumns,
                 tabSize = tabSize,
                 docLineCount = docLineCount,
-                textVersion = currentVersion
+                textVersion = currentVersion,
+                inlayHintsVersion = host.inlayHintsVersion,
             )
             for (i in 0 until visibleCount) {
                 firstVisual[i] = totalVisualLines
@@ -256,7 +269,8 @@ internal class EditorVisualLineMapper(
         wrapColumns: Int,
         tabSize: Int,
         docLineCount: Int,
-        textVersion: Long
+        textVersion: Long,
+        inlayHintsVersion: Long,
     ) {
         val counts = docSegmentCounts
         val generations = docSegmentCountGenerations
@@ -267,13 +281,15 @@ internal class EditorVisualLineMapper(
 
         if (docSegmentCountsWrapColumns != wrapColumns ||
             docSegmentCountsTabSize != tabSize ||
-            docSegmentCountsVersion != textVersion
+            docSegmentCountsVersion != textVersion ||
+            docSegmentCountsInlayHintsVersion != inlayHintsVersion
         ) {
             advanceDocSegmentCountGeneration()
         }
         docSegmentCountsWrapColumns = wrapColumns
         docSegmentCountsTabSize = tabSize
         docSegmentCountsVersion = textVersion
+        docSegmentCountsInlayHintsVersion = inlayHintsVersion
     }
 
     private fun advanceDocSegmentCountGeneration() {
@@ -301,11 +317,20 @@ internal class EditorVisualLineMapper(
         tabSize: Int
     ): Int {
         val lineText = textBuffer.getLine(docLine)
-        return TextScanKernel.countWrapSegments(
+        val inlayHints = host.inlayHintsForLine(docLine)
+        if (inlayHints.isEmpty()) {
+            return TextScanKernel.countWrapSegments(
+                lineText = lineText,
+                wrapColumns = wrapColumns,
+                tabSize = tabSize,
+            )
+        }
+        return EditorInlayHintColumnLayout.findWrapSegmentStarts(
             lineText = lineText,
             wrapColumns = wrapColumns,
-            tabSize = tabSize
-        )
+            tabSize = tabSize,
+            hints = inlayHints,
+        ).size.coerceAtLeast(1)
     }
 
     /**
@@ -382,5 +407,6 @@ internal class EditorVisualLineMapper(
         docSegmentCounts = null
         docSegmentCountGenerations = null
         docSegmentCountsVersion = newVersion
+        docSegmentCountsInlayHintsVersion = host.inlayHintsVersion
     }
 }

@@ -61,7 +61,6 @@ internal class SelectionRenderer {
         if (visibleVisualLines.isEmpty()) return
         val endpoints = resolveSelectionEndpoints(state, range)
         val textVersion = frameContext.textVersion
-        val tabSize = state.config.tabSize
         val selectionBackground = state.colorScheme.selectionBackground
         val lineHeightPx = state.lineHeightPx
         var cachedLine = -1
@@ -88,18 +87,20 @@ internal class SelectionRenderer {
             if (endColumn <= startColumn) continue
 
             val prefixLayout = cachedPrefixLayout ?: lineLayoutCache.getPrefixLayout(
+                state = state,
                 line = line,
                 lineText = lineText,
                 textVersion = textVersion,
                 paint = textPaint,
-                tabSize = tabSize
             ).also { cachedPrefixLayout = it }
-            val prefix = prefixLayout.prefix
             val safeVisualStartColumn = visualStartColumn.coerceIn(0, prefixLayout.length)
             val safeStartColumn = startColumn.coerceIn(safeVisualStartColumn, prefixLayout.length)
             val safeEndColumn = endColumn.coerceIn(safeStartColumn, prefixLayout.length)
-            val x = textStartX + (prefix[safeStartColumn] - prefix[safeVisualStartColumn])
-            val width = (prefix[safeEndColumn] - prefix[safeStartColumn]).coerceAtLeast(0f)
+            val segmentStartAdvance = prefixLayout.segmentStartAdvance(safeVisualStartColumn)
+            val selectionStartAdvance = prefixLayout.textStartAdvance(safeStartColumn)
+            val selectionEndAdvance = prefixLayout.textEndAdvance(safeEndColumn)
+            val x = textStartX + selectionStartAdvance - segmentStartAdvance
+            val width = (selectionEndAdvance - selectionStartAdvance).coerceAtLeast(0f)
             val y = state.visualLineTopInViewport(visualLine)
             drawScope.drawRect(
                 color = selectionBackground,
