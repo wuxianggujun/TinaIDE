@@ -51,17 +51,22 @@ if [ "$RELOCATED_PATH_COUNT" -ne 4 ]; then
     exit 1
 fi
 
-# SDL2's HID backend uses exported JNI function names instead of the class-path
-# strings above, so it must be relocated independently.
+# SDL2's HID backend builds exported JNI names from SDL_JAVA_PREFIX instead of
+# the class-path strings above, so the macro token must be relocated
+# independently.
 HIDAPI_ANDROID_SOURCE="${SRC_DIR}/src/hidapi/android/hid.cpp"
-if grep -Fq 'Java_org_libsdl_app_HIDDeviceManager_' "$HIDAPI_ANDROID_SOURCE"; then
-    sed -i \
-        's#Java_org_libsdl_app_HIDDeviceManager_#Java_org_libsdl2_app_HIDDeviceManager_#g' \
-        "$HIDAPI_ANDROID_SOURCE"
+if grep -Eq '^#define[[:space:]]+SDL_JAVA_PREFIX[[:space:]]+org_libsdl_app[[:space:]]*$' \
+    "$HIDAPI_ANDROID_SOURCE"; then
+    sed -i 's#org_libsdl_app#org_libsdl2_app#g' "$HIDAPI_ANDROID_SOURCE"
 fi
 
-if grep -Fq 'Java_org_libsdl_app_HIDDeviceManager_' "$HIDAPI_ANDROID_SOURCE"; then
+if grep -Fq 'org_libsdl_app' "$HIDAPI_ANDROID_SOURCE"; then
     log_error "SDL2 HID JNI source still references org.libsdl.app.HIDDeviceManager"
+    exit 1
+fi
+if ! grep -Eq '^#define[[:space:]]+SDL_JAVA_PREFIX[[:space:]]+org_libsdl2_app[[:space:]]*$' \
+    "$HIDAPI_ANDROID_SOURCE"; then
+    log_error "SDL2 HID JNI source is missing the relocated SDL_JAVA_PREFIX"
     exit 1
 fi
 
@@ -74,7 +79,7 @@ for HID_CALLBACK in \
     HIDDeviceDisconnected \
     HIDDeviceInputReport \
     HIDDeviceFeatureReport; do
-    if ! grep -Fq "${SDL2_HID_JNI_SYMBOL_PREFIX}${HID_CALLBACK}" "$HIDAPI_ANDROID_SOURCE"; then
+    if ! grep -Fq "HID_DEVICE_MANAGER_JAVA_INTERFACE(${HID_CALLBACK})" "$HIDAPI_ANDROID_SOURCE"; then
         log_error "SDL2 HID JNI source is missing relocated callback: ${HID_CALLBACK}"
         exit 1
     fi
