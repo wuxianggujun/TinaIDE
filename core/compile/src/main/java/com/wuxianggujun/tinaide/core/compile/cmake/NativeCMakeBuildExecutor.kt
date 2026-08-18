@@ -806,7 +806,11 @@ class NativeCMakeBuildExecutor(
 
         // sysroot 路径（Bionic libc 头文件和库）
         val sysrootManager = AndroidSysrootManager(appContext)
-        NativeSysrootPreparer.ensureInstalled(appContext, options.sysrootProfileId)?.let { message ->
+        NativeSysrootPreparer.ensureInstalled(
+            context = appContext,
+            profileId = options.sysrootProfileId,
+            apiLevel = options.sysrootApiLevel,
+        )?.let { message ->
             Timber.tag(TAG).w(message)
             return ConfigureResult.Error(message)
         }
@@ -1023,9 +1027,12 @@ class NativeCMakeBuildExecutor(
                     linkerCompatibilityFlags,
                     "-fuse-ld=lld"
                 )
-                val executableLinkerFlags = mergeFlagSegments(linkerFlags, projectLdFlags)
+                val projectLinkerFlags = mergeFlagSegments(linkerFlags, projectLdFlags)
+                val executableLinkerFlags = CMakeLinkPolicy.resolveAndroidExecutableLinkerFlags(
+                    projectLinkerFlags
+                )
                 val sharedLinkerFlags = CMakeLinkPolicy.resolveAndroidSharedLinkerFlags(
-                    executableLinkerFlags
+                    projectLinkerFlags
                 )
                 add("-DCMAKE_C_FLAGS=${mergeFlagSegments(cCompileFlags, compilerExecutionFlags, projectCFlags)}")
                 add("-DCMAKE_CXX_FLAGS=${mergeFlagSegments(cxxCompileFlags, compilerExecutionFlags, projectCppFlags)}")

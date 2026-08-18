@@ -189,7 +189,9 @@ if ($script:Failures.Count -eq 0) {
             "android-sysroot/.version",
             "android-sysroot/usr/include",
             "android-sysroot/usr/include/android/api-level.h",
-            "android-sysroot/usr/lib/$expectedTriple/libc++_shared.so"
+            "android-sysroot/usr/lib/$expectedTriple/libc++_shared.so",
+            "android-sysroot/usr/lib/$expectedTriple/libc++_static.a",
+            "android-sysroot/usr/lib/$expectedTriple/libc++abi.a"
         )
         foreach ($entry in $requiredEntries) {
             if ($entry -eq "android-sysroot/usr/include") {
@@ -213,6 +215,19 @@ if ($script:Failures.Count -eq 0) {
             Add-Failure "no API level lib directories found under usr/lib/$expectedTriple"
         } else {
             Write-Ok "API levels in archive: $($apiDirs -join ',')"
+        }
+
+        $declaredApiLevels = @($profile.apiLevels | ForEach-Object { [int]$_ } | Sort-Object -Unique)
+        foreach ($apiLevel in $declaredApiLevels) {
+            $apiLibDir = "android-sysroot/usr/lib/$expectedTriple/$apiLevel"
+            $apiLibCpp = "$apiLibDir/libc++.a"
+            if (-not (Test-EntryPrefix -Entries $entries -Prefix $apiLibDir)) {
+                Add-Failure "declared API level directory missing: id=$id apiLevel=$apiLevel"
+            } elseif (Test-EntryExact -Entries $entries -Entry $apiLibCpp) {
+                Write-Ok "static libc++ linker script exists: API $apiLevel"
+            } else {
+                Add-Failure "static libc++ linker script missing: id=$id apiLevel=$apiLevel entry=$apiLibCpp"
+            }
         }
 
         $versionText = Invoke-TarExtractText -ArchivePath $archivePath -Entry "android-sysroot/.version"

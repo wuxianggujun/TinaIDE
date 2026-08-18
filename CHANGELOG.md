@@ -31,6 +31,27 @@
 
 ## [Unreleased]
 
+## [0.18.20] - 2026-08-19
+
+### Changed
+
+- CMake、根 Makefile、项目元数据与单文件运行配置现在共用同一套 C++ 标准解析规则；切换单文件标准后会刷新已打开文件的 clangd 连接。
+- 外部 CMake、Bear 或用户提供的 `compile_commands.json` 会按来源与内容哈希识别并保持权威，仅 TinaIDE 生成的 fallback 数据库会自动重建。
+- Windows APK 构建脚本统一使用 `--no-daemon --console=plain`；Release 构建还会串行执行 R8/Lint 并关闭文件监听，避免多 ABI 并发分析耗尽 Gradle heap。
+
+### Fixed
+
+- 修复项目已经使用 C++20、clangd 仍按旧标准分析，导致代码可以编译但 LSP 持续误报的问题；fallback 编译命令中的最终 `-std=` 现在不会被额外 C++ flags 内的旧参数覆盖。
+- 修复保存根 `CMakeLists.txt`、`Makefile`、`makefile` 或 `GNUmakefile` 后 clangd 未及时刷新，以及配置保存、并发 attach 期间旧 compile setup 可能覆盖新连接的问题。
+- 修复输入 `/** ... */` 多行文档注释后，中间行继续复用旧代码高亮，以及过期 semantic token 或彩虹括号颜色覆盖注释色的问题。
+- 修复 Android C++ 可执行文件依赖 TinaIDE 私有 `libc++_shared.so`、复制到其他终端后因运行库版本不匹配而无法启动的问题；单文件与 CMake 可执行链路现在默认静态链接 libc++，共享库链路保持不变，并自动使旧构建缓存失效。
+- 自定义与内置 Android sysroot 现在会校验 `libc++_static.a`、`libc++abi.a` 及各 API 的 `libc++.a`，缺失时在构建前给出明确路径，避免到链接阶段才失败。
+
+### Tests
+
+- 新增 C++ 标准解析、CMake/Makefile/单文件 override、可执行文件 libc++ 链接与缓存失效策略、sysroot 静态运行库完整性、fallback 内容哈希、外部 compile database 保护和运行配置刷新回归测试。
+- 新增 Tree-sitter changed ranges、多行文档注释缓存失效与注释颜色优先级回归测试。
+
 ## [0.18.19] - 2026-08-18
 
 ### Fixed

@@ -11,9 +11,9 @@ import com.wuxianggujun.tinaide.core.packages.InstalledPackagePathResolver
 import com.wuxianggujun.tinaide.core.packages.store.LocalInstallStateStore
 import com.wuxianggujun.tinaide.core.proot.PRootBootstrap
 import com.wuxianggujun.tinaide.core.util.ClangResourceDirLocator
-import com.wuxianggujun.tinaide.project.CppStandard
 import com.wuxianggujun.tinaide.project.NativeBuildFlagTokenizer
 import com.wuxianggujun.tinaide.project.ProjectBuildSystem
+import com.wuxianggujun.tinaide.project.ProjectCppStandardResolver
 import com.wuxianggujun.tinaide.project.ProjectMetadataStore
 import java.io.File
 import java.io.FileInputStream
@@ -41,6 +41,7 @@ class CompileDatabaseProvider(
         private const val TAG = "CompileDbProvider"
         private const val COMPILE_COMMANDS_META_FILE_NAME = "compile_commands.tina.meta.properties"
         private const val META_KEY_CPP_STANDARD = "cppStandard"
+        private const val META_KEY_CONTENT_SHA256 = "contentSha256"
         private const val META_KEY_PACKAGE_FINGERPRINT = "packageFingerprint"
         private const val META_KEY_TOOLCHAIN_ID = "toolchainId"
         private const val META_KEY_SYSROOT_PROFILE_ID = "sysrootProfileId"
@@ -92,7 +93,7 @@ class CompileDatabaseProvider(
         val shouldGenerate: Boolean,
         val scanRoot: File,
         val isCxx: Boolean,
-        val desiredCppStandard: CppStandard,
+        val desiredCppStandardFlag: String,
         val packageFingerprint: String,
         val toolchainId: String?,
         val sysrootProfileId: String?,
@@ -111,7 +112,13 @@ class CompileDatabaseProvider(
         val regenerated: Boolean,
     )
 
-    fun prepare(file: File, projectRootPath: String?, toolchainId: String? = null): Prepared? {
+    fun prepare(
+        file: File,
+        projectRootPath: String?,
+        toolchainId: String? = null,
+        cppStandardOverride: String? = null,
+        forceRegenerateFallback: Boolean = false,
+    ): Prepared? {
         val workspaceRoot = resolveWorkspaceRoot(file, projectRootPath) ?: return null
         val metadata = ProjectMetadataStore.read(workspaceRoot)
         val buildSystem = metadata?.buildSystem
@@ -133,22 +140,26 @@ class CompileDatabaseProvider(
 
         val sourceCompileCommandsFile = File(compileCommandsDir, "compile_commands.json")
         val scanRoot = workspaceRoot
-        val desiredCppStandard = resolveCppStandard(workspaceRoot)
+        val desiredCppStandardFlag = resolveCppStandardFlag(
+            workspaceRoot = workspaceRoot,
+            override = cppStandardOverride,
+        )
         val packageFingerprint = resolvePackageFingerprint(workspaceRoot)
         val runtimeIdentity = resolveRuntimeIdentity(workspaceRoot, toolchainId)
         val hasUsableCompileCommands =
             sourceCompileCommandsFile.isFile && sourceCompileCommandsFile.length() > 0
+        val isTinaFallback = hasUsableCompileCommands &&
+            isTinaGeneratedCompileCommands(compileCommandsDir)
         val shouldReuseExisting = when {
             !hasUsableCompileCommands -> false
-            // CMake 等外部工具导出的 compile_commands.json 是权威数据库，直接复用。
-            // 但 Tina 兜底生成的数据库可能因包安装/工具链变化而过时，仍需走指纹校验，
-            // 否则会出现“装包后头文件假错”的问题。
-            isCmakeProject && !isTinaGeneratedCompileCommands(compileCommandsDir) -> true
+            // CMake、Bear 等外部工具导出的数据库始终是权威输入，不能被 fallback 覆盖。
+            !isTinaFallback -> true
+            forceRegenerateFallback -> false
             else -> compileCommandsUpToDate(
                 compileCommandsFile = sourceCompileCommandsFile,
                 isCxx = isCxx,
                 compileCommandsDir = compileCommandsDir,
-                desiredCppStandard = desiredCppStandard,
+                desiredCppStandardFlag = desiredCppStandardFlag,
                 packageFingerprint = packageFingerprint,
                 runtimeIdentity = runtimeIdentity,
             )
@@ -170,7 +181,7 @@ class CompileDatabaseProvider(
                 compileCommandsDir.absolutePath,
                 shouldGenerate,
                 isCxx,
-                desiredCppStandard.flag,
+                desiredCppStandardFlag,
                 runtimeIdentity.toolchainId
             )
             if (hasUsableCompileCommands) {
@@ -191,7 +202,7 @@ class CompileDatabaseProvider(
             shouldGenerate = shouldGenerate,
             scanRoot = scanRoot,
             isCxx = isCxx,
-            desiredCppStandard = desiredCppStandard,
+            desiredCppStandardFlag = desiredCppStandardFlag,
             packageFingerprint = packageFingerprint,
             toolchainId = runtimeIdentity.toolchainId,
             sysrootProfileId = runtimeIdentity.sysrootProfileId,
@@ -232,7 +243,7 @@ class CompileDatabaseProvider(
             if (materialized) {
                 writeCompileCommandsMetadata(
                     compileCommandsDir = prepared.compileCommandsDir,
-                    cppStandard = prepared.desiredCppStandard,
+                    cppStandardFlag = prepared.desiredCppStandardFlag,
                     packageFingerprint = prepared.packageFingerprint,
                     toolchainId = prepared.toolchainId,
                     sysrootProfileId = prepared.sysrootProfileId,
@@ -386,9 +397,8 @@ class CompileDatabaseProvider(
 
             if (prepared.isCxx) {
                 Timber.tag(TAG).i(
-                    "  C++ standard: %s (%s)",
-                    prepared.desiredCppStandard.flag,
-                    prepared.desiredCppStandard.name
+                    "  C++ standard: %s",
+                    prepared.desiredCppStandardFlag,
                 )
             }
 
@@ -398,7 +408,7 @@ class CompileDatabaseProvider(
                 sourceFiles = sourceFiles,
                 includeDirs = includeDirs,
                 isCxx = prepared.isCxx,
-                cppStandard = prepared.desiredCppStandard,
+                cppStandardFlag = prepared.desiredCppStandardFlag,
                 extraCFlags = extraCFlags,
                 extraCppFlags = extraCppFlags,
                 clangPathOverride = clangPathOverride,
@@ -416,7 +426,7 @@ class CompileDatabaseProvider(
             if (generatedSource) {
                 writeCompileCommandsMetadata(
                     compileCommandsDir = prepared.sourceCompileCommandsDir,
-                    cppStandard = prepared.desiredCppStandard,
+                    cppStandardFlag = prepared.desiredCppStandardFlag,
                     packageFingerprint = prepared.packageFingerprint,
                     toolchainId = prepared.toolchainId,
                     sysrootProfileId = prepared.sysrootProfileId,
@@ -448,7 +458,7 @@ class CompileDatabaseProvider(
             if (generated) {
                 writeCompileCommandsMetadata(
                     compileCommandsDir = prepared.compileCommandsDir,
-                    cppStandard = prepared.desiredCppStandard,
+                    cppStandardFlag = prepared.desiredCppStandardFlag,
                     packageFingerprint = prepared.packageFingerprint,
                     toolchainId = prepared.toolchainId,
                     sysrootProfileId = prepared.sysrootProfileId,
@@ -488,6 +498,7 @@ class CompileDatabaseProvider(
         sourceCompileCommandsFile: File,
         projectRootPath: String?,
         toolchainId: String? = null,
+        cppStandardOverride: String? = null,
     ): File? {
         if (!sourceCompileCommandsFile.isFile || sourceCompileCommandsFile.length() <= 0L) return null
 
@@ -497,7 +508,10 @@ class CompileDatabaseProvider(
             configuredMode = Prefs.clangdRunMode,
             linuxEnvironmentAvailable = linuxEnvironmentProvider.get().isAvailable()
         )
-        val desiredCppStandard = resolveCppStandard(workspaceRoot)
+        val desiredCppStandardFlag = resolveCppStandardFlag(
+            workspaceRoot = workspaceRoot,
+            override = cppStandardOverride,
+        )
         val packageFingerprint = resolvePackageFingerprint(workspaceRoot)
         val runtimeIdentity = resolveRuntimeIdentity(workspaceRoot, toolchainId)
 
@@ -513,7 +527,7 @@ class CompileDatabaseProvider(
 
         writeCompileCommandsMetadata(
             compileCommandsDir = compileCommandsDir,
-            cppStandard = desiredCppStandard,
+            cppStandardFlag = desiredCppStandardFlag,
             packageFingerprint = packageFingerprint,
             toolchainId = runtimeIdentity.toolchainId,
             sysrootProfileId = runtimeIdentity.sysrootProfileId,
@@ -527,11 +541,14 @@ class CompileDatabaseProvider(
         compileCommandsFile: File,
         isCxx: Boolean,
         compileCommandsDir: File,
-        desiredCppStandard: CppStandard,
+        desiredCppStandardFlag: String,
         packageFingerprint: String,
         runtimeIdentity: RuntimeIdentity,
     ): Boolean {
-        val standardMatches = !isCxx || compileCommandsMatchesCppStandard(compileCommandsFile, desiredCppStandard)
+        val standardMatches = !isCxx || compileCommandsMatchesCppStandard(
+            compileCommandsFile,
+            desiredCppStandardFlag,
+        )
         if (!standardMatches) return false
 
         if (!compileCommandsMatchesPackageFingerprint(compileCommandsDir, packageFingerprint)) return false
@@ -596,29 +613,37 @@ class CompileDatabaseProvider(
     /**
      * 判断指定目录下的 compile_commands.json 是否由 Tina 兜底生成。
      *
-     * 兼容旧数据：历史 meta 文件没有 generatedBy 字段，无法判定来源，
-     * 保守视为“非 Tina 生成”以维持原有的 CMake 直接复用行为，
-     * 待下一次 Tina 兜底生成或外部导出时补齐标记。
+     * 只有来源标记和内容 hash 都匹配时才视为 Tina 兜底产物。历史 meta 缺少 hash，
+     * 或真实构建工具覆盖了同路径数据库时，均保守按外部权威数据库处理。
      */
     private fun isTinaGeneratedCompileCommands(compileCommandsDir: File): Boolean {
         val metadata = readCompileCommandsMetadata(compileCommandsDir) ?: return false
         val generatedBy = metadata.getProperty(META_KEY_GENERATED_BY)?.trim().orEmpty()
-        return generatedBy == GENERATED_BY_TINA
+        if (generatedBy != GENERATED_BY_TINA) return false
+
+        val storedHash = metadata.getProperty(META_KEY_CONTENT_SHA256)?.trim().orEmpty()
+        if (storedHash.isEmpty()) return false
+        val compileCommandsFile = File(compileCommandsDir, "compile_commands.json")
+        val currentHash = runCatching {
+            sha256Hex(compileCommandsFile.readBytes())
+        }.getOrNull() ?: return false
+        return storedHash == currentHash
     }
 
     /**
-     * 复用已有数据库时读取其原始来源标记；缺失（旧数据）时按外部权威处理，
-     * 避免把无法判定来源的历史数据库误标成 Tina 兜底而触发不必要的重建。
+     * 复用已有数据库时只保留经过内容 hash 验证的 Tina 来源；其他情况按外部权威处理。
      */
     private fun resolveExistingGeneratedBy(compileCommandsDir: File): String {
-        val metadata = readCompileCommandsMetadata(compileCommandsDir) ?: return GENERATED_BY_EXTERNAL
-        val generatedBy = metadata.getProperty(META_KEY_GENERATED_BY)?.trim().orEmpty()
-        return generatedBy.ifEmpty { GENERATED_BY_EXTERNAL }
+        return if (isTinaGeneratedCompileCommands(compileCommandsDir)) {
+            GENERATED_BY_TINA
+        } else {
+            GENERATED_BY_EXTERNAL
+        }
     }
 
     private fun writeCompileCommandsMetadata(
         compileCommandsDir: File,
-        cppStandard: CppStandard,
+        cppStandardFlag: String,
         packageFingerprint: String,
         toolchainId: String?,
         sysrootProfileId: String?,
@@ -631,7 +656,12 @@ class CompileDatabaseProvider(
                 compileCommandsDir.mkdirs()
             }
             val props = Properties().apply {
-                setProperty(META_KEY_CPP_STANDARD, cppStandard.flag)
+                setProperty(META_KEY_CPP_STANDARD, cppStandardFlag)
+                File(compileCommandsDir, "compile_commands.json")
+                    .takeIf { it.isFile }
+                    ?.let { compileCommandsFile ->
+                        setProperty(META_KEY_CONTENT_SHA256, sha256Hex(compileCommandsFile.readBytes()))
+                    }
                 setProperty(META_KEY_PACKAGE_FINGERPRINT, packageFingerprint)
                 setProperty(META_KEY_GENERATED_BY, generatedBy)
                 toolchainId?.let { setProperty(META_KEY_TOOLCHAIN_ID, it) }
@@ -710,9 +740,8 @@ class CompileDatabaseProvider(
         return null
     }
 
-    private fun resolveCppStandard(workspaceRoot: File): CppStandard = runCatching {
-        ProjectMetadataStore.read(workspaceRoot)?.getCppStandard()
-    }.getOrNull() ?: CppStandard.DEFAULT
+    private fun resolveCppStandardFlag(workspaceRoot: File, override: String?): String =
+        ProjectCppStandardResolver.resolveFlag(workspaceRoot, override)
 
     fun resolveRuntimeIdentity(projectRoot: File?, toolchainId: String? = null): RuntimeIdentity {
         val normalizedToolchainId = resolveEffectiveToolchainId(toolchainId)
@@ -814,8 +843,8 @@ class CompileDatabaseProvider(
         return leftPath == rightPath
     }
 
-    private fun compileCommandsMatchesCppStandard(file: File, desired: CppStandard): Boolean {
-        val want = "\"-std=${desired.flag}\""
+    private fun compileCommandsMatchesCppStandard(file: File, desiredFlag: String): Boolean {
+        val want = "\"-std=$desiredFlag\""
         return runCatching { file.readText().contains(want) }.getOrDefault(false)
     }
 }

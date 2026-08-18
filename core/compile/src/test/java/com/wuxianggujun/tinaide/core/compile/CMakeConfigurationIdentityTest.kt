@@ -25,6 +25,8 @@ class CMakeConfigurationIdentityTest {
         )
 
         assertThat(identity.asCMakeCacheEntries()).containsAtLeast(
+            CMakeConfigurationIdentity.CMAKE_LINK_POLICY_VERSION_KEY,
+            "3",
             CMakeConfigurationIdentity.CMAKE_RUN_MODE_KEY,
             "NATIVE",
             CMakeConfigurationIdentity.CMAKE_COMPILER_TYPE_KEY,

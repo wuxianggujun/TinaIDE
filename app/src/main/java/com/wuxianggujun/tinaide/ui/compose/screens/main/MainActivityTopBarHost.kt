@@ -127,7 +127,14 @@ internal fun MainActivityTopBarHost(
         debugStatus = debugStatus,
         runConfigManager = buildUiState.runConfigManager,
         onRunConfigManagerChange = { updated ->
-            if (!buildUiState.commitRunConfigManager(updated, callbacks.onPersistRunConfigManager)) {
+            if (
+                !buildUiState.commitRunConfigManager(
+                    updated = updated,
+                    persist = callbacks.onPersistRunConfigManager,
+                    onSelectedSingleFileCppStandardChanged =
+                        editorContainerState::refreshOpenCxxEditorsForCompileConfigChange,
+                )
+            ) {
                 context.toastError(Strings.toast_run_config_save_failed.strOr(context))
             }
         },

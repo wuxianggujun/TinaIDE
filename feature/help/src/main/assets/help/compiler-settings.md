@@ -138,11 +138,13 @@
 
 - 编译参数里的 `--sysroot`
 - C++ 标准库头文件路径
-- 运行时注入的 `libc++_shared.so`
+- 命令行 C++ 可执行文件静态链接的 libc++ 版本
+- NativeActivity / SDL 共享库运行时注入的 `libc++_shared.so`
 - 导出 APK 时打包的 `libc++_shared.so`
 - LSP 看到的 C/C++ 头文件环境
 
 如果第三方库是用不同 NDK 版本构建的，可以导入对应 sysroot 后切换到它，避免 C++ runtime 不匹配。
+导入包必须包含 `libc++_shared.so`、`libc++_static.a`、`libc++abi.a`，以及每个 API 目录中的 `libc++.a` linker script。
 
 注意：
 

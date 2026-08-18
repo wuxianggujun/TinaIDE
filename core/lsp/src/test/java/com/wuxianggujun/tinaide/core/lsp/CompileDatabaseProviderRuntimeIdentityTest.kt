@@ -13,10 +13,12 @@ import com.wuxianggujun.tinaide.core.ndk.ToolchainInfo
 import com.wuxianggujun.tinaide.core.ndk.ToolchainType
 import com.wuxianggujun.tinaide.project.CppStandard
 import com.wuxianggujun.tinaide.project.ProjectBuildSystem
+import com.wuxianggujun.tinaide.project.ProjectCppStandardResolver
 import com.wuxianggujun.tinaide.project.ProjectMetadata
 import com.wuxianggujun.tinaide.project.ProjectMetadataStore
 import java.io.File
 import java.nio.file.Files
+import java.security.MessageDigest
 import java.util.Properties
 import org.junit.Before
 import org.junit.Test
@@ -96,6 +98,152 @@ class CompileDatabaseProviderRuntimeIdentityTest {
         assertThat(after.shouldGenerate).isTrue()
     }
 
+    @Test
+    fun prepare_shouldRegenerateTinaFallbackWhenCmakeCxxStandardChanges() {
+        configureToolchain("toolchain-a")
+        configureSysroot("sysroot-a")
+        writeCMakeLists(CppStandard.CPP_17)
+        writeCompileCommandsWithMetadata(
+            toolchainId = "toolchain-a",
+            sysrootProfileId = "sysroot-a",
+            sysrootApiLevel = 28,
+            cppStandardFlag = CppStandard.CPP_17.flag,
+        )
+
+        val before = requireNotNull(provider.prepare(File(projectRoot, "main.cpp"), projectRoot.absolutePath))
+        assertThat(before.desiredCppStandardFlag).isEqualTo("c++17")
+        assertThat(before.shouldGenerate).isFalse()
+
+        writeCMakeLists(CppStandard.CPP_20)
+
+        val after = requireNotNull(provider.prepare(File(projectRoot, "main.cpp"), projectRoot.absolutePath))
+        assertThat(after.desiredCppStandardFlag).isEqualTo("c++20")
+        assertThat(after.shouldGenerate).isTrue()
+    }
+
+    @Test
+    fun prepare_shouldKeepExternalCmakeCompileDatabaseAuthoritative() {
+        configureToolchain("toolchain-a")
+        configureSysroot("sysroot-a")
+        writeCMakeLists(CppStandard.CPP_20)
+        writeCompileCommandsWithMetadata(
+            toolchainId = "toolchain-a",
+            sysrootProfileId = "sysroot-a",
+            sysrootApiLevel = 28,
+            cppStandardFlag = CppStandard.CPP_17.flag,
+            generatedBy = "external",
+        )
+
+        val prepared = requireNotNull(provider.prepare(File(projectRoot, "main.cpp"), projectRoot.absolutePath))
+
+        assertThat(prepared.desiredCppStandardFlag).isEqualTo("c++20")
+        assertThat(prepared.shouldGenerate).isFalse()
+    }
+
+    @Test
+    fun prepare_shouldForceOnlyTinaFallbackRegenerationAfterBuildFileSave() {
+        configureToolchain("toolchain-a")
+        configureSysroot("sysroot-a")
+        writeCompileCommandsWithMetadata(
+            toolchainId = "toolchain-a",
+            sysrootProfileId = "sysroot-a",
+            sysrootApiLevel = 28,
+        )
+
+        val tinaFallback = requireNotNull(
+            provider.prepare(
+                file = File(projectRoot, "main.cpp"),
+                projectRootPath = projectRoot.absolutePath,
+                forceRegenerateFallback = true,
+            )
+        )
+        assertThat(tinaFallback.shouldGenerate).isTrue()
+
+        writeCompileCommandsWithMetadata(
+            toolchainId = "toolchain-a",
+            sysrootProfileId = "sysroot-a",
+            sysrootApiLevel = 28,
+            generatedBy = "external",
+        )
+        val externalDatabase = requireNotNull(
+            provider.prepare(
+                file = File(projectRoot, "main.cpp"),
+                projectRootPath = projectRoot.absolutePath,
+                forceRegenerateFallback = true,
+            )
+        )
+        assertThat(externalDatabase.shouldGenerate).isFalse()
+    }
+
+    @Test
+    fun prepare_shouldTreatReplacedTinaFallbackAsExternalCmakeDatabase() {
+        configureToolchain("toolchain-a")
+        configureSysroot("sysroot-a")
+        writeCMakeLists(CppStandard.CPP_20)
+        writeCompileCommandsWithMetadata(
+            toolchainId = "toolchain-a",
+            sysrootProfileId = "sysroot-a",
+            sysrootApiLevel = 28,
+            cppStandardFlag = "c++17",
+        )
+        File(projectRoot, "build/compile_commands.json").writeText(
+            """
+            [{"directory":"${projectRoot.absolutePath.replace("\\", "\\\\")}","arguments":["clang++","-std=gnu++23","main.cpp"],"file":"main.cpp"}]
+            """.trimIndent()
+        )
+
+        val prepared = requireNotNull(provider.prepare(File(projectRoot, "main.cpp"), projectRoot.absolutePath))
+
+        assertThat(prepared.desiredCppStandardFlag).isEqualTo("c++20")
+        assertThat(prepared.shouldGenerate).isFalse()
+    }
+
+    @Test
+    fun prepare_shouldUseExplicitFutureStandardOverrideForTinaFallback() {
+        configureToolchain("toolchain-a")
+        configureSysroot("sysroot-a")
+        writeCompileCommandsWithMetadata(
+            toolchainId = "toolchain-a",
+            sysrootProfileId = "sysroot-a",
+            sysrootApiLevel = 28,
+            cppStandardFlag = "c++17",
+        )
+
+        val prepared = requireNotNull(
+            provider.prepare(
+                file = File(projectRoot, "main.cpp"),
+                projectRootPath = projectRoot.absolutePath,
+                cppStandardOverride = "c++26",
+            )
+        )
+
+        assertThat(prepared.desiredCppStandardFlag).isEqualTo("c++26")
+        assertThat(prepared.shouldGenerate).isTrue()
+    }
+
+    @Test
+    fun prepare_shouldNotLetNativeCppFlagsOverrideCmakeStandard() {
+        configureToolchain("toolchain-a")
+        configureSysroot("sysroot-a")
+        val metadata = requireNotNull(ProjectMetadataStore.read(projectRoot))
+        ProjectMetadataStore.write(
+            projectRoot,
+            metadata.copy(nativeCppFlags = "-Wall -std=c++11"),
+        )
+        writeCMakeLists(CppStandard.CPP_20)
+        writeCompileCommandsWithMetadata(
+            toolchainId = "toolchain-a",
+            sysrootProfileId = "sysroot-a",
+            sysrootApiLevel = 28,
+            cppStandardFlag = "c++20",
+        )
+
+        val prepared = requireNotNull(provider.prepare(File(projectRoot, "main.cpp"), projectRoot.absolutePath))
+
+        assertThat(prepared.desiredCppStandardFlag).isEqualTo("c++20")
+        assertThat(prepared.shouldGenerate).isFalse()
+    }
+
     private fun configureToolchain(activeId: String) {
         val toolchainDir = File(context.filesDir, "toolchains/$activeId").apply {
             File(this, "bin").mkdirs()
@@ -126,9 +274,12 @@ class CompileDatabaseProviderRuntimeIdentityTest {
         File(profileDir, "usr/include/android").apply { mkdirs() }
             .resolve("api-level.h")
             .writeText("#define __ANDROID_API__ 28\n")
-        File(profileDir, "usr/lib/${arch.triple}/28").mkdirs()
+        val apiLibDir = File(profileDir, "usr/lib/${arch.triple}/28").apply { mkdirs() }
+        File(apiLibDir, "libc++.a").writeText("INPUT(-lc++_static -lc++abi)\n")
         val libDir = File(profileDir, "usr/lib/${arch.triple}").apply { mkdirs() }
         File(libDir, "libc++_shared.so").writeText("runtime")
+        File(libDir, "libc++_static.a").writeText("runtime")
+        File(libDir, "libc++abi.a").writeText("runtime")
         com.wuxianggujun.tinaide.core.ndk.SysrootProfileConfigManager(context).saveConfig(
             InstalledSysrootProfileConfig(
                 activeProfiles = mapOf(arch.name to activeId),
@@ -152,23 +303,44 @@ class CompileDatabaseProviderRuntimeIdentityTest {
         toolchainId: String,
         sysrootProfileId: String,
         sysrootApiLevel: Int,
+        cppStandardFlag: String = ProjectCppStandardResolver.DEFAULT_FLAG,
+        generatedBy: String = "tina-fallback",
     ) {
         val buildDir = File(projectRoot, "build").apply { mkdirs() }
-        File(buildDir, "compile_commands.json").writeText(
+        val compileCommandsFile = File(buildDir, "compile_commands.json")
+        compileCommandsFile.writeText(
             """
-            [{"directory":"${projectRoot.absolutePath.replace("\\", "\\\\")}","arguments":["clang++","-std=c++17","main.cpp"],"file":"main.cpp"}]
+            [{"directory":"${projectRoot.absolutePath.replace("\\", "\\\\")}","arguments":["clang++","-std=$cppStandardFlag","main.cpp"],"file":"main.cpp"}]
             """.trimIndent()
         )
         val props = Properties().apply {
-            setProperty("cppStandard", CppStandard.DEFAULT.flag)
+            setProperty("cppStandard", cppStandardFlag)
+            setProperty("contentSha256", sha256Hex(compileCommandsFile.readBytes()))
             setProperty("packageFingerprint", provider.computePackageFingerprint(projectRoot))
             setProperty("toolchainId", toolchainId)
             setProperty("sysrootProfileId", sysrootProfileId)
             setProperty("sysrootApiLevel", sysrootApiLevel.toString())
-            setProperty("generatedBy", "tina-fallback")
+            setProperty("generatedBy", generatedBy)
         }
         File(buildDir, "compile_commands.tina.meta.properties").outputStream().use { output ->
             props.store(output, "test")
+        }
+    }
+
+    private fun writeCMakeLists(cppStandard: CppStandard) {
+        File(projectRoot, "CMakeLists.txt").writeText(
+            "set(CMAKE_CXX_STANDARD ${cppStandard.cmakeValue})\n",
+            Charsets.UTF_8,
+        )
+    }
+
+    private fun sha256Hex(bytes: ByteArray): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
+        return buildString(digest.size * 2) {
+            digest.forEach { byte ->
+                append(((byte.toInt() ushr 4) and 0xF).toString(16))
+                append((byte.toInt() and 0xF).toString(16))
+            }
         }
     }
 }

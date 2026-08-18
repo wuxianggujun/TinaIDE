@@ -46,6 +46,24 @@ class CMakeLinkPolicyTest {
     }
 
     @Test
+    fun `resolveAndroidExecutableLinkerFlags adds static libc++`() {
+        val resolved = CMakeLinkPolicy.resolveAndroidExecutableLinkerFlags(
+            "--target=aarch64-linux-android28"
+        )
+
+        assertThat(resolved).isEqualTo("--target=aarch64-linux-android28 -static-libstdc++")
+    }
+
+    @Test
+    fun `resolveAndroidExecutableLinkerFlags keeps static libc++ once`() {
+        val resolved = CMakeLinkPolicy.resolveAndroidExecutableLinkerFlags(
+            "--target=aarch64-linux-android28 -static-libstdc++"
+        )
+
+        assertThat(resolved).isEqualTo("--target=aarch64-linux-android28 -static-libstdc++")
+    }
+
+    @Test
     fun `resolveAndroidSharedLinkerFlags adds shell-escaped origin runpath`() {
         val resolved = CMakeLinkPolicy.resolveAndroidSharedLinkerFlags(
             "--target=aarch64-linux-android28"

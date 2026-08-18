@@ -28,6 +28,31 @@ class TextRenderPlannerTest {
     }
 
     @Test
+    fun buildRuns_shouldKeepCommentColorOverStaleSemanticTokens() {
+        val runs = TextRenderPlanner.buildRuns(
+            visibleStartColumn = 0,
+            visibleEndColumn = 12,
+            defaultColor = 1,
+            syntaxOverlays = listOf(
+                TextRenderOverlay(
+                    startColumn = 0,
+                    endColumn = 12,
+                    color = 2,
+                    blocksSemantic = true,
+                ),
+                TextRenderOverlay(startColumn = 4, endColumn = 6, color = 4),
+            ),
+            semanticOverlays = listOf(
+                TextRenderOverlay(startColumn = 3, endColumn = 9, color = 3),
+            ),
+        )
+
+        assertThat(runs).containsExactly(
+            TextRenderRun(startColumn = 0, endColumn = 12, color = 2),
+        )
+    }
+
+    @Test
     fun buildRuns_shouldMergeAdjacentRunsWithSameColor() {
         val runs = TextRenderPlanner.buildRuns(
             visibleStartColumn = 0,

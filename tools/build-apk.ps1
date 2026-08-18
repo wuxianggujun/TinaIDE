@@ -74,6 +74,12 @@ function Get-GradleAbiArguments {
 }
 
 [string[]]$gradleAbiArgs = @(Get-GradleAbiArguments -abi $Abi)
+[string[]]$gradleExecutionArgs = @("--no-daemon", "--console=plain")
+if ($Variant -eq "release") {
+    # R8 and lint are both heap-intensive. Serializing Release tasks avoids
+    # concurrent flavor analysis exhausting the 4 GiB Gradle heap on 16 GiB hosts.
+    $gradleExecutionArgs += @("--max-workers=1", "--no-parallel", "--no-watch-fs")
+}
 
 function Invoke-GradleTask {
     param(
@@ -84,7 +90,8 @@ function Invoke-GradleTask {
     if ($gradleAbiArgs.Count -gt 0) {
         Write-Host "Gradle ABI arguments: $($gradleAbiArgs -join ' ')" -ForegroundColor DarkGray
     }
-    [string[]]$gradleArgs = @($gradleAbiArgs + $Task)
+    Write-Host "Gradle execution arguments: $($gradleExecutionArgs -join ' ')" -ForegroundColor DarkGray
+    [string[]]$gradleArgs = @($gradleAbiArgs + $Task + $gradleExecutionArgs)
     & ./gradlew @gradleArgs
     if ($LASTEXITCODE -ne 0) {
         if ($WarnOnly) {
@@ -106,7 +113,7 @@ function Invoke-CompositeGradleTask {
     Write-Host "Executing composite Gradle task: $Task" -ForegroundColor DarkCyan
     Push-Location $WorkingDirectory
     try {
-        & $WrapperPath $Task
+        & $WrapperPath $Task @gradleExecutionArgs
         if ($LASTEXITCODE -ne 0) {
             if ($WarnOnly) {
                 Write-Host "Composite Gradle task failed (${Task}) but script will continue. See Gradle output above for details." -ForegroundColor Yellow

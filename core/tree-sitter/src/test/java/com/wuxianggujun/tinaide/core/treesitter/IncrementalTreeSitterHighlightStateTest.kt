@@ -3,7 +3,9 @@ package com.wuxianggujun.tinaide.core.treesitter
 import android.os.Looper
 import com.google.common.truth.Truth.assertThat
 import com.itsaky.androidide.treesitter.TSParser
+import com.itsaky.androidide.treesitter.TSPoint
 import com.itsaky.androidide.treesitter.TSQuery
+import com.itsaky.androidide.treesitter.TSRange
 import com.itsaky.androidide.treesitter.TSTree
 import com.wuxianggujun.tinaide.core.textengine.TextChange
 import io.mockk.every
@@ -251,6 +253,55 @@ class IncrementalTreeSitterHighlightStateTest {
             releaseBarParse.countDown()
             waitUntil { updates.get() == 2 }
         }
+    }
+
+    @Test
+    fun incrementalParse_shouldReadStructuralChangedRangesForMultilineHighlightInvalidation() {
+        val parser = mockk<TSParser>()
+        val query = mockQuery()
+        val oldWorker = mockTree("oldWorker")
+        val oldRender = mockTree("oldRender")
+        val newWorker = mockTree("newWorker")
+        val newRender = mockTree("newRender")
+        val oldText = "int main() {\nvalue();\nreturn 0;\n}"
+        val newText = "int main() {\n/**value();\nreturn 0;*/\n}"
+        val changedRange = TSRange.create(
+            26,
+            70,
+            TSPoint.create(1, 0),
+            TSPoint.create(2, 22),
+        )
+
+        every { parser.reset() } just runs
+        every { parser.parseString(oldText) } returns oldWorker
+        every { parser.parseString(oldWorker, newText) } returns newWorker
+        every { oldWorker.copy() } returns oldRender
+        every { newWorker.copy() } returns newRender
+        every { newWorker.getChangedRanges(oldWorker) } returns arrayOf(changedRange)
+
+        createFixture(parser = parser, query = query).use { fixture ->
+            val updates = AtomicInteger(0)
+            fixture.state.setOnStateUpdated { updates.incrementAndGet() }
+            fixture.state.openDocument(oldText)
+            waitUntil { updates.get() == 1 }
+
+            fixture.state.applyTextChange(
+                TextChange(
+                    startOffset = oldText.indexOf("value"),
+                    endOffset = oldText.indexOf("value"),
+                    oldText = "",
+                    newText = "/**",
+                    startLine = 1,
+                    startColumn = 0,
+                    endLine = 1,
+                    endColumn = 0,
+                ),
+                newText,
+            )
+            waitUntil { updates.get() == 2 }
+        }
+
+        verify(exactly = 1) { newWorker.getChangedRanges(oldWorker) }
     }
 
     @Test

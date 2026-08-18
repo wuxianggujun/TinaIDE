@@ -1,6 +1,7 @@
 package com.wuxianggujun.tinaide.core.compile.strategy
 
 import com.google.common.truth.Truth.assertThat
+import com.wuxianggujun.tinaide.core.compile.AndroidCppRuntimeLinkage
 import java.io.File
 import kotlin.io.path.createTempDirectory
 import org.junit.Test
@@ -40,5 +41,37 @@ class SingleFileStrategyDiagnosticsTest {
         } finally {
             root.deleteRecursively()
         }
+    }
+
+    @Test
+    fun `single file C++ standard override remains the last std flag`() {
+        val flags = SingleFileStrategy.mergeCompileFlagsWithStandard(
+            isCpp = true,
+            standard = "c++20",
+            extraCompileFlags = listOf("-Wall", "-std=c++17"),
+        )
+
+        assertThat(flags.filter { it.startsWith("-std=") }.last()).isEqualTo("-std=c++20")
+    }
+
+    @Test
+    fun `single file C flags may override the default C standard`() {
+        val flags = SingleFileStrategy.mergeCompileFlagsWithStandard(
+            isCpp = false,
+            standard = "c11",
+            extraCompileFlags = listOf("-std=gnu11"),
+        )
+
+        assertThat(flags.filter { it.startsWith("-std=") }.last()).isEqualTo("-std=gnu11")
+    }
+
+    @Test
+    fun `single file C++ executable uses portable static runtime`() {
+        val flags = AndroidCppRuntimeLinkage.flagsForOutput(
+            isCpp = true,
+            outputIsSharedLibrary = false,
+        )
+
+        assertThat(flags).containsExactly("-static-libstdc++")
     }
 }

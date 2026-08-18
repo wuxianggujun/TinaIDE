@@ -7,6 +7,7 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import com.wuxianggujun.tinaide.core.textengine.TextChange
 import com.wuxianggujun.tinaide.core.treesitter.HighlightLineSegment
+import com.wuxianggujun.tinaide.core.treesitter.HighlightType
 import java.util.LinkedHashMap
 import timber.log.Timber
 
@@ -254,7 +255,8 @@ internal class TextRenderer {
                             TextRenderOverlay(
                                 startColumn = segment.startColumn,
                                 endColumn = segment.endColumn,
-                                color = scheme.syntax.colorOf(segment.type).toArgb()
+                                color = scheme.syntax.colorOf(segment.type).toArgb(),
+                                blocksSemantic = segment.type == HighlightType.COMMENT,
                             )
                         )
                     }
@@ -846,7 +848,8 @@ internal class TextRenderer {
 internal data class TextRenderOverlay(
     val startColumn: Int,
     val endColumn: Int,
-    val color: Int
+    val color: Int,
+    val blocksSemantic: Boolean = false,
 )
 
 internal data class TextRenderRun(
@@ -939,7 +942,10 @@ internal object TextRenderPlanner {
             )
             semanticPointer = semanticColor.nextPointer
 
-            val resolvedColor = semanticColor.color ?: syntaxColor.color ?: defaultColor
+            val resolvedColor = syntaxColor.semanticBlockingColor
+                ?: semanticColor.color
+                ?: syntaxColor.color
+                ?: defaultColor
             val lastRun = runs.lastOrNull()
             if (lastRun != null && lastRun.color == resolvedColor && lastRun.endColumn == startColumn) {
                 runs[runs.lastIndex] = lastRun.copy(endColumn = endColumn)
@@ -976,7 +982,8 @@ internal object TextRenderPlanner {
 
     private data class OverlayResolution(
         val color: Int?,
-        val nextPointer: Int
+        val semanticBlockingColor: Int?,
+        val nextPointer: Int,
     )
 
     private fun resolveOverlayColor(
@@ -991,15 +998,23 @@ internal object TextRenderPlanner {
         }
 
         var resolvedColor: Int? = null
+        var semanticBlockingColor: Int? = null
         var index = pointer
         while (index < overlays.size) {
             val overlay = overlays[index]
             if (overlay.startColumn >= intervalEnd) break
             if (overlay.endColumn > intervalStart) {
                 resolvedColor = overlay.color
+                if (overlay.blocksSemantic) {
+                    semanticBlockingColor = overlay.color
+                }
             }
             index++
         }
-        return OverlayResolution(color = resolvedColor, nextPointer = pointer)
+        return OverlayResolution(
+            color = resolvedColor,
+            semanticBlockingColor = semanticBlockingColor,
+            nextPointer = pointer,
+        )
     }
 }

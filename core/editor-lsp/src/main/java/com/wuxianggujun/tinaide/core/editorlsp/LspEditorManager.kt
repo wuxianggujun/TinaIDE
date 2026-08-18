@@ -91,6 +91,7 @@ sealed interface SemanticTokensRequestResult {
 class LspEditorManager(
     private val fileWatchService: IFileWatchService? = null,
     private val linuxEnvironmentProvider: LinuxEnvironmentProvider = UnavailableLinuxEnvironmentProvider,
+    private val cppStandardOverrideProvider: (File) -> String? = { null },
 ) {
 
     companion object {
@@ -102,6 +103,24 @@ class LspEditorManager(
         private const val INLAY_HINTS_TIMEOUT_SECONDS = 6L
         private const val FOLDING_RANGE_TIMEOUT_SECONDS = 6L
         private const val SHARED_CXX_IDLE_SHUTDOWN_MS = 20_000L
+        private val ROOT_MAKEFILE_NAMES = setOf("Makefile", "makefile", "GNUmakefile")
+
+        internal fun isRootMakeBuildFile(file: File, projectRootPath: String?): Boolean {
+            if (file.name !in ROOT_MAKEFILE_NAMES) return false
+            val projectRoot = projectRootPath
+                ?.takeIf { it.isNotBlank() }
+                ?.let(::File)
+                ?: file.parentFile
+                ?: return false
+            return sameCanonicalFile(file.parentFile, projectRoot)
+        }
+
+        private fun sameCanonicalFile(left: File?, right: File?): Boolean {
+            if (left == null || right == null) return false
+            val leftPath = runCatching { left.canonicalPath }.getOrDefault(left.absolutePath)
+            val rightPath = runCatching { right.canonicalPath }.getOrDefault(right.absolutePath)
+            return leftPath == rightPath
+        }
     }
 
     private enum class SessionKind { CXX, PLUGIN, CMAKE, MAKE }
@@ -356,7 +375,7 @@ class LspEditorManager(
     /**
      * 文件保存后调用：
      * 1. 向 LSP server 发送 textDocument/didSave 通知
-     * 2. 若保存的是 CMakeLists.txt / .cmake / compile_commands.json，刷新 compile_commands 并重启 clangd
+     * 2. 若保存的是 CMake / 根 Makefile / compile_commands.json，刷新 compile_commands 并重启 clangd
      */
     fun onFileSaved(context: Context, tabId: String, file: File, fullText: String) {
         // 1. 向当前 tab 的 LSP session 发送 didSave
@@ -373,26 +392,47 @@ class LspEditorManager(
         val isCmakeFile = file.name.equals("CMakeLists.txt", ignoreCase = true) ||
             file.extension.equals("cmake", ignoreCase = true)
         val isCompileCommandsFile = file.name.equals("compile_commands.json", ignoreCase = true)
+        val savedBinding = synchronized(stateLock) { tabBindings[tabId] }
+        val isRootMakefile = isRootMakeBuildFile(file, savedBinding?.projectRootPath)
 
-        // 2. 配置文件 / compile_commands 保存 → 刷新 compile_commands.json 并重载 clangd
-        if (isCmakeFile || isCompileCommandsFile) {
-            val reason = if (isCompileCommandsFile) "compile_commands" else "CMake"
+        // 2. 配置文件 / compile_commands 保存 -> 刷新 compile_commands.json 并重载 clangd
+        if (isCmakeFile || isRootMakefile || isCompileCommandsFile) {
+            val reason = when {
+                isCompileCommandsFile -> "compile_commands"
+                isRootMakefile -> "Makefile"
+                else -> "CMake"
+            }
             Timber.tag(TAG).i("%s file saved (%s), scheduling LSP reload", reason, file.name)
+            val cxxBinding = synchronized(stateLock) {
+                tabBindings.values.firstOrNull { binding ->
+                    binding.kind == SessionKind.CXX &&
+                        belongsToSameProject(binding, file, savedBinding?.projectRootPath)
+                }
+            }
+            val invalidationFile = cxxBinding?.file ?: file
+            val projectRootPath = cxxBinding?.projectRootPath ?: savedBinding?.projectRootPath
+            val cppStandardOverride = cxxBinding?.file?.let(::resolveCppStandardOverride)
+            compileSetupCache.invalidateForProject(invalidationFile, projectRootPath)
+
             lspScope.launch(Dispatchers.IO) {
-                val binding = synchronized(stateLock) {
-                    tabBindings.values.firstOrNull { it.kind == SessionKind.CXX }
-                } ?: return@launch
-                val compileProvider = compileSetupCache.getProvider(context)
-                compileSetupCache.invalidateForProject(binding.file, binding.projectRootPath)
+                val binding = cxxBinding ?: return@launch
                 if (isCompileCommandsFile) {
-                    compileProvider.prepareProvidedCompileCommandsForLsp(file, binding.projectRootPath)
+                    compileSetupCache.prepareProvidedCompileCommandsForLsp(
+                        context = context,
+                        sourceCompileCommandsFile = file,
+                        projectRootPath = binding.projectRootPath,
+                        cppStandardOverride = cppStandardOverride,
+                    )
                         ?: return@launch
                 } else {
-                    val prepared = compileProvider.prepare(binding.file, binding.projectRootPath)
+                    compileSetupCache.resolve(
+                        context = context,
+                        file = binding.file,
+                        projectRootPath = binding.projectRootPath,
+                        cppStandardOverride = cppStandardOverride,
+                        forceRegenerateFallback = true,
+                    )
                         ?: return@launch
-                    val metaFile = java.io.File(prepared.compileCommandsDir, "compile_commands.tina.meta.properties")
-                    metaFile.delete()
-                    compileProvider.ensureWithResult(prepared)
                 }
                 withContext(Dispatchers.Main) {
                     Timber.tag(TAG).i("Restarting clangd after %s file change: %s", reason, file.name)
@@ -400,6 +440,28 @@ class LspEditorManager(
                 }
             }
         }
+    }
+
+    private fun belongsToSameProject(
+        binding: TabBinding,
+        savedFile: File,
+        savedProjectRootPath: String?,
+    ): Boolean {
+        val bindingProjectRoot = binding.projectRootPath
+            ?.takeIf { it.isNotBlank() }
+            ?.let(::File)
+            ?: binding.file.parentFile
+            ?: return false
+        val savedProjectRoot = savedProjectRootPath
+            ?.takeIf { it.isNotBlank() }
+            ?.let(::File)
+        if (savedProjectRoot != null) {
+            return sameCanonicalFile(savedProjectRoot, bindingProjectRoot)
+        }
+
+        val rootPath = runCatching { bindingProjectRoot.canonicalPath }.getOrDefault(bindingProjectRoot.absolutePath)
+        val savedFilePath = runCatching { savedFile.canonicalPath }.getOrDefault(savedFile.absolutePath)
+        return savedFilePath == rootPath || savedFilePath.startsWith(rootPath + File.separator)
     }
 
     suspend fun requestSemanticTokens(
@@ -687,10 +749,6 @@ class LspEditorManager(
     fun hasActiveLspConnection(tabId: String): Boolean {
         val tabSession = synchronized(stateLock) { tabSessions[tabId] }
         return tabSession?.isConnected == true
-    }
-
-    private fun hasTabBinding(tabId: String, file: File): Boolean = synchronized(stateLock) {
-        tabBindings[tabId]?.file?.absolutePath == file.absolutePath
     }
 
     suspend fun requestCodeActions(
@@ -1143,13 +1201,6 @@ class LspEditorManager(
     }
 
     /**
-     * 让 compile setup 内存缓存失效（不重连）。
-     *
-     * 用于“项目开着但当前没有活跃 C/C++ 标签页”时发生依赖变更的场景：
-     * 此时无编辑器可重连，但残留的缓存会让下一次打开 C/C++ 文件直接命中旧 setup，
-     * 绕过 CompileDatabaseProvider 的包指纹校验，导致头文件假错。
-     */
-    /**
      * 让内存中的 compile setup 缓存整体失效。
      *
      * 依赖包安装/卸载后调用：即使当前没有打开的 C/C++ 编辑器，也需要清除缓存，
@@ -1209,6 +1260,11 @@ class LspEditorManager(
         projectRootPath: String?,
         textProvider: () -> String,
     ): Boolean {
+        val cppStandardOverride = resolveCppStandardOverride(file)
+        val compileAttachToken = Any()
+        synchronized(stateLock) {
+            attachTokenCache[tabId] = compileAttachToken
+        }
         // resolveClangdRunMode() 已在 Linux 环境不可用时回退 NATIVE，与编译链路一致。
         val runMode = resolveClangdRunMode()
         Timber.tag(TAG).i("attachLocalCxxLsp: file=%s, runMode=%s, projectRoot=%s", file.name, runMode, projectRootPath)
@@ -1224,6 +1280,9 @@ class LspEditorManager(
                     }
                     val sysrootResult = withContext(Dispatchers.IO) {
                         if (sysroot.isInstalled()) Result.success(Unit) else sysroot.install { }
+                    }
+                    if (!isCompileAttachCurrent(tabId, file, compileAttachToken)) {
+                        return@launch
                     }
                     if (toolchainResult.isSuccess && sysrootResult.isSuccess) {
                         Timber.tag(TAG).i("attachLocalCxxLsp: auto-install success, retrying attach")
@@ -1243,14 +1302,23 @@ class LspEditorManager(
 
         updateLspStatus(tabId, EditorStatus.Connecting)
         lspScope.launch {
-            val compileSetup = resolveCompileSetup(context, file, projectRootPath)
-            if (!hasTabBinding(tabId, file)) {
+            val compileSetup = resolveCompileSetup(
+                context = context,
+                file = file,
+                projectRootPath = projectRootPath,
+                cppStandardOverride = cppStandardOverride,
+            )
+            if (!isCompileAttachCurrent(tabId, file, compileAttachToken)) {
                 return@launch
             }
             if (compileSetup == null) {
                 Timber.tag(TAG).w("attachLocalCxxLsp: compile setup unavailable, setting NoLsp")
                 updateLspStatus(tabId, EditorStatus.NoLsp)
-                releaseSession(tabId, clearBinding = true)
+                releaseSession(
+                    tabId = tabId,
+                    clearBinding = true,
+                    expectedAttachToken = compileAttachToken,
+                )
                 return@launch
             }
 
@@ -1655,7 +1723,24 @@ class LspEditorManager(
         context: Context,
         file: File,
         projectRootPath: String?,
-    ): LspCompileSetupCache.Setup? = compileSetupCache.resolve(context, file, projectRootPath)
+        cppStandardOverride: String?,
+    ): LspCompileSetupCache.Setup? = compileSetupCache.resolve(
+        context = context,
+        file = file,
+        projectRootPath = projectRootPath,
+        cppStandardOverride = cppStandardOverride,
+    )
+
+    private fun resolveCppStandardOverride(file: File): String? = runCatching {
+        cppStandardOverrideProvider(file)
+    }.onFailure { error ->
+        Timber.tag(TAG).w(error, "Failed to resolve C++ standard override for %s", file.absolutePath)
+    }.getOrNull()
+
+    private fun isCompileAttachCurrent(tabId: String, file: File, token: Any): Boolean =
+        synchronized(stateLock) {
+            attachTokenCache[tabId] === token && tabBindings[tabId]?.file?.absolutePath == file.absolutePath
+        }
 
     private fun startSharedCxxAttach(
         tabId: String,

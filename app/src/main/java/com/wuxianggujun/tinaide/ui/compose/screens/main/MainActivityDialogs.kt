@@ -162,6 +162,7 @@ internal fun MainActivityDialogsHost(
 
     MainActivityRunConfigDialog(
         state = uiState.buildUiState,
+        editorContainerState = dependencies.editorContainerState,
         onPersistRunConfigManager = callbacks.onPersistRunConfigManager,
     )
 
@@ -461,6 +462,7 @@ internal fun MainActivityCloseProjectDialog(
 @Composable
 internal fun MainActivityRunConfigDialog(
     state: MainActivityBuildUiState,
+    editorContainerState: EditorContainerState,
     onPersistRunConfigManager: (RunConfigurationManager) -> Boolean,
 ) {
     val context = LocalContext.current
@@ -478,7 +480,14 @@ internal fun MainActivityRunConfigDialog(
             } else {
                 state.runConfigManager.updateConfig(newConfig)
             }
-            if (state.commitRunConfigManager(updated, onPersistRunConfigManager)) {
+            if (
+                state.commitRunConfigManager(
+                    updated = updated,
+                    persist = onPersistRunConfigManager,
+                    onSelectedSingleFileCppStandardChanged =
+                        editorContainerState::refreshOpenCxxEditorsForCompileConfigChange,
+                )
+            ) {
                 state.closeRunConfigDialog()
                 context.toastSuccess(Strings.toast_run_config_saved.strOr(context))
             } else {

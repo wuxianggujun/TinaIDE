@@ -3,6 +3,7 @@ package com.wuxianggujun.tinaide.ui.compose.screens.main
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import com.wuxianggujun.tinaide.core.lsp.Diagnostic
 import com.wuxianggujun.tinaide.core.symbol.IProjectSymbolIndexService
 import com.wuxianggujun.tinaide.editor.IEditorManager
@@ -11,6 +12,7 @@ import com.wuxianggujun.tinaide.editor.theme.PluginEditorThemeRegistry
 import com.wuxianggujun.tinaide.plugin.PluginSnippetManager
 import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState
 import com.wuxianggujun.tinaide.ui.compose.state.editor.rememberEditorContainerState
+import java.io.File
 import org.koin.compose.koinInject
 
 @Stable
@@ -23,11 +25,20 @@ internal data class MainActivityEditorHostState(
 internal fun rememberMainActivityEditorHostState(
     editorManager: IEditorManager,
     projectRootPathProvider: () -> String?,
+    cppStandardOverrideProvider: (File) -> String?,
     onLspDiagnosticsChanged: (String, List<Diagnostic>) -> Unit,
 ): MainActivityEditorHostState {
     val projectSymbolIndexService = koinInject<IProjectSymbolIndexService>() as? ProjectSymbolIndexService
     val projectSymbolIndexServiceProvider = remember(projectSymbolIndexService) {
         { projectSymbolIndexService }
+    }
+    val latestProjectRootPathProvider = rememberUpdatedState(projectRootPathProvider)
+    val latestCppStandardOverrideProvider = rememberUpdatedState(cppStandardOverrideProvider)
+    val stableProjectRootPathProvider = remember {
+        { latestProjectRootPathProvider.value() }
+    }
+    val stableCppStandardOverrideProvider = remember {
+        { file: File -> latestCppStandardOverrideProvider.value(file) }
     }
     val pluginSnippetManager: PluginSnippetManager = koinInject()
     val pluginEditorThemeRegistry: PluginEditorThemeRegistry = koinInject()
@@ -36,7 +47,8 @@ internal fun rememberMainActivityEditorHostState(
         snippetManager = pluginSnippetManager,
         pluginThemeRegistry = pluginEditorThemeRegistry,
         projectSymbolIndexServiceProvider = projectSymbolIndexServiceProvider,
-        projectRootPathProvider = projectRootPathProvider,
+        projectRootPathProvider = stableProjectRootPathProvider,
+        cppStandardOverrideProvider = stableCppStandardOverrideProvider,
         onLspDiagnosticsChanged = onLspDiagnosticsChanged,
     )
 

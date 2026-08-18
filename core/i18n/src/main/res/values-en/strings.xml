@@ -2157,6 +2157,7 @@ If you need to verify lower-level source or native submodules, please also check
   <string name="compile_sysroot_missing_header">Android sysroot is missing a required header: %1$s</string>
   <string name="compile_sysroot_missing_libcpp_header">Android sysroot is missing the libc++ header: %1$s</string>
   <string name="compile_sysroot_missing_api_lib_dir">Android sysroot is missing the API %1$d library directory: %2$s. Adjust sysrootApiLevel or reinstall the sysroot.</string>
+  <string name="compile_sysroot_missing_static_libcpp">Android sysroot is missing the static libc++ runtime: %1$s. Reinstall or import a complete NDK Runtime.</string>
   <string name="compile_diag_trace_banner">[diag] clang trace: %1$s</string>
   <string name="compile_diag_trace_exit_code">[diag] clang trace exit code: %1$d</string>
   <string name="compile_diag_phase_compile_failed">%1$s Conclusion: compile stage (cc1) failed</string>

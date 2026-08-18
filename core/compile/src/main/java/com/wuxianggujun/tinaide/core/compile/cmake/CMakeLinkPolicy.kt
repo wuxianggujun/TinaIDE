@@ -1,5 +1,7 @@
 package com.wuxianggujun.tinaide.core.compile.cmake
 
+import com.wuxianggujun.tinaide.core.compile.AndroidCppRuntimeLinkage
+
 /**
  * CMake 依赖注入策略。
  *
@@ -29,6 +31,18 @@ internal object CMakeLinkPolicy {
 
     fun resolveAndroidStandardLibraries(projectLdLibs: String): String {
         return normalizeLibraries(sequenceOf(ANDROID_LOG_LIBRARY) + projectLdLibs.lineSequence())
+    }
+
+    /**
+     * Native command-line executables must carry their own libc++ implementation.
+     * Otherwise another app can load an older `libc++_shared.so` after the binary is copied.
+     */
+    fun resolveAndroidExecutableLinkerFlags(linkerFlags: String): String {
+        return AndroidCppRuntimeLinkage.appendToLinkerFlags(
+            linkerFlags = normalizeLibraries(linkerFlags.lineSequence()),
+            isCpp = true,
+            outputIsSharedLibrary = false,
+        )
     }
 
     /**

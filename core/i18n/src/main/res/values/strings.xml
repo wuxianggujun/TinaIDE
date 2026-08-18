@@ -2765,6 +2765,7 @@
   <string name="compile_sysroot_missing_header">Android sysroot 缺少关键头文件：%1$s</string>
   <string name="compile_sysroot_missing_libcpp_header">Android sysroot 缺少 libc++ 头文件：%1$s</string>
   <string name="compile_sysroot_missing_api_lib_dir">Android sysroot 缺少 API %1$d 库目录：%2$s。请调整 sysrootApiLevel 或重新安装 sysroot。</string>
+  <string name="compile_sysroot_missing_static_libcpp">Android sysroot 缺少静态 libc++ 运行库：%1$s。请重新安装或导入完整的 NDK Runtime。</string>
   <string name="compile_diag_trace_banner">[diag] clang 追踪: %1$s</string>
   <string name="compile_diag_trace_exit_code">[diag] clang 追踪退出码: %1$d</string>
   <string name="compile_diag_phase_compile_failed">%1$s 结论: 编译阶段（cc1）失败</string>

@@ -4,9 +4,9 @@ import android.content.Context
 import com.wuxianggujun.tinaide.core.linux.LinuxEnvironmentProvider
 import com.wuxianggujun.tinaide.core.linux.LinuxRunModePolicy
 import com.wuxianggujun.tinaide.core.lsp.CompileDatabaseProvider
-import com.wuxianggujun.tinaide.project.CppStandard
-import com.wuxianggujun.tinaide.project.ProjectMetadataStore
+import com.wuxianggujun.tinaide.project.ProjectCppStandardResolver
 import java.io.File
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -46,11 +46,18 @@ internal class LspCompileSetupCache(
         val compileCommandsDir: File,
     )
 
+    private data class PendingTask(
+        val revision: Long,
+        val deferred: Deferred<Setup?>,
+    )
+
     private val stateLock = Any()
     private val mutex = Mutex()
+    private val compileDatabaseWriteMutex = Mutex()
     private val cache = mutableMapOf<Key, Setup>()
-    private val tasks = mutableMapOf<Key, Deferred<Setup?>>()
+    private val tasks = mutableMapOf<Key, PendingTask>()
     private var provider: CompileDatabaseProvider? = null
+    private var revision: Long = 0L
 
     fun getProvider(context: Context): CompileDatabaseProvider = synchronized(stateLock) {
         provider ?: CompileDatabaseProvider(
@@ -61,6 +68,7 @@ internal class LspCompileSetupCache(
 
     fun clear() {
         synchronized(stateLock) {
+            revision += 1L
             cache.clear()
         }
     }
@@ -68,6 +76,7 @@ internal class LspCompileSetupCache(
     fun invalidateForProject(file: File, projectRootPath: String?) {
         val projectHint = resolveProjectHint(file, projectRootPath)
         synchronized(stateLock) {
+            revision += 1L
             cache.keys.removeAll { key -> key.projectHint == projectHint }
         }
     }
@@ -76,54 +85,92 @@ internal class LspCompileSetupCache(
         context: Context,
         file: File,
         projectRootPath: String?,
+        cppStandardOverride: String? = null,
+        forceRegenerateFallback: Boolean = false,
     ): Setup? {
         val startedAt = System.nanoTime()
         val compileProvider = getProvider(context)
-        val key = buildKey(file, projectRootPath, compileProvider)
-        synchronized(stateLock) {
+        val resolveRevision = synchronized(stateLock) { revision }
+        val key = withContext(Dispatchers.IO) {
+            buildKey(file, projectRootPath, compileProvider, cppStandardOverride)
+        }
+        val cachedSetup = synchronized(stateLock) {
+            if (revision != resolveRevision) {
+                throw CancellationException("Compile setup invalidated")
+            }
             cache[key]
-        }?.let { cached ->
-            if (isStillFresh(context, cached)) {
-                Timber.tag(TAG).d(
-                    "compile setup cache hit for %s (%s) in %dms",
-                    file.name,
-                    key.projectHint,
-                    elapsedMillis(startedAt),
-                )
-                return cached
+        }
+        cachedSetup?.let { cached ->
+            if (isStillFresh(context, cached, cppStandardOverride)) {
+                val stillCurrent = synchronized(stateLock) { revision == resolveRevision }
+                if (stillCurrent) {
+                    Timber.tag(TAG).d(
+                        "compile setup cache hit for %s (%s) in %dms",
+                        file.name,
+                        key.projectHint,
+                        elapsedMillis(startedAt),
+                    )
+                    return cached
+                }
             }
             Timber.tag(TAG).i(
-                "compile setup cache stale for %s (%s): package fingerprint changed, recomputing",
+                "compile setup cache stale for %s (%s): compile inputs changed, recomputing",
                 file.name,
                 key.projectHint,
             )
             synchronized(stateLock) {
-                if (cache[key] === cached) {
+                if (revision == resolveRevision && cache[key] === cached) {
                     cache.remove(key)
                 }
             }
         }
 
-        val task = mutex.withLock {
+        val pendingTask = mutex.withLock {
             synchronized(stateLock) {
                 cache[key]
             }?.let { cached -> return cached }
 
-            tasks[key]?.takeIf { it.isActive } ?: scope.async(Dispatchers.IO) {
-                val prepared = compileProvider.prepare(file, projectRootPath) ?: return@async null
-                val ensured = compileProvider.ensureWithResult(prepared) ?: return@async null
-                Setup(
-                    prepared = prepared,
-                    compileCommandsDir = ensured.compileCommandsDir,
-                )
-            }.also { deferred ->
-                synchronized(stateLock) { tasks[key] = deferred }
+            tasks[key]?.takeIf { task ->
+                task.revision == resolveRevision && task.deferred.isActive
+            } ?: PendingTask(
+                revision = resolveRevision,
+                deferred = scope.async(Dispatchers.IO) {
+                    compileDatabaseWriteMutex.withLock writeLock@{
+                        if (!isRevisionCurrent(resolveRevision)) return@writeLock null
+                        val prepared = compileProvider.prepare(
+                            file = file,
+                            projectRootPath = projectRootPath,
+                            cppStandardOverride = cppStandardOverride,
+                            forceRegenerateFallback = forceRegenerateFallback,
+                        ) ?: return@writeLock null
+                        val ensured = compileProvider.ensureWithResult(prepared) ?: return@writeLock null
+                        Setup(
+                            prepared = prepared,
+                            compileCommandsDir = ensured.compileCommandsDir,
+                        )
+                    }
+                },
+            ).also { task ->
+                synchronized(stateLock) { tasks[key] = task }
             }
         }
 
         return try {
-            task.await()?.also { setup ->
-                synchronized(stateLock) { cache[key] = setup }
+            val setup = pendingTask.deferred.await()
+            val stillCurrent = synchronized(stateLock) {
+                if (revision == resolveRevision) {
+                    if (setup != null) {
+                        cache[key] = setup
+                    }
+                    true
+                } else {
+                    false
+                }
+            }
+            if (!stillCurrent) {
+                throw CancellationException("Compile setup invalidated")
+            }
+            setup?.also {
                 Timber.tag(TAG).d(
                     "compile setup ready for %s (%s) in %dms",
                     file.name,
@@ -132,17 +179,40 @@ internal class LspCompileSetupCache(
                 )
             }
         } finally {
-            mutex.withLock {
-                synchronized(stateLock) {
-                    if (tasks[key] === task) {
-                        tasks.remove(key)
-                    }
+            synchronized(stateLock) {
+                if (tasks[key] === pendingTask) {
+                    tasks.remove(key)
                 }
             }
         }
     }
 
-    private suspend fun isStillFresh(context: Context, cached: Setup): Boolean = withContext(Dispatchers.IO) {
+    suspend fun prepareProvidedCompileCommandsForLsp(
+        context: Context,
+        sourceCompileCommandsFile: File,
+        projectRootPath: String?,
+        cppStandardOverride: String? = null,
+    ): File? {
+        val operationRevision = synchronized(stateLock) { revision }
+        val compileCommandsDir = withContext(Dispatchers.IO) {
+            compileDatabaseWriteMutex.withLock {
+                ensureRevisionCurrent(operationRevision)
+                getProvider(context).prepareProvidedCompileCommandsForLsp(
+                    sourceCompileCommandsFile = sourceCompileCommandsFile,
+                    projectRootPath = projectRootPath,
+                    cppStandardOverride = cppStandardOverride,
+                )
+            }
+        }
+        ensureRevisionCurrent(operationRevision)
+        return compileCommandsDir
+    }
+
+    private suspend fun isStillFresh(
+        context: Context,
+        cached: Setup,
+        cppStandardOverride: String?,
+    ): Boolean = withContext(Dispatchers.IO) {
         runCatching {
             val currentProvider = getProvider(context)
             val currentFingerprint = currentProvider.computePackageFingerprint(cached.prepared.workspaceRoot)
@@ -151,7 +221,10 @@ internal class LspCompileSetupCache(
                 currentRuntimeIdentity.toolchainId == cached.prepared.toolchainId &&
                 currentRuntimeIdentity.sysrootProfileId == cached.prepared.sysrootProfileId &&
                 currentRuntimeIdentity.sysrootApiLevel == cached.prepared.sysrootApiLevel &&
-                resolveCppStandardFlag(cached.prepared.workspaceRoot) == cached.prepared.desiredCppStandard.flag
+                resolveCppStandardFlag(
+                    cached.prepared.workspaceRoot,
+                    cppStandardOverride,
+                ) == cached.prepared.desiredCppStandardFlag
         }.getOrDefault(true)
     }
 
@@ -159,6 +232,7 @@ internal class LspCompileSetupCache(
         file: File,
         projectRootPath: String?,
         compileProvider: CompileDatabaseProvider,
+        cppStandardOverride: String?,
     ): Key {
         val workspaceRoot = resolveWorkspaceRoot(file, projectRootPath)
         val projectHint = resolveProjectHint(file, projectRootPath)
@@ -170,7 +244,7 @@ internal class LspCompileSetupCache(
             toolchainId = runtimeIdentity.toolchainId,
             sysrootProfileId = runtimeIdentity.sysrootProfileId,
             sysrootApiLevel = runtimeIdentity.sysrootApiLevel,
-            cppStandardFlag = resolveCppStandardFlag(workspaceRoot),
+            cppStandardFlag = resolveCppStandardFlag(workspaceRoot, cppStandardOverride),
         )
     }
 
@@ -202,10 +276,18 @@ internal class LspCompileSetupCache(
         return file.parentFile?.takeIf { it.isDirectory }
     }
 
-    private fun resolveCppStandardFlag(projectRoot: File?): String =
-        projectRoot
-            ?.let { root -> runCatching { ProjectMetadataStore.read(root)?.getCppStandard()?.flag }.getOrNull() }
-            ?: CppStandard.DEFAULT.flag
+    private fun resolveCppStandardFlag(projectRoot: File?, cppStandardOverride: String?): String =
+        ProjectCppStandardResolver.resolveFlag(projectRoot, cppStandardOverride)
+
+    private fun isRevisionCurrent(expectedRevision: Long): Boolean = synchronized(stateLock) {
+        revision == expectedRevision
+    }
+
+    private fun ensureRevisionCurrent(expectedRevision: Long) {
+        if (!isRevisionCurrent(expectedRevision)) {
+            throw CancellationException("Compile setup invalidated")
+        }
+    }
 
     private fun File.stablePath(): String = runCatching { canonicalPath }.getOrDefault(absolutePath)
 

@@ -81,7 +81,11 @@ class NativeMakeBuildStrategy(
         val sysrootApiLevel = options.sysrootApiLevel
         val sysrootProfileId = options.sysrootProfileId
 
-        NativeSysrootPreparer.ensureInstalled(context, sysrootProfileId)?.let { error ->
+        NativeSysrootPreparer.ensureInstalled(
+            context = context,
+            profileId = sysrootProfileId,
+            apiLevel = sysrootApiLevel,
+        )?.let { error ->
             options.onProgress?.invoke(error)
             return makeBuildError(error)
         }

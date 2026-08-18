@@ -50,6 +50,9 @@ class AndroidSysrootManager private constructor(
         private const val CUSTOM_PROFILE_PREFIX = "custom"
         private const val API_LEVEL_HEADER_PATH = "usr/include/android/api-level.h"
         private const val CXX_SHARED_LIBRARY_NAME = "libc++_shared.so"
+        private const val CXX_STATIC_LIBRARY_NAME = "libc++_static.a"
+        private const val CXX_ABI_LIBRARY_NAME = "libc++abi.a"
+        private const val CXX_API_LINKER_SCRIPT_NAME = "libc++.a"
 
         private fun readBuiltinManifestFromAssets(context: Context): BuiltinSysrootProfileManifest? = try {
             context.assets.open(SYSROOT_ASSET_MANIFEST).use { input ->
@@ -192,6 +195,29 @@ class AndroidSysrootManager private constructor(
 
     fun isInstalled(arch: Arch = Arch.current(), profileId: String? = null): Boolean =
         isValidSysrootRoot(getSysrootDir(arch, profileId), arch)
+
+    fun findMissingStaticCppRuntimeFile(
+        apiLevel: Int,
+        arch: Arch = Arch.current(),
+        profileId: String? = null,
+    ): File? {
+        val root = getSysrootDir(arch, profileId)
+        val includeDir = File(root, "usr/include")
+        val apiLevelHeader = File(root, API_LEVEL_HEADER_PATH)
+        val libDir = File(root, "usr/lib/${arch.triple}")
+        val apiLibDir = File(libDir, apiLevel.toString())
+        val cxxSharedLibrary = File(libDir, CXX_SHARED_LIBRARY_NAME)
+        if (!root.isDirectory ||
+            !includeDir.isDirectory ||
+            !apiLevelHeader.isFile ||
+            !libDir.isDirectory ||
+            !apiLibDir.isDirectory ||
+            !cxxSharedLibrary.isFile
+        ) {
+            return null
+        }
+        return requiredStaticCppRuntimeFiles(libDir, listOf(apiLevel)).firstOrNull { !it.isFile }
+    }
 
     suspend fun importFromFile(
         archiveFile: File,
@@ -607,11 +633,21 @@ class AndroidSysrootManager private constructor(
         val apiLevelHeader = File(root, API_LEVEL_HEADER_PATH)
         val libDir = File(root, "usr/lib/${arch.triple}")
         val cxxSharedLibrary = File(libDir, CXX_SHARED_LIBRARY_NAME)
+        val apiLevels = discoverApiLevels(root, arch)
         return includeDir.isDirectory &&
             apiLevelHeader.isFile &&
             libDir.isDirectory &&
             cxxSharedLibrary.isFile &&
-            discoverApiLevels(root, arch).isNotEmpty()
+            apiLevels.isNotEmpty() &&
+            requiredStaticCppRuntimeFiles(libDir, apiLevels).all { it.isFile }
+    }
+
+    private fun requiredStaticCppRuntimeFiles(libDir: File, apiLevels: List<Int>): List<File> = buildList {
+        add(File(libDir, CXX_STATIC_LIBRARY_NAME))
+        add(File(libDir, CXX_ABI_LIBRARY_NAME))
+        apiLevels.distinct().forEach { apiLevel ->
+            add(File(File(libDir, apiLevel.toString()), CXX_API_LINKER_SCRIPT_NAME))
+        }
     }
 
     private fun discoverApiLevels(root: File, arch: Arch): List<Int> {

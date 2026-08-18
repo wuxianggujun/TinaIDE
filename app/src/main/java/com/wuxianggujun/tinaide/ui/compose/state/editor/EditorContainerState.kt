@@ -102,6 +102,7 @@ class EditorContainerState(
     private val pluginThemeRegistry: PluginEditorThemeRegistry,
     private val projectSymbolIndexServiceProvider: () -> ProjectSymbolIndexService?,
     private val projectRootPathProvider: () -> String?,
+    private val cppStandardOverrideProvider: (File) -> String? = { null },
     private val fileWatchService: IFileWatchService? = null,
     private val linuxEnvironmentProvider: LinuxEnvironmentProvider = UnavailableLinuxEnvironmentProvider,
     private val lspPluginManager: LspPluginManager? = null,
@@ -130,6 +131,7 @@ class EditorContainerState(
     private val lspEditorManager = LspEditorManager(
         fileWatchService = fileWatchService,
         linuxEnvironmentProvider = linuxEnvironmentProvider,
+        cppStandardOverrideProvider = cppStandardOverrideProvider,
     )
     private val searchStateManager = SearchStateManager()
     private val tabManager = EditorTabManager(context, editorManager)
@@ -1667,6 +1669,17 @@ class EditorContainerState(
         if (revision <= lastHandledDependencyRevision) return
         lastHandledDependencyRevision = revision
 
+        refreshOpenCxxEditorsAfterCompileInputsChanged("Dependency revision=$revision")
+    }
+
+    /**
+     * 单文件运行配置中的 C++ 标准变化后，使 clangd 使用新的 `-std` 参数。
+     */
+    fun refreshOpenCxxEditorsForCompileConfigChange() {
+        refreshOpenCxxEditorsAfterCompileInputsChanged("Single-file C++ standard changed")
+    }
+
+    private fun refreshOpenCxxEditorsAfterCompileInputsChanged(reason: String) {
         // 先让编译数据库缓存失效：即使当前没有打开的 C/C++ 编辑器，也要清除内存中的
         // compile setup 缓存。否则在“项目开着 + 装包 + 当前无活跃 C/C++ 文件”时，缓存会残留，
         // 下次打开 C/C++ 文件时会绕过 compile_commands 的包指纹校验，导致头文件假错。
@@ -1679,12 +1692,12 @@ class EditorContainerState(
 
         if (refreshCandidates <= 0) {
             Timber.tag("EditorContainerState")
-                .i("Dependency revision=%d detected, no active C/C++ tab; invalidated compile setup cache only", revision)
+                .i("%s, no active C/C++ tab; invalidated compile setup cache only", reason)
             return
         }
         lspEditorManager.refreshLspConnection(context)
         Timber.tag("EditorContainerState")
-            .i("Dependency revision=%d detected, refreshed %d C/C++ tab(s)", revision, refreshCandidates)
+            .i("%s, refreshed %d C/C++ tab(s)", reason, refreshCandidates)
     }
 
     fun restoreFromManager() {
@@ -1776,6 +1789,7 @@ fun rememberEditorContainerState(
     pluginThemeRegistry: PluginEditorThemeRegistry,
     projectSymbolIndexServiceProvider: () -> ProjectSymbolIndexService?,
     projectRootPathProvider: () -> String?,
+    cppStandardOverrideProvider: (File) -> String? = { null },
     onLspDiagnosticsChanged: ((fileUri: String, diagnostics: List<Diagnostic>) -> Unit)? = null
 ): EditorContainerState {
     val context = LocalContext.current
@@ -1787,6 +1801,8 @@ fun rememberEditorContainerState(
         snippetManager,
         pluginThemeRegistry,
         projectSymbolIndexServiceProvider,
+        projectRootPathProvider,
+        cppStandardOverrideProvider,
         fileWatchService,
         linuxEnvironmentProvider,
         lspPluginManager,
@@ -1798,6 +1814,7 @@ fun rememberEditorContainerState(
             pluginThemeRegistry = pluginThemeRegistry,
             projectSymbolIndexServiceProvider = projectSymbolIndexServiceProvider,
             projectRootPathProvider = projectRootPathProvider,
+            cppStandardOverrideProvider = cppStandardOverrideProvider,
             fileWatchService = fileWatchService,
             linuxEnvironmentProvider = linuxEnvironmentProvider,
             lspPluginManager = lspPluginManager,

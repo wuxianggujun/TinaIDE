@@ -52,4 +52,37 @@ class CompileCommandsGeneratorPackageIncludeTest {
             tempDir.deleteRecursively()
         }
     }
+
+    @Test
+    fun `generate preserves string cpp standard flag`() {
+        val tempDir = createTempDirectory(prefix = "compile-commands-standard-").toFile()
+        try {
+            val sourceFile = File(tempDir, "main.cpp").apply {
+                writeText("int main() { return 0; }\n")
+            }
+            val outputFile = File(tempDir, "build/compile_commands.json")
+
+            CompileCommandsGenerator.generate(
+                projectPath = tempDir.absolutePath,
+                sysrootDir = null,
+                sourceFiles = listOf(sourceFile.absolutePath),
+                includeDirs = emptyList(),
+                cppStandardFlag = "gnu++26",
+                extraCppFlags = listOf("-Wall", "-std=c++11"),
+                outputFileOverride = outputFile,
+            )
+
+            val arguments = Json.parseToJsonElement(outputFile.readText())
+                .jsonArray
+                .single()
+                .jsonObject["arguments"]!!
+                .jsonArray
+                .map { it.jsonPrimitive.contentOrNull.orEmpty() }
+
+            assertThat(arguments).contains("-std=gnu++26")
+            assertThat(arguments.filter { it.startsWith("-std=") }.last()).isEqualTo("-std=gnu++26")
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
 }

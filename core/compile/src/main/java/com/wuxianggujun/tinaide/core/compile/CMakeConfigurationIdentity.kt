@@ -39,11 +39,11 @@ data class CMakeConfigurationIdentity(
 
     companion object {
         /**
-         * 链接策略版本。修复共享库 $ORIGIN runpath 的 shell 转义后递增，
-         * 强制旧构建目录重新 configure，刷新缓存里损坏的 CMAKE_SHARED_LINKER_FLAGS。
+         * 链接策略版本。每次修改 IDE 注入的 CMake linker flags 都必须递增，
+         * 强制旧构建目录重新 configure 并刷新缓存。
          */
         const val CMAKE_LINK_POLICY_VERSION_KEY = "TINA_LINK_POLICY_VERSION"
-        const val LINK_POLICY_VERSION = "2"
+        const val LINK_POLICY_VERSION = "3"
         const val CMAKE_RUN_MODE_KEY = "TINA_RUN_MODE"
         const val CMAKE_COMPILER_TYPE_KEY = "TINA_COMPILER_TYPE"
         const val CMAKE_TOOLCHAIN_ID_KEY = "TINA_TOOLCHAIN_ID"
