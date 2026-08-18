@@ -1,0 +1,131 @@
+name: Build SDL2 Registry Package
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - dev
+    paths:
+      - '.github/workflows/sdl2-package-build.yml'
+      - 'docker/tinaide-pkg/Dockerfile'
+      - 'docker/tinaide-pkg/build.sh'
+      - 'docker/tinaide-pkg/build-common.sh'
+      - 'docker/tinaide-pkg/libs/build-sdl2.sh'
+      - 'docker/tinaide-pkg/package-sdl2.sh'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sdl2-registry-package-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      IMAGE_NAME: tinaide-pkg-builder:sdl2-ci
+      SOURCE_VOLUME: tinaide-pkg-source-${{ github.run_id }}-${{ github.run_attempt }}
+      PACKAGE_VERSION: 2.32.10.2
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Build package image
+        run: docker build --tag "$IMAGE_NAME" docker/tinaide-pkg
+
+      - name: Build SDL2 for supported ABIs
+        run: |
+          set -euo pipefail
+          output_dir="$GITHUB_WORKSPACE/docker/tinaide-pkg/output"
+          mkdir -p "$output_dir"
+          docker volume create "$SOURCE_VOLUME" >/dev/null
+
+          for abi in arm64-v8a x86_64; do
+            docker run --rm \
+              --volume "$SOURCE_VOLUME:/build/src" \
+              --volume "$output_dir:/output" \
+              "$IMAGE_NAME" \
+              /build/build.sh sdl2 "$abi" shared
+          done
+
+      - name: Package Registry artifacts
+        run: bash docker/tinaide-pkg/package-sdl2.sh "arm64-v8a x86_64"
+
+      - name: Verify package metadata and JNI exports
+        shell: python
+        run: |
+          import hashlib
+          import json
+          import pathlib
+          import tarfile
+
+          package_version = "${{ env.PACKAGE_VERSION }}"
+          package_dir = pathlib.Path("docker/tinaide-pkg/output/registry/sdl2") / package_version
+          archives = {
+              "sdl2.tar.xz": {"arm64-v8a", "x86_64"},
+              "sdl2-arm64-v8a.tar.xz": {"arm64-v8a"},
+              "sdl2-x86_64.tar.xz": {"x86_64"},
+          }
+          callbacks = (
+              "HIDDeviceRegisterCallback",
+              "HIDDeviceReleaseCallback",
+              "HIDDeviceConnected",
+              "HIDDeviceOpenPending",
+              "HIDDeviceOpenResult",
+              "HIDDeviceDisconnected",
+              "HIDDeviceInputReport",
+              "HIDDeviceFeatureReport",
+          )
+
+          for archive_name, expected_abis in archives.items():
+              archive_path = package_dir / archive_name
+              assert archive_path.is_file(), f"missing archive: {archive_path}"
+              checksum_path = archive_path.with_suffix(archive_path.suffix + ".sha256")
+              assert checksum_path.is_file(), f"missing checksum: {checksum_path}"
+              expected_checksum = checksum_path.read_text(encoding="utf-8").split()[0]
+              actual_checksum = hashlib.sha256(archive_path.read_bytes()).hexdigest()
+              assert actual_checksum == expected_checksum, f"checksum mismatch: {archive_name}"
+
+              with tarfile.open(archive_path, mode="r:xz") as archive:
+                  members = {member.name.lstrip("./"): member for member in archive.getmembers()}
+                  metadata = json.load(archive.extractfile(members["package.json"]))
+                  assert metadata["version"] == package_version
+                  assert metadata["packageRevision"] == 2
+                  assert metadata["upstreamVersion"] == "2.32.10"
+                  assert set(metadata["abis"]) == expected_abis
+
+                  library_abis = {
+                      name.split("/")[1]
+                      for name in members
+                      if name.startswith("lib/") and name.endswith("/libSDL2.so")
+                  }
+                  assert library_abis == expected_abis, (
+                      f"unexpected ABI payload in {archive_name}: {library_abis}"
+                  )
+                  for abi in expected_abis:
+                      library = archive.extractfile(members[f"lib/{abi}/libSDL2.so"]).read()
+                      assert b"Java_org_libsdl_app_HIDDeviceManager_" not in library
+                      for callback in callbacks:
+                          symbol = (
+                              "Java_org_libsdl2_app_HIDDeviceManager_" + callback
+                          ).encode("ascii")
+                          assert symbol in library, f"missing {callback} for {abi}"
+
+              print(f"verified {archive_name}: {actual_checksum}")
+
+      - name: Upload SDL2 Registry package
+        uses: actions/upload-artifact@v7
+        with:
+          name: sdl2-registry-${{ env.PACKAGE_VERSION }}
+          path: docker/tinaide-pkg/output/registry/sdl2/${{ env.PACKAGE_VERSION }}/*
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Cleanup Docker resources
+        if: ${{ always() }}
+        run: |
+          docker volume rm "$SOURCE_VOLUME" >/dev/null 2>&1 || true
+          docker image rm "$IMAGE_NAME" >/dev/null 2>&1 || true

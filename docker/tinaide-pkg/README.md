@@ -125,7 +125,7 @@ docker cp tinaide-toolchain-builder:/output/sdl3/arm64-v8a/sdl3-arm64-v8a-shared
 | curl | 8.6.0 | openssl (可选) | HTTP 客户端 |
 | libssh2 | 1.11.0 | openssl, zlib | SSH2 协议 |
 | libgit2 | 1.7.2 | openssl, libssh2, zlib | Git 操作库 |
-| sdl2 | 2.32.10 | 无 | SDL2 Android runtime（TinaIDE JNI 包名） |
+| sdl2 | 2.32.10.2（上游 2.32.10） | 无 | SDL2 Android runtime（TinaIDE JNI 包名） |
 | sdl2-image | 2.8.12 | sdl2 | SDL2 图像加载库（内建解码器） |
 | sdl2-ttf | 2.24.0 | sdl2 | SDL2 TrueType 字体渲染库（内置 FreeType） |
 | sdl2-mixer | 2.8.2 | sdl2 | SDL2 音频混音库（内建常用解码器） |
@@ -324,14 +324,16 @@ SDL2 必须使用本目录的构建脚本，不能直接发布官方 Android `.s
 ```
 
 ```bash
-# 合并 ABI，生成 sdl2-2.32.10-android.tar.xz 及 SHA-256
+# 合并 ABI，生成 Registry 包版本 2.32.10.2 的通用及 ABI 独立归档
 bash ./package-sdl2.sh "arm64-v8a x86_64"
 ```
 
 最终包 ID 固定为 `sdl2`，包含 `include/SDL2`、`lib/<abi>/libSDL2.so`、
 `lib/cmake/SDL2`、`pkgconfig/sdl2.pc`、`LICENSE.txt` 与 `package.json`。
 Java glue、头文件和 native 库必须保持同一 SDL release；当前固定为
-`release-2.32.10` / `5d249570393f7a37e037abf22cd6012a4cc56a71`。
+`release-2.32.10` / `5d249570393f7a37e037abf22cd6012a4cc56a71`。Registry
+包版本为 `2.32.10.2`，用于让已安装旧 `2.32.10` 包的客户端识别 HID JNI
+重定位修复；归档内 `upstreamVersion` 仍准确记录为 `2.32.10`。
 
 ## SDL3 完整使用示例
 

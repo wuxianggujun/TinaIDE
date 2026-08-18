@@ -438,10 +438,10 @@ SDL2 在仓库中的逻辑包 ID 固定为 `sdl2`。推荐发布字段如下：
   "description": "SDL2 Android runtime for TinaIDE",
   "category": "library",
   "android": {
-    "version": "2.32.10",
+    "version": "2.32.10.2",
     "artifact_type": "shared",
     "install_type": "download",
-    "download_url": "packages/sdl2/2.32.10/sdl2.tar.xz",
+    "download_url": "packages/sdl2/2.32.10.2/sdl2.tar.xz",
     "checksum": "sha256:<sha256>",
     "abi": ["arm64-v8a", "x86_64"],
     "is_latest": true
@@ -465,6 +465,10 @@ pkgconfig/sdl2.pc
 `release-2.32.10`，并把 SDL2 native 侧 JNI 类路径同步重定位为
 `org/libsdl2/app`；直接上传官方 `org/libsdl/app` 版本会与 APK 内的 SDL3
 Java glue 冲突，不能作为 TinaIDE SDL2 runtime 发布。
+
+Registry 包版本 `2.32.10.2` 对应上游 SDL `2.32.10`，用于发布
+`packageRevision=2` 的 HID JNI 重定位修复，并确保已安装 `2.32.10` 的客户端能
+按版本比较发现更新；不得覆盖历史 `packages/sdl2/2.32.10/` 制品。
 
 ### 依赖包 v1 兼容索引（旧客户端）
 

@@ -59,7 +59,10 @@ class SdlAndroidBridgeContractTest {
         assertThat(buildScript).contains("src/hidapi/android/hid.cpp")
         assertThat(buildScript).contains("Java_org_libsdl2_app_HIDDeviceManager_")
         assertThat(packageScript).contains("Java_org_libsdl2_app_HIDDeviceManager_")
-        assertThat(packageScript).contains("\"packageRevision\": 2")
+        assertThat(packageScript).contains("SDL2_PACKAGE_VERSION=\"2.32.10.2\"")
+        assertThat(packageScript).contains("SDL2_PACKAGE_REVISION=2")
+        assertThat(packageScript).contains("\"packageRevision\": \${SDL2_PACKAGE_REVISION}")
+        assertThat(packageScript).contains("Refusing to overwrite immutable SDL2 package")
     }
 
     private fun parseXml(file: File) = DocumentBuilderFactory.newInstance().apply {

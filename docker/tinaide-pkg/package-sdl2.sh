@@ -7,6 +7,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUTPUT_DIR="${SCRIPT_DIR}/output"
 SDL2_VERSION="2.32.10"
+SDL2_PACKAGE_VERSION="2.32.10.2"
+SDL2_PACKAGE_REVISION=2
 SDL2_TAG="release-${SDL2_VERSION}"
 SDL2_COMMIT="5d249570393f7a37e037abf22cd6012a4cc56a71"
 SDL2_HID_JNI_SYMBOL_PREFIX="Java_org_libsdl2_app_HIDDeviceManager_"
@@ -145,8 +147,8 @@ write_package_metadata() {
 {
   "id": "sdl2",
   "name": "SDL2",
-  "version": "${SDL2_VERSION}",
-  "packageRevision": 2,
+  "version": "${SDL2_PACKAGE_VERSION}",
+  "packageRevision": ${SDL2_PACKAGE_REVISION},
   "upstreamName": "SDL",
   "upstreamVersion": "${SDL2_VERSION}",
   "upstreamTag": "${SDL2_TAG}",
@@ -171,8 +173,8 @@ EOF
 
     cat > "$package_root/BUILD-INFO.txt" <<EOF
 package_id=sdl2
-package_version=${SDL2_VERSION}
-package_revision=2
+package_version=${SDL2_PACKAGE_VERSION}
+package_revision=${SDL2_PACKAGE_REVISION}
 artifact_type=shared
 upstream_tag=${SDL2_TAG}
 upstream_commit=${SDL2_COMMIT}
@@ -183,7 +185,16 @@ android_jni_package=org/libsdl2/app
 EOF
 }
 
-FINAL_OUTPUT_DIR="${OUTPUT_DIR}/registry/sdl2/${SDL2_VERSION}"
+FINAL_OUTPUT_DIR="${OUTPUT_DIR}/registry/sdl2/${SDL2_PACKAGE_VERSION}"
+for EXISTING_OUTPUT in \
+    "${FINAL_OUTPUT_DIR}/sdl2.tar.xz" \
+    "${FINAL_OUTPUT_DIR}/sdl2-arm64-v8a.tar.xz" \
+    "${FINAL_OUTPUT_DIR}/sdl2-x86_64.tar.xz"; do
+    if [ -e "$EXISTING_OUTPUT" ]; then
+        echo "[ERROR] Refusing to overwrite immutable SDL2 package: ${EXISTING_OUTPUT}" >&2
+        exit 1
+    fi
+done
 mkdir -p "$FINAL_OUTPUT_DIR"
 ABI_JSON="$(printf '"%s",' "${ABIS[@]}" | sed 's/,$//')"
 ABI_LIST="$(IFS=,; echo "${ABIS[*]}")"
