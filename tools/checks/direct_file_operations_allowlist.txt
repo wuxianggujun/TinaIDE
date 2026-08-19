@@ -43,7 +43,6 @@ core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/BundledPackag
 core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/PackageManagerImpl.kt | deleteRecursively=1 | Package install path cleanup.
 core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/backend/DownloadPackageBackend.kt | deleteRecursively=3,delete=3 | Package download and extraction cleanup.
 core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/cache/PackageCacheManager.kt | delete=4 | Package cache cleanup.
-core/editor-lsp/src/main/java/com/wuxianggujun/tinaide/core/editorlsp/LspEditorManager.kt | delete=1 | LSP metadata cache cleanup.
 core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/download/ResumableDownloader.kt | renameTo=1,delete=7 | Download temp file promotion, integrity-failure rejection, and cleanup.
 core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/BundledPluginsInstaller.kt | deleteRecursively=1,delete=1 | Bundled plugin install staging cleanup.
 core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/PluginLogManager.kt | delete=2 | Plugin log cleanup.
