@@ -21,6 +21,7 @@ dependencies {
     implementation(project.dependencies.project(":core:designsystem"))
     implementation(project.dependencies.project(":core:i18n"))
     implementation(project.dependencies.project(":core:model"))
+    implementation(project.dependencies.project(":core:packages"))
     implementation(project.dependencies.project(":core:plugin"))
     implementation(project.dependencies.project(":core:project"))
     implementation(project.dependencies.project(":core:storage"))

@@ -13,6 +13,7 @@ data class CMakeConfigurationIdentity(
     val runMode: String,
     val compilerType: String,
     val toolchainId: String,
+    val androidAbi: String,
     val sysrootProfileId: String,
     val sysrootApiLevel: String,
     val cppStandard: String,
@@ -27,6 +28,7 @@ data class CMakeConfigurationIdentity(
         CMAKE_RUN_MODE_KEY to runMode,
         CMAKE_COMPILER_TYPE_KEY to compilerType,
         CMAKE_TOOLCHAIN_ID_KEY to toolchainId,
+        CMAKE_ANDROID_ABI_KEY to androidAbi,
         NativeRuntimeIdentity.CMAKE_SYSROOT_PROFILE_ID_KEY to sysrootProfileId,
         NativeRuntimeIdentity.CMAKE_SYSROOT_API_LEVEL_KEY to sysrootApiLevel,
         CMAKE_CPP_STANDARD_KEY to cppStandard,
@@ -47,6 +49,7 @@ data class CMakeConfigurationIdentity(
         const val CMAKE_RUN_MODE_KEY = "TINA_RUN_MODE"
         const val CMAKE_COMPILER_TYPE_KEY = "TINA_COMPILER_TYPE"
         const val CMAKE_TOOLCHAIN_ID_KEY = "TINA_TOOLCHAIN_ID"
+        const val CMAKE_ANDROID_ABI_KEY = "TINA_ANDROID_ABI"
         const val CMAKE_CPP_STANDARD_KEY = "TINA_CPP_STANDARD"
         const val CMAKE_NATIVE_C_FLAGS_KEY = "TINA_NATIVE_C_FLAGS"
         const val CMAKE_NATIVE_CPP_FLAGS_KEY = "TINA_NATIVE_CPP_FLAGS"
@@ -57,12 +60,13 @@ data class CMakeConfigurationIdentity(
         private const val ACTIVE_TOOLCHAIN_ID = "<active>"
         private const val PROOT_TOOLCHAIN_ID = "<proot>"
 
-        fun from(options: BuildOptions): CMakeConfigurationIdentity {
+        fun from(options: BuildOptions, androidAbi: String = ""): CMakeConfigurationIdentity {
             val isNative = options.resolvedRunMode == LinuxRunModePolicy.RunMode.NATIVE
             return create(
                 runMode = options.resolvedRunMode.name,
                 compilerType = options.compilerType.name,
                 toolchainId = cacheToolchainId(options.toolchainId, isNative),
+                androidAbi = if (isNative) androidAbi else "",
                 sysrootProfileId = NativeRuntimeIdentity.profileIdForCMake(options.sysrootProfileId),
                 sysrootApiLevel = options.sysrootApiLevel.toString(),
                 cppStandard = options.cppStandard,
@@ -78,6 +82,7 @@ data class CMakeConfigurationIdentity(
             runMode: String,
             compilerType: String,
             toolchainId: String?,
+            androidAbi: String,
             sysrootProfileId: String?,
             sysrootApiLevel: Int,
             cppStandard: String?,
@@ -90,6 +95,7 @@ data class CMakeConfigurationIdentity(
             runMode = runMode,
             compilerType = compilerType,
             toolchainId = toolchainId,
+            androidAbi = androidAbi,
             sysrootProfileId = NativeRuntimeIdentity.profileIdForCMake(sysrootProfileId),
             sysrootApiLevel = sysrootApiLevel.toString(),
             cppStandard = cppStandard,
@@ -109,6 +115,7 @@ data class CMakeConfigurationIdentity(
             runMode: String,
             compilerType: String,
             toolchainId: String?,
+            androidAbi: String,
             sysrootProfileId: String,
             sysrootApiLevel: String,
             cppStandard: String?,
@@ -121,6 +128,7 @@ data class CMakeConfigurationIdentity(
             runMode = normalizeScalar(runMode),
             compilerType = normalizeScalar(compilerType),
             toolchainId = normalizeScalar(toolchainId),
+            androidAbi = normalizeScalar(androidAbi),
             sysrootProfileId = normalizeScalar(sysrootProfileId),
             sysrootApiLevel = normalizeScalar(sysrootApiLevel),
             cppStandard = normalizeScalar(cppStandard),

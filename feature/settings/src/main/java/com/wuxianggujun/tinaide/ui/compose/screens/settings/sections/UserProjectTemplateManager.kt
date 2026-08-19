@@ -3,9 +3,11 @@ package com.wuxianggujun.tinaide.ui.compose.screens.settings.sections
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import com.wuxianggujun.tinaide.core.common.io.ArchiveExtractionBudget
 import com.wuxianggujun.tinaide.project.ProjectBuildSystem
 import com.wuxianggujun.tinaide.project.ProjectLanguage
 import com.wuxianggujun.tinaide.project.ProjectTemplateMetadata
+import com.wuxianggujun.tinaide.project.ProjectTemplateArchivePolicy
 import com.wuxianggujun.tinaide.project.ProjectTemplateMetadataReader
 import com.wuxianggujun.tinaide.storage.ProjectPaths
 import java.io.File
@@ -13,7 +15,6 @@ import java.io.InputStream
 import java.io.OutputStream
 import java.util.Locale
 import java.util.zip.ZipEntry
-import java.util.zip.ZipFile
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 import kotlinx.coroutines.Dispatchers
@@ -115,8 +116,8 @@ internal object UserProjectTemplateManager {
         val tempFile = File(root, ".${target.name}.${System.nanoTime()}.tmp")
 
         return try {
-            tempFile.outputStream().use { output -> input.copyTo(output) }
-            runCatching { ZipFile(tempFile).use { } }
+            tempFile.outputStream().use { output -> copyArchiveWithLimit(input, output) }
+            runCatching { ProjectTemplateArchivePolicy.validate(tempFile) }
                 .onFailure { throw UserProjectTemplateException(UserProjectTemplateFailure.INVALID_ZIP, it) }
 
             if (!tempFile.renameTo(target)) {
@@ -317,14 +318,17 @@ internal object UserProjectTemplateManager {
         target: File,
         metadata: UserProjectTemplateMetadataUpdate,
     ) {
+        ProjectTemplateArchivePolicy.validate(source)
         val metadataBytes = metadata.toMetadataBytes()
         val copiedEntryNames = linkedSetOf<String>()
+        val budget = ArchiveExtractionBudget(ProjectTemplateArchivePolicy.limits)
 
         ZipInputStream(source.inputStream().buffered()).use { input ->
             ZipOutputStream(target.outputStream().buffered()).use { output ->
                 var entry = input.nextEntry
                 while (entry != null) {
                     val entryName = entry.name
+                    budget.beginEntry(entryName, entry.size)
                     if (!ProjectTemplateMetadataReader.isMetadataEntry(entryName) &&
                         copiedEntryNames.add(entryName)
                     ) {
@@ -334,9 +338,11 @@ internal object UserProjectTemplateManager {
                         }
                         output.putNextEntry(nextEntry)
                         if (!entry.isDirectory) {
-                            input.copyTo(output)
+                            budget.copyEntry(input, output, entryName)
                         }
                         output.closeEntry()
+                    } else if (!entry.isDirectory) {
+                        budget.copyEntry(input, DISCARDING_OUTPUT, entryName)
                     }
                     input.closeEntry()
                     entry = input.nextEntry
@@ -350,8 +356,22 @@ internal object UserProjectTemplateManager {
             }
         }
 
-        runCatching { ZipFile(target).use { } }
+        runCatching { ProjectTemplateArchivePolicy.validate(target) }
             .onFailure { throw UserProjectTemplateException(UserProjectTemplateFailure.METADATA_UPDATE_FAILED, it) }
+    }
+
+    private fun copyArchiveWithLimit(input: InputStream, output: OutputStream) {
+        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        var copied = 0L
+        while (true) {
+            val count = input.read(buffer)
+            if (count < 0) break
+            copied += count.toLong()
+            if (copied > ProjectTemplateArchivePolicy.limits.maxArchiveBytes) {
+                throw UserProjectTemplateException(UserProjectTemplateFailure.INVALID_ZIP)
+            }
+            output.write(buffer, 0, count)
+        }
     }
 
     private fun replaceTemplateFile(source: File, replacement: File) {
@@ -370,9 +390,15 @@ internal object UserProjectTemplateManager {
             backup.delete()
         } catch (error: Throwable) {
             if (source.exists()) {
-                source.delete()
+                runCatching {
+                    check(source.delete()) { "Failed to remove incomplete template replacement" }
+                }.onFailure(error::addSuppressed)
             }
-            backup.renameTo(source)
+            if (!source.exists()) {
+                runCatching {
+                    check(backup.renameTo(source)) { "Failed to restore template metadata backup" }
+                }.onFailure(error::addSuppressed)
+            }
             throw error
         }
     }
@@ -465,5 +491,10 @@ internal object UserProjectTemplateManager {
         val rootPath = root.path.trimEnd(File.separatorChar)
         val targetPath = path
         return targetPath == rootPath || targetPath.startsWith(rootPath + File.separator)
+    }
+
+    private val DISCARDING_OUTPUT = object : OutputStream() {
+        override fun write(value: Int) = Unit
+        override fun write(buffer: ByteArray, offset: Int, length: Int) = Unit
     }
 }

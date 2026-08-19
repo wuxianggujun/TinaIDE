@@ -169,6 +169,7 @@ class CMakeBuildExecutor(
             runMode = "PROOT",
             compilerType = options.compilerType.name,
             toolchainId = CMakeConfigurationIdentity.cacheToolchainId(null, isNative = false),
+            androidAbi = "",
             sysrootProfileId = runtimeIdentity.cmakeProfileId,
             sysrootApiLevel = runtimeIdentity.sysrootApiLevel,
             cppStandard = options.cppStandard,

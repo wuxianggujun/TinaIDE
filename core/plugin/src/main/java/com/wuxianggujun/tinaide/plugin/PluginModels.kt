@@ -165,7 +165,8 @@ data class PluginProjectTemplate(
     val primaryLanguage: String = "CPP",
     val isNdkTemplate: Boolean = false,
     val defaultRunTargetName: String? = null,
-    val defaultSdlTargetName: String? = null
+    val defaultSdlTargetName: String? = null,
+    val requiredPackages: List<String> = emptyList(),
 )
 
 @Serializable

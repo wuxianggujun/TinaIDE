@@ -1,12 +1,14 @@
 package com.wuxianggujun.tinaide.plugin
 
 import android.content.Context
+import com.wuxianggujun.tinaide.core.common.registry.RegistryPackageId
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.core.serialization.JsonSerializer
 import com.wuxianggujun.tinaide.plugin.lsp.LspServerCommandPolicy
 import com.wuxianggujun.tinaide.plugin.script.PluginPermission
 import com.wuxianggujun.tinaide.project.ProjectBuildSystem
+import com.wuxianggujun.tinaide.project.ProjectTemplateArchivePolicy
 import java.io.File
 
 internal object PluginManifestValidator {
@@ -82,20 +84,49 @@ internal object PluginManifestValidator {
             }
         }
 
-        manifest.contributions?.projectTemplates?.forEach { template ->
+        val projectTemplates = manifest.contributions?.projectTemplates.orEmpty()
+        val duplicateTemplateIds = projectTemplates.groupingBy { it.id }.eachCount().filterValues { it > 1 }.keys
+        require(duplicateTemplateIds.isEmpty()) {
+            Strings.plugin_error_project_template_duplicate_id.strOr(
+                context,
+                duplicateTemplateIds.joinToString(", "),
+            )
+        }
+        projectTemplates.forEach { template ->
             require(template.id.isNotBlank()) { Strings.plugin_error_id_empty.strOr(context) }
             require(template.name.isNotBlank()) { Strings.plugin_error_name_empty.strOr(context) }
             require(isSafePluginRelativePath(template.templatePath)) {
                 Strings.plugin_error_project_template_path_invalid.strOr(context, template.templatePath)
             }
-            require(File(pluginDir, template.templatePath).exists()) {
+            val templateFile = File(pluginDir, template.templatePath)
+            require(templateFile.isFile) {
                 Strings.plugin_error_project_template_file_not_exist.strOr(context, template.templatePath)
             }
+            runCatching { ProjectTemplateArchivePolicy.validate(templateFile) }
+                .getOrElse { error ->
+                    throw IllegalArgumentException(
+                        Strings.plugin_error_project_template_archive_invalid.strOr(
+                            context,
+                            template.templatePath,
+                        ),
+                        error,
+                    )
+                }
             require(parseProjectBuildSystem(template.buildSystem) != null) {
                 Strings.plugin_error_project_template_build_system_invalid.strOr(
                     context,
                     template.buildSystem
                 )
+            }
+            val invalidRequiredPackages = template.requiredPackages.filterNot(RegistryPackageId::isValid)
+            require(invalidRequiredPackages.isEmpty()) {
+                Strings.plugin_error_project_template_required_package_invalid.strOr(
+                    context,
+                    invalidRequiredPackages.joinToString(", "),
+                )
+            }
+            require(template.requiredPackages.distinct().size == template.requiredPackages.size) {
+                Strings.plugin_error_project_template_required_package_duplicate.strOr(context)
             }
         }
 

@@ -49,6 +49,7 @@ SDL2、SDL3 与 NativeActivity Activity 都通过 `GraphicalRuntimeActivityHost`
   "id": "friend.game.engine.starter",
   "name": "Friend Game Engine Starter",
   "version": "1.0.0",
+  "minAppVersion": "0.18.20",
   "type": "config",
   "contributions": {
     "projectTemplates": [
@@ -58,7 +59,8 @@ SDL2、SDL3 与 NativeActivity Activity 都通过 `GraphicalRuntimeActivityHost`
         "description": "Create an SDL3 game project powered by Friend Engine.",
         "templatePath": "templates/friend-engine-sdl3.zip",
         "buildSystem": "cmake",
-        "primaryLanguage": "CPP"
+        "primaryLanguage": "CPP",
+        "requiredPackages": ["sdl3"]
       }
     ]
   }
@@ -116,6 +118,10 @@ find_package(raylib CONFIG REQUIRED)
 add_library(main SHARED src/main.c)
 target_link_libraries(main PRIVATE raylib::raylib)
 ```
+
+`requiredPackages` 是模板级 Android Registry 包 ID 列表。新建向导会在创建目录前检查这些包；缺失时停止创建并打开包管理器。依赖必须按每个模板分别声明，不能用插件级依赖代替，因为同一插件可以贡献多个依赖不同的模板。
+
+首次使用 `requiredPackages` 的插件版本应同时设置支持该字段的 `minAppVersion`。当前最低版本为 `0.18.20`；旧宿主会继续获得插件的历史兼容版本，不会安装一个无法执行创建前依赖检查的新版本。
 
 `src/main.c` 保持普通 `int main(void)`，不要包含 SDL 的 main 重定向头，也不要定义 `SDL_main`。旧版 run config 中误设为 `SDL` 的 raylib 项目会在 schema 7 加载时迁移到 `NATIVE_ACTIVITY`。
 

@@ -1,6 +1,7 @@
 package com.wuxianggujun.tinaide.core.compile.cmake
 
 import android.content.Context
+import android.os.Build
 import com.wuxianggujun.tinaide.core.compile.AndroidLinkerCompatibilityFlags
 import com.wuxianggujun.tinaide.core.compile.BuildDiagnosticParser
 import com.wuxianggujun.tinaide.core.compile.BuildProcessRunner
@@ -20,6 +21,7 @@ import com.wuxianggujun.tinaide.core.i18n.str
 import com.wuxianggujun.tinaide.core.ndk.AndroidNativeToolchainManager
 import com.wuxianggujun.tinaide.core.ndk.AndroidSysrootManager
 import com.wuxianggujun.tinaide.core.packages.InstalledPackagePathResolver
+import com.wuxianggujun.tinaide.core.packages.PackageAbiCompatibility
 import com.wuxianggujun.tinaide.core.util.AndroidSystemLinker
 import com.wuxianggujun.tinaide.core.util.DiagnosticLogFormatter
 import com.wuxianggujun.tinaide.core.util.NativeExecutableRunner
@@ -552,6 +554,12 @@ class NativeCMakeBuildExecutor(
             )
         }
 
+        internal fun buildAndroidAbiCMakeArgument(androidAbi: String): String {
+            val normalizedAbi = androidAbi.trim()
+            require(normalizedAbi.isNotEmpty()) { "Android ABI must not be blank" }
+            return "-DANDROID_ABI=$normalizedAbi"
+        }
+
         internal fun buildCMakeExtraEnvironment(
             packageEnvironment: Map<String, String>,
             traceToolchainShim: Boolean
@@ -853,6 +861,10 @@ class NativeCMakeBuildExecutor(
         val packageEnvironment = buildCompilePackageEnvironment(packagePaths)
 
         val arch = AndroidSysrootManager.Companion.Arch.current()
+        val androidAbi = PackageAbiCompatibility.currentAppAbi(
+            nativeLibraryDir = nativeLibDir,
+            supportedAbis = Build.SUPPORTED_ABIS,
+        )
         val sysrootApiLevel = options.sysrootApiLevel
         val runtimeIdentity = NativeRuntimeIdentity(
             sysrootProfileId = options.sysrootProfileId,
@@ -862,6 +874,7 @@ class NativeCMakeBuildExecutor(
             runMode = "NATIVE",
             compilerType = options.compilerType.name,
             toolchainId = CMakeConfigurationIdentity.cacheToolchainId(options.toolchainId, isNative = true),
+            androidAbi = androidAbi,
             sysrootProfileId = runtimeIdentity.cmakeProfileId,
             sysrootApiLevel = runtimeIdentity.sysrootApiLevel,
             cppStandard = options.cppStandard,
@@ -1008,6 +1021,8 @@ class NativeCMakeBuildExecutor(
             // 显式指定系统版本，避免 CMake 在 Android 主机上回退读取 $PREFIX/include/android/api-level.h
             // 导致出现 "/include/android/api-level.h" 路径错误。
             add("-DCMAKE_SYSTEM_VERSION=$sysrootApiLevel")
+            // Registry 原生包通过 lib/<ANDROID_ABI> 选择当前 APK 对应的库目录。
+            add(buildAndroidAbiCMakeArgument(androidAbi))
             add("-DCMAKE_C_COMPILER=${cmakeCCompiler.compiler}")
             cmakeCCompiler.arg1?.let { add("-DCMAKE_C_COMPILER_ARG1=$it") }
             add("-DCMAKE_CXX_COMPILER=${cmakeCxxCompiler.compiler}")

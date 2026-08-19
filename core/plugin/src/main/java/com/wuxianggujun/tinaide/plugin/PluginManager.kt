@@ -447,6 +447,17 @@ class PluginManager(
 
     private fun getDefaultEnabledValue(manifest: PluginManifest): Boolean = !manifest.type.equals(PluginTypes.SYSTEM, ignoreCase = true)
 
+    private fun getDefaultEnabledAfterInstall(
+        manifest: PluginManifest,
+        markAsBundled: Boolean,
+    ): Boolean = if (markAsBundled) {
+        getDefaultEnabledValue(manifest)
+    } else {
+        // Config plugins are declarative and need to become visible immediately. Executable
+        // plugin types remain opt-in so installation never starts third-party code implicitly.
+        manifest.type.equals(PluginTypes.CONFIG, ignoreCase = true)
+    }
+
     suspend fun quarantinePlugin(
         record: PluginFaultRecord,
         runtimeAlreadyStopped: Boolean = false,
@@ -706,7 +717,7 @@ class PluginManager(
             val pluginDir = File(pluginsDir, manifest.id)
             val previousDesiredEnabled = getDesiredPluginEnabledOrNull(manifest.id)
                 ?: previousManifest?.let(::resolvePluginEnabled)
-                ?: if (markAsBundled) getDefaultEnabledValue(manifest) else false
+                ?: getDefaultEnabledAfterInstall(manifest, markAsBundled)
             val previousFault = faultStore.getFault(manifest.id)
             val rollbackFailedUpgrade = previousManifest != null && previousDesiredEnabled && previousFault == null
             val isNewerVersion = previousManifest != null &&
@@ -1184,7 +1195,8 @@ class PluginManager(
                 isNdkTemplate = template.isNdkTemplate,
                 defaultRunTargetName = template.defaultRunTargetName,
                 defaultSdlTargetName = template.defaultSdlTargetName,
-            )
+            ),
+            requiredPackages = template.requiredPackages,
         )
     }
 

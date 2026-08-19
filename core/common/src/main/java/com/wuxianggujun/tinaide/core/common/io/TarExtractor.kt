@@ -65,6 +65,7 @@ object TarExtractor {
      * @param archiveFile tar/tar.gz/tar.xz 文件
      * @param targetDir 解压目标目录
      * @param estimatedTotalEntries 预估条目数（用于进度计算）
+     * @param limits 可选归档展开限制
      * @param progress 进度回调 (0.0 - 1.0)
      */
     fun extract(
@@ -73,11 +74,15 @@ object TarExtractor {
         symlinkPolicy: SymlinkPolicy = SymlinkPolicy.RESTRICT_TO_TARGET_DIR,
         estimatedTotalEntries: Int = 2500,
         ensureActive: () -> Unit = {},
+        limits: ArchiveExtractionLimits? = null,
         progress: (Float) -> Unit = {},
     ) {
+        if (limits != null && archiveFile.length() > limits.maxArchiveBytes) {
+            throw ArchiveLimitException("Archive is larger than the allowed size")
+        }
         FileInputStream(archiveFile).use { fis ->
             BufferedInputStream(fis, BUFFER_SIZE).use { bis ->
-                extract(bis, targetDir, symlinkPolicy, estimatedTotalEntries, ensureActive, progress)
+                extract(bis, targetDir, symlinkPolicy, estimatedTotalEntries, ensureActive, limits, progress)
             }
         }
     }
@@ -96,12 +101,13 @@ object TarExtractor {
         symlinkPolicy: SymlinkPolicy = SymlinkPolicy.RESTRICT_TO_TARGET_DIR,
         estimatedTotalEntries: Int = 2500,
         ensureActive: () -> Unit = {},
+        limits: ArchiveExtractionLimits? = null,
         progress: (Float) -> Unit = {},
     ) {
         ensureActive()
         val compressionType = detectCompressionType(bufferedInput)
         val tarInput = wrapWithDecompressor(bufferedInput, compressionType)
-        extractTarStream(tarInput, targetDir, symlinkPolicy, estimatedTotalEntries, ensureActive, progress)
+        extractTarStream(tarInput, targetDir, symlinkPolicy, estimatedTotalEntries, ensureActive, limits, progress)
     }
 
     /**
@@ -114,12 +120,13 @@ object TarExtractor {
         symlinkPolicy: SymlinkPolicy = SymlinkPolicy.RESTRICT_TO_TARGET_DIR,
         estimatedTotalEntries: Int = 2500,
         ensureActive: () -> Unit = {},
+        limits: ArchiveExtractionLimits? = null,
         progress: (Float) -> Unit = {},
     ) {
         ensureActive()
         val buffered = if (input is BufferedInputStream) input else BufferedInputStream(input, BUFFER_SIZE)
         val tarInput = wrapWithDecompressor(buffered, compressionType)
-        extractTarStream(tarInput, targetDir, symlinkPolicy, estimatedTotalEntries, ensureActive, progress)
+        extractTarStream(tarInput, targetDir, symlinkPolicy, estimatedTotalEntries, ensureActive, limits, progress)
     }
 
     /**
@@ -187,9 +194,11 @@ object TarExtractor {
         symlinkPolicy: SymlinkPolicy,
         estimatedTotalEntries: Int,
         ensureActive: () -> Unit,
+        limits: ArchiveExtractionLimits?,
         progress: (Float) -> Unit,
     ) {
         var entryCount = 0
+        val budget = limits?.let(::ArchiveExtractionBudget)
 
         tarInput.use { tarStream ->
             ensureActive()
@@ -198,6 +207,7 @@ object TarExtractor {
             while (entry != null) {
                 ensureActive()
                 entryCount++
+                budget?.beginEntry(entry.name, entry.size)
                 val outputFile = ArchivePathSafety.resolveEntryFile(targetDir, entry.name, "tar entry")
 
                 if (entry.isDirectory) {
@@ -230,11 +240,15 @@ object TarExtractor {
                 } else {
                     outputFile.parentFile?.mkdirs()
                     FileOutputStream(outputFile).use { output ->
-                        val buffer = ByteArray(BUFFER_SIZE)
-                        var len: Int
-                        while (tarStream.read(buffer).also { len = it } != -1) {
-                            ensureActive()
-                            output.write(buffer, 0, len)
+                        if (budget != null) {
+                            budget.copyEntry(tarStream, output, entry.name, ensureActive)
+                        } else {
+                            val buffer = ByteArray(BUFFER_SIZE)
+                            var len: Int
+                            while (tarStream.read(buffer).also { len = it } != -1) {
+                                ensureActive()
+                                output.write(buffer, 0, len)
+                            }
                         }
                     }
                     applyUnixModeIfPresent(outputFile, entry.mode)
@@ -268,7 +282,11 @@ object TarExtractor {
                 } catch (_: Throwable) {
                     FileInputStream(targetFile).use { input ->
                         FileOutputStream(link.linkPath).use { output ->
-                            input.copyTo(output, BUFFER_SIZE)
+                            if (budget != null) {
+                                budget.copyEntry(input, output, link.targetPathInTar, ensureActive)
+                            } else {
+                                input.copyTo(output, BUFFER_SIZE)
+                            }
                         }
                     }
                 }

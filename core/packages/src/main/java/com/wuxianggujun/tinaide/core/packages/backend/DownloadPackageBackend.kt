@@ -3,23 +3,27 @@ package com.wuxianggujun.tinaide.core.packages.backend
 import android.content.Context
 import android.os.Build
 import com.wuxianggujun.tinaide.core.common.io.TarExtractor
+import com.wuxianggujun.tinaide.core.common.registry.RegistryPackageId
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.str
 import com.wuxianggujun.tinaide.core.network.ApiResult
 import com.wuxianggujun.tinaide.core.network.registry.GitHubRegistryHttpClientFactory
+import com.wuxianggujun.tinaide.core.packages.InstalledPackageMetadata
 import com.wuxianggujun.tinaide.core.packages.PackageAbiCompatibility
+import com.wuxianggujun.tinaide.core.packages.PackageArchivePolicy
 import com.wuxianggujun.tinaide.core.packages.PackageDownloadSourceSelector
+import com.wuxianggujun.tinaide.core.packages.PackageInstallCoordinator
 import com.wuxianggujun.tinaide.core.packages.api.PackageApiClient
 import com.wuxianggujun.tinaide.core.packages.download.DownloadError
 import com.wuxianggujun.tinaide.core.packages.download.DownloadResult
 import com.wuxianggujun.tinaide.core.packages.download.ResumableDownloader
 import com.wuxianggujun.tinaide.core.packages.model.*
+import com.wuxianggujun.tinaide.core.serialization.JsonSerializer
 import java.io.File
 import java.io.FileInputStream
 import java.net.URI
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
-import java.util.zip.ZipFile
 import timber.log.Timber
 
 class DownloadPackageBackend(
@@ -62,6 +66,11 @@ class DownloadPackageBackend(
         version: String,
         progress: (InstallProgressEvent) -> Unit
     ): InstallResult {
+        if (!RegistryPackageId.isValid(packageId)) {
+            val error = InstallError.UnknownError("Invalid package id: $packageId")
+            progress(InstallProgressEvent.Failed(error))
+            return InstallResult.Failure(packageId, error)
+        }
         progress(InstallProgressEvent.Preparing("Fetching download info..."))
 
         val downloadInfoResult = apiClient.getDownloadInfo(packageId, versionId)
@@ -74,6 +83,15 @@ class DownloadPackageBackend(
         }
 
         val downloadInfo = downloadInfoResult.data
+        if (
+            downloadInfo.packageId != packageId ||
+            downloadInfo.version != version ||
+            downloadInfo.platform != Platform.ANDROID
+        ) {
+            val error = InstallError.UnknownError("Registry download metadata does not match the requested package")
+            progress(InstallProgressEvent.Failed(error))
+            return InstallResult.Failure(packageId, error)
+        }
         val targetAbi = PackageAbiCompatibility.currentAppAbi(
             nativeLibraryDir = context.applicationInfo.nativeLibraryDir,
             supportedAbis = Build.SUPPORTED_ABIS,
@@ -88,7 +106,13 @@ class DownloadPackageBackend(
         var lastError: DownloadError? = null
 
         for (source in sortedSources) {
-            val archiveTarget = buildArchiveTarget(packageId, version, source.abi, source.url)
+            val archiveTarget = buildArchiveTarget(
+                packageId,
+                version,
+                source.abi,
+                source.url,
+                PackageInstallCoordinator.createOperationId(),
+            )
             Timber.tag(TAG).d("Trying source: ${source.name}, abi=${source.abi ?: "legacy"} (${source.url})")
             progress(InstallProgressEvent.Preparing("Downloading from ${source.name}..."))
 
@@ -117,7 +141,8 @@ class DownloadPackageBackend(
                     val extractResult = extractPackage(
                         archiveFile = downloadResult.file,
                         archiveFormat = archiveFormat,
-                        extractPath = packageId,
+                        packageId = packageId,
+                        expectedVersion = version,
                         progress = progress
                     )
 
@@ -161,70 +186,59 @@ class DownloadPackageBackend(
         return InstallResult.Failure(packageId, error)
     }
 
-    private fun extractPackage(
+    private suspend fun extractPackage(
         archiveFile: File,
         archiveFormat: ArchiveFormat,
-        extractPath: String,
+        packageId: String,
+        expectedVersion: String,
         progress: (InstallProgressEvent) -> Unit
-    ): Result<Unit> = try {
-        val targetDir = File(installDir, extractPath)
-        if (targetDir.exists()) {
-            targetDir.deleteRecursively()
-        }
-        targetDir.mkdirs()
+    ): Result<Unit> = runCatching {
+        PackageInstallCoordinator.withExclusiveAccess(installDir) {
+            cleanupInterruptedInstallDirectories()
+            val operationId = PackageInstallCoordinator.createOperationId()
+            val targetDir = resolvePackageDirectory(packageId)
+            val stagingDir = PackageInstallCoordinator.resolveTransactionDirectory(
+                installDir,
+                PackageInstallCoordinator.DOWNLOAD_STAGING_PREFIX,
+                packageId,
+                operationId,
+            )
 
-        when (archiveFormat) {
-            ArchiveFormat.ZIP -> extractZip(archiveFile, targetDir, progress)
-            ArchiveFormat.TAR -> {
-                TarExtractor.extract(archiveFile, targetDir) { pct ->
-                    progress(InstallProgressEvent.Extracting(pct))
-                }
-            }
-        }
-
-        Timber.tag(TAG).d("Extracted to ${targetDir.absolutePath}")
-        Result.success(Unit)
-    } catch (e: Exception) {
-        Timber.tag(TAG).e(e, "Extraction failed")
-        File(installDir, extractPath).deleteRecursively()
-        Result.failure(e)
-    }
-
-    private fun extractZip(
-        archiveFile: File,
-        targetDir: File,
-        progress: (InstallProgressEvent) -> Unit
-    ) {
-        ZipFile(archiveFile).use { zip ->
-            val entries = zip.entries().toList()
-            val total = entries.size.coerceAtLeast(1)
-            var extracted = 0
-
-            for (entry in entries) {
-                val safeName = sanitizeArchivePath(entry.name)
-                val entryFile = File(targetDir, safeName)
-
-                if (entry.isDirectory) {
-                    entryFile.mkdirs()
-                } else {
-                    entryFile.parentFile?.mkdirs()
-                    zip.getInputStream(entry).use { input ->
-                        entryFile.outputStream().use { output ->
-                            input.copyTo(output)
+            check(stagingDir.mkdirs()) { "Failed to create package staging directory" }
+            try {
+                when (archiveFormat) {
+                    ArchiveFormat.ZIP -> PackageArchivePolicy.extractZip(archiveFile, stagingDir) { pct ->
+                        progress(InstallProgressEvent.Extracting(pct))
+                    }
+                    ArchiveFormat.TAR -> {
+                        TarExtractor.extract(
+                            archiveFile,
+                            stagingDir,
+                            limits = PackageArchivePolicy.limits,
+                        ) { pct ->
+                            progress(InstallProgressEvent.Extracting(pct))
                         }
                     }
                 }
 
-                extracted++
-                if (extracted % 10 == 0 || extracted == total) {
-                    val pct = extracted.toFloat() / total
-                    progress(InstallProgressEvent.Extracting(pct))
-                }
+                requireValidPackageMetadata(stagingDir, packageId, expectedVersion)
+                replaceDirectoryAtomically(stagingDir, targetDir, packageId, operationId)
+                Timber.tag(TAG).d("Published package to ${targetDir.absolutePath}")
+            } finally {
+                if (stagingDir.exists()) stagingDir.deleteRecursively()
             }
         }
+    }.onFailure { error ->
+        Timber.tag(TAG).e(error, "Extraction failed for %s", packageId)
     }
 
-    private fun buildArchiveTarget(packageId: String, version: String, abi: String?, url: String): ArchiveTarget {
+    private fun buildArchiveTarget(
+        packageId: String,
+        version: String,
+        abi: String?,
+        url: String,
+        operationId: String,
+    ): ArchiveTarget {
         val rawPath = runCatching { URI(url).path }.getOrNull().orEmpty()
         val decodedPath = runCatching {
             URLDecoder.decode(rawPath.ifBlank { url.substringBefore('?') }, StandardCharsets.UTF_8.name())
@@ -250,25 +264,25 @@ class DownloadPackageBackend(
             ?.let { "-$it" }
             .orEmpty()
         return ArchiveTarget(
-            file = File(downloadDir, "$packageId-$version$abiSuffix${suffixAndFormat.first}"),
+            file = File(
+                downloadDir,
+                "$packageId-${sanitizeFileComponent(version)}$abiSuffix-$operationId${suffixAndFormat.first}",
+            ),
             formatHint = suffixAndFormat.second
         )
     }
 
-    private fun sanitizeArchivePath(path: String): String {
-        var normalized = path.replace('\\', '/')
-        while (normalized.startsWith("./")) normalized = normalized.removePrefix("./")
-        while (normalized.startsWith("/")) normalized = normalized.removePrefix("/")
-
-        if (normalized == ".." || normalized.startsWith("../") || normalized.contains("/../")) {
-            throw IllegalArgumentException("Invalid archive path: $path")
-        }
-        return normalized
-    }
+    private fun sanitizeFileComponent(value: String): String = value
+        .replace(Regex("[^A-Za-z0-9._-]"), "_")
+        .take(128)
+        .ifBlank { "unknown" }
 
     private fun detectArchiveFormat(file: File, formatHint: ArchiveFormat?): ArchiveFormat? {
-        if (formatHint != null) return formatHint
+        val detected = detectArchiveFormatByMagic(file) ?: return null
+        return detected.takeIf { formatHint == null || formatHint == detected }
+    }
 
+    private fun detectArchiveFormatByMagic(file: File): ArchiveFormat? {
         val header = ByteArray(512)
         val bytesRead = FileInputStream(file).use { input ->
             input.read(header)
@@ -328,15 +342,19 @@ class DownloadPackageBackend(
     }
 
     suspend fun uninstall(packageId: String): UninstallResult {
-        val targetDir = File(installDir, packageId)
         return try {
-            if (targetDir.exists()) {
-                val freedSpace = targetDir.walkTopDown().sumOf { it.length() }
-                targetDir.deleteRecursively()
-                Timber.tag(TAG).d("Uninstalled $packageId, freed $freedSpace bytes")
-                UninstallResult.Success(packageId, Platform.ANDROID, freedSpace)
-            } else {
-                UninstallResult.Failure(packageId, UninstallError.PackageNotFound(packageId))
+            RegistryPackageId.requireValid(packageId)
+            PackageInstallCoordinator.withExclusiveAccess(installDir) {
+                cleanupInterruptedInstallDirectories()
+                val targetDir = resolvePackageDirectory(packageId)
+                if (targetDir.exists()) {
+                    val freedSpace = targetDir.walkTopDown().sumOf { it.length() }
+                    check(targetDir.deleteRecursively()) { "Failed to delete installed package directory" }
+                    Timber.tag(TAG).d("Uninstalled $packageId, freed $freedSpace bytes")
+                    UninstallResult.Success(packageId, Platform.ANDROID, freedSpace)
+                } else {
+                    UninstallResult.Failure(packageId, UninstallError.PackageNotFound(packageId))
+                }
             }
         } catch (e: Exception) {
             Timber.tag(TAG).e(e, "Uninstall failed")
@@ -345,14 +363,94 @@ class DownloadPackageBackend(
     }
 
     fun isInstalled(packageId: String): Boolean {
-        val targetDir = File(installDir, packageId)
+        val targetDir = resolvePackageDirectory(packageId)
         return targetDir.exists() && targetDir.listFiles()?.isNotEmpty() == true
     }
 
-    fun getInstallPath(packageId: String): File = File(installDir, packageId)
+    fun getInstallPath(packageId: String): File = resolvePackageDirectory(packageId)
 
     fun clearDownloadCache() {
         downloader.clearTempFiles()
         downloadDir.listFiles()?.forEach { it.delete() }
+    }
+
+    private fun resolvePackageDirectory(packageId: String): File {
+        RegistryPackageId.requireValid(packageId)
+        val root = installDir.canonicalFile
+        val candidate = File(root, packageId).canonicalFile
+        require(candidate.parentFile == root) { "Package path escapes install directory" }
+        return candidate
+    }
+
+    private fun requireValidPackageMetadata(
+        packageDir: File,
+        expectedPackageId: String,
+        expectedVersion: String,
+    ): InstalledPackageMetadata {
+        val metadataFile = File(packageDir, "package.json")
+        require(metadataFile.isFile) { "Downloaded package is missing package.json" }
+        val metadata = JsonSerializer.decodeFromFile<InstalledPackageMetadata>(metadataFile)
+        require(metadata.id == expectedPackageId) { "Downloaded package id does not match the request" }
+        require(metadata.version == expectedVersion) { "Downloaded package version does not match the request" }
+        require(metadata.name.isNotBlank()) { "Downloaded package name is empty" }
+        return metadata
+    }
+
+    private fun replaceDirectoryAtomically(
+        stagingDir: File,
+        targetDir: File,
+        packageId: String,
+        operationId: String,
+    ) {
+        val staleBackup = PackageInstallCoordinator.publishStagedDirectory(
+            installDir = installDir,
+            stagingDir = stagingDir,
+            targetDir = targetDir,
+            backupPrefix = PackageInstallCoordinator.DOWNLOAD_BACKUP_PREFIX,
+            packageId = packageId,
+            operationId = operationId,
+        )
+        if (staleBackup != null) {
+            Timber.tag(TAG).w("Failed to delete package backup: ${staleBackup.absolutePath}")
+        }
+    }
+
+    private fun cleanupInterruptedInstallDirectories() {
+        installDir.listFiles().orEmpty().filter(File::isDirectory).forEach { staleDir ->
+            when {
+                staleDir.name.startsWith(PackageInstallCoordinator.DOWNLOAD_STAGING_PREFIX) ->
+                    deleteStaleDirectory(staleDir)
+                staleDir.name.startsWith(PackageInstallCoordinator.DOWNLOAD_BACKUP_PREFIX) ->
+                    recoverOrDeleteBackup(staleDir)
+            }
+        }
+    }
+
+    private fun recoverOrDeleteBackup(backupDir: File) {
+        val packageId = PackageInstallCoordinator.packageIdFromTransactionDirectory(
+            backupDir,
+            PackageInstallCoordinator.DOWNLOAD_BACKUP_PREFIX,
+        )
+        val targetDir = packageId?.let(::resolvePackageDirectory)
+        val metadata = runCatching {
+            val metadataFile = File(backupDir, "package.json")
+            metadataFile.takeIf(File::isFile)
+                ?.let { JsonSerializer.decodeFromFile<InstalledPackageMetadata>(it) }
+        }.getOrNull()
+        if (targetDir != null && !targetDir.exists() && metadata?.id == packageId) {
+            if (backupDir.renameTo(targetDir)) {
+                Timber.tag(TAG).w("Recovered interrupted package install: $packageId")
+                return
+            }
+            Timber.tag(TAG).e("Failed to recover package backup: ${backupDir.absolutePath}")
+            return
+        }
+        deleteStaleDirectory(backupDir)
+    }
+
+    private fun deleteStaleDirectory(staleDir: File) {
+        if (!staleDir.deleteRecursively()) {
+            Timber.tag(TAG).w("Failed to clean stale package directory: ${staleDir.absolutePath}")
+        }
     }
 }

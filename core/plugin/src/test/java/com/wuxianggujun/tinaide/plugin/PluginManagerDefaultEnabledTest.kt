@@ -81,6 +81,38 @@ class PluginManagerDefaultEnabledTest {
     }
 
     @Test
+    fun `first install enables declarative config plugin`() = runBlocking {
+        val pluginId = pluginId("config-first-install")
+        val pluginManager = PluginManager(context)
+
+        pluginManager.installPluginFromDirectory(
+            extractedDir = createInstallSource(pluginId, version = "1.0.0"),
+            allowSkipIfSameVersion = false,
+        )
+        pluginManager.refreshInstalledPlugins()
+
+        assertThat(prefs.getBoolean("desired_enabled_$pluginId", false)).isTrue()
+        assertThat(pluginManager.isPluginEnabled(pluginId)).isTrue()
+    }
+
+    @Test
+    fun `first install keeps executable plugin types disabled`() = runBlocking {
+        val pluginManager = PluginManager(context)
+
+        listOf(PluginTypes.SCRIPT, PluginTypes.HYBRID, PluginTypes.LSP, PluginTypes.SYSTEM).forEach { type ->
+            val pluginId = pluginId("${type.lowercase()}-first-install")
+            pluginManager.installPluginFromDirectory(
+                extractedDir = createInstallSource(pluginId, version = "1.0.0", type = type),
+                allowSkipIfSameVersion = false,
+            )
+            pluginManager.refreshInstalledPlugins()
+
+            assertThat(prefs.getBoolean("desired_enabled_$pluginId", true)).isFalse()
+            assertThat(pluginManager.isPluginEnabled(pluginId)).isFalse()
+        }
+    }
+
+    @Test
     fun `incompatible installed plugin remains visible but cannot be enabled`() = runBlocking {
         val pluginId = pluginId("incompatible-refresh")
         writePluginManifest(
@@ -478,6 +510,7 @@ class PluginManagerDefaultEnabledTest {
         pluginId: String,
         version: String,
         minAppVersion: String? = null,
+        type: String = PluginTypes.CONFIG,
     ): File {
         val sourceRoot = File(context.cacheDir, "plugin-install-${System.nanoTime()}").apply {
             mkdirs()
@@ -485,12 +518,18 @@ class PluginManagerDefaultEnabledTest {
         }
         writePluginManifest(
             pluginId = pluginId,
-            type = PluginTypes.CONFIG,
+            type = type,
             version = version,
             root = sourceRoot,
             minAppVersion = minAppVersion,
         )
-        return File(sourceRoot, pluginId)
+        return File(sourceRoot, pluginId).also { pluginDir ->
+            if (type.equals(PluginTypes.SCRIPT, ignoreCase = true) ||
+                type.equals(PluginTypes.HYBRID, ignoreCase = true)
+            ) {
+                File(pluginDir, "main.lua").writeText("return {}\n", Charsets.UTF_8)
+            }
+        }
     }
 
     private fun quarantine(pluginId: String, version: String) {

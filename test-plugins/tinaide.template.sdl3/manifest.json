@@ -1,7 +1,8 @@
 {
   "id": "tinaide.template.sdl3",
   "name": "SDL3 Project Template",
-  "version": "1.0.1",
+  "version": "1.0.2",
+  "minAppVersion": "0.18.20",
   "description": "Adds an SDL3 + CMake project template to New Project.",
   "type": "config",
   "author": {
@@ -15,7 +16,8 @@
         "description": "Ready-to-run SDL3 app with SDL_main callbacks and CMake.",
         "templatePath": "templates/sdl3_cmake.zip",
         "buildSystem": "cmake",
-        "primaryLanguage": "CPP"
+        "primaryLanguage": "CPP",
+        "requiredPackages": ["sdl3"]
       }
     ]
   }

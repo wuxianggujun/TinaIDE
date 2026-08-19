@@ -1,8 +1,12 @@
 package com.wuxianggujun.tinaide.project
 
+import com.wuxianggujun.tinaide.core.common.io.ArchiveExtractionBudget
+import com.wuxianggujun.tinaide.core.common.io.ArchivePathSafety
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
+import java.nio.ByteBuffer
+import java.nio.charset.CodingErrorAction
 import java.util.zip.ZipInputStream
 import timber.log.Timber
 
@@ -23,6 +27,15 @@ object ProjectTemplateInstaller {
     private const val NDK_API_LEVEL_PLACEHOLDER = "{{NDK_API_LEVEL}}"
     private const val AUTHOR_PLACEHOLDER = "{{AUTHOR}}"
     private const val AUTHOR_VARIABLE_NAME = "AUTHOR"
+    private const val MAX_TEXT_ENTRY_BYTES = 8L * 1024L * 1024L
+    private val placeholders = listOf(
+        PROJECT_NAME_PLACEHOLDER,
+        PROJECT_NAME_UPPER_PLACEHOLDER,
+        CPP_STANDARD_PLACEHOLDER,
+        CPP_STANDARD_FLAG_PLACEHOLDER,
+        NDK_API_LEVEL_PLACEHOLDER,
+        AUTHOR_PLACEHOLDER,
+    )
 
     fun install(
         destDir: File,
@@ -82,7 +95,14 @@ object ProjectTemplateInstaller {
                 defaultSdlTargetName = resolvedDefaultSdlTargetName,
             )
             Timber.tag(TAG).i(
-                "Project created: $projectName, buildSystem: ${templateSpec.buildSystem}, cppStandard: $cppStandard, language: ${templateSpec.primaryLanguage}, ndkApiLevel: ${effectiveNdkApiLevel?.level}, nativeApiLevel: $templateNativeApiLevel",
+                "Project created: %s, buildSystem: %s, cppStandard: %s, " +
+                    "language: %s, ndkApiLevel: %s, nativeApiLevel: %s",
+                projectName,
+                templateSpec.buildSystem,
+                cppStandard,
+                templateSpec.primaryLanguage,
+                effectiveNdkApiLevel?.level,
+                templateNativeApiLevel,
             )
             true
         } catch (e: Exception) {
@@ -130,6 +150,7 @@ object ProjectTemplateInstaller {
         ndkApiLevel: AndroidApiLevel?,
         authorName: String,
     ) {
+        ProjectTemplateArchivePolicy.validate(zipFile)
         zipFile.inputStream().use { inputStream ->
             extractTemplateStream(
                 inputStream = inputStream,
@@ -151,11 +172,14 @@ object ProjectTemplateInstaller {
         authorName: String,
     ) {
         val safeRoot = destDir.canonicalFile
+        val budget = ArchiveExtractionBudget(ProjectTemplateArchivePolicy.limits)
         ZipInputStream(inputStream).use { zipStream ->
             var entry = zipStream.nextEntry
             while (entry != null) {
                 val entryName = entry.name.replace('\\', '/')
+                budget.beginEntry(entryName, entry.size)
                 if (ProjectTemplateMetadataReader.isMetadataEntry(entryName)) {
+                    budget.copyEntry(zipStream, DISCARDING_OUTPUT, entryName)
                     zipStream.closeEntry()
                     entry = zipStream.nextEntry
                     continue
@@ -168,14 +192,17 @@ object ProjectTemplateInstaller {
                     destFile.mkdirs()
                 } else {
                     destFile.parentFile?.mkdirs()
-                    val entryBytes = zipStream.readBytes()
-                    if (shouldReplaceTextContent(entryName, entryBytes)) {
-                        val content = entryBytes.toString(Charsets.UTF_8)
-                        val replacedContent = replaceText(content, projectName, cppStandard, ndkApiLevel, authorName)
-                        destFile.writeText(replacedContent, Charsets.UTF_8)
-                    } else {
-                        destFile.writeBytes(entryBytes)
+                    destFile.outputStream().use { output ->
+                        budget.copyEntry(zipStream, output, entryName)
                     }
+                    replaceTextContentIfNeeded(
+                        file = destFile,
+                        entryName = entryName,
+                        projectName = projectName,
+                        cppStandard = cppStandard,
+                        ndkApiLevel = ndkApiLevel,
+                        authorName = authorName,
+                    )
                 }
 
                 zipStream.closeEntry()
@@ -185,34 +212,46 @@ object ProjectTemplateInstaller {
     }
 
     private fun resolveTemplateDestination(destRoot: File, entryName: String): File {
-        val destFile = File(destRoot, entryName).canonicalFile
-        val rootPath = destRoot.path
-        val destPath = destFile.path
-        if (destFile != destRoot && !destPath.startsWith(rootPath + File.separator)) {
-            throw IllegalArgumentException("Unsafe template entry path: $entryName")
-        }
-        return destFile
+        return ArchivePathSafety.resolveEntryFile(destRoot, entryName, "project template entry").canonicalFile
     }
 
-    private fun shouldReplaceTextContent(entryName: String, entryBytes: ByteArray): Boolean {
+    private fun replaceTextContentIfNeeded(
+        file: File,
+        entryName: String,
+        projectName: String,
+        cppStandard: CppStandard,
+        ndkApiLevel: AndroidApiLevel?,
+        authorName: String,
+    ) {
         val normalizedName = entryName.substringAfterLast('/').lowercase()
         val extension = normalizedName.substringAfterLast('.', missingDelimiterValue = "")
-        if (extension in textFileExtensions) {
-            return true
+        val knownTextType = extension in textFileExtensions
+        if (file.length() > MAX_TEXT_ENTRY_BYTES) {
+            if (knownTextType) {
+                throw IOException("Template text entry is too large: $entryName")
+            }
+            return
         }
 
-        if (entryBytes.isEmpty()) {
-            return true
+        val bytes = file.readBytes()
+        val content = decodeStrictUtf8(bytes)
+        if (content == null) {
+            if (knownTextType) throw IOException("Template text entry is not valid UTF-8: $entryName")
+            return
         }
+        if (!knownTextType && placeholders.none(content::contains)) return
 
-        if (entryBytes.any { it == 0.toByte() }) {
-            return false
-        }
-
-        return runCatching {
-            entryBytes.toString(Charsets.UTF_8)
-        }.isSuccess
+        val replacedContent = replaceText(content, projectName, cppStandard, ndkApiLevel, authorName)
+        file.writeText(replacedContent, Charsets.UTF_8)
     }
+
+    private fun decodeStrictUtf8(bytes: ByteArray): String? = runCatching {
+        Charsets.UTF_8.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT)
+            .decode(ByteBuffer.wrap(bytes))
+            .toString()
+    }.getOrNull()
 
     private fun replaceText(
         text: String,
@@ -243,4 +282,9 @@ object ProjectTemplateInstaller {
         ?.let { replaceText(it, projectName, cppStandard, ndkApiLevel, authorName) }
         ?.trim()
         ?.takeIf { it.isNotBlank() }
+
+    private val DISCARDING_OUTPUT = object : java.io.OutputStream() {
+        override fun write(value: Int) = Unit
+        override fun write(buffer: ByteArray, offset: Int, length: Int) = Unit
+    }
 }

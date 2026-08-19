@@ -1,6 +1,7 @@
 package com.wuxianggujun.tinaide.core.packages.cache
 
 import android.content.Context
+import com.wuxianggujun.tinaide.core.common.registry.RegistryPackageId
 import com.wuxianggujun.tinaide.core.packages.model.GUIPackage
 import com.wuxianggujun.tinaide.core.packages.model.PackageCategory
 import com.wuxianggujun.tinaide.core.serialization.JsonSerializer
@@ -87,6 +88,7 @@ class PackageCacheManager(
     }
 
     fun getPackageDetail(packageId: String): GUIPackage? {
+        if (!RegistryPackageId.isValid(packageId)) return null
         val detailFile = File(cacheDir, "package_$packageId.json")
         if (!isCacheValid(detailFile, config.packageExpiry)) {
             return null
@@ -101,6 +103,10 @@ class PackageCacheManager(
     }
 
     fun savePackageDetail(pkg: GUIPackage) {
+        if (!RegistryPackageId.isValid(pkg.id)) {
+            Timber.tag(TAG).w("Ignoring package detail with invalid id")
+            return
+        }
         try {
             val detailFile = File(cacheDir, "package_${pkg.id}.json")
             JsonSerializer.encodePrettyToFile(detailFile, pkg)

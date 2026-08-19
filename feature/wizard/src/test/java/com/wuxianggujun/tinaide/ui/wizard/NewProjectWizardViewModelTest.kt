@@ -2,6 +2,9 @@ package com.wuxianggujun.tinaide.ui.wizard
 
 import android.app.Application
 import com.google.common.truth.Truth.assertThat
+import com.wuxianggujun.tinaide.core.packages.model.InstallType
+import com.wuxianggujun.tinaide.core.packages.model.Platform
+import com.wuxianggujun.tinaide.core.packages.store.LocalInstallStateStore
 import com.wuxianggujun.tinaide.project.ProjectBuildSystem
 import com.wuxianggujun.tinaide.project.ProjectLanguage
 import com.wuxianggujun.tinaide.project.ProjectMetadataStore
@@ -45,6 +48,9 @@ class NewProjectWizardViewModelTest {
     @After
     fun tearDown() {
         tempDirs.forEach { it.deleteRecursively() }
+        val context = RuntimeEnvironment.getApplication().applicationContext
+        LocalInstallStateStore(context).clear()
+        File(context.filesDir, "installed-packages").deleteRecursively()
     }
 
     @Test
@@ -152,12 +158,90 @@ class NewProjectWizardViewModelTest {
         assertThat(metadata?.primaryLanguage).isEqualTo(ProjectLanguage.CPP.name)
     }
 
+    @Test
+    fun createProject_shouldReportMissingTemplatePackagesBeforeCreatingDirectory() = runTest {
+        val context = RuntimeEnvironment.getApplication().applicationContext
+        LocalInstallStateStore(context).clear()
+        val projectRoot = tempDir("wizard-missing-package-root")
+        val templateZip = projectRoot.resolve("sdl3_template.zip")
+        ZipOutputStream(templateZip.outputStream()).use { zip ->
+            zip.writeEntry("main.cpp", "int main() { return 0; }\n")
+        }
+        val option = template(
+            id = "plugin:test:sdl3",
+            language = ProjectLanguage.CPP,
+            zipFile = templateZip,
+            requiredPackages = listOf("sdl3"),
+        )
+        val missingPackages = mutableListOf<List<String>>()
+        val viewModel = NewProjectWizardViewModel(ioDispatcher = mainDispatcherRule.dispatcher)
+        viewModel.setTemplate(option)
+        viewModel.setProjectName("MissingDependency")
+
+        viewModel.createProject(
+            context = context,
+            projectPath = projectRoot.absolutePath,
+            availableTemplates = listOf(option),
+            onSuccess = { error("Project must not be created") },
+            onError = { error(it) },
+            onMissingPackages = { missingPackages += it },
+        )
+        advanceUntilIdle()
+
+        assertThat(missingPackages).containsExactly(listOf("sdl3"))
+        assertThat(projectRoot.resolve("MissingDependency").exists()).isFalse()
+    }
+
+    @Test
+    fun createProject_shouldTreatStaleInstallStateAsMissing() = runTest {
+        val context = RuntimeEnvironment.getApplication().applicationContext
+        LocalInstallStateStore(context).apply {
+            clear()
+            setInstalled(
+                packageId = "sdl3",
+                platform = Platform.ANDROID,
+                version = "3.2.0",
+                installType = InstallType.DOWNLOAD,
+            )
+        }
+        File(context.filesDir, "installed-packages/sdl3").deleteRecursively()
+        val projectRoot = tempDir("wizard-stale-package-root")
+        val templateZip = projectRoot.resolve("sdl3_template.zip")
+        ZipOutputStream(templateZip.outputStream()).use { zip ->
+            zip.writeEntry("main.cpp", "int main() { return 0; }\n")
+        }
+        val option = template(
+            id = "plugin:test:stale-sdl3",
+            language = ProjectLanguage.CPP,
+            zipFile = templateZip,
+            requiredPackages = listOf("sdl3"),
+        )
+        val missingPackages = mutableListOf<List<String>>()
+        val viewModel = NewProjectWizardViewModel(ioDispatcher = mainDispatcherRule.dispatcher)
+        viewModel.setTemplate(option)
+        viewModel.setProjectName("StaleDependency")
+
+        viewModel.createProject(
+            context = context,
+            projectPath = projectRoot.absolutePath,
+            availableTemplates = listOf(option),
+            onSuccess = { error("Project must not be created") },
+            onError = { error(it) },
+            onMissingPackages = { missingPackages += it },
+        )
+        advanceUntilIdle()
+
+        assertThat(missingPackages).containsExactly(listOf("sdl3"))
+        assertThat(projectRoot.resolve("StaleDependency").exists()).isFalse()
+    }
+
     private fun template(
         id: String,
         buildSystem: ProjectBuildSystem = ProjectBuildSystem.CMAKE,
         language: ProjectLanguage,
         isNdkTemplate: Boolean = false,
         zipFile: File = File("$id.zip"),
+        requiredPackages: List<String> = emptyList(),
     ): ProjectTemplateOption = ProjectTemplateOption(
         id = id,
         displayName = id,
@@ -169,6 +253,7 @@ class NewProjectWizardViewModelTest {
             primaryLanguage = language,
             isNdkTemplate = isNdkTemplate,
         ),
+        requiredPackages = requiredPackages,
     )
 
     private fun tempDir(prefix: String): File = Files.createTempDirectory(prefix).toFile().also { tempDirs += it }

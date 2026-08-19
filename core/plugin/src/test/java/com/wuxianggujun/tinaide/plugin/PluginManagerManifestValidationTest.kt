@@ -6,6 +6,8 @@ import com.wuxianggujun.tinaide.plugin.lsp.LspServerConfig
 import com.wuxianggujun.tinaide.plugin.lsp.LspServerConnectionConfig
 import com.wuxianggujun.tinaide.plugin.lsp.LspToolchainConfig
 import java.io.File
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Before
 import org.junit.Test
@@ -329,6 +331,48 @@ class PluginManagerManifestValidationTest {
         assertThat(error.message).contains("zh-CN.json")
     }
 
+    @Test
+    fun `validateManifest should accept valid project template dependencies`() {
+        val pluginDir = createConfigPluginDir("validate_project_template")
+        createProjectTemplateZip(pluginDir)
+        val manifest = createProjectTemplateManifest(requiredPackages = listOf("sdl3", "sdl3-image"))
+
+        PluginManifestValidator.validate(context, manifest, pluginDir)
+    }
+
+    @Test
+    fun `validateManifest should reject duplicate project template ids`() {
+        val pluginDir = createConfigPluginDir("validate_duplicate_project_templates")
+        createProjectTemplateZip(pluginDir)
+        val template = createProjectTemplateManifest().contributions!!.projectTemplates!!.single()
+        val manifest = createProjectTemplateManifest().copy(
+            contributions = PluginContributions(projectTemplates = listOf(template, template))
+        )
+
+        assertThat(runValidationFailure(manifest, pluginDir).message).contains(template.id)
+    }
+
+    @Test
+    fun `validateManifest should reject invalid required package id`() {
+        val pluginDir = createConfigPluginDir("validate_project_template_package")
+        createProjectTemplateZip(pluginDir)
+        val manifest = createProjectTemplateManifest(requiredPackages = listOf("../sdl3"))
+
+        assertThat(runValidationFailure(manifest, pluginDir).message).contains("../sdl3")
+    }
+
+    @Test
+    fun `validateManifest should reject invalid project template archive`() {
+        val pluginDir = createConfigPluginDir("validate_project_template_archive")
+        File(pluginDir, "templates/project.zip").apply {
+            parentFile?.mkdirs()
+            writeText("not a zip")
+        }
+
+        assertThat(runValidationFailure(createProjectTemplateManifest(), pluginDir).message)
+            .contains("templates/project.zip")
+    }
+
     private fun createScriptPluginDir(name: String): File = File(context.cacheDir, name).apply {
         deleteRecursively()
         mkdirs()
@@ -354,6 +398,37 @@ class PluginManagerManifestValidationTest {
         type = "config",
         locales = locales,
     )
+
+    private fun createProjectTemplateManifest(
+        requiredPackages: List<String> = emptyList(),
+    ): PluginManifest = PluginManifest(
+        id = "test.plugin.project-template",
+        name = "Validate Project Template",
+        version = "1.0.0",
+        type = PluginTypes.CONFIG,
+        contributions = PluginContributions(
+            projectTemplates = listOf(
+                PluginProjectTemplate(
+                    id = "cmake",
+                    name = "CMake",
+                    description = "CMake project",
+                    templatePath = "templates/project.zip",
+                    buildSystem = "cmake",
+                    requiredPackages = requiredPackages,
+                )
+            )
+        ),
+    )
+
+    private fun createProjectTemplateZip(pluginDir: File) {
+        val templateFile = File(pluginDir, "templates/project.zip")
+        templateFile.parentFile?.mkdirs()
+        ZipOutputStream(templateFile.outputStream()).use { zip ->
+            zip.putNextEntry(ZipEntry("CMakeLists.txt"))
+            zip.write("cmake_minimum_required(VERSION 3.20)".toByteArray())
+            zip.closeEntry()
+        }
+    }
 
     private fun createLspManifest(
         toolchains: List<LspToolchainConfig>,

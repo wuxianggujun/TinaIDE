@@ -4,6 +4,8 @@ import android.app.Application
 import com.google.common.truth.Truth.assertThat
 import java.io.File
 import java.nio.file.Files
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -37,7 +39,11 @@ class PluginProjectTemplateBuildSystemTest {
     @Test
     fun `project template should accept plugin build system`() {
         File(pluginDir, "templates").mkdirs()
-        File(pluginDir, "templates/demo-plugin.zip").writeBytes(byteArrayOf(0x50, 0x4B, 0x03, 0x04))
+        ZipOutputStream(File(pluginDir, "templates/demo-plugin.zip").outputStream()).use { zip ->
+            zip.putNextEntry(ZipEntry("manifest.json"))
+            zip.write("{\"id\":\"demo.plugin\"}".toByteArray(Charsets.UTF_8))
+            zip.closeEntry()
+        }
         File(pluginDir, PluginManager.MANIFEST_FILE_NAME).writeText(
             """
             {

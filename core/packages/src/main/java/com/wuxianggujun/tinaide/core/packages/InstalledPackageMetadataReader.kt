@@ -1,6 +1,7 @@
 package com.wuxianggujun.tinaide.core.packages
 
 import android.content.Context
+import com.wuxianggujun.tinaide.core.common.registry.RegistryPackageId
 import com.wuxianggujun.tinaide.core.serialization.JsonSerializer
 import java.io.File
 import kotlinx.serialization.Serializable
@@ -14,18 +15,25 @@ object InstalledPackageMetadataReader {
     private const val PACKAGE_METADATA_FILE_NAME = "package.json"
 
     fun read(context: Context, packageId: String): InstalledPackageMetadata? {
+        if (!RegistryPackageId.isValid(packageId)) return null
         val metadataFile = resolveMetadataFile(context, packageId)
         if (!metadataFile.isFile) return null
-        return JsonSerializer.decodeFromFileOrNull(metadataFile)
+        return JsonSerializer.decodeFromFileOrNull<InstalledPackageMetadata>(metadataFile)
+            ?.takeIf { metadata ->
+                metadata.id == packageId && metadata.name.isNotBlank() && metadata.version.isNotBlank()
+            }
     }
 
     fun readVersion(context: Context, packageId: String): String? = read(context, packageId)?.version
 
     fun readUpstreamVersion(context: Context, packageId: String): String? = read(context, packageId)?.upstreamVersion
 
-    private fun resolveMetadataFile(context: Context, packageId: String): File = File(context.filesDir, INSTALL_DIR_NAME)
-        .resolve(packageId)
-        .resolve(PACKAGE_METADATA_FILE_NAME)
+    private fun resolveMetadataFile(context: Context, packageId: String): File {
+        RegistryPackageId.requireValid(packageId)
+        return File(context.filesDir, INSTALL_DIR_NAME)
+            .resolve(packageId)
+            .resolve(PACKAGE_METADATA_FILE_NAME)
+    }
 }
 
 @Serializable

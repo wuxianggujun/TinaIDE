@@ -16,6 +16,7 @@ import androidx.lifecycle.lifecycleScope
 import com.gyf.immersionbar.ktx.immersionBar
 import com.wuxianggujun.tinaide.core.config.IConfigManager
 import com.wuxianggujun.tinaide.core.config.Prefs
+import com.wuxianggujun.tinaide.core.packages.PackageManagerNavigation
 import com.wuxianggujun.tinaide.plugin.EditorThemeIndex
 import com.wuxianggujun.tinaide.plugin.PluginHostLogSources
 import com.wuxianggujun.tinaide.plugin.PluginLogManager
@@ -97,10 +98,17 @@ internal object SettingsActivitySupport {
     fun extractInitialPackageSearchQuery(intent: Intent): String? = intent.getStringExtra(
         SettingsActivity.EXTRA_INITIAL_PACKAGE_SEARCH_QUERY
     )?.takeUnless { it.isBlank() }
+        ?: PackageManagerNavigation.extractInitialSearchQuery(intent)
 
     fun resolveInitialRoute(routeId: String?): SettingsRoute = routeId?.takeUnless { it.isBlank() }?.let(initialRoutes::get) ?: SettingsRoute.Root
 
-    fun resolveInitialRoute(intent: Intent): SettingsRoute = resolveInitialRoute(extractInitialRouteId(intent))
+    fun resolveInitialRoute(intent: Intent): SettingsRoute = if (
+        PackageManagerNavigation.isPackageManagerIntent(intent)
+    ) {
+        SettingsRoute.Packages
+    } else {
+        resolveInitialRoute(extractInitialRouteId(intent))
+    }
 }
 
 internal data class SettingsNavigationState(

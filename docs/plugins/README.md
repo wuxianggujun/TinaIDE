@@ -144,7 +144,7 @@ my-plugin/
 - `contributions.menus["editor/toolbar"]`：编辑器标签栏右侧插件动作菜单（宿主命令 + 当前插件已注册命令）
 - `contributions.keybindings`：快捷键扩展（JSON 文件声明，宿主命令 + 当前插件已注册命令；用户自定义/内置快捷键优先）
 - `contributions.snippets`：代码片段（补全列表显示 + Snippet 插入）
-- `contributions.projectTemplates`：新建项目模板（插件携带 zip 模板资源）
+- `contributions.projectTemplates`：新建项目模板（插件携带受限校验的 zip 模板资源；可通过模板级 `requiredPackages` 声明创建前必须安装的 Android Registry 包）
 - `contributions.apkExports`：APK 导出模板扩展（插件携带模板 APK，宿主负责通用打包逻辑）
 - `configuration`：插件配置 schema（宿主在插件详情页自动生成设置 UI）
 - `manifest.type = "script" / "hybrid"`：Lua 脚本运行时（需权限确认；不支持 DEX）

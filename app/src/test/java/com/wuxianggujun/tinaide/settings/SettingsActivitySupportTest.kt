@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Intent
 import androidx.activity.ComponentActivity
 import com.google.common.truth.Truth.assertThat
+import com.wuxianggujun.tinaide.core.packages.PackageManagerNavigation
 import com.wuxianggujun.tinaide.ui.compose.screens.settings.SettingsRoute
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -116,6 +117,17 @@ class SettingsActivitySupportTest {
             .isEqualTo("sdl3-image")
         assertThat(SettingsActivitySupport.resolveInitialRoute(startedIntent))
             .isEqualTo(SettingsRoute.Packages)
+    }
+
+    @Test
+    fun packageManagerNavigationIntent_shouldResolvePackagesRouteAndSearchQuery() {
+        val application = RuntimeEnvironment.getApplication()
+
+        val intent = PackageManagerNavigation.createIntent(application, "sdl2")
+
+        assertThat(intent.component?.className).isEqualTo(SettingsActivity::class.java.name)
+        assertThat(SettingsActivitySupport.resolveInitialRoute(intent)).isEqualTo(SettingsRoute.Packages)
+        assertThat(SettingsActivitySupport.extractInitialPackageSearchQuery(intent)).isEqualTo("sdl2")
     }
 
     @Test

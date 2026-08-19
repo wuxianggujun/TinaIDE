@@ -1,6 +1,7 @@
 package com.wuxianggujun.tinaide.core.packages.api
 
 import android.content.Context
+import com.wuxianggujun.tinaide.core.common.registry.RegistryPackageId
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.str
 import com.wuxianggujun.tinaide.core.network.ApiResult
@@ -117,61 +118,76 @@ class PackageApiClient private constructor(
         index.categories.takeIf { it.isNotEmpty() } ?: deriveCategories(index.packages)
     }
 
-    suspend fun getPackageDetail(packageId: String): ApiResult<GUIPackage> = withContext(Dispatchers.IO) {
-        when (val indexResult = loadIndex()) {
-            is ApiResult.Success -> when (val detailResult = resolvePackageDetail(indexResult.data, packageId)) {
-                is ApiResult.Success -> ApiResult.Success(detailResult.data.pkg)
+    suspend fun getPackageDetail(packageId: String): ApiResult<GUIPackage> {
+        if (!RegistryPackageId.isValid(packageId)) {
+            return ApiResult.Error(-1, Strings.pkg_manager_error_package_not_found.str(packageId))
+        }
+        return withContext(Dispatchers.IO) {
+            when (val indexResult = loadIndex()) {
+                is ApiResult.Success -> when (val detailResult = resolvePackageDetail(indexResult.data, packageId)) {
+                    is ApiResult.Success -> ApiResult.Success(detailResult.data.pkg)
+                    is ApiResult.Error -> detailResult
+                    is ApiResult.NetworkError -> detailResult
+                }
+                is ApiResult.Error -> indexResult
+                is ApiResult.NetworkError -> indexResult
+            }
+        }
+    }
+
+    suspend fun getPackageVersions(packageId: String): ApiResult<PackageVersionsResponse> {
+        if (!RegistryPackageId.isValid(packageId)) {
+            return ApiResult.Error(-1, Strings.pkg_manager_error_package_not_found.str(packageId))
+        }
+        return withContext(Dispatchers.IO) {
+            val index = when (val indexResult = loadIndex()) {
+                is ApiResult.Success -> indexResult.data
+                is ApiResult.Error -> return@withContext indexResult
+                is ApiResult.NetworkError -> return@withContext indexResult
+            }
+            when (val detailResult = resolvePackageDetail(index, packageId)) {
+                is ApiResult.Success -> {
+                    val detail = detailResult.data
+                    ApiResult.Success(detail.versions ?: detail.pkg.toVersions(packageId))
+                }
                 is ApiResult.Error -> detailResult
                 is ApiResult.NetworkError -> detailResult
             }
-            is ApiResult.Error -> indexResult
-            is ApiResult.NetworkError -> indexResult
         }
     }
 
-    suspend fun getPackageVersions(packageId: String): ApiResult<PackageVersionsResponse> = withContext(Dispatchers.IO) {
-        val index = when (val indexResult = loadIndex()) {
-            is ApiResult.Success -> indexResult.data
-            is ApiResult.Error -> return@withContext indexResult
-            is ApiResult.NetworkError -> return@withContext indexResult
+    suspend fun getDownloadInfo(packageId: String, versionId: Int): ApiResult<DownloadInfo> {
+        if (!RegistryPackageId.isValid(packageId)) {
+            return ApiResult.Error(-1, Strings.pkg_manager_error_package_not_found.str(packageId))
         }
-        when (val detailResult = resolvePackageDetail(index, packageId)) {
-            is ApiResult.Success -> {
-                val detail = detailResult.data
-                ApiResult.Success(detail.versions ?: detail.pkg.toVersions(packageId))
+        return withContext(Dispatchers.IO) {
+            val index = when (val indexResult = loadIndex()) {
+                is ApiResult.Success -> indexResult.data
+                is ApiResult.Error -> return@withContext indexResult
+                is ApiResult.NetworkError -> return@withContext indexResult
             }
-            is ApiResult.Error -> detailResult
-            is ApiResult.NetworkError -> detailResult
-        }
-    }
-
-    suspend fun getDownloadInfo(packageId: String, versionId: Int): ApiResult<DownloadInfo> = withContext(Dispatchers.IO) {
-        val index = when (val indexResult = loadIndex()) {
-            is ApiResult.Success -> indexResult.data
-            is ApiResult.Error -> return@withContext indexResult
-            is ApiResult.NetworkError -> return@withContext indexResult
-        }
-        when (val detailResult = resolvePackageDetail(index, packageId)) {
-            is ApiResult.Success -> {
-                val detail = detailResult.data
-                ApiResult.Success(
-                    detail.downloads["$packageId:$versionId"]
-                        ?.withResolvedSources(index.endpoint)
-                        ?: resolveDownloadInfo(
-                            packageId = packageId,
-                            versionId = versionId,
-                            endpoint = index.endpoint,
-                            versions = detail.versions,
-                            pkg = detail.pkg,
-                        )
-                        ?: return@withContext ApiResult.Error(
-                            -1,
-                            Strings.pkg_manager_error_download_info_not_found.str(packageId, versionId),
-                        )
-                )
+            when (val detailResult = resolvePackageDetail(index, packageId)) {
+                is ApiResult.Success -> {
+                    val detail = detailResult.data
+                    ApiResult.Success(
+                        detail.downloads["$packageId:$versionId"]
+                            ?.withResolvedSources(index.endpoint)
+                            ?: resolveDownloadInfo(
+                                packageId = packageId,
+                                versionId = versionId,
+                                endpoint = index.endpoint,
+                                versions = detail.versions,
+                                pkg = detail.pkg,
+                            )
+                            ?: return@withContext ApiResult.Error(
+                                -1,
+                                Strings.pkg_manager_error_download_info_not_found.str(packageId, versionId),
+                            )
+                    )
+                }
+                is ApiResult.Error -> detailResult
+                is ApiResult.NetworkError -> detailResult
             }
-            is ApiResult.Error -> detailResult
-            is ApiResult.NetworkError -> detailResult
         }
     }
 
@@ -286,7 +302,11 @@ class PackageApiClient private constructor(
                             return@use
                         }
                         val detail = json.decodeFromString<PackageRegistryDetail>(body)
-                        cachedDetails[detail.pkg.id] = detail
+                        if (detail.pkg.id != entry.id || !RegistryPackageId.isValid(detail.pkg.id)) {
+                            lastError = ApiResult.Error(-1, "Package detail id does not match registry entry")
+                            return@use
+                        }
+                        cachedDetails[entry.id] = detail
                         return@withLock ApiResult.Success(detail)
                     }
                 } catch (e: IOException) {

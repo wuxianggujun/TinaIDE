@@ -7,14 +7,22 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.res.stringResource
 import com.gyf.immersionbar.ktx.immersionBar
 import com.wuxianggujun.tinaide.core.config.NewProjectSourceLocation
 import com.wuxianggujun.tinaide.core.config.Prefs
+import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
+import com.wuxianggujun.tinaide.core.packages.PackageManagerNavigation
 import com.wuxianggujun.tinaide.plugin.PluginManager
 import com.wuxianggujun.tinaide.storage.ProjectPaths
 import com.wuxianggujun.tinaide.ui.theme.TinaIDETheme
@@ -46,6 +54,7 @@ class NewProjectWizardActivity : ComponentActivity() {
             TinaIDETheme {
                 val pluginManager = remember { PluginManager.getInstance(this@NewProjectWizardActivity) }
                 val state by viewModel.state.collectAsState()
+                var missingRequiredPackages by remember { mutableStateOf<List<String>?>(null) }
                 val enabledPlugins by pluginManager.enabledPluginsFlow.collectAsState()
                 val initialTemplateId = remember { intent.getStringExtra(EXTRA_INITIAL_TEMPLATE_ID) }
                 val preferPluginTemplate = remember {
@@ -114,7 +123,8 @@ class NewProjectWizardActivity : ComponentActivity() {
                             },
                             onError = { errorMessage ->
                                 Toast.makeText(this, errorMessage, Toast.LENGTH_LONG).show()
-                            }
+                            },
+                            onMissingPackages = { missingRequiredPackages = it },
                         )
                     },
                     onBack = {
@@ -125,6 +135,41 @@ class NewProjectWizardActivity : ComponentActivity() {
                         }
                     }
                 )
+
+                missingRequiredPackages?.let { packageIds ->
+                    AlertDialog(
+                        onDismissRequest = { missingRequiredPackages = null },
+                        title = { Text(stringResource(Strings.wizard_missing_packages_title)) },
+                        text = {
+                            Text(
+                                stringResource(
+                                    Strings.wizard_missing_packages_message,
+                                    packageIds.joinToString(", "),
+                                )
+                            )
+                        },
+                        confirmButton = {
+                            TextButton(
+                                onClick = {
+                                    missingRequiredPackages = null
+                                    startActivity(
+                                        PackageManagerNavigation.createIntent(
+                                            this@NewProjectWizardActivity,
+                                            packageIds.firstOrNull(),
+                                        )
+                                    )
+                                }
+                            ) {
+                                Text(stringResource(Strings.wizard_open_package_manager))
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { missingRequiredPackages = null }) {
+                                Text(stringResource(Strings.btn_cancel))
+                            }
+                        },
+                    )
+                }
             }
         }
     }
