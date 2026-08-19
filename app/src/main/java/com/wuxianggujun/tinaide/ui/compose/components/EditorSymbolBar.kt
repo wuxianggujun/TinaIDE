@@ -3,7 +3,6 @@ package com.wuxianggujun.tinaide.ui.compose.components
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
@@ -27,9 +26,6 @@ private val editorQuickSymbols = listOf(
     "&", "|", "^", "~", "`", "!", "?", ".", ",", "#", "@", "\\", "\$", "_",
 )
 
-// 工作区左侧边缘由抽屉手势占用，固定留出安全区域，避免滚动后的快捷键进入手势层下方。
-private val drawerGestureSafeInset = 24.dp
-
 @Composable
 fun EditorSymbolBar(
     onSymbolClick: (String) -> Unit,
@@ -46,11 +42,10 @@ fun EditorSymbolBar(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Spacer(modifier = Modifier.width(drawerGestureSafeInset))
             LazyRow(
                 modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(
-                    start = 4.dp,
+                    start = 0.dp,
                     top = 2.dp,
                     end = 8.dp,
                     bottom = 2.dp,
