@@ -31,6 +31,31 @@
 
 ## [Unreleased]
 
+### Added
+
+- 新增 C/C++ 编译上下文诊断中心：点击编辑器状态栏的语言服务状态，可查看当前文件实际使用的 clangd 模式、`compile_commands.json` 来源与更新时间、命令匹配方式、编译器、语言标准、Target、工具链、Sysroot、Clang resource directory、头文件搜索路径、预处理宏和完整编译参数，并可直接刷新编译上下文与语言服务连接。
+- 编译上下文支持结构化解析 `compile_commands.json` 的 `arguments` 与 `command` 两种格式；头文件缺少直接条目时，可从相关源文件推断编译命令，并明确展示数据库缺失、格式损坏、命令未命中、工具链准备失败和 clangd 启动失败等状态。
+- 多文件 Code Action 在应用 `WorkspaceEdit` 前会显示项目相对路径、受影响文件数和编辑数量；取消预览会返回操作列表，不再误报为执行失败。
+- “问题”面板新增条件式 Fix All：仅当当前活动文件的语言服务器返回启用的 `source.fixAll` action 时显示，并在点击后重新请求最新操作；多文件修改继续经过 WorkspaceEdit 预览。
+
+### Fixed
+
+- C/C++ 编译上下文改为按编辑器标签页保存并使用 Compose 可观察状态，刷新、标签关闭、ID 重映射和全局清理后界面会同步更新，避免状态已变化但诊断弹窗仍显示旧内容。
+- 修复“问题”面板对所有诊断无条件显示“查看修复”的问题：当前仅对可见诊断按需探测 Quick Fix，只有语言服务器返回未禁用修复时才显示入口；诊断请求同时限定 `quickfix` 并过滤误返回的 Refactor / Source Action，通用 Code Actions 不受影响。
+- 修复 App 与内嵌 RikkaHub 的 `usesCleartextTraffic` manifest 合并冲突；宿主继续保持禁止明文流量。
+
+### Tests
+
+- 新增编译数据库解析、头文件命令推断和编译上下文状态生命周期测试，并通过 LSP、编辑器状态、App arm64 Debug 编译与国际化检查。
+- 新增 Code Action kind 限定、服务端越界响应过滤与诊断 Quick Fix 按可用性显示的回归测试。
+- 新增 WorkspaceEdit 预览解析测试，覆盖多文件摘要、项目目录越界、资源操作拒绝、文档版本和容量限制。
+- 新增 SourceFixAll 严格 kind 过滤和整文档 UTF-16 范围测试，避免普通 Command 或 Quick Fix 误触发批量修复入口。
+
+### Documentation
+
+- 更新 README、开发指南及 App 内中英文 LSP 帮助，补充 C++ 编译上下文诊断入口、字段含义和排障流程。
+- 补充诊断 Quick Fix 的显示条件、通用 Code Actions 边界、定向测试命令与后续编辑器体验路线。
+
 ## [0.18.20] - 2026-08-19
 
 ### Fixed

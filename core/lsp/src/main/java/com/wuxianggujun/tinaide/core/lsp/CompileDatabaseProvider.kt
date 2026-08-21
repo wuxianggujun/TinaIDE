@@ -90,6 +90,7 @@ class CompileDatabaseProvider(
         val projectType: ProjectType,
         val compileCommandsDir: File,
         val sourceCompileCommandsDir: File,
+        val compileDatabaseSource: CxxCompileDatabaseSource,
         val shouldGenerate: Boolean,
         val scanRoot: File,
         val isCxx: Boolean,
@@ -169,6 +170,11 @@ class CompileDatabaseProvider(
             else -> baseProjectType
         }
         val shouldGenerate = !shouldReuseExisting
+        val compileDatabaseSource = if (hasUsableCompileCommands && !isTinaFallback) {
+            CxxCompileDatabaseSource.EXTERNAL
+        } else {
+            CxxCompileDatabaseSource.TINA_FALLBACK
+        }
 
         if (CompileCommandsDebugLogger.isCompileCommandsSelectionEnabled()) {
             Timber.tag(TAG).i(
@@ -199,6 +205,7 @@ class CompileDatabaseProvider(
             projectType = projectType,
             compileCommandsDir = compileCommandsDir,
             sourceCompileCommandsDir = compileCommandsDir,
+            compileDatabaseSource = compileDatabaseSource,
             shouldGenerate = shouldGenerate,
             scanRoot = scanRoot,
             isCxx = isCxx,

@@ -35,7 +35,6 @@ import com.wuxianggujun.tinaide.ui.compose.state.editor.ConditionalEditorTextRep
 import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState
 import com.wuxianggujun.tinaide.ui.compose.state.editor.TextEditOperation
 import java.io.File
-import java.net.URI
 import java.nio.charset.Charset
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -44,7 +43,6 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.eclipse.lsp4j.TextEdit
 import org.eclipse.lsp4j.WorkspaceEdit
 import timber.log.Timber
 
@@ -79,11 +77,6 @@ class MainActivityActionsViewModel(
     }
 
     enum class ToastType { SUCCESS, ERROR, INFO }
-
-    private data class WorkspaceFileEditBatch(
-        val edits: MutableList<TextEdit> = mutableListOf(),
-        var expectedVersion: Int? = null
-    )
 
     private data class OpenWorkspaceEditPlan(
         val tabId: String,
@@ -466,83 +459,35 @@ class MainActivityActionsViewModel(
     /**
      * 应用 LSP WorkspaceEdit
      */
-    suspend fun applyWorkspaceEdit(
+    internal suspend fun applyWorkspaceEdit(
         editorContainerState: EditorContainerState,
-        edit: WorkspaceEdit
+        edit: WorkspaceEdit,
+        confirmMultiFileEdit: suspend (WorkspaceEditPreview) -> Boolean = { true },
     ): Boolean {
-        val projectRoot = projectContext.getCurrentProject()?.rootPath
-            ?.let(::File)
-            ?.takeIf { it.isDirectory }
-            ?.runCatching { canonicalFile }
-            ?.getOrNull()
-            ?: return false
-        val editsByFile = linkedMapOf<File, WorkspaceFileEditBatch>()
-        var replacementBytes = 0L
-
-        fun addEdits(uri: String, edits: List<TextEdit>, expectedVersion: Int?): Boolean {
-            val file = workspaceUriToFile(uri, projectRoot) ?: return false
-            if (file !in editsByFile && editsByFile.size >= MAX_WORKSPACE_EDIT_FILES) return false
-            edits.forEach { textEdit ->
-                val editBytes = textEdit.newText.orEmpty().toByteArray(Charsets.UTF_8).size.toLong()
-                if (editBytes > MAX_WORKSPACE_EDIT_BYTES - replacementBytes) return false
-                replacementBytes += editBytes
-            }
-            val batch = editsByFile.getOrPut(file) { WorkspaceFileEditBatch() }
-            if (expectedVersion != null) {
-                val previousVersion = batch.expectedVersion
-                if (previousVersion != null && previousVersion != expectedVersion) return false
-                batch.expectedVersion = expectedVersion
-            }
-            batch.edits.addAll(edits)
-            return true
-        }
-
-        edit.changes.orEmpty().forEach { (uri, edits) ->
-            if (!addEdits(uri, edits, expectedVersion = null)) return false
-        }
-
-        edit.documentChanges.orEmpty().forEach { change ->
-            if (!change.isLeft) return false
-            val documentEdit = change.left
-            val extractedEdits = mutableListOf<TextEdit>()
-            @Suppress("UNCHECKED_CAST")
-            val rawEdits = documentEdit.edits as List<*>
-            rawEdits.forEach { item ->
-                val textEdit = when (item) {
-                    is TextEdit -> item
-                    is org.eclipse.lsp4j.jsonrpc.messages.Either<*, *> -> when {
-                        item.isLeft -> item.left as? TextEdit
-                        item.isRight -> item.right as? TextEdit
-                        else -> null
-                    }
-                    else -> null
-                } ?: return false
-                extractedEdits += textEdit
-            }
-            if (!addEdits(
-                    uri = documentEdit.textDocument.uri,
-                    edits = extractedEdits,
-                    expectedVersion = documentEdit.textDocument.version
-                )
-            ) {
-                return false
-            }
-        }
-
-        if (editsByFile.isEmpty()) return false
+        val projectRoot = projectContext.getCurrentProject()?.rootPath?.let(::File) ?: return false
+        val parsedEdit = WorkspaceEditParser.parse(
+            edit = edit,
+            projectRoot = projectRoot,
+            maxFiles = MAX_WORKSPACE_EDIT_FILES,
+            maxReplacementBytes = MAX_WORKSPACE_EDIT_BYTES,
+        ) ?: return false
+        if (parsedEdit.preview.files.size > 1 && !confirmMultiFileEdit(parsedEdit.preview)) return false
+        if (!isCurrentProjectRoot(parsedEdit.projectRoot)) return false
 
         val openPlans = mutableListOf<OpenWorkspaceEditPlan>()
         val closedPlans = mutableListOf<ClosedWorkspaceEditPlan>()
-        editsByFile.forEach { (file, batch) ->
-            if (batch.edits.isEmpty()) return@forEach
+        parsedEdit.files.forEach { fileEdits ->
+            val file = fileEdits.file
+            if (fileEdits.edits.isEmpty()) return@forEach
             val tabId = editorContainerState.findOpenTabIdByFileOrNull(file)
             if (tabId != null) {
-                if (batch.expectedVersion != null &&
-                    !editorContainerState.isLspDocumentVersionCurrent(tabId, batch.expectedVersion!!)
+                val expectedVersion = fileEdits.expectedVersion
+                if (expectedVersion != null &&
+                    !editorContainerState.isLspDocumentVersionCurrent(tabId, expectedVersion)
                 ) {
                     return false
                 }
-                val mappedEdits = batch.edits.map { textEdit ->
+                val mappedEdits = fileEdits.edits.map { textEdit ->
                     TextEditOperation(
                         startLine = textEdit.range.start.line,
                         startColumn = textEdit.range.start.character,
@@ -553,13 +498,14 @@ class MainActivityActionsViewModel(
                 }
                 val plan = withContext(Dispatchers.Main.immediate) {
                     val originalText = editorContainerState.readTextFromTab(tabId) ?: return@withContext null
-                    val updatedText = WorkspaceTextEditApplier.apply(originalText, batch.edits) ?: return@withContext null
+                    val updatedText = WorkspaceTextEditApplier.apply(originalText, fileEdits.edits)
+                        ?: return@withContext null
                     if (updatedText == originalText) return@withContext OpenWorkspaceEditPlan(
                         tabId = tabId,
                         edits = emptyList(),
                         originalText = originalText,
                         documentVersion = editorContainerState.readTabDocumentVersion(tabId),
-                        expectedLspVersion = batch.expectedVersion
+                        expectedLspVersion = fileEdits.expectedVersion
                     )
                     if (!editorContainerState.canApplyTextEditsInTab(tabId, mappedEdits)) return@withContext null
                     OpenWorkspaceEditPlan(
@@ -567,18 +513,18 @@ class MainActivityActionsViewModel(
                         edits = mappedEdits,
                         originalText = originalText,
                         documentVersion = editorContainerState.readTabDocumentVersion(tabId),
-                        expectedLspVersion = batch.expectedVersion
+                        expectedLspVersion = fileEdits.expectedVersion
                     )
                 } ?: return false
                 openPlans += plan
             } else {
-                if (batch.expectedVersion != null) return false
+                if (fileEdits.expectedVersion != null) return false
                 val plan = withContext(Dispatchers.IO) {
                     runCatching {
                         if (!file.isFile) return@runCatching null
                         val charset = FileCharsetDetector.detect(file)
                         val originalText = file.readText(charset)
-                        val updatedText = WorkspaceTextEditApplier.apply(originalText, batch.edits)
+                        val updatedText = WorkspaceTextEditApplier.apply(originalText, fileEdits.edits)
                             ?: return@runCatching null
                         ClosedWorkspaceEditPlan(file, originalText, updatedText, charset)
                     }.getOrNull()
@@ -663,21 +609,10 @@ class MainActivityActionsViewModel(
         }
     }
 
-    /**
-     * 将 URI 转换为文件
-     */
-    private fun workspaceUriToFile(uri: String, projectRoot: File): File? = runCatching {
-        val parsed = URI(uri)
-        val file = when {
-            parsed.scheme == null -> File(uri)
-            parsed.scheme.equals("file", ignoreCase = true) -> File(parsed)
-            else -> null
-        }
-        val canonicalFile = file?.canonicalFile ?: return@runCatching null
-        canonicalFile.takeIf { candidate ->
-            candidate.toPath().startsWith(projectRoot.toPath()) && candidate.isFile
-        }
-    }.getOrNull()
+    private fun isCurrentProjectRoot(expectedRoot: File): Boolean = projectContext.getCurrentProject()?.rootPath
+        ?.let(::File)
+        ?.runCatching { canonicalFile }
+        ?.getOrNull() == expectedRoot
 
     // ============ 项目关闭 ============
 

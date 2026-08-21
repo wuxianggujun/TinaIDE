@@ -25,8 +25,10 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class CompileDatabaseProviderRuntimeIdentityTest {
 
     private lateinit var context: Context
@@ -137,6 +139,7 @@ class CompileDatabaseProviderRuntimeIdentityTest {
         val prepared = requireNotNull(provider.prepare(File(projectRoot, "main.cpp"), projectRoot.absolutePath))
 
         assertThat(prepared.desiredCppStandardFlag).isEqualTo("c++20")
+        assertThat(prepared.compileDatabaseSource).isEqualTo(CxxCompileDatabaseSource.EXTERNAL)
         assertThat(prepared.shouldGenerate).isFalse()
     }
 

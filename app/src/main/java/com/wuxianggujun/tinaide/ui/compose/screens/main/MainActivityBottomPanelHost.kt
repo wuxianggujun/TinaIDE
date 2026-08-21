@@ -34,10 +34,11 @@ import com.wuxianggujun.tinaide.ui.compose.components.EditorStatusBarHeight
 import com.wuxianggujun.tinaide.ui.compose.components.SwipeableDrawerState
 import com.wuxianggujun.tinaide.ui.compose.components.rememberBottomPanelDragState
 import com.wuxianggujun.tinaide.ui.compose.state.DialogState
+import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveEditorCommandResult
 import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState
 import com.wuxianggujun.tinaide.ui.compose.state.git.GitUiState
+import org.eclipse.lsp4j.CodeActionKind
 import org.koin.compose.koinInject
-import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveEditorCommandResult
 
 @Composable
 internal fun MainActivityBottomPanelHost(
@@ -154,7 +155,57 @@ internal fun MainActivityBottomPanelHost(
                                 diagnostic.column,
                                 diagnostic.endLine,
                                 diagnostic.endColumn,
+                                listOf(CodeActionKind.QuickFix),
                             )
+                        }
+                    },
+                    onDiagnosticQuickFixAvailabilityRequest = { diagnostic ->
+                        val file = MainActivityNavigationHelper.resolveDiagnosticFile(diagnostic)
+                        val tabId = editorContainerState.findOpenTabIdByFileOrNull(file)
+                        if (
+                            tabId == null ||
+                            !editorContainerState.hasActiveLspConnection(tabId)
+                        ) {
+                            false
+                        } else {
+                            editorContainerState.requestCodeActions(
+                                tabId = tabId,
+                                startLine = diagnostic.line,
+                                startColumn = diagnostic.column,
+                                endLine = diagnostic.endLine,
+                                endColumn = diagnostic.endColumn,
+                                onlyKinds = listOf(CodeActionKind.QuickFix),
+                            ).any { action -> action.isEnabled }
+                        }
+                    },
+                    onDiagnosticFixAllClick = {
+                        editorContainerState.getActiveDocumentCodeActionTarget()?.let { target ->
+                            editorContainerState.onLspCodeActionsRequested?.invoke(
+                                target.tabId,
+                                0,
+                                0,
+                                target.endLine,
+                                target.endColumn,
+                                listOf(CodeActionKind.SourceFixAll),
+                            )
+                        }
+                    },
+                    onDiagnosticFixAllAvailabilityRequest = {
+                        val target = editorContainerState.getActiveDocumentCodeActionTarget()
+                        if (
+                            target == null ||
+                            !editorContainerState.hasActiveLspConnection(target.tabId)
+                        ) {
+                            false
+                        } else {
+                            editorContainerState.requestCodeActions(
+                                tabId = target.tabId,
+                                startLine = 0,
+                                startColumn = 0,
+                                endLine = target.endLine,
+                                endColumn = target.endColumn,
+                                onlyKinds = listOf(CodeActionKind.SourceFixAll),
+                            ).any { action -> action.isEnabled }
                         }
                     },
                     gitCurrentBranch = gitUiState.status.branch,

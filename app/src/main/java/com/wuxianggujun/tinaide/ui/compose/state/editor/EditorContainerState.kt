@@ -35,6 +35,7 @@ import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.core.lang.CxxFileSupport
 import com.wuxianggujun.tinaide.core.linux.LinuxEnvironmentProvider
 import com.wuxianggujun.tinaide.core.linux.UnavailableLinuxEnvironmentProvider
+import com.wuxianggujun.tinaide.core.lsp.CxxCompileContextSnapshot
 import com.wuxianggujun.tinaide.core.lsp.Diagnostic
 import com.wuxianggujun.tinaide.core.lsp.DocumentSymbolItem
 import com.wuxianggujun.tinaide.core.lsp.LocationItem
@@ -84,6 +85,18 @@ internal fun coerceSplitEditorPrimaryRatio(ratio: Float): Float = if (ratio.isFi
 } else {
     DEFAULT_SPLIT_EDITOR_PRIMARY_RATIO
 }
+
+internal data class CodeActionProbeContext(
+    val filePath: String,
+    val documentVersion: Long?,
+    val isInteractive: Boolean,
+)
+
+internal data class ActiveDocumentCodeActionTarget(
+    val tabId: String,
+    val endLine: Int,
+    val endColumn: Int,
+)
 
 /**
  * 编辑器容器状态管理
@@ -237,6 +250,8 @@ class EditorContainerState(
 
         lspEditorManager.onLspStatusChanged = lspUiState::handleStatusChanged
 
+        lspEditorManager.onCxxCompileContextChanged = lspUiState::handleCxxCompileContextChanged
+
         lspEditorManager.onPluginLspDependencyNotReady = lspUiState::handlePluginDependencyNotReady
 
         // 设置标签关闭回调，清理状态
@@ -334,9 +349,9 @@ class EditorContainerState(
     /**
      * LSP Code Actions 请求回调
      *
-     * 参数：tabId, startLine, startColumn, endLine, endColumn
+     * 参数：tabId, startLine, startColumn, endLine, endColumn, onlyKinds
      */
-    var onLspCodeActionsRequested: ((tabId: String, startLine: Int, startColumn: Int, endLine: Int, endColumn: Int) -> Unit)?
+    var onLspCodeActionsRequested: ((tabId: String, startLine: Int, startColumn: Int, endLine: Int, endColumn: Int, onlyKinds: List<String>) -> Unit)?
         get() = lspNavigationFacade.onLspCodeActionsRequested
         set(value) {
             lspNavigationFacade.onLspCodeActionsRequested = value
@@ -391,6 +406,46 @@ class EditorContainerState(
     internal fun getActiveLspStatus(): EditorStatus {
         val tab = getActiveTab() ?: return EditorStatus.NoLsp
         return getLspStatus(tab.id)
+    }
+
+    internal fun getCodeActionProbeContext(): List<CodeActionProbeContext> = tabs.map(::codeActionProbeContextFor)
+
+    internal fun getActiveCodeActionProbeContext(): CodeActionProbeContext? =
+        getActiveTab()?.let(::codeActionProbeContextFor)
+
+    private fun codeActionProbeContextFor(tab: EditorTabState) =
+        CodeActionProbeContext(
+            filePath = tab.file.absolutePath,
+            documentVersion = lspUiState.getDocumentVersion(tab.id) ?: readTabDocumentVersion(tab.id),
+            isInteractive = getLspStatus(tab.id).isInteractiveForCodeActionProbe(),
+        )
+
+    internal fun getActiveDocumentCodeActionTarget(): ActiveDocumentCodeActionTarget? {
+        val activeTab = getActiveTab() ?: return null
+        val text = readActiveTabText() ?: return null
+        var endLine = 0
+        var endColumn = 0
+        text.forEach { character ->
+            if (character == '\n') {
+                endLine++
+                endColumn = 0
+            } else {
+                endColumn++
+            }
+        }
+        return ActiveDocumentCodeActionTarget(
+            tabId = activeTab.id,
+            endLine = endLine,
+            endColumn = endColumn,
+        )
+    }
+
+    internal fun activeTabSupportsCxxCompileContext(): Boolean =
+        getActiveTab()?.file?.extension?.lowercase() in CxxFileSupport.clangdSupportedExtensions
+
+    internal fun getActiveCxxCompileContext(): CxxCompileContextSnapshot? {
+        val tab = getActiveTab() ?: return null
+        return lspUiState.getCxxCompileContext(tab.id)
     }
 
     internal fun getActiveDocumentSymbolsTargetResult(): ActiveDocumentSymbolsTargetResult {
@@ -1485,10 +1540,11 @@ class EditorContainerState(
 
     fun releaseTinaLspForTab(tabId: String) {
         lspEditorManager.releaseLspEditor(tabId)
-        lspUiState.removeStatus(tabId)
+        lspUiState.removeTab(tabId)
     }
 
     fun notifyTinaTextChanged(tabId: String, change: TextChange, documentVersion: Long) {
+        lspUiState.handleDocumentVersionChanged(tabId, documentVersion)
         lspEditorManager.onTinaDocumentChanged(tabId, change, documentVersion)
     }
 
@@ -1554,8 +1610,16 @@ class EditorContainerState(
         startLine: Int,
         startColumn: Int,
         endLine: Int,
-        endColumn: Int
-    ) = lspEditorManager.requestCodeActions(tabId, startLine, startColumn, endLine, endColumn)
+        endColumn: Int,
+        onlyKinds: List<String> = emptyList(),
+    ) = lspEditorManager.requestCodeActions(
+        tabId = tabId,
+        startLine = startLine,
+        startColumn = startColumn,
+        endLine = endLine,
+        endColumn = endColumn,
+        onlyKinds = onlyKinds,
+    )
 
     suspend fun executeCodeAction(
         tabId: String,

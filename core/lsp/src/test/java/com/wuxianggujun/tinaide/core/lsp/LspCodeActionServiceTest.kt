@@ -4,6 +4,7 @@ import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.CodeAction
+import org.eclipse.lsp4j.CodeActionKind
 import org.eclipse.lsp4j.CodeActionDisabled
 import org.eclipse.lsp4j.Command
 import org.eclipse.lsp4j.Diagnostic
@@ -16,6 +17,110 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either
 import org.junit.Test
 
 class LspCodeActionServiceTest {
+
+    @Test
+    fun `request limits code actions to requested kinds`() {
+        runBlocking {
+            var captured: org.eclipse.lsp4j.CodeActionParams? = null
+
+            LspCodeActionService().requestCodeActions(
+                documentUri = "file:///project/main.cpp",
+                startLine = 2,
+                startColumn = 1,
+                endLine = 2,
+                endColumn = 4,
+                onlyKinds = listOf(CodeActionKind.QuickFix),
+                codeActionRequest = { params, _ ->
+                    captured = params
+                    emptyList()
+                },
+            )
+
+            assertThat(captured?.context?.only).containsExactly(CodeActionKind.QuickFix)
+        }
+    }
+
+    @Test
+    fun `request leaves code action kinds unrestricted by default`() {
+        runBlocking {
+            var captured: org.eclipse.lsp4j.CodeActionParams? = null
+
+            LspCodeActionService().requestCodeActions(
+                documentUri = "file:///project/main.cpp",
+                startLine = 2,
+                startColumn = 1,
+                endLine = 2,
+                endColumn = 4,
+                codeActionRequest = { params, _ ->
+                    captured = params
+                    emptyList()
+                },
+            )
+
+            assertThat(captured?.context?.only).isNull()
+        }
+    }
+
+    @Test
+    fun `request drops actions outside requested kinds`() {
+        runBlocking {
+            val result = LspCodeActionService().requestCodeActions(
+                documentUri = "file:///project/main.cpp",
+                startLine = 2,
+                startColumn = 1,
+                endLine = 2,
+                endColumn = 4,
+                onlyKinds = listOf(CodeActionKind.QuickFix),
+                codeActionRequest = { _, _ ->
+                    listOf(
+                        Either.forRight(
+                            CodeAction("Add missing include").apply { kind = CodeActionKind.QuickFix }
+                        ),
+                        Either.forRight(
+                            CodeAction("Extract function").apply { kind = CodeActionKind.RefactorExtract }
+                        ),
+                        Either.forRight(
+                            CodeAction("Organize imports").apply { kind = CodeActionKind.SourceOrganizeImports }
+                        ),
+                    )
+                },
+            )
+
+            assertThat(result.map { action -> action.title }).containsExactly("Add missing include")
+        }
+    }
+
+    @Test
+    fun `source fix all requires an explicit matching action kind`() {
+        runBlocking {
+            val result = LspCodeActionService().requestCodeActions(
+                documentUri = "file:///project/main.cpp",
+                startLine = 0,
+                startColumn = 0,
+                endLine = 20,
+                endColumn = 0,
+                onlyKinds = listOf(CodeActionKind.SourceFixAll),
+                codeActionRequest = { _, _ ->
+                    listOf(
+                        Either.forLeft(Command("Untyped command", "clangd.command", emptyList())),
+                        Either.forRight(
+                            CodeAction("Single quick fix").apply { kind = CodeActionKind.QuickFix },
+                        ),
+                        Either.forRight(
+                            CodeAction("Fix all").apply { kind = CodeActionKind.SourceFixAll },
+                        ),
+                        Either.forRight(
+                            CodeAction("Clangd fix all").apply { kind = "${CodeActionKind.SourceFixAll}.clangd" },
+                        ),
+                    )
+                },
+            )
+
+            assertThat(result.map { action -> action.title })
+                .containsExactly("Fix all", "Clangd fix all")
+                .inOrder()
+        }
+    }
 
     @Test
     fun `request propagates server failure`() {

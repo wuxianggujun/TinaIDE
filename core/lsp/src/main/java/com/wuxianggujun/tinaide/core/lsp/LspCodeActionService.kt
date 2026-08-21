@@ -58,6 +58,7 @@ class LspCodeActionService {
         endLine: Int,
         endColumn: Int,
         diagnostics: List<org.eclipse.lsp4j.Diagnostic> = emptyList(),
+        onlyKinds: List<String> = emptyList(),
         codeActionRequest: suspend (CodeActionParams, Long) -> List<Either<Command, CodeAction>>?,
     ): List<CodeActionItem> = withContext(Dispatchers.IO) {
         try {
@@ -72,6 +73,9 @@ class LspCodeActionService {
                     // LSP servers use these diagnostics to produce diagnostic quick fixes.
                     this.diagnostics = diagnostics.filter { diagnostic ->
                         diagnostic.range?.let { it.intersects(requestRange) } == true
+                    }
+                    if (onlyKinds.isNotEmpty()) {
+                        only = onlyKinds
                     }
                 }
             }
@@ -118,7 +122,7 @@ class LspCodeActionService {
                     disabledReason = disabledReason,
                     action = item
                 )
-            }
+            }.filter { item -> item.matchesRequestedKinds(onlyKinds) }
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (e: Exception) {
@@ -126,6 +130,19 @@ class LspCodeActionService {
             throw e
         }
     }
+
+    private fun CodeActionItem.matchesRequestedKinds(onlyKinds: List<String>): Boolean {
+        if (onlyKinds.isEmpty()) return true
+        if (kind == null) {
+            return onlyKinds.none { requestedKind -> requestedKind.requiresExplicitActionKind() }
+        }
+        return onlyKinds.any { requestedKind ->
+            kind == requestedKind || kind.startsWith("$requestedKind.")
+        }
+    }
+
+    private fun String.requiresExplicitActionKind(): Boolean =
+        this == CodeActionKind.SourceFixAll || startsWith("${CodeActionKind.SourceFixAll}.")
 
     private fun Range.intersects(other: Range): Boolean {
         val thisStart = start ?: return false

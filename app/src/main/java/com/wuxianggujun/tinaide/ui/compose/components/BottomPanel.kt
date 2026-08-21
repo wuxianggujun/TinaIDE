@@ -61,6 +61,9 @@ fun BottomPanel(
     onBookmarkNavigate: (filePath: String, line: Int) -> Unit,
     onDiagnosticClick: (Diagnostic) -> Unit,
     onDiagnosticCodeActionsClick: (Diagnostic) -> Unit,
+    onDiagnosticQuickFixAvailabilityRequest: suspend (Diagnostic) -> Boolean,
+    onDiagnosticFixAllClick: () -> Unit,
+    onDiagnosticFixAllAvailabilityRequest: suspend () -> Boolean,
     modifier: Modifier = Modifier,
     // Git 相关参数
     gitCurrentBranch: String? = null,
@@ -124,6 +127,7 @@ fun BottomPanel(
     // 变量详情对话框状态
     var showVariableDetailDialog by remember { mutableStateOf(false) }
     var selectedVariableForDetail by remember { mutableStateOf<DebugVariable?>(null) }
+    var showCxxCompileContextDialog by rememberSaveable { mutableStateOf(false) }
 
     // 默认底栏：问题 / 构建；命令打开的次级 Tab 临时并入可见列表
     val normalModeTabs = resolveNormalModeBottomTabs(
@@ -147,6 +151,8 @@ fun BottomPanel(
     val diagnostics = bottomPanelViewModel.diagnostics.collectAsStateWithLifecycleWhen(
         !isActive && resolvedBottomTab == BottomPanelTab.DIAGNOSTICS
     )
+    val quickFixProbeKey = editorContainerState.getCodeActionProbeContext()
+    val fixAllProbeKey = editorContainerState.getActiveCodeActionProbeContext()
     val buildLogCount by bottomPanelViewModel.buildLogCount.collectAsStateWithLifecycle()
     val runOutputCount by bottomPanelViewModel.runOutputCount.collectAsStateWithLifecycle()
     val normalModeTabBadges = mapOf(
@@ -177,6 +183,11 @@ fun BottomPanel(
                     line = cursorLine,
                     column = cursorColumn,
                     bottomPanelState = bottomPanelState,
+                    onStatusClick = if (editorContainerState.activeTabSupportsCxxCompileContext()) {
+                        { showCxxCompileContextDialog = true }
+                    } else {
+                        null
+                    },
                     onCursorPositionClick = onCursorPositionClick,
                     isEditorSymbolBarVisible = isEditorSymbolBarVisible,
                     onToggleEditorSymbolBar = if (canToggleEditorSymbolBar) {
@@ -305,6 +316,11 @@ fun BottomPanel(
                                         diagnostics = diagnostics,
                                         onDiagnosticClick = onDiagnosticClick,
                                         onDiagnosticCodeActionsClick = onDiagnosticCodeActionsClick,
+                                        quickFixProbeKey = quickFixProbeKey,
+                                        fixAllProbeKey = fixAllProbeKey,
+                                        onQuickFixAvailabilityRequest = onDiagnosticQuickFixAvailabilityRequest,
+                                        onFixAllClick = onDiagnosticFixAllClick,
+                                        onFixAllAvailabilityRequest = onDiagnosticFixAllAvailabilityRequest,
                                     )
                                     BottomPanelTab.PERFORMANCE -> EditorPerformanceContent(
                                         snapshotProvider = if (showEditorPerformanceTab) {
@@ -359,6 +375,15 @@ fun BottomPanel(
                 showVariableDetailDialog = false
                 selectedVariableForDetail = null
             }
+        )
+    }
+
+    if (showCxxCompileContextDialog) {
+        CxxCompileContextDialog(
+            status = editorStatus,
+            context = editorContainerState.getActiveCxxCompileContext(),
+            onReload = editorContainerState::refreshLspConnections,
+            onDismiss = { showCxxCompileContextDialog = false },
         )
     }
 }

@@ -65,7 +65,7 @@ class MainActivityBuildUiStateTest {
         val updatedManager = runConfigManagerWithSelectedName("Release")
         val state = MainActivityBuildUiState(initialManager)
 
-        val committed = state.commitRunConfigManager(updatedManager) { true }
+        val committed = state.commitRunConfigManager(updatedManager, persist = { true })
 
         assertThat(committed).isTrue()
         assertThat(state.runConfigManager).isEqualTo(updatedManager)
@@ -77,7 +77,7 @@ class MainActivityBuildUiStateTest {
         val updatedManager = runConfigManagerWithSelectedName("Release")
         val state = MainActivityBuildUiState(initialManager)
 
-        val committed = state.commitRunConfigManager(updatedManager) { false }
+        val committed = state.commitRunConfigManager(updatedManager, persist = { false })
 
         assertThat(committed).isFalse()
         assertThat(state.runConfigManager).isEqualTo(initialManager)
@@ -93,7 +93,10 @@ class MainActivityBuildUiStateTest {
         )
         val state = MainActivityBuildUiState(initialManager)
 
-        state.commitRunConfigManager(initialManager.selectConfig(releaseConfig.id)) { false }
+        state.commitRunConfigManager(
+            initialManager.selectConfig(releaseConfig.id),
+            persist = { false },
+        )
 
         assertThat(state.runConfigManager.selectedConfig).isEqualTo(debugConfig)
     }

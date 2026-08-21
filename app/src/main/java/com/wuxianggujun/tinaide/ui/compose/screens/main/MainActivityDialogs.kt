@@ -62,6 +62,7 @@ import com.wuxianggujun.tinaide.ui.compose.components.TinaDialogTitleText
 import com.wuxianggujun.tinaide.ui.compose.components.TinaTextButton
 import com.wuxianggujun.tinaide.ui.compose.components.TinaThreeActionDialog
 import com.wuxianggujun.tinaide.ui.compose.components.UnsavedChangesOnExitDialog
+import com.wuxianggujun.tinaide.ui.compose.components.WorkspaceEditPreviewDialog
 import com.wuxianggujun.tinaide.ui.compose.state.DialogState
 import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorActionsState
 import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState
@@ -265,26 +266,47 @@ internal fun MainActivityEditorDialogs(
             onActionClick = { action ->
                 val tabId = state.codeActionsTabId ?: return@CodeActionsMenu
                 state.codeActionsLoading = true
+                state.showCodeActionsMenu = false
                 uiScope.launch {
+                    var workspaceEditCancelled = false
                     val success = runCatching {
                         editorContainerState.executeCodeAction(
                             tabId = tabId,
                             action = action,
-                            onApplyEdit = { edit -> actionsViewModel.applyWorkspaceEdit(editorContainerState, edit) }
+                            onApplyEdit = { edit ->
+                                actionsViewModel.applyWorkspaceEdit(
+                                    editorContainerState = editorContainerState,
+                                    edit = edit,
+                                    confirmMultiFileEdit = { preview ->
+                                        val confirmed = state.requestWorkspaceEditConfirmation(preview)
+                                        if (!confirmed) workspaceEditCancelled = true
+                                        confirmed
+                                    },
+                                )
+                            },
                         )
                     }.getOrDefault(false)
 
                     state.codeActionsLoading = false
-                    state.showCodeActionsMenu = false
 
                     if (success) {
                         context.toastSuccess(Strings.code_action_executed.strOr(context))
+                    } else if (workspaceEditCancelled) {
+                        state.showCodeActionsMenu = true
                     } else {
                         context.toastError(Strings.code_action_failed.strOr(context))
                     }
                 }
             },
             onDismiss = { state.dismissCodeActions() }
+        )
+    }
+
+    state.workspaceEditPreview?.let { preview ->
+        WorkspaceEditPreviewDialog(
+            preview = preview,
+            onConfirm = state::confirmWorkspaceEdit,
+            onDismiss = state::dismissWorkspaceEditPreview,
         )
     }
 

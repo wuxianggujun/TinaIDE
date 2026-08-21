@@ -1,6 +1,6 @@
 # TinaIDE 测试文档
 
-> 最后人工核验：2026-07-31
+> 最后人工核验：2026-08-21
 
 本目录只保留当前仍值得固定维护的测试入口说明。
 
@@ -26,6 +26,17 @@
 ```bash
 ./gradlew :app:testArm64DebugUnitTest --tests "com.wuxianggujun.tinaide.ui.CompileActionsHelperTest" --tests "com.wuxianggujun.tinaide.ui.compose.components.BottomPanelTabResolutionTest" --tests "com.wuxianggujun.tinaide.ui.compose.components.SwipeableDrawerStateTest" --tests "com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerStateTest" --no-daemon --console=plain
 ```
+
+## 诊断 Quick Fix 定向回归
+
+诊断面板或 Code Action 请求边界发生变化时，至少运行：
+
+```powershell
+./gradlew :core:lsp:testDebugUnitTest --tests "com.wuxianggujun.tinaide.core.lsp.LspCodeActionServiceTest" --no-daemon --console=plain
+./gradlew :app:testArm64DebugUnitTest --tests "com.wuxianggujun.tinaide.ui.WorkspaceEditPreviewTest" --tests "com.wuxianggujun.tinaide.ui.compose.components.DiagnosticQuickFixAvailabilityTest" --tests "com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerStateTest" --no-daemon --console=plain
+```
+
+手工回归需覆盖五类场景：语言服务器提供可用 Quick Fix 时显示入口；普通语法错误或 disabled action 不显示入口；编辑器通用 Code Actions 仍可返回 Refactor / Source Action；仅当活动文件返回启用的 `source.fixAll` 时显示“全部修复”；多文件操作显示文件与编辑数量摘要，取消后返回操作列表且不显示失败提示。
 
 ## 文档一致性检查
 

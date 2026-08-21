@@ -2,7 +2,7 @@
 
 [![爱发电](https://img.shields.io/badge/%E7%88%B1%E5%8F%91%E7%94%B5-%E6%94%AF%E6%8C%81%E5%BC%80%E6%BA%90-946ce6?style=flat-square)](https://ifdian.net/a/wuxianggujun)
 
-> 最后人工核验：2026-07-15
+> 最后人工核验：2026-08-21
 >
 > 运行在 Android 设备上的 C/C++ IDE，默认使用 `native tina-toolchain + Android sysroot`；可选提供自研 Linux distro / PRoot 环境。
 
@@ -24,7 +24,8 @@ TinaIDE 是面向手机和平板的移动端 IDE。当前版本的核心变化�
 
 - 原生 C/C++ 工具链：内置 `tina-toolchain`，提供 clang / clang++ / clangd 等能力
 - Android sysroot：按 ABI 安装与校验运行时必需的头文件和库
-- 智能补全：native clangd + LSP，支持诊断、跳转定义、查找引用、悬浮信息
+- 代码智能：native clangd + LSP，支持补全、诊断、按实际可用性展示 Quick Fix、跳转定义、查找引用、重命名与悬浮信息
+- C++ 编译上下文诊断：从编辑器状态栏查看当前文件实际使用的编译数据库、编译器、语言标准、Target、Sysroot、头文件路径、宏和完整参数，并可刷新 clangd 连接
 - 自研编辑器：Tina Editor（Compose + Canvas），支持多标签、增量高亮、会话管理
 - Tree-sitter 高亮：支持 C/C++/CMake 及扩展语言
 - 终端与 Linux 环境：可选 Linux distro / PRoot 终端

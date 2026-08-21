@@ -10,6 +10,9 @@ import com.wuxianggujun.tinaide.core.linux.LinuxEnvironmentProvider
 import com.wuxianggujun.tinaide.core.linux.LinuxRunModePolicy
 import com.wuxianggujun.tinaide.core.linux.UnavailableLinuxEnvironmentProvider
 import com.wuxianggujun.tinaide.core.lsp.CompileDatabaseProvider
+import com.wuxianggujun.tinaide.core.lsp.CxxCompileContextInspector
+import com.wuxianggujun.tinaide.core.lsp.CxxCompileContextIssue
+import com.wuxianggujun.tinaide.core.lsp.CxxCompileContextSnapshot
 import com.wuxianggujun.tinaide.core.lsp.Diagnostic
 import com.wuxianggujun.tinaide.core.lsp.DocumentSymbolItem
 import com.wuxianggujun.tinaide.core.lsp.LocationItem
@@ -204,6 +207,7 @@ class LspEditorManager(
 
     private val tabSessions = mutableMapOf<String, TabSession>()
     private val tabBindings = mutableMapOf<String, TabBinding>()
+    private val cxxCompileContexts = mutableMapOf<String, CxxCompileContextSnapshot>()
     private val attachTokenCache = mutableMapOf<String, Any>()
     private val lspKnownUris = mutableSetOf<String>()
     private val lspDiagnosticsByUri = mutableMapOf<String, LspDiagnosticsCache>()
@@ -250,6 +254,7 @@ class LspEditorManager(
 
     var onDiagnosticsChanged: ((fileUri: String, diagnostics: List<Diagnostic>) -> Unit)? = null
     var onLspStatusChanged: ((tabId: String, status: EditorStatus) -> Unit)? = null
+    var onCxxCompileContextChanged: ((tabId: String, context: CxxCompileContextSnapshot?) -> Unit)? = null
     var onPluginLspDependencyNotReady: ((PluginLspDependencyNotReadyEvent) -> Unit)? = null
 
     val codeActionService = LspCodeActionService()
@@ -756,7 +761,8 @@ class LspEditorManager(
         startLine: Int,
         startColumn: Int,
         endLine: Int,
-        endColumn: Int
+        endColumn: Int,
+        onlyKinds: List<String> = emptyList(),
     ): List<LspCodeActionService.CodeActionItem> = withLspTabSession(tabId) { tabSession, session ->
         val requestTicket = createTabRequestTicket(tabId, tabSession.documentUri)
         val documentSnapshot = session.currentDocumentSnapshot(tabSession.documentUri)
@@ -778,6 +784,7 @@ class LspEditorManager(
             endLine = endLine,
             endColumn = endColumn,
             diagnostics = diagnostics,
+            onlyKinds = onlyKinds,
             codeActionRequest = { params, timeoutSeconds ->
                 awaitTrackedTabFuture(
                     ticket = requestTicket,
@@ -1294,6 +1301,14 @@ class LspEditorManager(
                             sysrootResult.exceptionOrNull()?.message
                         )
                         updateLspStatus(tabId, EditorStatus.Error)
+                        updateCxxCompileContext(
+                            tabId,
+                            CxxCompileContextSnapshot.unavailable(
+                                file = file,
+                                workspaceRoot = resolveContextWorkspace(file, projectRootPath),
+                                issue = CxxCompileContextIssue.TOOLCHAIN_SETUP_FAILED,
+                            ),
+                        )
                     }
                 }
                 return true
@@ -1319,8 +1334,27 @@ class LspEditorManager(
                     clearBinding = true,
                     expectedAttachToken = compileAttachToken,
                 )
+                updateCxxCompileContext(
+                    tabId,
+                    CxxCompileContextSnapshot.unavailable(
+                        file = file,
+                        workspaceRoot = resolveContextWorkspace(file, projectRootPath),
+                        issue = CxxCompileContextIssue.COMPILE_SETUP_UNAVAILABLE,
+                    ),
+                )
                 return@launch
             }
+
+            val compileContext = withContext(Dispatchers.IO) {
+                CxxCompileContextInspector.inspect(
+                    prepared = compileSetup.prepared,
+                    compileCommandsDir = compileSetup.compileCommandsDir,
+                )
+            }
+            if (!isCompileAttachCurrent(tabId, file, compileAttachToken)) {
+                return@launch
+            }
+            updateCxxCompileContext(tabId, compileContext)
 
             val prepared = compileSetup.prepared
             val workspaceRoot = prepared.workspaceRoot.absolutePath
@@ -1375,6 +1409,11 @@ class LspEditorManager(
             lspCompileCommandsDirOverride = null
             isUsingRemoteLsp = true
         }
+
+        updateCxxCompileContext(
+            tabId,
+            CxxCompileContextSnapshot.remote(file, File(projectRoot)),
+        )
 
         return startSharedCxxAttach(
             tabId = tabId,
@@ -1839,6 +1878,14 @@ class LspEditorManager(
                     expectedAttachToken = token,
                     onCurrentAttachment = {
                         updateLspStatus(tabId, EditorStatus.Error)
+                        val failedContext = cxxCompileContexts[tabId]
+                            ?.copy(issue = CxxCompileContextIssue.CLANGD_START_FAILED)
+                            ?: CxxCompileContextSnapshot.unavailable(
+                                file = file,
+                                workspaceRoot = File(workspaceRoot),
+                                issue = CxxCompileContextIssue.CLANGD_START_FAILED,
+                            )
+                        updateCxxCompileContext(tabId, failedContext)
                         if (remote) {
                             RemoteLspConfigManager.updateConnectionState(
                                 RemoteLspConnectionState.ERROR,
@@ -1995,6 +2042,7 @@ class LspEditorManager(
         expectedAttachToken: Any? = null,
         onCurrentAttachment: (() -> Unit)? = null,
     ): Boolean {
+        var clearedCxxCompileContext = false
         val (releaseState, cancelledRequests) = synchronized(stateLock) {
             if (expectedAttachToken != null && attachTokenCache[tabId] !== expectedAttachToken) {
                 return false
@@ -2006,7 +2054,10 @@ class LspEditorManager(
             inlayHintsCache.remove(tabId)
             documentVersions.remove(tabId)
             completionWarmupTabIds.remove(tabId)
-            if (clearBinding) tabBindings.remove(tabId)
+            if (clearBinding) {
+                tabBindings.remove(tabId)
+                clearedCxxCompileContext = cxxCompileContexts.remove(tabId) != null
+            }
             val removed = tabSessions.remove(tabId)
             removed?.let { tabSession ->
                 val diagnosticUris = setOf(
@@ -2026,6 +2077,9 @@ class LspEditorManager(
                 },
                 removed,
             ) to requests
+        }
+        if (clearedCxxCompileContext) {
+            onCxxCompileContextChanged?.invoke(tabId, null)
         }
         val (sharedSession, diagnosticsJob, removed) = releaseState
         cancelledRequests.forEach { future -> future.cancel(true) }
@@ -2049,6 +2103,18 @@ class LspEditorManager(
     private fun registerBinding(binding: TabBinding) {
         synchronized(stateLock) { tabBindings[binding.tabId] = binding }
     }
+
+    private fun updateCxxCompileContext(tabId: String, context: CxxCompileContextSnapshot) {
+        synchronized(stateLock) { cxxCompileContexts[tabId] = context }
+        onCxxCompileContextChanged?.invoke(tabId, context)
+    }
+
+    private fun resolveContextWorkspace(file: File, projectRootPath: String?): File =
+        projectRootPath
+            ?.takeIf(String::isNotBlank)
+            ?.let(::File)
+            ?: file.parentFile
+            ?: file
 
     private fun registerPendingLspSession(
         tabId: String,
@@ -2082,6 +2148,7 @@ class LspEditorManager(
         }
         diagnosticsJobs.forEach { job -> job.cancel() }
         val sharedSession = sharedCxxSessions.takeForDispose()
+        val clearedCxxCompileContextTabIds = mutableListOf<String>()
         val (sessions, inflightRequests) = synchronized(stateLock) {
             attachTokenCache.clear()
             semanticTokensCache.clear()
@@ -2089,11 +2156,18 @@ class LspEditorManager(
             documentVersions.clear()
             completionWarmupTabIds.clear()
             val inflight = tabRequestTracker.drainAll()
-            if (clearBindings) tabBindings.clear()
+            if (clearBindings) {
+                tabBindings.clear()
+                clearedCxxCompileContextTabIds += cxxCompileContexts.keys
+                cxxCompileContexts.clear()
+            }
             val all = tabSessions.values.toList()
             tabSessions.clear()
             lspDiagnosticsByUri.clear()
             all to inflight
+        }
+        clearedCxxCompileContextTabIds.forEach { tabId ->
+            onCxxCompileContextChanged?.invoke(tabId, null)
         }
         inflightRequests.forEach { future -> future.cancel(true) }
         val uniqueLspSessions = buildSet {

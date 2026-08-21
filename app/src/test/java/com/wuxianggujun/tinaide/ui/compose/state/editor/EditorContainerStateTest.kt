@@ -1663,6 +1663,49 @@ class EditorContainerStateTest {
     }
 
     @Test
+    fun getActiveDocumentCodeActionTarget_shouldCoverWholeUtf16Document() {
+        setActiveTab()
+        var text = "first\n\uD83D\uDE00x"
+        state.registerCodeEditorCallback(
+            tabId = "tab-1",
+            callback = testCodeEditorCallback(
+                readAllText = { text },
+                replaceWholeText = { false },
+            ),
+        )
+
+        assertThat(state.getActiveDocumentCodeActionTarget()).isEqualTo(
+            ActiveDocumentCodeActionTarget(
+                tabId = "tab-1",
+                endLine = 1,
+                endColumn = 3,
+            ),
+        )
+
+        text = "first\n"
+        assertThat(state.getActiveDocumentCodeActionTarget()).isEqualTo(
+            ActiveDocumentCodeActionTarget(
+                tabId = "tab-1",
+                endLine = 1,
+                endColumn = 0,
+            ),
+        )
+    }
+
+    @Test
+    fun getActiveCodeActionProbeContext_shouldFollowActiveTab() {
+        val tabs = createCodeTabs(2)
+        setTabs(managerTabs = tabs, activeTabId = "tab-1")
+
+        assertThat(state.getActiveCodeActionProbeContext()?.filePath)
+            .isEqualTo(tabs[0].file.absolutePath)
+
+        setTabs(managerTabs = tabs, activeTabId = "tab-2")
+        assertThat(state.getActiveCodeActionProbeContext()?.filePath)
+            .isEqualTo(tabs[1].file.absolutePath)
+    }
+
+    @Test
     fun getEditorProjectRootPathOrNull_shouldReuseResolvedProjectRoot() {
         assertThat(state.getEditorProjectRootPathOrNull())
             .isEqualTo(context.cacheDir.absolutePath)

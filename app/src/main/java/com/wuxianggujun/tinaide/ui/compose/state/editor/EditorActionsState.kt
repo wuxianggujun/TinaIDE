@@ -8,6 +8,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.wuxianggujun.tinaide.core.lsp.LspCodeActionService
+import com.wuxianggujun.tinaide.ui.WorkspaceEditPreview
+import kotlinx.coroutines.CompletableDeferred
 
 /**
  * 合并 Code Actions / LSP Rename 相关的 UI 状态，减少 MainScreen 中的散落状态变量。
@@ -19,6 +21,10 @@ internal class EditorActionsState {
     var codeActionsTabId by mutableStateOf<String?>(null)
     var codeActionsLoading by mutableStateOf(false)
     var codeActions by mutableStateOf<List<LspCodeActionService.CodeActionItem>>(emptyList())
+
+    var workspaceEditPreview by mutableStateOf<WorkspaceEditPreview?>(null)
+        private set
+    private var workspaceEditConfirmation: CompletableDeferred<Boolean>? = null
 
     // LSP Rename
     var showLspRenameDialog by mutableStateOf(false)
@@ -37,6 +43,36 @@ internal class EditorActionsState {
 
     fun dismissCodeActions() {
         showCodeActionsMenu = false
+    }
+
+    suspend fun requestWorkspaceEditConfirmation(preview: WorkspaceEditPreview): Boolean {
+        workspaceEditConfirmation?.complete(false)
+        val confirmation = CompletableDeferred<Boolean>()
+        workspaceEditConfirmation = confirmation
+        workspaceEditPreview = preview
+        return try {
+            confirmation.await()
+        } finally {
+            if (workspaceEditConfirmation === confirmation) {
+                workspaceEditConfirmation = null
+                workspaceEditPreview = null
+            }
+        }
+    }
+
+    fun confirmWorkspaceEdit() {
+        completeWorkspaceEditConfirmation(confirmed = true)
+    }
+
+    fun dismissWorkspaceEditPreview() {
+        completeWorkspaceEditConfirmation(confirmed = false)
+    }
+
+    private fun completeWorkspaceEditConfirmation(confirmed: Boolean) {
+        val confirmation = workspaceEditConfirmation ?: return
+        workspaceEditConfirmation = null
+        workspaceEditPreview = null
+        confirmation.complete(confirmed)
     }
 
     fun openRename(tabId: String, line: Int, column: Int, currentName: String) {

@@ -18,7 +18,7 @@ internal class EditorLspNavigationFacade(
     private val activeTabTextProvider: () -> String?,
 ) {
     var onLspNavigationRequested: ((tabId: String, navigationType: String) -> Unit)? = null
-    var onLspCodeActionsRequested: ((tabId: String, startLine: Int, startColumn: Int, endLine: Int, endColumn: Int) -> Unit)? = null
+    var onLspCodeActionsRequested: ((tabId: String, startLine: Int, startColumn: Int, endLine: Int, endColumn: Int, onlyKinds: List<String>) -> Unit)? = null
     var onLspRenameRequested: ((tabId: String, line: Int, column: Int, currentName: String) -> Unit)? = null
 
     fun supportsBasicLspNavigation(file: File): Boolean =
@@ -58,7 +58,7 @@ internal class EditorLspNavigationFacade(
         val startColumn = selection?.startColumn ?: cursor.column
         val endLine = selection?.endLine ?: cursor.line
         val endColumn = selection?.endColumn ?: cursor.column
-        callback(tab.id, startLine, startColumn, endLine, endColumn)
+        callback(tab.id, startLine, startColumn, endLine, endColumn, emptyList())
         return true
     }
 

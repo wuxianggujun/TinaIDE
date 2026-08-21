@@ -62,6 +62,7 @@ fun EditorStatusBar(
     line: Int = 1,
     column: Int = 1,
     bottomPanelState: BottomPanelDragState? = null,
+    onStatusClick: (() -> Unit)? = null,
     onCursorPositionClick: (() -> Unit)? = null,
     isEditorSymbolBarVisible: Boolean = false,
     onToggleEditorSymbolBar: (() -> Unit)? = null,
@@ -181,7 +182,15 @@ fun EditorStatusBar(
             // 左侧：状态指示器 + 远程 LSP 状态 + 编码
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier
+                    .weight(1f)
+                    .then(
+                        if (onStatusClick != null) {
+                            Modifier.clickable(onClick = onStatusClick)
+                        } else {
+                            Modifier
+                        }
+                    )
             ) {
                 // 状态圆点
                 Box(

@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Warning
@@ -29,7 +30,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -39,6 +46,28 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.lsp.Diagnostic
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+
+internal enum class DiagnosticQuickFixAvailability {
+    CHECKING,
+    AVAILABLE,
+    UNAVAILABLE;
+
+    val shouldShowAction: Boolean
+        get() = this == AVAILABLE
+}
+
+private data class DiagnosticQuickFixKey(
+    val fileUri: String,
+    val line: Int,
+    val column: Int,
+    val endLine: Int,
+    val endColumn: Int,
+    val code: String?,
+    val message: String,
+)
 
 /**
  * 诊断列表内容
@@ -48,6 +77,11 @@ fun DiagnosticsContent(
     diagnostics: List<Diagnostic>,
     onDiagnosticClick: (Diagnostic) -> Unit,
     onDiagnosticCodeActionsClick: (Diagnostic) -> Unit,
+    quickFixProbeKey: Any?,
+    fixAllProbeKey: Any?,
+    onQuickFixAvailabilityRequest: suspend (Diagnostic) -> Boolean,
+    onFixAllClick: () -> Unit,
+    onFixAllAvailabilityRequest: suspend () -> Boolean,
     modifier: Modifier = Modifier
 ) {
     if (diagnostics.isEmpty()) {
@@ -60,6 +94,23 @@ fun DiagnosticsContent(
         val groupedDiagnostics = remember(diagnostics) {
             diagnostics.groupBy { it.fileName }
         }
+        val quickFixAvailability = remember(diagnostics, quickFixProbeKey) {
+            mutableStateMapOf<DiagnosticQuickFixKey, DiagnosticQuickFixAvailability>()
+        }
+        val quickFixProbeSemaphore = remember(diagnostics, quickFixProbeKey) { Semaphore(2) }
+        val latestAvailabilityRequest by rememberUpdatedState(onQuickFixAvailabilityRequest)
+        val latestFixAllAvailabilityRequest by rememberUpdatedState(onFixAllAvailabilityRequest)
+        var fixAllAvailable by remember(diagnostics, fixAllProbeKey) { mutableStateOf(false) }
+
+        LaunchedEffect(diagnostics, fixAllProbeKey) {
+            fixAllAvailable = try {
+                latestFixAllAvailabilityRequest()
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Exception) {
+                false
+            }
+        }
 
         LazyColumn(
             modifier = modifier
@@ -68,22 +119,68 @@ fun DiagnosticsContent(
             contentPadding = PaddingValues(vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            if (fixAllAvailable) {
+                item(key = "diagnostics-fix-all") {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                    ) {
+                        TinaOutlinedButton(
+                            text = stringResource(Strings.diagnostics_fix_all),
+                            onClick = onFixAllClick,
+                            leadingIcon = Icons.Default.Build,
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                        )
+                    }
+                }
+            }
+
             groupedDiagnostics.forEach { (fileName, fileDiagnostics) ->
                 item {
                     DiagnosticFileHeader(fileName = fileName, count = fileDiagnostics.size)
                 }
 
                 items(fileDiagnostics) { diagnostic ->
+                    val quickFixKey = diagnostic.quickFixKey()
+                    LaunchedEffect(quickFixKey, quickFixProbeKey) {
+                        if (quickFixAvailability.containsKey(quickFixKey)) return@LaunchedEffect
+                        quickFixAvailability[quickFixKey] = DiagnosticQuickFixAvailability.CHECKING
+                        quickFixAvailability[quickFixKey] = try {
+                            val available = quickFixProbeSemaphore.withPermit {
+                                latestAvailabilityRequest(diagnostic)
+                            }
+                            if (available) {
+                                DiagnosticQuickFixAvailability.AVAILABLE
+                            } else {
+                                DiagnosticQuickFixAvailability.UNAVAILABLE
+                            }
+                        } catch (cancellation: CancellationException) {
+                            throw cancellation
+                        } catch (_: Exception) {
+                            DiagnosticQuickFixAvailability.UNAVAILABLE
+                        }
+                    }
                     DiagnosticItem(
                         diagnostic = diagnostic,
                         onClick = { onDiagnosticClick(diagnostic) },
                         onCodeActionsClick = { onDiagnosticCodeActionsClick(diagnostic) },
+                        showCodeActions = quickFixAvailability[quickFixKey]?.shouldShowAction == true,
                     )
                 }
             }
         }
     }
 }
+
+private fun Diagnostic.quickFixKey() = DiagnosticQuickFixKey(
+    fileUri = fileUri,
+    line = line,
+    column = column,
+    endLine = endLine,
+    endColumn = endColumn,
+    code = code,
+    message = message,
+)
 
 @Composable
 private fun DiagnosticFileHeader(
@@ -136,6 +233,7 @@ private fun DiagnosticItem(
     diagnostic: Diagnostic,
     onClick: () -> Unit,
     onCodeActionsClick: () -> Unit,
+    showCodeActions: Boolean,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -244,11 +342,13 @@ private fun DiagnosticItem(
                 )
             }
 
-            TinaTextButton(
-                text = stringResource(Strings.diagnostics_view_fixes),
-                onClick = onCodeActionsClick,
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-            )
+            if (showCodeActions) {
+                TinaTextButton(
+                    text = stringResource(Strings.diagnostics_view_fixes),
+                    onClick = onCodeActionsClick,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                )
+            }
         }
     }
 }

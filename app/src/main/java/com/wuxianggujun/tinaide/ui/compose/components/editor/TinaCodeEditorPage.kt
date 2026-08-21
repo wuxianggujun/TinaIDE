@@ -487,7 +487,8 @@ fun TinaCodeEditorPage(
                                 start.line,
                                 start.column,
                                 end.line,
-                                end.column
+                                end.column,
+                                emptyList(),
                             )
                         }
                     } else {

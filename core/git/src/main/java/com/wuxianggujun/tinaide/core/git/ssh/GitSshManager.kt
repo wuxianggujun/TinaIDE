@@ -205,6 +205,7 @@ class GitSshManager(context: Context) {
                     )
                 }
                 passphraseCache.remove(name)
+                Unit
             }
         }
     }

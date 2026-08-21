@@ -47,13 +47,14 @@ class LspEditorActionsDelegate(
         this.onToastError = onToastError
 
         editorContainerState.onLspCodeActionsRequested =
-            { tabId, startLine, startColumn, endLine, endColumn ->
+            { tabId, startLine, startColumn, endLine, endColumn, onlyKinds ->
                 handleCodeActionsRequest(
                     tabId = tabId,
                     startLine = startLine,
                     startColumn = startColumn,
                     endLine = endLine,
                     endColumn = endColumn,
+                    onlyKinds = onlyKinds,
                     editorContainerState = editorContainerState,
                     editorActionsState = editorActionsState,
                 )
@@ -78,6 +79,7 @@ class LspEditorActionsDelegate(
         startColumn: Int,
         endLine: Int,
         endColumn: Int,
+        onlyKinds: List<String>,
         editorContainerState: EditorContainerState,
         editorActionsState: EditorActionsState,
     ) {
@@ -113,6 +115,7 @@ class LspEditorActionsDelegate(
                     startColumn = startColumn,
                     endLine = endLine,
                     endColumn = endColumn,
+                    onlyKinds = onlyKinds,
                 )
             } catch (cancellation: CancellationException) {
                 throw cancellation
