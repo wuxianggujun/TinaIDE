@@ -1,6 +1,7 @@
 package com.wuxianggujun.tinaide.core.linuxdistro
 
 import java.io.File
+import java.util.UUID
 
 data class LinuxDistroInstallLayout(
     val runtimeDir: File,
@@ -9,9 +10,11 @@ data class LinuxDistroInstallLayout(
     val stagingDir: File = File(runtimeDir, "staging"),
 ) {
     fun ensureDirectories() {
-        downloadCacheDir.mkdirs()
-        installedRootfsDir.mkdirs()
-        stagingDir.mkdirs()
+        listOf(downloadCacheDir, installedRootfsDir, stagingDir).forEach { directory ->
+            check((directory.isDirectory || directory.mkdirs()) && directory.isDirectory) {
+                "Failed to create linux distro runtime directory: ${directory.absolutePath}"
+            }
+        }
     }
 
     fun rootfsDir(distroId: String): File {
@@ -34,7 +37,7 @@ data class LinuxDistroInstallLayout(
 
     fun newStagingRootfsDir(distroId: String): File {
         require(distroId.isSafeId()) { "Unsafe distro id: $distroId" }
-        return File(stagingDir, "$distroId-${System.currentTimeMillis()}")
+        return File(stagingDir, "$distroId-${UUID.randomUUID()}")
     }
 }
 

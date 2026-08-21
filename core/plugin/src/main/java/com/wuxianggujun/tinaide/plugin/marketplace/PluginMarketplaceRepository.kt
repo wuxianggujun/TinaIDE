@@ -192,7 +192,7 @@ class PluginMarketplaceRepository(
     suspend fun confirmPluginInstall(
         pending: MarketplacePendingPluginInstall,
     ): Result<InstalledPlugin> = withContext(Dispatchers.IO) {
-        withContext(NonCancellable) {
+        try {
             val result = pluginManager.installWithPermissions(
                 zipFile = pending.packageFile,
                 pluginId = pending.requestedPluginId,
@@ -205,10 +205,13 @@ class PluginMarketplaceRepository(
                     stackTrace = error.stackTraceToString(),
                 )
             }
-            pending.packageFile.delete()
             val cancellation = result.exceptionOrNull() as? CancellationException
             if (cancellation != null) throw cancellation
             result
+        } finally {
+            withContext(NonCancellable) {
+                pending.packageFile.delete()
+            }
         }
     }
 

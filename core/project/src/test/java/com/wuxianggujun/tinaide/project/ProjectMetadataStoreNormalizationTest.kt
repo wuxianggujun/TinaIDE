@@ -76,6 +76,129 @@ class ProjectMetadataStoreNormalizationTest {
     }
 
     @Test
+    fun `read replaces path-like project identity and persists the replacement`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            writeProjectMetadata(
+                projectRoot,
+                """
+                {
+                  "schemaVersion": 5,
+                  "id": "../../outside-workspace",
+                  "displayName": "Unsafe identity",
+                  "createdAt": 1700000000000
+                }
+                """.trimIndent()
+            )
+
+            val metadata = requireNotNull(ProjectMetadataStore.read(projectRoot))
+
+            assertThat(ProjectIdentity.isValid(metadata.id)).isTrue()
+            assertThat(metadata.id).isNotEqualTo("../../outside-workspace")
+            assertThat(readProjectMetadata(projectRoot)).contains("\"id\": \"${metadata.id}\"")
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `read rejects oversized metadata before decoding`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            writeProjectMetadata(projectRoot, "x".repeat(300 * 1024))
+
+            assertThat(ProjectMetadataStore.read(projectRoot)).isNull()
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `write truncates display name without leaving an unpaired surrogate`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            val metadata = ProjectMetadata(
+                schemaVersion = 5,
+                id = "surrogate-boundary",
+                displayName = "x".repeat(255) + "\uD83D\uDE00",
+                createdAt = 1700000000000,
+            )
+
+            assertThat(ProjectMetadataStore.write(projectRoot, metadata)).isTrue()
+
+            val persisted = requireNotNull(ProjectMetadataStore.read(projectRoot))
+            assertThat(persisted.displayName).isEqualTo("x".repeat(255))
+            assertThat(File(projectRoot, ".tinaide").listFiles().orEmpty().map(File::getName))
+                .containsExactly("project.json")
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `oversized write preserves existing metadata`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            val baseline = ProjectMetadata(
+                schemaVersion = 5,
+                id = "atomic-baseline",
+                displayName = "Baseline",
+                createdAt = 1700000000000,
+            )
+            assertThat(ProjectMetadataStore.write(projectRoot, baseline)).isTrue()
+            val oversizedPaths = (0 until 256).map { index ->
+                "include/$index/" + "x".repeat(4_080)
+            }
+
+            val wroteOversized = ProjectMetadataStore.write(
+                projectRoot,
+                baseline.copy(displayName = "Replacement", nativeIncludeDirs = oversizedPaths),
+            )
+
+            assertThat(wroteOversized).isFalse()
+            assertThat(requireNotNull(ProjectMetadataStore.read(projectRoot)).displayName)
+                .isEqualTo("Baseline")
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `read bounds untrusted metadata fields`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            val excessivePaths = (0 until 300).joinToString(",") { index ->
+                "\"include/$index\""
+            }
+            writeProjectMetadata(
+                projectRoot,
+                """
+                {
+                  "schemaVersion": 5,
+                  "id": "bounded-metadata",
+                  "displayName": "${"x".repeat(300)}",
+                  "createdAt": 1700000000000,
+                  "createdByIdeVersion": "version\u0000hidden",
+                  "nativeIncludeDirs": [$excessivePaths],
+                  "nativeCFlags": "${"-DVALUE ".repeat(3000)}",
+                  "defaultRunTargetName": "${"target".repeat(100)}"
+                }
+                """.trimIndent(),
+            )
+
+            val metadata = requireNotNull(ProjectMetadataStore.read(projectRoot))
+
+            assertThat(metadata.displayName).hasLength(256)
+            assertThat(metadata.createdByIdeVersion).isEqualTo("version hidden")
+            assertThat(metadata.nativeIncludeDirs).hasSize(256)
+            assertThat(metadata.nativeCFlags).isEmpty()
+            assertThat(metadata.defaultRunTargetName).isNull()
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `read removes incompatible SDL3 APK export from SDL2 metadata`() {
         val projectRoot = createTempProjectRoot()
         try {
@@ -262,8 +385,9 @@ class ProjectMetadataStoreNormalizationTest {
     private fun writeProjectMetadata(projectRoot: File, content: String) {
         val file = File(projectRoot, ".tinaide/project.json")
         file.parentFile?.mkdirs()
-        file.writeText(content)
+        file.writeText(content, Charsets.UTF_8)
     }
 
-    private fun readProjectMetadata(projectRoot: File): String = File(projectRoot, ".tinaide/project.json").readText()
+    private fun readProjectMetadata(projectRoot: File): String =
+        File(projectRoot, ".tinaide/project.json").readText(Charsets.UTF_8)
 }

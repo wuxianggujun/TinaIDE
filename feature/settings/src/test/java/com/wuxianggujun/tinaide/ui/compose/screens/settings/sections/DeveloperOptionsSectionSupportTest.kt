@@ -93,6 +93,17 @@ class DeveloperOptionsSectionSupportTest {
     }
 
     @Test
+    fun isServerUrlValid_shouldRequireHttpsExceptForSupportedLoopbackHosts() {
+        assertThat(DeveloperOptionsSectionSupport.isServerUrlValid(null)).isTrue()
+        assertThat(DeveloperOptionsSectionSupport.isServerUrlValid("https://server.example.com")).isTrue()
+        assertThat(DeveloperOptionsSectionSupport.isServerUrlValid("http://localhost:8080")).isTrue()
+        assertThat(DeveloperOptionsSectionSupport.isServerUrlValid("http://127.0.0.1:8080")).isTrue()
+        assertThat(DeveloperOptionsSectionSupport.isServerUrlValid("http://server.example.com")).isFalse()
+        assertThat(DeveloperOptionsSectionSupport.isServerUrlValid("https://user@server.example.com")).isFalse()
+        assertThat(DeveloperOptionsSectionSupport.isServerUrlValid("https://server.example.com?token=x")).isFalse()
+    }
+
+    @Test
     fun resolveServerUrlSaveResult_shouldKeepPersistedUrlAndExposeConnectionStatus() {
         val successState = DeveloperOptionsSectionSupport.resolveServerUrlSaveResult(
             persistedServerUrl = "https://ok.example.com",
@@ -127,6 +138,9 @@ class DeveloperOptionsSectionSupportTest {
         val failureMessage = DeveloperOptionsSectionSupport.resolveServerUrlFeedbackMessage(
             DeveloperServerUrlFeedback.TestFailure
         )
+        val invalidMessage = DeveloperOptionsSectionSupport.resolveServerUrlFeedbackMessage(
+            DeveloperServerUrlFeedback.Invalid
+        )
         val restoredMessage = DeveloperOptionsSectionSupport.resolveServerUrlFeedbackMessage(
             DeveloperServerUrlFeedback.RestoredDefault
         )
@@ -138,6 +152,8 @@ class DeveloperOptionsSectionSupportTest {
             .isEqualTo(DeveloperMessageSpec(Strings.toast_tina_server_test_ok))
         assertThat(failureMessage)
             .isEqualTo(DeveloperMessageSpec(Strings.toast_tina_server_test_failed))
+        assertThat(invalidMessage)
+            .isEqualTo(DeveloperMessageSpec(Strings.toast_tina_server_url_invalid))
         assertThat(restoredMessage)
             .isEqualTo(DeveloperMessageSpec(Strings.toast_tina_server_restored_default))
     }

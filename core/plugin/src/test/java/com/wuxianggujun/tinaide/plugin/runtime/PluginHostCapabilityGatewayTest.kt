@@ -14,6 +14,10 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
+import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -131,6 +135,59 @@ class PluginHostCapabilityGatewayTest {
     }
 
     @Test
+    fun `host error text should be bounded by utf8 bytes`() {
+        val response = gateway.call(
+            request(
+                namespace = "界".repeat(8 * 1024),
+                method = "unknown",
+                args = JsonArray(emptyList()),
+            ),
+        )
+
+        assertThat(response.error).isNotNull()
+        assertThat(response.error.orEmpty().toByteArray(Charsets.UTF_8).size).isAtMost(8 * 1024)
+    }
+
+    @Test
+    fun `workspace scans should be rate limited independently`() {
+        permissionManager.grantPermission(PLUGIN_ID, PluginPermission.FILE_READ)
+
+        repeat(12) {
+            val response = gateway.call(
+                request("workspace", "findFiles", JsonArray(listOf(JsonPrimitive("*.txt")))),
+            )
+            assertThat(response.error).isNull()
+        }
+        val limited = gateway.call(
+            request("workspace", "findFiles", JsonArray(listOf(JsonPrimitive("*.txt")))),
+        )
+
+        assertThat(limited.error).contains("rate limit")
+        assertThat(limited.values.first()).isEqualTo(JsonArray(emptyList()))
+    }
+
+    @Test
+    fun `commands should reject invalid target instead of executing without context`() {
+        permissionManager.grantPermission(PLUGIN_ID, PluginPermission.COMMAND_EXECUTE)
+
+        val response = gateway.call(
+            request(
+                "commands",
+                "execute",
+                JsonArray(
+                    listOf(
+                        JsonPrimitive("view.toggleFileTree"),
+                        JsonPrimitive("../outside.txt"),
+                    ),
+                ),
+            ),
+        )
+
+        assertThat(response.errorKind).isEqualTo(PluginHostErrorKind.INVALID_REQUEST)
+        assertThat(response.values.first()).isEqualTo(JsonPrimitive(false))
+    }
+
+    @Test
     fun `optional permissions require explicit grant even at no-risk level`() {
         val beforeGrant = gateway.call(request("diagnostics", "get", JsonArray(emptyList())))
         permissionManager.grantPermission(PLUGIN_ID, PluginPermission.DIAGNOSTICS_READ)
@@ -207,6 +264,86 @@ class PluginHostCapabilityGatewayTest {
         assertThat(invalidPayload.errorKind).isEqualTo(PluginHostErrorKind.INVALID_REQUEST)
     }
 
+    @Test
+    fun `storage should persist accepted values and reject oversized values`() {
+        permissionManager.grantPermission(PLUGIN_ID, PluginPermission.STORAGE_LOCAL)
+        val accepted = gateway.call(
+            request(
+                "storage",
+                "set",
+                JsonArray(listOf(JsonPrimitive("key"), JsonPrimitive("value"))),
+            ),
+        )
+        val loaded = gateway.call(
+            request("storage", "get", JsonArray(listOf(JsonPrimitive("key")))),
+        )
+        val oversized = gateway.call(
+            request(
+                "storage",
+                "set",
+                JsonArray(listOf(JsonPrimitive("large"), JsonPrimitive("x".repeat(64 * 1024 + 1)))),
+            ),
+        )
+
+        assertThat(accepted.error).isNull()
+        assertThat(loaded.values.single()).isEqualTo(JsonPrimitive("value"))
+        assertThat(oversized.error).contains("size limit")
+    }
+
+    @Test
+    fun `network should reject malformed urls and oversized request bodies as invalid requests`() {
+        permissionManager.grantPermission(PLUGIN_ID, PluginPermission.NETWORK_FETCH)
+
+        val malformedUrl = gateway.call(
+            request("network", "get", JsonArray(listOf(JsonPrimitive("not a url")))),
+        )
+        val oversizedBody = gateway.call(
+            request(
+                "network",
+                "post",
+                JsonArray(
+                    listOf(
+                        JsonPrimitive("https://example.com/upload"),
+                        JsonPrimitive("x".repeat(8 * 1024 * 1024 + 1)),
+                    ),
+                ),
+            ),
+        )
+
+        assertThat(malformedUrl.errorKind).isEqualTo(PluginHostErrorKind.INVALID_REQUEST)
+        assertThat(oversizedBody.errorKind).isEqualTo(PluginHostErrorKind.INVALID_REQUEST)
+        assertThat(oversizedBody.error).contains("size limit")
+    }
+
+    @Test
+    fun `network should encapsulate oversized responses as business errors`() {
+        val responseClient = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                Response.Builder()
+                    .request(chain.request())
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(200)
+                    .message("OK")
+                    .body("x".repeat(8 * 1024 * 1024 + 1).toResponseBody())
+                    .build()
+            }
+            .build()
+        val capabilities = PluginHostDataCapabilities(
+            context = context,
+            pluginManager = pluginManager,
+            hasAnyPermission = { _, _ -> true },
+            networkClient = responseClient,
+        )
+
+        val response = capabilities.call(
+            request("network", "get", JsonArray(listOf(JsonPrimitive("https://example.com/large")))),
+        )
+
+        assertThat(response.errorKind).isEqualTo(PluginHostErrorKind.BUSINESS_ERROR)
+        assertThat(response.error).contains("size limit")
+        capabilities.cleanup()
+    }
+
     private fun request(
         namespace: String,
         method: String,
@@ -231,8 +368,9 @@ class PluginHostCapabilityGatewayTest {
               "apiVersion": 1,
               "type": "script",
               "main": "main.lua",
-              "permissions": ["workspace.read"],
+              "permissions": ["workspace.read", "storage.local", "network.fetch", "command.execute"],
               "optionalPermissions": ["diagnostics.read"],
+              "networkHosts": ["example.com"],
               "contributions": {
                 "panels": [
                   { "id": "status", "title": "Status" }

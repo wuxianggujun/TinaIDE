@@ -39,4 +39,42 @@ class GitHubRegistryConfigTest {
             "https://mirror.example.com/${GitHubRegistryConfig.GITHUB_RAW_BASE_URL}"
         )
     }
+
+    @Test
+    fun registryResourceUrlCandidates_shouldRejectCleartextAndInvalidAbsoluteUrls() {
+        val endpoint = RegistryEndpoint("test", "https://registry.example.com")
+
+        assertThat(
+            GitHubRegistryConfig.registryResourceUrlCandidates(
+                urlOrPath = "http://registry.example.com/package.json",
+                endpoint = endpoint,
+            )
+        ).isEmpty()
+        assertThat(
+            GitHubRegistryConfig.registryResourceUrlCandidates(
+                urlOrPath = "https:///missing-host/package.json",
+                endpoint = endpoint,
+            )
+        ).isEmpty()
+        assertThat(
+            GitHubRegistryConfig.registryResourceUrlCandidates(
+                urlOrPath = "https://token@registry.example.com/package.json",
+                endpoint = endpoint,
+            )
+        ).isEmpty()
+        assertThat(GitHubRegistryConfig.normalizeGitHubProxyPrefix("https://token@mirror.example.com"))
+            .isNull()
+    }
+
+    @Test
+    fun registryResourceUrlCandidates_shouldResolveRelativePathOverHttps() {
+        val endpoint = RegistryEndpoint("test", "https://registry.example.com")
+
+        assertThat(
+            GitHubRegistryConfig.registryResourceUrlCandidates(
+                urlOrPath = "packages/sdl2/package.json",
+                endpoint = endpoint,
+            )
+        ).containsExactly("https://registry.example.com/packages/sdl2/package.json")
+    }
 }

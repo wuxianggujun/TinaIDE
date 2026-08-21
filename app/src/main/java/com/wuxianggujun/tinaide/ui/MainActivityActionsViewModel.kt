@@ -470,10 +470,23 @@ class MainActivityActionsViewModel(
         editorContainerState: EditorContainerState,
         edit: WorkspaceEdit
     ): Boolean {
+        val projectRoot = projectContext.getCurrentProject()?.rootPath
+            ?.let(::File)
+            ?.takeIf { it.isDirectory }
+            ?.runCatching { canonicalFile }
+            ?.getOrNull()
+            ?: return false
         val editsByFile = linkedMapOf<File, WorkspaceFileEditBatch>()
+        var replacementBytes = 0L
 
         fun addEdits(uri: String, edits: List<TextEdit>, expectedVersion: Int?): Boolean {
-            val file = workspaceUriToFile(uri) ?: return false
+            val file = workspaceUriToFile(uri, projectRoot) ?: return false
+            if (file !in editsByFile && editsByFile.size >= MAX_WORKSPACE_EDIT_FILES) return false
+            edits.forEach { textEdit ->
+                val editBytes = textEdit.newText.orEmpty().toByteArray(Charsets.UTF_8).size.toLong()
+                if (editBytes > MAX_WORKSPACE_EDIT_BYTES - replacementBytes) return false
+                replacementBytes += editBytes
+            }
             val batch = editsByFile.getOrPut(file) { WorkspaceFileEditBatch() }
             if (expectedVersion != null) {
                 val previousVersion = batch.expectedVersion
@@ -653,14 +666,17 @@ class MainActivityActionsViewModel(
     /**
      * 将 URI 转换为文件
      */
-    private fun workspaceUriToFile(uri: String): File? = runCatching {
+    private fun workspaceUriToFile(uri: String, projectRoot: File): File? = runCatching {
         val parsed = URI(uri)
         val file = when {
             parsed.scheme == null -> File(uri)
             parsed.scheme.equals("file", ignoreCase = true) -> File(parsed)
             else -> null
         }
-        file?.absoluteFile?.toPath()?.normalize()?.toFile()
+        val canonicalFile = file?.canonicalFile ?: return@runCatching null
+        canonicalFile.takeIf { candidate ->
+            candidate.toPath().startsWith(projectRoot.toPath()) && candidate.isFile
+        }
     }.getOrNull()
 
     // ============ 项目关闭 ============
@@ -686,7 +702,11 @@ class MainActivityActionsViewModel(
             if (forgetSession) {
                 clearCurrentProjectState()
             }
-            projectSession.closeProject()
+            if (forgetSession) {
+                projectSession.closeProject()
+            } else {
+                projectSession.clearInMemorySession()
+            }
         }
 
         return true
@@ -735,5 +755,7 @@ class MainActivityActionsViewModel(
 
     companion object {
         private const val TAG = "MainActionsViewModel"
+        private const val MAX_WORKSPACE_EDIT_FILES = 128
+        private const val MAX_WORKSPACE_EDIT_BYTES = 8L * 1024L * 1024L
     }
 }

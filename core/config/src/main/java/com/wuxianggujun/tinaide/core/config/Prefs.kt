@@ -54,6 +54,7 @@ data class DeveloperDiagnosticsSettings(
  */
 object Prefs {
     private const val CONFIG_PREFS_NAME = "tinaide_config"
+    private const val CUSTOM_EDITOR_THEME_KEY = "editor_custom_theme_v1"
 
     @Volatile
     private var configManagerRef: IConfigManager? = null
@@ -314,6 +315,14 @@ object Prefs {
         MutableStateFlow(editorTheme)
     }
 
+    /** User-defined editor palette, observed separately so edits refresh an active custom theme. */
+    val customEditorThemeFlow: StateFlow<CustomEditorTheme>
+        get() = customEditorThemeState.asStateFlow()
+
+    private val customEditorThemeState: MutableStateFlow<CustomEditorTheme> by lazy {
+        MutableStateFlow(customEditorTheme)
+    }
+
     /**
      * LSP 辅助能力设置 StateFlow，用于响应式更新已打开的编辑器。
      */
@@ -483,11 +492,14 @@ object Prefs {
         get() = sharedPrefs.getString("editor_font_path", "") ?: ""
 
     /**
-     * 编辑器主题："LIGHT" / "DARK" / "GRAY" / "AUTO"
+     * 编辑器主题：内置主题、CUSTOM，或 plugin: 前缀的插件主题 ID。
      * 默认 GRAY（灰色主题）
      */
     val editorTheme: String
         get() = sharedPrefs.getString("editor_theme", "GRAY") ?: "GRAY"
+
+    val customEditorTheme: CustomEditorTheme
+        get() = CustomEditorThemeCodec.decode(sharedPrefs.getString(CUSTOM_EDITOR_THEME_KEY, null))
 
     /**
      * 是否启用彩虹括号。
@@ -811,6 +823,18 @@ object Prefs {
     fun setEditorTheme(theme: String) {
         sharedPrefs.edit().putString("editor_theme", theme).apply()
         editorThemeState.value = theme
+    }
+
+    fun setCustomEditorTheme(theme: CustomEditorTheme) {
+        val sanitized = theme.sanitized()
+        sharedPrefs.edit()
+            .putString(CUSTOM_EDITOR_THEME_KEY, CustomEditorThemeCodec.encode(sanitized))
+            .apply()
+        customEditorThemeState.value = sanitized
+    }
+
+    fun resetCustomEditorTheme(base: EditorThemeBase = EditorThemeBase.GRAY) {
+        setCustomEditorTheme(CustomEditorTheme(base = base))
     }
 
     fun setEditorRainbowBrackets(enabled: Boolean) {

@@ -21,6 +21,7 @@ import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.wuxianggujun.tinaide.core.config.CUSTOM_EDITOR_THEME_ID
 import com.wuxianggujun.tinaide.core.font.AppFontManager
 import com.wuxianggujun.tinaide.core.i18n.Arrays
 import com.wuxianggujun.tinaide.core.i18n.Strings
@@ -63,6 +64,7 @@ internal fun EditorSettingsSection(viewModel: SettingsViewModel) {
     var showFontDialog by remember { mutableStateOf(false) }
     var showRainbowBracketsLimitDialog by remember { mutableStateOf(false) }
     var showEditorThemeDialog by remember { mutableStateOf(false) }
+    var showEditorThemeCustomizer by remember { mutableStateOf(false) }
     var showRenderWhitespaceDialog by remember { mutableStateOf(false) }
 
     val fontPickerLauncher = rememberLauncherForActivityResult(
@@ -115,7 +117,8 @@ internal fun EditorSettingsSection(viewModel: SettingsViewModel) {
         currentTheme = state.editorTheme,
         themeEntries = editorThemeEntries.toList(),
         themeValues = editorThemeValues.toList(),
-        pluginThemesLabel = stringResource(Strings.theme_preview_test_plugin_themes)
+        pluginThemesLabel = stringResource(Strings.theme_preview_test_plugin_themes),
+        customThemeLabel = stringResource(Strings.settings_editor_theme_custom)
     )
 
     SettingsCard {
@@ -124,6 +127,18 @@ internal fun EditorSettingsSection(viewModel: SettingsViewModel) {
             subtitle = stringResource(Strings.settings_editor_theme_summary),
             value = editorThemeDisplayName,
             onClick = { showEditorThemeDialog = true },
+            showDivider = true
+        )
+
+        SettingsClickableItem(
+            title = stringResource(Strings.settings_editor_theme_customize),
+            subtitle = stringResource(Strings.settings_editor_theme_customize_summary),
+            value = if (state.editorTheme == CUSTOM_EDITOR_THEME_ID) {
+                stringResource(Strings.settings_editor_theme_custom_active)
+            } else {
+                null
+            },
+            onClick = { showEditorThemeCustomizer = true },
             showDivider = true
         )
 
@@ -243,7 +258,8 @@ internal fun EditorSettingsSection(viewModel: SettingsViewModel) {
     if (showEditorThemeDialog) {
         val options = EditorSettingsSectionSupport.buildEditorThemeOptions(
             themeEntries = editorThemeEntries.toList(),
-            themeValues = editorThemeValues.toList()
+            themeValues = editorThemeValues.toList(),
+            customThemeLabel = stringResource(Strings.settings_editor_theme_custom)
         )
 
         TinaSingleChoiceDialog(
@@ -255,6 +271,17 @@ internal fun EditorSettingsSection(viewModel: SettingsViewModel) {
                 showEditorThemeDialog = false
             },
             onDismiss = { showEditorThemeDialog = false }
+        )
+    }
+
+    if (showEditorThemeCustomizer) {
+        EditorThemeCustomizerDialog(
+            initialTheme = state.customEditorTheme,
+            onApply = { theme ->
+                viewModel.setCustomEditorTheme(theme)
+                showEditorThemeCustomizer = false
+            },
+            onDismiss = { showEditorThemeCustomizer = false }
         )
     }
 

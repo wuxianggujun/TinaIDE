@@ -4,10 +4,14 @@ import android.content.Context
 import com.wuxianggujun.tinaide.core.linuxdistro.LinuxDistroManifest
 import com.wuxianggujun.tinaide.core.linuxdistro.LinuxDistroManifestParser
 import com.wuxianggujun.tinaide.core.linuxdistro.LinuxDistroManifestSource
-import com.wuxianggujun.tinaide.core.network.OkHttpClientProvider
+import com.wuxianggujun.tinaide.core.network.readUtf8Limited
 import com.wuxianggujun.tinaide.core.network.registry.GitHubRegistryConfig
+import com.wuxianggujun.tinaide.core.network.registry.GitHubRegistryHttpClientFactory
 import java.io.File
 import java.io.IOException
+import java.net.URI
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import timber.log.Timber
@@ -28,7 +32,7 @@ import timber.log.Timber
 class RemoteLinuxDistroManifestSource(
     context: Context,
     private val fallback: LinuxDistroManifestSource,
-    private val client: OkHttpClient = OkHttpClientProvider.probe,
+    private val client: OkHttpClient = GitHubRegistryHttpClientFactory.probe(context.applicationContext),
     private val cacheFile: File = defaultCacheFile(context),
     private val manifestUrls: List<String> = GitHubRegistryConfig.linuxDistroManifestUrls().map { it.url },
     private val cacheTtlMillis: Long = DEFAULT_CACHE_TTL_MILLIS,
@@ -61,6 +65,7 @@ class RemoteLinuxDistroManifestSource(
     }
 
     private fun decodeCacheOrNull(): LinuxDistroManifest? = runCatching {
+        require(cacheFile.length() <= MAX_MANIFEST_BYTES) { "Cached linux distro manifest exceeds size limit" }
         LinuxDistroManifestParser.decode(cacheFile.readText(Charsets.UTF_8))
     }.onFailure { error ->
         Timber.tag(TAG).w(error, "Decode cached linux distro manifest failed")
@@ -71,13 +76,21 @@ class RemoteLinuxDistroManifestSource(
             val manifest = runCatching { fetchFrom(url) }
                 .onFailure { error ->
                     when (error) {
-                        is IOException -> Timber.tag(TAG).w("Fetch linux distro manifest failed via %s: %s", url, error.message)
-                        else -> Timber.tag(TAG).w(error, "Parse linux distro manifest failed via %s", url)
+                        is IOException -> Timber.tag(TAG).w(
+                            "Fetch linux distro manifest failed via %s (%s)",
+                            endpointName(url),
+                            error::class.java.simpleName,
+                        )
+                        else -> Timber.tag(TAG).w(
+                            "Parse linux distro manifest failed via %s (%s)",
+                            endpointName(url),
+                            error::class.java.simpleName,
+                        )
                     }
                 }
                 .getOrNull()
             if (manifest != null) {
-                Timber.tag(TAG).i("Loaded remote linux distro manifest via %s", url)
+                Timber.tag(TAG).i("Loaded remote linux distro manifest via %s", endpointName(url))
                 return manifest
             }
         }
@@ -87,7 +100,7 @@ class RemoteLinuxDistroManifestSource(
     private fun fetchFrom(url: String): LinuxDistroManifest? {
         client.newCall(Request.Builder().url(url).get().build()).execute().use { response ->
             if (!response.isSuccessful) return null
-            val body = response.body?.string()
+            val body = response.body?.readUtf8Limited(MAX_MANIFEST_BYTES)
             if (body.isNullOrBlank()) return null
             return LinuxDistroManifestParser.decode(body)
         }
@@ -95,17 +108,43 @@ class RemoteLinuxDistroManifestSource(
 
     private fun writeCache(manifest: LinuxDistroManifest) {
         runCatching {
-            cacheFile.parentFile?.mkdirs()
+            val parent = requireNotNull(cacheFile.parentFile) { "Linux distro cache must have a parent directory" }
+            check(parent.mkdirs() || parent.isDirectory) { "Failed to create linux distro cache directory" }
             // 回写解析后的标准 JSON，确保缓存内容一定可被本 App 重新解析。
-            cacheFile.writeText(LinuxDistroManifestParser.encode(manifest), Charsets.UTF_8)
+            val pending = Files.createTempFile(parent.toPath(), ".${cacheFile.name}.", ".tmp")
+            try {
+                pending.toFile().writeText(LinuxDistroManifestParser.encode(manifest), Charsets.UTF_8)
+                moveReplacing(pending, cacheFile.toPath())
+            } finally {
+                Files.deleteIfExists(pending)
+            }
         }.onFailure { error ->
             Timber.tag(TAG).w(error, "Write linux distro manifest cache failed")
         }
     }
 
+    private fun moveReplacing(source: java.nio.file.Path, target: java.nio.file.Path) {
+        try {
+            Files.move(source, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+        } catch (atomicError: IOException) {
+            try {
+                Files.move(source, target, StandardCopyOption.REPLACE_EXISTING)
+            } catch (fallbackError: IOException) {
+                fallbackError.addSuppressed(atomicError)
+                throw fallbackError
+            }
+        }
+    }
+
+    private fun endpointName(url: String): String = runCatching { URI(url).host }
+        .getOrNull()
+        ?.takeIf(String::isNotBlank)
+        ?: "unknown-host"
+
     companion object {
         private const val TAG = "RemoteLinuxManifest"
         private const val DEFAULT_CACHE_TTL_MILLIS = 6L * 60L * 60L * 1000L // 6h
+        private const val MAX_MANIFEST_BYTES = 2 * 1024 * 1024
 
         fun defaultCacheFile(context: Context): File = File(
             SelfHostedLinuxDistroRuntime.defaultRuntimeDir(context),

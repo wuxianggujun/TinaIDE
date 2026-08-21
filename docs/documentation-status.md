@@ -1,6 +1,6 @@
 # TinaIDE 文档状态与生命周期
 
-> 最后人工核验：2026-08-13
+> 最后人工核验：2026-08-20
 
 本文用于说明仓库内文档的可信层级、维护边界和后续清理规则。遇到文档内容冲突时，先按这里的顺序判断，不要直接以历史设计稿或旧路线图作为当前实现依据。
 
@@ -50,9 +50,9 @@
 - Android SDK 口径：`minSdk=28`、`targetSdk=36`、`compileSdk=37`，以 `app/build.gradle.kts` 为准。
 - RikkaHub：TinaIDE 主仓库不再维护自研 `feature:ai`；AI 聊天、模型、渠道、MCP 和 API Key 配置由内嵌 RikkaHub 维护。
 - App 内帮助：中文正文位于 `feature/help/src/main/assets/help/*.md`，英文正文位于 `feature/help/src/main/assets/help/en/*.md`；英文缺失或加载失败时回落到中文。
-- 远程 LSP：Android 客户端保留 WebSocket remote LSP 能力；当前仓库不内置 `tools/tina-lsp-proxy.py` 或 `tools/tina-lsp-proxy-kt` PC 代理实现。
+- 远程 LSP：默认使用 WSS 且 Bearer Token 必需，WS 仅允许回环地址；Token 加密保存并排除备份。内置项目同步要求 `tina/syncProject`、`tina/syncProjectStart` 和每个 `tina/syncProjectChunk` 按 JSON-RPC `id` 返回 ACK。当前仓库不内置 PC 代理实现。
 - Release 构建：可能递增 `version.properties` 并备份 R8 mapping；mapping 文件仅由公开构建逻辑做本地归档。
-- Registry：当前 Android 主干读取插件 `plugins/index.v3.json`、依赖包 `packages/index.v2.json` 与 `linux-distro/manifest.v1.json`；插件 `plugins/index.v2.json` 仅作为旧宿主兼容视图保留。Android 二进制依赖包按已安装 APK 的实际 ABI 选择 source，并在安装前校验 source 级大小与 checksum。
+- Registry：当前 Android 主干读取插件 `plugins/index.v3.json`、依赖包 `packages/index.v2.json` 与内置 `linux-distro/manifest.v1.json`；插件 `plugins/index.v2.json` 仅作为旧宿主兼容视图保留。Registry 资源只接受 HTTPS；插件与 DOWNLOAD 依赖包必须提供有效 SHA-256，下载和解包都有硬性预算。远程 Linux distro manifest 在具备签名验证前保持禁用。
 - MT 管理器访问：默认开启；只暴露 TinaIDE 自己的 `data`、`Android/data`、`Android/obb` 和 `user_de_data`，可在设置中关闭。
 
 ### 设计参考

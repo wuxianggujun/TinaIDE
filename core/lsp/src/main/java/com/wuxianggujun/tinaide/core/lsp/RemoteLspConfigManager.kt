@@ -1,5 +1,6 @@
 package com.wuxianggujun.tinaide.core.lsp
 
+import android.content.Context
 import com.wuxianggujun.tinaide.core.config.ConfigKeys
 import com.wuxianggujun.tinaide.core.config.IConfigManager
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -49,6 +50,8 @@ data class RemoteLspConfig(
     val enabled: Boolean = false,
     val host: String = "",
     val port: Int = 6789,
+    val secureTransport: Boolean = true,
+    val hasAuthenticationToken: Boolean = false,
     val syncMode: RemoteLspSyncMode = RemoteLspSyncMode.AUTO,
     val syncMethod: RemoteLspSyncMethod = RemoteLspSyncMethod.BUILTIN,
     val rsyncModule: String = "tina-workspace",
@@ -57,8 +60,8 @@ data class RemoteLspConfig(
 ) {
     fun getNormalizedHostForConnection(): String {
         val trimmed = host.trim()
-        return when (trimmed) {
-            "127.0.0.1" -> "localhost"
+        return when {
+            trimmed == "127.0.0.1" || trimmed == "::1" || trimmed == "[::1]" -> "localhost"
             else -> trimmed
         }
     }
@@ -66,14 +69,48 @@ data class RemoteLspConfig(
     /**
      * 检查配置是否有效（可以尝试连接）
      */
-    fun isValid(): Boolean = enabled && host.isNotBlank() && port in 1..65535
+    fun isValid(): Boolean = enabled &&
+        host.isNotBlank() &&
+        hasValidHostSyntax() &&
+        port in 1..65535 &&
+        hasAuthenticationToken &&
+        (secureTransport || isLoopbackHost())
 
     /**
      * 获取 WebSocket URL
      */
     fun getWebSocketUrl(): String {
         val normalizedHost = getNormalizedHostForConnection()
-        return "ws://$normalizedHost:$port"
+        val scheme = if (secureTransport) "wss" else "ws"
+        require(hasValidHostSyntax()) { "Remote LSP host is invalid" }
+        require(port in 1..65535) { "Remote LSP port is invalid" }
+        require(secureTransport || isLoopbackHost()) { "Cleartext remote LSP is restricted to loopback hosts" }
+        return "$scheme://$normalizedHost:$port"
+    }
+
+    fun hasValidHostSyntax(): Boolean {
+        val value = getNormalizedHostForConnection()
+        if (value.isBlank() || value.length > MAX_HOST_LENGTH || value.any { it.isWhitespace() || it in "/@?#" }) {
+            return false
+        }
+        return if (value.startsWith('[') || value.endsWith(']')) {
+            value.startsWith('[') && value.endsWith(']') &&
+                value.substring(1, value.length - 1).contains(':') &&
+                value.substring(1, value.length - 1).matches(Regex("(?i)^[0-9a-f:.]+$")) &&
+                runCatching { java.net.URI("http://$value").host != null }.getOrDefault(false)
+        } else {
+            value.split('.').all { label ->
+                label.length in 1..63 &&
+                    label.matches(Regex("(?i)^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"))
+            }
+        }
+    }
+
+    private fun isLoopbackHost(): Boolean =
+        getNormalizedHostForConnection().equals("localhost", ignoreCase = true)
+
+    private companion object {
+        const val MAX_HOST_LENGTH = 253
     }
 }
 
@@ -87,14 +124,17 @@ object RemoteLspConfigManager {
 
     @Volatile
     private var configManager: IConfigManager? = null
+    @Volatile
+    private var credentialStore: RemoteLspCredentialStore? = null
 
-    fun install(configManager: IConfigManager) {
+    fun install(context: Context, configManager: IConfigManager) {
         this.configManager = configManager
+        this.credentialStore = RemoteLspCredentialStore(context)
         refresh()
     }
 
     private fun requireConfigManager(): IConfigManager = checkNotNull(configManager) {
-        "RemoteLspConfigManager is not installed. Call RemoteLspConfigManager.install(configManager) from app init."
+        "RemoteLspConfigManager is not installed. Call RemoteLspConfigManager.install(context, configManager) from app init."
     }
 
     // 配置状态流
@@ -146,6 +186,8 @@ object RemoteLspConfigManager {
         enabled = configManager.get(ConfigKeys.RemoteLspEnabled),
         host = configManager.get(ConfigKeys.RemoteLspHost),
         port = configManager.get(ConfigKeys.RemoteLspPort),
+        secureTransport = configManager.get(ConfigKeys.RemoteLspSecureTransport),
+        hasAuthenticationToken = credentialStore?.readToken() != null,
         syncMode = RemoteLspSyncMode.fromString(configManager.get(ConfigKeys.RemoteLspSyncMode)),
         syncMethod = RemoteLspSyncMethod.fromString(configManager.get(ConfigKeys.RemoteLspSyncMethod)),
         rsyncModule = configManager.get(ConfigKeys.RemoteLspRsyncModule),
@@ -187,6 +229,20 @@ object RemoteLspConfigManager {
         configManager.set(ConfigKeys.RemoteLspPort, port)
         _configFlow.value = _configFlow.value.copy(port = port)
     }
+
+    fun setSecureTransport(secure: Boolean) {
+        val configManager = requireConfigManager()
+        configManager.set(ConfigKeys.RemoteLspSecureTransport, secure)
+        _configFlow.value = _configFlow.value.copy(secureTransport = secure)
+    }
+
+    fun setAuthenticationToken(token: String?) {
+        val store = checkNotNull(credentialStore) { "Remote LSP credential store is not installed" }
+        store.writeToken(token)
+        _configFlow.value = _configFlow.value.copy(hasAuthenticationToken = store.readToken() != null)
+    }
+
+    fun getAuthenticationToken(): String? = credentialStore?.readToken()
 
     /**
      * 设置同步模式
@@ -300,10 +356,16 @@ object RemoteLspConfigManager {
         setEnabled(false)
         setHost("")
         setPort(6789)
+        setSecureTransport(true)
+        setAuthenticationToken(null)
         setSyncMode(RemoteLspSyncMode.AUTO)
         setSyncMethod(RemoteLspSyncMethod.BUILTIN)
         setRsyncModule("tina-workspace")
         setRsyncPort(873)
+        setRemoteWorkspaceRootUri("")
+        clearDetectedSyncMode()
+        updateLatency(0L)
+        updateReconnectAttempt(0)
         updateConnectionState(RemoteLspConnectionState.DISCONNECTED)
     }
 }

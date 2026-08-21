@@ -1,14 +1,29 @@
 package com.wuxianggujun.tinaide.project
 
 import com.wuxianggujun.tinaide.core.serialization.JsonSerializer
+import java.io.ByteArrayOutputStream
 import java.io.File
-import java.util.UUID
+import java.nio.ByteBuffer
+import java.nio.charset.CodingErrorAction
+import java.nio.charset.StandardCharsets
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
 import timber.log.Timber
 
 object ProjectMetadataStore {
     private const val TAG = "ProjectMetadataStore"
     private const val PROJECT_METADATA_SCHEMA_CURRENT = 5
+    private const val MAX_METADATA_BYTES = 256 * 1024
+    private const val MAX_DISPLAY_NAME_CHARS = 256
+    private const val MAX_VERSION_CHARS = 64
+    private const val MAX_ENUM_VALUE_CHARS = 64
+    private const val MAX_PATH_ENTRIES = 256
+    private const val MAX_PATH_ENTRY_CHARS = 4_096
+    private const val MAX_BUILD_FLAGS_CHARS = 16 * 1024
+    private const val MAX_TARGET_NAME_CHARS = 256
 
     private val json = JsonSerializer.pretty
 
@@ -28,24 +43,20 @@ object ProjectMetadataStore {
         if (!file.exists()) return null
 
         return runCatching {
-            val jsonContent = file.readText()
+            val jsonContent = readMetadataText(file)
             val decoded = json.decodeFromString<ProjectMetadata>(jsonContent)
-            if (decoded.id.isBlank()) {
-                Timber.tag(TAG).w("Invalid metadata: id is blank for project ${projectRoot.name}")
-                null
-            } else {
-                val normalized = normalizeMetadata(
-                    migrateGraphicalRuntimeMetadata(projectRoot, decoded)
-                        .copy(schemaVersion = PROJECT_METADATA_SCHEMA_CURRENT)
-                )
-                if (normalized != decoded) {
-                    Timber.tag(TAG).i("Normalized project metadata for ${projectRoot.name}")
-                    write(projectRoot, normalized)
-                }
-                normalized
+            val normalized = normalizeMetadata(
+                migrateGraphicalRuntimeMetadata(projectRoot, decoded)
+                    .copy(schemaVersion = PROJECT_METADATA_SCHEMA_CURRENT),
+                displayNameFallback = projectRoot.name,
+            )
+            if (normalized != decoded) {
+                Timber.tag(TAG).i("Normalized project metadata")
+                check(write(projectRoot, normalized)) { "Failed to persist normalized project metadata" }
             }
-        }.onFailure { e ->
-            Timber.tag(TAG).e(e, "Failed to read metadata for project ${projectRoot.name}")
+            normalized
+        }.onFailure { error ->
+            Timber.tag(TAG).e("Failed to read project metadata: error=%s", error.javaClass.simpleName)
         }.getOrNull()
     }
 
@@ -74,7 +85,7 @@ object ProjectMetadataStore {
             if (existing.createdByIdeVersion == null) {
                 updated = updated.copy(createdByIdeVersion = currentIdeVersion)
                 needsUpdate = true
-                Timber.tag(TAG).i("Added createdByIdeVersion for project ${projectRoot.name}")
+                Timber.tag(TAG).i("Added createdByIdeVersion to project metadata")
             }
 
             if (existing.lastOpenedIdeVersion != currentIdeVersion) {
@@ -117,14 +128,14 @@ object ProjectMetadataStore {
             }
 
             if (needsUpdate) {
-                write(projectRoot, updated)
+                check(write(projectRoot, updated)) { "Failed to persist updated project metadata" }
             }
             return updated
         }
 
         val meta = ProjectMetadata(
             schemaVersion = PROJECT_METADATA_SCHEMA_CURRENT,
-            id = UUID.randomUUID().toString(),
+            id = ProjectIdentity.create(),
             displayName = displayNameFallback,
             createdAt = System.currentTimeMillis(),
             createdByIdeVersion = currentIdeVersion,
@@ -139,22 +150,25 @@ object ProjectMetadataStore {
             defaultRunTargetName = normalizedDefaultRunTargetName,
             defaultSdlTargetName = normalizedDefaultSdlTargetName
         )
-        write(projectRoot, meta)
+        check(write(projectRoot, meta)) { "Failed to create project metadata" }
         return meta
     }
 
     fun write(projectRoot: File, metadata: ProjectMetadata): Boolean {
         val metadataToPersist = normalizeMetadata(
-            metadata.copy(schemaVersion = PROJECT_METADATA_SCHEMA_CURRENT)
+            metadata = metadata.copy(schemaVersion = PROJECT_METADATA_SCHEMA_CURRENT),
+            displayNameFallback = projectRoot.name,
         )
         return runCatching {
             val dir = File(projectRoot, META_DIR_NAME)
-            if (!dir.exists()) dir.mkdirs()
+            check((dir.exists() || dir.mkdirs()) && dir.isDirectory) {
+                "Failed to create project metadata directory"
+            }
             val file = File(dir, META_FILE_NAME)
-            JsonSerializer.encodePrettyToFile(file, metadataToPersist)
+            writeMetadataAtomically(file, metadataToPersist)
             true
-        }.onFailure { e ->
-            Timber.tag(TAG).e(e, "Failed to write metadata for project ${projectRoot.name}")
+        }.onFailure { error ->
+            Timber.tag(TAG).e("Failed to write project metadata: error=%s", error.javaClass.simpleName)
         }.getOrElse { false }
     }
 
@@ -264,7 +278,11 @@ object ProjectMetadataStore {
         )
     }
 
-    private fun normalizeMetadata(metadata: ProjectMetadata): ProjectMetadata {
+    private fun normalizeMetadata(
+        metadata: ProjectMetadata,
+        displayNameFallback: String,
+    ): ProjectMetadata {
+        val normalizedId = metadata.id.takeIf(ProjectIdentity::isValid) ?: ProjectIdentity.create()
         val normalizedSdlVersion = metadata.getSdlVersionOrNull()
         val normalizedApkExportType = metadata.apkExportType.takeUnless {
             normalizedSdlVersion == ProjectSdlVersion.SDL2 &&
@@ -272,7 +290,12 @@ object ProjectMetadataStore {
         }
         return metadata.copy(
             schemaVersion = PROJECT_METADATA_SCHEMA_CURRENT,
-            cppStandard = metadata.normalizedCppStandardValue(),
+            id = normalizedId,
+            displayName = normalizeDisplayName(metadata.displayName, displayNameFallback, normalizedId),
+            createdByIdeVersion = normalizeOptionalValue(metadata.createdByIdeVersion, MAX_VERSION_CHARS),
+            cppStandard = normalizeOptionalValue(metadata.normalizedCppStandardValue(), MAX_ENUM_VALUE_CHARS),
+            primaryLanguage = normalizeOptionalValue(metadata.primaryLanguage, MAX_ENUM_VALUE_CHARS),
+            lastOpenedIdeVersion = normalizeOptionalValue(metadata.lastOpenedIdeVersion, MAX_VERSION_CHARS),
             nativeApiLevel = normalizeNativeApiLevel(metadata.nativeApiLevel),
             nativeIncludeDirs = normalizePathEntries(metadata.nativeIncludeDirs),
             nativeLibraryDirs = normalizePathEntries(metadata.nativeLibraryDirs),
@@ -324,21 +347,111 @@ object ProjectMetadataStore {
         if (paths.isEmpty()) return emptyList()
         return paths.asSequence()
             .map { it.trim() }
-            .filter { it.isNotBlank() }
+            .filter {
+                it.isNotBlank() &&
+                    it.length <= MAX_PATH_ENTRY_CHARS &&
+                    it.none(Char::isISOControl)
+            }
             .distinct()
+            .take(MAX_PATH_ENTRIES)
             .toList()
     }
 
     private fun normalizeFlagValue(value: String): String {
         if (value.isBlank()) return ""
-        return value.lineSequence()
+        val normalized = value.lineSequence()
             .map { it.trim() }
             .filter { it.isNotBlank() }
             .joinToString(" ")
             .trim()
+        return normalized.takeIf {
+            it.length <= MAX_BUILD_FLAGS_CHARS && it.none(Char::isISOControl)
+        }.orEmpty()
     }
 
     private fun normalizeTargetName(value: String?): String? = value
         ?.trim()
-        ?.takeIf { it.isNotBlank() }
+        ?.takeIf {
+            it.isNotBlank() &&
+                it.length <= MAX_TARGET_NAME_CHARS &&
+                it.none(Char::isISOControl)
+        }
+
+    private fun normalizeDisplayName(value: String, fallback: String, projectId: String): String {
+        val normalizedValue = normalizeSingleLineValue(value, MAX_DISPLAY_NAME_CHARS)
+        if (normalizedValue.isNotEmpty()) return normalizedValue
+        return normalizeSingleLineValue(fallback, MAX_DISPLAY_NAME_CHARS).ifEmpty { projectId }
+    }
+
+    private fun normalizeOptionalValue(value: String?, maxChars: Int): String? = value
+        ?.let { normalizeSingleLineValue(it, maxChars) }
+        ?.takeIf(String::isNotEmpty)
+
+    private fun normalizeSingleLineValue(value: String, maxChars: Int): String = value
+        .asSequence()
+        .map { char -> if (char.isISOControl()) ' ' else char }
+        .joinToString(separator = "")
+        .trim()
+        .replace(Regex("\\s+"), " ")
+        .takeWithoutSplittingSurrogatePair(maxChars)
+        .trim()
+
+    private fun String.takeWithoutSplittingSurrogatePair(maxChars: Int): String {
+        if (length <= maxChars) return this
+        val endIndex = if (this[maxChars - 1].isHighSurrogate() && this[maxChars].isLowSurrogate()) {
+            maxChars - 1
+        } else {
+            maxChars
+        }
+        return substring(0, endIndex)
+    }
+
+    private fun readMetadataText(file: File): String {
+        require(file.length() <= MAX_METADATA_BYTES) { "Project metadata exceeds the size limit" }
+        val bytes = file.inputStream().use { input ->
+            ByteArrayOutputStream(minOf(file.length(), MAX_METADATA_BYTES.toLong()).toInt()).use { output ->
+                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                var total = 0
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    total += read
+                    require(total <= MAX_METADATA_BYTES) { "Project metadata exceeds the size limit" }
+                    output.write(buffer, 0, read)
+                }
+                output.toByteArray()
+            }
+        }
+        return StandardCharsets.UTF_8.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT)
+            .decode(ByteBuffer.wrap(bytes))
+            .toString()
+    }
+
+    private fun writeMetadataAtomically(file: File, metadata: ProjectMetadata) {
+        val encoded = json.encodeToString(metadata).toByteArray(StandardCharsets.UTF_8)
+        require(encoded.size <= MAX_METADATA_BYTES) { "Project metadata exceeds the size limit" }
+
+        val tempFile = File.createTempFile("${file.name}.", ".tmp", file.parentFile)
+        try {
+            tempFile.outputStream().use { output ->
+                output.write(encoded)
+                output.flush()
+                output.fd.sync()
+            }
+            try {
+                Files.move(
+                    tempFile.toPath(),
+                    file.toPath(),
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING,
+                )
+            } catch (_: AtomicMoveNotSupportedException) {
+                Files.move(tempFile.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            }
+        } finally {
+            tempFile.delete()
+        }
+    }
 }

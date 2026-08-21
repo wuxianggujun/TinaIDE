@@ -8,10 +8,13 @@ import com.wuxianggujun.tinaide.core.symbol.FuzzySymbolMatch
 import com.wuxianggujun.tinaide.core.symbol.IProjectSymbolIndexService
 import com.wuxianggujun.tinaide.core.symbol.SymbolIndexStatus
 import com.wuxianggujun.tinaide.core.symbol.SymbolInfo
+import java.io.ByteArrayOutputStream
 import java.io.Closeable
 import java.io.File
+import java.nio.file.Files
 import java.util.Locale
 import java.util.TreeMap
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
@@ -19,8 +22,11 @@ import kotlin.concurrent.write
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -28,7 +34,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.sync.Mutex
 import timber.log.Timber
 
 /**
@@ -63,6 +69,10 @@ class ProjectSymbolIndexService(
 
         /** 解析超时时间（毫秒）- 防止恶意代码导致解析挂起 */
         private const val PARSE_TIMEOUT_MS = 5000L // 5 秒
+
+        private const val MAX_INDEX_FILES = 50_000
+        private const val MAX_SCAN_ENTRIES = 100_000
+        private const val MAX_SCAN_DEPTH = 64
     }
 
     data class IndexStatus(
@@ -80,6 +90,11 @@ class ProjectSymbolIndexService(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val lock = ReentrantReadWriteLock()
     private val revision = AtomicLong(0L)
+    private val projectGeneration = AtomicLong(0L)
+    private val fileUpdateSequence = AtomicLong(0L)
+    private val latestFileUpdates = ConcurrentHashMap<String, FileUpdateToken>()
+    private val cacheSaveMutex = Mutex()
+    private var indexingJob: Job? = null
 
     private val mutableStatus = MutableStateFlow(IndexStatus())
     private val statusInternal: StateFlow<IndexStatus> = mutableStatus.asStateFlow()
@@ -104,10 +119,24 @@ class ProjectSymbolIndexService(
         val lock: Any = Any(),
     )
 
+    private data class FileUpdateToken(
+        val projectGeneration: Long,
+        val sequence: Long,
+    )
+
+    private data class CacheSaveSnapshot(
+        val revision: Long,
+        val fileSnapshots: List<SymbolIndexCache.CachedFileSnapshot>,
+        val fileTimestamps: Map<String, Long>,
+    )
+
     private val parserStates: List<ProviderParserState> = this.providers.map { provider ->
         ProviderParserState(
             provider = provider,
-            parser = TSParser.create().apply { setLanguage(provider.createLanguage()) },
+            parser = TSParser.create().apply {
+                setLanguage(provider.createLanguage())
+                setTimeout(PARSE_TIMEOUT_MS * 1_000L)
+            },
         )
     }
     private val parserStateByExt: Map<String, ProviderParserState> = buildMap {
@@ -142,28 +171,47 @@ class ProjectSymbolIndexService(
     }
 
     override fun onProjectOpened(projectRoot: File) {
-        if (!projectRoot.isDirectory) return
-        if (activeProjectRoot?.absolutePath == projectRoot.absolutePath) return
-        activeProjectRoot = projectRoot
+        val normalizedRoot = runCatching { projectRoot.canonicalFile }.getOrElse { projectRoot.absoluteFile }
+        if (!normalizedRoot.isDirectory) return
+        if (activeProjectRoot?.absolutePath == normalizedRoot.absolutePath) return
+        indexingJob?.cancel()
+        cancelInFlightParses()
+        activeProjectRoot = normalizedRoot
+        val generation = projectGeneration.incrementAndGet()
         clearIndex("project switched")
-        startIndexWithCache(projectRoot)
+        startIndexWithCache(normalizedRoot, generation)
     }
 
     override fun onProjectClosed() {
+        indexingJob?.cancel()
+        indexingJob = null
+        cancelInFlightParses()
+        projectGeneration.incrementAndGet()
         activeProjectRoot = null
         clearIndex("project closed")
     }
 
     override fun onFileSaved(file: File, content: String) {
         val root = activeProjectRoot ?: return
-        if (!isUnderRoot(file, root)) return
-        if (!isSupportedFile(file)) return
+        val normalizedFile = runCatching { file.canonicalFile }.getOrNull() ?: return
+        if (!isUnderOrEqualRoot(normalizedFile, root) || !normalizedFile.isFile) return
+        if (runCatching { Files.isSymbolicLink(normalizedFile.toPath()) }.getOrDefault(true)) return
+        if (!isSupportedFile(normalizedFile)) return
+        val generation = projectGeneration.get()
+        if (!isCurrentProject(root, generation)) return
+        val path = normalizedFile.absolutePath
+        val updateToken = beginFileUpdate(path, generation)
         scope.launch {
-            val errorMessage = updateSingleFile(file, content)
-            if (errorMessage != null) {
-                mutableStatus.value = mutableStatus.value.copy(lastError = errorMessage)
-            } else if (mutableStatus.value.lastError != null) {
-                mutableStatus.value = mutableStatus.value.copy(lastError = null)
+            try {
+                val errorMessage = updateSingleFile(normalizedFile, content, updateToken)
+                if (!isCurrentFileUpdate(path, updateToken)) return@launch
+                if (errorMessage != null) {
+                    mutableStatus.value = mutableStatus.value.copy(lastError = errorMessage)
+                } else if (mutableStatus.value.lastError != null) {
+                    mutableStatus.value = mutableStatus.value.copy(lastError = null)
+                }
+            } finally {
+                completeFileUpdate(path, updateToken)
             }
         }
     }
@@ -258,10 +306,11 @@ class ProjectSymbolIndexService(
     /**
      * 启动索引（优先从缓存加载）
      */
-    private fun startIndexWithCache(projectRoot: File) {
-        scope.launch {
+    private fun startIndexWithCache(projectRoot: File, generation: Long) {
+        indexingJob = scope.launch {
             runCatching {
                 val files = collectProjectFiles(projectRoot)
+                if (!isCurrentProject(projectRoot, generation)) return@runCatching
                 mutableStatus.value = mutableStatus.value.copy(
                     projectRoot = projectRoot.absolutePath,
                     isIndexing = true,
@@ -278,6 +327,7 @@ class ProjectSymbolIndexService(
                 var cacheHitCount = 0
 
                 if (cached != null) {
+                    if (!isCurrentProject(projectRoot, generation)) return@runCatching
                     // 验证缓存有效性
                     val invalidFiles = indexCache.validateCache(cached, files)
                     val invalidPathSet = invalidFiles.asSequence()
@@ -301,9 +351,10 @@ class ProjectSymbolIndexService(
                         )
 
                         // 应用有效缓存，剩余文件增量更新（不再按 50% 阈值放弃缓存）
-                        applyCachedIndex(cached, validPathSet)
-                        cacheHitCount = validPathSet.size
-                        filesToIndex = invalidFiles
+                        val appliedPaths = applyCachedIndex(cached, validPathSet, generation)
+                        if (!isCurrentProject(projectRoot, generation)) return@runCatching
+                        cacheHitCount = appliedPaths.size
+                        filesToIndex = files.filter { it.absolutePath !in appliedPaths }
 
                         mutableStatus.value = mutableStatus.value.copy(
                             cacheLoaded = true,
@@ -318,29 +369,40 @@ class ProjectSymbolIndexService(
                 // 索引需要更新的文件
                 var done = cacheHitCount
                 for (file in filesToIndex) {
-                    val readResult = runCatching { file.readText() }
-                    if (readResult.isFailure) {
-                        val error = readResult.exceptionOrNull()
-                        mutableStatus.value = mutableStatus.value.copy(
-                            lastError = "Read file failed: ${file.name} (${error?.messageOrClass() ?: "unknown"})"
-                        )
+                    if (!isCurrentProject(projectRoot, generation)) return@runCatching
+                    val path = file.absolutePath
+                    val updateToken = beginFileUpdate(path, generation)
+                    try {
+                        val readResult = runCatching { readFileForIndex(file) }
+                        if (readResult.isFailure) {
+                            removeSnapshotForCurrentUpdate(path, updateToken)
+                            if (!isCurrentProject(projectRoot, generation)) return@runCatching
+                            val error = readResult.exceptionOrNull()
+                            mutableStatus.value = mutableStatus.value.copy(
+                                lastError = "Read file failed: ${file.name} (${error?.messageOrClass() ?: "unknown"})"
+                            )
+                            done++
+                            if (done % 20 == 0) {
+                                mutableStatus.value = mutableStatus.value.copy(indexedFiles = done)
+                            }
+                            continue
+                        }
+                        val text = readResult.getOrThrow()
+                        val fileError = updateSingleFile(file, text, updateToken)
+                        if (!isCurrentProject(projectRoot, generation)) return@runCatching
+                        if (fileError != null) {
+                            mutableStatus.value = mutableStatus.value.copy(lastError = fileError)
+                        }
                         done++
                         if (done % 20 == 0) {
                             mutableStatus.value = mutableStatus.value.copy(indexedFiles = done)
                         }
-                        continue
-                    }
-                    val text = readResult.getOrThrow()
-                    val fileError = updateSingleFile(file, text)
-                    if (fileError != null) {
-                        mutableStatus.value = mutableStatus.value.copy(lastError = fileError)
-                    }
-                    done++
-                    if (done % 20 == 0) {
-                        mutableStatus.value = mutableStatus.value.copy(indexedFiles = done)
+                    } finally {
+                        completeFileUpdate(path, updateToken)
                     }
                 }
 
+                if (!isCurrentProject(projectRoot, generation)) return@runCatching
                 val now = System.currentTimeMillis()
                 mutableStatus.value = mutableStatus.value.copy(
                     isIndexing = false,
@@ -350,8 +412,10 @@ class ProjectSymbolIndexService(
                 )
 
                 // 保存缓存
-                saveIndexCache(projectRoot.absolutePath)
+                saveIndexCache(projectRoot.absolutePath, generation)
             }.onFailure { e ->
+                if (e is CancellationException) throw e
+                if (!isCurrentProject(projectRoot, generation)) return@onFailure
                 Timber.tag(TAG).w(e, "Index failed: ${e.message}")
                 mutableStatus.value = mutableStatus.value.copy(
                     isIndexing = false,
@@ -366,14 +430,21 @@ class ProjectSymbolIndexService(
      */
     private fun applyCachedIndex(
         cached: SymbolIndexCache.CachedIndex,
-        allowedPaths: Set<String>
-    ) {
-        lock.write {
+        allowedPaths: Set<String>,
+        generation: Long,
+    ): Set<String> = lock.write {
+            if (!isCurrentProjectGeneration(generation)) return@write emptySet()
             // 只应用允许复用的缓存文件，避免陈旧索引污染。
             var applied = 0
             var skipped = 0
+            val appliedPaths = HashSet<String>()
             for (cachedSnapshot in cached.fileSnapshots) {
-                if (cachedSnapshot.filePath !in allowedPaths) {
+                val hasCurrentUpdate = latestFileUpdates[cachedSnapshot.filePath]
+                    ?.projectGeneration == generation
+                if (cachedSnapshot.filePath !in allowedPaths ||
+                    hasCurrentUpdate ||
+                    !appliedPaths.add(cachedSnapshot.filePath)
+                ) {
                     skipped++
                     continue
                 }
@@ -385,31 +456,56 @@ class ProjectSymbolIndexService(
             }
 
             Timber.tag(TAG).i("Cache applied: $applied files, skipped: $skipped")
-            bumpRevisionLocked()
+            if (applied > 0) bumpRevisionLocked()
+            appliedPaths
         }
-    }
 
     /**
      * 保存索引到缓存
      */
-    private suspend fun saveIndexCache(projectRoot: String) {
+    private suspend fun saveIndexCache(projectRoot: String, generation: Long = projectGeneration.get()) {
         val cache = indexCache ?: return
+        cacheSaveMutex.lock()
+        try {
+            if (!isCurrentProjectGeneration(generation)) return
+            if (hasInFlightFileUpdates(generation)) {
+                cache.clearCache(projectRoot)
+                return
+            }
 
-        val (snapshots, timestamps) = lock.read {
-            val cachedSnapshots = fileSnapshots.values.map { snapshot ->
-                SymbolIndexCache.CachedFileSnapshot(
-                    filePath = snapshot.filePath,
-                    globals = snapshot.globals,
+            val snapshot = lock.read {
+                CacheSaveSnapshot(
+                    revision = revision.get(),
+                    fileSnapshots = fileSnapshots.values.map { fileSnapshot ->
+                        SymbolIndexCache.CachedFileSnapshot(
+                            filePath = fileSnapshot.filePath,
+                            globals = fileSnapshot.globals,
+                        )
+                    },
+                    fileTimestamps = fileTimestamps.toMap(),
                 )
             }
-            cachedSnapshots to fileTimestamps.toMap()
-        }
 
-        cache.saveIndex(
-            projectRoot = projectRoot,
-            fileSnapshots = snapshots,
-            fileTimestamps = timestamps,
-        )
+            if (!isCurrentProjectGeneration(generation)) return
+            var cacheSaved = false
+            try {
+                cacheSaved = cache.saveIndex(
+                    projectRoot = projectRoot,
+                    fileSnapshots = snapshot.fileSnapshots,
+                    fileTimestamps = snapshot.fileTimestamps,
+                )
+            } finally {
+                if (!cacheSaved ||
+                    !isCurrentProjectGeneration(generation) ||
+                    revision.get() != snapshot.revision ||
+                    hasInFlightFileUpdates(generation)
+                ) {
+                    cache.clearCache(projectRoot)
+                }
+            }
+        } finally {
+            cacheSaveMutex.unlock()
+        }
     }
 
     /**
@@ -422,11 +518,10 @@ class ProjectSymbolIndexService(
         data class Failure(val cause: Throwable) : ParseResult
     }
 
-    private suspend fun parseWithTimeout(content: String, parserState: ProviderParserState): ParseResult = try {
-        val tree = withTimeoutOrNull(PARSE_TIMEOUT_MS) {
-            synchronized(parserState.lock) {
-                parserState.parser.parseString(content)
-            }
+    private fun parseWithTimeout(content: String, parserState: ProviderParserState): ParseResult = try {
+        val tree = synchronized(parserState.lock) {
+            parserState.parser.reset()
+            parserState.parser.parseString(content)
         }
         if (tree == null) {
             Timber.tag(TAG).w("Parse timeout after %d ms", PARSE_TIMEOUT_MS)
@@ -440,30 +535,27 @@ class ProjectSymbolIndexService(
         ParseResult.Failure(t)
     }
 
-    private suspend fun updateSingleFile(file: File, content: String): String? {
+    private fun updateSingleFile(file: File, content: String, updateToken: FileUpdateToken): String? {
         val path = file.absolutePath
+        if (!isCurrentFileUpdate(path, updateToken)) return null
         val parserState = parserStateByExt[file.extension.lowercase(Locale.ROOT)]
         if (parserState == null) {
-            lock.write {
-                removeFileSnapshotLocked(path)
-                fileTimestamps.remove(path)
-            }
-            bumpRevisionLocked()
+            removeSnapshotForCurrentUpdate(path, updateToken)
             return null
         }
 
         if (!file.exists() || !file.isFile) {
-            lock.write {
-                removeFileSnapshotLocked(path)
-                fileTimestamps.remove(path)
-            }
-            bumpRevisionLocked()
+            removeSnapshotForCurrentUpdate(path, updateToken)
             return null
         }
 
         val size = runCatching { file.length() }.getOrDefault(0L)
-        if (size > MAX_FILE_BYTES_DEFAULT) {
+        if (size > MAX_FILE_BYTES_DEFAULT ||
+            content.length > MAX_FILE_BYTES_DEFAULT ||
+            content.toByteArray(Charsets.UTF_8).size > MAX_FILE_BYTES_DEFAULT
+        ) {
             Timber.tag(TAG).d("Skipping large file: %s (%d bytes)", path, size)
+            removeSnapshotForCurrentUpdate(path, updateToken)
             return null
         }
 
@@ -473,17 +565,20 @@ class ProjectSymbolIndexService(
             ParseResult.Timeout -> {
                 val message = "Parse timeout: ${file.name}"
                 Timber.tag(TAG).w("Failed to parse file (timeout): %s", path)
+                removeSnapshotForCurrentUpdate(path, updateToken)
                 return message
             }
             is ParseResult.Failure -> {
                 val message = "Parse failed: ${file.name} (${parseResult.cause.messageOrClass()})"
                 Timber.tag(TAG).w(parseResult.cause, "Failed to parse file: %s", path)
+                removeSnapshotForCurrentUpdate(path, updateToken)
                 return message
             }
         }
 
         var warningMessage: String? = null
         try {
+            if (!isCurrentFileUpdate(path, updateToken)) return null
             val globals = runCatching {
                 parserState.provider.extractSymbols(tree.rootNode, content)
             }.getOrElse { e ->
@@ -498,6 +593,7 @@ class ProjectSymbolIndexService(
             }
             val snapshot = FileSnapshot.from(file, globals)
             lock.write {
+                if (!isCurrentFileUpdate(path, updateToken)) return@write
                 removeFileSnapshotLocked(path)
                 applyFileSnapshotLocked(snapshot)
                 fileSnapshots[path] = snapshot
@@ -508,6 +604,68 @@ class ProjectSymbolIndexService(
             tree.close()
         }
         return warningMessage
+    }
+
+    private fun isCurrentProject(projectRoot: File, generation: Long): Boolean =
+        isCurrentProjectGeneration(generation) && activeProjectRoot?.absolutePath == projectRoot.absolutePath
+
+    private fun isCurrentProjectGeneration(generation: Long): Boolean = projectGeneration.get() == generation
+
+    private fun beginFileUpdate(path: String, generation: Long): FileUpdateToken {
+        val updateToken = FileUpdateToken(generation, fileUpdateSequence.incrementAndGet())
+        while (true) {
+            val current = latestFileUpdates[path]
+            if (current != null && current.sequence >= updateToken.sequence) return updateToken
+            if (current == null) {
+                if (latestFileUpdates.putIfAbsent(path, updateToken) == null) return updateToken
+            } else if (latestFileUpdates.replace(path, current, updateToken)) {
+                return updateToken
+            }
+        }
+    }
+
+    private fun isCurrentFileUpdate(path: String, updateToken: FileUpdateToken): Boolean =
+        isCurrentProjectGeneration(updateToken.projectGeneration) && latestFileUpdates[path] == updateToken
+
+    private fun completeFileUpdate(path: String, updateToken: FileUpdateToken) {
+        latestFileUpdates.remove(path, updateToken)
+    }
+
+    private fun hasInFlightFileUpdates(generation: Long): Boolean =
+        latestFileUpdates.values.any { it.projectGeneration == generation }
+
+    private fun removeSnapshotForCurrentUpdate(path: String, updateToken: FileUpdateToken) {
+        lock.write {
+            if (!isCurrentFileUpdate(path, updateToken)) return@write
+            val removedSnapshot = removeFileSnapshotLocked(path)
+            val removedTimestamp = fileTimestamps.remove(path) != null
+            if (removedSnapshot || removedTimestamp) bumpRevisionLocked()
+        }
+    }
+
+    private fun readFileForIndex(file: File): String {
+        require(file.length() <= MAX_FILE_BYTES_DEFAULT) { "File exceeds symbol index size limit" }
+        val bytes = file.inputStream().use { input ->
+            ByteArrayOutputStream(minOf(file.length(), MAX_FILE_BYTES_DEFAULT.toLong()).toInt()).use { output ->
+                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                var total = 0
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    total += read
+                    require(total <= MAX_FILE_BYTES_DEFAULT) { "File exceeds symbol index size limit" }
+                    output.write(buffer, 0, read)
+                }
+                output.toByteArray()
+            }
+        }
+        return bytes.toString(Charsets.UTF_8)
+    }
+
+    private fun cancelInFlightParses() {
+        parserStates.forEach { state ->
+            runCatching { state.parser.requestCancellationAsync() }
+        }
     }
 
     private fun bumpRevisionLocked() {
@@ -522,8 +680,8 @@ class ProjectSymbolIndexService(
         }
     }
 
-    private fun removeFileSnapshotLocked(path: String) {
-        val old = fileSnapshots.remove(path) ?: return
+    private fun removeFileSnapshotLocked(path: String): Boolean {
+        val old = fileSnapshots.remove(path) ?: return false
 
         for (s in old.globals) {
             val key = s.name.lowercase(Locale.ROOT)
@@ -531,6 +689,7 @@ class ProjectSymbolIndexService(
             list.removeAll { it.filePath == old.filePath && it.name == s.name && it.kind == s.kind }
             if (list.isEmpty()) globalSymbolsByLower.remove(key)
         }
+        return true
     }
 
     private fun clearIndex(reason: String) {
@@ -538,6 +697,7 @@ class ProjectSymbolIndexService(
             fileSnapshots.clear()
             globalSymbolsByLower.clear()
             fileTimestamps.clear()
+            latestFileUpdates.clear()
             val newRev = revision.incrementAndGet()
             mutableStatus.value = IndexStatus(
                 projectRoot = activeProjectRoot?.absolutePath,
@@ -562,26 +722,69 @@ class ProjectSymbolIndexService(
         indexCache?.clearCache(projectRoot)
     }
 
-    private fun collectProjectFiles(projectRoot: File): List<File> {
+    private suspend fun collectProjectFiles(projectRoot: File): List<File> {
+        val canonicalRoot = runCatching { projectRoot.canonicalFile }.getOrElse { projectRoot.absoluteFile }
         val out = ArrayList<File>(1024)
-        projectRoot.walkTopDown()
-            .onEnter { dir -> dir.name !in IGNORED_DIR_NAMES }
-            .forEach { f ->
-                if (!f.isFile) return@forEach
-                if (!isSupportedFile(f)) return@forEach
-                val size = runCatching { f.length() }.getOrDefault(0L)
-                if (size <= MAX_FILE_BYTES_DEFAULT) {
-                    out.add(f)
+        val pendingDirectories = ArrayDeque<ScanDirectory>()
+        val visitedDirectories = hashSetOf(canonicalRoot.path)
+        pendingDirectories.add(ScanDirectory(canonicalRoot, depth = 0))
+        var scannedEntries = 0
+
+        while (pendingDirectories.isNotEmpty() &&
+            out.size < MAX_INDEX_FILES &&
+            scannedEntries < MAX_SCAN_ENTRIES
+        ) {
+            currentCoroutineContext().ensureActive()
+            val current = pendingDirectories.removeLast()
+            try {
+                Files.newDirectoryStream(current.directory.toPath()).use { children ->
+                    for (childPath in children) {
+                        currentCoroutineContext().ensureActive()
+                        scannedEntries++
+                        if (scannedEntries > MAX_SCAN_ENTRIES) break
+                        if (runCatching { Files.isSymbolicLink(childPath) }.getOrDefault(true)) continue
+
+                        val canonicalChild = runCatching { childPath.toFile().canonicalFile }.getOrNull() ?: continue
+                        if (!isUnderOrEqualRoot(canonicalChild, canonicalRoot)) continue
+                        when {
+                            canonicalChild.isDirectory -> {
+                                if (current.depth >= MAX_SCAN_DEPTH || canonicalChild.name in IGNORED_DIR_NAMES) continue
+                                if (visitedDirectories.add(canonicalChild.path)) {
+                                    pendingDirectories.add(
+                                        ScanDirectory(canonicalChild, depth = current.depth + 1)
+                                    )
+                                }
+                            }
+                            canonicalChild.isFile && isSupportedFile(canonicalChild) -> {
+                                val size = runCatching { canonicalChild.length() }.getOrDefault(Long.MAX_VALUE)
+                                if (size <= MAX_FILE_BYTES_DEFAULT) {
+                                    out.add(canonicalChild)
+                                    if (out.size >= MAX_INDEX_FILES) break
+                                }
+                            }
+                        }
+                    }
                 }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                Timber.tag(TAG).d(e, "Skipping unreadable directory: %s", current.directory.path)
             }
+        }
+        if (out.size >= MAX_INDEX_FILES || scannedEntries >= MAX_SCAN_ENTRIES) {
+            Timber.tag(TAG).w(
+                "Project symbol scan reached its resource limit: files=%d entries=%d",
+                out.size,
+                scannedEntries,
+            )
+        }
         return out
     }
 
     private fun isSupportedFile(file: File): Boolean = file.extension.lowercase(Locale.ROOT) in parserStateByExt
 
-    private fun isUnderRoot(file: File, root: File): Boolean {
-        val rp = root.absolutePath.trimEnd(File.separatorChar) + File.separator
-        return file.absolutePath.startsWith(rp)
+    private fun isUnderOrEqualRoot(file: File, root: File): Boolean {
+        val rootPath = root.path.trimEnd(File.separatorChar)
+        return file.path == rootPath || file.path.startsWith(rootPath + File.separator)
     }
 
     private fun <V> prefixView(map: TreeMap<String, V>, prefix: String): Map<String, V> {
@@ -591,19 +794,21 @@ class ProjectSymbolIndexService(
     }
 
     override fun close() {
-        // 关闭前保存缓存
-        val projectRoot = activeProjectRoot?.absolutePath
-        if (projectRoot != null) {
-            scope.launch {
-                saveIndexCache(projectRoot)
-            }
-        }
+        indexingJob?.cancel()
+        indexingJob = null
+        cancelInFlightParses()
+        projectGeneration.incrementAndGet()
         scope.cancel()
         parserStates.forEach { state ->
             runCatching { synchronized(state.lock) { state.parser.close() } }
         }
         Timber.tag(TAG).i("ProjectSymbolIndexService closed")
     }
+
+    private data class ScanDirectory(
+        val directory: File,
+        val depth: Int,
+    )
 }
 
 data class ProjectSymbol(

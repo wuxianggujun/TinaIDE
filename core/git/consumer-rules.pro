@@ -17,6 +17,12 @@
 # SshSessionFactory 通过反射发现 SSH 实现
 -keepnames class * extends org.eclipse.jgit.transport.SshSessionFactory
 
+# Ed25519 key generation uses the bundled BouncyCastle provider on Android 9-12,
+# where the platform JCA provider does not consistently expose Ed25519.
+-keep class org.bouncycastle.jce.provider.BouncyCastleProvider { *; }
+-keep class org.bouncycastle.jcajce.provider.asymmetric.edec.** { *; }
+-dontwarn org.bouncycastle.**
+
 # ============================================================================
 # JGit + Apache SSHD — 桌面 JDK API 警告抑制
 # ============================================================================

@@ -29,7 +29,6 @@ import com.wuxianggujun.tinaide.plugin.script.api.PluginHostEventDispatcher
 import com.wuxianggujun.tinaide.plugin.script.api.PluginHostCommandExecutorHolder
 import com.wuxianggujun.tinaide.plugin.script.api.PluginWorkspaceFileAccess
 import java.io.ByteArrayOutputStream
-import java.io.File
 import java.io.InputStream
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.ConcurrentHashMap
@@ -58,10 +57,12 @@ internal class PluginHostCapabilityGateway(
 ) {
     companion object {
         private const val MAIN_THREAD_TIMEOUT_MS = 2_000L
-        private const val MAX_LOG_MESSAGE_CHARS = 8 * 1024
+        private const val MAX_LOG_MESSAGE_BYTES = 8 * 1024
+        private const val MAX_HOST_MESSAGE_BYTES = 8 * 1024
         private const val MAX_FILE_CONTENT_BYTES = 8 * 1024 * 1024
         private const val MAX_DATABASE_ROWS = 1_000
         private const val MAX_DIRECTORY_ENTRIES = 1_000
+        private const val MAX_FIND_FILES_CALLS_PER_MINUTE = 12
         private const val MAX_BULK_INLINE_BYTES = 128 * 1024
         private const val MAX_BULK_PAYLOAD_BYTES = 8 * 1024 * 1024
     }
@@ -72,6 +73,7 @@ internal class PluginHostCapabilityGateway(
     private val workspaceAccess = PluginWorkspaceFileAccess(projectRootProvider)
     private val mainHandler = Handler(Looper.getMainLooper())
     private val fileLimiters = ConcurrentHashMap<String, RateLimiter>()
+    private val findFilesLimiters = ConcurrentHashMap<String, RateLimiter>()
     private val payloadStore = PluginBulkPayloadStore(context)
     private val dataCapabilities = PluginHostDataCapabilities(context, pluginManager, ::hasAnyPermission)
 
@@ -106,6 +108,7 @@ internal class PluginHostCapabilityGateway(
     fun cleanupPlugin(pluginId: String) {
         dataCapabilities.cleanupPlugin(pluginId)
         fileLimiters.remove(pluginId)
+        findFilesLimiters.remove(pluginId)
         payloadStore.clearPlugin(pluginId)
         PluginPanelContentStore.clearPlugin(pluginId)
     }
@@ -113,6 +116,7 @@ internal class PluginHostCapabilityGateway(
     fun cleanup() {
         dataCapabilities.cleanup()
         fileLimiters.clear()
+        findFilesLimiters.clear()
         payloadStore.clear()
         PluginPanelContentStore.clearAll()
     }
@@ -134,7 +138,7 @@ internal class PluginHostCapabilityGateway(
     }
 
     private fun handleLog(request: PluginHostCallRequest, pluginName: String): PluginHostCallResponse {
-        val message = request.args.string(0).orEmpty().take(MAX_LOG_MESSAGE_CHARS)
+        val message = truncateUtf8(request.args.string(0).orEmpty(), MAX_LOG_MESSAGE_BYTES)
         when (request.method) {
             "debug" -> logManager.debug(request.pluginId, pluginName, message)
             "info" -> logManager.info(request.pluginId, pluginName, message)
@@ -356,55 +360,61 @@ internal class PluginHostCapabilityGateway(
     private fun handleWorkspace(request: PluginHostCallRequest): PluginHostCallResponse = when (request.method) {
         "readFile" -> readWorkspaceFile(request)
         "writeFile" -> writeWorkspaceFile(request)
-        "findFiles" -> success(
-            JsonArray(
-                workspaceAccess.findFiles(request.args.string(0), request.args.int(1) ?: 200)
-                    .map(::JsonPrimitive),
-            ),
-        )
+        "findFiles" -> {
+            if (!findFilesLimiter(request.pluginId).tryAcquire()) {
+                failureWithValues(JsonArray(emptyList()), "Workspace scan rate limit exceeded")
+            } else {
+                success(
+                    JsonArray(
+                        workspaceAccess.findFiles(request.args.string(0), request.args.int(1) ?: 200)
+                            .map(::JsonPrimitive),
+                    ),
+                )
+            }
+        }
         else -> invalidMethod(request)
     }
 
     private fun handleFileSystem(request: PluginHostCallRequest): PluginHostCallResponse = when (request.method) {
         "readFile" -> readWorkspaceFile(request)
         "writeFile" -> writeWorkspaceFile(request)
-        "exists" -> success(JsonPrimitive(resolveWorkspaceFile(request)?.exists() == true))
-        "isDirectory" -> success(JsonPrimitive(resolveWorkspaceFile(request)?.isDirectory == true))
+        "exists" -> success(JsonPrimitive(workspaceAccess.exists(request.args.string(0))))
+        "isDirectory" -> success(JsonPrimitive(workspaceAccess.isDirectory(request.args.string(0))))
         "listDir" -> {
-            val directory = resolveWorkspaceFile(request)
-            if (directory == null || !directory.isDirectory) success(JsonNull) else success(
-                JsonArray(directory.listFiles().orEmpty().take(MAX_DIRECTORY_ENTRIES).map { JsonPrimitive(it.name) }),
-            )
+            val entries = workspaceAccess.listDirectory(request.args.string(0), MAX_DIRECTORY_ENTRIES)
+            if (entries == null) success(JsonNull) else success(JsonArray(entries.map(::JsonPrimitive)))
         }
         "mkdir" -> {
-            val directory = resolveWorkspaceFile(request)
-            success(JsonPrimitive(directory != null && (directory.mkdirs() || directory.isDirectory)))
+            val path = request.args.string(0)
+            success(JsonPrimitive(path != null && workspaceAccess.createDirectories(path)))
         }
         else -> invalidMethod(request)
     }
 
     private fun readWorkspaceFile(request: PluginHostCallRequest): PluginHostCallResponse {
         if (!fileLimiter(request.pluginId).tryAcquire()) return failure("File operation rate limit exceeded")
-        val file = resolveWorkspaceFile(request)
+        val path = request.args.string(0)
             ?: return failureWithValues(JsonNull, "Invalid path or access denied")
-        if (!file.isFile) return failureWithValues(JsonNull, "File not found")
-        val bytes = file.inputStream().use { it.readLimited(MAX_FILE_CONTENT_BYTES) }
+        val input = workspaceAccess.openFileForRead(path)
+            ?: return failureWithValues(JsonNull, "File not found or access denied")
+        val bytes = input.use { it.readLimited(MAX_FILE_CONTENT_BYTES) }
         return success(JsonPrimitive(String(bytes, StandardCharsets.UTF_8)))
     }
 
     private fun writeWorkspaceFile(request: PluginHostCallRequest): PluginHostCallResponse {
         if (!fileLimiter(request.pluginId).tryAcquire()) return failureWithValues(JsonPrimitive(false), "File operation rate limit exceeded")
-        val file = resolveWorkspaceFile(request)
+        val path = request.args.string(0)
             ?: return failureWithValues(JsonPrimitive(false), "Invalid path or access denied")
         val content = request.args.string(1)
             ?: return failureWithValues(JsonPrimitive(false), "Path and content are required")
-        file.parentFile?.mkdirs()
-        file.writeText(content, Charsets.UTF_8)
+        if (content.toByteArray(StandardCharsets.UTF_8).size > MAX_FILE_CONTENT_BYTES) {
+            return failureWithValues(JsonPrimitive(false), "File content exceeds the size limit")
+        }
+        if (!workspaceAccess.writeUtf8File(path, content)) {
+            return failureWithValues(JsonPrimitive(false), "Invalid path or access denied")
+        }
         return success(JsonPrimitive(true))
     }
-
-    private fun resolveWorkspaceFile(request: PluginHostCallRequest): File? = request.args.string(0)
-        ?.let(workspaceAccess::resolveSafePath)
 
     private fun handleCommands(request: PluginHostCallRequest, pluginName: String): PluginHostCallResponse = when (request.method) {
         "register" -> {
@@ -440,12 +450,13 @@ internal class PluginHostCapabilityGateway(
         )
         "execute" -> {
             val commandId = request.args.string(0)?.trim().orEmpty()
-            val targetFile = request.args.string(1)?.let { path ->
-                val root = projectRootProvider()?.let(::File) ?: return@let null
-                val target = if (File(path).isAbsolute) File(path) else File(root, path)
-                val rootCanonical = runCatching { root.canonicalFile }.getOrNull() ?: return@let null
-                val targetCanonical = runCatching { target.canonicalFile }.getOrNull() ?: return@let null
-                targetCanonical.takeIf { it == rootCanonical || it.path.startsWith(rootCanonical.path + File.separator) }
+            val targetFile = request.args.string(1)?.let { relativePath ->
+                workspaceAccess.resolveSafePath(relativePath)
+                    ?: return failureWithValues(
+                        JsonPrimitive(false),
+                        "Invalid command target path",
+                        PluginHostErrorKind.INVALID_REQUEST,
+                    )
             }
             val invocation = HostCommandInvocation(targetFile, request.args.boolean(2) ?: targetFile?.isDirectory)
             val handled = when {
@@ -506,7 +517,7 @@ internal class PluginHostCapabilityGateway(
     }
 
     private fun handleUi(request: PluginHostCallRequest): PluginHostCallResponse = runOnMainThread(request) {
-        val rawMessage = request.args.string(0).orEmpty()
+        val rawMessage = truncateUtf8(request.args.string(0).orEmpty(), MAX_HOST_MESSAGE_BYTES)
         val message = if (request.method == "showError") {
             Strings.plugin_ui_error_prefix.strOr(context, rawMessage)
         } else {
@@ -574,46 +585,64 @@ internal class PluginHostCapabilityGateway(
     private fun failure(
         message: String,
         kind: PluginHostErrorKind = PluginHostErrorKind.BUSINESS_ERROR,
-    ): PluginHostCallResponse = PluginHostCallResponse(
-        values = JsonArray(listOf(JsonNull, JsonPrimitive(message))),
-        errorKind = kind,
-        error = message,
-    )
+    ): PluginHostCallResponse {
+        val boundedMessage = truncateUtf8(message, MAX_HOST_MESSAGE_BYTES)
+        return PluginHostCallResponse(
+            values = JsonArray(listOf(JsonNull, JsonPrimitive(boundedMessage))),
+            errorKind = kind,
+            error = boundedMessage,
+        )
+    }
 
     private fun failureWithValues(
         firstValue: JsonElement,
         message: String,
         kind: PluginHostErrorKind = PluginHostErrorKind.BUSINESS_ERROR,
-    ): PluginHostCallResponse = PluginHostCallResponse(
-        values = JsonArray(listOf(firstValue, JsonPrimitive(message))),
-        errorKind = kind,
-        error = message,
-    )
+    ): PluginHostCallResponse {
+        val boundedMessage = truncateUtf8(message, MAX_HOST_MESSAGE_BYTES)
+        return PluginHostCallResponse(
+            values = JsonArray(listOf(firstValue, JsonPrimitive(boundedMessage))),
+            errorKind = kind,
+            error = boundedMessage,
+        )
+    }
 
     private fun PluginHostCallResponse.withBulkPayloads(pluginId: String): PluginHostCallResponse {
-        val bulk = mutableMapOf<Int, PluginBulkPayloadRef>()
-        val updated = values.mapIndexed { index, value ->
+        val encodedValues = values.map { value ->
             val text = (value as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull
             val encodedValue = text ?: value.toString()
             val encodedBytes = encodedValue.toByteArray(StandardCharsets.UTF_8)
             if (encodedBytes.size > MAX_BULK_PAYLOAD_BYTES) {
                 return failure("Plugin API response exceeds 8 MiB", PluginHostErrorKind.BUSINESS_ERROR)
             }
-            if (encodedBytes.size > MAX_BULK_INLINE_BYTES) {
-                bulk[index] = payloadStore.put(
-                    pluginId = pluginId,
-                    bytes = encodedBytes,
-                    encoding = if (text != null) PluginBulkPayloadEncoding.STRING else PluginBulkPayloadEncoding.JSON,
-                )
-                JsonNull
-            } else {
-                value
-            }
+            EncodedHostValue(value, text, encodedBytes)
         }
-        return copy(values = JsonArray(updated), bulkValues = bulk)
+        val bulk = mutableMapOf<Int, PluginBulkPayloadRef>()
+        return try {
+            val updated = encodedValues.mapIndexed { index, encoded ->
+                if (encoded.bytes.size > MAX_BULK_INLINE_BYTES) {
+                    bulk[index] = payloadStore.put(
+                        pluginId = pluginId,
+                        bytes = encoded.bytes,
+                        encoding = if (encoded.text != null) PluginBulkPayloadEncoding.STRING else PluginBulkPayloadEncoding.JSON,
+                    )
+                    JsonNull
+                } else {
+                    encoded.value
+                }
+            }
+            copy(values = JsonArray(updated), bulkValues = bulk)
+        } catch (_: Exception) {
+            bulk.values.forEach { reference -> payloadStore.discard(reference.token) }
+            failure("Failed to stage plugin API response", PluginHostErrorKind.BUSINESS_ERROR)
+        }
     }
 
     private fun fileLimiter(pluginId: String): RateLimiter = fileLimiters.computeIfAbsent(pluginId) { RateLimiter(60, 60_000L) }
+
+    private fun findFilesLimiter(pluginId: String): RateLimiter = findFilesLimiters.computeIfAbsent(pluginId) {
+        RateLimiter(MAX_FIND_FILES_CALLS_PER_MINUTE, 60_000L)
+    }
 
     private fun <T> runOnMainThread(request: PluginHostCallRequest, block: () -> T): T {
         check(isGenerationCurrent(request.pluginId, request.generation)) {
@@ -665,6 +694,23 @@ internal class PluginHostCapabilityGateway(
         return output.toByteArray()
     }
 
+    private fun truncateUtf8(value: String, maxBytes: Int): String {
+        if (value.toByteArray(StandardCharsets.UTF_8).size <= maxBytes) return value
+        val result = StringBuilder()
+        var index = 0
+        var usedBytes = 0
+        while (index < value.length) {
+            val codePoint = value.codePointAt(index)
+            val text = String(Character.toChars(codePoint))
+            val byteCount = text.toByteArray(StandardCharsets.UTF_8).size
+            if (usedBytes + byteCount > maxBytes) break
+            result.append(text)
+            usedBytes += byteCount
+            index += Character.charCount(codePoint)
+        }
+        return result.toString()
+    }
+
     private fun JsonArray.string(index: Int): String? = getOrNull(index)
         ?.takeUnless { it is JsonNull }
         ?.jsonPrimitive
@@ -680,5 +726,11 @@ internal class PluginHostCapabilityGateway(
         is JsonArray -> map { value -> value.toEventValue() }
         is JsonPrimitive -> booleanOrNull ?: longOrNull ?: doubleOrNull ?: contentOrNull
     }
+
+    private data class EncodedHostValue(
+        val value: JsonElement,
+        val text: String?,
+        val bytes: ByteArray,
+    )
 
 }

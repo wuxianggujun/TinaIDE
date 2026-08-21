@@ -19,6 +19,7 @@ class ArchiveExtractionLimitsTest {
         maxEntryBytes = 768,
         maxEntryCount = 4,
         maxCompressionRatio = 10,
+        maxPathDepth = 2,
     )
 
     @Test
@@ -59,12 +60,43 @@ class ArchiveExtractionLimitsTest {
     }
 
     @Test
+    fun `budget rejects streamed archive with excessive expansion ratio`() {
+        val budget = ArchiveExtractionBudget(
+            limits = limits.copy(maxExpandedBytes = 1024, maxEntryBytes = 1024, maxCompressionRatio = 10),
+            archiveBytes = 10,
+        )
+        budget.beginEntry("payload.bin")
+
+        assertThrows(ArchiveLimitException::class.java) {
+            budget.readEntry(ByteArray(101).inputStream(), "payload.bin")
+        }
+    }
+
+    @Test
     fun `budget rejects duplicate normalized path`() {
         val budget = ArchiveExtractionBudget(limits)
         budget.beginEntry("dir/file.txt", 1)
 
         assertThrows(ArchiveLimitException::class.java) {
             budget.beginEntry("dir//file.txt", 1)
+        }
+    }
+
+    @Test
+    fun `validator rejects entry path beyond depth limit`() {
+        val archive = createZip("deep.zip", mapOf("one/two/three.txt" to byteArrayOf(1)))
+
+        assertThrows(ArchiveLimitException::class.java) {
+            ZipArchiveValidator.validate(archive, limits)
+        }
+    }
+
+    @Test
+    fun `budget rejects streamed entry path beyond depth limit`() {
+        val budget = ArchiveExtractionBudget(limits)
+
+        assertThrows(ArchiveLimitException::class.java) {
+            budget.beginEntry("one/two/three.txt", 1)
         }
     }
 

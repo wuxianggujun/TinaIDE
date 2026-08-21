@@ -4,6 +4,7 @@ import android.content.Context
 import com.wuxianggujun.tinaide.editor.bookmark.db.BookmarkDatabase
 import com.wuxianggujun.tinaide.editor.session.db.EditorFileStateEntity
 import com.wuxianggujun.tinaide.editor.session.db.EditorSessionEntity
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import timber.log.Timber
@@ -42,12 +43,12 @@ class ProjectSessionStorage(context: Context) {
     }
 
     suspend fun load(projectPath: String): ProjectSessionSnapshot? = withContext(Dispatchers.IO) {
-        return@withContext runCatching {
+        try {
             val session = sessionDao.getSession(projectPath)
             val fileStates = sessionDao.getFileStates(projectPath)
 
             if (session == null && fileStates.isEmpty()) {
-                return@runCatching null
+                return@withContext null
             }
 
             ProjectSessionSnapshot(
@@ -55,38 +56,48 @@ class ProjectSessionStorage(context: Context) {
                 files = fileStates.map { it.toDomainModel() },
                 updatedAt = session?.updatedAt ?: System.currentTimeMillis()
             ).normalized()
-        }.onFailure { e ->
-            Timber.tag(TAG).e(e, "Failed to load editor session for project: %s", projectPath)
-        }.getOrNull()
+        } catch (e: Exception) {
+            Timber.tag(TAG).e("Failed to load editor session: %s", e.javaClass.simpleName)
+            throw e
+        }
     }
 
     suspend fun save(projectPath: String, snapshot: ProjectSessionSnapshot) = withContext(Dispatchers.IO) {
-        runCatching {
+        try {
+            val projectDir = File(projectPath)
+            if (!projectDir.isDirectory) {
+                Timber.tag(TAG).w("Skipped saving editor session for missing project")
+                return@withContext
+            }
             val normalized = snapshot.normalized()
 
             // 保存会话
             val sessionEntity = EditorSessionEntity.fromSnapshot(projectPath, normalized)
-            sessionDao.insertSession(sessionEntity)
-
-            // 先删除旧的文件状态，再插入新的
-            sessionDao.deleteFileStates(projectPath)
             val fileStateEntities = normalized.files.map { file ->
                 EditorFileStateEntity.fromDomainModel(projectPath, file)
             }
-            sessionDao.insertFileStates(fileStateEntities)
+            sessionDao.replaceProjectSession(projectPath, sessionEntity, fileStateEntities)
 
-            Timber.tag(TAG).d("Saved editor session for project: %s (files=%d)", projectPath, normalized.files.size)
-        }.onFailure { e ->
-            Timber.tag(TAG).e(e, "Failed to save editor session for project: %s", projectPath)
+            if (!projectDir.isDirectory) {
+                sessionDao.clearProjectSession(projectPath)
+                Timber.tag(TAG).w("Discarded editor session written while project moved")
+                return@withContext
+            }
+
+            Timber.tag(TAG).d("Saved editor session: files=%d", normalized.files.size)
+        } catch (e: Exception) {
+            Timber.tag(TAG).e("Failed to save editor session: %s", e.javaClass.simpleName)
+            throw e
         }
     }
 
     suspend fun clear(projectPath: String) = withContext(Dispatchers.IO) {
-        runCatching {
+        try {
             sessionDao.clearProjectSession(projectPath)
-            Timber.tag(TAG).d("Cleared editor session for project: %s", projectPath)
-        }.onFailure { e ->
-            Timber.tag(TAG).e(e, "Failed to clear editor session for project: %s", projectPath)
+            Timber.tag(TAG).d("Cleared editor session")
+        } catch (e: Exception) {
+            Timber.tag(TAG).e("Failed to clear editor session: %s", e.javaClass.simpleName)
+            throw e
         }
     }
 }

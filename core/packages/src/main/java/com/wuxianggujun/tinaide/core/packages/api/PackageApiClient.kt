@@ -6,6 +6,8 @@ import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.str
 import com.wuxianggujun.tinaide.core.network.ApiResult
 import com.wuxianggujun.tinaide.core.network.OkHttpClientProvider
+import com.wuxianggujun.tinaide.core.network.ResponseBodyTooLargeException
+import com.wuxianggujun.tinaide.core.network.readUtf8Limited
 import com.wuxianggujun.tinaide.core.network.registry.GitHubRegistryConfig
 import com.wuxianggujun.tinaide.core.network.registry.GitHubRegistryHttpClientFactory
 import com.wuxianggujun.tinaide.core.network.registry.GitHubRegistryProxyConfig
@@ -21,6 +23,7 @@ import com.wuxianggujun.tinaide.core.packages.model.Platform
 import com.wuxianggujun.tinaide.core.packages.model.PlatformPackage
 import com.wuxianggujun.tinaide.core.serialization.JsonSerializer
 import java.io.IOException
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -39,12 +42,15 @@ class PackageApiClient private constructor(
 ) {
     private val json = JsonSerializer.default
     private val indexMutex = Mutex()
-    private val detailMutex = Mutex()
+    private val detailMutexes = ConcurrentHashMap<String, Mutex>()
+    @Volatile
     private var cachedIndex: LoadedPackageRegistryCatalog? = null
-    private val cachedDetails = mutableMapOf<String, PackageRegistryDetail>()
+    private val cachedDetails = ConcurrentHashMap<String, PackageRegistryDetail>()
 
     companion object {
         private const val TAG = "PackageApiClient"
+        private const val MAX_PAGE_SIZE = 100
+        private const val MAX_REGISTRY_JSON_BYTES = 8 * 1024 * 1024
 
         @Volatile
         private var instance: PackageApiClient? = null
@@ -104,10 +110,11 @@ class PackageApiClient private constructor(
             .sortedBy { it.name.lowercase() }
             .toList()
 
-        val safePageSize = pageSize.coerceAtLeast(1)
+        val safePageSize = pageSize.coerceIn(1, MAX_PAGE_SIZE)
         val safePage = page.coerceAtLeast(1)
+        val offset = ((safePage - 1L) * safePageSize).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         PackageListResponse(
-            packages = filtered.drop((safePage - 1) * safePageSize).take(safePageSize),
+            packages = filtered.drop(offset).take(safePageSize),
             total = filtered.size,
             page = safePage,
             pageSize = safePageSize,
@@ -203,8 +210,12 @@ class PackageApiClient private constructor(
         indexMutex.withLock {
             cachedIndex?.let { return@withLock ApiResult.Success(it) }
             val result = loadIndexFromUrls(indexUrls, "v2") { body, registryUrl ->
+                val catalog = json.decodeFromString<PackageRegistryCatalog>(body)
+                require(catalog.schemaVersion == PACKAGE_REGISTRY_SCHEMA_VERSION) {
+                    "Unsupported package registry schema: ${catalog.schemaVersion}"
+                }
                 LoadedPackageRegistryCatalog(
-                    catalog = json.decodeFromString<PackageRegistryCatalog>(body),
+                    catalog = catalog,
                     baseUrl = registryUrl.endpoint.baseUrl,
                     endpoint = registryUrl.endpoint,
                 )
@@ -231,7 +242,6 @@ class PackageApiClient private constructor(
                         .build()
                 ).execute()
                 response.use { resp ->
-                    val body = resp.body?.string()
                     if (!resp.isSuccessful) {
                         lastError = ApiResult.Error(
                             resp.code,
@@ -239,6 +249,7 @@ class PackageApiClient private constructor(
                         )
                         return@use
                     }
+                    val body = resp.body?.readUtf8Limited(MAX_REGISTRY_JSON_BYTES)
                     if (body.isNullOrBlank()) {
                         lastError = ApiResult.Error(-1, Strings.error_response_empty.str())
                         return@use
@@ -251,6 +262,9 @@ class PackageApiClient private constructor(
                     )
                     return ApiResult.Success(index)
                 }
+            } catch (e: ResponseBodyTooLargeException) {
+                Timber.tag(TAG).w("Package registry %s response exceeded size limit via %s", schemaLabel, registryUrl.endpoint.name)
+                lastError = ApiResult.Error(-1, Strings.error_response_parse_failed.str())
             } catch (e: IOException) {
                 Timber.tag(TAG).w(e, "Load package registry %s failed via %s", schemaLabel, registryUrl.endpoint.name)
                 lastError = ApiResult.NetworkError(e.message ?: Strings.error_network_connection_failed.str())
@@ -273,6 +287,7 @@ class PackageApiClient private constructor(
             ?: return ApiResult.Error(-1, Strings.pkg_manager_error_package_not_found.str(packageId))
 
         cachedDetails[entry.id]?.let { return ApiResult.Success(it) }
+        val detailMutex = detailMutexes.computeIfAbsent(entry.id) { Mutex() }
         return detailMutex.withLock {
             cachedDetails[entry.id]?.let { return@withLock ApiResult.Success(it) }
             var lastError: ApiResult<PackageRegistryDetail>? = null
@@ -296,7 +311,7 @@ class PackageApiClient private constructor(
                             )
                             return@use
                         }
-                        val body = resp.body?.string()
+                        val body = resp.body?.readUtf8Limited(MAX_REGISTRY_JSON_BYTES)
                         if (body.isNullOrBlank()) {
                             lastError = ApiResult.Error(-1, Strings.error_response_empty.str())
                             return@use
@@ -309,6 +324,9 @@ class PackageApiClient private constructor(
                         cachedDetails[entry.id] = detail
                         return@withLock ApiResult.Success(detail)
                     }
+                } catch (e: ResponseBodyTooLargeException) {
+                    Timber.tag(TAG).w("Package detail response exceeded size limit: %s", packageId)
+                    lastError = ApiResult.Error(-1, Strings.error_response_parse_failed.str())
                 } catch (e: IOException) {
                     Timber.tag(TAG).w(e, "Load package detail failed: %s", packageId)
                     lastError = ApiResult.NetworkError(e.message ?: Strings.error_network_connection_failed.str())
@@ -449,12 +467,14 @@ class PackageApiClient private constructor(
 @Serializable
 data class PackageRegistryCatalog(
     @SerialName("schema_version")
-    val schemaVersion: Int = 2,
+    val schemaVersion: Int,
     @SerialName("generated_at")
     val generatedAt: String? = null,
     val packages: List<PackageRegistryCatalogEntry> = emptyList(),
     val categories: List<PackageCategory> = emptyList(),
 )
+
+private const val PACKAGE_REGISTRY_SCHEMA_VERSION = 2
 
 @Serializable
 data class PackageRegistryCatalogEntry(

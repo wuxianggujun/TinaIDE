@@ -6,6 +6,7 @@ import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.core.serialization.JsonSerializer
 import com.wuxianggujun.tinaide.plugin.lsp.LspServerCommandPolicy
+import com.wuxianggujun.tinaide.plugin.lsp.LspToolchainPackagePolicy
 import com.wuxianggujun.tinaide.plugin.script.PluginPermission
 import com.wuxianggujun.tinaide.project.ProjectBuildSystem
 import com.wuxianggujun.tinaide.project.ProjectTemplateArchivePolicy
@@ -52,7 +53,7 @@ internal object PluginManifestValidator {
             require(isSafePluginRelativePath(mainEntry)) {
                 Strings.plugin_error_main_path_invalid.strOr(context, mainEntry)
             }
-            require(File(pluginDir, mainEntry).exists()) {
+            require(File(pluginDir, mainEntry).isFile) {
                 Strings.plugin_error_main_file_not_exist.strOr(context, mainEntry)
             }
         }
@@ -61,7 +62,7 @@ internal object PluginManifestValidator {
             require(isSafePluginRelativePath(path)) {
                 Strings.plugin_error_themes_path_invalid.strOr(context, path)
             }
-            require(File(pluginDir, path).exists()) {
+            require(File(pluginDir, path).isFile) {
                 Strings.plugin_error_theme_file_not_exist.strOr(context, path)
             }
         }
@@ -70,7 +71,7 @@ internal object PluginManifestValidator {
             require(isSafePluginRelativePath(path)) {
                 Strings.plugin_error_snippets_path_invalid.strOr(context, path)
             }
-            require(File(pluginDir, path).exists()) {
+            require(File(pluginDir, path).isFile) {
                 Strings.plugin_error_snippet_file_not_exist.strOr(context, path)
             }
         }
@@ -139,7 +140,7 @@ internal object PluginManifestValidator {
                     apkExport.templatePath
                 )
             }
-            require(File(pluginDir, apkExport.templatePath).exists()) {
+            require(File(pluginDir, apkExport.templatePath).isFile) {
                 Strings.plugin_error_apk_export_template_file_not_exist.strOr(
                     context,
                     apkExport.templatePath
@@ -213,6 +214,14 @@ internal object PluginManifestValidator {
         require(languageServers.isNotEmpty()) {
             Strings.plugin_error_lsp_language_servers_empty.strOr(context)
         }
+        val duplicateServerIds = languageServers
+            .groupingBy { it.id.trim() }
+            .eachCount()
+            .filterValues { it > 1 }
+            .keys
+        require(duplicateServerIds.isEmpty()) {
+            Strings.plugin_error_lsp_language_server_duplicate_id.strOr(context, duplicateServerIds.joinToString(", "))
+        }
         languageServers.forEach { server ->
             require(server.id.isNotBlank()) { Strings.plugin_error_id_empty.strOr(context) }
             require(server.name.isNotBlank()) { Strings.plugin_error_name_empty.strOr(context) }
@@ -238,20 +247,90 @@ internal object PluginManifestValidator {
                 Strings.plugin_error_lsp_server_command_invalid.strOr(context, server.id)
             }
         }
-        contributions?.toolchains.orEmpty().forEach { toolchain ->
+        val toolchains = contributions?.toolchains.orEmpty()
+        val duplicateToolchainIds = toolchains
+            .groupingBy { it.id.trim() }
+            .eachCount()
+            .filterValues { it > 1 }
+            .keys
+        require(duplicateToolchainIds.isEmpty()) {
+            Strings.plugin_error_lsp_toolchain_duplicate_id.strOr(context, duplicateToolchainIds.joinToString(", "))
+        }
+        toolchains.forEach { toolchain ->
             val type = toolchain.type.trim().lowercase()
+            require(toolchain.id.matches(Regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"))) {
+                Strings.plugin_error_lsp_toolchain_id_invalid.strOr(context, toolchain.id)
+            }
+            require(toolchain.name.isNotBlank()) {
+                Strings.plugin_error_lsp_toolchain_name_empty.strOr(context, toolchain.id)
+            }
+            require(isSafeVerifyCommand(toolchain.verifyCommand)) {
+                Strings.plugin_error_lsp_toolchain_verify_command_invalid.strOr(context, toolchain.id)
+            }
+            require(isSafeVerifyPattern(toolchain.verifyPattern)) {
+                Strings.plugin_error_lsp_toolchain_verify_pattern_invalid.strOr(context, toolchain.id)
+            }
             require(type in supportedLspToolchainTypes) {
                 Strings.plugin_error_lsp_toolchain_type_invalid.strOr(context, toolchain.type)
             }
             if (type == "system") {
-                val hasGenericPackages = toolchain.packages.orEmpty().any { it.isNotBlank() }
-                val hasManagerPackages = toolchain.packagesByManager.orEmpty().values.flatten().any { it.isNotBlank() }
-                require(hasGenericPackages || hasManagerPackages) {
+                val genericPackages = toolchain.packages.orEmpty()
+                val managerPackages = toolchain.packagesByManager.orEmpty().values.flatten()
+                require(genericPackages.isNotEmpty() || managerPackages.isNotEmpty()) {
                     Strings.plugin_error_lsp_toolchain_system_packages_empty.strOr(context, toolchain.id)
+                }
+                require(
+                    (genericPackages.isEmpty() || LspToolchainPackagePolicy.areValid(type, genericPackages)) &&
+                        (managerPackages.isEmpty() || LspToolchainPackagePolicy.areValid(type, managerPackages)) &&
+                        LspToolchainPackagePolicy.areFallbackVersionsValid(toolchain.fallbackVersions),
+                ) {
+                    Strings.plugin_error_lsp_toolchain_packages_invalid.strOr(context, toolchain.id)
+                }
+            }
+            if (type == "pip" || type == "npm") {
+                require(LspToolchainPackagePolicy.areValid(type, toolchain.packages.orEmpty())) {
+                    Strings.plugin_error_lsp_toolchain_packages_invalid.strOr(context, toolchain.id)
+                }
+            }
+            if (type == "download") {
+                require(toolchain.url?.let(::isHttpsUrl) == true) {
+                    Strings.plugin_error_lsp_toolchain_download_https_required.strOr(context, toolchain.id)
+                }
+                require(toolchain.sha256?.matches(Regex("(?i)^[0-9a-f]{64}$")) == true) {
+                    Strings.plugin_error_lsp_toolchain_sha256_invalid.strOr(context, toolchain.id)
+                }
+                require(isSafePluginRelativePath(toolchain.extractTo.orEmpty())) {
+                    Strings.plugin_error_lsp_toolchain_extract_path_invalid.strOr(context, toolchain.id)
                 }
             }
         }
     }
+
+    private fun isSafeVerifyCommand(command: String?): Boolean {
+        val value = command?.trim().orEmpty()
+        return value.isNotEmpty() && value.length <= 512 &&
+            value.matches(Regex("^[A-Za-z0-9_./+-]+(?:\\s+[-A-Za-z0-9_./=:+]+)*$"))
+    }
+
+    private fun isSafeVerifyPattern(pattern: String?): Boolean {
+        val value = pattern?.trim() ?: return true
+        if (value.isEmpty() || value.length > 256 ||
+            value.any { char ->
+                !char.isLetterOrDigit() && char != '$' && char !in " _./:+*?^\\[]-"
+            }
+        ) {
+            return false
+        }
+        return runCatching { Regex(value) }.isSuccess
+    }
+
+    private fun isHttpsUrl(url: String): Boolean = runCatching {
+        java.net.URI(url).let { uri ->
+            uri.scheme.equals("https", ignoreCase = true) &&
+                !uri.host.isNullOrBlank() &&
+                uri.userInfo == null
+        }
+    }.getOrDefault(false)
 
     fun parseProjectBuildSystem(value: String): ProjectBuildSystem? = when (value.trim().lowercase()) {
         "single_file", "single-file", "singlefile" -> ProjectBuildSystem.SINGLE_FILE

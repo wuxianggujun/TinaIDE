@@ -4,6 +4,7 @@ import android.content.Context
 import com.wuxianggujun.tinaide.terminal.persistence.db.TerminalDatabase
 import com.wuxianggujun.tinaide.terminal.persistence.db.TerminalSessionEntity
 import com.wuxianggujun.tinaide.terminal.persistence.db.TerminalStateEntity
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import timber.log.Timber
@@ -28,22 +29,23 @@ class TerminalStateStorage(context: Context) {
      * @return 终端状态，如果不存在或解析失败则返回 null
      */
     suspend fun load(projectPath: String): ProjectTerminalState? = withContext(Dispatchers.IO) {
-        return@withContext runCatching {
+        try {
             val state = stateDao.getState(projectPath)
             val sessions = stateDao.getSessions(projectPath)
 
             if (state == null && sessions.isEmpty()) {
-                return@runCatching null
+                return@withContext null
             }
 
-            ProjectTerminalState(
+            return@withContext ProjectTerminalState(
                 activeSessionId = state?.activeSessionId,
                 sessions = sessions.map { it.toDomainModel() },
                 updatedAt = state?.updatedAt ?: System.currentTimeMillis()
             ).normalized()
-        }.onFailure { e ->
-            Timber.tag(TAG).e(e, "Failed to load terminal state for project: %s", projectPath)
-        }.getOrNull()
+        } catch (e: Exception) {
+            Timber.tag(TAG).e("Failed to load terminal state: %s", e.javaClass.simpleName)
+            throw e
+        }
     }
 
     /**
@@ -53,23 +55,29 @@ class TerminalStateStorage(context: Context) {
      * @param state 要保存的终端状态
      */
     suspend fun save(projectPath: String, state: ProjectTerminalState) = withContext(Dispatchers.IO) {
-        runCatching {
+        try {
+            val projectDir = File(projectPath)
+            if (!projectDir.isDirectory) {
+                Timber.tag(TAG).w("Skipped saving terminal state for missing project")
+                return@withContext
+            }
             val normalized = state.normalized()
-
-            // 保存状态
             val stateEntity = TerminalStateEntity.fromSnapshot(projectPath, normalized)
-            stateDao.insertState(stateEntity)
-
-            // 先删除旧的会话，再插入新的
-            stateDao.deleteSessions(projectPath)
             val sessionEntities = normalized.sessions.map { session ->
                 TerminalSessionEntity.fromDomainModel(projectPath, session)
             }
-            stateDao.insertSessions(sessionEntities)
+            stateDao.replaceProjectTerminal(projectPath, stateEntity, sessionEntities)
 
-            Timber.tag(TAG).d("Saved terminal state for project: %s (sessions=%d)", projectPath, normalized.sessions.size)
-        }.onFailure { e ->
-            Timber.tag(TAG).e(e, "Failed to save terminal state for project: %s", projectPath)
+            if (!projectDir.isDirectory) {
+                stateDao.clearProjectTerminal(projectPath)
+                Timber.tag(TAG).w("Discarded terminal state written while project moved")
+                return@withContext
+            }
+
+            Timber.tag(TAG).d("Saved terminal state: sessions=%d", normalized.sessions.size)
+        } catch (e: Exception) {
+            Timber.tag(TAG).e("Failed to save terminal state: %s", e.javaClass.simpleName)
+            throw e
         }
     }
 
@@ -79,11 +87,12 @@ class TerminalStateStorage(context: Context) {
      * @param projectPath 项目根目录路径
      */
     suspend fun clear(projectPath: String) = withContext(Dispatchers.IO) {
-        runCatching {
+        try {
             stateDao.clearProjectTerminal(projectPath)
-            Timber.tag(TAG).d("Cleared terminal state for project: %s", projectPath)
-        }.onFailure { e ->
-            Timber.tag(TAG).e(e, "Failed to clear terminal state for project: %s", projectPath)
+            Timber.tag(TAG).d("Cleared terminal state")
+        } catch (e: Exception) {
+            Timber.tag(TAG).e("Failed to clear terminal state: %s", e.javaClass.simpleName)
+            throw e
         }
     }
 
@@ -94,10 +103,15 @@ class TerminalStateStorage(context: Context) {
      * @return 如果状态文件存在则返回 true
      */
     suspend fun exists(projectPath: String): Boolean = withContext(Dispatchers.IO) {
-        return@withContext runCatching {
-            val state = stateDao.getState(projectPath)
-            val sessions = stateDao.getSessions(projectPath)
-            state != null || sessions.isNotEmpty()
-        }.getOrElse { false }
+        val state = stateDao.getState(projectPath)
+        val sessions = stateDao.getSessions(projectPath)
+        state != null || sessions.isNotEmpty()
+    }
+
+    suspend fun migrateProjectPath(oldProjectPath: String, newProjectPath: String) = withContext(Dispatchers.IO) {
+        require(oldProjectPath.isNotBlank() && newProjectPath.isNotBlank())
+        if (oldProjectPath != newProjectPath) {
+            stateDao.migrateProjectPath(oldProjectPath, newProjectPath)
+        }
     }
 }

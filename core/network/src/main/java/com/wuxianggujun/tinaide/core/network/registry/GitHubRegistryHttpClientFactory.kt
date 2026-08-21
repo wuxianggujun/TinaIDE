@@ -2,6 +2,7 @@ package com.wuxianggujun.tinaide.core.network.registry
 
 import android.content.Context
 import com.wuxianggujun.tinaide.core.network.OkHttpClientProvider
+import java.io.IOException
 import java.net.InetSocketAddress
 import java.net.Proxy
 import okhttp3.OkHttpClient
@@ -22,14 +23,28 @@ object GitHubRegistryHttpClientFactory {
         baseClient: OkHttpClient,
     ): OkHttpClient {
         val settings = GitHubRegistryProxyConfig.load(context)
-        if (!settings.isUsable) return baseClient
-
-        val proxy = Proxy(
-            Proxy.Type.HTTP,
-            InetSocketAddress(settings.host, settings.port),
-        )
         return baseClient.newBuilder()
-            .proxy(proxy)
+            .apply {
+                if (settings.isUsable) {
+                    proxy(
+                        Proxy(
+                            Proxy.Type.HTTP,
+                            InetSocketAddress(settings.host, settings.port),
+                        )
+                    )
+                }
+            }
+            .addNetworkInterceptor { chain ->
+                if (!chain.request().url.isHttps) {
+                    throw IOException("Registry requests require HTTPS")
+                }
+                chain.proceed(chain.request()).also { response ->
+                    if (!response.request.url.isHttps) {
+                        response.close()
+                        throw IOException("Registry redirect downgraded from HTTPS")
+                    }
+                }
+            }
             .build()
     }
 }

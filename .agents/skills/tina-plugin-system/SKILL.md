@@ -36,6 +36,7 @@ description: TinaIDE 插件系统、.tinaplug、manifest、权限、Lua script/h
 - 该 Registry 承载索引、可下载包文件、官方插件源码、starter 源模板和索引构建脚本；不承载后端、数据库或管理后台。
 - 如果 v2 的 `plugins` / `packages` 索引为空，市场列表为空属于 Registry 未发布内容，不是 Android 仓库缺代码。
 - 宿主行为应消费启用态插件，例如 `enabledPluginsFlow` 或中心状态快照；不要遍历安装态插件后临时过滤。
+- 首次安装时纯 `config` 插件自动启用；`script`、`hybrid`、`lsp`、`system` 等插件默认禁用。升级保留用户原有启用意图。
 
 ## 修改流程
 

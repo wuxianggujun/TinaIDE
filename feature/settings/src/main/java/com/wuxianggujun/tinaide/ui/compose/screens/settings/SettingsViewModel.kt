@@ -4,7 +4,9 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.wuxianggujun.tinaide.core.config.AppTheme
+import com.wuxianggujun.tinaide.core.config.CUSTOM_EDITOR_THEME_ID
 import com.wuxianggujun.tinaide.core.config.ConfigKeys
+import com.wuxianggujun.tinaide.core.config.CustomEditorTheme
 import com.wuxianggujun.tinaide.core.config.DebugToolbarPosition
 import com.wuxianggujun.tinaide.core.config.IConfigManager
 import com.wuxianggujun.tinaide.core.config.MTFileProviderManager
@@ -38,6 +40,7 @@ import kotlinx.coroutines.launch
 data class SettingsUiState(
     val appTheme: AppTheme,
     val editorTheme: String,
+    val customEditorTheme: CustomEditorTheme,
     val editorFontSize: Float,
     val editorTabSize: Int,
     val editorWordWrap: Boolean,
@@ -109,6 +112,7 @@ data class SettingsUiState(
         fun fromPrefs(configManager: IConfigManager, linuxEnvironmentEnabled: Boolean): SettingsUiState = SettingsUiState(
             appTheme = Prefs.appTheme,
             editorTheme = Prefs.editorTheme,
+            customEditorTheme = Prefs.customEditorTheme,
             editorFontSize = Prefs.editorFontSize,
             editorTabSize = Prefs.editorTabSize,
             editorWordWrap = Prefs.editorWordWrap,
@@ -253,6 +257,12 @@ class SettingsViewModel(
         }
 
         viewModelScope.launch {
+            Prefs.customEditorThemeFlow.collect { theme ->
+                _uiState.update { it.copy(customEditorTheme = theme) }
+            }
+        }
+
+        viewModelScope.launch {
             Prefs.debugToolbarPositionFlow.collect { position ->
                 _uiState.update { it.copy(debugToolbarPosition = position) }
             }
@@ -329,6 +339,18 @@ class SettingsViewModel(
     fun setEditorTheme(themeId: String) {
         Prefs.setEditorTheme(themeId)
         _uiState.update { it.copy(editorTheme = themeId) }
+    }
+
+    fun setCustomEditorTheme(theme: CustomEditorTheme) {
+        val sanitized = theme.sanitized()
+        Prefs.setCustomEditorTheme(sanitized)
+        Prefs.setEditorTheme(CUSTOM_EDITOR_THEME_ID)
+        _uiState.update {
+            it.copy(
+                editorTheme = CUSTOM_EDITOR_THEME_ID,
+                customEditorTheme = sanitized
+            )
+        }
     }
 
     fun setEditorTabSize(tabSize: Int) {

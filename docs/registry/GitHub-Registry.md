@@ -78,7 +78,7 @@ Linux distro 使用独立的 `linux-distro/manifest.v1.json` 协议。它不是�
 `download_url`、兼容模型中的 `download_sources[].url`，以及 v2 详情中的
 `downloads["<package-id>:<version-id>"].sources[].url` 支持两种写法：
 
-- 绝对 URL：客户端原样访问。
+- 绝对 URL：必须是带有效 Host、无 userInfo 的 HTTPS URL；HTTP 或畸形 URL 不会进入候选列表。
 - 相对路径：客户端会拼到本次成功加载索引的 Registry base 后面。
   默认通常是 GitHub Raw，失败后才会是 jsDelivr CDN。
 
@@ -86,7 +86,7 @@ Linux distro 使用独立的 `linux-distro/manifest.v1.json` 协议。它不是�
 
 - 小文件、索引、示例插件可以继续使用相对路径，客户端会优先走 GitHub Raw。
 - 大文件、依赖包、运行时包建议填写你自己的 CDN/对象存储绝对 URL。
-- 不要把未校验的大文件只放在随机公开代理上；能填写 `sha256:` 时必须填写。
+- 不要把制品只放在随机公开代理上；当前客户端要求远程制品提供 `sha256:<64 位十六进制>`。
 
 ## 构建索引
 
@@ -172,6 +172,7 @@ Android 仓库已经移除 `PluginRegistryIndex` / `PackageRegistryIndex` 生产
 
 ```json
 {
+  "id": "tinaide.plugin.example",
   "plugin_id": "tinaide.plugin.example",
   "versions": [
     {
@@ -187,6 +188,20 @@ Android 仓库已经移除 `PluginRegistryIndex` / `PackageRegistryIndex` 生产
   ]
 }
 ```
+
+#### 项目模板依赖与宿主兼容门禁
+
+项目模板插件可在每个 `contributions.projectTemplates` 条目中使用 `requiredPackages` 声明
+创建项目之前必须安装的 Android Registry 包 ID。该字段由 TinaIDE `0.18.20` 起执行真实
+安装状态与 `package.json` 双重校验，因此首次使用该字段的新插件版本必须同时满足：
+
+- 源 `manifest.json` 声明 `minAppVersion: "0.18.20"` 或更高版本；
+- `plugin.v3.json` 对应版本声明 `min_app_version: "0.18.20"` 或更高版本；
+- `plugins/index.v2.json` 和旧 `plugin.json` 继续暴露不依赖该字段的历史兼容版本；
+- 新版本写入独立版本目录，不能覆盖已发布的 `.tinaplug` 不可变制品。
+
+这样新宿主会选择带依赖预检的新版本，旧宿主仍会获得可执行的历史版本，而不是安装一个
+能显示模板但无法保证依赖完整性的版本。
 
 ### 插件 v2 旧宿主兼容索引
 
@@ -290,8 +305,8 @@ Android 仓库已经移除 `PluginRegistryIndex` / `PackageRegistryIndex` 生产
 }
 ```
 
-`file_hash` 是推荐字段。填写后客户端会做 SHA-256 校验；未填写时只下载，
-不做完整性校验。
+当前 v2/v3 插件详情中的 `file_size` 和 `file_hash` 都是安装必需字段。
+`file_hash` 必须使用 `sha256:<64 位十六进制>`；缺失或格式错误时客户端拒绝下载。
 
 ## 依赖包索引
 
@@ -420,10 +435,11 @@ Android 仓库已经移除 `PluginRegistryIndex` / `PackageRegistryIndex` 生产
 1. 从已安装 APK 的 native library 目录识别 App 实际 ABI；无法识别时才回落到设备报告的首选 ABI。这样在存在 native bridge 的设备上也不会仅凭 `Build.SUPPORTED_ABIS` 误选制品。
 2. 如果存在与当前 ABI 匹配的 source，只保留这些 source 并按 `priority` 降序尝试；不会因为无 ABI 通用源优先级更高而下载双 ABI 包。
 3. 没有匹配的 ABI source 时，只允许回落到未声明 `abi` 的旧通用 source；其他 ABI 的 source 永远不会进入候选列表。
-4. 相对 URL 展开为 Registry、CDN 或代理候选时，客户端会完整保留原 source 的 `abi`、`size`、`checksum` 和 `supports_range`。
-5. 每个候选优先使用 source 自己的 `size` 与 `checksum`，仅在字段缺失时回落到下载信息顶层值。ABI 独立 source 应始终写自己的值，不应依赖这个兼容回落。
+4. 只保留 HTTPS 下载候选；相对 URL 展开为 Registry、CDN 或代理候选时，客户端会完整保留原 source 的 `abi`、`size`、`checksum` 和 `supports_range`。
+5. `DOWNLOAD` 类型必须提供合法 `sha256:<64 位十六进制>`。每个候选优先使用 source 自己的 `size` 与 `checksum`，旧通用 source 可兼容回落到下载信息顶层值；ABI 独立 source 必须写自己的精确值。
 6. 下载先写入临时文件。接收完成后先比较压缩归档的实际字节数，再校验 checksum；两项都通过后才替换正式缓存文件并进入归档识别和解压。
-7. HTTP、大小、checksum 或归档识别失败时，客户端会尝试下一个已选候选。大小或 checksum 不匹配会删除无效临时文件，但不会覆盖已经存在的正式缓存文件；主动取消会保留临时文件，source 支持 Range 时后续下载可以继续使用。
+7. HTTP、重定向降级、`Content-Range`、大小、checksum 或归档识别失败时，客户端会尝试下一个已选候选。无效临时文件不会覆盖已经存在的正式缓存文件；主动取消会保留临时文件，source 支持 Range 时后续下载可以继续使用。
+8. 单个依赖包下载上限为 512 MiB；归档还会继续执行条目数、展开总量、单项大小、路径深度和压缩比限制。
 
 `supports_range` 只声明 source 是否支持断点续传，不会放宽大小或 checksum 校验。
 
@@ -552,7 +568,7 @@ Android 依赖包不按 ABI 拆成多个逻辑包。一个库只保留一个 `pa
 - 为兼容旧客户端，可以保留无 `abi` 的通用源并设置更高优先级；新客户端检测到匹配
   ABI 的源时只使用匹配源，不会回退下载通用双 ABI 包。
 - ABI 独立归档只包含自己的 `lib/<abi>/`。不得在 ARM64 独立归档中携带 `lib/x86_64/`。
-- source 缺少 `size` 或 `checksum` 时客户端虽然会回落顶层值，但 ABI 独立归档大小通常不同；发布端不能把通用包元数据复用于 ABI 独立 source。
+- ABI 独立 source 必须提供自己的 `size` 和 `checksum`，且两者对应自身归档；禁止复用通用包或其他 ABI 的元数据。
 
 发布前必须在 Registry 仓库运行：
 

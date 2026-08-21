@@ -332,7 +332,13 @@ class PackageManagerImpl(
         val result = when (platformPkg.installType) {
             InstallType.APT -> installLinuxPackage(packageId, platformPkg, progress)
             InstallType.DOWNLOAD -> installDownload(packageId, descriptor.packageName, platform, platformPkg, progress)
-            InstallType.SCRIPT -> installScript(packageId, platform, platformPkg, progress)
+            InstallType.SCRIPT -> {
+                val error = InstallError.UnknownError(
+                    "Remote script packages are disabled because registry scripts are not signed",
+                )
+                progress(InstallProgressEvent.Failed(error))
+                InstallResult.Failure(packageId, error)
+            }
         }
 
         when (result) {
@@ -534,38 +540,10 @@ class PackageManagerImpl(
             InstallType.DOWNLOAD -> {
                 downloadBackend.uninstall(packageId)
             }
-            InstallType.SCRIPT -> {
-                val versionsResult = apiClient.getPackageVersions(packageId)
-                val versions = if (versionsResult is ApiResult.Success) {
-                    when (platform) {
-                        Platform.LINUX -> versionsResult.data.linux
-                        Platform.ANDROID -> versionsResult.data.android
-                    }
-                } else {
-                    null
-                }
-
-                val uninstallScript = versions?.find { it.isLatest }?.uninstallScript
-
-                if (!uninstallScript.isNullOrBlank() && prootEnv?.isInstalled() == true) {
-                    val result = prootEnv.executeShellWithEnv(
-                        command = uninstallScript,
-                        env = emptyMap(),
-                        timeout = 120_000
-                    )
-                    if (result.exitCode == 0) {
-                        // 脚本卸载成功后，也清理可能存在的下载文件
-                        cleanupDownloadFiles(packageId)
-                        UninstallResult.Success(packageId, platform, 0)
-                    } else {
-                        UninstallResult.Failure(packageId, UninstallError.UnknownError("Uninstall script failed"))
-                    }
-                } else {
-                    // 没有卸载脚本时，尝试清理下载文件
-                    cleanupDownloadFiles(packageId)
-                    UninstallResult.Success(packageId, platform, 0)
-                }
-            }
+            InstallType.SCRIPT -> UninstallResult.Failure(
+                packageId,
+                UninstallError.UnknownError("Remote script packages are disabled because registry scripts are not signed"),
+            )
             null -> {
                 // 安装类型未知（API 和本地都没有记录），尝试清理下载文件作为兜底
                 Timber.tag(TAG).w("Unknown install type for $packageId, attempting download file cleanup")
@@ -656,7 +634,7 @@ class PackageManagerImpl(
         cachedVersions.clear()
     }
 
-    override suspend fun clearCache() = withContext(ioDispatcher) {
+    override suspend fun clearCache(): Unit = withContext(ioDispatcher) {
         cacheManager.clearCache()
         cachedVersions.clear()
         downloadBackend.clearDownloadCache()

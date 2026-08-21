@@ -25,7 +25,7 @@ Lua 不再运行在 TinaIDE 主进程。宿主通过 Binder 调用非导出的 `
 - 不依赖 `io`、`debug`、`loadfile/dofile`、native `loadlib`、Java/luajava 反射。
 - 多文件代码使用受限 `require("module.name")`；模块必须位于插件目录、扩展名为 `.lua`，不能使用绝对路径或 `..`。
 - 宿主对象和真实路径不会进入 Lua；所有文件、编辑器、UI、Clipboard、Network 与 Database 能力都通过 `tina.*` 和权限检查访问。
-- 新安装插件默认禁用。安装完成后需在详情页明确启用；权限等待、自动隔离和 runtime 不可用会显示为不同状态。
+- 新安装的 `script`、`hybrid`、`lsp`、`system` 插件默认禁用，需在详情页明确启用；纯 `config` 插件会自动启用，但不会获得或执行 Lua/LSP 运行时。权限等待、自动隔离和 runtime 不可用会显示为不同状态。
 - 被自动隔离的插件必须由用户确认重新启用，或安装严格更高版本后再尝试运行。
 - 市场安装会在写入插件目录前绑定请求的 `pluginId` 与版本，并复用文件安装的权限确认；身份不一致的包会被拒绝。市场下载与系统文件选择器导入都执行 64 MiB 流式上限。
 - 只有 script/hybrid 的必需权限会在安装事务中授予；L0 权限自动授予，其他级别先确认，安装失败时恢复原授权。配置类插件不会被预授予脚本权限。
@@ -223,8 +223,11 @@ Lua 不再运行在 TinaIDE 主进程。宿主通过 Binder 调用非导出的 `
 
 - 只能在当前项目根目录下访问
 - 不允许路径逃逸
+- `readFile` / `writeFile` 不跟随路径任一层的符号链接，单次 UTF-8 内容上限为 8 MiB
+- 每插件最多执行 60 次文件读写/分钟
 - `findFiles` 支持 `*`、`?`、`**/`
 - `findFiles` 会跳过 `.git`、`.gradle`、`.idea`、`.cxx`、`build`、`node_modules`
+- `findFiles` 每次最多扫描 50,000 项，每插件每分钟最多调用 12 次
 - `maxResults` 默认 200，限制在 1 到 1000；匹配项排序后才截取前 N 项，未触及扫描上限的同一目录树不受 Windows/Linux 遍历顺序影响
 - 单次调用最多扫描 50,000 项；触及上限时结果只覆盖已扫描集合，不能当作完整工作区索引
 
@@ -251,6 +254,8 @@ Lua 不再运行在 TinaIDE 主进程。宿主通过 Binder 调用非导出的 `
 - 新插件优先使用 `tina.workspace.*`
 - 老插件可以继续使用 `tina.fs.*`
 - 权限仍映射到 `workspace.read` / `workspace.write` 对应的底层文件权限
+- `exists`、`isDirectory`、`listDir`、`mkdir` 与读写 API 使用相同的项目相对路径和 symlink no-follow 策略
+- `listDir` 最多返回 1000 个名称
 
 ### 4.7 `tina.config`
 
@@ -307,6 +312,13 @@ Lua 不再运行在 TinaIDE 主进程。宿主通过 Binder 调用非导出的 `
 - 数据库文件名由完整插件 ID 的 SHA-256 派生，不会因 `.` / `_` 归一化产生跨插件碰撞。
 - 旧版数据库仅在同名映射没有其他已安装插件竞争时迁移。
 - 卸载会撤销该插件的权限授权，并清理 `tina.storage` 与 `tina.db` 持久化数据；普通升级不会清理。
+
+资源与 SQL 边界：
+
+- 单插件数据库上限 64 MiB，数据库 API 最多调用 300 次/分钟。
+- `query` 单次最多返回 1000 行，编码结果总计最多 192 KiB。
+- SQL 最长 64 KiB，只允许单条语句；禁止 `ATTACH`、`DETACH`、`PRAGMA`、`VACUUM`、`LOAD_EXTENSION`，query API 会拒绝写入型 CTE。
+- `params` 必须为标量数组，支持字符串、整数、浮点数、布尔值与 `null`；所有操作和事务都在当前插件的单线程数据库执行器中顺序执行。
 
 ### 4.10 `tina.network`
 

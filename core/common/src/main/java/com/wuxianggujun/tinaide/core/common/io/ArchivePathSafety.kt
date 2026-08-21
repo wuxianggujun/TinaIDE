@@ -1,6 +1,7 @@
 package com.wuxianggujun.tinaide.core.common.io
 
 import java.io.File
+import java.nio.file.Files
 
 object ArchivePathSafety {
     fun sanitizeRelativePath(path: String, source: String = "archive entry"): String {
@@ -58,6 +59,28 @@ object ArchivePathSafety {
         }
 
         return linkTarget
+    }
+
+    fun requireNoSymlinkComponents(
+        targetDir: File,
+        candidate: File,
+        includeLeaf: Boolean = true,
+        source: String = "archive entry",
+    ) {
+        val rootPath = targetDir.absoluteFile.toPath().normalize()
+        val candidatePath = candidate.absoluteFile.toPath().normalize()
+        require(candidatePath.startsWith(rootPath)) { "$source escapes target directory: ${candidate.path}" }
+        if (candidatePath == rootPath) return
+
+        val relativePath = rootPath.relativize(candidatePath)
+        val componentCount = relativePath.nameCount - if (includeLeaf) 0 else 1
+        var currentPath = rootPath
+        for (index in 0 until componentCount) {
+            currentPath = currentPath.resolve(relativePath.getName(index))
+            require(!Files.isSymbolicLink(currentPath)) {
+                "$source traverses a symbolic link: ${candidate.path}"
+            }
+        }
     }
 
     private fun canonicalCandidate(file: File): File {

@@ -131,8 +131,10 @@ locale 文件只覆盖用户可见字段，不覆盖 `id`、`version`、`type`�
 | `findFiles(pattern, maxResults)` | `workspace.read` / `file.read` | 稳定 | 返回按相对路径升序排列的数组；`pattern` 支持 `*`、`?`、`**/`，默认 `**/*`，结果最多 1000 条。 |
 
 工作区 API 只接受项目相对路径，Unix、Windows drive 和 UNC 绝对路径都会被拒绝。
+`readFile`、`writeFile` 以及兼容 `tina.fs` 的元数据/目录操作不会跟随路径任一层的符号链接；
+单次文件读取或写入的 UTF-8 内容上限为 8 MiB，读写操作按插件限制为每分钟 60 次。
 `findFiles` 会跳过符号链接和常见重目录：`.git`、`.gradle`、`.idea`、`.cxx`、`build`、`node_modules`；
-为避免插件触发无界目录遍历，单次调用最多扫描 50,000 项；触及上限后停止枚举，返回值只代表已扫描集合中的匹配项，不是完整工作区索引。
+为避免插件触发无界目录遍历，单次调用最多扫描 50,000 项，每插件每分钟最多调用 12 次；触及上限后停止枚举，返回值只代表已扫描集合中的匹配项，不是完整工作区索引。
 匹配项统一转换为 `/` 相对路径并排序后才应用 `maxResults`；对未触及扫描上限的相同目录树，不会因宿主文件系统遍历顺序不同而返回不同前 N 项。
 
 ### `tina.editor.*`
@@ -247,6 +249,27 @@ locale 文件只覆盖用户可见字段，不覆盖 `id`、`version`、`type`�
 插件可通过 `tina.events.on("config.changed", callbackName)` 监听自身配置变化。该事件只会定向派发给配置所属插件，
 不会广播其他插件的配置值。
 
+### `tina.db.*`
+
+`db` 为每个插件提供独立 SQLite 数据库，文件名由完整插件 ID 的 SHA-256 派生，受
+`storage.database` 权限保护。数据库操作在每插件专用单线程执行器中顺序执行，事务中的调用不会跨线程。
+
+| API | 权限 | 稳定性 | 行为 |
+| --- | --- | --- | --- |
+| `execute(sql, params)` | `storage.database` | 稳定 | 执行单条受限 DDL/DML，返回影响行数。 |
+| `query(sql, params)` | `storage.database` | 稳定 | 执行只读查询，返回对象数组。 |
+| `transaction(callback)` | `storage.database` | 稳定 | callback 成功时提交，异常时回滚。 |
+| `tableExists(name)` | `storage.database` | 稳定 | 返回表是否存在。 |
+| `close()` | 无 | 稳定 | 幂等关闭当前插件数据库句柄。 |
+
+当前资源与 SQL 边界：
+
+- 单个数据库上限为 64 MiB；每个插件最多调用数据库 API 300 次/分钟。
+- 单次 query 最多返回 1000 行，编码后的总结果上限为 192 KiB。
+- SQL 最长 64 KiB，只接受单条语句；拒绝分号、多语句、不完整引号/括号和 `ATTACH`、`DETACH`、`PRAGMA`、`VACUUM`、`LOAD_EXTENSION`。
+- query 仅接受 `SELECT`、`EXPLAIN`，以及最终执行 `SELECT` / `VALUES` 的只读 `WITH`；写入型 CTE 不会通过 query API 执行。
+- `params` 必须是标量数组，支持字符串、整数、浮点数、布尔值和 `null`；SQLite `NULL` 会保留其占位符位置。
+
 ### `tina.panels.*`
 
 `panels` 是 apiVersion 1 的稳定文本面板 API。插件必须先在 `contributions.panels` 中声明面板 ID，
@@ -310,11 +333,11 @@ locale 文件只覆盖用户可见字段，不覆盖 `id`、`version`、`type`�
 - `io`、`debug`、`loadfile`、`dofile`、`package.loadlib`、`java` 和 `luajava` 不可用。`require()` 只允许加载插件目录内由字母、数字、`_`、`-` 和 `.` 组成的纯 Lua 模块名；绝对路径、`..` 与 native module 会被拒绝。
 - 每次 Host API 调用都会重新检查插件 generation、启用/隔离状态、manifest 声明和用户授权。文件访问仍受 Workspace 白名单约束，网络仍受 `networkHosts`、超时与限流约束。
 - 纯 Lua 连续执行默认上限为 5 秒，单次调用总上限为 60 秒；纯 Lua 超时、资源越限或隔离进程死亡会终止并重建 runtime process，不会等待同步 JNI 返回。
-- 插件进程总 PSS 上限为 192 MiB，单次调用增长上限为 64 MiB。Binder JSON 请求和普通响应上限为 256 KiB；Host API 的受支持大响应改走只读 FD，最大 8 MiB。Lua 回调直接返回的序列化结果若超过 256 KiB，runtime 会返回有界 `RESOURCE_LIMIT` 响应并隔离当前插件，不会尝试发送超大 Binder transaction。Network body 上限为 8 MiB。
+- 插件进程总 PSS 上限为 192 MiB，单次调用增长上限为 64 MiB。Binder JSON 请求和普通响应上限为 256 KiB；Host API 的受支持大响应改走只读 FD，单个最大 8 MiB，每插件最多保留 8 个、合计 16 MiB 的待消费 payload，宿主进程全局最多保留 32 个、合计 64 MiB。Lua 回调直接返回的序列化结果若超过 256 KiB，runtime 会返回有界 `RESOURCE_LIMIT` 响应并隔离当前插件，不会尝试发送超大 Binder transaction。Network body 上限为 8 MiB。
 - 插件包上限为 64 MiB，解压后上限为 256 MiB、4096 项；单项上限 64 MiB、压缩比上限 `100:1`；单个 Lua 文件上限 1 MiB，Lua 源码合计上限 8 MiB。
 - 单条插件日志最多 8 KiB，每插件最多保留 1000 条并有限速；绝对私有路径与常见 Token 字段会脱敏。
 
-新安装插件默认禁用。用户明确启用后，启动异常、未处理的事件/命令回调、超时、资源越限、runtime crash、无效贡献或成功启动后的 LSP 异常退出会使当前版本自动进入隔离状态。权限拒绝、普通网络失败、依赖未安装以及 toolchain/Linux 未就绪不会被归因为插件故障。
+新安装的纯 `config` 插件默认启用；`script`、`hybrid`、`lsp`、`system` 等插件默认禁用。升级保留用户原有启用意图。用户明确启用后，启动异常、未处理的事件/命令回调、超时、资源越限、runtime crash、无效贡献或成功启动后的 LSP 异常退出会使当前版本自动进入隔离状态。权限拒绝、普通网络失败、依赖未安装以及 toolchain/Linux 未就绪不会被归因为插件故障。
 
 隔离只会在用户确认“重新启用”或安装严格更高版本后清除；升级采用同文件系统 staging/backup/atomic rename，并在停止旧 runtime 前同步写入安装 journal。进程中断后会恢复旧目录、启用状态和故障状态；journal 损坏时插件子系统 fail-closed。健康插件升级失败时回滚旧版本。
 

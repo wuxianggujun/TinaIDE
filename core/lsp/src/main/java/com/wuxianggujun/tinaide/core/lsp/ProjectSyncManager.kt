@@ -7,6 +7,8 @@ import com.wuxianggujun.tinaide.core.lang.CxxFileSupport
 import com.wuxianggujun.tinaide.core.lang.ProjectPathFilters
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.nio.file.Files
+import java.util.UUID
 import java.util.zip.GZIPOutputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -69,7 +71,12 @@ data class ChunkConfig(
     val maxChunkSize: Long = 512 * 1024,
     val maxFilesPerChunk: Int = 50,
     val enabled: Boolean = true
-)
+) {
+    init {
+        require(maxChunkSize > 0L)
+        require(maxFilesPerChunk > 0)
+    }
+}
 
 /**
  * 同步块信息
@@ -94,6 +101,11 @@ data class SyncChunk(
 object ProjectSyncManager {
 
     private const val TAG = "ProjectSyncManager"
+    const val MAX_SYNC_FILE_COUNT = 10_000
+    const val MAX_SYNC_FILE_BYTES = 2L * 1024L * 1024L
+    const val MAX_SYNC_TOTAL_BYTES = 64L * 1024L * 1024L
+    const val MAX_SYNC_DEPTH = 64
+    const val MAX_SYNC_PATH_BYTES = 1024
 
     // 同步进度状态流
     private val _progressFlow = MutableStateFlow(ProjectSyncProgress())
@@ -107,6 +119,32 @@ object ProjectSyncManager {
 
     // 默认忽略的目录和文件
     private val defaultIgnorePatterns = ProjectPathFilters.SYNC_IGNORE_PATTERNS
+    private val sensitiveFileNames = setOf(
+        ".env",
+        ".npmrc",
+        ".pypirc",
+        "credentials",
+        "credentials.json",
+        "client_secret.json",
+        "service_account.json",
+        ".git-credentials",
+        ".netrc",
+        "id_rsa",
+        "id_dsa",
+        "id_ecdsa",
+        "id_ed25519",
+    )
+    private val sensitiveConfigExtensions = setOf(
+        "conf",
+        "ini",
+        "json",
+        "properties",
+        "toml",
+        "txt",
+        "yaml",
+        "yml",
+    )
+    private val sensitiveConfigStems = setOf("credential", "credentials", "secret", "secrets")
 
     // 源代码文件扩展名（优先同步）
     private val sourceExtensions: Set<String> =
@@ -146,11 +184,22 @@ object ProjectSyncManager {
         updateProgress(ProjectSyncState.SCANNING, totalFiles = 0)
 
         try {
-            scanDirectory(projectRoot, projectRoot, files, ignorePatterns)
-            Timber.tag(TAG).d("Scanned ${files.size} files from ${projectRoot.absolutePath}")
+            val canonicalRoot = projectRoot.canonicalFile
+            require(canonicalRoot.isDirectory) { "Project root is not a directory" }
+            scanDirectory(
+                root = canonicalRoot,
+                current = canonicalRoot,
+                files = files,
+                ignorePatterns = ignorePatterns,
+                visitedDirectories = hashSetOf(),
+                totalBytes = longArrayOf(0L),
+                depth = 0,
+            )
+            Timber.tag(TAG).d("Project sync scan completed: files=%d", files.size)
         } catch (e: Exception) {
-            Timber.tag(TAG).e(e, "Failed to scan project")
+            Timber.tag(TAG).e("Failed to scan project: %s", e::class.java.simpleName)
             updateProgress(ProjectSyncState.ERROR, errorMessage = e.message)
+            throw e
         }
 
         files
@@ -163,40 +212,113 @@ object ProjectSyncManager {
         root: File,
         current: File,
         files: MutableList<ProjectFileInfo>,
-        ignorePatterns: List<String>
+        ignorePatterns: List<String>,
+        visitedDirectories: MutableSet<String>,
+        totalBytes: LongArray,
+        depth: Int,
     ) {
+        require(depth <= MAX_SYNC_DEPTH) { "Project directory depth exceeds the sync limit" }
+        val canonicalCurrent = current.canonicalFile
+        val rootPath = root.toPath()
+        require(canonicalCurrent.toPath().startsWith(rootPath)) { "Project path escapes the project root" }
+        if (!visitedDirectories.add(canonicalCurrent.path)) return
         val children = current.listFiles() ?: return
 
         for (child in children) {
-            val relativePath = child.relativeTo(root).path.replace('\\', '/')
-
-            // 检查是否应该忽略
-            if (shouldIgnore(relativePath, child.isDirectory, ignorePatterns)) {
+            val lexicalRelativePath = child.relativeTo(root).path.replace('\\', '/')
+            if (shouldIgnore(lexicalRelativePath, child.isDirectory, ignorePatterns)) {
                 continue
             }
+            if (Files.isSymbolicLink(child.toPath())) {
+                Timber.tag(TAG).w("Skipping project symbolic link: %s", lexicalRelativePath)
+                continue
+            }
+            val canonicalChild = child.canonicalFile
+            require(canonicalChild.toPath().startsWith(rootPath)) {
+                "Project symbolic link escapes the project root: ${child.path}"
+            }
+            val relativePath = canonicalChild.relativeTo(root).path.replace('\\', '/')
 
             if (child.isDirectory) {
-                scanDirectory(root, child, files, ignorePatterns)
-            } else if (child.isFile && isSourceFile(child)) {
+                scanDirectory(root, canonicalChild, files, ignorePatterns, visitedDirectories, totalBytes, depth + 1)
+            } else if (canonicalChild.isFile && isSourceFile(canonicalChild) && !isSensitiveFile(relativePath)) {
                 try {
-                    val content = child.readText()
+                    val fileSize = canonicalChild.length()
+                    require(fileSize <= MAX_SYNC_FILE_BYTES) { "Project file exceeds the sync limit: $relativePath" }
+                    require(files.size < MAX_SYNC_FILE_COUNT) { "Project has too many files to sync" }
+                    require(fileSize <= MAX_SYNC_TOTAL_BYTES - totalBytes[0]) {
+                        "Project exceeds the total sync size limit"
+                    }
+                    val (content, actualSize) = readUtf8TextWithLimit(canonicalChild, relativePath)
+                    require(actualSize <= MAX_SYNC_TOTAL_BYTES - totalBytes[0]) {
+                        "Project exceeds the total sync size limit"
+                    }
                     files.add(
                         ProjectFileInfo(
                             relativePath = relativePath,
                             content = content,
-                            size = child.length()
+                            size = actualSize
                         )
                     )
+                    totalBytes[0] += actualSize
                     updateProgress(
                         ProjectSyncState.SCANNING,
                         currentFile = relativePath,
                         processedFiles = files.size
                     )
                 } catch (e: Exception) {
-                    Timber.tag(TAG).w(e, "Failed to read file: $relativePath")
+                    Timber.tag(TAG).w("Failed to read project sync file: error=%s", e::class.java.simpleName)
+                    throw e
                 }
             }
         }
+    }
+
+    private fun readUtf8TextWithLimit(file: File, relativePath: String): Pair<String, Long> {
+        val output = ByteArrayOutputStream()
+        file.inputStream().use { input ->
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            var totalBytes = 0L
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                totalBytes += read.toLong()
+                require(totalBytes <= MAX_SYNC_FILE_BYTES) {
+                    "Project file exceeds the sync limit: $relativePath"
+                }
+                output.write(buffer, 0, read)
+            }
+            return output.toString(Charsets.UTF_8.name()) to totalBytes
+        }
+    }
+
+    fun validateSyncFiles(files: List<ProjectFileInfo>): Long {
+        require(files.size <= MAX_SYNC_FILE_COUNT) { "Project has too many files to sync" }
+        var totalSize = 0L
+        val uniquePaths = HashSet<String>(files.size)
+        files.forEach { file ->
+            require(isSafeRelativeSyncPath(file.relativePath)) { "Project contains an unsafe sync path" }
+            val normalizedPath = normalizeSyncPath(file.relativePath)
+            require(uniquePaths.add(normalizedPath)) { "Project contains duplicate sync paths" }
+            val actualSize = file.content.toByteArray(Charsets.UTF_8).size.toLong()
+            require(actualSize <= MAX_SYNC_FILE_BYTES) { "Project contains an oversized sync file" }
+            require(actualSize <= MAX_SYNC_TOTAL_BYTES - totalSize) {
+                "Project exceeds the total sync size limit"
+            }
+            totalSize += actualSize
+        }
+        return totalSize
+    }
+
+    private fun isSensitiveFile(relativePath: String): Boolean {
+        val name = relativePath.substringAfterLast('/').lowercase()
+        val extension = name.substringAfterLast('.', missingDelimiterValue = "")
+        val stem = name.substringBeforeLast('.', missingDelimiterValue = name)
+        return name in sensitiveFileNames ||
+            name.startsWith(".env.") ||
+            name.endsWith(".pem") ||
+            name.endsWith(".key") ||
+            (extension in sensitiveConfigExtensions && stem in sensitiveConfigStems)
     }
 
     /**
@@ -207,6 +329,13 @@ object ProjectSyncManager {
 
         for (pattern in patterns) {
             when {
+                // 目录前缀模式（例如 cmake-build-*/）
+                pattern.endsWith("*/") -> {
+                    val prefix = pattern.removeSuffix("*/")
+                    if (isDirectory && path.split('/').any { segment -> segment.startsWith(prefix) }) {
+                        return true
+                    }
+                }
                 // 目录模式（以 / 结尾）
                 pattern.endsWith("/") -> {
                     if (isDirectory && (pathToCheck.startsWith(pattern) || pathToCheck.contains("/$pattern"))) {
@@ -256,9 +385,9 @@ object ProjectSyncManager {
         files: List<ProjectFileInfo>,
         compress: Boolean = true
     ): Pair<String, Long> = withContext(Dispatchers.IO) {
+        val totalSize = validateSyncFiles(files)
         updateProgress(ProjectSyncState.COMPRESSING, totalFiles = files.size)
 
-        val totalSize = files.sumOf { it.size }
         val filesArray = JSONArray()
 
         files.forEachIndexed { index, file ->
@@ -319,6 +448,7 @@ object ProjectSyncManager {
         files: List<ProjectFileInfo>,
         config: ChunkConfig = ChunkConfig()
     ): List<SyncChunk> {
+        validateSyncFiles(files)
         if (!config.enabled || files.isEmpty()) {
             return listOf(SyncChunk(0, 1, files, true))
         }
@@ -328,10 +458,11 @@ object ProjectSyncManager {
         var currentChunkSize = 0L
 
         for (file in files) {
+            val fileSize = file.content.toByteArray(Charsets.UTF_8).size.toLong()
             // 检查是否需要开始新的块
             val shouldStartNewChunk = currentChunkFiles.isNotEmpty() &&
                 (
-                    currentChunkSize + file.size > config.maxChunkSize ||
+                    currentChunkSize + fileSize > config.maxChunkSize ||
                         currentChunkFiles.size >= config.maxFilesPerChunk
                     )
 
@@ -349,7 +480,7 @@ object ProjectSyncManager {
             }
 
             currentChunkFiles.add(file)
-            currentChunkSize += file.size
+            currentChunkSize += fileSize
         }
 
         // 添加最后一个块
@@ -389,6 +520,7 @@ object ProjectSyncManager {
         sessionId: String,
         compress: Boolean = true
     ): String = withContext(Dispatchers.IO) {
+        validateSyncFiles(chunk.files)
         val filesArray = JSONArray()
 
         chunk.files.forEach { file ->
@@ -455,7 +587,7 @@ object ProjectSyncManager {
     /**
      * 生成唯一的同步会话 ID
      */
-    fun generateSessionId(): String = "sync-${System.currentTimeMillis()}-${(Math.random() * 10000).toInt()}"
+    fun generateSessionId(): String = "sync-${UUID.randomUUID()}"
 
     /**
      * 判断是否应该使用分块传输
@@ -470,7 +602,7 @@ object ProjectSyncManager {
     ): Boolean {
         if (!config.enabled) return false
 
-        val totalSize = files.sumOf { it.size }
+        val totalSize = validateSyncFiles(files)
         val fileCount = files.size
 
         // 如果总大小超过 1MB 或文件数超过 100，使用分块传输
@@ -492,6 +624,18 @@ object ProjectSyncManager {
         content: String? = null,
         oldPath: String? = null
     ): String {
+        require(type in FILE_CHANGE_TYPES) { "Unsupported file change type" }
+        require(isSafeRelativeSyncPath(path)) { "File change path must stay inside the synchronized project" }
+        require(oldPath == null || isSafeRelativeSyncPath(oldPath)) {
+            "Previous file path must stay inside the synchronized project"
+        }
+        require(content == null || content.toByteArray(Charsets.UTF_8).size <= MAX_SYNC_FILE_BYTES) {
+            "Changed file exceeds the sync size limit"
+        }
+        require(type !in CONTENT_REQUIRED_CHANGE_TYPES || content != null) {
+            "Created and modified file changes require content"
+        }
+        require(type != "renamed" || oldPath != null) { "Renamed file changes require the previous path" }
         val params = JSONObject().apply {
             put("type", type)
             put("path", path)
@@ -505,6 +649,21 @@ object ProjectSyncManager {
             put("params", params)
         }.toString()
     }
+
+    fun isSafeRelativeSyncPath(path: String): Boolean {
+        val normalized = normalizeSyncPath(path)
+        if (normalized.isBlank() || normalized.startsWith('/') ||
+            normalized.toByteArray(Charsets.UTF_8).size > MAX_SYNC_PATH_BYTES ||
+            normalized.any(Char::isISOControl) ||
+            Regex("^[A-Za-z]:").containsMatchIn(normalized)
+        ) {
+            return false
+        }
+        return normalized.split('/').none { it.isBlank() || it == "." || it == ".." } &&
+            !isSensitiveFile(normalized)
+    }
+
+    private fun normalizeSyncPath(path: String): String = path.replace('\\', '/').trim()
 
     /**
      * 检测项目特征，判断应该使用哪种同步模式
@@ -528,28 +687,11 @@ object ProjectSyncManager {
             )
         }
 
-        // 统计项目文件
-        var fileCount = 0
-        var totalSize = 0L
-
-        fun countFiles(dir: File) {
-            dir.listFiles()?.forEach { file ->
-                if (file.isDirectory) {
-                    if (!shouldIgnore(file.name + "/", true, defaultIgnorePatterns)) {
-                        countFiles(file)
-                    }
-                } else if (isSourceFile(file)) {
-                    fileCount++
-                    totalSize += file.length()
-                }
-            }
-        }
-
-        countFiles(projectRoot)
+        val (fileCount, totalSize) = summarizeProjectForMode(projectRoot)
 
         // 判断规则
         return@withContext when {
-            fileCount > 20 || totalSize > 1024 * 1024 -> {
+            fileCount > PROJECT_MODE_FILE_THRESHOLD || totalSize > PROJECT_MODE_SIZE_THRESHOLD -> {
                 Pair(
                     RemoteLspSyncMode.PROJECT,
                     Strings.lsp_sync_reason_project_recommended.str(fileCount, formatSize(totalSize))
@@ -562,6 +704,56 @@ object ProjectSyncManager {
                 )
             }
         }
+    }
+
+    private fun summarizeProjectForMode(projectRoot: File): Pair<Int, Long> {
+        val canonicalRoot = projectRoot.canonicalFile
+        if (!canonicalRoot.isDirectory) return 0 to 0L
+
+        var fileCount = 0
+        var totalSize = 0L
+        var scannedEntries = 0
+        val rootPath = canonicalRoot.toPath()
+        val visitedDirectories = hashSetOf<String>()
+        val pending = ArrayDeque<Pair<File, Int>>()
+        pending.add(canonicalRoot to 0)
+
+        while (pending.isNotEmpty()) {
+            val (directory, depth) = pending.removeLast()
+            if (depth > MAX_SYNC_DEPTH) return PROJECT_MODE_FILE_THRESHOLD + 1 to totalSize
+            val canonicalDirectory = runCatching { directory.canonicalFile }.getOrNull() ?: continue
+            if (!canonicalDirectory.toPath().startsWith(rootPath) ||
+                !visitedDirectories.add(canonicalDirectory.path)
+            ) {
+                continue
+            }
+
+            canonicalDirectory.listFiles()?.forEach { child ->
+                scannedEntries++
+                if (scannedEntries > MAX_MODE_SCAN_ENTRY_COUNT) {
+                    return PROJECT_MODE_FILE_THRESHOLD + 1 to totalSize
+                }
+                val canonicalChild = runCatching { child.canonicalFile }.getOrNull() ?: return@forEach
+                if (Files.isSymbolicLink(child.toPath())) return@forEach
+                if (!canonicalChild.toPath().startsWith(rootPath)) return@forEach
+                val relativePath = canonicalChild.relativeTo(canonicalRoot).path.replace('\\', '/')
+                if (shouldIgnore(relativePath, child.isDirectory, defaultIgnorePatterns)) return@forEach
+
+                if (child.isDirectory) {
+                    pending.add(canonicalChild to depth + 1)
+                } else if (canonicalChild.isFile &&
+                    isSourceFile(canonicalChild) &&
+                    !isSensitiveFile(relativePath)
+                ) {
+                    fileCount++
+                    totalSize = (totalSize + canonicalChild.length()).coerceAtMost(PROJECT_MODE_SIZE_THRESHOLD + 1)
+                    if (fileCount > PROJECT_MODE_FILE_THRESHOLD || totalSize > PROJECT_MODE_SIZE_THRESHOLD) {
+                        return fileCount to totalSize
+                    }
+                }
+            }
+        }
+        return fileCount to totalSize
     }
 
     private fun hasProjectCompileCommands(projectRoot: File): Boolean {
@@ -578,6 +770,12 @@ object ProjectSyncManager {
             File(projectRoot, relative).let { it.isFile && it.length() > 0L }
         }
     }
+
+    private const val PROJECT_MODE_FILE_THRESHOLD = 20
+    private const val PROJECT_MODE_SIZE_THRESHOLD = 1024L * 1024L
+    private const val MAX_MODE_SCAN_ENTRY_COUNT = 20_000
+    private val FILE_CHANGE_TYPES = setOf("created", "deleted", "renamed", "modified")
+    private val CONTENT_REQUIRED_CHANGE_TYPES = setOf("created", "modified")
 
     /**
      * 格式化文件大小

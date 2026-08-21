@@ -4,7 +4,9 @@ import android.content.Context
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.str
 import com.wuxianggujun.tinaide.core.network.ApiResult
+import com.wuxianggujun.tinaide.core.network.ResponseBodyTooLargeException
 import com.wuxianggujun.tinaide.core.network.executeCancellable
+import com.wuxianggujun.tinaide.core.network.readUtf8Limited
 import com.wuxianggujun.tinaide.core.network.registry.GitHubRegistryConfig
 import com.wuxianggujun.tinaide.core.network.registry.GitHubRegistryHttpClientFactory
 import com.wuxianggujun.tinaide.core.network.registry.GitHubRegistryProxyConfig
@@ -17,13 +19,20 @@ import com.wuxianggujun.tinaide.plugin.ZipUtils
 import java.io.File
 import java.io.IOException
 import java.io.RandomAccessFile
+import java.net.URI
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -40,13 +49,19 @@ class PluginMarketplaceApi private constructor(
 ) {
     private val json = JsonSerializer.default
     private val indexMutex = Mutex()
-    private val detailMutex = Mutex()
+    private val detailMutexes = ConcurrentHashMap<String, Mutex>()
+    private val detailFetchSemaphore = Semaphore(MAX_CONCURRENT_DETAIL_REQUESTS)
+    @Volatile
     private var cachedIndex: LoadedPluginRegistryCatalog? = null
-    private val cachedDetails = mutableMapOf<String, PluginDetail>()
+    private val cachedDetails = ConcurrentHashMap<String, PluginDetail>()
     private var currentHostVersion: String? = null
 
     companion object {
         private const val TAG = "PluginMarketplaceApi"
+        private const val MAX_PAGE_SIZE = 100
+        private const val MAX_REGISTRY_JSON_BYTES = 8 * 1024 * 1024
+        private const val MAX_CONCURRENT_DETAIL_REQUESTS = 4
+        private val CONTENT_RANGE_REGEX = Regex("^bytes\\s+(\\d+)-(\\d+)/(\\d+|\\*)$", RegexOption.IGNORE_CASE)
 
         fun create(context: Context): PluginMarketplaceApi {
             val appContext = context.applicationContext
@@ -87,9 +102,18 @@ class PluginMarketplaceApi private constructor(
             }
             .sortedWith(pluginSortComparator(sort))
             .toList()
+        val detailResults = coroutineScope {
+            filteredEntries.map { entry ->
+                async {
+                    detailFetchSemaphore.withPermit {
+                        entry to resolvePluginDetail(index, entry.pluginId)
+                    }
+                }
+            }.awaitAll()
+        }
         val filtered = buildList {
-            for (entry in filteredEntries) {
-                val detail = when (val detailResult = resolvePluginDetail(index, entry.pluginId)) {
+            for ((entry, detailResult) in detailResults) {
+                val detail = when (detailResult) {
                     is ApiResult.Success -> detailResult.data
                     is ApiResult.Error -> return@withContext detailResult
                     is ApiResult.NetworkError -> return@withContext detailResult
@@ -100,12 +124,13 @@ class PluginMarketplaceApi private constructor(
             }
         }
 
-        val safeLimit = limit.coerceAtLeast(1)
+        val safeLimit = limit.coerceIn(1, MAX_PAGE_SIZE)
         val safePage = page.coerceAtLeast(1)
         val total = filtered.size
         val totalPages = if (total == 0) 1 else ((total + safeLimit - 1) / safeLimit)
+        val offset = ((safePage - 1L) * safeLimit).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         val pageItems = filtered
-            .drop((safePage - 1) * safeLimit)
+            .drop(offset)
             .take(safeLimit)
             .map { (entry, latestVersion) -> entry.toSummary(latestVersion) }
 
@@ -204,11 +229,23 @@ class PluginMarketplaceApi private constructor(
                     -1,
                     Strings.plugin_marketplace_error_download_url_missing.str(pluginId),
                 )
+            val expectedHash = pluginVersion.fileHash
+                ?.takeIf { it.matches(Regex("(?i)^sha256:[0-9a-f]{64}$")) }
+                ?: return@withContext ApiResult.Error(
+                    -1,
+                    Strings.plugin_marketplace_error_integrity_metadata_invalid.str(),
+                )
+            val expectedSize = pluginVersion.fileSize.takeIf { it in 1L..ZipUtils.MAX_PACKAGE_BYTES }
+                ?: return@withContext ApiResult.Error(
+                    -1,
+                    Strings.plugin_marketplace_error_integrity_metadata_invalid.str(),
+                )
 
             downloadFile(
                 urls = downloadUrls,
                 targetFile = targetFile,
-                expectedHash = pluginVersion.fileHash,
+                expectedHash = expectedHash,
+                expectedSize = expectedSize,
                 onProgress = onProgress,
             )
         } catch (e: CancellationException) {
@@ -260,7 +297,6 @@ class PluginMarketplaceApi private constructor(
                         .build()
                 ).execute()
                 response.use { resp ->
-                    val body = resp.body?.string()
                     if (!resp.isSuccessful) {
                         lastError = ApiResult.Error(
                             resp.code,
@@ -268,6 +304,7 @@ class PluginMarketplaceApi private constructor(
                         )
                         return@use
                     }
+                    val body = resp.body?.readUtf8Limited(MAX_REGISTRY_JSON_BYTES)
                     if (body.isNullOrBlank()) {
                         lastError = ApiResult.Error(-1, Strings.error_response_empty.str())
                         return@use
@@ -280,6 +317,9 @@ class PluginMarketplaceApi private constructor(
                     )
                     return ApiResult.Success(index)
                 }
+            } catch (e: ResponseBodyTooLargeException) {
+                Timber.tag(TAG).w("Plugin registry %s response exceeded size limit via %s", schemaLabel, registryUrl.endpoint.name)
+                lastError = ApiResult.Error(-1, Strings.error_response_parse_failed.str())
             } catch (e: IOException) {
                 Timber.tag(TAG).w(e, "Load plugin registry %s failed via %s", schemaLabel, registryUrl.endpoint.name)
                 lastError = ApiResult.NetworkError(e.message ?: Strings.error_network_connection_failed.str())
@@ -305,6 +345,7 @@ class PluginMarketplaceApi private constructor(
         cachedDetails[entry.pluginId]?.let { return ApiResult.Success(it) }
         cachedDetails[entry.id]?.let { return ApiResult.Success(it) }
 
+        val detailMutex = detailMutexes.computeIfAbsent(entry.pluginId) { Mutex() }
         return detailMutex.withLock {
             cachedDetails[entry.pluginId]?.let { return@withLock ApiResult.Success(it) }
             cachedDetails[entry.id]?.let { return@withLock ApiResult.Success(it) }
@@ -329,16 +370,23 @@ class PluginMarketplaceApi private constructor(
                             )
                             return@use
                         }
-                        val body = resp.body?.string()
+                        val body = resp.body?.readUtf8Limited(MAX_REGISTRY_JSON_BYTES)
                         if (body.isNullOrBlank()) {
                             lastError = ApiResult.Error(-1, Strings.error_response_empty.str())
                             return@use
                         }
                         val detail = json.decodeFromString<PluginDetail>(body)
+                        if (detail.pluginId != entry.pluginId || detail.id != entry.id) {
+                            lastError = ApiResult.Error(-1, "Plugin detail id does not match registry entry")
+                            return@use
+                        }
                         cachedDetails[detail.pluginId] = detail
                         cachedDetails[detail.id] = detail
                         return@withLock ApiResult.Success(detail)
                     }
+                } catch (e: ResponseBodyTooLargeException) {
+                    Timber.tag(TAG).w("Plugin detail response exceeded size limit: %s", pluginId)
+                    lastError = ApiResult.Error(-1, Strings.error_response_parse_failed.str())
                 } catch (e: IOException) {
                     Timber.tag(TAG).w(e, "Load plugin detail failed: %s", pluginId)
                     lastError = ApiResult.NetworkError(e.message ?: Strings.error_network_connection_failed.str())
@@ -354,7 +402,8 @@ class PluginMarketplaceApi private constructor(
     private suspend fun downloadFile(
         urls: List<String>,
         targetFile: File,
-        expectedHash: String?,
+        expectedHash: String,
+        expectedSize: Long,
         onProgress: ((downloaded: Long, total: Long) -> Unit)?,
     ): ApiResult<File> {
         var lastResult: ApiResult<File>? = null
@@ -364,12 +413,13 @@ class PluginMarketplaceApi private constructor(
                     url = candidateUrl,
                     targetFile = targetFile,
                     expectedHash = expectedHash,
+                    expectedSize = expectedSize,
                     onProgress = onProgress,
                 )
             } catch (e: CancellationException) {
                 // 用户取消：不再尝试下一个镜像，直接向上抛出。
                 throw e
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 ApiResult.NetworkError(error.message ?: Strings.error_network_connection_failed.str())
             }
             if (result is ApiResult.Success) return result
@@ -381,15 +431,30 @@ class PluginMarketplaceApi private constructor(
     private suspend fun downloadSingleFile(
         url: String,
         targetFile: File,
-        expectedHash: String?,
+        expectedHash: String,
+        expectedSize: Long,
         onProgress: ((downloaded: Long, total: Long) -> Unit)?,
     ): ApiResult<File> {
+        if (!url.isStrictHttpsUrl()) {
+            return ApiResult.Error(-1, Strings.error_download_failed.str())
+        }
         var startByte = 0L
         if (targetFile.exists()) {
             startByte = targetFile.length()
             if (startByte > ZipUtils.MAX_PACKAGE_BYTES) {
                 targetFile.delete()
                 return ApiResult.Error(-1, Strings.plugin_error_package_too_large.str())
+            }
+            if (startByte == expectedSize) {
+                val expectedHashValue = expectedHash.substringAfter("sha256:")
+                if (calculateSha256(targetFile).equals(expectedHashValue, ignoreCase = true)) {
+                    return ApiResult.Success(targetFile)
+                }
+                targetFile.delete()
+                startByte = 0L
+            } else if (startByte > expectedSize) {
+                targetFile.delete()
+                startByte = 0L
             }
         }
 
@@ -403,20 +468,40 @@ class PluginMarketplaceApi private constructor(
 
         val response = downloadClient.newCall(requestBuilder.build()).executeCancellable()
         response.use { resp ->
+            if (!resp.request.url.toString().isStrictHttpsUrl()) {
+                return ApiResult.Error(-1, Strings.error_download_failed.str())
+            }
             if (!resp.isSuccessful && resp.code != 206) {
                 return ApiResult.Error(resp.code, "${Strings.error_download_failed.str()} (HTTP ${resp.code})")
             }
 
             val body = resp.body ?: return ApiResult.Error(-1, Strings.error_download_failed.str())
             val contentLength = body.contentLength()
-            val total = if (resp.code == 206) {
-                resp.header("Content-Range")?.substringAfter("/")?.toLongOrNull() ?: (startByte + contentLength)
+            val contentRange = if (resp.code == 206) {
+                parseContentRange(resp.header("Content-Range"))
+                    ?.takeIf { range ->
+                        range.start == startByte &&
+                            (contentLength < 0L || range.end - range.start + 1L == contentLength)
+                    }
+                    ?: run {
+                        targetFile.delete()
+                        return ApiResult.Error(-1, Strings.error_download_failed.str())
+                    }
             } else {
-                contentLength
+                null
+            }
+            val total = when {
+                contentRange?.total != null -> contentRange.total
+                resp.code == 206 && contentLength >= 0L -> startByte + contentLength
+                else -> contentLength
             }
             if (total > ZipUtils.MAX_PACKAGE_BYTES) {
                 targetFile.delete()
                 return ApiResult.Error(-1, Strings.plugin_error_package_too_large.str())
+            }
+            if (total > 0L && total != expectedSize) {
+                targetFile.delete()
+                return ApiResult.Error(-1, Strings.error_download_failed.str())
             }
 
             val isResume = resp.code == 206
@@ -449,18 +534,39 @@ class PluginMarketplaceApi private constructor(
                 return ApiResult.Error(-1, Strings.plugin_error_package_too_large.str())
             }
 
-            if (!expectedHash.isNullOrBlank()) {
-                val actualHash = calculateSha256(targetFile)
-                val expectedHashValue = expectedHash.substringAfter("sha256:", expectedHash)
-                if (!actualHash.equals(expectedHashValue, ignoreCase = true)) {
-                    targetFile.delete()
-                    return ApiResult.Error(-1, Strings.error_file_hash_mismatch.str())
-                }
+            if (targetFile.length() != expectedSize) {
+                targetFile.delete()
+                return ApiResult.Error(-1, Strings.error_download_failed.str())
+            }
+
+            val actualHash = calculateSha256(targetFile)
+            val expectedHashValue = expectedHash.substringAfter("sha256:")
+            if (!actualHash.equals(expectedHashValue, ignoreCase = true)) {
+                targetFile.delete()
+                return ApiResult.Error(-1, Strings.error_file_hash_mismatch.str())
             }
 
             return ApiResult.Success(targetFile)
         }
     }
+
+    private fun String.isStrictHttpsUrl(): Boolean = runCatching {
+        val uri = URI(this)
+        uri.scheme.equals("https", ignoreCase = true) &&
+            !uri.host.isNullOrBlank() &&
+            uri.userInfo == null
+    }.getOrDefault(false)
+
+    private fun parseContentRange(value: String?): ContentRange? {
+        val match = value?.trim()?.let(CONTENT_RANGE_REGEX::matchEntire) ?: return null
+        val start = match.groupValues[1].toLongOrNull() ?: return null
+        val end = match.groupValues[2].toLongOrNull() ?: return null
+        val total = match.groupValues[3].takeUnless { it == "*" }?.toLongOrNull()
+        if (end < start || total != null && (total <= end || total <= 0L)) return null
+        return ContentRange(start, end, total)
+    }
+
+    private data class ContentRange(val start: Long, val end: Long, val total: Long?)
 
     private fun pluginSortComparator(sort: String?): Comparator<PluginRegistryCatalogEntry> = when (sort) {
         PluginSortType.NEWEST.value -> compareByDescending { it.createdAt }

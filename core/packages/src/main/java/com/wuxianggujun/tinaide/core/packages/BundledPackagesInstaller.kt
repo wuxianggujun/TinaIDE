@@ -164,6 +164,7 @@ class BundledPackagesInstaller(
                             targetDir = stagingDir,
                             compressionType = compressionType,
                             limits = PackageArchivePolicy.limits,
+                            archiveSizeBytes = tempFile.length(),
                         )
                     }
                 }

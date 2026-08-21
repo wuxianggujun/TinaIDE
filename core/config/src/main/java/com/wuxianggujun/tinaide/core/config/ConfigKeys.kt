@@ -81,6 +81,12 @@ sealed class ConfigKey<T>(val key: String, val default: T) {
         default = 6789
     )
 
+    /** Whether the remote WebSocket uses TLS. Cleartext is allowed only for loopback hosts. */
+    object RemoteLspSecureTransport : ConfigKey<Boolean>(
+        key = "lsp.remote.secure_transport",
+        default = true,
+    )
+
     /**
      * 远程 LSP 同步模式
      * - auto: 自动判断（根据项目大小和特征）
@@ -197,6 +203,7 @@ object ConfigKeys {
     val RemoteLspEnabled = ConfigKey.RemoteLspEnabled
     val RemoteLspHost = ConfigKey.RemoteLspHost
     val RemoteLspPort = ConfigKey.RemoteLspPort
+    val RemoteLspSecureTransport = ConfigKey.RemoteLspSecureTransport
     val RemoteLspSyncMode = ConfigKey.RemoteLspSyncMode
     val RemoteLspSyncMethod = ConfigKey.RemoteLspSyncMethod
     val RemoteLspRsyncModule = ConfigKey.RemoteLspRsyncModule

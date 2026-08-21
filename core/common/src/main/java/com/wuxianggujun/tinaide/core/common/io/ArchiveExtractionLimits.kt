@@ -13,6 +13,7 @@ data class ArchiveExtractionLimits(
     val maxEntryBytes: Long,
     val maxEntryCount: Int,
     val maxCompressionRatio: Long,
+    val maxPathDepth: Int = 128,
 ) {
     init {
         require(maxArchiveBytes > 0)
@@ -20,6 +21,7 @@ data class ArchiveExtractionLimits(
         require(maxEntryBytes > 0)
         require(maxEntryCount > 0)
         require(maxCompressionRatio > 0)
+        require(maxPathDepth > 0)
     }
 }
 
@@ -33,6 +35,7 @@ data class ZipArchiveSummary(
 
 class ArchiveExtractionBudget(
     private val limits: ArchiveExtractionLimits,
+    private val archiveBytes: Long? = null,
 ) {
     private var entryCount = 0
     private var expandedBytes = 0L
@@ -43,6 +46,7 @@ class ArchiveExtractionBudget(
         if (safeName.isBlank()) {
             throw ArchiveLimitException("Archive contains an empty entry path")
         }
+        requirePathDepth(safeName, limits.maxPathDepth)
         if (!seenPaths.add(safeName)) {
             throw ArchiveLimitException("Archive contains a duplicate entry: $safeName")
         }
@@ -77,8 +81,12 @@ class ArchiveExtractionBudget(
             if (count.toLong() > limits.maxExpandedBytes - expandedBytes) {
                 throw ArchiveLimitException("Archive expands beyond the allowed size")
             }
+            val nextExpandedBytes = expandedBytes + count.toLong()
+            if (hasExcessiveExpansionRatio(nextExpandedBytes, archiveBytes, limits.maxCompressionRatio)) {
+                throw ArchiveLimitException("Archive compression ratio is too high")
+            }
             output.write(buffer, 0, count)
-            expandedBytes += count.toLong()
+            expandedBytes = nextExpandedBytes
         }
         return entryBytes
     }
@@ -90,6 +98,16 @@ class ArchiveExtractionBudget(
             output.toByteArray()
         }
     }
+}
+
+private fun hasExcessiveExpansionRatio(
+    expandedBytes: Long,
+    archiveBytes: Long?,
+    maxRatio: Long,
+): Boolean {
+    if (archiveBytes == null || archiveBytes <= 0L || expandedBytes <= 0L) return false
+    if (archiveBytes > Long.MAX_VALUE / maxRatio) return false
+    return expandedBytes > archiveBytes * maxRatio
 }
 
 object ZipArchiveValidator {
@@ -119,6 +137,7 @@ object ZipArchiveValidator {
                 if (safeName.isBlank()) {
                     throw ArchiveLimitException("Archive contains an empty entry path")
                 }
+                requirePathDepth(safeName, limits.maxPathDepth)
                 if (!seenPaths.add(safeName)) {
                     throw ArchiveLimitException("Archive contains a duplicate entry: $safeName")
                 }
@@ -154,5 +173,12 @@ object ZipArchiveValidator {
         if (compressedSize == 0L) return true
         if (compressedSize > Long.MAX_VALUE / maxRatio) return false
         return expandedSize > compressedSize * maxRatio
+    }
+}
+
+private fun requirePathDepth(path: String, maxPathDepth: Int) {
+    val pathDepth = path.count { it == '/' } + 1
+    if (pathDepth > maxPathDepth) {
+        throw ArchiveLimitException("Archive entry path is too deep: $path")
     }
 }

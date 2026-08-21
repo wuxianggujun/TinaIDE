@@ -13,7 +13,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.wuxianggujun.tinaide.core.config.CUSTOM_EDITOR_THEME_ID
 import com.wuxianggujun.tinaide.core.config.EditorSettings
+import com.wuxianggujun.tinaide.core.config.EditorThemeBase
 import com.wuxianggujun.tinaide.core.config.LspAssistSettings
 import com.wuxianggujun.tinaide.core.config.Prefs
 import com.wuxianggujun.tinaide.core.config.ThemeManager
@@ -1621,6 +1623,15 @@ class EditorContainerState(
 
     private fun resolveEditorColorScheme(context: android.content.Context): EditorColorScheme {
         val themeId = Prefs.editorTheme
+        if (themeId == CUSTOM_EDITOR_THEME_ID) {
+            val customTheme = Prefs.customEditorTheme
+            val fallback = when (customTheme.base) {
+                EditorThemeBase.GRAY -> EditorColorScheme.builtinGray()
+                EditorThemeBase.DARK -> EditorColorScheme.builtinDark()
+                EditorThemeBase.LIGHT -> EditorColorScheme.builtinLight()
+            }
+            return EditorColorScheme.fromThemeColors(customTheme.colors, fallback)
+        }
         if (themeId.startsWith(PluginEditorThemeRegistry.THEME_ID_PREFIX)) {
             val themeConfig = pluginThemeRegistry.themesFlow.value[themeId]
             if (themeConfig == null) {
@@ -1850,6 +1861,15 @@ fun rememberEditorContainerState(
     LaunchedEffect(Unit) {
         Prefs.editorThemeFlow.collect { _ ->
             state.updateEditorColorSchemes(context)
+        }
+    }
+
+    // Editing the active custom palette keeps every open editor in sync.
+    LaunchedEffect(Unit) {
+        Prefs.customEditorThemeFlow.collect { _ ->
+            if (Prefs.editorTheme == CUSTOM_EDITOR_THEME_ID) {
+                state.updateEditorColorSchemes(context)
+            }
         }
     }
 

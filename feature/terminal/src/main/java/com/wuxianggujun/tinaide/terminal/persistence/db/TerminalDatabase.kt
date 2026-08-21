@@ -14,7 +14,7 @@ import androidx.room.RoomDatabase
         TerminalSessionEntity::class
     ],
     version = 1,
-    exportSchema = false
+    exportSchema = true
 )
 abstract class TerminalDatabase : RoomDatabase() {
 

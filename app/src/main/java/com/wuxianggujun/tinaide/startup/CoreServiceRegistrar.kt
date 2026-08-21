@@ -40,7 +40,7 @@ class CoreServiceRegistrar(private val context: Context) : KoinComponent {
             serverConfigSignatureRequired = BuildConfig.SERVER_CONFIG_SIGNATURE_REQUIRED
         )
         KeyboardShortcutManager.initialize(AppPreferences.get(appContext))
-        RemoteLspConfigManager.install(configManager)
+        RemoteLspConfigManager.install(appContext, configManager)
         val installLogManager = get<InstallLogManager>()
         PRootBootstrap.bindDependencies(
             installLogManager = installLogManager,

@@ -13,6 +13,8 @@ class PluginSqlPolicyTest {
         assertThat(PluginSqlPolicy.isAllowedQuery("SELECT id, body FROM notes WHERE id = ?")).isTrue()
         assertThat(PluginSqlPolicy.isAllowedQuery("WITH recent AS (SELECT * FROM notes) SELECT * FROM recent"))
             .isTrue()
+        assertThat(PluginSqlPolicy.isAllowedQuery("SELECT 'PRAGMA is data, not a statement'"))
+            .isTrue()
     }
 
     @Test
@@ -23,6 +25,16 @@ class PluginSqlPolicyTest {
         assertThat(PluginSqlPolicy.isAllowedMutation("VACUUM INTO '/storage/emulated/0/leak.db'"))
             .isFalse()
         assertThat(PluginSqlPolicy.isAllowedQuery("SELECT load_extension('payload.so')")).isFalse()
+        assertThat(PluginSqlPolicy.isAllowedQuery("SELECT \"load_extension\"('payload.so')")).isFalse()
+        assertThat(PluginSqlPolicy.isAllowedQuery("WITH removed AS (SELECT 1) DELETE FROM notes RETURNING id"))
+            .isFalse()
+        assertThat(PluginSqlPolicy.isAllowedQuery("WITH RECURSIVE counter(x) AS (VALUES(1)) SELECT x FROM counter"))
+            .isFalse()
+        assertThat(PluginSqlPolicy.isAllowedQuery("SELECT randomblob(2147483647)")).isFalse()
+        assertThat(PluginSqlPolicy.isAllowedQuery("SELECT replace /* expansion */ ('a', 'a', 'payload')"))
+            .isFalse()
+        assertThat(PluginSqlPolicy.isAllowedMutation("REPLACE INTO notes(id, body) VALUES (1, 'ok')"))
+            .isTrue()
     }
 
     @Test

@@ -7,12 +7,13 @@ import com.wuxianggujun.tinaide.core.network.ApiEnvelopeParseResult
 import com.wuxianggujun.tinaide.core.network.ApiEnvelopeParser
 import com.wuxianggujun.tinaide.core.network.ApiResult
 import com.wuxianggujun.tinaide.core.network.OkHttpClientProvider
+import com.wuxianggujun.tinaide.core.network.readBytesLimited
+import com.wuxianggujun.tinaide.core.network.readUtf8Limited
 import com.wuxianggujun.tinaide.core.security.ServerConfigHmacVerifier
 import com.wuxianggujun.tinaide.core.serialization.JsonSerializer
 import com.wuxianggujun.tinaide.core.serialization.MessagePackCodec
 import java.io.File
 import java.io.IOException
-import kotlin.math.abs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
@@ -37,6 +38,8 @@ class TinaServerApi private constructor(
 
     companion object {
         private const val TAG = "TinaServerApi"
+        private const val MAX_API_RESPONSE_BYTES = 8 * 1024 * 1024
+        private const val MAX_ERROR_MESSAGE_CHARS = 4 * 1024
         private const val SERVER_CONFIG_PROTOCOL_VERSION = 1
         private const val SERVER_CONFIG_MAX_CLOCK_SKEW_SECS = 24 * 60 * 60
 
@@ -52,6 +55,12 @@ class TinaServerApi private constructor(
 
         fun resetInstance() {
             instance = null
+        }
+
+        internal fun isServerConfigTimestampAllowed(timestamp: Long, nowSecs: Long): Boolean {
+            val minimumTimestamp = nowSecs - SERVER_CONFIG_MAX_CLOCK_SKEW_SECS
+            val maximumTimestamp = nowSecs + SERVER_CONFIG_MAX_CLOCK_SKEW_SECS
+            return timestamp in minimumTimestamp..maximumTimestamp
         }
     }
 
@@ -97,60 +106,61 @@ class TinaServerApi private constructor(
                 .addHeader("Accept", "application/msgpack")
                 .build()
 
-            val response = client.newCall(request).execute()
-            val bytes = response.body?.bytes()
+            return@withContext client.newCall(request).execute().use { response ->
+                val bytes = response.body?.readBytesLimited(MAX_API_RESPONSE_BYTES)
 
-            if (bytes == null || bytes.isEmpty()) {
-                return@withContext if (response.isSuccessful) {
-                    ApiResult.Error(-1, Strings.error_response_empty.str())
-                } else {
-                    ApiResult.Error(
+                if (bytes == null || bytes.isEmpty()) {
+                    return@use if (response.isSuccessful) {
+                        ApiResult.Error(-1, Strings.error_response_empty.str())
+                    } else {
+                        ApiResult.Error(
+                            code = response.code,
+                            message = Strings.error_request_failed_with_code.str(response.code)
+                        )
+                    }
+                }
+
+                if (!response.isSuccessful) {
+                    val bodyText = runCatching { String(bytes, Charsets.UTF_8) }.getOrNull()
+                    val errorMessage = parseErrorMessage(bodyText)
+                    return@use ApiResult.Error(
                         code = response.code,
-                        message = Strings.error_request_failed_with_code.str(response.code)
+                        message = errorMessage ?: Strings.error_request_failed_with_code.str(response.code)
                     )
                 }
-            }
 
-            if (!response.isSuccessful) {
-                val bodyText = runCatching { String(bytes, Charsets.UTF_8) }.getOrNull()
-                val errorMessage = parseErrorMessage(bodyText)
-                return@withContext ApiResult.Error(
-                    code = response.code,
-                    message = errorMessage ?: Strings.error_request_failed_with_code.str(response.code)
-                )
-            }
+                runCatching {
+                    val payload = MessagePackCodec.decodeOkEnvelope<ServerConfigPayload>(bytes)
+                    if (payload.protocolVersion != SERVER_CONFIG_PROTOCOL_VERSION) {
+                        error("Unsupported protocol_version=${payload.protocolVersion}")
+                    }
 
-            return@withContext runCatching {
-                val payload = MessagePackCodec.decodeOkEnvelope<ServerConfigPayload>(bytes)
-                if (payload.protocolVersion != SERVER_CONFIG_PROTOCOL_VERSION) {
-                    error("Unsupported protocol_version=${payload.protocolVersion}")
+                    val nowSecs = System.currentTimeMillis() / 1000
+                    if (!isServerConfigTimestampAllowed(payload.timestamp, nowSecs)) {
+                        error("Timestamp out of range: now=$nowSecs, ts=${payload.timestamp}")
+                    }
+
+                    val secret = TinaServerEnvironment.serverConfigHmacSecret
+                    if (secret.isNotBlank()) {
+                        val ok = ServerConfigHmacVerifier.verify(
+                            secret = secret.toByteArray(),
+                            protocolVersion = payload.protocolVersion,
+                            timestamp = payload.timestamp,
+                            data = payload.data,
+                            signature = payload.signature
+                        )
+                        if (!ok) error("Invalid signature")
+                    } else if (TinaServerEnvironment.serverConfigSignatureRequired) {
+                        error("Server config signature verification is required")
+                    } else {
+                        Timber.tag(TAG).w("SERVER_CONFIG_HMAC_SECRET is empty; skip signature verification")
+                    }
+
+                    ApiResult.Success(MessagePackCodec.decode<ServerConfigResponse>(payload.data))
+                }.getOrElse {
+                    Timber.tag(TAG).e(it, "Failed to parse msgpack server-config response")
+                    ApiResult.Error(-1, Strings.error_response_parse_failed.str())
                 }
-
-                val nowSecs = System.currentTimeMillis() / 1000
-                if (abs(nowSecs - payload.timestamp) > SERVER_CONFIG_MAX_CLOCK_SKEW_SECS) {
-                    error("Timestamp out of range: now=$nowSecs, ts=${payload.timestamp}")
-                }
-
-                val secret = TinaServerEnvironment.serverConfigHmacSecret
-                if (secret.isNotBlank()) {
-                    val ok = ServerConfigHmacVerifier.verify(
-                        secret = secret.toByteArray(),
-                        protocolVersion = payload.protocolVersion,
-                        timestamp = payload.timestamp,
-                        data = payload.data,
-                        signature = payload.signature
-                    )
-                    if (!ok) error("Invalid signature")
-                } else if (TinaServerEnvironment.serverConfigSignatureRequired) {
-                    error("Server config signature verification is required")
-                } else {
-                    Timber.tag(TAG).w("SERVER_CONFIG_HMAC_SECRET is empty; skip signature verification")
-                }
-
-                ApiResult.Success(MessagePackCodec.decode<ServerConfigResponse>(payload.data))
-            }.getOrElse {
-                Timber.tag(TAG).e(it, "Failed to parse msgpack server-config response")
-                ApiResult.Error(-1, Strings.error_response_parse_failed.str())
             }
         } catch (e: IOException) {
             Timber.tag(TAG).e(e, "GET /api/server-config network error")
@@ -238,30 +248,35 @@ class TinaServerApi private constructor(
     private inline fun <reified T> parseResponse(
         response: okhttp3.Response,
         expectEnvelope: Boolean
-    ): ApiResult<T> {
-        val responseBody = response.body?.string()
+    ): ApiResult<T> = response.use { closedResponse ->
+        val responseBody = closedResponse.body?.readUtf8Limited(MAX_API_RESPONSE_BYTES)
 
         if (responseBody.isNullOrBlank()) {
-            return if (response.isSuccessful) {
+            return if (closedResponse.isSuccessful) {
                 ApiResult.Error(-1, Strings.error_response_empty.str())
             } else {
-                ApiResult.Error(response.code, Strings.error_request_failed_with_code.str(response.code))
+                ApiResult.Error(closedResponse.code, Strings.error_request_failed_with_code.str(closedResponse.code))
             }
         }
 
         if (!expectEnvelope) {
-            if (!response.isSuccessful) {
+            if (!closedResponse.isSuccessful) {
                 val errorMessage = parseErrorMessage(responseBody)
                 return ApiResult.Error(
-                    code = response.code,
-                    message = errorMessage ?: Strings.error_request_failed_with_code.str(response.code)
+                    code = closedResponse.code,
+                    message = errorMessage ?: Strings.error_request_failed_with_code.str(closedResponse.code)
                 )
             }
 
             return runCatching {
                 ApiResult.Success(json.decodeFromString<T>(responseBody))
             }.getOrElse {
-                Timber.tag(TAG).e(it, "Failed to parse raw response: $responseBody")
+                Timber.tag(TAG).e(
+                    it,
+                    "Failed to parse raw response (http=%d, length=%d)",
+                    closedResponse.code,
+                    responseBody.length,
+                )
                 ApiResult.Error(-1, Strings.error_response_parse_failed.str())
             }
         }
@@ -269,16 +284,17 @@ class TinaServerApi private constructor(
         return when (val parsed = ApiEnvelopeParser.parse<T>(responseBody)) {
             is ApiEnvelopeParseResult.Success -> ApiResult.Success(parsed.data)
             is ApiEnvelopeParseResult.ApiError -> ApiResult.Error(
-                code = response.code,
+                code = closedResponse.code,
                 message = ApiEnvelopeParser.formatApiError(parsed.apiCode, parsed.message)
             )
             is ApiEnvelopeParseResult.InvalidFormat -> {
                 Timber.tag(TAG).e(
-                    "Invalid API envelope (http=${response.code}, ok=${response.isSuccessful}): ${parsed.reason}"
+                    "Invalid API envelope " +
+                        "(http=${closedResponse.code}, ok=${closedResponse.isSuccessful}): ${parsed.reason}"
                 )
-                val errorMessage = if (!response.isSuccessful) parseErrorMessage(responseBody) else null
+                val errorMessage = if (!closedResponse.isSuccessful) parseErrorMessage(responseBody) else null
                 ApiResult.Error(
-                    code = if (response.isSuccessful) -1 else response.code,
+                    code = if (closedResponse.isSuccessful) -1 else closedResponse.code,
                     message = errorMessage ?: Strings.error_response_parse_failed.str()
                 )
             }
@@ -288,17 +304,17 @@ class TinaServerApi private constructor(
     private fun parseErrorMessage(body: String?): String? {
         if (body.isNullOrBlank()) return null
 
-        ApiEnvelopeParser.parseError(body)?.let { err ->
-            return ApiEnvelopeParser.formatApiError(err.apiCode, err.message)
-        }
-
-        return runCatching {
+        val parsedMessage = ApiEnvelopeParser.parseError(body)?.let { err ->
+            ApiEnvelopeParser.formatApiError(err.apiCode, err.message)
+        } ?: runCatching {
             val jsonElement = json.parseToJsonElement(body)
             val obj = runCatching { jsonElement.jsonObject }.getOrNull()
-                ?: return@runCatching body.trim().takeIf { it.isNotEmpty() }
-            obj["message"]?.jsonPrimitive?.content
-                ?: body.trim().takeIf { it.isNotEmpty() }
-        }.getOrNull()
+            obj?.get("message")?.jsonPrimitive?.content ?: body
+        }.getOrDefault(body)
+
+        return parsedMessage.trim()
+            .take(MAX_ERROR_MESSAGE_CHARS)
+            .takeIf { it.isNotEmpty() }
     }
 }
 

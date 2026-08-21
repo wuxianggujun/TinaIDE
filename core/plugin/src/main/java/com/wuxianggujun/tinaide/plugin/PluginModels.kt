@@ -257,20 +257,21 @@ data class ResolvedPluginFileIcon(
 /**
  * 主题配置（插件贡献）
  *
- * 当前最小实现仅解析 colors（颜色 ID/常量名 -> 颜色值）。
+ * colors 使用 TinaIDE 稳定颜色键；tokenColors 兼容常见 TextMate scope。
  */
 @Serializable
 data class ThemeConfig(
     val name: String,
     val type: String = "dark", // dark, light
-    val colors: Map<String, String>,
+    val colors: Map<String, String> = emptyMap(),
     val tokenColors: List<TokenColor>? = null
 )
 
 @Serializable
 data class TokenColor(
-    val scope: List<String>,
-    val settings: TokenSettings
+    @Serializable(with = StringOrArraySerializer::class)
+    val scope: List<String> = emptyList(),
+    val settings: TokenSettings = TokenSettings()
 )
 
 @Serializable

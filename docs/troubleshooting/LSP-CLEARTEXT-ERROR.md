@@ -1,123 +1,50 @@
-# LSP 连接明文通信错误修复记录
+# LSP 明文连接错误排查
 
-## 错误信息
+> 更新日期：2026-08-20
 
-```
-连接失败：CLEARTEXT communication to 127.0.0.1 not permitted by network security policy
-```
+## 现象
 
-## 问题背景
-
-- **发生场景**：启用远程 LSP 功能，尝试通过 WebSocket 连接本地回环地址 `127.0.0.1:48488`
-- **Android 版本**：Android 9 (API 28) 及以上
-- **日期**：2026-01-07
-
-## 原因分析
-
-从 Android 9 (API 28) 开始，系统默认禁止应用进行明文（HTTP/WebSocket）网络通信，即使是本地回环地址 `127.0.0.1` 也受此限制。
-
-这是 Android 的网络安全策略变更，目的是强制应用使用 HTTPS/WSS 等加密通信方式。
-
-## 解决方案
-
-### 1. 创建网络安全配置文件
-
-文件路径：`app/src/main/res/xml/network_security_config.xml`
-
-```xml
-<?xml version="1.0" encoding="utf-8"?>
-<!--
-    网络安全配置
-
-    允许明文通信（HTTP/WS），用于：
-    - 远程 LSP 服务器连接（ws://pc-ip:port）
-    - 本地开发和调试（127.0.0.1、localhost）
-
-    注意：TinaIDE 作为开发工具需要连接各种本地/远程服务器
--->
-<network-security-config>
-    <!-- 允许所有明文通信（开发工具必需） -->
-    <base-config cleartextTrafficPermitted="true">
-        <trust-anchors>
-            <certificates src="system" />
-            <certificates src="user" />
-        </trust-anchors>
-    </base-config>
-</network-security-config>
+```text
+连接失败：CLEARTEXT communication to <host> not permitted by network security policy
 ```
 
-### 2. 在 AndroidManifest.xml 中引用配置
+## 当前策略
 
-在 `<application>` 标签中添加以下属性：
+TinaIDE 默认禁止全局明文网络通信。远程 LSP 默认使用 `wss://`，只有 Android 本机
+`localhost` 和 `127.0.0.1` 允许 `ws://`；`::1` 与 `[::1]` 会规范化为 `localhost`。局域网 IP、公网 IP 和域名不能通过修改地址
+绕过此限制。
 
-```xml
-<application
-    ...
-    android:networkSecurityConfig="@xml/network_security_config"
-    android:usesCleartextTraffic="true">
-```
+当前配置位于：
 
-### 3. 重新构建并安装
+- `app/src/main/res/xml/network_security_config.xml`
+- `app/src/main/AndroidManifest.xml`
+- `core/lsp/.../RemoteLspConfigManager.kt`
 
-修改配置后，必须重新构建并安装 APK：
+`AndroidManifest.xml` 保持 `android:usesCleartextTraffic="false"`，网络安全配置只为两个
+回环主机开放 cleartext。不要恢复历史上的全局 `base-config cleartextTrafficPermitted="true"`。
 
-```powershell
-# 真机（arm64-v8a）
-pwsh ./tools/build-apk.ps1 -Variant debug -Abi arm64 -Install
+## 修复步骤
 
-# 模拟器（x86_64）
-pwsh ./tools/build-apk.ps1 -Variant debug -Abi x86 -Install
-```
+### 连接 PC 或远程服务器
 
-或在 Android Studio 中直接点击 Run。
+1. 在 PC 代理前配置 TLS，提供系统可信或正确安装的 CA 证书。
+2. TinaIDE 设置中开启 **安全传输**，连接地址将使用 `wss://`。
+3. 在代理端配置 Bearer Token 校验，并在 TinaIDE 设置中保存相同 Token。
+4. 检查证书主机名、端口、防火墙和代理监听地址。
 
-## 配置说明
+### 仅调试本机回环服务
 
-### 为什么使用 base-config 而非 domain-config？
+只有服务实际映射到 Android 本机 `localhost` 或 `127.0.0.1` 时，才可关闭安全传输并
+使用 `ws://`。例如通过 ADB reverse 映射端口后测试。Bearer Token 仍然必需。
 
-最初尝试使用 `domain-config` 针对特定域名/IP 配置：
+## 验证结果
 
-```xml
-<!-- 不推荐：对 IP 地址配置可能存在兼容性问题 -->
-<domain-config cleartextTrafficPermitted="true">
-    <domain includeSubdomains="true">127.0.0.1</domain>
-    <domain includeSubdomains="true">localhost</domain>
-</domain-config>
-```
+- 非回环地址配置 `ws://` 时，设置校验和连接层都会拒绝。
+- `wss://` 证书或 Token 错误时，连接测试失败且不会记录 Token。
+- `ws://localhost:<port>` 与 `ws://127.0.0.1:<port>` 可用于受控的本机调试。
 
-但这种方式存在问题：
-1. `includeSubdomains` 对 IP 地址没有实际意义
-2. 不同 Android 版本对 IP 地址的 domain-config 解析可能有差异
-3. TinaIDE 作为开发工具，需要连接各种本地和远程服务器
+## 相关文档
 
-因此采用 `base-config` 允许所有明文通信，更简单可靠。
-
-### trust-anchors 配置
-
-```xml
-<trust-anchors>
-    <certificates src="system" />
-    <certificates src="user" />
-</trust-anchors>
-```
-
-- `system`：信任系统预装的 CA 证书
-- `user`：信任用户安装的 CA 证书（用于调试 HTTPS 等场景）
-
-## 相关文件
-
-| 文件 | 说明 |
-|------|------|
-| `app/src/main/res/xml/network_security_config.xml` | 网络安全配置 |
-| `app/src/main/AndroidManifest.xml` | 应用清单（第 38-39 行引用配置） |
-
-## 参考资料
-
-- [Android Network Security Configuration](https://developer.android.com/training/articles/security-config)
-- [Opt out of cleartext traffic](https://developer.android.com/guide/topics/manifest/application-element#usesCleartextTraffic)
-
-## 修复记录
-
-- **修复人**：Claude Code
-- **修复日期**：2026-01-07
-- **修复内容**：简化 network_security_config.xml，使用 base-config 允许所有明文通信
+- [远程 LSP 功能使用指南](../guides/Remote-LSP-Guide.md)
+- [PC 端远程 LSP 代理配置指南](../guides/PC-LSP-Proxy-Setup-Guide.md)
+- [Android Network Security Configuration](https://developer.android.com/privacy-and-security/security-config)

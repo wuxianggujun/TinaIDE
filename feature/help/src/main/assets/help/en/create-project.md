@@ -56,6 +56,11 @@ Designed for Android native libraries and JNI/NDK experiments. The template norm
 
 Use local import for projects copied to the device or stored externally. Use Git import to clone a repository. Configure HTTPS credentials or SSH keys under **Settings → Git** before cloning a private repository.
 
+Archive import accepts ZIP, TAR, TAR.GZ, TAR.XZ, and TAR.ZST. Limits are 50,000 entries,
+1 GiB expanded data, 256 MiB for the source archive or one file, and 64 path levels.
+Duplicate or escaping paths, symbolic links, hard links, and special files are rejected.
+Files remain in a staging directory until all checks pass, so an existing project is not overwritten.
+
 ## Recommended first actions
 
 1. Open the main source file and confirm encoding and paths.

@@ -1,8 +1,13 @@
 package com.wuxianggujun.tinaide.plugin.script.api
 
 import java.io.File
+import java.io.InputStream
 import java.net.URI
+import java.nio.channels.Channels
 import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.Path
+import java.nio.file.StandardOpenOption
 import timber.log.Timber
 
 internal class PluginWorkspaceFileAccess(
@@ -26,18 +31,59 @@ internal class PluginWorkspaceFileAccess(
     }
 
     fun resolveSafePath(path: String): File? {
-        val projectRoot = resolveProjectRoot() ?: return null
-        val normalizedPath = normalizeRelativePath(path) ?: return null
-        val targetFile = File(projectRoot, normalizedPath)
-        val canonicalTarget = runCatching { targetFile.canonicalFile }.getOrNull() ?: return null
-        val canonicalRoot = runCatching { projectRoot.canonicalFile }.getOrNull() ?: return null
+        return resolveSafeWorkspacePath(path)?.target?.toFile()
+    }
 
-        if (canonicalTarget == canonicalRoot || canonicalTarget.path.startsWith(canonicalRoot.path + File.separator)) {
-            return canonicalTarget
+    fun writeUtf8File(path: String, content: String): Boolean {
+        val initialPath = resolveSafeWorkspacePath(path) ?: return false
+        if (!createDirectoriesNoFollow(initialPath.root, initialPath.target.parent)) return false
+        val verifiedPath = resolveSafeWorkspacePath(path) ?: return false
+        Files.write(
+            verifiedPath.target,
+            content.toByteArray(Charsets.UTF_8),
+            StandardOpenOption.CREATE,
+            StandardOpenOption.TRUNCATE_EXISTING,
+            StandardOpenOption.WRITE,
+            LinkOption.NOFOLLOW_LINKS,
+        )
+        return true
+    }
+
+    fun openFileForRead(path: String): InputStream? {
+        val safePath = resolveSafeWorkspacePath(path) ?: return null
+        if (!Files.isRegularFile(safePath.target, LinkOption.NOFOLLOW_LINKS)) return null
+        val channel = Files.newByteChannel(
+            safePath.target,
+            StandardOpenOption.READ,
+            LinkOption.NOFOLLOW_LINKS,
+        )
+        return Channels.newInputStream(channel)
+    }
+
+    fun createDirectories(path: String): Boolean {
+        val mutationPath = resolveSafeWorkspacePath(path) ?: return false
+        return createDirectoriesNoFollow(mutationPath.root, mutationPath.target)
+    }
+
+    fun exists(path: String?): Boolean = path
+        ?.let(::resolveSafeWorkspacePath)
+        ?.let { safePath -> Files.exists(safePath.target, LinkOption.NOFOLLOW_LINKS) }
+        ?: false
+
+    fun isDirectory(path: String?): Boolean = path
+        ?.let(::resolveSafeWorkspacePath)
+        ?.let { safePath -> Files.isDirectory(safePath.target, LinkOption.NOFOLLOW_LINKS) }
+        ?: false
+
+    fun listDirectory(path: String?, maxEntries: Int): List<String>? {
+        val safePath = path?.let(::resolveSafeWorkspacePath) ?: return null
+        if (!Files.isDirectory(safePath.target, LinkOption.NOFOLLOW_LINKS)) return null
+        return Files.newDirectoryStream(safePath.target).use { entries ->
+            entries.asSequence()
+                .map { entry -> entry.fileName.toString() }
+                .take(maxEntries.coerceAtLeast(0))
+                .toList()
         }
-
-        Timber.w("Path escape attempt blocked: $path")
-        return null
     }
 
     fun findFiles(pattern: String?, maxResults: Int = DEFAULT_FIND_FILES_LIMIT): List<String> {
@@ -99,6 +145,49 @@ internal class PluginWorkspaceFileAccess(
         val projectRoot = projectRootProvider()?.takeIf { it.isNotBlank() } ?: return null
         val rootFile = File(projectRoot)
         return rootFile.takeIf { it.exists() && it.isDirectory }
+    }
+
+    private fun resolveSafeWorkspacePath(path: String): WorkspacePath? {
+        val normalizedPath = normalizeRelativePath(path) ?: return null
+        val canonicalRoot = resolveProjectRoot()?.let { runCatching { it.canonicalFile }.getOrNull() }
+            ?: return null
+        val rootPath = canonicalRoot.toPath()
+        val targetPath = rootPath.resolve(normalizedPath).normalize()
+        if (!targetPath.startsWith(rootPath) || containsSymbolicLink(rootPath, targetPath)) return null
+
+        val canonicalTarget = runCatching { targetPath.toFile().canonicalFile }.getOrNull() ?: return null
+        if (canonicalTarget != canonicalRoot && !canonicalTarget.path.startsWith(canonicalRoot.path + File.separator)) {
+            return null
+        }
+        return WorkspacePath(rootPath, targetPath)
+    }
+
+    private fun containsSymbolicLink(root: Path, target: Path): Boolean {
+        var current = root
+        for (segment in root.relativize(target)) {
+            current = current.resolve(segment)
+            if (Files.isSymbolicLink(current)) return true
+        }
+        return false
+    }
+
+    private fun createDirectoriesNoFollow(root: Path, targetDirectory: Path?): Boolean {
+        val target = targetDirectory ?: return false
+        if (!target.startsWith(root)) return false
+        var current = root
+        for (segment in root.relativize(target)) {
+            current = current.resolve(segment)
+            if (!Files.exists(current, LinkOption.NOFOLLOW_LINKS)) {
+                runCatching { Files.createDirectory(current) }
+                    .onFailure { error ->
+                        if (!Files.exists(current, LinkOption.NOFOLLOW_LINKS)) throw error
+                    }
+            }
+            if (Files.isSymbolicLink(current) || !Files.isDirectory(current, LinkOption.NOFOLLOW_LINKS)) {
+                return false
+            }
+        }
+        return true
     }
 
     private fun normalizeRelativePath(path: String): String? {
@@ -182,4 +271,9 @@ internal class PluginWorkspaceFileAccess(
         builder.append('$')
         return Regex(builder.toString())
     }
+
+    private data class WorkspacePath(
+        val root: Path,
+        val target: Path,
+    )
 }

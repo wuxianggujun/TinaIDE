@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -673,6 +674,7 @@ fun TinaValidatedInputDialog(
     validator: @Composable (String) -> String? = { null },
     hint: (@Composable (String) -> String?)? = null,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
     allowEmpty: Boolean = false,
     onConfirm: (String) -> Unit,
     onDismiss: () -> Unit
@@ -695,6 +697,7 @@ fun TinaValidatedInputDialog(
                 isError = errorMessage != null,
                 errorText = errorMessage,
                 keyboardOptions = keyboardOptions,
+                visualTransformation = visualTransformation,
                 singleLine = true
             )
         },

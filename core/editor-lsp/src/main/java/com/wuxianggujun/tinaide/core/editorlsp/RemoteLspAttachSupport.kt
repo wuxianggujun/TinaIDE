@@ -22,6 +22,8 @@ internal object RemoteLspAttachSupport {
         RemoteLspConnectionProvider(
             host = host,
             port = port,
+            secureTransport = RemoteLspConfigManager.config.secureTransport,
+            authenticationToken = RemoteLspConfigManager.getAuthenticationToken(),
             autoReconnect = true,
             maxReconnectAttempts = 5,
         ).also { provider ->
@@ -83,9 +85,6 @@ internal object RemoteLspAttachSupport {
             error(started.exceptionOrNull()?.message ?: "remote start failed")
         }
         val files = ProjectSyncManager.scanProject(projectRoot)
-        if (files.isNotEmpty()) {
-            provider.syncProject(projectRoot.name, files) { _, _ -> }
-        }
-        return true
+        return files.isEmpty() || provider.syncProject(projectRoot.name, files) { _, _ -> }
     }
 }

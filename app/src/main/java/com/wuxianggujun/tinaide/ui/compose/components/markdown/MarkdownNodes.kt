@@ -183,9 +183,10 @@ internal fun MarkdownNode(
             val altText = node.findChildRecursive(MarkdownElementTypes.LINK_TEXT)
                 ?.getTextInNode(content)?.toString()
                 ?.trim('[', ']', '!') ?: ""
-            if (linkDest.isNotBlank()) {
+            val safeImageUrl = MarkdownUrlPolicy.safeImageUrlOrNull(linkDest)
+            if (safeImageUrl != null) {
                 AsyncImage(
-                    model = linkDest,
+                    model = safeImageUrl,
                     contentDescription = altText.ifBlank { null },
                     contentScale = ContentScale.FillWidth,
                     modifier = modifier
@@ -293,6 +294,8 @@ private fun CodeFenceNode(
         if (language.equals("mermaid", ignoreCase = true)) {
             MermaidDiagram(
                 code = codeText,
+                onCopy = { onCodeCopy?.invoke(codeText) },
+                onInsert = { onCodeInsert?.invoke(codeText) },
                 modifier = modifier.fillMaxWidth().padding(vertical = 4.dp),
             )
         } else {

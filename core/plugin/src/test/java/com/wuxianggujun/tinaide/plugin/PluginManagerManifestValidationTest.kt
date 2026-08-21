@@ -150,6 +150,32 @@ class PluginManagerManifestValidationTest {
     }
 
     @Test
+    fun `validateManifest should reject directories used as referenced files`() {
+        val pluginDir = createScriptPluginDir("validate_referenced_files_are_files")
+        File(pluginDir, "entry.lua").mkdirs()
+        File(pluginDir, "theme.json").mkdirs()
+        File(pluginDir, "snippets.json").mkdirs()
+
+        val invalidMain = PluginManifest(
+            id = "test.plugin.main-directory",
+            name = "Main Directory",
+            version = "1.0.0",
+            type = PluginTypes.SCRIPT,
+            main = "entry.lua",
+        )
+        val invalidTheme = createConfigManifest().copy(
+            contributions = PluginContributions(themes = listOf("theme.json")),
+        )
+        val invalidSnippet = createConfigManifest().copy(
+            contributions = PluginContributions(snippets = listOf("snippets.json")),
+        )
+
+        assertThat(runValidationFailure(invalidMain, pluginDir).message).contains("entry.lua")
+        assertThat(runValidationFailure(invalidTheme, pluginDir).message).contains("theme.json")
+        assertThat(runValidationFailure(invalidSnippet, pluginDir).message).contains("snippets.json")
+    }
+
+    @Test
     fun `validateManifest should reject legacy lsp package manager toolchain type`() {
         val pluginDir = createLspPluginDir("validate_lsp_legacy_type")
         val manifest = createLspManifest(
@@ -159,6 +185,7 @@ class PluginManagerManifestValidationTest {
                     name = "Python 3",
                     type = "apt",
                     packages = listOf("python3"),
+                    verifyCommand = "python3 --version",
                 )
             )
         )
@@ -177,6 +204,7 @@ class PluginManagerManifestValidationTest {
                     id = "python3",
                     name = "Python 3",
                     type = "system",
+                    verifyCommand = "python3 --version",
                 )
             )
         )
@@ -215,6 +243,7 @@ class PluginManagerManifestValidationTest {
                         "apk" to listOf("python3", "py3-pip"),
                         "apt" to listOf("python3", "python3-pip"),
                     ),
+                    verifyCommand = "python3 --version",
                 )
             )
         )
@@ -224,6 +253,81 @@ class PluginManagerManifestValidationTest {
             manifest = manifest,
             pluginDir = pluginDir,
         )
+    }
+
+    @Test
+    fun `validateManifest should reject option-like lsp packages`() {
+        val pluginDir = createLspPluginDir("validate_lsp_package_options")
+        val manifest = createLspManifest(
+            toolchains = listOf(
+                LspToolchainConfig(
+                    id = "python3",
+                    name = "Python 3",
+                    type = "system",
+                    packages = listOf("--root=/tmp/guest"),
+                    verifyCommand = "python3 --version",
+                )
+            )
+        )
+
+        val error = runValidationFailure(manifest, pluginDir)
+
+        assertThat(error.message).contains("python3")
+    }
+
+    @Test
+    fun `validateManifest should reject unsafe lsp verification patterns`() {
+        val pluginDir = createLspPluginDir("validate_lsp_unsafe_verify_pattern")
+        val manifest = createLspManifest(
+            toolchains = listOf(
+                LspToolchainConfig(
+                    id = "python3",
+                    name = "Python 3",
+                    type = "system",
+                    packages = listOf("python3"),
+                    verifyCommand = "python3 --version",
+                    verifyPattern = "(a+)+$",
+                )
+            )
+        )
+
+        val error = runValidationFailure(manifest, pluginDir)
+
+        assertThat(error.message).contains("python3")
+    }
+
+    @Test
+    fun `validateManifest should require https checksum and safe extraction for downloads`() {
+        val pluginDir = createLspPluginDir("validate_lsp_download_policy")
+        val base = LspToolchainConfig(
+            id = "downloaded",
+            name = "Downloaded LSP",
+            type = "download",
+            url = "https://example.com/lsp.tar.gz",
+            sha256 = "a".repeat(64),
+            extractTo = "opt/downloaded",
+            verifyCommand = "opt/downloaded/bin/lsp --version",
+        )
+
+        PluginManifestValidator.validate(context, createLspManifest(listOf(base)), pluginDir)
+        assertThat(
+            runValidationFailure(
+                createLspManifest(listOf(base.copy(url = "http://example.com/lsp.tar.gz"))),
+                pluginDir,
+            ).message
+        ).contains("downloaded")
+        assertThat(
+            runValidationFailure(
+                createLspManifest(listOf(base.copy(sha256 = "bad"))),
+                pluginDir,
+            ).message
+        ).contains("downloaded")
+        assertThat(
+            runValidationFailure(
+                createLspManifest(listOf(base.copy(extractTo = "../escape"))),
+                pluginDir,
+            ).message
+        ).contains("downloaded")
     }
 
     @Test
@@ -329,6 +433,33 @@ class PluginManagerManifestValidationTest {
         val error = runValidationFailure(manifest, pluginDir)
 
         assertThat(error.message).contains("zh-CN.json")
+    }
+
+    @Test
+    fun `validateManifest should reject duplicate lsp server and toolchain ids`() {
+        val pluginDir = createLspPluginDir("validate_lsp_duplicate_ids")
+        val toolchain = LspToolchainConfig(
+            id = "python3",
+            name = "Python 3",
+            type = "system",
+            packages = listOf("python3"),
+            verifyCommand = "python3 --version",
+        )
+        val baseManifest = createLspManifest(toolchains = listOf(toolchain))
+        val server = baseManifest.contributions!!.languageServers!!.single()
+        val duplicateServers = baseManifest.copy(
+            contributions = baseManifest.contributions.copy(
+                languageServers = listOf(server, server.copy(name = "Duplicate Python Server")),
+            ),
+        )
+        val duplicateToolchains = baseManifest.copy(
+            contributions = baseManifest.contributions.copy(
+                toolchains = listOf(toolchain, toolchain.copy(name = "Duplicate Python Toolchain")),
+            ),
+        )
+
+        assertThat(runValidationFailure(duplicateServers, pluginDir).message).contains("pylsp")
+        assertThat(runValidationFailure(duplicateToolchains, pluginDir).message).contains("python3")
     }
 
     @Test

@@ -68,7 +68,7 @@ R8 对代码执行三项操作：
 |------|----------|----------|
 | `core:lsp` | lsp4j 字段名 + 服务接口 + jsonrpc 框架 | Gson 反射序列化 + 动态代理 |
 | `core:network` | msgpack buffer 类 | `Class.forName()` 动态加载 |
-| `core:git` | JGit NLS + ServiceLoader + SSHD 警告抑制 | 反射加载 ResourceBundle + Transport |
+| `core:git` | JGit NLS + ServiceLoader + SSHD 警告抑制；BouncyCastle Ed25519 provider | 反射加载 ResourceBundle + Transport；Android 9-12 的 Ed25519 兼容生成 |
 | `core:tree-sitter` | grammar TSLanguage 子类 | `Class.forName()` 加载语法绑定 |
 | `core:plugin` | LuaJava JNI + 回调接口 | JNI native 方法 + Lua↔Java 互调 |
 | `core:apk-builder` | BouncyCastle JCA provider + apksig ASN.1 注解反射 + ARSCLib 告警抑制 | JcaContentSignerBuilder 内部 SPI/反射算法查找；apksig 签名时通过运行时注解和反射解析 X.509/PKCS#7 模型 |

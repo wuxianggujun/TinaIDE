@@ -58,7 +58,9 @@ import com.wuxianggujun.tinaide.ui.compose.screens.settings.components.SettingsC
 import com.wuxianggujun.tinaide.ui.compose.screens.settings.components.SettingsClickableItem
 import com.wuxianggujun.tinaide.ui.compose.screens.settings.components.SettingsSwitchItem
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 整合后的 Git 设置页面，使用 Tab 切换 HTTPS 认证和 SSH 密钥管理
@@ -395,6 +397,7 @@ private fun GitSshContent() {
     val sshErrorImportFailed = stringResource(Strings.git_ssh_error_import_failed)
     val sshGenerateOkTemplate = stringResource(Strings.git_ssh_generate_ok)
     val sshGenerateFailed = stringResource(Strings.git_ssh_generate_failed)
+    val sshKeyNameInvalid = stringResource(Strings.git_ssh_key_name_invalid)
     val sshImportOkTemplate = stringResource(Strings.git_ssh_import_ok)
     val sshPubkeyMissing = stringResource(Strings.git_ssh_pubkey_missing)
     val sshPubkeyCopied = stringResource(Strings.git_ssh_pubkey_copied)
@@ -403,6 +406,10 @@ private fun GitSshContent() {
     val sshBindingSaveOk = stringResource(Strings.git_ssh_binding_save_ok)
     val sshBindingSaveFailed = stringResource(Strings.git_ssh_binding_save_failed)
     val sshBindingDeleteOk = stringResource(Strings.git_ssh_binding_delete_ok)
+    val sshBindingHostInvalid = stringResource(Strings.git_ssh_binding_host_invalid)
+    val sshBindingPortInvalid = stringResource(Strings.git_ssh_binding_port_invalid)
+    val sshTrustedHostsResetOk = stringResource(Strings.git_ssh_trusted_hosts_reset_ok)
+    val sshTrustedHostsResetFailed = stringResource(Strings.git_ssh_trusted_hosts_reset_failed)
 
     var keys by remember { mutableStateOf<List<GitSshKeyMeta>>(emptyList()) }
     var bindings by remember { mutableStateOf<List<GitSshHostBinding>>(emptyList()) }
@@ -423,6 +430,7 @@ private fun GitSshContent() {
     var keyDetailsPub by remember { mutableStateOf<String?>(null) }
 
     var selectingDefaultKey by remember { mutableStateOf(false) }
+    var trustedHostsResetDialogVisible by remember { mutableStateOf(false) }
     var bindingEditor by remember { mutableStateOf<GitSshHostBinding?>(null) }
     var bindingDialogVisible by remember { mutableStateOf(false) }
     var bindingHost by remember { mutableStateOf("") }
@@ -457,7 +465,7 @@ private fun GitSshContent() {
         val uri = result.data?.data ?: return@rememberLauncherForActivityResult
         scope.launch {
             runCatching {
-                val pem = readTextFromUri(context, uri)
+                val pem = withContext(Dispatchers.IO) { readTextFromUri(context, uri) }
                 importPem = pem
                 importName = GitSettingsSectionSupport.suggestKeyName(uri.lastPathSegment)
                 importComment = ""
@@ -503,7 +511,15 @@ private fun GitSshContent() {
             subtitle = stringResource(Strings.git_ssh_default_key_desc),
             value = defaultKeyName ?: stringResource(Strings.git_ssh_default_key_none),
             onClick = { selectingDefaultKey = true },
-            showDivider = false
+            showDivider = true
+        )
+
+        SettingsClickableItem(
+            title = stringResource(Strings.git_ssh_trusted_hosts_reset_title),
+            subtitle = stringResource(Strings.git_ssh_trusted_hosts_reset_desc),
+            value = null,
+            onClick = { trustedHostsResetDialogVisible = true },
+            showDivider = false,
         )
     }
 
@@ -614,6 +630,41 @@ private fun GitSshContent() {
         )
     }
 
+    if (trustedHostsResetDialogVisible) {
+        TinaAlertDialog(
+            onDismissRequest = { trustedHostsResetDialogVisible = false },
+            title = { TinaDialogTitleText(stringResource(Strings.git_ssh_trusted_hosts_reset_dialog_title)) },
+            text = {
+                TinaDialogMessageCard(
+                    message = stringResource(Strings.git_ssh_trusted_hosts_reset_dialog_message),
+                )
+            },
+            confirmButton = {
+                TinaDangerButton(
+                    text = stringResource(Strings.git_ssh_trusted_hosts_reset_confirm),
+                    onClick = {
+                        scope.launch {
+                            runCatching { sshManager.clearTrustedHosts() }
+                                .onSuccess {
+                                    trustedHostsResetDialogVisible = false
+                                    Toast.makeText(context, sshTrustedHostsResetOk, Toast.LENGTH_SHORT).show()
+                                }
+                                .onFailure {
+                                    Toast.makeText(context, sshTrustedHostsResetFailed, Toast.LENGTH_LONG).show()
+                                }
+                        }
+                    },
+                )
+            },
+            dismissButton = {
+                TinaTextButton(
+                    text = stringResource(Strings.btn_cancel),
+                    onClick = { trustedHostsResetDialogVisible = false },
+                )
+            },
+        )
+    }
+
     if (generateDialogVisible) {
         TinaAlertDialog(
             onDismissRequest = { generateDialogVisible = false },
@@ -639,6 +690,10 @@ private fun GitSshContent() {
                     text = stringResource(Strings.btn_ok),
                     onClick = {
                         val name = generateName.trim()
+                        if (!GitSshManager.isValidKeyName(name)) {
+                            Toast.makeText(context, sshKeyNameInvalid, Toast.LENGTH_LONG).show()
+                            return@TinaPrimaryButton
+                        }
                         scope.launch {
                             sshManager.generateEd25519Key(name, generateComment.trim().ifBlank { null })
                                 .onSuccess {
@@ -692,8 +747,13 @@ private fun GitSshContent() {
                             Toast.makeText(context, sshErrorImportFailed, Toast.LENGTH_SHORT).show()
                             return@TinaPrimaryButton
                         }
+                        val name = importName.trim()
+                        if (!GitSshManager.isValidKeyName(name)) {
+                            Toast.makeText(context, sshKeyNameInvalid, Toast.LENGTH_LONG).show()
+                            return@TinaPrimaryButton
+                        }
                         scope.launch {
-                            sshManager.importPrivateKey(importName, pem, importComment)
+                            sshManager.importPrivateKey(name, pem, importComment)
                                 .onSuccess {
                                     Toast.makeText(
                                         context,
@@ -831,6 +891,14 @@ private fun GitSshContent() {
                 TinaPrimaryButton(
                     text = stringResource(Strings.btn_ok),
                     onClick = {
+                        if (GitSettingsSectionSupport.validateSshBindingHost(bindingHost) != null) {
+                            Toast.makeText(context, sshBindingHostInvalid, Toast.LENGTH_LONG).show()
+                            return@TinaPrimaryButton
+                        }
+                        if (GitSettingsSectionSupport.validateSshBindingPort(bindingPort) != null) {
+                            Toast.makeText(context, sshBindingPortInvalid, Toast.LENGTH_LONG).show()
+                            return@TinaPrimaryButton
+                        }
                         val draft = GitSettingsSectionSupport.resolveBindingDraft(
                             host = bindingHost,
                             keyName = bindingKeyName,
@@ -865,7 +933,7 @@ private fun GitSshContent() {
                             onClick = {
                                 scope.launch {
                                     val clearedState = GitSettingsSectionSupport.clearBindingEditorState()
-                                    sshManager.deleteHostBinding(editing.host)
+                                    sshManager.deleteHostBinding(editing.host, editing.port)
                                     Toast.makeText(context, sshBindingDeleteOk, Toast.LENGTH_SHORT).show()
                                     bindingDialogVisible = false
                                     bindingEditor = null
@@ -1031,7 +1099,24 @@ private fun GitHubRegistryContent() {
 
 private fun readTextFromUri(context: android.content.Context, uri: Uri): String {
     context.contentResolver.openInputStream(uri)?.use { input ->
-        return input.bufferedReader(Charsets.UTF_8).readText()
+        val output = java.io.ByteArrayOutputStream()
+        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        var totalBytes = 0
+        while (true) {
+            val read = input.read(buffer)
+            if (read < 0) break
+            totalBytes += read
+            if (totalBytes > GitSshManager.MAX_PRIVATE_KEY_BYTES) {
+                throw IllegalArgumentException(
+                    Strings.git_ssh_private_key_too_large.strOr(
+                        context,
+                        GitSshManager.MAX_PRIVATE_KEY_BYTES / (1024 * 1024),
+                    ),
+                )
+            }
+            output.write(buffer, 0, read)
+        }
+        return output.toString(Charsets.UTF_8.name())
     }
     throw IllegalStateException(Strings.git_error_cannot_read_file.strOr(context))
 }

@@ -126,20 +126,30 @@ object CrashLogUploader {
         val deviceInfo = serverConfig.getDeviceInfo()
         val fingerprint = DeviceFingerprint.get(context)
 
-        val crashText = runCatching { readUtf8MaxBytes(latest, MAX_CRASH_TEXT_BYTES).trim() }
+        val rawCrashText = runCatching { readUtf8MaxBytes(latest, MAX_CRASH_TEXT_BYTES).trim() }
             .getOrElse { t ->
                 val reason = uploadReason("read_failed", t)
-                Timber.tag(TAG).w(t, "Failed to read tombstone before upload: %s", latest.name)
+                Timber.tag(TAG).w(
+                    "Failed to read tombstone before upload: file=%s, error=%s",
+                    latest.name,
+                    t::class.java.simpleName,
+                )
                 CrashUploadState.markUploadDeferred(context, latest.name, latest.lastModified(), reason)
                 return true
             }
-        if (crashText.isBlank()) {
+        if (rawCrashText.isBlank()) {
             Timber.tag(TAG).w("Tombstone content is blank after reading: %s", latest.name)
             CrashUploadState.markUploadSkipped(context, latest.name, "blank_tombstone_content")
             return false
         }
 
-        Timber.tag(TAG).i("Uploading crash log: file=%s, size=%d bytes", latest.name, crashText.length)
+        val crashText = CrashLogUploadSanitizer.sanitize(rawCrashText, context.packageName)
+
+        Timber.tag(TAG).i(
+            "Uploading crash log: file=%s, size=%d bytes",
+            latest.name,
+            crashText.toByteArray(Charsets.UTF_8).size,
+        )
 
         val res = runCatching {
             api.uploadLog(
@@ -153,7 +163,7 @@ object CrashLogUploader {
             )
         }.getOrElse { t ->
             val reason = uploadReason("exception", t)
-            Timber.tag(TAG).e(t, "Crash log upload threw exception")
+            Timber.tag(TAG).e("Crash log upload threw exception: %s", t::class.java.simpleName)
             CrashUploadState.markUploadDeferred(context, latest.name, latest.lastModified(), reason)
             return true
         }
@@ -165,12 +175,12 @@ object CrashLogUploader {
                 false
             }
             is ApiResult.NetworkError -> {
-                Timber.tag(TAG).e("Crash log upload network error (will retry): %s", res.message)
+                Timber.tag(TAG).e("Crash log upload network error; retry scheduled")
                 CrashUploadState.markUploadDeferred(
                     context = context,
                     fileName = latest.name,
                     mtime = latest.lastModified(),
-                    reason = "network_error: ${res.message}"
+                    reason = "network_error"
                 )
                 true
             }
@@ -187,22 +197,22 @@ object CrashLogUploader {
                         true
                     }
                     res.code >= 500 -> {
-                        Timber.tag(TAG).e("Crash log upload server error (code=%d, will retry): %s", res.code, res.message)
+                        Timber.tag(TAG).e("Crash log upload server error (code=%d); retry scheduled", res.code)
                         CrashUploadState.markUploadDeferred(
                             context = context,
                             fileName = latest.name,
                             mtime = latest.lastModified(),
-                            reason = "server_error_${res.code}: ${res.message}"
+                            reason = "server_error_${res.code}"
                         )
                         true
                     }
                     else -> {
-                        Timber.tag(TAG).e("Crash log upload failed permanently (code=%d): %s", res.code, res.message)
+                        Timber.tag(TAG).e("Crash log upload failed permanently (code=%d)", res.code)
                         CrashUploadState.markUploadFailed(
                             context = context,
                             fileName = latest.name,
                             mtime = latest.lastModified(),
-                            reason = "client_error_${res.code}: ${res.message}"
+                            reason = "client_error_${res.code}"
                         )
                         false
                     }
@@ -269,7 +279,6 @@ object CrashLogUploader {
     }
 
     private fun uploadReason(prefix: String, throwable: Throwable): String {
-        val message = throwable.message ?: throwable::class.java.simpleName
-        return "$prefix: $message"
+        return "$prefix:${throwable::class.java.simpleName}"
     }
 }

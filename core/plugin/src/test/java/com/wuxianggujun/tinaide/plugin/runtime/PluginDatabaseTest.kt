@@ -3,6 +3,10 @@ package com.wuxianggujun.tinaide.plugin.runtime
 import android.app.Application
 import com.google.common.truth.Truth.assertThat
 import java.io.File
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -96,5 +100,66 @@ class PluginDatabaseTest {
         PluginDatabase.deletePersistentFiles(context, pluginId)
 
         assertThat(files.filter(File::exists)).isEmpty()
+    }
+
+    @Test
+    fun `transaction rollback restores data and null bindings keep their positions`() {
+        val database = PluginDatabase(context, "com.example.transactions")
+        try {
+            database.execute("CREATE TABLE notes(body TEXT, marker INTEGER)", null)
+            database.beginTransaction()
+            database.execute(
+                "INSERT INTO notes(body, marker) VALUES (?, ?)",
+                JsonArray(listOf(JsonNull, JsonPrimitive(7))),
+            )
+            database.rollbackTransaction()
+
+            assertThat(database.query("SELECT body, marker FROM notes", null)).isEmpty()
+
+            database.beginTransaction()
+            database.execute(
+                "INSERT INTO notes(body, marker) VALUES (?, ?)",
+                JsonArray(listOf(JsonNull, JsonPrimitive(7))),
+            )
+            database.commitTransaction()
+            val row = database.query(
+                "SELECT body, marker FROM notes WHERE body IS ? AND marker = ?",
+                JsonArray(listOf(JsonNull, JsonPrimitive(7))),
+            ).single() as JsonObject
+
+            assertThat(row["body"]).isEqualTo(JsonNull)
+            assertThat(row["marker"]).isEqualTo(JsonPrimitive(7L))
+        } finally {
+            database.close()
+            database.close()
+        }
+    }
+
+    @Test
+    fun `closing an unused database is idempotent and does not create its file`() {
+        val pluginId = "com.example.unused"
+        val file = context.getDatabasePath(PluginDatabase.databaseName(pluginId))
+        val database = PluginDatabase(context, pluginId)
+
+        database.close()
+        database.close()
+
+        assertThat(file.exists()).isFalse()
+    }
+
+    @Test
+    fun `string bindings keep their JSON type and leading zeroes`() {
+        val database = PluginDatabase(context, "com.example.binding-types")
+        try {
+            val row = database.query(
+                "SELECT typeof(?) AS value_type, ? AS value",
+                JsonArray(listOf(JsonPrimitive("007"), JsonPrimitive("007"))),
+            ).single() as JsonObject
+
+            assertThat(row["value_type"]).isEqualTo(JsonPrimitive("text"))
+            assertThat(row["value"]).isEqualTo(JsonPrimitive("007"))
+        } finally {
+            database.close()
+        }
     }
 }

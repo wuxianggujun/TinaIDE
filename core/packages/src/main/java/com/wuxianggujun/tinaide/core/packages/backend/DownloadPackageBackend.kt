@@ -24,6 +24,8 @@ import java.io.FileInputStream
 import java.net.URI
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import timber.log.Timber
 
 class DownloadPackageBackend(
@@ -60,11 +62,22 @@ class DownloadPackageBackend(
         )
     }
 
+    private val downloadCacheMutex = Mutex()
+
     suspend fun install(
         packageId: String,
         versionId: Int,
         version: String,
-        progress: (InstallProgressEvent) -> Unit
+        progress: (InstallProgressEvent) -> Unit,
+    ): InstallResult = downloadCacheMutex.withLock {
+        installWithCacheLock(packageId, versionId, version, progress)
+    }
+
+    private suspend fun installWithCacheLock(
+        packageId: String,
+        versionId: Int,
+        version: String,
+        progress: (InstallProgressEvent) -> Unit,
     ): InstallResult {
         if (!RegistryPackageId.isValid(packageId)) {
             val error = InstallError.UnknownError("Invalid package id: $packageId")
@@ -92,11 +105,18 @@ class DownloadPackageBackend(
             progress(InstallProgressEvent.Failed(error))
             return InstallResult.Failure(packageId, error)
         }
+        val checksum = downloadInfo.checksum
+        if (checksum == null || !checksum.matches(Regex("(?i)^sha256:[0-9a-f]{64}$"))) {
+            val error = InstallError.UnknownError("Package download requires a valid SHA-256 checksum")
+            progress(InstallProgressEvent.Failed(error))
+            return InstallResult.Failure(packageId, error)
+        }
         val targetAbi = PackageAbiCompatibility.currentAppAbi(
             nativeLibraryDir = context.applicationInfo.nativeLibraryDir,
             supportedAbis = Build.SUPPORTED_ABIS,
         )
         val sortedSources = PackageDownloadSourceSelector.select(downloadInfo.sources, targetAbi)
+            .filter { source -> runCatching { URI(source.url).scheme.equals("https", ignoreCase = true) }.getOrDefault(false) }
         if (sortedSources.isEmpty()) {
             val error = InstallError.UnknownError(Strings.pkg_manager_error_no_download_source_for_abi.str(targetAbi))
             progress(InstallProgressEvent.Failed(error))
@@ -113,7 +133,7 @@ class DownloadPackageBackend(
                 source.url,
                 PackageInstallCoordinator.createOperationId(),
             )
-            Timber.tag(TAG).d("Trying source: ${source.name}, abi=${source.abi ?: "legacy"} (${source.url})")
+            Timber.tag(TAG).d("Trying source: ${source.name}, abi=${source.abi ?: "legacy"}")
             progress(InstallProgressEvent.Preparing("Downloading from ${source.name}..."))
 
             val downloadResult = downloader.download(
@@ -130,7 +150,7 @@ class DownloadPackageBackend(
                 is DownloadResult.Success -> {
                     val archiveFormat = detectArchiveFormat(downloadResult.file, archiveTarget.formatHint)
                     if (archiveFormat == null) {
-                        lastError = DownloadError.IOError("Unsupported archive format: ${source.url}")
+                        lastError = DownloadError.IOError("Unsupported package archive format")
                         Timber.tag(TAG).w("Unsupported archive file: ${downloadResult.file.name}")
                         downloadResult.file.delete()
                         continue
@@ -145,9 +165,9 @@ class DownloadPackageBackend(
                         expectedVersion = version,
                         progress = progress
                     )
+                    downloadResult.file.delete()
 
                     if (extractResult.isSuccess) {
-                        downloadResult.file.delete()
                         progress(
                             InstallProgressEvent.Completed(
                                 InstallResult.Success(packageId, version, Platform.ANDROID)
@@ -179,6 +199,7 @@ class DownloadPackageBackend(
             is DownloadError.HttpError -> InstallError.NetworkError("HTTP ${lastError.code}: ${lastError.message}")
             is DownloadError.SizeMismatch -> InstallError.SizeMismatch(lastError.expected, lastError.actual)
             is DownloadError.ChecksumMismatch -> InstallError.ChecksumMismatch(lastError.expected, lastError.actual)
+            is DownloadError.SizeLimitExceeded -> InstallError.SizeMismatch(lastError.limit, lastError.actual)
             is DownloadError.IOError -> InstallError.NetworkError(lastError.message)
             null -> InstallError.UnknownError("All download sources failed")
         }
@@ -369,7 +390,7 @@ class DownloadPackageBackend(
 
     fun getInstallPath(packageId: String): File = resolvePackageDirectory(packageId)
 
-    fun clearDownloadCache() {
+    suspend fun clearDownloadCache() = downloadCacheMutex.withLock {
         downloader.clearTempFiles()
         downloadDir.listFiles()?.forEach { it.delete() }
     }

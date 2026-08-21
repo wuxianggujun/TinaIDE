@@ -119,7 +119,10 @@ add_library(main SHARED src/main.c)
 target_link_libraries(main PRIVATE raylib::raylib)
 ```
 
-`requiredPackages` 是模板级 Android Registry 包 ID 列表。新建向导会在创建目录前检查这些包；缺失时停止创建并打开包管理器。依赖必须按每个模板分别声明，不能用插件级依赖代替，因为同一插件可以贡献多个依赖不同的模板。
+`requiredPackages` 是模板级 Android Registry 包 ID 列表。新建向导会在创建目录前同时检查
+Android 安装状态和 `files/installed-packages/<id>/package.json` 的真实元数据；状态残留但目录
+缺失、元数据损坏或 ID 不匹配都会按缺包处理。缺失时停止创建并打开包管理器。依赖必须
+按每个模板分别声明，不能用插件级依赖代替，因为同一插件可以贡献多个依赖不同的模板。
 
 首次使用 `requiredPackages` 的插件版本应同时设置支持该字段的 `minAppVersion`。当前最低版本为 `0.18.20`；旧宿主会继续获得插件的历史兼容版本，不会安装一个无法执行创建前依赖检查的新版本。
 
@@ -206,6 +209,15 @@ target_link_libraries(friend_engine_game PRIVATE SDL3::SDL3)
   "selectedId": "sdl3-debug"
 }
 ```
+
+Native CMake 配置时，TinaIDE 会根据当前 APK ABI 显式传入
+`-DANDROID_ABI=arm64-v8a` 或 `-DANDROID_ABI=x86_64`。Registry 包的 CMake config 可据此从
+`lib/<ANDROID_ABI>` 选择对应预编译库；模板不应自行写死 ABI。ABI 同时属于 TinaIDE 的 CMake
+cache identity，切换 ABI 后旧配置不会被错误复用。PRoot CMake 不注入 Android ABI。
+
+如果 CMake 报错 `SDL2 Android package requires ANDROID_ABI`，说明宿主版本早于该修复或项目
+绕过了 Native CMake executor；先确认 TinaIDE 版本不低于 `0.18.20`，再删除项目旧构建缓存并
+重新配置。不要在模板 `CMakeLists.txt` 中用固定 ABI 规避该错误。
 
 `sdlVersion` 可以是 `SDL2`、`SDL3` 或省略（自动检测）。SDL2 模板只需改为 `find_package(SDL2)`、链接 SDL2 target，并将该字段设为 `SDL2` 或交给自动检测。
 

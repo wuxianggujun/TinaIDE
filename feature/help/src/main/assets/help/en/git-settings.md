@@ -23,10 +23,15 @@ The SSH tab supports:
 - generating an Ed25519 key;
 - importing a private key;
 - choosing a default key;
+- resetting trusted server host keys;
 - listing and inspecting keys;
 - copying a public key;
 - deleting a non-protected key;
 - binding a key and port to a host.
+
+Generated public keys use the standard OpenSSH `ssh-ed25519` format and can be copied directly to GitHub, GitLab, or Gitee. Bindings are keyed by both host and port, so port 22 and port 2222 can use separate entries for the same host.
+
+Private-key imports are limited to 1 MiB. Key names must be 1-64 characters, start with a letter or digit, and contain only letters, digits, `.`, `_`, or `-`.
 
 Use the default key when one identity handles most repositories. Use host bindings for multiple accounts, company GitLab instances, or non-standard ports.
 
@@ -48,6 +53,10 @@ Create a host binding for that host, key, and optional custom port.
 ### An imported key is not selected
 
 Set it as the default or bind it to the relevant host.
+
+### The server host key changed
+
+Confirm the change through a trusted channel first, then use **Reset trusted host keys** in SSH settings. The next connection records the server key again. Deleting a host binding also removes the trust record for that host and port.
 
 ## Related documentation
 

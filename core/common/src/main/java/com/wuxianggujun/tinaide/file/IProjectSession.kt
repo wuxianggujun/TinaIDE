@@ -16,6 +16,11 @@ interface IProjectSession {
     fun openProject(path: String): Project
     fun closeProject()
 
+    /**
+     * 项目目录移动后，同步当前会话和最近文件中的绝对路径。
+     */
+    fun retargetProjectPath(oldPath: String, newPath: String)
+
     fun restoreLastSession(): Project?
 
     fun clearInMemorySession()

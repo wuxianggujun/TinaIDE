@@ -288,6 +288,7 @@ class PluginRegistryProtocolTest {
                           "version": "1.1.0",
                           "version_code": 2,
                           "file_size": 7,
+                          "file_hash": "sha256:ed7002b439e9ac845f22357d822bac1444730fbdb6016d3ec9432297b9ec9f73",
                           "download_url": "$githubDownloadUrl",
                           "created_at": "2026-06-06T00:00:00Z"
                         }
@@ -378,6 +379,7 @@ class PluginRegistryProtocolTest {
                           "version": "1.5.0",
                           "version_code": 10500,
                           "file_size": 10,
+                          "file_hash": "sha256:a1613be9e3df6e9a2d9f0562bc73df744d6e440e5d3a244e1c647eb6489073dc",
                           "download_url": "plugins/tinaide.plugin.example/1.5.0/example.tinaplug",
                           "api_version": 1,
                           "min_app_version": "0.18.0",
@@ -546,6 +548,7 @@ class PluginRegistryProtocolTest {
                           "version": "1.0.0",
                           "version_code": 1,
                           "file_size": 1,
+                          "file_hash": "sha256:2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881",
                           "download_url": "$downloadUrl",
                           "created_at": "2026-06-06T00:00:00Z"
                         }

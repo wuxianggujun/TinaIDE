@@ -1,6 +1,7 @@
 package com.wuxianggujun.tinaide.ui.compose.state.editor
 
 import android.content.Context
+import java.io.File
 import java.security.MessageDigest
 import org.json.JSONArray
 import org.json.JSONObject
@@ -9,20 +10,48 @@ internal class SplitEditorSessionStorage(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     fun load(projectPath: String): SplitEditorStateSnapshot? {
-        val raw = prefs.getString(keyForProject(projectPath), null) ?: return null
-        return runCatching { decodeSnapshot(JSONObject(raw)) }.getOrNull()
+        return synchronized(STATE_LOCK) {
+            val raw = prefs.getString(keyForProject(projectPath), null) ?: return@synchronized null
+            runCatching { decodeSnapshot(JSONObject(raw)) }.getOrNull()
+        }
     }
 
     fun save(projectPath: String, snapshot: SplitEditorStateSnapshot) {
-        prefs.edit()
-            .putString(keyForProject(projectPath), encodeSnapshot(snapshot.normalized()).toString())
-            .apply()
+        synchronized(STATE_LOCK) {
+            if (!File(projectPath).isDirectory) return
+            prefs.edit()
+                .putString(keyForProject(projectPath), encodeSnapshot(snapshot.normalized()).toString())
+                .apply()
+        }
     }
 
     fun clear(projectPath: String) {
-        prefs.edit()
-            .remove(keyForProject(projectPath))
-            .apply()
+        synchronized(STATE_LOCK) {
+            prefs.edit()
+                .remove(keyForProject(projectPath))
+                .apply()
+        }
+    }
+
+    fun migrateProjectPath(oldProjectPath: String, newProjectPath: String) {
+        require(oldProjectPath.isNotBlank() && newProjectPath.isNotBlank())
+        if (oldProjectPath == newProjectPath) return
+
+        synchronized(STATE_LOCK) {
+            val oldKey = keyForProject(oldProjectPath)
+            val raw = prefs.getString(oldKey, null) ?: return
+            val migrated = retargetSnapshotPaths(
+                decodeSnapshot(JSONObject(raw)),
+                oldProjectPath,
+                newProjectPath
+            )
+            check(
+                prefs.edit()
+                    .remove(oldKey)
+                    .putString(keyForProject(newProjectPath), encodeSnapshot(migrated).toString())
+                    .commit()
+            ) { "Failed to migrate split editor state" }
+        }
     }
 
     private fun encodeSnapshot(snapshot: SplitEditorStateSnapshot): JSONObject = JSONObject()
@@ -123,6 +152,34 @@ internal class SplitEditorSessionStorage(context: Context) {
         return result
     }
 
+    private fun retargetSnapshotPaths(
+        snapshot: SplitEditorStateSnapshot,
+        oldProjectPath: String,
+        newProjectPath: String,
+    ): SplitEditorStateSnapshot = snapshot.copy(
+        tabPaneAssignments = snapshot.tabPaneAssignments.mapKeys { (path, _) ->
+            retargetPath(path, oldProjectPath, newProjectPath)
+        },
+        mirroredFilePathsByPane = snapshot.mirroredFilePathsByPane.mapValues { (_, paths) ->
+            paths.mapTo(linkedSetOf()) { path -> retargetPath(path, oldProjectPath, newProjectPath) }
+        },
+        activeFilePathByPane = snapshot.activeFilePathByPane.mapValues { (_, path) ->
+            retargetPath(path, oldProjectPath, newProjectPath)
+        }
+    ).normalized()
+
+    private fun retargetPath(path: String, oldProjectPath: String, newProjectPath: String): String {
+        val oldRoot = oldProjectPath.replace('\\', '/').trimEnd('/')
+        val normalizedPath = path.replace('\\', '/')
+        return when {
+            normalizedPath == oldRoot -> newProjectPath
+            normalizedPath.startsWith("$oldRoot/") -> {
+                newProjectPath.trimEnd('/', '\\') + normalizedPath.substring(oldRoot.length)
+            }
+            else -> path
+        }
+    }
+
     private fun parsePane(value: String?): EditorPaneId = runCatching {
         EditorPaneId.valueOf(value.orEmpty())
     }.getOrDefault(EditorPaneId.PRIMARY)
@@ -139,6 +196,7 @@ internal class SplitEditorSessionStorage(context: Context) {
     }
 
     private companion object {
+        val STATE_LOCK = Any()
         const val PREFS_NAME = "tinaide_editor_split_state"
         const val SNAPSHOT_VERSION = 1
         const val DEFAULT_PRIMARY_RATIO = 0.5f

@@ -10,7 +10,7 @@ object ProjectCppStandardResolver {
     private val makefileNames = listOf("Makefile", "makefile", "GNUmakefile")
     private val bracketCommentPattern = Regex("""(?s)#\[(=*)\[.*?]\1]""")
     private val cmakeOperationPattern = Regex(
-        """(?s)\b((?i:set|unset))[\t ]*\([\t\r\n]*CMAKE_CXX_STANDARD\b(.*?)\)""",
+        """(?s)\b((?i:set|unset))[\t ]*\(\s*CMAKE_CXX_STANDARD\b(.*?)\)""",
     )
     private val standardOptionPattern = Regex(
         """(?i)(?:^|[\s="'])-std=((?:c|gnu)\+\+(?:98|03|11|14|17|20|23|26|2a|2b|2c))(?![A-Za-z0-9_+.-])""",

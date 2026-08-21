@@ -30,13 +30,18 @@ import timber.log.Timber
 /**
  * 预估 LaTeX 公式渲染尺寸（用于 InlineTextContent placeholder 计算）
  */
-fun assumeLatexSize(latex: String, fontSize: Float): Rect = runCatching {
-    JLatexMathDrawable.builder(latex)
-        .textSize(fontSize)
-        .padding(0)
-        .build()
-        .bounds
-}.getOrElse { Rect(0, 0, 0, 0) }
+fun assumeLatexSize(latex: String, fontSize: Float): Rect {
+    val renderableLatex = LatexRenderPolicy.prepareForRendering(latex) ?: return Rect(0, 0, 0, 0)
+    return runCatching {
+        JLatexMathDrawable.builder(renderableLatex)
+            .textSize(fontSize)
+            .padding(0)
+            .build()
+            .bounds
+            .takeIf(::hasSafeRenderBounds)
+            ?: Rect(0, 0, 0, 0)
+    }.getOrElse { Rect(0, 0, 0, 0) }
+}
 
 /**
  * LaTeX 公式渲染组件
@@ -53,20 +58,26 @@ fun LatexText(
 ) {
     val mergedStyle = style.merge(fontSize = fontSize, color = color)
     val density = LocalDensity.current
+    val renderableLatex = remember(latex) { LatexRenderPolicy.prepareForRendering(latex) }
 
-    val drawable = remember(latex, fontSize, mergedStyle) {
+    val drawable = remember(renderableLatex, fontSize, mergedStyle, density) {
+        if (renderableLatex == null) return@remember null
         runCatching {
             with(density) {
-                JLatexMathDrawable.builder(processLatex(latex))
+                JLatexMathDrawable.builder(renderableLatex)
                     .textSize(fontSize.takeOrElse { mergedStyle.fontSize }.toPx())
                     .color(mergedStyle.color.toArgb())
                     .background(mergedStyle.background.toArgb())
                     .padding(0)
                     .align(JLatexMathDrawable.ALIGN_LEFT)
                     .build()
+                    .takeIf { hasSafeRenderBounds(it.bounds) }
             }
-        }.onFailure {
-            Timber.tag("LatexRenderer").w(it, "Failed to render LaTeX")
+        }.onFailure { error ->
+            Timber.tag("LatexRenderer").w(
+                "Failed to render LaTeX: error=%s",
+                error.javaClass.simpleName,
+            )
         }.getOrNull()
     }
 
@@ -83,7 +94,7 @@ fun LatexText(
         }
     } else {
         Text(
-            text = latex,
+            text = LatexRenderPolicy.fallbackText(latex),
             style = mergedStyle.copy(fontFamily = FontFamily.Monospace),
             modifier = modifier,
         )
@@ -128,27 +139,9 @@ fun MathBlock(
     }
 }
 
-// ── LaTeX 预处理 ──────────────────────────────────────────
-
-private val displayDollarRegex = Regex("""^\$\$(.*?)\$\$""", RegexOption.DOT_MATCHES_ALL)
-private val inlineDollarRegex = Regex("""^\$(.*?)\$""", RegexOption.DOT_MATCHES_ALL)
-private val displayBracketRegex = Regex("""^\\\[(.*?)\\\]""", RegexOption.DOT_MATCHES_ALL)
-private val inlineParenRegex = Regex("""^\\\((.*?)\\\)""", RegexOption.DOT_MATCHES_ALL)
-
-/**
- * 剥离 LaTeX 分隔符（$...$, $$...$$, \(...\), \[...\]）
- */
-private fun processLatex(latex: String): String {
-    val trimmed = latex.trim()
-    return when {
-        displayDollarRegex.matches(trimmed) ->
-            displayDollarRegex.find(trimmed)?.groupValues?.get(1)?.trim() ?: trimmed
-        inlineDollarRegex.matches(trimmed) ->
-            inlineDollarRegex.find(trimmed)?.groupValues?.get(1)?.trim() ?: trimmed
-        displayBracketRegex.matches(trimmed) ->
-            displayBracketRegex.find(trimmed)?.groupValues?.get(1)?.trim() ?: trimmed
-        inlineParenRegex.matches(trimmed) ->
-            inlineParenRegex.find(trimmed)?.groupValues?.get(1)?.trim() ?: trimmed
-        else -> trimmed
-    }
+private fun hasSafeRenderBounds(bounds: Rect): Boolean {
+    val width = bounds.right.toLong() - bounds.left.toLong()
+    val height = bounds.bottom.toLong() - bounds.top.toLong()
+    return width in 1..LatexRenderPolicy.MAX_RENDER_DIMENSION_PX.toLong() &&
+        height in 1..LatexRenderPolicy.MAX_RENDER_DIMENSION_PX.toLong()
 }

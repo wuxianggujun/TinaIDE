@@ -5,6 +5,8 @@ import android.os.Build
 import com.wuxianggujun.tinaide.core.device.DeviceInfo
 import com.wuxianggujun.tinaide.core.device.DeviceInfoProvider
 import com.wuxianggujun.tinaide.core.network.OkHttpClientProvider
+import java.net.URI
+import java.util.Locale
 import java.util.UUID
 import okhttp3.OkHttpClient
 
@@ -34,6 +36,25 @@ class TinaServerConfig private constructor(private val context: Context) {
         }
 
         fun getBaseUrl(): String = DEFAULT_SERVER_URL
+
+        fun isAllowedServerUrl(url: String): Boolean = normalizeServerUrl(url) != null
+
+        internal fun normalizeServerUrl(url: String): String? {
+            val candidate = url.trim().trimEnd('/')
+            if (candidate.isBlank()) return null
+            val uri = runCatching { URI(candidate) }.getOrNull() ?: return null
+            val scheme = uri.scheme?.lowercase(Locale.ROOT) ?: return null
+            val host = uri.host?.lowercase(Locale.ROOT) ?: return null
+            val isAllowedScheme = scheme == "https" ||
+                (scheme == "http" && (host == "localhost" || host == "127.0.0.1"))
+            if (!isAllowedScheme || uri.isOpaque || uri.userInfo != null ||
+                uri.query != null || uri.fragment != null ||
+                uri.port != -1 && uri.port !in 1..65535
+            ) {
+                return null
+            }
+            return candidate
+        }
     }
 
     private val prefs by lazy {
@@ -45,7 +66,7 @@ class TinaServerConfig private constructor(private val context: Context) {
     }
 
     suspend fun getServerUrl(): String = prefs.getString(KEY_SERVER_URL, null)
-        ?.takeIf { it.isNotBlank() }
+        ?.let(::normalizeServerUrl)
         ?: getDefaultServerUrl()
 
     suspend fun setServerUrl(url: String?) {
@@ -53,7 +74,10 @@ class TinaServerConfig private constructor(private val context: Context) {
             if (url.isNullOrBlank()) {
                 remove(KEY_SERVER_URL)
             } else {
-                putString(KEY_SERVER_URL, url.trimEnd('/'))
+                val normalized = requireNotNull(normalizeServerUrl(url)) {
+                    "Tina server URL must use HTTPS, or HTTP on localhost"
+                }
+                putString(KEY_SERVER_URL, normalized)
             }
         }.apply()
         TinaServerApi.resetInstance()

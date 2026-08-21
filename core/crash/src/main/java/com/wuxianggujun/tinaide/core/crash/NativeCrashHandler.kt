@@ -53,7 +53,11 @@ object NativeCrashHandler {
 
         // 崩溃回调：当崩溃发生时跳转到 CrashActivity
         val callback = ICrashCallback { logPath, emergency ->
-            Timber.tag(TAG).e("Crash captured! logPath=$logPath, emergency=$emergency")
+            Timber.tag(TAG).e(
+                "Crash captured: file=%s, hasEmergency=%s",
+                crashLogFileName(logPath).ifBlank { "<unknown>" },
+                !emergency.isNullOrBlank(),
+            )
             handleCrash(context, logPath, emergency)
         }
 
@@ -111,7 +115,10 @@ object NativeCrashHandler {
             if (displayer != null) {
                 displayer.show(context.applicationContext, crashInfo, crashLogFileName)
             } else {
-                Timber.tag(TAG).e("Crash captured (no displayer registered):\n%s", crashInfo)
+                Timber.tag(TAG).e(
+                    "Crash captured with no displayer registered: file=%s",
+                    crashLogFileName.ifBlank { "<unknown>" },
+                )
             }
         } catch (e: Throwable) {
             Timber.tag(TAG).e(e, "Failed to handle crash")

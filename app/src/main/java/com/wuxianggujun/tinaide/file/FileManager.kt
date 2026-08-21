@@ -139,6 +139,69 @@ class FileManager(
         closeCurrentProject(preserveLastProject = false)
     }
 
+    override fun retargetProjectPath(oldPath: String, newPath: String) {
+        val oldRoot = File(oldPath).absoluteFile.normalize()
+        val newRoot = File(newPath).absoluteFile.normalize()
+        require(newRoot.isDirectory) { "Invalid moved project path: ${newRoot.absolutePath}" }
+
+        val previousProject = _currentProject.value
+        val previousRecentFiles = synchronized(recentFilesLock) { recentFiles.toList() }
+        val previousConfiguredProject = configManager.get(ConfigKeys.CurrentProject)
+        val configuredProjectMoved = pathsEqual(previousConfiguredProject, oldRoot.path)
+
+        val retargetedRecentFiles = previousRecentFiles.map { recent ->
+            retargetPath(recent, oldRoot, newRoot) ?: recent
+        }
+        val retargetedProject = previousProject
+            ?.takeIf { pathsEqual(it.rootPath, oldRoot.path) }
+            ?.copy(
+                name = newRoot.name,
+                rootPath = newRoot.path,
+                files = previousProject.files.map { file ->
+                    retargetPath(file, oldRoot, newRoot) ?: file
+                }
+            )
+
+        try {
+            if (configuredProjectMoved) {
+                configManager.set(ConfigKeys.CurrentProject, newRoot.path)
+            }
+            configManager.set(
+                ConfigKeys.RecentFiles,
+                retargetedRecentFiles.joinToString(";") { it.absolutePath }
+            )
+            synchronized(recentFilesLock) {
+                recentFiles.clear()
+                recentFiles.addAll(retargetedRecentFiles)
+            }
+            if (retargetedProject != null) {
+                _currentProject.value = retargetedProject
+            }
+        } catch (error: Exception) {
+            runCatching {
+                if (configuredProjectMoved) {
+                    configManager.set(ConfigKeys.CurrentProject, previousConfiguredProject)
+                }
+                configManager.set(
+                    ConfigKeys.RecentFiles,
+                    previousRecentFiles.joinToString(";") { it.absolutePath }
+                )
+            }.onFailure(error::addSuppressed)
+            synchronized(recentFilesLock) {
+                recentFiles.clear()
+                recentFiles.addAll(previousRecentFiles)
+            }
+            _currentProject.value = previousProject
+            throw error
+        }
+
+        if (retargetedProject != null) {
+            projectSymbolIndexServiceProvider()?.onProjectOpened(newRoot)
+            PluginHostEventDispatcher.emitProjectClosed(oldRoot.path)
+            PluginHostEventDispatcher.emitProjectOpened(newRoot.path)
+        }
+    }
+
     override fun clearInMemorySession() {
         closeCurrentProject(preserveLastProject = true)
     }
@@ -634,6 +697,33 @@ class FileManager(
             }
         }
         saveRecentFiles()
+    }
+
+    private fun retargetPath(path: File, oldRoot: File, newRoot: File): File? {
+        val oldNormalized = normalizeRecentLookupPath(oldRoot.absolutePath).trimEnd('/')
+        if (oldNormalized.isBlank()) return null
+        val pathNormalized = normalizeRecentLookupPath(path.absolutePath)
+        val oldCompare = normalizeRecentLookupPathForCompare(oldNormalized)
+        val pathCompare = normalizeRecentLookupPathForCompare(pathNormalized)
+        return when {
+            pathCompare == oldCompare -> newRoot
+            pathCompare.startsWith("$oldCompare/") -> {
+                val suffix = pathNormalized.substring(oldNormalized.length + 1)
+                File(newRoot, suffix.replace('/', File.separatorChar))
+            }
+            else -> null
+        }
+    }
+
+    private fun pathsEqual(left: String, right: String): Boolean {
+        if (left.isBlank() || right.isBlank()) return false
+        val normalizedLeft = normalizeRecentLookupPathForCompare(
+            normalizeRecentLookupPath(File(left).absoluteFile.normalize().path)
+        )
+        val normalizedRight = normalizeRecentLookupPathForCompare(
+            normalizeRecentLookupPath(File(right).absoluteFile.normalize().path)
+        )
+        return normalizedLeft == normalizedRight
     }
 
     private fun removeRecentFilesForDeletedPath(deletedPath: File) {

@@ -25,4 +25,5 @@ dependencies {
     implementation(libs.kotlinx.coroutines)
     implementation(libs.okhttp)
     implementation(libs.androidx.annotation)
+    implementation(libs.androidx.security.crypto)
 }

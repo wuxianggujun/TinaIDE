@@ -1,9 +1,11 @@
 package com.wuxianggujun.tinaide.plugin.lsp
 
 import android.content.Context
+import com.wuxianggujun.tinaide.core.common.io.ArchiveExtractionLimits
 import com.wuxianggujun.tinaide.core.common.io.TarExtractor
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
+import com.wuxianggujun.tinaide.core.network.executeCancellable
 import com.wuxianggujun.tinaide.core.linux.LinuxEnvironment
 import com.wuxianggujun.tinaide.core.linux.LinuxEnvironmentProvider
 import com.wuxianggujun.tinaide.core.linux.UnavailableLinuxEnvironmentProvider
@@ -20,6 +22,7 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.security.MessageDigest
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -54,6 +57,15 @@ class LspToolchainInstaller(
         private const val PIP_INSTALL_TIMEOUT_MS = 300_000L
         private const val DOWNLOAD_TIMEOUT_MS = 600_000L
         private const val VERIFY_TIMEOUT_MS = 10_000L
+        private const val MAX_VERIFY_OUTPUT_CHARS = 64 * 1024
+        private const val MAX_DOWNLOAD_BYTES = 512L * 1024L * 1024L
+        private val DOWNLOAD_EXTRACTION_LIMITS = ArchiveExtractionLimits(
+            maxArchiveBytes = MAX_DOWNLOAD_BYTES,
+            maxExpandedBytes = 2L * 1024L * 1024L * 1024L,
+            maxEntryBytes = 512L * 1024L * 1024L,
+            maxEntryCount = 50_000,
+            maxCompressionRatio = 500L,
+        )
     }
 
     private val httpClient by lazy {
@@ -89,6 +101,8 @@ class LspToolchainInstaller(
                 "npm" -> installNpm(config, progress)
                 else -> Result.failure(IllegalArgumentException(Strings.lsp_toolchain_error_unknown_type.strOr(context, config.type)))
             }
+        } catch (error: CancellationException) {
+            throw error
         } catch (e: Exception) {
             Timber.tag(TAG).e(e, "Failed to install toolchain: ${config.id}")
             Result.failure(e)
@@ -137,7 +151,7 @@ class LspToolchainInstaller(
      * 检查工具链是否已安装
      */
     suspend fun isInstalled(config: LspToolchainConfig): Boolean = withContext(Dispatchers.IO) {
-        if (config.verifyCommand == null) return@withContext true
+        if (config.verifyCommand.isNullOrBlank()) return@withContext false
         val linuxEnvironment = linuxEnvironmentProvider.get()
         if (!linuxEnvironment.isAvailable()) return@withContext false
 
@@ -152,11 +166,13 @@ class LspToolchainInstaller(
 
             if (config.verifyPattern != null) {
                 val pattern = Regex(config.verifyPattern)
-                val output = result.stdout + "\n" + result.stderr
+                val output = (result.stdout + "\n" + result.stderr).take(MAX_VERIFY_OUTPUT_CHARS)
                 return@withContext pattern.containsMatchIn(output)
             }
 
             true
+        } catch (error: CancellationException) {
+            throw error
         } catch (e: Exception) {
             Timber.tag(TAG).w(e, "Verify command failed for ${config.id}")
             false
@@ -179,6 +195,14 @@ class LspToolchainInstaller(
                 IllegalArgumentException(
                     Strings.lsp_toolchain_error_no_system_packages.strOr(context, packageManager.displayName())
                 )
+            )
+        }
+        if (
+            !LspToolchainPackagePolicy.areValid("system", packages) ||
+            !LspToolchainPackagePolicy.areFallbackVersionsValid(config.fallbackVersions)
+        ) {
+            return Result.failure(
+                IllegalArgumentException(Strings.lsp_toolchain_error_packages_invalid.strOr(context, config.id))
             )
         }
 
@@ -263,19 +287,42 @@ class LspToolchainInstaller(
             ?: return Result.failure(IllegalArgumentException(Strings.lsp_toolchain_error_no_download_url.strOr(context)))
         val extractTo = config.extractTo
             ?: return Result.failure(IllegalArgumentException(Strings.lsp_toolchain_error_no_extract_path.strOr(context)))
+        val sha256 = config.sha256
+            ?.takeIf { it.matches(Regex("(?i)^[0-9a-f]{64}$")) }
+            ?: return Result.failure(
+                IllegalArgumentException(Strings.lsp_toolchain_error_sha256_required.strOr(context))
+            )
+        if (!isHttpsUrl(url)) {
+            return Result.failure(
+                IllegalArgumentException(Strings.lsp_toolchain_error_https_required.strOr(context))
+            )
+        }
 
         progress(
             LspInstallProgress(
                 phase = Strings.lsp_toolchain_phase_downloading.strOr(context),
                 progress = 0.1f,
                 toolchainId = config.id,
-                message = url
+                message = runCatching { java.net.URI(url).host }.getOrNull()
             )
         )
 
-        val rootfsPath = PRootBootstrap.getActiveRootfsPath(context)
-        val targetDir = File(rootfsPath, extractTo.trimStart('/'))
-        val tempFile = File(context.cacheDir, "lsp_download_${config.id}_${System.currentTimeMillis()}.tar.gz")
+        val rootfsDir = File(PRootBootstrap.getActiveRootfsPath(context)).canonicalFile
+        val targetDir = File(rootfsDir, extractTo).canonicalFile
+        if (!targetDir.toPath().startsWith(rootfsDir.toPath())) {
+            return Result.failure(
+                IllegalArgumentException(Strings.lsp_toolchain_error_extract_path_invalid.strOr(context))
+            )
+        }
+        val safeId = config.id.replace(Regex("[^A-Za-z0-9._-]"), "_")
+        val operationId = UUID.randomUUID().toString()
+        val tempFile = File(context.cacheDir, "lsp_download_${safeId}_$operationId.tar.gz")
+        val transaction = LspDownloadInstallTransaction(
+            targetDir = targetDir,
+            toolchainId = config.id,
+            operationId = operationId,
+            unmanagedTargetMessage = Strings.lsp_toolchain_error_extract_path_occupied.strOr(context, extractTo),
+        )
 
         try {
             // 下载文件
@@ -291,23 +338,20 @@ class LspToolchainInstaller(
                 )
             }
 
-            // 验证 SHA256
-            if (config.sha256 != null) {
-                progress(
-                    LspInstallProgress(
-                        phase = Strings.lsp_toolchain_phase_verifying_checksum.strOr(context),
-                        progress = 0.65f,
-                        toolchainId = config.id
+            progress(
+                LspInstallProgress(
+                    phase = Strings.lsp_toolchain_phase_verifying_checksum.strOr(context),
+                    progress = 0.65f,
+                    toolchainId = config.id
+                )
+            )
+            val actualSha256 = calculateSha256(tempFile)
+            if (!actualSha256.equals(sha256, ignoreCase = true)) {
+                return Result.failure(
+                    RuntimeException(
+                        Strings.lsp_toolchain_error_checksum_mismatch.strOr(context, sha256, actualSha256)
                     )
                 )
-                val actualSha256 = calculateSha256(tempFile)
-                if (!actualSha256.equals(config.sha256, ignoreCase = true)) {
-                    return Result.failure(
-                        RuntimeException(
-                            Strings.lsp_toolchain_error_checksum_mismatch.strOr(context, config.sha256, actualSha256)
-                        )
-                    )
-                }
             }
 
             progress(
@@ -318,12 +362,27 @@ class LspToolchainInstaller(
                 )
             )
 
-            // 解压（复用 TarExtractor）
-            targetDir.parentFile?.mkdirs()
-            TarExtractor.extract(tempFile, targetDir)
+            val stagingDir = transaction.createStagingDirectory()
+            TarExtractor.extract(tempFile, stagingDir, limits = DOWNLOAD_EXTRACTION_LIMITS)
+            transaction.publish()
 
-            return verifyAndReturn(config, progress)
+            val verifyResult = verifyAndReturn(config, progress)
+            if (verifyResult.isSuccess) {
+                if (!transaction.commit()) {
+                    Timber.tag(TAG).w("Failed to delete previous toolchain backup for %s", config.id)
+                }
+                return verifyResult
+            }
+
+            transaction.rollback()
+            return verifyResult
+        } catch (error: Exception) {
+            runCatching { transaction.rollback() }
+                .onFailure(error::addSuppressed)
+            throw error
         } finally {
+            runCatching { transaction.cleanup() }
+                .onFailure { error -> Timber.tag(TAG).w(error, "Failed to clean toolchain staging directory") }
             tempFile.delete()
         }
     }
@@ -335,6 +394,11 @@ class LspToolchainInstaller(
         val packages = config.packages
         if (packages.isNullOrEmpty()) {
             return Result.failure(IllegalArgumentException(Strings.lsp_toolchain_error_no_pip_packages.strOr(context)))
+        }
+        if (!LspToolchainPackagePolicy.areValid("pip", packages)) {
+            return Result.failure(
+                IllegalArgumentException(Strings.lsp_toolchain_error_packages_invalid.strOr(context, config.id))
+            )
         }
 
         progress(
@@ -389,6 +453,11 @@ class LspToolchainInstaller(
         val packages = config.packages
         if (packages.isNullOrEmpty()) {
             return Result.failure(IllegalArgumentException(Strings.lsp_toolchain_error_no_npm_packages.strOr(context)))
+        }
+        if (!LspToolchainPackagePolicy.areValid("npm", packages)) {
+            return Result.failure(
+                IllegalArgumentException(Strings.lsp_toolchain_error_packages_invalid.strOr(context, config.id))
+            )
         }
 
         progress(
@@ -451,13 +520,16 @@ class LspToolchainInstaller(
         return Result.success(Unit)
     }
 
-    private fun downloadFile(
+    private suspend fun downloadFile(
         url: String,
         target: File,
         progress: (Long, Long) -> Unit
     ) {
         val request = Request.Builder().url(url).build()
-        httpClient.newCall(request).execute().use { response ->
+        httpClient.newCall(request).executeCancellable().use { response ->
+            if (!response.request.url.isHttps) {
+                throw RuntimeException(Strings.lsp_toolchain_error_https_required.strOr(context))
+            }
             if (!response.isSuccessful) {
                 throw RuntimeException(
                     Strings.lsp_toolchain_error_download_failed.strOr(context, response.code, response.message)
@@ -466,6 +538,9 @@ class LspToolchainInstaller(
 
             val body = response.body ?: throw RuntimeException(Strings.lsp_toolchain_error_empty_download_body.strOr(context))
             val contentLength = body.contentLength()
+            if (contentLength > MAX_DOWNLOAD_BYTES) {
+                throw RuntimeException(Strings.lsp_toolchain_error_download_too_large.strOr(context))
+            }
 
             FileOutputStream(target).use { output ->
                 body.byteStream().use { input ->
@@ -474,6 +549,9 @@ class LspToolchainInstaller(
                     var read: Int
 
                     while (input.read(buffer).also { read = it } != -1) {
+                        if (read.toLong() > MAX_DOWNLOAD_BYTES - downloaded) {
+                            throw RuntimeException(Strings.lsp_toolchain_error_download_too_large.strOr(context))
+                        }
                         output.write(buffer, 0, read)
                         downloaded += read
                         progress(downloaded, contentLength)
@@ -494,6 +572,14 @@ class LspToolchainInstaller(
         }
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
+
+    private fun isHttpsUrl(url: String): Boolean = runCatching {
+        java.net.URI(url).let { uri ->
+            uri.scheme.equals("https", ignoreCase = true) &&
+                !uri.host.isNullOrBlank() &&
+                uri.userInfo == null
+        }
+    }.getOrDefault(false)
 
     private fun formatBytes(bytes: Long): String = when {
         bytes < 1024 -> "$bytes B"

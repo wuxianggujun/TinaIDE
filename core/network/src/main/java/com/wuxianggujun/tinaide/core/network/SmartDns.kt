@@ -94,7 +94,7 @@ internal class DohDnsResolver {
                     addresses[ip] = addr
                 }
                 if (addresses.isNotEmpty()) return Result(addresses.values.toList(), endpoint.name)
-            } catch (_: Throwable) {
+            } catch (_: Exception) {
                 // ignore
             }
         }
@@ -112,8 +112,9 @@ internal class DohDnsResolver {
                 .build()
 
         client.newCall(request).execute().use { response ->
+            if (!response.request.url.isHttps) return emptyList()
             if (!response.isSuccessful) return emptyList()
-            val body = response.body?.string().orEmpty()
+            val body = response.body?.readUtf8Limited(MAX_DOH_RESPONSE_BYTES).orEmpty()
             if (body.isBlank()) return emptyList()
 
             val json = JSONObject(body)
@@ -131,6 +132,10 @@ internal class DohDnsResolver {
             }
             return out
         }
+    }
+
+    private companion object {
+        private const val MAX_DOH_RESPONSE_BYTES = 256 * 1024
     }
 }
 

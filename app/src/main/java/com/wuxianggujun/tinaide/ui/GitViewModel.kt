@@ -698,7 +698,7 @@ class GitViewModel(
                 pendingOp = op,
                 error = null
             )
-            _syncError.value = stripPassphraseMarker(message)
+            _syncError.value = stripPassphraseMarker(message).takeIf { it.isNotBlank() }
             return
         }
         _syncError.value = message

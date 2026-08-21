@@ -95,4 +95,53 @@ class PluginWorkspaceFileAccessTest {
             Files.deleteIfExists(link.toPath())
         }
     }
+
+    @Test
+    fun mutations_shouldRejectSymbolicLinkTargetsAndParents() {
+        val outsideDirectory = Files.createTempDirectory("tina-plugin-outside").toFile()
+        val targetLink = File(rootDir, "linked-file.txt")
+        val parentLink = File(rootDir, "linked-directory")
+        val linksCreated = runCatching {
+            Files.createSymbolicLink(targetLink.toPath(), outsideDirectory.resolve("outside.txt").toPath())
+            Files.createSymbolicLink(parentLink.toPath(), outsideDirectory.toPath())
+        }.isSuccess
+        if (!linksCreated) {
+            Files.deleteIfExists(targetLink.toPath())
+            Files.deleteIfExists(parentLink.toPath())
+            outsideDirectory.deleteRecursively()
+        }
+        assumeTrue("Symbolic links are unavailable on this platform", linksCreated)
+
+        try {
+            assertThat(fileAccess.writeUtf8File("linked-file.txt", "blocked")).isFalse()
+            assertThat(fileAccess.openFileForRead("linked-file.txt")).isNull()
+            assertThat(fileAccess.resolveSafePath("linked-file.txt")).isNull()
+            assertThat(fileAccess.exists("linked-file.txt")).isFalse()
+            assertThat(fileAccess.writeUtf8File("linked-directory/child.txt", "blocked")).isFalse()
+            assertThat(fileAccess.createDirectories("linked-directory/nested")).isFalse()
+            assertThat(fileAccess.isDirectory("linked-directory")).isFalse()
+            assertThat(fileAccess.listDirectory("linked-directory", 10)).isNull()
+            assertThat(outsideDirectory.resolve("outside.txt").exists()).isFalse()
+            assertThat(outsideDirectory.resolve("child.txt").exists()).isFalse()
+        } finally {
+            Files.deleteIfExists(targetLink.toPath())
+            Files.deleteIfExists(parentLink.toPath())
+            outsideDirectory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun mutationHelpers_shouldCreateAndReadRegularWorkspaceFiles() {
+        assertThat(fileAccess.createDirectories("generated/nested")).isTrue()
+        assertThat(fileAccess.writeUtf8File("generated/nested/result.txt", "UTF-8 内容")).isTrue()
+
+        val content = fileAccess.openFileForRead("generated/nested/result.txt")
+            ?.bufferedReader(Charsets.UTF_8)
+            ?.use { it.readText() }
+
+        assertThat(content).isEqualTo("UTF-8 内容")
+        assertThat(fileAccess.exists("generated/nested/result.txt")).isTrue()
+        assertThat(fileAccess.isDirectory("generated/nested")).isTrue()
+        assertThat(fileAccess.listDirectory("generated/nested", 10)).containsExactly("result.txt")
+    }
 }

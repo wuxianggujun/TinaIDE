@@ -1034,20 +1034,22 @@ class PluginManager(
         zipFile: File,
         expectedPackage: PluginPackageExpectation?,
         permissionUpdate: PluginPermissionInstallUpdate?,
-    ): Result<InstalledPlugin> = withContext(NonCancellable + Dispatchers.IO) {
+    ): Result<InstalledPlugin> = withContext(Dispatchers.IO) {
         mutationMutex.withLock {
-            runCatching {
-                val manifest = installPluginArchiveLocked(
-                    zipFile = zipFile,
-                    expectedPackage = expectedPackage,
-                    permissionUpdate = permissionUpdate,
-                )
-                refreshInstalledPlugins()
-                logHostInfo(
-                    "install completed pluginId=${manifest.id} version=${manifest.version} instance=$instanceId",
-                )
-                getInstalledPlugin(manifest.id)
-                    ?: throw IllegalStateException("Plugin installed but not found: ${manifest.id}")
+            withContext(NonCancellable) {
+                runCatching {
+                    val manifest = installPluginArchiveLocked(
+                        zipFile = zipFile,
+                        expectedPackage = expectedPackage,
+                        permissionUpdate = permissionUpdate,
+                    )
+                    refreshInstalledPlugins()
+                    logHostInfo(
+                        "install completed pluginId=${manifest.id} version=${manifest.version} instance=$instanceId",
+                    )
+                    getInstalledPlugin(manifest.id)
+                        ?: throw IllegalStateException("Plugin installed but not found: ${manifest.id}")
+                }
             }
         }
     }

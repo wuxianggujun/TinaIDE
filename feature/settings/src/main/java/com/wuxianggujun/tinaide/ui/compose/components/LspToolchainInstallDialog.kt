@@ -41,6 +41,7 @@ import com.wuxianggujun.tinaide.plugin.lsp.ToolchainInstallState
 import com.wuxianggujun.tinaide.ui.compose.components.TinaAlertDialog
 import com.wuxianggujun.tinaide.ui.compose.components.TinaPrimaryButton
 import com.wuxianggujun.tinaide.ui.compose.components.TinaTextButton
+import java.net.URI
 
 /**
  * LSP 工具链安装确认对话框
@@ -265,6 +266,21 @@ private fun ToolchainItem(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+            if (toolchain.type.trim().equals("download", ignoreCase = true)) {
+                ToolchainDetailText(
+                    stringResource(
+                        Strings.lsp_plugin_toolchain_source_host,
+                        runCatching { URI(toolchain.url.orEmpty()).host }.getOrNull().orEmpty(),
+                    )
+                )
+                ToolchainDetailText(stringResource(Strings.lsp_plugin_toolchain_checksum_verified))
+                ToolchainDetailText(
+                    stringResource(Strings.lsp_plugin_toolchain_target_path, toolchain.extractTo.orEmpty())
+                )
+            }
+            ToolchainDetailText(
+                stringResource(Strings.lsp_plugin_toolchain_verify_command, toolchain.verifyCommand.orEmpty())
+            )
         }
 
         // 状态文字
@@ -284,6 +300,17 @@ private fun ToolchainItem(
             }
         )
     }
+}
+
+@Composable
+private fun ToolchainDetailText(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+    )
 }
 
 @Composable

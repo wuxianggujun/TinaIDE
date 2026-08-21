@@ -92,7 +92,9 @@ object GitHubRegistryConfig {
         } else {
             resolveRawUrl(value, GITHUB_RAW_BASE_URL)
         }
-        return (listOf(primaryUrl) + gitHubUrlCandidates(rawGitHubUrl, customProxyPrefix)).distinct()
+        return (listOf(primaryUrl) + gitHubUrlCandidates(rawGitHubUrl, customProxyPrefix))
+            .filter(::isHttpsUrl)
+            .distinct()
     }
 
     fun rewriteGitHubUrl(url: String, proxyPrefix: String?): String {
@@ -132,8 +134,9 @@ object GitHubRegistryConfig {
         val withScheme = if (trimmed.contains("://")) trimmed else "https://$trimmed"
         val withoutQuery = withScheme.substringBefore('?').substringBefore('#')
         val uri = runCatching { URI(withoutQuery) }.getOrNull() ?: return null
-        if (uri.scheme?.lowercase() !in setOf("http", "https")) return null
+        if (!uri.scheme.equals("https", ignoreCase = true)) return null
         if (uri.host.isNullOrBlank()) return null
+        if (uri.userInfo != null) return null
         return withoutQuery.trimEnd('/') + "/"
     }
 
@@ -141,6 +144,14 @@ object GitHubRegistryConfig {
         url.startsWith("https://api.github.com/") ||
         url.startsWith("https://raw.githubusercontent.com/") ||
         url.startsWith("https://objects.githubusercontent.com/")
+
+    private fun isHttpsUrl(url: String): Boolean = runCatching {
+        URI(url).let { uri ->
+            uri.scheme.equals("https", ignoreCase = true) &&
+                !uri.host.isNullOrBlank() &&
+                uri.userInfo == null
+        }
+    }.getOrDefault(false)
 
     private fun unproxiedGitHubUrl(
         url: String,

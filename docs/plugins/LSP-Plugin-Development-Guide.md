@@ -234,8 +234,8 @@ Language Server 配置数组，每个元素定义一个 LSP 服务器。
 | `type` | string | ✓ | 安装类型（见下表） |
 | `packages` | string[] | * | 包名列表（system/pip/npm 需要；不同发行版优先使用 packagesByManager） |
 | `url` | string | * | 下载 URL（download 需要） |
-| `sha256` | string | | 文件 SHA256 校验和（download） |
-| `extractTo` | string | * | 解压目标路径（download 需要） |
+| `sha256` | string | * | 归档的 64 位十六进制 SHA-256（download 需要） |
+| `extractTo` | string | * | rootfs 内的安全相对专用目录（download 需要） |
 | `required` | boolean | | 是否必需（默认 true） |
 | `verifyCommand` | string | | 验证安装的命令 |
 | `verifyPattern` | string | | 验证输出的正则表达式 |
@@ -248,7 +248,7 @@ Language Server 配置数组，每个元素定义一个 LSP 服务器。
 | `system` | 通过当前 Linux 发行版包管理器安装系统包 | `packages` 或 `packagesByManager` |
 | `pip` | 通过 pip3 安装 Python 包 | `packages` |
 | `npm` | 通过 npm 安装 Node.js 包 | `packages` |
-| `download` | 下载并解压二进制文件 | `url`, `extractTo` |
+| `download` | 下载并解压二进制文件 | `url`, `sha256`, `extractTo` |
 
 ---
 
@@ -339,20 +339,26 @@ Language Server 配置数组，每个元素定义一个 LSP 服务器。
   "name": "Rust Analyzer",
   "type": "download",
   "url": "https://example.com/rust-analyzer-aarch64-linux.tar.gz",
-  "sha256": "abc123...",
-  "extractTo": "/usr/local/bin",
+  "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "extractTo": "opt/tinaide/lsp/rust-analyzer",
   "required": true,
-  "verifyCommand": "rust-analyzer --version",
+  "verifyCommand": "/opt/tinaide/lsp/rust-analyzer/bin/rust-analyzer --version",
   "verifyPattern": "rust-analyzer"
 }
 ```
 
 **执行流程**：
 
-1. 下载文件到临时目录
-2. 验证 SHA256（如果提供）
-3. 解压 tar.gz 到 `extractTo` 目录
-4. 执行 `verifyCommand` 验证安装
+1. 下载文件到 UUID 临时文件，并限制下载与展开大小
+2. 强制验证 SHA-256
+3. 解压到目标目录同级的 staging 目录
+4. 仅向空目录或 TinaIDE 已管理的目录发布，并保留旧目录备份
+5. 执行 `verifyCommand`；失败时恢复旧目录，成功后提交 pending 标记并删除备份
+6. 进程若在发布与提交之间退出，下一次同目标安装会先清理未验证的首次安装，或从受管 backup 恢复旧版本
+
+`extractTo` 不接受 `/` 开头、盘符、`.`、`..` 或空路径段。每个 download 工具链应使用独立目录，
+例如 `opt/tinaide/lsp/<toolchain-id>`；不要指向 `usr/local/bin` 等共享目录。示例中的全零 SHA-256
+仅为格式占位，发布插件前必须替换为实际归档摘要。
 
 ---
 
@@ -436,9 +442,10 @@ Language Server 配置数组，每个元素定义一个 LSP 服务器。
       {
         "id": "rust-analyzer",
         "type": "download",
-        "url": "https://github.com/rust-lang/rust-analyzer/releases/download/2024-01-01/rust-analyzer-aarch64-unknown-linux-gnu.gz",
-        "extractTo": "/usr/local/bin",
-        "verifyCommand": "rust-analyzer --version"
+        "url": "https://example.com/rust-analyzer-aarch64-linux.tar.gz",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "extractTo": "opt/tinaide/lsp/rust-analyzer",
+        "verifyCommand": "/opt/tinaide/lsp/rust-analyzer/bin/rust-analyzer --version"
       }
     ]
   }
@@ -483,8 +490,9 @@ Language Server 配置数组，每个元素定义一个 LSP 服务器。
         "id": "jdtls",
         "type": "download",
         "url": "https://download.eclipse.org/jdtls/snapshots/jdt-language-server-latest.tar.gz",
-        "extractTo": "/opt/jdtls",
-        "verifyCommand": "/opt/jdtls/bin/jdtls --version"
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "extractTo": "opt/tinaide/lsp/jdtls",
+        "verifyCommand": "/opt/tinaide/lsp/jdtls/bin/jdtls --version"
       }
     ]
   }
@@ -629,8 +637,8 @@ data class LspToolchainConfig(
     val type: String,                            // 安装类型
     val packages: List<String>? = null,          // 包名列表
     val url: String? = null,                     // 下载 URL
-    val sha256: String? = null,                  // SHA256 校验
-    val extractTo: String? = null,               // 解压路径
+    val sha256: String? = null,                  // download 必填：SHA-256
+    val extractTo: String? = null,               // download 必填：rootfs 相对专用目录
     val required: Boolean = true,                // 是否必需
     val verifyCommand: String? = null,           // 验证命令
     val verifyPattern: String? = null,           // 验证模式

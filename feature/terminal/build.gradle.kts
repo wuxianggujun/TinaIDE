@@ -11,6 +11,12 @@ android {
     }
 }
 
+kapt {
+    arguments {
+        arg("room.schemaLocation", project.file("schemas").absolutePath)
+    }
+}
+
 dependencies {
     implementation(project.dependencies.project(":core:common"))
     implementation(project.dependencies.project(":core:designsystem"))

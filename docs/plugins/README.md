@@ -117,7 +117,10 @@
 - 打包生成 `dist/<id>-<version>.tinaplug`
 - 热安装到当前 TinaIDE
 
-首次安装后插件保持禁用，需在“设置 → 插件”详情页检查权限并明确启用；升级保留原有启用意图。安装或刷新列表本身不会执行新插件。
+首次安装时，纯声明式 `config` 插件会自动启用，使主题、片段和项目模板立即可见；
+`script`、`hybrid`、`lsp`、`system` 等带运行时或高权限能力的插件仍保持禁用，需在
+“设置 → 插件”详情页检查权限并明确启用。升级始终保留用户原有启用意图，安装或刷新
+列表不会隐式启动可执行插件代码。
 
 点击 `构建` 时只生成 `.tinaplug`，不执行热安装。
 
@@ -354,18 +357,20 @@ my-plugin.tinaplug
 仓库不再额外保留示例插件目录。直接按本文给出的 `manifest.json` / `theme`
  / `snippet` 示例自行组织目录后打包即可。
 
-## 主题文件格式（最小）
+## 主题文件格式
 
-`themes/*.json` 当前只使用：
+`themes/*.json` 支持：
 
 - `name`: 主题名称
 - `type`: `"dark"` / `"light"`
-- `colors`: `Map<String, String>`
+- `colors`: `Map<String, String>`，可省略
+- `tokenColors`: TextMate scope 配色列表，可省略
 
 其中 `colors` 的 key 支持三类：
 
 - `EditorColorScheme` 的颜色常量名，例如 `WHOLE_BACKGROUND`、`KEYWORD`
 - 纯数字颜色 ID（例如彩虹括号 `256-261`）
+- TinaIDE 稳定分组 key，例如 `editor.background`、`syntax.keyword`
 
 颜色值支持：`#RRGGBB` / `#AARRGGBB` / `0xAARRGGBB`。
 
@@ -377,11 +382,24 @@ my-plugin.tinaplug
 - `folding.iconExpanded` / `folding.iconCollapsed` / `folding.iconWarning`
 - `diagnostic.error` / `diagnostic.warning` / `diagnostic.info` / `diagnostic.hint`
 - `scrollbar.track` / `scrollbar.thumb` / `scrollbar.thumbHover`
-- `syntax.keyword` / `syntax.string` / `syntax.number` / `syntax.comment` / `syntax.function` / `syntax.variable` / `syntax.type` / `syntax.operator` / `syntax.punctuation`
+- `editor.whitespace` / `editor.bracketPairGuide` / `editor.bracketPairGuideActive`
+- `rainbowBrackets.0` 至 `rainbowBrackets.5`
+- `syntax.keyword` / `syntax.string` / `syntax.number` / `syntax.comment` / `syntax.function` / `syntax.variable` / `syntax.property` / `syntax.type` / `syntax.operator` / `syntax.punctuation` / `syntax.constant` / `syntax.builtin` / `syntax.deprecated`
 
 优先级：数字 ID > 常量名 > 分组 key。
 
 （小技巧）颜色值为 `"0"` 会被视为“未设置”，编辑器会回退到内置主题颜色。
+
+`tokenColors[].scope` 可省略，也同时接受单个字符串和字符串数组；逗号分隔或空格分隔的复合 selector 会逐项解析。省略 `scope` 时，`settings.foreground` 作为 `editor.foreground`。宿主会把常见 TextMate scope 映射到上述有限语法分类，例如：
+
+- `keyword`、`storage.modifier` → `syntax.keyword`
+- `entity.name.function`、`support.function` → `syntax.function`
+- `entity.name.type`、`storage.type`、`support.type` → `syntax.type`
+- `variable.other.property` → `syntax.property`
+- `constant.numeric` → `syntax.number`
+- `comment` / `string` / `punctuation` / `variable` → 对应语法分类
+
+同一主题同时提供两种格式时，`colors` 中的 TinaIDE 稳定 key 覆盖从 `tokenColors` 推导出的颜色。当前只消费 `settings.foreground`；`fontStyle` 已保留在模型中，但编辑器尚未渲染粗体、斜体或下划线。
 
 ---
 
@@ -756,7 +774,7 @@ my-plugin.tinaplug
 
 也可以通过写入 `SharedPreferences` 的 `editor_theme` 来选择：
 
-- 内置值：`GRAY` / `DARK` / `LIGHT` / `AUTO`
+- 内置值：`GRAY` / `DARK` / `LIGHT` / `AUTO` / `CUSTOM`
 - 插件主题：`plugin:<pluginId>/<themeRelativePath>`
 
 例如：
