@@ -1,5 +1,6 @@
 package com.wuxianggujun.tinaide.ui.compose.components
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.Arrangement
@@ -40,6 +41,8 @@ fun TinaDropdownMenu(
     properties: PopupProperties = PopupProperties(focusable = true),
     content: @Composable ColumnScope.() -> Unit
 ) {
+    // Popup 的默认返回处理依赖窗口焦点；显式注册可以保证菜单优先于页面级返回逻辑关闭。
+    BackHandler(enabled = expanded, onBack = onDismissRequest)
     DropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismissRequest,
@@ -76,6 +79,7 @@ fun ExposedDropdownMenuBoxScope.TinaExposedDropdownMenu(
     ),
     content: @Composable ColumnScope.() -> Unit
 ) {
+    BackHandler(enabled = expanded, onBack = onDismissRequest)
     ExposedDropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismissRequest,

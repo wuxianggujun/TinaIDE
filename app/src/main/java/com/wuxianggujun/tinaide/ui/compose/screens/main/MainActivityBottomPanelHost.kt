@@ -1,5 +1,6 @@
 package com.wuxianggujun.tinaide.ui.compose.screens.main
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -37,6 +39,7 @@ import com.wuxianggujun.tinaide.ui.compose.state.DialogState
 import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveEditorCommandResult
 import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState
 import com.wuxianggujun.tinaide.ui.compose.state.git.GitUiState
+import kotlinx.coroutines.launch
 import org.eclipse.lsp4j.CodeActionKind
 import org.koin.compose.koinInject
 
@@ -77,10 +80,16 @@ internal fun MainActivityBottomPanelHost(
             minHeight = 0.dp,
             maxHeight = maxPanelHeight
         )
+        val bottomPanelScope = rememberCoroutineScope()
         BindMainActivityBottomPanelState(
             bottomPanelState = bottomPanelState,
             bottomPanelController = bottomPanelController,
         )
+        // 底部面板展开时，返回应先收起面板；抽屉打开时由上层 BackHandler 优先处理。
+        BackHandler(enabled = drawerState.isClosed && bottomPanelState.isExpanded) {
+            // BottomPanelDragState 的动画必须在协程中执行。
+            bottomPanelScope.launch { bottomPanelState.collapse() }
+        }
         val bottomPanelImeModifier = if (drawerState.isClosed) {
             Modifier
                 .windowInsetsPadding(WindowInsets.ime)

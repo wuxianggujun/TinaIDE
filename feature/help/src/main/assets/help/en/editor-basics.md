@@ -13,6 +13,10 @@ The workspace normally contains:
 
 The terminal is a separate screen, not a permanent bottom-panel tab.
 
+## Back and temporary panels
+
+Back first closes temporary UI: an open dropdown is dismissed, an expanded bottom panel is collapsed, and an open file-tree drawer is closed. Only after these layers are closed does Back continue to unsaved-change confirmation or workspace exit.
+
 ## Files and tabs
 
 - Open files from the project tree.
