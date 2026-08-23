@@ -31,6 +31,8 @@
 
 ## [Unreleased]
 
+## [0.18.23] - 2026-08-23
+
 ### Added
 
 - 新增 C/C++ 编译上下文诊断中心：点击编辑器状态栏的语言服务状态，可查看当前文件实际使用的 clangd 模式、`compile_commands.json` 来源与更新时间、命令匹配方式、编译器、语言标准、Target、工具链、Sysroot、Clang resource directory、头文件搜索路径、预处理宏和完整编译参数，并可直接刷新编译上下文与语言服务连接。
@@ -44,6 +46,7 @@
 - C/C++ 编译上下文改为按编辑器标签页保存并使用 Compose 可观察状态，刷新、标签关闭、ID 重映射和全局清理后界面会同步更新，避免状态已变化但诊断弹窗仍显示旧内容。
 - 修复“问题”面板对所有诊断无条件显示“查看修复”的问题：当前仅对可见诊断按需探测 Quick Fix，只有语言服务器返回未禁用修复时才显示入口；诊断请求同时限定 `quickfix` 并过滤误返回的 Refactor / Source Action，通用 Code Actions 不受影响。
 - 修复 App 与内嵌 RikkaHub 的 `usesCleartextTraffic` manifest 合并冲突；宿主继续保持禁止明文流量。
+- 修复部分 Redmi/HyperOS 设备将 `/data/user/0` 与 `/data/data` 解析为同一应用目录时，Android sysroot 解包被误判为 `tar entry escapes target directory` 的问题；路径穿越与符号链接防护保持启用。
 
 ### Tests
 
@@ -52,11 +55,19 @@
 - 新增 Code Action kind 限定、服务端越界响应过滤与诊断 Quick Fix 按可用性显示的回归测试。
 - 新增 WorkspaceEdit 预览解析测试，覆盖多文件摘要、项目目录越界、资源操作拒绝、文档版本和容量限制。
 - 新增 SourceFixAll 严格 kind 过滤和整文档 UTF-16 范围测试，避免普通 Command 或 Quick Fix 误触发批量修复入口。
+- 新增 Android 应用数据目录 canonical alias 回归测试；`:core:common:testDebugUnitTest` 共 81 项测试全部通过。
 
 ### Documentation
 
 - 更新 README、开发指南及 App 内中英文 LSP 帮助，补充 C++ 编译上下文诊断入口、字段含义和排障流程。
 - 补充诊断 Quick Fix 的显示条件、通用 Code Actions 边界、定向测试命令与后续编辑器体验路线。
+- 更新 App 内中英文已知问题，补充旧版本 sysroot 解包路径别名报错的升级与重新部署指引。
+
+### Verification
+
+- `py tools/checks/check_all.py`、`py tools/i18n/check_all.py` 与 `git diff --check` 全部通过。
+- 本地 ARM64 Release 构建通过，版本为 `0.18.23`（APK `versionCode=18242`）。
+- R8、Lint、ZipAlign、V2 签名及 tina-toolchain assets 校验全部通过。
 
 ## [0.18.20] - 2026-08-19
 

@@ -67,7 +67,7 @@ object ArchivePathSafety {
         includeLeaf: Boolean = true,
         source: String = "archive entry",
     ) {
-        val rootPath = targetDir.absoluteFile.toPath().normalize()
+        val rootPath = targetDir.canonicalFile.toPath().normalize()
         val candidatePath = candidate.absoluteFile.toPath().normalize()
         require(candidatePath.startsWith(rootPath)) { "$source escapes target directory: ${candidate.path}" }
         if (candidatePath == rootPath) return

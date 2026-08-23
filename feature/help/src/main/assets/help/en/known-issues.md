@@ -10,6 +10,10 @@ Large C/C++ projects can build and index slowly on mobile hardware. Use incremen
 
 First launch or an upgrade may require time and free storage to prepare runtime assets. Terminal and debugging features may remain unavailable until their optional environment is ready.
 
+TinaIDE 0.18.22 and earlier may report `tar entry escapes target directory` while deploying the Android sysroot on some Redmi / HyperOS devices. This is caused by Android treating `/data/user/0` and `/data/data` as aliases for the same app data directory; it does not by itself indicate a damaged archive or insufficient storage.
+
+Upgrade to TinaIDE 0.18.23 or later, then redeploy the development environment from Settings. If deployment still fails, export the diagnostic log and include the device model, Android version, and complete error message.
+
 ## External workspaces and SAF
 
 Many small operations through Android Storage Access Framework can be slower than internal project paths. Keep workspaces tidy and exclude unrelated generated files.
@@ -60,3 +64,5 @@ Export logs from About and include:
 - [About and logs](about-and-logs.md)
 - [Terminal troubleshooting](terminal-troubleshooting.md)
 - [Build a project](build-project.md)
+
+Updated: 2026-08-23
