@@ -41,7 +41,6 @@ internal fun MainActivityDrawerContentHost(
     val gitStatusMap = remember(gitUiState.status) {
         GitStatusHelper.buildGitStatusMap(gitUiState.status)
     }
-
     DrawerContent(
         projectName = projectName,
         fileTreeState = fileTreeState,

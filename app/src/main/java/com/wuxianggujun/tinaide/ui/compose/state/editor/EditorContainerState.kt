@@ -982,12 +982,20 @@ class EditorContainerState(
         return tabs.getOrNull(tabIndex)?.id
     }
 
-    internal fun readTextFromOpenTabIfPresent(file: File): String? = withOpenTabSelected(file) { readActiveTabText() }
+    internal fun isOpenTabDirty(file: File): Boolean? {
+        val tabIndex = findOpenTabIndexByFileOrNull(file) ?: return null
+        return tabs.getOrNull(tabIndex)?.isDirty
+    }
 
-    internal fun updateOpenTabTextIfPresent(file: File, newText: String): Boolean = withOpenTabSelected(file) {
-        replaceActiveTabText(newText)
-        true
-    } ?: false
+    internal fun readTextFromOpenTabIfPresent(file: File): String? {
+        val tabId = findOpenTabIdByFileOrNull(file) ?: return null
+        return readTextFromTab(tabId)
+    }
+
+    internal fun updateOpenTabTextIfPresent(file: File, newText: String): Boolean {
+        val tabId = findOpenTabIdByFileOrNull(file) ?: return false
+        return replaceTextInTab(tabId, newText)
+    }
 
     internal fun requestCloseTabForFile(file: File): Boolean {
         val tabIndex = findOpenTabIndexByFileOrNull(file) ?: return false
@@ -1486,22 +1494,6 @@ class EditorContainerState(
         return tabs.indexOfFirst { tab ->
             normalizeOpenTabLookupPath(tab.file.absolutePath) == normalizedPath
         }.takeIf { it >= 0 }
-    }
-
-    private inline fun <T> withOpenTabSelected(file: File, action: () -> T): T? {
-        val tabIndex = findOpenTabIndexByFileOrNull(file) ?: return null
-        val previousIndex = activeTabIndex
-        if (previousIndex != tabIndex) {
-            selectTab(tabIndex)
-        }
-
-        return try {
-            action()
-        } finally {
-            if (previousIndex != tabIndex && previousIndex in tabs.indices) {
-                selectTab(previousIndex)
-            }
-        }
     }
 
     internal fun getActiveFileOrNull(): File? = getActiveTab()?.file

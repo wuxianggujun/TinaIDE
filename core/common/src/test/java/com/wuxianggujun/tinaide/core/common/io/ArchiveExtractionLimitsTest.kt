@@ -83,6 +83,37 @@ class ArchiveExtractionLimitsTest {
     }
 
     @Test
+    fun `budget accepts tar root directory placeholder and counts it`() {
+        listOf(".", "./").forEach { rootDirectoryPlaceholder ->
+            val budget = ArchiveExtractionBudget(limits.copy(maxEntryCount = 1))
+
+            budget.beginEntry(rootDirectoryPlaceholder, declaredSize = 0, isDirectory = true)
+
+            assertThrows(ArchiveLimitException::class.java) {
+                budget.beginEntry("payload.bin", declaredSize = 1)
+            }
+        }
+    }
+
+    @Test
+    fun `budget rejects truly empty directory path`() {
+        val budget = ArchiveExtractionBudget(limits)
+
+        assertThrows(ArchiveLimitException::class.java) {
+            budget.beginEntry("", declaredSize = 0, isDirectory = true)
+        }
+    }
+
+    @Test
+    fun `budget rejects root placeholder used by a non-directory entry`() {
+        val budget = ArchiveExtractionBudget(limits)
+
+        assertThrows(ArchiveLimitException::class.java) {
+            budget.beginEntry("./", declaredSize = 0, isDirectory = false)
+        }
+    }
+
+    @Test
     fun `validator rejects entry path beyond depth limit`() {
         val archive = createZip("deep.zip", mapOf("one/two/three.txt" to byteArrayOf(1)))
 

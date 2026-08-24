@@ -3,8 +3,12 @@ package com.wuxianggujun.tinaide.ui.compose.screens.main
 import androidx.activity.compose.BackHandler
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import com.wuxianggujun.tinaide.ui.TinaEmbeddedProjectBridge
 import com.wuxianggujun.tinaide.ui.compose.components.SwipeableDrawer
+import me.rerere.rikkahub.data.ai.embedded.EmbeddedProjectBridgeRegistry
 
 @Composable
 internal fun MainActivityDrawerHost(
@@ -15,6 +19,19 @@ internal fun MainActivityDrawerHost(
     onDismissCommandPalette: () -> Unit,
     callbacks: MainActivityScreenCallbacks,
 ) {
+    val embeddedProjectBridge = remember(dependencies.projectContext, dependencies.editorContainerState) {
+        TinaEmbeddedProjectBridge(
+            projectContext = dependencies.projectContext,
+            editorState = dependencies.editorContainerState,
+        )
+    }
+    DisposableEffect(embeddedProjectBridge) {
+        EmbeddedProjectBridgeRegistry.register(embeddedProjectBridge)
+        onDispose {
+            EmbeddedProjectBridgeRegistry.unregister(embeddedProjectBridge)
+        }
+    }
+
     BackHandler(enabled = dependencies.drawerState.isOpen || dependencies.editorContainerState.hasUnsavedChanges()) {
         when {
             dependencies.drawerState.isOpen -> dependencies.drawerState.close()

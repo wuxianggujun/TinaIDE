@@ -1,5 +1,6 @@
 package com.wuxianggujun.tinaide.ui.compose.screens.main
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -121,10 +122,9 @@ internal fun MainActivityTopBar(
             val screenWidthPx = LocalWindowInfo.current.containerSize.width
             val compactTitleWidthPx = with(LocalDensity.current) { 360.dp.toPx() }
             val useCompactTitleLayout = screenWidthPx < compactTitleWidthPx
-            Row(
+            Box(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically
+                contentAlignment = Alignment.CenterEnd,
             ) {
                 if (showDebugBarInTop) {
                     DebugBar(

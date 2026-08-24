@@ -818,6 +818,24 @@ class EditorContainerStateTest {
     }
 
     @Test
+    fun updateOpenTabTextIfPresent_shouldPropagateEditorReplacementFailure() {
+        val file = File(context.cacheDir, "ReplacementFailure.kt")
+        setTabs(
+            managerTabs = listOf(EditorTab(id = "tab-1", file = file)),
+            activeTabId = "tab-1",
+        )
+        state.registerCodeEditorCallback(
+            tabId = "tab-1",
+            callback = testCodeEditorCallback(
+                readAllText = { "old" },
+                replaceWholeText = { false },
+            ),
+        )
+
+        assertThat(state.updateOpenTabTextIfPresent(file, "new")).isFalse()
+    }
+
+    @Test
     fun requestCloseTabForFile_shouldCloseMatchedTabWithoutCallerTrackingIndex() {
         val firstFile = File(context.cacheDir, "First.kt")
         val secondFile = File(context.cacheDir, "Second.kt")

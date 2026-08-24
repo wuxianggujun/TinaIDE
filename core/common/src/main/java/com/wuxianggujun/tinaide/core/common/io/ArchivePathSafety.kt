@@ -4,6 +4,8 @@ import java.io.File
 import java.nio.file.Files
 
 object ArchivePathSafety {
+    internal fun isRootDirectoryPlaceholder(path: String): Boolean = path == "." || path == "./"
+
     fun sanitizeRelativePath(path: String, source: String = "archive entry"): String {
         require(path.indexOf('\u0000') < 0) { "Invalid $source path: $path" }
         require(!path.startsWith("/") && !path.startsWith("\\")) { "Invalid $source path: $path" }

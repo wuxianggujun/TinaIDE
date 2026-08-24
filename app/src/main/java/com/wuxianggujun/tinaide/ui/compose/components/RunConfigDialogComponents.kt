@@ -385,6 +385,10 @@ fun VariablesHelpDialog(
  * 常驻只保留配置名与运行主按钮，构建/调试/终端运行进入 Run 菜单，
  * 以适配手机窄顶栏与平板略宽布局。
  */
+private val RunConfigActionSize = 36.dp
+private val RunConfigDividerThickness = 1.dp
+private val RunConfigCompactSegmentMinWidth = 32.dp
+
 @Composable
 fun RunConfigSelector(
     configManager: RunConfigurationManager,
@@ -414,54 +418,76 @@ fun RunConfigSelector(
     val currentConfig = configManager.selectedConfig
     val showInlineBuild = showBuildButton && onBuild != null && buildIconRes != 0
     val showInlineDebug = showDebugButton && debugIconRes != 0
+    val inlineActionCount =
+        1 + (if (showInlineBuild) 1 else 0) + (if (showInlineDebug) 1 else 0)
+    val actionSegmentWidth = RunConfigActionSize + RunConfigDividerThickness
+    val selectorMaxWidth = configSegmentMaxWidth + actionSegmentWidth * inlineActionCount.toFloat()
 
-    Box(modifier = modifier) {
+    BoxWithConstraints(
+        modifier = modifier
+            .widthIn(max = selectorMaxWidth)
+            .fillMaxWidth(),
+        contentAlignment = Alignment.CenterEnd,
+    ) {
+        val showConfigSegment =
+            maxWidth >= RunConfigActionSize + RunConfigDividerThickness +
+            RunConfigCompactSegmentMinWidth
+
         // 配置 + Run（可选内联 Build/Debug，默认关闭以保持顶栏简洁）
         TinaOverlayPanelSurface(
             shape = MaterialTheme.shapes.small,
             containerColor = MaterialTheme.colorScheme.surfaceVariant,
             tonalElevation = 0.dp,
             shadowElevation = 0.dp,
-            modifier = Modifier.height(36.dp)
+            modifier = if (showConfigSegment) {
+                Modifier
+                    .fillMaxWidth()
+                    .height(RunConfigActionSize)
+            } else {
+                Modifier.size(RunConfigActionSize)
+            },
         ) {
             Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                // 左侧：配置名称 + 下拉箭头（可点击展开菜单）
-                TinaPanelSegmentButton(
-                    onClick = { expanded = true },
-                    modifier = Modifier
-                        .height(36.dp)
-                        .widthIn(max = configSegmentMaxWidth),
-                    contentPadding = PaddingValues(start = 8.dp, end = 2.dp),
-                    contentAlignment = Alignment.CenterStart
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                if (showConfigSegment) {
+                    // 配置段使用剩余宽度，固定尺寸的 Run 始终优先保留。
+                    TinaPanelSegmentButton(
+                        onClick = { expanded = true },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(RunConfigActionSize),
+                        contentPadding = PaddingValues(start = 8.dp, end = 2.dp),
+                        contentAlignment = Alignment.CenterStart
                     ) {
-                        Text(
-                            text = currentConfig.displayName(),
-                            style = MaterialTheme.typography.bodySmall,
-                            maxLines = 1,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false)
-                        )
-                        Icon(
-                            imageVector = Icons.Default.ArrowDropDown,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = currentConfig.displayName(),
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false)
+                            )
+                            Icon(
+                                imageVector = Icons.Default.ArrowDropDown,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     }
-                }
 
-                // 分隔线
-                VerticalDivider(
-                    modifier = Modifier.height(20.dp),
-                    thickness = 1.dp,
-                    color = MaterialTheme.colorScheme.outlineVariant
-                )
+                    VerticalDivider(
+                        modifier = Modifier.height(20.dp),
+                        thickness = RunConfigDividerThickness,
+                        color = MaterialTheme.colorScheme.outlineVariant
+                    )
+                }
 
                 // 主操作：运行（短按运行，长按/菜单含构建与调试）
                 RunActionButton(
@@ -481,13 +507,13 @@ fun RunConfigSelector(
                 if (showInlineBuild) {
                     VerticalDivider(
                         modifier = Modifier.height(20.dp),
-                        thickness = 1.dp,
+                        thickness = RunConfigDividerThickness,
                         color = MaterialTheme.colorScheme.outlineVariant
                     )
                     TinaPanelSegmentButton(
                         onClick = onBuild!!,
                         enabled = isBuildEnabled,
-                        modifier = Modifier.size(36.dp),
+                        modifier = Modifier.size(RunConfigActionSize),
                         contentPadding = PaddingValues(0.dp)
                     ) {
                         Icon(
@@ -506,13 +532,13 @@ fun RunConfigSelector(
                 if (showInlineDebug) {
                     VerticalDivider(
                         modifier = Modifier.height(20.dp),
-                        thickness = 1.dp,
+                        thickness = RunConfigDividerThickness,
                         color = MaterialTheme.colorScheme.outlineVariant
                     )
                     TinaPanelSegmentButton(
                         onClick = onDebug,
                         enabled = isDebugEnabled,
-                        modifier = Modifier.size(36.dp),
+                        modifier = Modifier.size(RunConfigActionSize),
                         contentPadding = PaddingValues(0.dp)
                     ) {
                         Icon(
@@ -672,7 +698,7 @@ internal fun RunActionButton(
     }
 
     Box(
-        modifier = Modifier.size(36.dp)
+        modifier = Modifier.size(RunConfigActionSize)
     ) {
         TinaPanelSegmentButton(
             onClick = {},

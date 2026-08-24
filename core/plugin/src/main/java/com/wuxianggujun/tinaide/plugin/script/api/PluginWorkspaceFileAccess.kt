@@ -10,7 +10,7 @@ import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 import timber.log.Timber
 
-internal class PluginWorkspaceFileAccess(
+class PluginWorkspaceFileAccess(
     private val projectRootProvider: () -> String?
 ) {
     companion object {

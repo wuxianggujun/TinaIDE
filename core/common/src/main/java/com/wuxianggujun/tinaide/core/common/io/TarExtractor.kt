@@ -243,8 +243,23 @@ object TarExtractor {
             while (entry != null) {
                 ensureActive()
                 entryCount++
-                budget?.beginEntry(entry.name, entry.size)
-                val outputFile = ArchivePathSafety.resolveEntryFile(targetDir, entry.name, "tar entry")
+                val safeEntryName = ArchivePathSafety.sanitizeRelativePath(entry.name, "tar entry")
+                val isRootDirectoryPlaceholder =
+                    entry.isDirectory && ArchivePathSafety.isRootDirectoryPlaceholder(entry.name)
+                budget?.beginEntry(entry.name, entry.size, entry.isDirectory)
+                require(safeEntryName.isNotBlank() || isRootDirectoryPlaceholder) {
+                    "Archive contains an empty entry path"
+                }
+                if (isRootDirectoryPlaceholder) {
+                    entry = tarStream.nextEntry
+                    continue
+                }
+
+                val outputFile = ArchivePathSafety.resolveEntryFile(
+                    targetDir,
+                    safeEntryName,
+                    "tar entry",
+                )
                 ArchivePathSafety.requireNoSymlinkComponents(
                     targetDir = targetDir,
                     candidate = outputFile,

@@ -41,18 +41,26 @@ class ArchiveExtractionBudget(
     private var expandedBytes = 0L
     private val seenPaths = HashSet<String>()
 
-    fun beginEntry(entryName: String, declaredSize: Long = -1L) {
+    fun beginEntry(
+        entryName: String,
+        declaredSize: Long = -1L,
+        isDirectory: Boolean = false,
+    ) {
         val safeName = ArchivePathSafety.sanitizeRelativePath(entryName)
-        if (safeName.isBlank()) {
+        val isRootDirectoryPlaceholder =
+            isDirectory && ArchivePathSafety.isRootDirectoryPlaceholder(entryName)
+        if (safeName.isBlank() && !isRootDirectoryPlaceholder) {
             throw ArchiveLimitException("Archive contains an empty entry path")
-        }
-        requirePathDepth(safeName, limits.maxPathDepth)
-        if (!seenPaths.add(safeName)) {
-            throw ArchiveLimitException("Archive contains a duplicate entry: $safeName")
         }
         entryCount += 1
         if (entryCount > limits.maxEntryCount) {
             throw ArchiveLimitException("Archive has too many entries")
+        }
+        if (!isRootDirectoryPlaceholder) {
+            requirePathDepth(safeName, limits.maxPathDepth)
+            if (!seenPaths.add(safeName)) {
+                throw ArchiveLimitException("Archive contains a duplicate entry: $safeName")
+            }
         }
         if (declaredSize > limits.maxEntryBytes) {
             throw ArchiveLimitException("Archive entry is too large: $entryName")
