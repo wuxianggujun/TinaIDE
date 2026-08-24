@@ -1097,11 +1097,12 @@
   <string name="settings_project_native_ldlibs">LDLIBS</string>
   <string name="settings_project_native_ldlibs_desc">追加链接库参数（例如 -lSDL3 -lEGL -lGLESv2）</string>
   <string name="settings_project_native_cmake_args">CMake Args</string>
-  <string name="settings_project_native_cmake_args_desc">追加到 CMake configure 阶段（每行一个参数）</string>
+  <string name="settings_project_native_cmake_args_desc">项目共享的 CMake configure 参数（每行一个）</string>
   <string name="settings_project_native_flags_edit_hint">输入原生编译/链接参数。可多行输入，保存时会自动合并为空格分隔。</string>
   <string name="settings_project_native_flags_edit_placeholder">例如：\n-O2 -fPIC\n-DMY_FEATURE=1</string>
-  <string name="settings_project_native_cmake_args_edit_hint">每行一个 CMake 参数。示例：-DXXX=ON</string>
+  <string name="settings_project_native_cmake_args_edit_hint">每行一个 CMake 参数。构建类型请在运行配置中选择。</string>
   <string name="settings_project_native_cmake_args_edit_placeholder">例如：\n-DSDL_TEST=OFF\n-DCMAKE_VERBOSE_MAKEFILE=ON</string>
+  <string name="settings_project_native_cmake_args_build_type_managed">CMAKE_BUILD_TYPE 由运行配置管理，请移除该参数</string>
 
   <string name="btn_ok">确定</string>
 
@@ -1323,7 +1324,6 @@
   <string name="settings_clang_format_run_mode_desc">原生模式格式化速度更快，PRoot 模式兼容性更好</string>
   <string name="settings_make_run_mode">Make 运行模式</string>
   <string name="settings_make_run_mode_desc">原生模式构建速度更快，PRoot 模式兼容性更好</string>
-  <string name="settings_build_type">构建类型</string>
   <string name="settings_generator">生成器</string>
   <string name="settings_parallel_jobs">并行任务数</string>
   <string name="settings_completion_limit">补全候选数量</string>
@@ -1345,11 +1345,6 @@
   <string name="dialog_title_opt_level">优化级别</string>
   <string name="dialog_title_threads">编译线程数</string>
   <string name="dialog_title_completion_limit">补全候选数量</string>
-  <string name="build_type_debug">Debug - 调试模式</string>
-  <string name="build_type_release">Release - 发布模式</string>
-  <string name="build_type_relwithdebinfo">RelWithDebInfo - 带调试信息</string>
-  <string name="build_type_minsizerel">MinSizeRel - 最小体积</string>
-  <string name="dialog_title_cmake_build_type">CMake 构建类型</string>
   <string name="generator_make">Make - 兼容性好</string>
   <string name="generator_ninja">Ninja - 构建更快</string>
   <string name="dialog_title_cmake_generator">CMake 生成器</string>
@@ -4828,6 +4823,10 @@ kept=%3$d bytes
   <string name="run_config_build_type_debug_desc">生成带调试信息的产物，适合开发与排查问题</string>
   <string name="run_config_build_type_release">Release</string>
   <string name="run_config_build_type_release_desc">生成发布优化产物，适合最终运行与性能测试</string>
+  <string name="run_config_build_type_rel_with_deb_info">RelWithDebInfo</string>
+  <string name="run_config_build_type_rel_with_deb_info_desc">启用优化并保留调试信息，适合分析接近发布版的程序</string>
+  <string name="run_config_build_type_min_size_rel">MinSizeRel</string>
+  <string name="run_config_build_type_min_size_rel_desc">以最小产物体积为目标进行发布优化</string>
   <string name="menu_cmake_tools">CMake</string>
   <string name="menu_cmake_open_artifacts_dir">打开构建产物目录</string>
   <string name="menu_cmake_reconfigure">重新配置缓存</string>

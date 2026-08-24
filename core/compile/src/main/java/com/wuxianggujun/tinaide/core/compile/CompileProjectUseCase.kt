@@ -11,6 +11,7 @@ import com.wuxianggujun.tinaide.core.compile.launcher.LaunchDescriptor
 import com.wuxianggujun.tinaide.core.compile.pipeline.BuildContextFactory
 import com.wuxianggujun.tinaide.core.compile.pipeline.BuildOrchestrator
 import com.wuxianggujun.tinaide.core.compile.strategy.BuildStrategyRegistry
+import com.wuxianggujun.tinaide.core.config.Prefs
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.core.linux.LinuxEnvironmentProvider
@@ -955,7 +956,10 @@ class CompileProjectUseCase(
 
     private fun getRunConfiguration(): RunConfiguration {
         val project = projectContext.getCurrentProject() ?: return RunConfiguration()
-        return RunConfigurationManager.load(project.rootPath).selectedConfig
+        return RunConfigurationManager.load(
+            projectPath = project.rootPath,
+            legacyCMakeBuildType = CMakeBuildTypeOption.fromValue(Prefs.legacyCmakeBuildType),
+        ).selectedConfig
     }
 
     private fun resolveLaunchEnvironment(

@@ -84,11 +84,14 @@ NDK 共享库模板不是“编译一个 `.so` 就结束”。
 
 当前工作台支持运行配置相关能力，常见配置项包括：
 
+- 构建类型：CMake 支持 Debug、Release、RelWithDebInfo、MinSizeRel，Make 与单文件支持 Debug、Release
 - 运行目标
 - 输出模式：终端、SDL 图形运行或 NativeActivity 图形运行
 - 命令行参数
 - 环境变量
 - 工作目录
+
+构建类型跟随当前选中的运行配置，因此同一项目可以分别保存 Debug 与 Release 配置。项目设置中的路径、编译/链接标志和 CMake Args 由项目内所有运行配置共享。
 
 如果你的程序需要特定输入文件、参数或环境变量，请先检查运行配置，而不是只盯着编译本身。
 

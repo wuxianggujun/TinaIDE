@@ -257,7 +257,7 @@ object ProjectMetadataStore {
         val normalizedCppFlags = normalizeFlagValue(cppFlags)
         val normalizedLdFlags = normalizeFlagValue(ldFlags)
         val normalizedLdLibs = normalizeFlagValue(ldLibs)
-        val normalizedCMakeArgs = normalizePathEntries(cmakeArgs)
+        val normalizedCMakeArgs = ProjectCMakeArgumentPolicy.sanitize(cmakeArgs)
 
         val unchanged = existing.normalizedNativeCFlags() == normalizedCFlags &&
             existing.normalizedNativeCppFlags() == normalizedCppFlags &&
@@ -304,7 +304,7 @@ object ProjectMetadataStore {
             nativeCppFlags = normalizeFlagValue(metadata.nativeCppFlags),
             nativeLdFlags = normalizeFlagValue(metadata.nativeLdFlags),
             nativeLdLibs = normalizeFlagValue(metadata.nativeLdLibs),
-            nativeCMakeArgs = normalizePathEntries(metadata.nativeCMakeArgs),
+            nativeCMakeArgs = metadata.normalizedNativeCMakeArgs(),
             defaultRunTargetName = normalizeTargetName(metadata.defaultRunTargetName),
             defaultSdlTargetName = normalizeTargetName(metadata.defaultSdlTargetName),
             apkExportType = normalizedApkExportType,

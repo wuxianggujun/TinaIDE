@@ -34,13 +34,6 @@ internal object CompilerSettingsSectionSupport {
         CompilerSettingsOptionSpec("O3", Strings.opt_level_o3)
     )
 
-    fun buildCmakeBuildTypeOptions(): List<CompilerSettingsOptionSpec> = listOf(
-        CompilerSettingsOptionSpec("Debug", Strings.build_type_debug),
-        CompilerSettingsOptionSpec("Release", Strings.build_type_release),
-        CompilerSettingsOptionSpec("RelWithDebInfo", Strings.build_type_relwithdebinfo),
-        CompilerSettingsOptionSpec("MinSizeRel", Strings.build_type_minsizerel)
-    )
-
     fun buildCmakeGeneratorOptions(): List<CompilerSettingsOptionSpec> = listOf(
         CompilerSettingsOptionSpec("Unix Makefiles", Strings.generator_make),
         CompilerSettingsOptionSpec("Ninja", Strings.generator_ninja)
@@ -59,15 +52,6 @@ internal object CompilerSettingsSectionSupport {
         "O1" -> Strings.opt_level_o1
         "O2" -> Strings.opt_level_o2
         "O3" -> Strings.opt_level_o3
-        else -> null
-    }
-
-    @StringRes
-    fun resolveCmakeBuildTypeDisplayLabel(buildType: String): Int? = when (buildType) {
-        "Debug" -> Strings.build_type_debug
-        "Release" -> Strings.build_type_release
-        "RelWithDebInfo" -> Strings.build_type_relwithdebinfo
-        "MinSizeRel" -> Strings.build_type_minsizerel
         else -> null
     }
 

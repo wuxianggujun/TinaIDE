@@ -890,11 +890,12 @@
   <string name="settings_project_native_ldlibs">LDLIBS</string>
   <string name="settings_project_native_ldlibs_desc">Append link libraries (e.g. -lSDL3 -lEGL -lGLESv2)</string>
   <string name="settings_project_native_cmake_args">CMake Args</string>
-  <string name="settings_project_native_cmake_args_desc">Append to CMake configure stage (one arg per line)</string>
+  <string name="settings_project_native_cmake_args_desc">Project-wide CMake configure arguments (one per line)</string>
   <string name="settings_project_native_flags_edit_hint">Input native compile/link flags. Multi-line is supported and will be merged by spaces when saved.</string>
   <string name="settings_project_native_flags_edit_placeholder">Example:\n-O2 -fPIC\n-DMY_FEATURE=1</string>
-  <string name="settings_project_native_cmake_args_edit_hint">One CMake argument per line. Example: -DXXX=ON</string>
+  <string name="settings_project_native_cmake_args_edit_hint">One CMake argument per line. Select the build type in the run configuration.</string>
   <string name="settings_project_native_cmake_args_edit_placeholder">Example:\n-DSDL_TEST=OFF\n-DCMAKE_VERBOSE_MAKEFILE=ON</string>
+  <string name="settings_project_native_cmake_args_build_type_managed">CMAKE_BUILD_TYPE is managed by the run configuration. Remove this argument.</string>
 
   <string name="btn_ok">OK</string>
 
@@ -1102,7 +1103,6 @@
   <string name="settings_clang_format_run_mode_desc">Native mode is faster, PRoot mode has better compatibility</string>
   <string name="settings_make_run_mode">Make Run Mode</string>
   <string name="settings_make_run_mode_desc">Native mode is faster, PRoot mode has better compatibility</string>
-  <string name="settings_build_type">Build Type</string>
   <string name="settings_generator">Generator</string>
   <string name="settings_parallel_jobs">Parallel Jobs</string>
   <string name="settings_completion_limit">Completion Candidates</string>
@@ -1114,11 +1114,6 @@
   <string name="dialog_title_opt_level">Optimization Level</string>
   <string name="dialog_title_threads">Compiler Threads</string>
   <string name="dialog_title_completion_limit">Completion Candidates</string>
-  <string name="build_type_debug">Debug - Debug Mode</string>
-  <string name="build_type_release">Release - Release Mode</string>
-  <string name="build_type_relwithdebinfo">RelWithDebInfo - With Debug Info</string>
-  <string name="build_type_minsizerel">MinSizeRel - Minimum Size</string>
-  <string name="dialog_title_cmake_build_type">CMake Build Type</string>
   <string name="generator_make">Make - Better Compatibility</string>
   <string name="generator_ninja">Ninja - Faster Build</string>
   <string name="dialog_title_cmake_generator">CMake Generator</string>
@@ -4693,6 +4688,10 @@ kept=%3$d bytes
     <string name="run_config_build_type_debug_desc">Build with debug info for development and troubleshooting</string>
     <string name="run_config_build_type_release">Release</string>
     <string name="run_config_build_type_release_desc">Build optimized artifacts for final runs and performance testing</string>
+    <string name="run_config_build_type_rel_with_deb_info">RelWithDebInfo</string>
+    <string name="run_config_build_type_rel_with_deb_info_desc">Optimize while retaining debug information for release-like diagnostics</string>
+    <string name="run_config_build_type_min_size_rel">MinSizeRel</string>
+    <string name="run_config_build_type_min_size_rel_desc">Optimize release artifacts for the smallest output size</string>
     <string name="menu_cmake_tools">CMake</string>
     <string name="menu_cmake_open_artifacts_dir">Open Build Artifacts</string>
     <string name="menu_cmake_reconfigure">Reconfigure Cache</string>

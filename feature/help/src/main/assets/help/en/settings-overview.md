@@ -16,7 +16,7 @@ See [LSP settings](lsp-settings.md).
 
 ### Compiler
 
-Optimization, build concurrency, CMake/Make/clang-format modes, build type, generator, formatting style, active toolchain, NDK Runtime, sysroot, imports, and optional environment redeployment.
+Optimization, build concurrency, CMake/Make/clang-format modes, generator, formatting style, active toolchain, NDK Runtime, sysroot, imports, and optional environment redeployment. Build type belongs to the selected project run configuration.
 
 ### Project
 

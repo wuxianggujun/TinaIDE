@@ -1015,7 +1015,6 @@ class NativeCMakeBuildExecutor(
             add(projectDir.absolutePath)
             add("-B")
             add(buildDir.absolutePath)
-            add("-DCMAKE_BUILD_TYPE=${options.buildType.cmakeValue}")
             add("-G")
             add(options.generator.cmakeValue)
             // 显式指定系统版本，避免 CMake 在 Android 主机上回退读取 $PREFIX/include/android/api-level.h
@@ -1088,6 +1087,8 @@ class NativeCMakeBuildExecutor(
             cmakeIdentity.asCMakeCacheEntries().forEach { (key, value) ->
                 add("-D$key:STRING=$value")
             }
+            // The run configuration owns this value, so it must win over legacy project arguments.
+            add("-DCMAKE_BUILD_TYPE=${options.buildType.cmakeValue}")
         }
 
         Timber.tag(TAG).i("Configuring CMake project: ${projectDir.name}")

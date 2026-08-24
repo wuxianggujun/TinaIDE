@@ -31,6 +31,14 @@
 
 ## [Unreleased]
 
+### Changed
+
+- CMake 构建类型统一由项目运行配置管理，支持为同一项目分别保存 Debug、Release、RelWithDebInfo 与 MinSizeRel；旧版全局值会在首次加载旧运行配置时迁移并持久化。
+
+### Fixed
+
+- 修复项目级 `CMake Args` 可通过 `CMAKE_BUILD_TYPE` 覆盖当前运行配置的问题；设置页会拒绝冲突参数，构建执行端也保证运行配置最终生效。
+
 ## [0.18.23] - 2026-08-23
 
 ### Added

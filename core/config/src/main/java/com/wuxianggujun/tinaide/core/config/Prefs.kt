@@ -690,8 +690,8 @@ object Prefs {
     val cmakeRunMode: String
         get() = sharedPrefs.getString("cmake_run_mode", "native") ?: "native"
 
-    /** CMake 构建类型："Debug" / "Release" / "RelWithDebInfo" / "MinSizeRel"。 */
-    val cmakeBuildType: String
+    /** 仅用于把 schema 7 及更早版本迁移到项目运行配置，不参与构建参数解析。 */
+    val legacyCmakeBuildType: String
         get() = sharedPrefs.getString("cmake_build_type", "Debug") ?: "Debug"
 
     /** CMake 生成器："Unix Makefiles" / "Ninja"。 */
@@ -1014,10 +1014,6 @@ object Prefs {
      */
     fun setMakeRunMode(mode: String) {
         sharedPrefs.edit().putString("make_run_mode", mode).apply()
-    }
-
-    fun setCmakeBuildType(buildType: String) {
-        sharedPrefs.edit().putString("cmake_build_type", buildType).apply()
     }
 
     fun setCmakeGenerator(generator: String) {

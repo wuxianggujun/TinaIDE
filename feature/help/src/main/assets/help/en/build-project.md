@@ -36,7 +36,9 @@ The first build configures the project, creates or updates the build directory, 
 
 ## Run configurations
 
-Check the selected target, arguments, environment variables, and working directory when a program builds but does not run as expected.
+Each run configuration owns its build type. CMake configurations support Debug, Release, RelWithDebInfo, and MinSizeRel; Make and single-file configurations support Debug and Release. This lets one project keep separate Debug and Release configurations.
+
+Project Settings paths, compiler/linker flags, and CMake arguments remain shared by every run configuration in the project. Check the selected build type, target, arguments, environment variables, and working directory when a program builds but does not run as expected.
 
 ## Debugging
 

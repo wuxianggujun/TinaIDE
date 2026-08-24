@@ -53,7 +53,11 @@ internal object EffectiveBuildConfigResolver {
     )
 
     fun resolve(input: Input): EffectiveBuildConfig {
-        val cmakeBuildType = CMakeBuildTypeOption.fromValue(Prefs.cmakeBuildType)
+        val cmakeBuildType = resolveCMakeBuildType(
+            launch = input.launch,
+            buildSystem = input.buildSystem,
+            configuredBuildType = input.runConfig.cmakeBuildType,
+        )
         val cmakeGenerator = CMakeGeneratorOption.fromValue(Prefs.cmakeGenerator)
         val optimizationLevel = normalizeOptimizationLevel(Prefs.compilerOptimizationLevel)
         val parallelJobs = resolveParallelJobs(input.buildSystem)
@@ -119,18 +123,23 @@ internal object EffectiveBuildConfigResolver {
         }
 
         if (buildSystem == BuildSystem.CMAKE) {
-            return when (cmakeBuildType) {
-                CMakeBuildTypeOption.DEBUG -> BuildType.DEBUG to true
-                CMakeBuildTypeOption.REL_WITH_DEB_INFO -> BuildType.DEBUG to true
-                CMakeBuildTypeOption.RELEASE -> BuildType.RELEASE to false
-                CMakeBuildTypeOption.MIN_SIZE_REL -> BuildType.RELEASE to false
-            }
+            return cmakeBuildType.generalBuildType to cmakeBuildType.generatesDebugInfo
         }
 
         return when (configuredBuildType) {
             BuildType.DEBUG -> BuildType.DEBUG to true
             BuildType.RELEASE -> BuildType.RELEASE to false
         }
+    }
+
+    internal fun resolveCMakeBuildType(
+        launch: LaunchIntent,
+        buildSystem: BuildSystem,
+        configuredBuildType: CMakeBuildTypeOption,
+    ): CMakeBuildTypeOption = when {
+        buildSystem != BuildSystem.CMAKE -> CMakeBuildTypeOption.DEBUG
+        launch is LaunchIntent.Debug -> CMakeBuildTypeOption.DEBUG
+        else -> configuredBuildType
     }
 
     private fun resolveParallelJobs(buildSystem: BuildSystem): Int {

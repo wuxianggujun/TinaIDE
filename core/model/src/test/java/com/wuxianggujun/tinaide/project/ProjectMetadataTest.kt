@@ -13,7 +13,13 @@ class ProjectMetadataTest {
             nativeApiLevel = 36,
             nativeIncludeDirs = listOf(" include ", "", "include", "third_party/include"),
             nativeCFlags = "\n -DDEBUG \n -Wall ",
-            nativeCMakeArgs = listOf(" -GNinja ", "", "-GNinja", "-DOPT=ON")
+            nativeCMakeArgs = listOf(
+                " -GNinja ",
+                "",
+                "-GNinja",
+                "-DOPT=ON",
+                "-DCMAKE_BUILD_TYPE=Release",
+            )
         )
 
         assertThat(metadata.getCppStandard()).isEqualTo(CppStandard.CPP_20)
@@ -27,6 +33,20 @@ class ProjectMetadataTest {
         assertThat(metadata.normalizedNativeCMakeArgs())
             .containsExactly("-GNinja", "-DOPT=ON")
             .inOrder()
+    }
+
+    @Test
+    fun metadata_shouldRejectRunConfigurationManagedCMakeBuildTypeArguments() {
+        val arguments = listOf(
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-D CMAKE_BUILD_TYPE:STRING=MinSizeRel",
+            "-Dcmake_build_type = Debug",
+        )
+
+        assertThat(ProjectCMakeArgumentPolicy.containsManagedBuildType(arguments)).isTrue()
+        assertThat(ProjectCMakeArgumentPolicy.sanitize(arguments)).isEmpty()
+        assertThat(ProjectCMakeArgumentPolicy.sanitize(listOf("-DOTHER_BUILD_TYPE=Release")))
+            .containsExactly("-DOTHER_BUILD_TYPE=Release")
     }
 
     @Test

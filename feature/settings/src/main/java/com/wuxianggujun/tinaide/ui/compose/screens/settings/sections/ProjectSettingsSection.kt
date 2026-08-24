@@ -34,6 +34,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.project.ProjectBuildSystem
+import com.wuxianggujun.tinaide.project.ProjectCMakeArgumentPolicy
 import com.wuxianggujun.tinaide.project.ProjectLanguage
 import com.wuxianggujun.tinaide.storage.ProjectPaths
 import com.wuxianggujun.tinaide.ui.compose.components.TinaActionChoiceDialog
@@ -808,7 +809,15 @@ internal fun ProjectSettingsSection(viewModel: SettingsViewModel) {
             NativeDependencyPathEditorDialog(
                 title = stringResource(activeBuildFlagType.titleRes),
                 initialPaths = state.projectNativeCMakeArgs,
-                onConfirm = { updatedArgs ->
+                onConfirm = confirm@{ updatedArgs ->
+                    if (ProjectCMakeArgumentPolicy.containsManagedBuildType(updatedArgs)) {
+                        Toast.makeText(
+                            context,
+                            context.getString(Strings.settings_project_native_cmake_args_build_type_managed),
+                            Toast.LENGTH_LONG
+                        ).show()
+                        return@confirm
+                    }
                     viewModel.updateProjectNativeBuildFlags(
                         cFlags = state.projectNativeCFlags,
                         cppFlags = state.projectNativeCppFlags,

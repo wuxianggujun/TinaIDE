@@ -16,7 +16,9 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import timber.log.Timber
 
-private const val RUN_CONFIG_SCHEMA_CURRENT = 7
+private const val RUN_CONFIG_SCHEMA_CURRENT = 8
+private const val RUN_CONFIG_SCHEMA_NATIVE_ACTIVITY = 7
+private const val RUN_CONFIG_SCHEMA_CMAKE_BUILD_TYPE = 8
 
 /**
  * 源文件模式 - 决定编译哪个源文件
@@ -62,6 +64,9 @@ data class RunConfiguration(
     val args: String = "", // 命令行参数（支持变量）
     val workDir: String = "", // 工作目录（相对路径，支持变量）
     val buildType: BuildType = BuildType.DEBUG,
+
+    /** CMake 构建类型。schema 8 起由每个运行配置独立持有。 */
+    val cmakeBuildType: CMakeBuildTypeOption = CMakeBuildTypeOption.DEBUG,
     val outputMode: OutputMode = OutputMode.TERMINAL,
     val targetName: String = "", // CMake 构建目标（留空表示默认目标）
 
@@ -317,7 +322,10 @@ data class RunConfigurationManager(
         /**
          * 从项目目录加载配置
          */
-        fun load(projectPath: String): RunConfigurationManager {
+        fun load(
+            projectPath: String,
+            legacyCMakeBuildType: CMakeBuildTypeOption = CMakeBuildTypeOption.DEBUG,
+        ): RunConfigurationManager {
             val configFile = configFile(projectPath)
             return try {
                 if (configFile.exists()) {
@@ -336,8 +344,13 @@ data class RunConfigurationManager(
                             configurations = validConfigs
                         )
                         val projectMetadata = resolveProjectMetadata(projectPath)
-                        val normalizedConfigManager = migrateLegacyNativeActivityMode(
+                        val buildTypeMigratedManager = migrateLegacyCMakeBuildType(
                             manager = normalizeManager(sanitizedManager),
+                            sourceSchemaVersion = rawManager.schemaVersion,
+                            legacyCMakeBuildType = legacyCMakeBuildType,
+                        )
+                        val normalizedConfigManager = migrateLegacyNativeActivityMode(
+                            manager = buildTypeMigratedManager,
                             sourceSchemaVersion = rawManager.schemaVersion,
                             metadata = projectMetadata,
                         )
@@ -463,13 +476,27 @@ data class RunConfigurationManager(
             }
         }
 
+        private fun migrateLegacyCMakeBuildType(
+            manager: RunConfigurationManager,
+            sourceSchemaVersion: Int,
+            legacyCMakeBuildType: CMakeBuildTypeOption,
+        ): RunConfigurationManager {
+            if (sourceSchemaVersion >= RUN_CONFIG_SCHEMA_CMAKE_BUILD_TYPE) return manager
+
+            return manager.copy(
+                configurations = manager.configurations.map { config ->
+                    config.copy(cmakeBuildType = legacyCMakeBuildType)
+                }
+            )
+        }
+
         private fun migrateLegacyNativeActivityMode(
             manager: RunConfigurationManager,
             sourceSchemaVersion: Int,
             metadata: ProjectMetadata?,
         ): RunConfigurationManager {
             if (
-                sourceSchemaVersion >= RUN_CONFIG_SCHEMA_CURRENT ||
+                sourceSchemaVersion >= RUN_CONFIG_SCHEMA_NATIVE_ACTIVITY ||
                 metadata?.apkExportType != ProjectApkExportType.NATIVE_ACTIVITY ||
                 metadata?.getSdlVersionOrNull() != null
             ) {

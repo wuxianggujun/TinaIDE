@@ -15,7 +15,7 @@ CMake, Make, and clang-format can use native or proot modes. The proot choice ap
 
 The default compilation host is still the native tina-toolchain with an Android sysroot. Use proot only for workflows that require the Linux guest environment.
 
-Available build types include Debug, Release, RelWithDebInfo, and MinSizeRel. Generators include Unix Makefiles and Ninja. CMake Parallel Jobs controls CMake build concurrency separately from the global compilation-thread preference.
+Build type is configured by the selected run configuration in the project workspace, so Compiler Settings no longer keeps a competing global value. The first load of an older project copies the legacy global value into that project's run configurations. Generators include Unix Makefiles and Ninja. CMake Parallel Jobs controls CMake build concurrency separately from the global compilation-thread preference.
 
 ## Formatting
 

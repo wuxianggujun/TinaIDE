@@ -74,7 +74,6 @@ internal fun CompilerSettingsSection(viewModel: SettingsViewModel) {
     var showCmakeRunModeDialog by remember { mutableStateOf(false) }
     var showClangFormatRunModeDialog by remember { mutableStateOf(false) }
     var showMakeRunModeDialog by remember { mutableStateOf(false) }
-    var showCmakeBuildTypeDialog by remember { mutableStateOf(false) }
     var showCmakeGeneratorDialog by remember { mutableStateOf(false) }
     var showCmakeParallelJobsDialog by remember { mutableStateOf(false) }
     var showFormatStyleDialog by remember { mutableStateOf(false) }
@@ -348,17 +347,6 @@ internal fun CompilerSettingsSection(viewModel: SettingsViewModel) {
                 showDivider = true
             )
         }
-
-        val cmakeBuildTypeDisplayName =
-            CompilerSettingsSectionSupport.resolveCmakeBuildTypeDisplayLabel(
-                state.cmakeBuildType
-            )?.let { stringResource(it) } ?: state.cmakeBuildType
-        SettingsClickableItem(
-            title = stringResource(Strings.settings_build_type),
-            value = cmakeBuildTypeDisplayName,
-            onClick = { showCmakeBuildTypeDialog = true },
-            showDivider = true
-        )
 
         val cmakeGeneratorDisplayName =
             CompilerSettingsSectionSupport.resolveCmakeGeneratorDisplayLabel(
@@ -672,22 +660,6 @@ internal fun CompilerSettingsSection(viewModel: SettingsViewModel) {
                 showMakeRunModeDialog = false
             },
             onDismiss = { showMakeRunModeDialog = false }
-        )
-    }
-
-    if (showCmakeBuildTypeDialog) {
-        val options = CompilerSettingsSectionSupport.buildCmakeBuildTypeOptions().map { option ->
-            option.value to stringResource(option.labelRes)
-        }
-        TinaSingleChoiceDialog(
-            title = stringResource(Strings.dialog_title_cmake_build_type),
-            options = options,
-            selectedValue = state.cmakeBuildType,
-            onSelected = { value ->
-                viewModel.setCmakeBuildType(value)
-                showCmakeBuildTypeDialog = false
-            },
-            onDismiss = { showCmakeBuildTypeDialog = false }
         )
     }
 

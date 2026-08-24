@@ -74,7 +74,6 @@ data class SettingsUiState(
     val clangFormatRunMode: String,
     val makeRunMode: String,
     val linuxEnvironmentEnabled: Boolean,
-    val cmakeBuildType: String,
     val cmakeGenerator: String,
     val cmakeParallelJobs: Int,
     val newProjectDefaultSourceLocation: NewProjectSourceLocation,
@@ -146,7 +145,6 @@ data class SettingsUiState(
             clangFormatRunMode = Prefs.clangFormatRunMode,
             makeRunMode = Prefs.makeRunMode,
             linuxEnvironmentEnabled = linuxEnvironmentEnabled,
-            cmakeBuildType = Prefs.cmakeBuildType,
             cmakeGenerator = Prefs.cmakeGenerator,
             cmakeParallelJobs = Prefs.cmakeParallelJobs,
             newProjectDefaultSourceLocation = Prefs.projectDefaultSourceLocation,
@@ -504,11 +502,6 @@ class SettingsViewModel(
         val resolvedMode = resolveRunMode(mode)
         Prefs.setMakeRunMode(resolvedMode)
         _uiState.update { it.copy(makeRunMode = resolvedMode) }
-    }
-
-    fun setCmakeBuildType(buildType: String) {
-        Prefs.setCmakeBuildType(buildType)
-        _uiState.update { it.copy(cmakeBuildType = buildType) }
     }
 
     fun setCmakeGenerator(generator: String) {

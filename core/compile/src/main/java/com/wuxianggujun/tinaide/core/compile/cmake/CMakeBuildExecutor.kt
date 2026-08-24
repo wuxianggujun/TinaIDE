@@ -204,7 +204,6 @@ class CMakeBuildExecutor(
             append(" --no-warn-unused-cli")
             append(" -S $guestProjectRoot")
             append(" -B $guestBuildDir")
-            append(" -DCMAKE_BUILD_TYPE=${options.buildType.cmakeValue}")
             append(" -G \"${options.generator.cmakeValue}\"")
             // 设置编译器（只允许来自路径解析器或显式传入的路径）
             append(" -DCMAKE_C_COMPILER=$resolvedCCompiler")
@@ -243,6 +242,8 @@ class CMakeBuildExecutor(
             cmakeIdentity.asCMakeCacheEntries().forEach { (key, value) ->
                 append(" -D$key:STRING=${shellQuotePosix(value)}")
             }
+            // The run configuration owns this value, so it must win over legacy project arguments.
+            append(" -DCMAKE_BUILD_TYPE=${options.buildType.cmakeValue}")
         }
 
         progress(Strings.cmake_progress_configuring.strOr(appContext))

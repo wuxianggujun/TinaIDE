@@ -217,7 +217,8 @@ data class ProjectMetadata(
     /**
      * 获取项目级 CMake 参数（去空、去重）。
      */
-    fun normalizedNativeCMakeArgs(): List<String> = normalizeStringEntries(nativeCMakeArgs)
+    fun normalizedNativeCMakeArgs(): List<String> =
+        ProjectCMakeArgumentPolicy.sanitize(nativeCMakeArgs)
 
     fun normalizedDefaultRunTargetName(): String? = normalizeTargetName(defaultRunTargetName)
 

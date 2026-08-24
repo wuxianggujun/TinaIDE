@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import com.wuxianggujun.tinaide.core.compile.BuildSystem
 import com.wuxianggujun.tinaide.core.compile.BuildType
 import com.wuxianggujun.tinaide.core.compile.BuildVariables
+import com.wuxianggujun.tinaide.core.compile.CMakeBuildTypeOption
 import com.wuxianggujun.tinaide.core.compile.CompilerType
 import com.wuxianggujun.tinaide.core.compile.OutputMode
 import com.wuxianggujun.tinaide.core.compile.RunConfiguration
@@ -78,6 +79,7 @@ fun RunConfigDialog(
     var args by remember { mutableStateOf(config.args) }
     var workDir by remember { mutableStateOf(config.workDir) }
     var buildType by remember { mutableStateOf(config.buildType) }
+    var cmakeBuildType by remember { mutableStateOf(config.cmakeBuildType) }
     var outputMode by remember { mutableStateOf(config.outputMode) }
     var targetName by remember { mutableStateOf(config.targetName) }
     var targetDropdownExpanded by remember { mutableStateOf(false) }
@@ -234,8 +236,6 @@ fun RunConfigDialog(
     val isNativeBuildSystem = buildSystem == BuildSystem.CMAKE ||
         buildSystem == BuildSystem.MAKE ||
         buildSystem == BuildSystem.SINGLE_FILE
-    val showExplicitBuildType = buildSystem == BuildSystem.MAKE ||
-        buildSystem == BuildSystem.SINGLE_FILE
     var sysrootApiLevelInput by remember { mutableStateOf(config.sysrootApiLevel?.toString().orEmpty()) }
     val parsedSysrootApiLevel = sysrootApiLevelInput.trim().toIntOrNull()
     val effectiveSysrootProfileId = sysrootProfileId ?: activeSysrootProfileId
@@ -296,12 +296,22 @@ fun RunConfigDialog(
                     TextButton(
                         enabled = confirmEnabled,
                         onClick = {
+                            val savedBuildType = if (buildSystem == BuildSystem.CMAKE) {
+                                cmakeBuildType.generalBuildType
+                            } else {
+                                buildType
+                            }
                             onSave(
                                 config.copy(
                                     name = name.trim().ifEmpty { "Debug" },
                                     args = args.trim(),
                                     workDir = workDir.trim(),
-                                    buildType = buildType,
+                                    buildType = savedBuildType,
+                                    cmakeBuildType = if (buildSystem == BuildSystem.CMAKE) {
+                                        cmakeBuildType
+                                    } else {
+                                        config.cmakeBuildType
+                                    },
                                     outputMode = outputMode,
                                     targetName = targetName.trim(),
                                     sourceFileMode = sourceFileMode,
@@ -345,6 +355,16 @@ fun RunConfigDialog(
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
+
+            if (isNativeBuildSystem) {
+                RunConfigBuildTypeSection(
+                    buildSystem = buildSystem,
+                    buildType = buildType,
+                    onBuildTypeChange = { buildType = it },
+                    cmakeBuildType = cmakeBuildType,
+                    onCmakeBuildTypeChange = { cmakeBuildType = it },
+                )
+            }
 
             // 编译器选择
             ExposedDropdownMenuBox(
@@ -1009,25 +1029,6 @@ fun RunConfigDialog(
                 singleLine = true
             )
 
-            if (showExplicitBuildType) {
-                RunConfigSectionCard(
-                    title = stringResource(Strings.run_config_build_type)
-                ) {
-                    RunConfigOptionRow(
-                        selected = buildType == BuildType.DEBUG,
-                        onClick = { buildType = BuildType.DEBUG },
-                        title = stringResource(Strings.run_config_build_type_debug),
-                        description = stringResource(Strings.run_config_build_type_debug_desc)
-                    )
-                    RunConfigOptionRow(
-                        selected = buildType == BuildType.RELEASE,
-                        onClick = { buildType = BuildType.RELEASE },
-                        title = stringResource(Strings.run_config_build_type_release),
-                        description = stringResource(Strings.run_config_build_type_release_desc)
-                    )
-                }
-            }
-
             RunConfigSectionCard(
                 title = stringResource(Strings.run_config_output_mode)
             ) {
@@ -1155,6 +1156,59 @@ fun RunConfigDialog(
         VariablesHelpDialog(
             onDismiss = { showVariablesHelp = false }
         )
+    }
+}
+
+@Composable
+private fun RunConfigBuildTypeSection(
+    buildSystem: BuildSystem,
+    buildType: BuildType,
+    onBuildTypeChange: (BuildType) -> Unit,
+    cmakeBuildType: CMakeBuildTypeOption,
+    onCmakeBuildTypeChange: (CMakeBuildTypeOption) -> Unit,
+) {
+    RunConfigSectionCard(
+        title = stringResource(Strings.run_config_build_type)
+    ) {
+        if (buildSystem == BuildSystem.CMAKE) {
+            RunConfigOptionRow(
+                selected = cmakeBuildType == CMakeBuildTypeOption.DEBUG,
+                onClick = { onCmakeBuildTypeChange(CMakeBuildTypeOption.DEBUG) },
+                title = stringResource(Strings.run_config_build_type_debug),
+                description = stringResource(Strings.run_config_build_type_debug_desc),
+            )
+            RunConfigOptionRow(
+                selected = cmakeBuildType == CMakeBuildTypeOption.RELEASE,
+                onClick = { onCmakeBuildTypeChange(CMakeBuildTypeOption.RELEASE) },
+                title = stringResource(Strings.run_config_build_type_release),
+                description = stringResource(Strings.run_config_build_type_release_desc),
+            )
+            RunConfigOptionRow(
+                selected = cmakeBuildType == CMakeBuildTypeOption.REL_WITH_DEB_INFO,
+                onClick = { onCmakeBuildTypeChange(CMakeBuildTypeOption.REL_WITH_DEB_INFO) },
+                title = stringResource(Strings.run_config_build_type_rel_with_deb_info),
+                description = stringResource(Strings.run_config_build_type_rel_with_deb_info_desc),
+            )
+            RunConfigOptionRow(
+                selected = cmakeBuildType == CMakeBuildTypeOption.MIN_SIZE_REL,
+                onClick = { onCmakeBuildTypeChange(CMakeBuildTypeOption.MIN_SIZE_REL) },
+                title = stringResource(Strings.run_config_build_type_min_size_rel),
+                description = stringResource(Strings.run_config_build_type_min_size_rel_desc),
+            )
+        } else {
+            RunConfigOptionRow(
+                selected = buildType == BuildType.DEBUG,
+                onClick = { onBuildTypeChange(BuildType.DEBUG) },
+                title = stringResource(Strings.run_config_build_type_debug),
+                description = stringResource(Strings.run_config_build_type_debug_desc),
+            )
+            RunConfigOptionRow(
+                selected = buildType == BuildType.RELEASE,
+                onClick = { onBuildTypeChange(BuildType.RELEASE) },
+                title = stringResource(Strings.run_config_build_type_release),
+                description = stringResource(Strings.run_config_build_type_release_desc),
+            )
+        }
     }
 }
 
