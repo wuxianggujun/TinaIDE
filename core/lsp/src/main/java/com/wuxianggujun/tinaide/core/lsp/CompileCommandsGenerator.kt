@@ -4,7 +4,7 @@ import com.wuxianggujun.tinaide.core.lang.CxxFileSupport
 import com.wuxianggujun.tinaide.core.util.ClangResourceDirLocator
 import com.wuxianggujun.tinaide.core.util.RootfsTargetDetector
 import com.wuxianggujun.tinaide.core.util.ToolchainBinaryLocator
-import com.wuxianggujun.tinaide.project.CppStandard
+import com.wuxianggujun.tinaide.project.ProjectCppStandardResolver
 import java.io.File
 import timber.log.Timber
 
@@ -44,7 +44,7 @@ object CompileCommandsGenerator {
         isCxx: Boolean = true,
         target: String? = null,
         variant: BuildVariant = BuildVariant.Debug,
-        cppStandard: CppStandard = CppStandard.DEFAULT,
+        cppStandardFlag: String = ProjectCppStandardResolver.DEFAULT_FLAG,
         extraCFlags: List<String> = emptyList(),
         extraCppFlags: List<String> = emptyList(),
         clangPathOverride: String? = null,
@@ -134,10 +134,11 @@ object CompileCommandsGenerator {
                     add("-isystem")
                     add(include.absolutePath)
                 }
-                if (inferredIsCxx) {
-                    add("-std=${cppStandard.flag}")
-                }
                 addAll(if (inferredIsCxx) normalizedExtraCppFlags else normalizedExtraCFlags)
+                if (inferredIsCxx) {
+                    // Keep the resolved project/run-config standard as the final effective -std.
+                    add("-std=$cppStandardFlag")
+                }
                 add("-c")
                 add(canonicalSourceFile)
                 if (!isGnuRootfs) {

@@ -10,10 +10,16 @@ import com.wuxianggujun.tinaide.core.proot.RootfsPackageManager
 import com.wuxianggujun.tinaide.core.proot.displayName
 import com.wuxianggujun.tinaide.core.proot.resolveGuestPackageManager
 import com.wuxianggujun.tinaide.plugin.InstalledPlugin
+import com.wuxianggujun.tinaide.plugin.PluginFaultKind
+import com.wuxianggujun.tinaide.plugin.PluginFaultPhase
+import com.wuxianggujun.tinaide.plugin.PluginFaultRecord
 import com.wuxianggujun.tinaide.plugin.PluginLogLevel
 import com.wuxianggujun.tinaide.plugin.PluginLogManager
 import com.wuxianggujun.tinaide.plugin.PluginManager
+import com.wuxianggujun.tinaide.plugin.PluginRuntimeLifecycle
 import java.io.File
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -22,6 +28,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import timber.log.Timber
 
@@ -44,6 +51,17 @@ class LspPluginManager(
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val startedPluginIds = ConcurrentHashMap.newKeySet<String>()
+    private val lifecycleHandler = PluginRuntimeLifecycle.Handler(
+        stop = { pluginId ->
+            startedPluginIds.remove(pluginId)
+            PluginLspSessionRegistry.closeAll(pluginId)
+        },
+        activate = { pluginId ->
+            PluginLspSessionRegistry.activate(pluginId)
+            Result.success(Unit)
+        },
+    )
 
     private val _lspPluginsFlow = MutableStateFlow<List<LspPluginInfo>>(emptyList())
     val lspPluginsFlow: StateFlow<List<LspPluginInfo>> = _lspPluginsFlow.asStateFlow()
@@ -60,6 +78,7 @@ class LspPluginManager(
     }
 
     override fun onCreate() {
+        PluginRuntimeLifecycle.register(lifecycleHandler)
         Timber.tag(TAG).i(
             "LspPluginManager binding PluginManager instance=%s",
             pluginManager.instanceId
@@ -67,12 +86,21 @@ class LspPluginManager(
         // 监听插件列表变化
         scope.launch {
             pluginManager.enabledPluginsFlow.collect { plugins ->
-                refreshLspPlugins(plugins)
+                try {
+                    refreshLspPlugins(plugins)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    Timber.tag(TAG).e(error, "Failed to refresh LSP plugin contributions")
+                }
             }
         }
     }
 
     override fun onDestroy() {
+        PluginRuntimeLifecycle.unregister(lifecycleHandler)
+        PluginLspSessionRegistry.closeAll()
+        startedPluginIds.clear()
         scope.cancel()
     }
 
@@ -80,12 +108,19 @@ class LspPluginManager(
      * 刷新 LSP 插件列表
      */
     private fun refreshLspPlugins(allPlugins: List<InstalledPlugin>) {
+        val previousPluginIds = _lspPluginsFlow.value.mapTo(mutableSetOf()) { it.pluginId }
         val lspPlugins = allPlugins
-            .filter { it.manifest.type == "lsp" }
+            .filter { it.manifest.type.equals("lsp", ignoreCase = true) }
             .mapNotNull { plugin ->
                 parseLspPluginInfo(plugin)
             }
         _lspPluginsFlow.value = lspPlugins
+        val activePluginIds = lspPlugins.mapTo(mutableSetOf()) { it.pluginId }
+        activePluginIds.forEach(PluginLspSessionRegistry::activate)
+        (previousPluginIds - activePluginIds).forEach { pluginId ->
+            startedPluginIds.remove(pluginId)
+            PluginLspSessionRegistry.closeAll(pluginId)
+        }
         Timber.tag(TAG).i("Refreshed LSP plugins: ${lspPlugins.map { it.pluginId }}")
         scope.launch {
             refreshToolchainInstallStates()
@@ -136,10 +171,13 @@ class LspPluginManager(
      * 优先按扩展名匹配，再按文件名模式匹配，
      * 兼容无扩展名文件与 `pom.xml` 这类固定文件名。
      */
-    fun getServerConfigForFile(file: File): Pair<LspPluginInfo, LspServerConfig>? {
+    fun getServerConfigForFile(
+        file: File,
+        detectedLanguageId: String? = null,
+    ): Pair<LspPluginInfo, LspServerConfig>? {
         val fileName = file.name
         val ext = file.extension.lowercase()
-        return findServerConfig { config ->
+        return findServerConfig(detectedLanguageId) { config ->
             matchesFileExtension(config, ext) ||
                 matchesFilePattern(config, fileName, ext)
         }
@@ -151,6 +189,7 @@ class LspPluginManager(
     fun getServerConfigForLanguage(languageId: String): Pair<LspPluginInfo, LspServerConfig>? {
         val langId = languageId.lowercase()
         for (plugin in _lspPluginsFlow.value) {
+            if (!plugin.supportsLanguageActivation(langId)) continue
             for (config in plugin.serverConfigs) {
                 if (langId in config.languages.map { it.lowercase() }) {
                     return plugin to config
@@ -385,11 +424,32 @@ class LspPluginManager(
     }
 
     fun markServerStartupSucceeded(pluginId: String) {
+        startedPluginIds += pluginId
         updateInstallState(pluginId) {
             it.copy(
                 serverReady = true,
                 lastError = null,
             )
+        }
+    }
+
+    fun reportUnexpectedServerExit(pluginId: String, error: String) {
+        if (!startedPluginIds.remove(pluginId)) return
+        scope.launch {
+            val plugin = pluginManager.getEnabledPlugin(pluginId) ?: return@launch
+            PluginLspSessionRegistry.closeAll(pluginId)
+            val record = PluginFaultRecord(
+                pluginId = pluginId,
+                pluginVersion = plugin.manifest.version,
+                phase = PluginFaultPhase.LSP,
+                kind = PluginFaultKind.LSP_CRASH,
+                message = error,
+                timestampMillis = System.currentTimeMillis(),
+                executionId = UUID.randomUUID().toString(),
+            )
+            pluginManager.quarantinePlugin(record).onFailure { failure ->
+                Timber.tag(TAG).e(failure, "Failed to quarantine crashed LSP plugin %s", pluginId)
+            }
         }
     }
 
@@ -402,11 +462,12 @@ class LspPluginManager(
     }
 
     private fun findServerConfig(
-        predicate: (LspServerConfig) -> Boolean
+        detectedLanguageId: String? = null,
+        predicate: (LspServerConfig) -> Boolean,
     ): Pair<LspPluginInfo, LspServerConfig>? {
         for (plugin in _lspPluginsFlow.value) {
             for (config in plugin.serverConfigs) {
-                if (predicate(config)) {
+                if (plugin.supportsServerActivation(config, detectedLanguageId) && predicate(config)) {
                     return plugin to config
                 }
             }
@@ -511,12 +572,14 @@ class LspPluginManager(
     }
 
     private fun updateInstallState(pluginId: String, update: (LspPluginInstallState) -> LspPluginInstallState) {
-        val current = _installStatesFlow.value[pluginId] ?: LspPluginInstallState(
-            pluginId = pluginId,
-            toolchainStates = emptyMap(),
-            serverReady = false
-        )
-        _installStatesFlow.value = _installStatesFlow.value + (pluginId to update(current))
+        _installStatesFlow.update { states ->
+            val current = states[pluginId] ?: LspPluginInstallState(
+                pluginId = pluginId,
+                toolchainStates = emptyMap(),
+                serverReady = false,
+            )
+            states + (pluginId to update(current))
+        }
     }
 
     private fun matchGlobPattern(pattern: String, filename: String): Boolean {

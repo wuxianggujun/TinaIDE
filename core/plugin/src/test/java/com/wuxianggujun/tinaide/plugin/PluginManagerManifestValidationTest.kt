@@ -6,6 +6,8 @@ import com.wuxianggujun.tinaide.plugin.lsp.LspServerConfig
 import com.wuxianggujun.tinaide.plugin.lsp.LspServerConnectionConfig
 import com.wuxianggujun.tinaide.plugin.lsp.LspToolchainConfig
 import java.io.File
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Before
 import org.junit.Test
@@ -62,6 +64,50 @@ class PluginManagerManifestValidationTest {
     }
 
     @Test
+    fun `validateManifest should accept unique panels for script plugins`() {
+        val pluginDir = createScriptPluginDir("validate_panels")
+        val manifest = PluginManifest(
+            id = "test.plugin.panels",
+            name = "Validate Panels",
+            version = "1.0.0",
+            type = PluginTypes.SCRIPT,
+            contributions = PluginContributions(
+                panels = listOf(
+                    PluginPanel("status", "Status"),
+                    PluginPanel("trace", "Trace"),
+                ),
+            ),
+        )
+
+        PluginManifestValidator.validate(context, manifest, pluginDir)
+    }
+
+    @Test
+    fun `validateManifest should reject duplicate or non-script panels`() {
+        val scriptDir = createScriptPluginDir("validate_duplicate_panels")
+        val duplicate = PluginManifest(
+            id = "test.plugin.duplicate-panels",
+            name = "Duplicate Panels",
+            version = "1.0.0",
+            type = PluginTypes.SCRIPT,
+            contributions = PluginContributions(
+                panels = listOf(PluginPanel("status", "One"), PluginPanel("status", "Two")),
+            ),
+        )
+        val configDir = createConfigPluginDir("validate_config_panels")
+        val config = PluginManifest(
+            id = "test.plugin.config-panels",
+            name = "Config Panels",
+            version = "1.0.0",
+            type = PluginTypes.CONFIG,
+            contributions = PluginContributions(panels = listOf(PluginPanel("status", "Status"))),
+        )
+
+        assertThat(runValidationFailure(duplicate, scriptDir).message).contains("status")
+        assertThat(runValidationFailure(config, configDir).message).contains("script")
+    }
+
+    @Test
     fun `validateManifest should reject invalid plugin configuration defaults`() {
         val pluginDir = createScriptPluginDir("validate_configuration")
         val manifest = PluginManifest(
@@ -104,6 +150,32 @@ class PluginManagerManifestValidationTest {
     }
 
     @Test
+    fun `validateManifest should reject directories used as referenced files`() {
+        val pluginDir = createScriptPluginDir("validate_referenced_files_are_files")
+        File(pluginDir, "entry.lua").mkdirs()
+        File(pluginDir, "theme.json").mkdirs()
+        File(pluginDir, "snippets.json").mkdirs()
+
+        val invalidMain = PluginManifest(
+            id = "test.plugin.main-directory",
+            name = "Main Directory",
+            version = "1.0.0",
+            type = PluginTypes.SCRIPT,
+            main = "entry.lua",
+        )
+        val invalidTheme = createConfigManifest().copy(
+            contributions = PluginContributions(themes = listOf("theme.json")),
+        )
+        val invalidSnippet = createConfigManifest().copy(
+            contributions = PluginContributions(snippets = listOf("snippets.json")),
+        )
+
+        assertThat(runValidationFailure(invalidMain, pluginDir).message).contains("entry.lua")
+        assertThat(runValidationFailure(invalidTheme, pluginDir).message).contains("theme.json")
+        assertThat(runValidationFailure(invalidSnippet, pluginDir).message).contains("snippets.json")
+    }
+
+    @Test
     fun `validateManifest should reject legacy lsp package manager toolchain type`() {
         val pluginDir = createLspPluginDir("validate_lsp_legacy_type")
         val manifest = createLspManifest(
@@ -113,6 +185,7 @@ class PluginManagerManifestValidationTest {
                     name = "Python 3",
                     type = "apt",
                     packages = listOf("python3"),
+                    verifyCommand = "python3 --version",
                 )
             )
         )
@@ -131,6 +204,7 @@ class PluginManagerManifestValidationTest {
                     id = "python3",
                     name = "Python 3",
                     type = "system",
+                    verifyCommand = "python3 --version",
                 )
             )
         )
@@ -169,6 +243,7 @@ class PluginManagerManifestValidationTest {
                         "apk" to listOf("python3", "py3-pip"),
                         "apt" to listOf("python3", "python3-pip"),
                     ),
+                    verifyCommand = "python3 --version",
                 )
             )
         )
@@ -178,6 +253,121 @@ class PluginManagerManifestValidationTest {
             manifest = manifest,
             pluginDir = pluginDir,
         )
+    }
+
+    @Test
+    fun `validateManifest should reject option-like lsp packages`() {
+        val pluginDir = createLspPluginDir("validate_lsp_package_options")
+        val manifest = createLspManifest(
+            toolchains = listOf(
+                LspToolchainConfig(
+                    id = "python3",
+                    name = "Python 3",
+                    type = "system",
+                    packages = listOf("--root=/tmp/guest"),
+                    verifyCommand = "python3 --version",
+                )
+            )
+        )
+
+        val error = runValidationFailure(manifest, pluginDir)
+
+        assertThat(error.message).contains("python3")
+    }
+
+    @Test
+    fun `validateManifest should reject unsafe lsp verification patterns`() {
+        val pluginDir = createLspPluginDir("validate_lsp_unsafe_verify_pattern")
+        val manifest = createLspManifest(
+            toolchains = listOf(
+                LspToolchainConfig(
+                    id = "python3",
+                    name = "Python 3",
+                    type = "system",
+                    packages = listOf("python3"),
+                    verifyCommand = "python3 --version",
+                    verifyPattern = "(a+)+$",
+                )
+            )
+        )
+
+        val error = runValidationFailure(manifest, pluginDir)
+
+        assertThat(error.message).contains("python3")
+    }
+
+    @Test
+    fun `validateManifest should require https checksum and safe extraction for downloads`() {
+        val pluginDir = createLspPluginDir("validate_lsp_download_policy")
+        val base = LspToolchainConfig(
+            id = "downloaded",
+            name = "Downloaded LSP",
+            type = "download",
+            url = "https://example.com/lsp.tar.gz",
+            sha256 = "a".repeat(64),
+            extractTo = "opt/downloaded",
+            verifyCommand = "opt/downloaded/bin/lsp --version",
+        )
+
+        PluginManifestValidator.validate(context, createLspManifest(listOf(base)), pluginDir)
+        assertThat(
+            runValidationFailure(
+                createLspManifest(listOf(base.copy(url = "http://example.com/lsp.tar.gz"))),
+                pluginDir,
+            ).message
+        ).contains("downloaded")
+        assertThat(
+            runValidationFailure(
+                createLspManifest(listOf(base.copy(sha256 = "bad"))),
+                pluginDir,
+            ).message
+        ).contains("downloaded")
+        assertThat(
+            runValidationFailure(
+                createLspManifest(listOf(base.copy(extractTo = "../escape"))),
+                pluginDir,
+            ).message
+        ).contains("downloaded")
+    }
+
+    @Test
+    fun `validateManifest should accept matching lsp language activation event`() {
+        val pluginDir = createLspPluginDir("validate_lsp_activation")
+        val manifest = createLspManifest(
+            toolchains = emptyList(),
+            activationEvents = listOf("onLanguage:python"),
+        )
+
+        PluginManifestValidator.validate(context, manifest, pluginDir)
+    }
+
+    @Test
+    fun `validateManifest should reject unknown lsp language activation event`() {
+        val pluginDir = createLspPluginDir("validate_lsp_activation_unknown")
+        val manifest = createLspManifest(
+            toolchains = emptyList(),
+            activationEvents = listOf("onLanguage:javascript"),
+        )
+
+        val error = runValidationFailure(manifest, pluginDir)
+
+        assertThat(error.message).contains("javascript")
+    }
+
+    @Test
+    fun `validateManifest should reject activation events on script plugins`() {
+        val pluginDir = createScriptPluginDir("validate_script_activation")
+        val manifest = PluginManifest(
+            id = "test.plugin.script-activation",
+            name = "Script Activation",
+            version = "1.0.0",
+            type = PluginTypes.SCRIPT,
+            activationEvents = listOf("onLanguage:python"),
+        )
+
+        val error = runValidationFailure(manifest, pluginDir)
+
+        assertThat(error.message).contains("LSP")
     }
 
     @Test
@@ -245,6 +435,75 @@ class PluginManagerManifestValidationTest {
         assertThat(error.message).contains("zh-CN.json")
     }
 
+    @Test
+    fun `validateManifest should reject duplicate lsp server and toolchain ids`() {
+        val pluginDir = createLspPluginDir("validate_lsp_duplicate_ids")
+        val toolchain = LspToolchainConfig(
+            id = "python3",
+            name = "Python 3",
+            type = "system",
+            packages = listOf("python3"),
+            verifyCommand = "python3 --version",
+        )
+        val baseManifest = createLspManifest(toolchains = listOf(toolchain))
+        val server = baseManifest.contributions!!.languageServers!!.single()
+        val duplicateServers = baseManifest.copy(
+            contributions = baseManifest.contributions.copy(
+                languageServers = listOf(server, server.copy(name = "Duplicate Python Server")),
+            ),
+        )
+        val duplicateToolchains = baseManifest.copy(
+            contributions = baseManifest.contributions.copy(
+                toolchains = listOf(toolchain, toolchain.copy(name = "Duplicate Python Toolchain")),
+            ),
+        )
+
+        assertThat(runValidationFailure(duplicateServers, pluginDir).message).contains("pylsp")
+        assertThat(runValidationFailure(duplicateToolchains, pluginDir).message).contains("python3")
+    }
+
+    @Test
+    fun `validateManifest should accept valid project template dependencies`() {
+        val pluginDir = createConfigPluginDir("validate_project_template")
+        createProjectTemplateZip(pluginDir)
+        val manifest = createProjectTemplateManifest(requiredPackages = listOf("sdl3", "sdl3-image"))
+
+        PluginManifestValidator.validate(context, manifest, pluginDir)
+    }
+
+    @Test
+    fun `validateManifest should reject duplicate project template ids`() {
+        val pluginDir = createConfigPluginDir("validate_duplicate_project_templates")
+        createProjectTemplateZip(pluginDir)
+        val template = createProjectTemplateManifest().contributions!!.projectTemplates!!.single()
+        val manifest = createProjectTemplateManifest().copy(
+            contributions = PluginContributions(projectTemplates = listOf(template, template))
+        )
+
+        assertThat(runValidationFailure(manifest, pluginDir).message).contains(template.id)
+    }
+
+    @Test
+    fun `validateManifest should reject invalid required package id`() {
+        val pluginDir = createConfigPluginDir("validate_project_template_package")
+        createProjectTemplateZip(pluginDir)
+        val manifest = createProjectTemplateManifest(requiredPackages = listOf("../sdl3"))
+
+        assertThat(runValidationFailure(manifest, pluginDir).message).contains("../sdl3")
+    }
+
+    @Test
+    fun `validateManifest should reject invalid project template archive`() {
+        val pluginDir = createConfigPluginDir("validate_project_template_archive")
+        File(pluginDir, "templates/project.zip").apply {
+            parentFile?.mkdirs()
+            writeText("not a zip")
+        }
+
+        assertThat(runValidationFailure(createProjectTemplateManifest(), pluginDir).message)
+            .contains("templates/project.zip")
+    }
+
     private fun createScriptPluginDir(name: String): File = File(context.cacheDir, name).apply {
         deleteRecursively()
         mkdirs()
@@ -271,14 +530,47 @@ class PluginManagerManifestValidationTest {
         locales = locales,
     )
 
+    private fun createProjectTemplateManifest(
+        requiredPackages: List<String> = emptyList(),
+    ): PluginManifest = PluginManifest(
+        id = "test.plugin.project-template",
+        name = "Validate Project Template",
+        version = "1.0.0",
+        type = PluginTypes.CONFIG,
+        contributions = PluginContributions(
+            projectTemplates = listOf(
+                PluginProjectTemplate(
+                    id = "cmake",
+                    name = "CMake",
+                    description = "CMake project",
+                    templatePath = "templates/project.zip",
+                    buildSystem = "cmake",
+                    requiredPackages = requiredPackages,
+                )
+            )
+        ),
+    )
+
+    private fun createProjectTemplateZip(pluginDir: File) {
+        val templateFile = File(pluginDir, "templates/project.zip")
+        templateFile.parentFile?.mkdirs()
+        ZipOutputStream(templateFile.outputStream()).use { zip ->
+            zip.putNextEntry(ZipEntry("CMakeLists.txt"))
+            zip.write("cmake_minimum_required(VERSION 3.20)".toByteArray())
+            zip.closeEntry()
+        }
+    }
+
     private fun createLspManifest(
         toolchains: List<LspToolchainConfig>,
         serverType: String = "stdio",
+        activationEvents: List<String>? = null,
     ): PluginManifest = PluginManifest(
         id = "test.plugin.lsp",
         name = "Validate LSP Plugin",
         version = "1.0.0",
         type = PluginTypes.LSP,
+        activationEvents = activationEvents,
         contributions = PluginContributions(
             languageServers = listOf(
                 LspServerConfig(

@@ -3,9 +3,9 @@ package com.wuxianggujun.tinaide.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.wuxianggujun.tinaide.core.config.IConfigManager
 import com.wuxianggujun.tinaide.core.debug.BreakpointStore
 import com.wuxianggujun.tinaide.core.debug.DebugSessionService
-import com.wuxianggujun.tinaide.core.debug.DebugSessionStore
 import com.wuxianggujun.tinaide.core.debug.DebugState
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.str
@@ -18,7 +18,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -38,11 +37,11 @@ import kotlinx.coroutines.launch
 class DebugViewModel(
     application: Application,
     private val breakpointStore: BreakpointStore,
-    private val debugSessionStore: DebugSessionStore
+    private val configManager: IConfigManager,
 ) : AndroidViewModel(application) {
 
     // 调试服务实例
-    private val prootEnv by lazy { PRootEnvironment(getApplication()) }
+    private val prootEnv by lazy { PRootEnvironment(getApplication(), configManager) }
     private val debugSessionService = DebugSessionService(getApplication(), prootEnv, breakpointStore)
 
     // ============ UI 状态 ============
@@ -70,27 +69,6 @@ class DebugViewModel(
             state is DebugState.Starting || state is DebugState.Paused || state is DebugState.Running
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
-
-    /**
-     * 当前会话 ID
-     */
-    val sessionId: StateFlow<String?> = combine(
-        debugSessionStore.descriptor,
-        debugSessionService.state
-    ) { descriptor, state ->
-        descriptor?.sessionId
-            ?: (state as? DebugState.Starting)?.sessionId
-            ?: (state as? DebugState.Paused)?.sessionId
-            ?: (state as? DebugState.Running)?.sessionId
-            ?: (state as? DebugState.Terminated)?.sessionId
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
-
-    /**
-     * 会话信息（描述符路径）
-     */
-    val sessionInfo: StateFlow<String?> = debugSessionStore.descriptor
-        .map { it?.descriptorPath }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     /**
      * 当前位置（仅在暂停时有值）

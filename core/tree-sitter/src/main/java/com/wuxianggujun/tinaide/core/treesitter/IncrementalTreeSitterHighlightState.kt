@@ -82,7 +82,9 @@ internal class IncrementalTreeSitterHighlightState(
 
     private data class ParseResult(
         val text: String,
-        val renderTree: TSTree
+        val renderTree: TSTree,
+        val changedLineRanges: List<DirtyLineRange>,
+        val canReuseLineCache: Boolean,
     )
 
     private val lock = Any()
@@ -386,6 +388,8 @@ internal class IncrementalTreeSitterHighlightState(
             workerTree
         }
         val snapshotText = request.text
+        var changedLineRanges: List<DirtyLineRange> = emptyList()
+        var canReuseLineCache = !request.reset && previous != null
         val next = when {
             request.reset || previous == null -> {
                 parser.reset()
@@ -395,7 +399,26 @@ internal class IncrementalTreeSitterHighlightState(
             else -> {
                 val edit = request.change?.toTsInputEdit() ?: return null
                 previous.edit(edit)
-                parser.parseString(previous, snapshotText)
+                parser.parseString(previous, snapshotText)?.also { parsedTree ->
+                    val changedRanges = runCatching {
+                        parsedTree.getChangedRanges(previous)
+                    }.onFailure { error ->
+                        Timber.tag("TreeSitter").d(error, "Failed to resolve changed syntax ranges")
+                    }
+                    if (changedRanges.isFailure) {
+                        canReuseLineCache = false
+                    } else {
+                        changedLineRanges = changedRanges.getOrThrow().fold(emptyList()) { ranges, changedRange ->
+                            mergeDirtyLineRanges(
+                                current = ranges,
+                                added = DirtyLineRange(
+                                    startLine = changedRange.startPoint.row.coerceAtLeast(0),
+                                    endLine = changedRange.endPoint.row.coerceAtLeast(changedRange.startPoint.row),
+                                ),
+                            )
+                        }
+                    }
+                }
             }
         } ?: return null
 
@@ -421,7 +444,12 @@ internal class IncrementalTreeSitterHighlightState(
             .onFailure { Timber.tag("TreeSitter").d(it, "Failed to copy render tree") }
             .getOrNull()
             ?: return null
-        return ParseResult(text = snapshotText, renderTree = renderTree)
+        return ParseResult(
+            text = snapshotText,
+            renderTree = renderTree,
+            changedLineRanges = changedLineRanges,
+            canReuseLineCache = canReuseLineCache,
+        )
     }
 
     private fun applyResult(request: ParseRequest, result: ParseResult) {
@@ -435,7 +463,7 @@ internal class IncrementalTreeSitterHighlightState(
             }
             oldSnapshot = renderSnapshot?.safeTree
 
-            // 抢救旧 snapshot 的 lineCache：未落在 pendingDirtyLineRanges 的行，
+            // 抢救旧 snapshot 的 lineCache：未落在文本或语法树变化范围内的行，
             // 其 segments 用的是列相对坐标，在新 snapshot 里仍然有效。
             // 这样"打字一个字符后滚动"不会因为 applyResult 清空缓存而看到默认色。
             // 初始容量直接跟随 previousCache.size —— 绝大多数 tree update 只有几行变脏，
@@ -447,8 +475,10 @@ internal class IncrementalTreeSitterHighlightState(
                 0.75f,
                 true
             )
-            val dirtyRanges = pendingDirtyLineRanges
-            if (previousCache != null) {
+            val dirtyRanges = result.changedLineRanges.fold(pendingDirtyLineRanges) { ranges, changedRange ->
+                mergeDirtyLineRanges(ranges, changedRange)
+            }
+            if (result.canReuseLineCache && previousCache != null) {
                 synchronized(previousCache) {
                     previousCache.forEach { (line, segments) ->
                         val isDirty = dirtyRanges.any { line in it.startLine..it.endLine }

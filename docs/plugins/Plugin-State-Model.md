@@ -1,6 +1,6 @@
 # 插件状态模型
 
-> 文档更新：2026-04-22
+> 文档更新：2026-07-16
 > 目标：统一 TinaIDE 插件系统中的安装态、启用态、运行态与页面态，避免状态漂移。
 
 ---
@@ -20,7 +20,7 @@
 
 ---
 
-## 2. 四层状态
+## 2. 状态分层
 
 ### 2.1 安装态（Installed State）
 
@@ -43,7 +43,8 @@
 
 来源：
 
-- `SharedPreferences` 中的 `enabled_<pluginId>`
+- `SharedPreferences` 中的 `desired_enabled_<pluginId>`（用户期望）
+- `enabled_<pluginId>` 作为降级兼容字段；隔离时强制写为 `false`
 - `PluginManager.resolvePluginEnabled()`
 
 数据表现：
@@ -53,7 +54,38 @@
 - `PluginStateSnapshot.enabledCapabilities`
 - `PluginManager.enabledPluginsFlow`
 
-### 2.3 运行态（Runtime State）
+### 2.3 有效状态（Effective Status）
+
+定义：综合用户期望、权限、隔离记录和 runtime 可用性后，插件当前真实状态。
+
+脚本插件状态包括：
+
+- `DISABLED`
+- `WAITING_PERMISSION`
+- `LOADING`
+- `ACTIVE`
+- `QUARANTINED`
+- `RUNTIME_UNAVAILABLE`
+
+`desiredEnabled=true` 不代表插件一定可运行；存在故障隔离时，有效启用态仍为 false。
+有效状态由 `PluginFaultStore.effectiveStatuses` 持久化；故障记录与 `QUARANTINED` 状态在同一次同步提交中落盘。
+`RUNTIME_UNAVAILABLE` 表示宿主插件运行基础设施当前无法安全执行，例如 isolated runtime 服务或执行 journal 持久化不可用；
+它不是可归因到插件的 fault，不得生成隔离记录，也不得清除用户的 `desiredEnabled`。只有用户期望启用、插件未被隔离、
+运行基础设施可用且必需权限满足时，脚本插件才进入 `ACTIVE`。
+
+### 2.4 故障与执行 journal
+
+来源：`PluginFaultStore`，使用附加 SharedPreferences 字段持久化：
+
+- `PluginFaultRecord`：插件版本、阶段、故障类型、脱敏信息、时间和 execution ID
+- `PluginInFlightRecord`：进入插件代码前同步落盘，正常返回后清除
+- `PluginInstallTransactionRecord`：目录替换前落盘；记录旧版本 backup、启用状态与旧故障状态
+
+启动时先恢复安装事务，再审计执行 journal，之后才启动状态同步。`pluginStateFlow` 与 `grantsFlow` 必须通过
+单个组合流同步：首次 replay 只允许加载一次，后续权限变化仍必须触发重算。残留执行 journal 会归因到对应插件版本并进入隔离；
+损坏的安装 journal 会让插件子系统 fail-closed，并保留 staging/backup 供恢复，避免加载半安装目录。
+
+### 2.5 运行态（Runtime State）
 
 定义：对需要运行时的插件，当前是否真的加载并在内存中工作。
 
@@ -65,15 +97,19 @@
 
 来源：
 
-- `ScriptPluginManager`
+- `ScriptPluginManager`（宿主协调器；Lua/JNI 只存在于 `:plugin_runtime`）
 - `LspPluginManager`
 
 关键约束：
 
-- **禁用插件必须先影响启用态，再驱动运行态卸载**
+- disable / uninstall / upgrade 必须通过可等待的串行生命周期操作停止 runtime，再完成状态切换
 - 运行态绝不能绕过启用态独立存在
+- 所有回调携带 generation；旧 generation 不能重新注册贡献或激活插件
+- LSP session 必须记录 `ownerPluginId`，插件失效时立即关闭对应进程和编辑器连接
+- 状态与权限初值不得由两个独立 collector 分别触发加载，避免第二次 `LOADING` 覆盖已经稳定的有效状态
+- 必需权限补齐后必须重新计算有效状态；满足权限和 runtime 条件时从 `WAITING_PERMISSION` 进入 `ACTIVE`
 
-### 2.4 页面态（UI State）
+### 2.6 页面态（UI State）
 
 定义：页面当前选中了哪个插件、是否在详情页、是否在管理模式。
 
@@ -156,7 +192,11 @@
 2. 不要让模块自己重新维护一份“已安装 / 已启用 / 可更新”集合，优先复用中心快照或仓库解析器。
 3. 任何“会影响宿主行为”的模块都只能消费“启用态”，不能直接消费“安装态”。
 4. 对脚本 / hybrid 这类有运行时的插件，禁用时必须同步卸载运行时和事件订阅。
-5. 如果新增插件能力，先明确它属于“安装态”“启用态”“运行态”还是“页面态”，再决定挂在哪层。
+5. 新安装的纯 `config` 插件默认启用；`script`、`hybrid`、`lsp`、`system` 等插件默认禁用。刷新安装列表不得改变用户启用意图或隐式启动可执行插件代码。
+6. 插件故障与宿主/环境故障必须分类，权限拒绝、网络失败和依赖未就绪不得误隔离。
+7. 如果新增插件能力，先明确它属于“安装态”“期望启用态”“有效状态”“运行态”还是“页面态”，再决定挂在哪层。
+8. 卸载必须撤销运行时授权并清理插件 KV/SQLite 数据；升级只替换代码与 manifest，不得误删持久化数据。
+9. 状态快照和权限授权必须由同一串行同步入口消费；不得为两个 `StateFlow` 分别建立会 replay 初值的加载 collector。
 
 ---
 
@@ -169,6 +209,7 @@
 - 在多个 ViewModel 中重复拷贝版本比较逻辑
 - 菜单、Snippet、LSP、APK 导出直接遍历“所有已安装插件”再临时过滤
 - 禁用插件时只更新 UI，不处理运行时或事件订阅
+- 用两个独立 `StateFlow` collector 分别同步同一批 script runtime，导致首次回放重复加载
 
 ---
 

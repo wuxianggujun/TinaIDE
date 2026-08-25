@@ -12,8 +12,11 @@ import com.wuxianggujun.tinaide.core.proot.LinuxDistroRootfsHealthReport
 import com.wuxianggujun.tinaide.core.proot.RootfsPackageManager
 import com.wuxianggujun.tinaide.core.serialization.JsonSerializer
 import com.wuxianggujun.tinaide.plugin.PluginManifest
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
@@ -26,6 +29,9 @@ import org.robolectric.annotation.Config
     application = Application::class,
 )
 class LspToolchainInstallerTest {
+
+    @get:Rule
+    val temporaryFolder = TemporaryFolder()
 
     private val context: Application
         get() = RuntimeEnvironment.getApplication()
@@ -95,6 +101,7 @@ class LspToolchainInstallerTest {
                     "apk" to listOf("python3", "py3-pip"),
                     "apt" to listOf("python3", "python3-pip"),
                 ),
+                verifyCommand = "python3 --version",
             ),
             progress = {},
         )
@@ -104,6 +111,7 @@ class LspToolchainInstallerTest {
             .containsExactly(
                 listOf("apt-get", "update"),
                 listOf("apt-get", "install", "-y", "python3", "python3-pip"),
+                listOf("/bin/sh", "-c", "python3 --version"),
             )
             .inOrder()
     }
@@ -124,6 +132,7 @@ class LspToolchainInstallerTest {
                 type = "system",
                 packages = listOf("nodejs", "npm"),
                 packagesByManager = mapOf("apt" to listOf("nodejs", "npm")),
+                verifyCommand = "node --version",
             ),
             progress = {},
         )
@@ -133,6 +142,7 @@ class LspToolchainInstallerTest {
             .containsExactly(
                 listOf("dnf", "makecache"),
                 listOf("dnf", "install", "-y", "nodejs", "npm"),
+                listOf("/bin/sh", "-c", "node --version"),
             )
             .inOrder()
     }
@@ -219,6 +229,216 @@ class LspToolchainInstallerTest {
         assertThat(environment.commands).isEmpty()
     }
 
+    @Test
+    fun `install should preserve coroutine cancellation`() = runBlocking {
+        val environment = RecordingLinuxEnvironment(CancellationException("cancelled"))
+        val installer = LspToolchainInstaller(
+            context = context,
+            linuxEnvironmentProvider = StaticLinuxEnvironmentProvider(environment),
+            packageManagerResolver = { RootfsPackageManager.APT },
+        )
+
+        val error = runCatching {
+            installer.install(
+                config = LspToolchainConfig(
+                    id = "python3",
+                    name = "Python 3",
+                    type = "system",
+                    packages = listOf("python3"),
+                    verifyCommand = "python3 --version",
+                ),
+                progress = {},
+            )
+        }.exceptionOrNull()
+
+        assertThat(error).isInstanceOf(CancellationException::class.java)
+    }
+
+    @Test
+    fun `download transaction should publish staged toolchain`() = runBlocking {
+        val targetDir = temporaryFolder.root.resolve("opt/toolchain")
+        val transaction = LspDownloadInstallTransaction(
+            targetDir = targetDir,
+            toolchainId = "toolchain",
+            operationId = "publish",
+            unmanagedTargetMessage = "occupied",
+        )
+        val stagingDir = transaction.createStagingDirectory()
+        stagingDir.resolve("bin/server").apply {
+            parentFile.mkdirs()
+            writeText("new")
+        }
+
+        transaction.publish()
+
+        assertThat(targetDir.resolve("bin/server").readText()).isEqualTo("new")
+        assertThat(targetDir.resolve(LspDownloadInstallTransaction.OWNER_MARKER_NAME).readText())
+            .isEqualTo("toolchain")
+        assertThat(transaction.commit()).isTrue()
+        assertThat(targetDir.resolve(LspDownloadInstallTransaction.PENDING_MARKER_NAME).exists()).isFalse()
+    }
+
+    @Test
+    fun `download transaction should restore managed target on rollback`() = runBlocking {
+        val targetDir = temporaryFolder.root.resolve("opt/toolchain").apply { mkdirs() }
+        targetDir.resolve("bin/server").apply {
+            parentFile.mkdirs()
+            writeText("old")
+        }
+        targetDir.resolve(LspDownloadInstallTransaction.OWNER_MARKER_NAME).writeText("toolchain")
+        val transaction = LspDownloadInstallTransaction(
+            targetDir = targetDir,
+            toolchainId = "toolchain",
+            operationId = "rollback",
+            unmanagedTargetMessage = "occupied",
+        )
+        transaction.createStagingDirectory().resolve("bin/server").apply {
+            parentFile.mkdirs()
+            writeText("new")
+        }
+
+        transaction.publish()
+        transaction.rollback()
+
+        assertThat(targetDir.resolve("bin/server").readText()).isEqualTo("old")
+    }
+
+    @Test
+    fun `download transaction should reject unmanaged nonempty target`() = runBlocking {
+        val targetDir = temporaryFolder.root.resolve("usr/local/bin").apply { mkdirs() }
+        targetDir.resolve("unrelated").writeText("keep")
+        val transaction = LspDownloadInstallTransaction(
+            targetDir = targetDir,
+            toolchainId = "toolchain",
+            operationId = "reject",
+            unmanagedTargetMessage = "occupied",
+        )
+
+        val error = try {
+            runCatching { transaction.createStagingDirectory() }.exceptionOrNull()
+        } finally {
+            transaction.cleanup()
+        }
+
+        assertThat(error).isInstanceOf(IllegalArgumentException::class.java)
+        assertThat(error).hasMessageThat().isEqualTo("occupied")
+        assertThat(targetDir.resolve("unrelated").readText()).isEqualTo("keep")
+    }
+
+    @Test
+    fun `download transaction should recover old target after interrupted upgrade`() = runBlocking {
+        val targetDir = temporaryFolder.root.resolve("opt/interrupted-upgrade").apply { mkdirs() }
+        targetDir.resolve("bin/server").apply {
+            parentFile.mkdirs()
+            writeText("old")
+        }
+        targetDir.resolve(LspDownloadInstallTransaction.OWNER_MARKER_NAME).writeText("toolchain")
+        val interrupted = LspDownloadInstallTransaction(
+            targetDir = targetDir,
+            toolchainId = "toolchain",
+            operationId = "interrupted",
+            unmanagedTargetMessage = "occupied",
+        )
+        interrupted.createStagingDirectory().resolve("bin/server").apply {
+            parentFile.mkdirs()
+            writeText("unverified")
+        }
+        interrupted.publish()
+        interrupted.cleanup()
+
+        val recovery = LspDownloadInstallTransaction(
+            targetDir = targetDir,
+            toolchainId = "toolchain",
+            operationId = "recovery",
+            unmanagedTargetMessage = "occupied",
+        )
+        try {
+            recovery.createStagingDirectory()
+
+            assertThat(targetDir.resolve("bin/server").readText()).isEqualTo("old")
+            assertThat(targetDir.resolve(LspDownloadInstallTransaction.PENDING_MARKER_NAME).exists()).isFalse()
+        } finally {
+            recovery.cleanup()
+        }
+    }
+
+    @Test
+    fun `download transaction should restore backup from matching operation`() = runBlocking {
+        val targetDir = temporaryFolder.root.resolve("opt/matching-upgrade").apply { mkdirs() }
+        targetDir.resolve("bin/server").apply {
+            parentFile.mkdirs()
+            writeText("old")
+        }
+        targetDir.resolve(LspDownloadInstallTransaction.OWNER_MARKER_NAME).writeText("toolchain")
+        val interrupted = LspDownloadInstallTransaction(
+            targetDir = targetDir,
+            toolchainId = "toolchain",
+            operationId = "interrupted",
+            unmanagedTargetMessage = "occupied",
+        )
+        interrupted.createStagingDirectory().resolve("bin/server").apply {
+            parentFile.mkdirs()
+            writeText("unverified")
+        }
+        interrupted.publish()
+
+        val unrelatedBackup = targetDir.parentFile.resolve(".${targetDir.name}.unrelated.backup").apply {
+            resolve("bin/server").apply {
+                parentFile.mkdirs()
+                writeText("unrelated")
+            }
+            resolve(LspDownloadInstallTransaction.OWNER_MARKER_NAME).writeText("toolchain")
+            setLastModified(System.currentTimeMillis() + 60_000L)
+        }
+        interrupted.cleanup()
+
+        val recovery = LspDownloadInstallTransaction(
+            targetDir = targetDir,
+            toolchainId = "toolchain",
+            operationId = "recovery",
+            unmanagedTargetMessage = "occupied",
+        )
+        try {
+            recovery.createStagingDirectory()
+
+            assertThat(targetDir.resolve("bin/server").readText()).isEqualTo("old")
+            assertThat(unrelatedBackup.exists()).isFalse()
+        } finally {
+            recovery.cleanup()
+        }
+    }
+
+    @Test
+    fun `download transaction should remove interrupted first install`() = runBlocking {
+        val targetDir = temporaryFolder.root.resolve("opt/interrupted-first-install")
+        val interrupted = LspDownloadInstallTransaction(
+            targetDir = targetDir,
+            toolchainId = "toolchain",
+            operationId = "interrupted-first",
+            unmanagedTargetMessage = "occupied",
+        )
+        interrupted.createStagingDirectory().resolve("bin/server").apply {
+            parentFile.mkdirs()
+            writeText("unverified")
+        }
+        interrupted.publish()
+        interrupted.cleanup()
+
+        val recovery = LspDownloadInstallTransaction(
+            targetDir = targetDir,
+            toolchainId = "toolchain",
+            operationId = "recovery-first",
+            unmanagedTargetMessage = "occupied",
+        )
+        try {
+            recovery.createStagingDirectory()
+
+            assertThat(targetDir.exists()).isFalse()
+        } finally {
+            recovery.cleanup()
+        }
+    }
+
     private class StaticLinuxEnvironmentProvider(
         private val environment: LinuxEnvironment,
     ) : LinuxEnvironmentProvider {
@@ -233,7 +453,9 @@ class LspToolchainInstallerTest {
         val stdin: String?,
     )
 
-    private class RecordingLinuxEnvironment : LinuxEnvironment {
+    private class RecordingLinuxEnvironment(
+        private val executionFailure: Throwable? = null,
+    ) : LinuxEnvironment {
         val commands = mutableListOf<RecordedCommand>()
 
         override fun isAvailable(): Boolean = true
@@ -245,6 +467,7 @@ class LspToolchainInstallerTest {
             timeout: Long?,
             stdin: String?,
         ): LinuxExecutionResult {
+            executionFailure?.let { throw it }
             commands += RecordedCommand(command, workDir, env, timeout, stdin)
             return LinuxExecutionResult(
                 exitCode = 0,

@@ -405,7 +405,7 @@ class EditorPopupComposeSmokeTest {
     }
 
     @Test
-    fun editorSelectionContextMenu_shouldExpandTextActionsAndDispatchCallbacks() {
+    fun editorSelectionContextMenu_shouldExposePrimaryActionsWithoutMovingWhenMoreOpens() {
         val events = mutableListOf<String>()
 
         composeRule.setContent {
@@ -443,17 +443,25 @@ class EditorPopupComposeSmokeTest {
         assertThat(
             composeRule.onNodeWithTag(SELECTION_CONTEXT_MENU_TAG).fetchSemanticsNode()
         ).isNotNull()
+        val toolbarBoundsBeforeMore = composeRule
+            .onNodeWithTag(SELECTION_CONTEXT_MENU_TAG)
+            .fetchSemanticsNode()
+            .boundsInRoot
 
-        composeRule.onNodeWithTag(SELECTION_CONTEXT_MENU_TEXT_GROUP_TAG).performClick()
         composeRule.onNodeWithTag(SELECTION_CONTEXT_MENU_COPY_ACTION_TAG).performClick()
-        composeRule.onNodeWithTag(SELECTION_CONTEXT_MENU_TEXT_GROUP_TAG).performClick()
+        composeRule.onNodeWithTag(SELECTION_CONTEXT_MENU_MORE_ACTION_TAG).performClick()
+        val toolbarBoundsAfterMore = composeRule
+            .onNodeWithTag(SELECTION_CONTEXT_MENU_TAG)
+            .fetchSemanticsNode()
+            .boundsInRoot
         composeRule.onNodeWithTag(SELECTION_CONTEXT_MENU_HOVER_ACTION_TAG).performClick()
 
+        assertThat(toolbarBoundsAfterMore).isEqualTo(toolbarBoundsBeforeMore)
         assertThat(events).containsExactly("copy", "hover").inOrder()
     }
 
     @Test
-    fun editorSelectionContextMenu_shouldKeepCodeGroupCollapsedOnInitialLongPress() {
+    fun editorSelectionContextMenu_shouldKeepMoreMenuCollapsedOnInitialLongPress() {
         val events = mutableListOf<String>()
 
         composeRule.setContent {
@@ -466,20 +474,17 @@ class EditorPopupComposeSmokeTest {
         composeRule.waitForIdle()
 
         assertThat(
-            composeRule.onNodeWithTag(SELECTION_CONTEXT_MENU_CODE_GROUP_TAG).fetchSemanticsNode()
-        ).isNotNull()
-        assertThat(
             composeRule.onAllNodesWithTag(SELECTION_CONTEXT_MENU_GOTO_DEFINITION_ACTION_TAG).fetchSemanticsNodes()
         ).isEmpty()
 
-        composeRule.onNodeWithTag(SELECTION_CONTEXT_MENU_CODE_GROUP_TAG).performClick()
+        composeRule.onNodeWithTag(SELECTION_CONTEXT_MENU_MORE_ACTION_TAG).performClick()
         composeRule.onNodeWithTag(SELECTION_CONTEXT_MENU_GOTO_DEFINITION_ACTION_TAG).performClick()
 
         assertThat(events).containsExactly("gotoDefinition")
     }
 
     @Test
-    fun editorSelectionContextMenu_shouldExpandCodeGroupForKeyboardSelectedCodeAction() {
+    fun editorSelectionContextMenu_shouldOpenMoreMenuForKeyboardSelectedCodeAction() {
         composeRule.setContent {
             TestSelectionContextMenu(
                 keyboardSelectedAction = EditorContextMenuActionId.GotoDefinition,

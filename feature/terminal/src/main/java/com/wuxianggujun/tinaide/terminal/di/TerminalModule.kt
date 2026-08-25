@@ -28,22 +28,43 @@ val terminalModule = module {
     single<ITerminalThemeProvider> { TerminalThemeProvider() }
 
     // Locale 安装器
-    factory<ILocaleInstaller> { LocaleInstaller(get()) }
+    factory<ILocaleInstaller> {
+        LocaleInstaller(
+            context = get(),
+            linuxEnvironmentProvider = get(),
+        )
+    }
 
     // Guest 开发基础包安装器
-    factory<IGuestDevPackagesInstaller> { GuestDevelopmentPackagesInstaller(get()) }
+    factory<IGuestDevPackagesInstaller> {
+        GuestDevelopmentPackagesInstaller(
+            context = get(),
+            linuxEnvironmentProvider = get(),
+        )
+    }
 
     // Shell 安装器（Zsh）
-    factory<IShellInstaller> { ZshInstaller(get()) }
+    factory<IShellInstaller> {
+        ZshInstaller(
+            context = get(),
+            linuxEnvironmentProvider = get(),
+        )
+    }
 
     // Shell 解析器
-    factory<IShellResolver> { ShellResolverAdapter(get()) }
+    factory<IShellResolver> {
+        ShellResolverAdapter(
+            context = get(),
+            linuxEnvironmentProvider = get(),
+        )
+    }
 
     // TerminalSessionManager（feature:terminal 层具体类）
     single {
         TerminalSessionManager(
             application = get(),
-            scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+            linuxEnvironmentProvider = get(),
         )
     }
 

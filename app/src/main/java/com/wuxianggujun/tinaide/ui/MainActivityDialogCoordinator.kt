@@ -84,7 +84,11 @@ class MainActivityDialogCoordinator(
             if (forgetSession) {
                 clearCurrentProjectState()
             }
-            projectSession.closeProject()
+            if (forgetSession) {
+                projectSession.closeProject()
+            } else {
+                projectSession.clearInMemorySession()
+            }
         }
         withContext(Dispatchers.Main) {
             activity.startActivity(

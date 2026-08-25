@@ -194,14 +194,14 @@ internal class SelectionHandleDragCoordinator(
                     loaded
                 }
                 val prefixLayout = lineLayoutCache.getPrefixLayout(
+                    state = state,
                     line = line,
                     lineText = lineText,
                     textVersion = textVersion,
                     paint = textPaint,
-                    tabSize = state.config.tabSize
                 )
                 val safeVisualStartColumn = visualStartColumn.coerceIn(0, prefixLayout.length)
-                val segmentStartXInText = prefixLayout.prefix[safeVisualStartColumn]
+                val segmentStartXInText = prefixLayout.segmentStartAdvance(safeVisualStartColumn)
                 val column = lineLayoutCache.xToColumn(
                     layout = prefixLayout,
                     contentX = segmentStartXInText + contentX

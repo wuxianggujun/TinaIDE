@@ -19,9 +19,11 @@ import com.wuxianggujun.tinaide.ui.CompileActionsHelper
 import com.wuxianggujun.tinaide.ui.MainActivityActionsViewModel
 import com.wuxianggujun.tinaide.ui.TerminalActivity
 import com.wuxianggujun.tinaide.ui.compose.components.BottomPanelTab
+import com.wuxianggujun.tinaide.ui.compose.components.DrawerTab
 import com.wuxianggujun.tinaide.ui.compose.components.FileTreeState
 import com.wuxianggujun.tinaide.ui.compose.components.SwipeableDrawerState
 import com.wuxianggujun.tinaide.ui.compose.state.DialogState
+import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveEditorCommandResult
 import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
@@ -326,7 +328,8 @@ class MainActivityHostCommandExecutor(
                 true
             }
             HostCommands.VIEW_TOGGLE_SYMBOLS -> {
-                toggleBottomPanelSymbols()
+                // 与侧栏「符号」统一：打开抽屉大纲，不再堆底栏次级 Tab
+                openDrawerSymbols()
                 true
             }
             HostCommands.VIEW_COMMAND_PALETTE -> {
@@ -389,15 +392,15 @@ class MainActivityHostCommandExecutor(
     }
 
     private fun openDialogForActiveEditableEditor(onSupported: () -> Unit): Boolean = when (editorContainerState.getActiveEditableEditorCommandAvailability()) {
-        EditorContainerState.ActiveEditorCommandResult.SUCCESS -> {
+        ActiveEditorCommandResult.SUCCESS -> {
             onSupported()
             true
         }
-        EditorContainerState.ActiveEditorCommandResult.NO_OPEN_FILE -> {
+        ActiveEditorCommandResult.NO_OPEN_FILE -> {
             toastInfo(Strings.toast_no_open_file.strOr(activity))
             true
         }
-        EditorContainerState.ActiveEditorCommandResult.UNSUPPORTED_EDITOR -> {
+        ActiveEditorCommandResult.UNSUPPORTED_EDITOR -> {
             toastInfo(Strings.toast_file_not_support_format.strOr(activity))
             true
         }
@@ -411,17 +414,8 @@ class MainActivityHostCommandExecutor(
         return handled
     }
 
-    private fun toggleBottomPanelSymbols() {
-        val currentTab = bottomPanelViewModel.selectedBottomTab.value
-        val isSelected = currentTab == BottomPanelTab.SYMBOLS
-        scope.launch {
-            if (isSelected && bottomPanelController.isExpanded()) {
-                bottomPanelController.collapse()
-            } else {
-                bottomPanelViewModel.setSelectedTab(BottomPanelTab.SYMBOLS)
-                bottomPanelController.expandToDefault()
-            }
-        }
+    private fun openDrawerSymbols() {
+        drawerState.toggleTab(DrawerTab.SYMBOLS)
     }
 
     private fun openBottomPanelBookmarks() {

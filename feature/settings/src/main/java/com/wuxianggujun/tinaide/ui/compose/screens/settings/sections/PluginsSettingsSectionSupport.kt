@@ -13,6 +13,7 @@ import com.wuxianggujun.tinaide.plugin.PluginDiagnosticSeverity
 import com.wuxianggujun.tinaide.plugin.PluginDiagnosticSource
 import com.wuxianggujun.tinaide.plugin.PluginDiagnosticsReport
 import com.wuxianggujun.tinaide.plugin.PluginDiagnosticsSnapshot
+import com.wuxianggujun.tinaide.plugin.PluginFaultPhase
 import com.wuxianggujun.tinaide.plugin.PluginLogLevel
 import com.wuxianggujun.tinaide.plugin.PluginManifest
 import com.wuxianggujun.tinaide.plugin.PluginMenuItem
@@ -455,6 +456,20 @@ internal object PluginsSettingsSectionSupport {
         ScriptPluginState.ACTIVE -> Strings.plugins_runtime_state_active
         ScriptPluginState.ERROR -> Strings.plugins_runtime_state_error
         ScriptPluginState.DISABLED -> Strings.plugins_runtime_state_disabled
+        ScriptPluginState.WAITING_PERMISSION -> Strings.plugins_runtime_state_waiting_permission
+        ScriptPluginState.QUARANTINED -> Strings.plugins_runtime_state_quarantined
+        ScriptPluginState.RUNTIME_UNAVAILABLE -> Strings.plugins_runtime_state_unavailable
+    }
+
+    @StringRes
+    fun resolvePluginFaultPhaseLabelRes(phase: PluginFaultPhase): Int = when (phase) {
+        PluginFaultPhase.STARTUP -> Strings.plugins_fault_phase_startup
+        PluginFaultPhase.COMMAND -> Strings.plugins_fault_phase_command
+        PluginFaultPhase.EVENT -> Strings.plugins_fault_phase_event
+        PluginFaultPhase.API_CALL -> Strings.plugins_fault_phase_api
+        PluginFaultPhase.LSP -> Strings.plugins_fault_phase_lsp
+        PluginFaultPhase.CONTRIBUTION -> Strings.plugins_fault_phase_contribution
+        PluginFaultPhase.UNKNOWN -> Strings.plugins_fault_phase_unknown
     }
 
     fun isScriptPlugin(manifest: PluginManifest): Boolean = manifest.type.equals("script", ignoreCase = true) ||

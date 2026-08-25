@@ -72,11 +72,11 @@ internal class BracketPairGuideRenderer {
                     )
                     .leadingIndentColumns
                 cachedPrefixLayout = lineLayoutCache.getPrefixLayout(
+                    state = state,
                     line = guideLine,
                     lineText = cachedLineText,
                     textVersion = textVersion,
                     paint = textPaint,
-                    tabSize = tabSize
                 )
             }
             val prefixLayout = cachedPrefixLayout ?: continue

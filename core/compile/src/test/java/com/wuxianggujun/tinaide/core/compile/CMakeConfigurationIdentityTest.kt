@@ -21,16 +21,21 @@ class CMakeConfigurationIdentityTest {
                 nativeCMakeArgs = listOf(" -DUSE_A=ON ", "", "-DUSE_A=ON", "-DUSE_B=OFF"),
                 cppStandard = " c++20 ",
                 resolvedRunMode = LinuxRunModePolicy.RunMode.NATIVE,
-            )
+            ),
+            androidAbi = " arm64-v8a ",
         )
 
         assertThat(identity.asCMakeCacheEntries()).containsAtLeast(
+            CMakeConfigurationIdentity.CMAKE_LINK_POLICY_VERSION_KEY,
+            "3",
             CMakeConfigurationIdentity.CMAKE_RUN_MODE_KEY,
             "NATIVE",
             CMakeConfigurationIdentity.CMAKE_COMPILER_TYPE_KEY,
             "CLANG",
             CMakeConfigurationIdentity.CMAKE_TOOLCHAIN_ID_KEY,
             "toolchain-a",
+            CMakeConfigurationIdentity.CMAKE_ANDROID_ABI_KEY,
+            "arm64-v8a",
             NativeRuntimeIdentity.CMAKE_SYSROOT_PROFILE_ID_KEY,
             "sysroot-a",
             NativeRuntimeIdentity.CMAKE_SYSROOT_API_LEVEL_KEY,
@@ -56,10 +61,13 @@ class CMakeConfigurationIdentityTest {
             BuildOptions(
                 toolchainId = "native-toolchain-should-not-leak",
                 resolvedRunMode = LinuxRunModePolicy.RunMode.PROOT,
-            )
+            ),
+            androidAbi = "arm64-v8a",
         )
 
         assertThat(identity.asCMakeCacheEntries()[CMakeConfigurationIdentity.CMAKE_TOOLCHAIN_ID_KEY])
             .isEqualTo("<proot>")
+        assertThat(identity.asCMakeCacheEntries()[CMakeConfigurationIdentity.CMAKE_ANDROID_ABI_KEY])
+            .isEmpty()
     }
 }

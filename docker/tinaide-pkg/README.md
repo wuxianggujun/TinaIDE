@@ -27,7 +27,13 @@ tinaide-pkg/
 │   ├── build-libssh2.sh
 │   ├── build-libgit2.sh
 │   ├── build-pcre2.sh
-│   └── build-sdl3.sh
+│   ├── build-sdl2.sh
+│   ├── build-sdl3.sh
+│   ├── build-sdl-extension.sh
+│   ├── build-raylib.sh
+│   └── build-box2d.sh
+├── package-native-library.sh # 生成通用兼容包和按 ABI 拆分的 Registry 产物
+├── package-sdl2.sh     # 生成 SDL2 通用兼容包和按 ABI 拆分产物
 ├── package-for-assets.sh # 打包为 assets 格式
 └── output/              # 构建输出
     ├── zlib/
@@ -82,10 +88,10 @@ docker cp tinaide-toolchain-builder:/output/sdl3/arm64-v8a/sdl3-arm64-v8a-shared
 ### 构建所有库
 
 ```powershell
-# 构建所有库的所有架构静态版本
+# 构建所有支持静态产物的库（自动跳过 shared-only 库）
 .\build-pkg.ps1 -Library all -Arch all -LinkType static
 
-# 构建所有库的 arm64 静态和动态版本
+# 构建所有库的 arm64 支持产物（按库过滤链接类型）
 .\build-pkg.ps1 -Library all -Arch arm64-v8a -LinkType all
 ```
 
@@ -119,22 +125,31 @@ docker cp tinaide-toolchain-builder:/output/sdl3/arm64-v8a/sdl3-arm64-v8a-shared
 | curl | 8.6.0 | openssl (可选) | HTTP 客户端 |
 | libssh2 | 1.11.0 | openssl, zlib | SSH2 协议 |
 | libgit2 | 1.7.2 | openssl, libssh2, zlib | Git 操作库 |
-| sdl3 | 3.1.6 | 无 | 跨平台多媒体库 |
+| sdl2 | 2.32.10.2（上游 2.32.10） | 无 | SDL2 Android runtime（TinaIDE JNI 包名） |
+| sdl2-image | 2.8.12 | sdl2 | SDL2 图像加载库（内建解码器） |
+| sdl2-ttf | 2.24.0 | sdl2 | SDL2 TrueType 字体渲染库（内置 FreeType） |
+| sdl2-mixer | 2.8.2 | sdl2 | SDL2 音频混音库（内建常用解码器） |
+| sdl2-net | 2.4.0 | sdl2 | SDL2 TCP/UDP 网络库 |
+| sdl3 | 3.5.0 | 无 | 跨平台多媒体库 |
+| sdl3-image | 3.4.4 | sdl3 | SDL3 图像加载库（内建解码器） |
+| sdl3-ttf | 3.2.2 | sdl3 | SDL3 TrueType 字体渲染库（内置 FreeType） |
+| sdl3-mixer | 3.2.4 | sdl3 | SDL3 音频混音库（内建常用解码器） |
+| sdl3-net | 3.2.0 | sdl3 | SDL3 网络库 |
+| raylib | 6.0 | 无 | 游戏开发库（动态库） |
+| box2d | 3.1.1 | 无 | 2D 物理引擎（静态库） |
 
 ### 依赖关系图
 
 ```
-zlib ──────────────────────────────┐
-                                   │
-openssl ───────────────────────────┼──> libssh2 ──> libgit2
-                                   │
-                                   └──> curl
+zlib ───────────────────────────────┐
+                                    ├──> libssh2 ──> libgit2
+openssl ────────────────────────────┘
+   └──> curl（可选）
 
-sdl3 (独立，无依赖)
-                                   │         │
-pcre2 (独立)                       └─────────┘
-                                   │
-curl <── openssl (可选)            │
+sdl2 ──> sdl2-image / sdl2-ttf / sdl2-mixer / sdl2-net
+sdl3 ──> sdl3-image / sdl3-ttf / sdl3-mixer / sdl3-net
+
+pcre2 / raylib / box2d（独立）
 ```
 
 ### 推荐构建顺序
@@ -296,6 +311,30 @@ A: 修改对应 `libs/build-{库名}.sh` 中的版本号和 URL。
 
 ---
 
+## SDL2 Android 包
+
+SDL2 必须使用本目录的构建脚本，不能直接发布官方 Android `.so`。TinaIDE
+同时打包 SDL2 与 SDL3 Java glue，因此 SDL2 native JNI 注册路径已从
+`org/libsdl/app` 重定位为 `org/libsdl2/app`。
+
+```powershell
+# registry 至少构建 TinaIDE 当前支持的两个 ABI
+.\build-pkg.ps1 -Library sdl2 -Arch arm64-v8a -LinkType shared
+.\build-pkg.ps1 -Library sdl2 -Arch x86_64 -LinkType shared
+```
+
+```bash
+# 合并 ABI，生成 Registry 包版本 2.32.10.2 的通用及 ABI 独立归档
+bash ./package-sdl2.sh "arm64-v8a x86_64"
+```
+
+最终包 ID 固定为 `sdl2`，包含 `include/SDL2`、`lib/<abi>/libSDL2.so`、
+`lib/cmake/SDL2`、`pkgconfig/sdl2.pc`、`LICENSE.txt` 与 `package.json`。
+Java glue、头文件和 native 库必须保持同一 SDL release；当前固定为
+`release-2.32.10` / `5d249570393f7a37e037abf22cd6012a4cc56a71`。Registry
+包版本为 `2.32.10.2`，用于让已安装旧 `2.32.10` 包的客户端识别 HID JNI
+重定位修复；归档内 `upstreamVersion` 仍准确记录为 `2.32.10`。
+
 ## SDL3 完整使用示例
 
 ### 1. 编译 SDL3
@@ -368,13 +407,37 @@ clang++ -I/data/data/.../sdl3/include \
         -lSDL3 main.cpp -o my_app
 ```
 
-### 5. 扩展库
+### 5. 扩展库与游戏开发库
 
-使用相同流程可编译 SDL3 生态系统库：
+使用相同流程可编译并发布 SDL2/SDL3 生态系统库：
 
-- **SDL3_image**: 图像加载（PNG, JPEG, WebP）
-- **SDL3_mixer**: 音频混音
-- **SDL3_ttf**: TrueType 字体渲染
+- **SDL2_image / SDL3_image**：图像加载，使用内建后端，不引入额外动态 codec 依赖
+- **SDL2_mixer / SDL3_mixer**：WAV、Ogg、MP3、FLAC 音频混音，codec 静态内置
+- **SDL2_ttf / SDL3_ttf**：TrueType 字体渲染，FreeType 静态内置
+- **SDL2_net / SDL3_net**：TCP/UDP 网络能力
+- **raylib**：游戏开发动态库；保持 shared 构建，必须导出 `ANativeActivity_onCreate`、保留未定义的普通 `main`，且不得依赖 SDL
+- **Box2D**：2D 物理引擎静态库
+
+Registry 打包会保留一个供旧客户端使用的双 ABI 通用包，并为 `arm64-v8a` 与
+`x86_64` 分别生成独立归档。新客户端按当前 App ABI 下载独立归档，不再让 ARM64
+用户额外下载 x86_64 库；每个独立归档仍包含头文件、对应的 `lib/<abi>`、
+CMake package、pkg-config 和仅声明当前 ABI 的 `package.json`：
+
+```powershell
+# 在构建镜像中运行，复用容器内的 readelf、tar 和 xz
+docker run --rm --entrypoint /build/package-native-library.sh `
+    -v "${PWD}\output:/output" tinaide-pkg-builder sdl2-image
+docker run --rm --entrypoint /build/package-native-library.sh `
+    -v "${PWD}\output:/output" tinaide-pkg-builder box2d
+```
+
+以 `raylib` 为例，输出目录包含：
+
+```text
+output/registry/raylib/6.0/raylib.tar.xz              # 旧客户端兼容
+output/registry/raylib/6.0/raylib-arm64-v8a.tar.xz    # ARM64
+output/registry/raylib/6.0/raylib-x86_64.tar.xz       # x86_64
+```
 
 ---
 

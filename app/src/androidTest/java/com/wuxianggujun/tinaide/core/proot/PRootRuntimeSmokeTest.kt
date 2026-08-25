@@ -29,7 +29,11 @@ class PRootRuntimeSmokeTest {
             timeout = 30_000L
         )
 
-        assertEquals("proot shell child-chain exitCode", 0, result.exitCode)
+        assertEquals(
+            "proot shell child-chain exitCode; output=${result.combinedOutput}",
+            0,
+            result.exitCode,
+        )
         assertTrue(
             "proot child-chain output should contain OK_CHILD_CHAIN",
             result.combinedOutput.contains("OK_CHILD_CHAIN")
@@ -87,7 +91,8 @@ class PRootRuntimeSmokeTest {
 
     private fun requireReadyEnvironment(context: android.content.Context): PRootEnvironment {
         assumeTrue("proot environment not ready", PRootBootstrap.isEnvironmentReady(context))
-        val env = PRootEnvironment(context)
+        val configManager = com.wuxianggujun.tinaide.core.config.ConfigManager(context)
+        val env = PRootEnvironment(context, configManager)
         assumeTrue("proot environment not available", env.isAvailable())
         return env
     }

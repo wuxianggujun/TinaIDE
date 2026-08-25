@@ -6,6 +6,7 @@ $repoRoot = Split-Path -Parent $root
 $outputRoot = Join-Path $repoRoot "tools/plugin-starters/dist/tinaide.plugin.starters/templates"
 $sharedRoot = Join-Path $PSScriptRoot "shared"
 $stagingRoot = Join-Path $PSScriptRoot ".bundle"
+$zipBuilder = Join-Path $sharedRoot "build_deterministic_zip.py"
 
 $templates = @(
     @{ Name = "config-basic"; Output = "tina-config-plugin.zip" },
@@ -13,6 +14,18 @@ $templates = @(
     @{ Name = "script-basic"; Output = "tina-script-plugin.zip" },
     @{ Name = "lsp-basic"; Output = "tina-lsp-plugin.zip" }
 )
+
+function Resolve-PythonCommand {
+    foreach ($name in @("py", "python3", "python")) {
+        $command = Get-Command $name -ErrorAction SilentlyContinue
+        if ($null -ne $command) {
+            return $command.Source
+        }
+    }
+    throw "Python 3 is required to build deterministic starter archives."
+}
+
+$pythonCommand = Resolve-PythonCommand
 
 New-Item -ItemType Directory -Force -Path $outputRoot | Out-Null
 if (Test-Path $stagingRoot) {
@@ -48,11 +61,10 @@ foreach ($template in $templates) {
     Copy-Item (Join-Path $sharedRoot "validate_core.py") -Destination $starterSupportDir -Force
     Copy-Item (Join-Path $sharedRoot "validation-rules.json") -Destination $starterSupportDir -Force
 
-    if (Test-Path $outputZip) {
-        Remove-Item $outputZip -Force
+    & $pythonCommand $zipBuilder --source $stagingDir --output $outputZip
+    if ($LASTEXITCODE -ne 0) {
+        throw "Starter archive build failed: $($template.Name)"
     }
-
-    Compress-Archive -Path (Join-Path $stagingDir "*") -DestinationPath $outputZip
     Write-Host "Built $outputZip"
 }
 

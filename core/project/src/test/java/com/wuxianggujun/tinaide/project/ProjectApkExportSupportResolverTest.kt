@@ -32,6 +32,189 @@ class ProjectApkExportSupportResolverTest {
     }
 
     @Test
+    fun `detect records SDL2 runtime without enabling SDL3 APK export`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            projectRoot.resolve("CMakeLists.txt").writeText(
+                """
+                cmake_minimum_required(VERSION 3.22)
+                project(Demo)
+                find_package(SDL2 CONFIG REQUIRED)
+                add_library(Demo SHARED src/main.cpp)
+                set_target_properties(Demo PROPERTIES OUTPUT_NAME "main")
+                target_link_libraries(Demo PRIVATE SDL2::SDL2)
+                """.trimIndent()
+            )
+            projectRoot.resolve("src").mkdirs()
+            projectRoot.resolve("src/main.cpp").writeText("""#include <SDL2/SDL.h>""")
+
+            val detected = ProjectApkExportSupportResolver.detectSupport(projectRoot)
+
+            assertThat(detected.sdlVersion).isEqualTo(ProjectSdlVersion.SDL2)
+            assertThat(detected.apkExportType).isNull()
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `detect accepts bare SDL2 CMake target`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            projectRoot.resolve("CMakeLists.txt").writeText(
+                """
+                add_library(main SHARED src/main.cpp)
+                target_link_libraries(main
+                    PRIVATE
+                    SDL2
+                )
+                """.trimIndent()
+            )
+
+            val detected = ProjectApkExportSupportResolver.detectSupport(projectRoot)
+
+            assertThat(detected.sdlVersion).isEqualTo(ProjectSdlVersion.SDL2)
+            assertThat(detected.apkExportType).isNull()
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `detect scans SDL2 markers from included cmake modules`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            projectRoot.resolve("CMakeLists.txt").writeText(
+                """
+                add_library(main SHARED src/main.cpp)
+                include(cmake/Dependencies.cmake)
+                """.trimIndent()
+            )
+            projectRoot.resolve("cmake").mkdirs()
+            projectRoot.resolve("cmake/Dependencies.cmake").writeText(
+                "target_link_libraries(main PRIVATE SDL2::SDL2)"
+            )
+
+            val detected = ProjectApkExportSupportResolver.detectSupport(projectRoot)
+
+            assertThat(detected.sdlVersion).isEqualTo(ProjectSdlVersion.SDL2)
+            assertThat(detected.apkExportType).isNull()
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `detect accepts SDL2 config command from GNUmakefile`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            projectRoot.resolve("GNUmakefile").writeText(
+                """
+                SDL_CFLAGS := ${'$'}(shell sdl2-config --cflags)
+                SDL_LIBS := ${'$'}(shell sdl2-config --libs)
+                """.trimIndent()
+            )
+
+            val detected = ProjectApkExportSupportResolver.detectSupport(projectRoot)
+
+            assertThat(detected.sdlVersion).isEqualTo(ProjectSdlVersion.SDL2)
+            assertThat(detected.apkExportType).isNull()
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `detect does not classify SDL2 project as native activity`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            projectRoot.resolve("CMakeLists.txt").writeText(
+                """
+                add_library(main SHARED src/main.cpp)
+                target_link_libraries(main PRIVATE SDL2::SDL2)
+                """.trimIndent()
+            )
+            projectRoot.resolve("src").mkdirs()
+            projectRoot.resolve("src/main.cpp").writeText(
+                """
+                #include <android_native_app_glue.h>
+                #include <SDL2/SDL.h>
+                """.trimIndent()
+            )
+
+            val detected = ProjectApkExportSupportResolver.detectSupport(projectRoot)
+
+            assertThat(detected.sdlVersion).isEqualTo(ProjectSdlVersion.SDL2)
+            assertThat(detected.apkExportType).isNull()
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `detect accepts versioned SDL2 soname markers`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            projectRoot.resolve("Android.mk").writeText(
+                """
+                LOCAL_MODULE := main
+                LOCAL_LDLIBS += -Llibs -lSDL2
+                # Runtime SONAME: libSDL2-2.0.so.0
+                """.trimIndent()
+            )
+
+            val detected = ProjectApkExportSupportResolver.detectSupport(projectRoot)
+
+            assertThat(detected.sdlVersion).isEqualTo(ProjectSdlVersion.SDL2)
+            assertThat(detected.apkExportType).isNull()
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `detect does not treat shared SDLActivity marker as SDL3`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            projectRoot.resolve("CMakeLists.txt").writeText(
+                """
+                add_library(main SHARED src/main.cpp)
+                """.trimIndent()
+            )
+            projectRoot.resolve("AndroidManifest.xml").writeText(
+                """<activity android:name="org.libsdl.app.SDLActivity" />"""
+            )
+
+            val detected = ProjectApkExportSupportResolver.detectSupport(projectRoot)
+
+            assertThat(detected.sdlVersion).isNull()
+            assertThat(detected.apkExportType).isNull()
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `detect leaves conflicting SDL2 and SDL3 markers unresolved`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            projectRoot.resolve("CMakeLists.txt").writeText(
+                """
+                add_library(main SHARED src/main.cpp)
+                target_link_libraries(main PRIVATE SDL2::SDL2 SDL3::SDL3)
+                """.trimIndent()
+            )
+
+            val detected = ProjectApkExportSupportResolver.detectSupport(projectRoot)
+
+            assertThat(detected.sdlVersion).isNull()
+            assertThat(detected.apkExportType).isNull()
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `detect returns null when project only outputs libmain`() {
         val projectRoot = createTempProjectRoot()
         try {
@@ -48,6 +231,56 @@ class ProjectApkExportSupportResolverTest {
             val detected = ProjectApkExportSupportResolver.detect(projectRoot)
 
             assertThat(detected).isNull()
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `detect returns native activity for shared raylib project`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            projectRoot.resolve("CMakeLists.txt").writeText(
+                """
+                cmake_minimum_required(VERSION 3.22)
+                project(RaylibDemo)
+                find_package(raylib CONFIG REQUIRED)
+                add_library(main SHARED src/main.c)
+                target_link_libraries(main PRIVATE raylib::raylib)
+                """.trimIndent()
+            )
+            projectRoot.resolve("src").mkdirs()
+            projectRoot.resolve("src/main.c").writeText(
+                """
+                #include <raylib.h>
+                int main(void) { InitWindow(640, 480, "demo"); return 0; }
+                """.trimIndent()
+            )
+
+            val detected = ProjectApkExportSupportResolver.detectSupport(projectRoot)
+
+            assertThat(detected.apkExportType).isEqualTo(ProjectApkExportType.NATIVE_ACTIVITY)
+            assertThat(detected.sdlVersion).isNull()
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `detect does not classify raylib plus SDL as native activity`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            projectRoot.resolve("CMakeLists.txt").writeText(
+                """
+                add_library(main SHARED src/main.cpp)
+                target_link_libraries(main PRIVATE raylib SDL2::SDL2)
+                """.trimIndent()
+            )
+
+            val detected = ProjectApkExportSupportResolver.detectSupport(projectRoot)
+
+            assertThat(detected.apkExportType).isNull()
+            assertThat(detected.sdlVersion).isEqualTo(ProjectSdlVersion.SDL2)
         } finally {
             projectRoot.deleteRecursively()
         }
@@ -146,6 +379,66 @@ class ProjectApkExportSupportResolverTest {
             assertThat(detected).isEqualTo(ProjectApkExportType.NATIVE_ACTIVITY)
             assertThat(ProjectMetadataStore.read(projectRoot)?.apkExportType)
                 .isEqualTo(ProjectApkExportType.NATIVE_ACTIVITY)
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `ensureDetected persists SDL2 runtime without APK export type`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            projectRoot.resolve("CMakeLists.txt").writeText(
+                """
+                add_library(main SHARED src/main.cpp)
+                target_link_libraries(main PRIVATE SDL2::SDL2)
+                """.trimIndent()
+            )
+            ProjectMetadataStore.ensure(
+                projectRoot = projectRoot,
+                displayNameFallback = "Demo",
+                buildSystem = ProjectBuildSystem.CMAKE,
+            )
+
+            val detected = ProjectApkExportSupportResolver.ensureDetected(projectRoot)
+            val metadata = ProjectMetadataStore.read(projectRoot)
+
+            assertThat(detected).isNull()
+            assertThat(metadata?.apkExportType).isNull()
+            assertThat(metadata?.sdlVersion).isEqualTo(ProjectSdlVersion.SDL2)
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `ensureDetected does not replace known SDL2 with native activity export`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            projectRoot.resolve("CMakeLists.txt").writeText(
+                """
+                add_library(main SHARED src/main.cpp)
+                """.trimIndent()
+            )
+            projectRoot.resolve("src").mkdirs()
+            projectRoot.resolve("src/main.cpp").writeText(
+                """
+                #include <android_native_app_glue.h>
+                void android_main(struct android_app* app) {}
+                """.trimIndent()
+            )
+            ProjectMetadataStore.ensure(
+                projectRoot = projectRoot,
+                displayNameFallback = "SDL2 Demo",
+                sdlVersion = ProjectSdlVersion.SDL2,
+            )
+
+            val detected = ProjectApkExportSupportResolver.ensureDetected(projectRoot)
+
+            assertThat(detected).isNull()
+            assertThat(ProjectMetadataStore.read(projectRoot)?.sdlVersion)
+                .isEqualTo(ProjectSdlVersion.SDL2)
+            assertThat(ProjectMetadataStore.read(projectRoot)?.apkExportType).isNull()
         } finally {
             projectRoot.deleteRecursively()
         }

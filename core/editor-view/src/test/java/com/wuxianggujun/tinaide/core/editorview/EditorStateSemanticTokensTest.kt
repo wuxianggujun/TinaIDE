@@ -130,7 +130,7 @@ class EditorStateSemanticTokensTest {
     }
 
     @Test
-    fun applyTextChangeToSemanticTokens_shouldDropChangedLineTokens() {
+    fun applyTextChangeToSemanticTokens_shouldShiftTokenAfterSingleLineInsertion() {
         val state = createState()
         state.replaceSemanticTokens(
             listOf(
@@ -156,8 +156,138 @@ class EditorStateSemanticTokensTest {
             )
         )
 
-        assertThat(state.semanticTokensByLine).doesNotContainKey(1)
-        assertThat(state.semanticTokens).isEmpty()
+        val shifted = SemanticToken(
+            line = 1,
+            startColumn = 2,
+            length = 4,
+            tokenType = SemanticTokenType.FUNCTION
+        )
+        assertThat(state.semanticTokensByLine[1]).containsExactly(shifted)
+        assertThat(state.semanticTokens).containsExactly(shifted)
+    }
+
+    @Test
+    fun applyTextChangeToSemanticTokens_shouldPreserveBeforeDropOverlapAndShiftAfter() {
+        val state = createState()
+        val before = SemanticToken(1, 0, 2, SemanticTokenType.KEYWORD)
+        val overlap = SemanticToken(1, 3, 3, SemanticTokenType.FUNCTION)
+        val after = SemanticToken(1, 8, 2, SemanticTokenType.VARIABLE)
+        state.replaceSemanticTokens(listOf(before, overlap, after))
+
+        state.applyTextChangeToSemanticTokens(
+            TextChange(
+                startOffset = 9,
+                endOffset = 11,
+                oldText = "ta",
+                newText = "x",
+                startLine = 1,
+                startColumn = 3,
+                endLine = 1,
+                endColumn = 5
+            )
+        )
+
+        assertThat(state.semanticTokensByLine[1]).containsExactly(
+            before,
+            after.copy(startColumn = 7)
+        ).inOrder()
+    }
+
+    @Test
+    fun applyTextChangeToSemanticTokens_shouldDropTokenContainingInsertionPoint() {
+        val state = createState()
+        val containing = SemanticToken(1, 1, 4, SemanticTokenType.FUNCTION)
+        val after = SemanticToken(1, 6, 2, SemanticTokenType.VARIABLE)
+        state.replaceSemanticTokens(listOf(containing, after))
+
+        state.applyTextChangeToSemanticTokens(
+            TextChange(
+                startOffset = 9,
+                endOffset = 9,
+                oldText = "",
+                newText = "xx",
+                startLine = 1,
+                startColumn = 3,
+                endLine = 1,
+                endColumn = 3
+            )
+        )
+
+        assertThat(state.semanticTokensByLine[1]).containsExactly(after.copy(startColumn = 8))
+    }
+
+    @Test
+    fun applyTextChangeToSemanticTokens_insertionAtTokenBoundaryShouldPreserveLeftAndShiftRight() {
+        val state = createState()
+        val left = SemanticToken(1, 0, 3, SemanticTokenType.KEYWORD)
+        val right = SemanticToken(1, 3, 1, SemanticTokenType.VARIABLE)
+        state.replaceSemanticTokens(listOf(left, right))
+
+        state.applyTextChangeToSemanticTokens(
+            TextChange(
+                startOffset = 9,
+                endOffset = 9,
+                oldText = "",
+                newText = "xx",
+                startLine = 1,
+                startColumn = 3,
+                endLine = 1,
+                endColumn = 3
+            )
+        )
+
+        assertThat(state.semanticTokensByLine[1]).containsExactly(
+            left,
+            right.copy(startColumn = 5)
+        ).inOrder()
+    }
+
+    @Test
+    fun applyTextChangeToSemanticTokens_replacementTouchingTokenEdgesShouldNotDropTokens() {
+        val state = createState()
+        val left = SemanticToken(0, 0, 2, SemanticTokenType.KEYWORD)
+        val right = SemanticToken(0, 3, 2, SemanticTokenType.VARIABLE)
+        state.replaceSemanticTokens(listOf(left, right))
+
+        state.applyTextChangeToSemanticTokens(
+            TextChange(
+                startOffset = 2,
+                endOffset = 3,
+                oldText = "p",
+                newText = "",
+                startLine = 0,
+                startColumn = 2,
+                endLine = 0,
+                endColumn = 3
+            )
+        )
+
+        assertThat(state.semanticTokensByLine[0]).containsExactly(
+            left,
+            right.copy(startColumn = 2)
+        ).inOrder()
+    }
+
+    @Test
+    fun applyTextChangeToSemanticTokens_negativeDeltaShouldAllowTokenToShiftToColumnZero() {
+        val state = createState()
+        val token = SemanticToken(0, 3, 2, SemanticTokenType.VARIABLE)
+        state.replaceSemanticTokens(listOf(token))
+
+        state.applyTextChangeToSemanticTokens(
+            TextChange(
+                startOffset = 0,
+                endOffset = 3,
+                oldText = "alp",
+                newText = "",
+                startLine = 0,
+                startColumn = 0,
+                endLine = 0,
+                endColumn = 3
+            )
+        )
+
+        assertThat(state.semanticTokensByLine[0]).containsExactly(token.copy(startColumn = 0))
     }
 
     @Test

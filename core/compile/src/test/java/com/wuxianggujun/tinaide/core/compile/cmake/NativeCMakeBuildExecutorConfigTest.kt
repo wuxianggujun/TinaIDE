@@ -462,6 +462,17 @@ class NativeCMakeBuildExecutorConfigTest {
     }
 
     @Test
+    fun `buildAndroidAbiCMakeArgument exposes package ABI to CMake config files`() {
+        assertThat(
+            NativeCMakeBuildExecutor.buildAndroidAbiCMakeArgument(" arm64-v8a ")
+        ).isEqualTo("-DANDROID_ABI=arm64-v8a")
+
+        assertThat(
+            NativeCMakeBuildExecutor.buildAndroidAbiCMakeArgument("x86_64")
+        ).isEqualTo("-DANDROID_ABI=x86_64")
+    }
+
+    @Test
     fun `buildCMakeExtraEnvironment adds shim trace flag when enabled`() {
         val env = NativeCMakeBuildExecutor.buildCMakeExtraEnvironment(
             packageEnvironment = mapOf("CPATH" to "/pkg/include"),

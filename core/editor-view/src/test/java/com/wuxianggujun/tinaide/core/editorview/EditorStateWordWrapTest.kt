@@ -2,6 +2,7 @@ package com.wuxianggujun.tinaide.core.editorview
 
 import com.google.common.truth.Truth.assertThat
 import com.wuxianggujun.tinaide.core.textengine.RopeTextBuffer
+import com.wuxianggujun.tinaide.core.treesitter.TreeSitterFoldingProvider.FoldRegion
 import org.junit.Test
 
 class EditorStateWordWrapTest {
@@ -69,6 +70,64 @@ class EditorStateWordWrapTest {
         }.sum()
 
         assertThat(state.visualLineCount()).isEqualTo(expectedVisualLines)
+    }
+
+    @Test
+    fun wrapLayoutCache_withSameLengthReplacement_shouldUseNewText() {
+        val cache = EditorWordWrapLayoutCache()
+
+        val withTab = cache.getWrapLayout(0, "a\tb", 1L, 3, 4)
+        val withoutTab = cache.getWrapLayout(0, "abc", 1L, 3, 4)
+
+        assertThat(withTab.segmentCount).isGreaterThan(1)
+        assertThat(withoutTab.segmentCount).isEqualTo(1)
+    }
+
+    @Test
+    fun wrapLayoutCache_withCollidingLegacyParameterHash_shouldRebuildLayout() {
+        val lineText = "\tabc"
+        val cache = EditorWordWrapLayoutCache()
+
+        val first = cache.getWrapLayout(0, lineText, 1L, wrapColumns = 1, tabSize = 32)
+        val second = cache.getWrapLayout(0, lineText, 1L, wrapColumns = 2, tabSize = 1)
+        val expected = EditorWordWrapLayoutCache()
+            .getWrapLayout(0, lineText, 1L, wrapColumns = 2, tabSize = 1)
+
+        assertThat(first.starts.asList()).isNotEqualTo(expected.starts.asList())
+        assertThat(second.starts.asList()).containsExactlyElementsIn(expected.starts.asList()).inOrder()
+    }
+
+    @Test
+    fun maxVerticalScrollOffset_shouldRefreshWhenWordWrapChangesWithoutTextEdit() {
+        val buffer = RopeTextBuffer().apply { insert(0, "abcdefghij\nabcdefghij") }
+        val state = EditorState(
+            textBuffer = buffer,
+            config = EditorConfig(wordWrap = false, codeFolding = false)
+        ).apply {
+            updateMetrics(10f, 1f, 20f, 5f, 0f)
+        }
+        val unwrappedMaxScroll = state.maxVerticalScrollOffsetPx()
+
+        state.config = state.config.copy(wordWrap = true)
+
+        assertThat(state.maxVerticalScrollOffsetPx()).isGreaterThan(unwrappedMaxScroll)
+    }
+
+    @Test
+    fun maxVerticalScrollOffset_shouldRefreshWhenFoldStateChangesWithoutTextEdit() {
+        val buffer = RopeTextBuffer().apply { insert(0, "zero\none\ntwo\nthree\nfour") }
+        val state = EditorState(
+            textBuffer = buffer,
+            config = EditorConfig(wordWrap = false, codeFolding = true)
+        ).apply {
+            updateMetrics(10f, 1f, 20f, 20f, 0f)
+            setFoldRegions(listOf(FoldRegion(startLine = 0, endLine = 3)), buffer.version)
+        }
+        val expandedMaxScroll = state.maxVerticalScrollOffsetPx()
+
+        state.toggleFoldAtLine(0)
+
+        assertThat(state.maxVerticalScrollOffsetPx()).isLessThan(expandedMaxScroll)
     }
 
     private fun createWordWrapState(

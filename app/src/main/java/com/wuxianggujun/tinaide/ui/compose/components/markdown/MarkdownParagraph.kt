@@ -62,7 +62,16 @@ internal fun MarkdownParagraph(
 
     val inlineContents = remember { mutableStateMapOf<String, InlineTextContent>() }
 
-    val annotatedString = remember(content, node.startOffset, node.endOffset) {
+    val annotatedString = remember(
+        content,
+        node.startOffset,
+        node.endOffset,
+        codeBackground,
+        linkColor,
+        trim,
+        fontSizePx,
+        density,
+    ) {
         inlineContents.clear()
         buildAnnotatedString {
             node.children.fastForEach { child ->
@@ -118,10 +127,15 @@ private fun AnnotatedString.Builder.appendInlineNode(
         // GFM 自动链接
         node.type == GFMTokenTypes.GFM_AUTOLINK -> {
             val link = node.getTextInNode(content).toString()
-            withLink(LinkAnnotation.Url(link)) {
-                withStyle(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline)) {
-                    append(link)
+            val safeUrl = MarkdownUrlPolicy.safeLinkUrlOrNull(link)
+            if (safeUrl != null) {
+                withLink(LinkAnnotation.Url(safeUrl)) {
+                    withStyle(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline)) {
+                        append(link)
+                    }
                 }
+            } else {
+                append(link)
             }
         }
 
@@ -146,14 +160,14 @@ private fun AnnotatedString.Builder.appendInlineNode(
                             fontSize = with(density) { fontSizePx.toSp() },
                         )
                     }
-                    appendInlineContent(id, "[Math]")
+                    appendInlineContent(id, LatexRenderPolicy.fallbackText(formula))
                 } else {
                     withStyle(SpanStyle(fontFamily = FontFamily.Monospace)) {
-                        append(formula)
+                        append(LatexRenderPolicy.fallbackText(formula))
                     }
                 }
             } else {
-                append(formula)
+                append(LatexRenderPolicy.fallbackText(formula))
             }
         }
 
@@ -214,8 +228,9 @@ private fun AnnotatedString.Builder.appendInlineNode(
                 ?.getTextInNode(content)?.toString()
                 ?.trim('[', ']') ?: linkDest
 
-            if (linkDest.isNotBlank()) {
-                withLink(LinkAnnotation.Url(linkDest)) {
+            val safeUrl = MarkdownUrlPolicy.safeLinkUrlOrNull(linkDest)
+            if (safeUrl != null) {
+                withLink(LinkAnnotation.Url(safeUrl)) {
                     withStyle(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline)) {
                         append(linkText)
                     }
@@ -231,10 +246,15 @@ private fun AnnotatedString.Builder.appendInlineNode(
                 .filter { it.type != MarkdownTokenTypes.LT && it.type != MarkdownTokenTypes.GT }
             links.fastForEach { linkNode ->
                 val url = linkNode.getTextInNode(content).toString()
-                withLink(LinkAnnotation.Url(url)) {
-                    withStyle(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline)) {
-                        append(url)
+                val safeUrl = MarkdownUrlPolicy.safeLinkUrlOrNull(url)
+                if (safeUrl != null) {
+                    withLink(LinkAnnotation.Url(safeUrl)) {
+                        withStyle(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline)) {
+                            append(url)
+                        }
                     }
+                } else {
+                    append(url)
                 }
             }
         }

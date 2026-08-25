@@ -43,4 +43,21 @@ class PluginLogManagerTest {
         assertThat(entry.level).isEqualTo(PluginLogLevel.INFO)
         assertThat(entry.message).isEqualTo("singleton reused")
     }
+
+    @Test
+    fun log_shouldRedactAbsolutePathsAndSecrets() {
+        logManager.error(
+            pluginId = "plugin.privacy",
+            pluginName = "Privacy",
+            message = "failed path=/storage/emulated/0/Documents/private.cpp api_key=secret-value",
+            stackTrace = "at C:\\Users\\tester\\workspace\\main.lua token:abc123",
+        )
+
+        val entry = logManager.getAllLogs().single()
+
+        assertThat(entry.message).doesNotContain("/storage/emulated")
+        assertThat(entry.message).doesNotContain("secret-value")
+        assertThat(entry.stackTrace).doesNotContain("C:\\Users")
+        assertThat(entry.stackTrace).doesNotContain("abc123")
+    }
 }

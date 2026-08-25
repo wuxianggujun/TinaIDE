@@ -62,9 +62,11 @@ ENV ANDROID_API=${ANDROID_API}
 
 # ===== Layer 5: 复制构建脚本 =====
 COPY build-common.sh /build/
+COPY build.sh /build/
+COPY package-native-library.sh /build/
 COPY libs/ /build/libs/
 
-RUN chmod +x /build/build-common.sh && \
+RUN chmod +x /build/build-common.sh /build/build.sh /build/package-native-library.sh && \
     chmod +x /build/libs/*.sh 2>/dev/null || true
 
 # 默认入口点

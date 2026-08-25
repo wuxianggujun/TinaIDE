@@ -1,6 +1,6 @@
 # 插件教程验收清单
 
-> 文档更新：2026-04-26
+> 文档更新：2026-07-16
 > 目标：把“插件教程是否真的可用”变成可复查的验收项，避免后续再次回落到普通新建项目、普通 C/C++ 运行链路或旧命令模型。
 
 ---
@@ -75,7 +75,38 @@
 - `NewProjectWizardActivity.EXTRA_PREFER_PLUGIN_TEMPLATE`
 - `NewProjectWizardActivity.EXTRA_INITIAL_TEMPLATE_ID`
 
-### 2.4 普通新建项目入口
+### 2.4 教程内容完整性
+
+1. 教程页“进阶功能”分类至少包含以下连续课程：
+   - 插件开发快速开始
+   - 插件 Manifest 与版本兼容
+   - Script API 与最小权限
+   - 插件面板与事件联动
+   - LSP 插件开发与排错
+   - 插件测试、自愈与发布前检查
+2. 每个课程都能打开非空正文，不显示空白详情页。
+3. 中文环境加载 `help/<file>.md`，英文环境优先加载 `help/en/<file>.md`。
+4. “继续学习”中的教程链接留在教程流程内，普通帮助链接进入帮助中心。
+5. 任一目录条目缺少中英文 asset、内容为空或链接无法解析时，自动化测试必须失败。
+
+### 2.5 加载、搜索与阅读状态
+
+1. 首次进入教程页时，目录加载完成前应显示 Loading，不得先闪现“暂无教程”。
+2. 目录加载完成且确实没有数据时，才显示空状态。
+3. 在帮助中心搜索只出现在插件教程正文、没有出现在标题或摘要中的关键词，预期仍能命中对应文档。
+4. 中文和英文文档使用各自正文缓存；切换语言后搜索结果不得复用另一语言正文。
+5. 打开教程文章时先显示 Loading；正文成功返回后再显示文章内容。
+6. 正文链接缺失、内容为空、读取返回失败或抛出异常时，应显示错误状态和“重试”操作，不得留下空白页。
+7. 点击“重试”后应重新加载正文；后续读取成功时，错误状态应被文章内容替换。
+8. ARTICLE 教程首次阅读后应显示“阅读中 / Reading in progress”，不得显示没有真实计算依据的 `0%`。
+
+自动化锁点：
+
+- `HelpRepositoryTest`：正文关键词搜索、中文/英文缓存隔离。
+- `TutorialCatalogUiStateTest`：初始 Loading、加载完成和分类排序。
+- `TutorialArticleLoadStateTest`：成功、缺失/空白、`Result.failure` 和 loader 抛异常。
+
+### 2.6 普通新建项目入口
 
 1. 打开项目页右下角 `+`。
 2. 选择普通新建项目。
@@ -96,8 +127,8 @@
 3. 预期：标题显示“新建插件项目”。
 4. 预期：模板列表只包含插件模板：
    - `Tina Config Plugin`
-   - `Tina Script Command Plugin (Beta)`
-   - `Tina Script Plugin (Beta)`
+   - `Tina Script Command Plugin`
+   - `Tina Script Plugin`
    - `Tina LSP Plugin`
 5. 预期：插件模板卡片显示“插件”标识。
 6. 预期：配置页隐藏 C++ 标准、NDK API 这类无关字段。
@@ -239,6 +270,16 @@ CompileActionsHelper
 4. `main.lua` 在插件加载时调用 `tina.commands.register(...)` 注册同一个命令 ID。
 5. 插件成功启用，并且运行时没有加载错误。
 
+### 7.3 Workspace 搜索与运行时状态
+
+Script API 教程使用 `tina.workspace.findFiles()` 时还应满足：
+
+1. 返回值只包含项目相对路径，并统一使用 `/`。
+2. 未触及 50,000 项扫描上限的相同目录树，在不同文件创建顺序和 Windows/Linux 文件系统上返回相同排序。
+3. `maxResults` 在稳定排序后应用，不能因为遍历顺序不同而得到不同前 N 项。
+4. runtime service 暂时不可用时，插件保持启用意愿并显示 `RUNTIME_UNAVAILABLE`，不产生 fault 或 quarantine。
+5. 缺少必需权限时保持 `WAITING_PERMISSION`；授予权限后只执行一次加载并进入 `ACTIVE`。
+
 ---
 
 ## 8. 常见失败与排查入口
@@ -309,8 +350,25 @@ CompileActionsHelper
 - `CompileActionsHelperTest`
   - 插件热安装成功后显示成功提示并打开构建日志。
 - `HelpRepositoryTest`
-  - 插件快速开始文档可加载、可搜索。
+  - 插件快速开始文档可加载、标题和正文均可搜索。
+  - 中文和英文正文缓存互不串用。
   - 插件快速开始文档显示快捷操作。
+- `TutorialCatalogUiStateTest`
+  - 教程目录首次进入保持 Loading，加载完成后才显示内容或空状态。
+  - 分类和课程按既定顺序输出。
+- `TutorialArticleLoadStateTest`
+  - 教程文章成功、缺失、空白、失败和异常状态均可重复验证；协程取消继续向上传播，不伪装成加载错误。
+  - 界面重试按钮复用同一加载状态机；实际点击后的重新加载由 Compose UI / 真机走查确认。
+- `PluginWorkspaceFileAccessTest`
+  - 反向创建同一批文件时，排序和 `maxResults` 结果仍完全一致。
+- `ScriptPluginManagerTest`
+  - runtime unavailable 不隔离插件且首次只调用一次 load。
+  - `WAITING_PERMISSION` 在授权后进入 `ACTIVE`，并且只加载一次。
+- `PluginFaultStoreTest`
+  - 并发故障写入保留全部插件记录；整组 deadline 结束后 executor 必须退出，不得污染后续测试。
+
+插件 JVM 门禁必须全部通过；当前测试数和最近一次远端成功记录统一维护在 `docs/testing/README.md`，
+避免验收清单复制易变计数。JVM/静态门禁不替代本清单中的真实设备教程走查和 instrumentation。
 
 ---
 

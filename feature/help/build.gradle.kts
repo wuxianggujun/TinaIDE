@@ -25,8 +25,11 @@ dependencies {
     implementation(libs.timber)
     implementation(libs.kotlinx.coroutines)
     implementation(platform(libs.compose.bom))
+    testImplementation(platform(libs.compose.bom))
     implementation(libs.compose.material3)
     implementation(libs.compose.material.icons.extended)
     implementation(libs.compose.ui)
+    testImplementation(libs.compose.ui.test.junit4)
     implementation(libs.lifecycle.viewmodel)
+    debugImplementation(libs.compose.ui.test.manifest)
 }

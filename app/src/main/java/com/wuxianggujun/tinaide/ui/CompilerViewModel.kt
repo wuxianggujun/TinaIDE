@@ -4,9 +4,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.wuxianggujun.tinaide.core.compile.BuildSystem
 import com.wuxianggujun.tinaide.core.compile.BuildSystemDetector
+import com.wuxianggujun.tinaide.core.compile.CMakeBuildTypeOption
 import com.wuxianggujun.tinaide.core.compile.CompileProjectUseCase
 import com.wuxianggujun.tinaide.core.compile.ProcessManager
 import com.wuxianggujun.tinaide.core.compile.RunConfigurationManager
+import com.wuxianggujun.tinaide.core.config.Prefs
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.str
 import com.wuxianggujun.tinaide.file.IProjectContext
@@ -129,7 +131,10 @@ class CompilerViewModel(
      */
     fun getRunConfigurationManager(): RunConfigurationManager {
         val project = projectContext.getCurrentProject() ?: return RunConfigurationManager()
-        return RunConfigurationManager.load(project.rootPath)
+        return RunConfigurationManager.load(
+            projectPath = project.rootPath,
+            legacyCMakeBuildType = CMakeBuildTypeOption.fromValue(Prefs.legacyCmakeBuildType),
+        )
     }
 
     /**

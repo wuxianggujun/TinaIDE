@@ -2,7 +2,9 @@ package com.wuxianggujun.tinaide.core.help
 
 import android.app.Application
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.res.Configuration
+import android.content.res.Resources
 import com.google.common.truth.Truth.assertThat
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import java.util.Locale
@@ -55,6 +57,94 @@ class HelpRepositoryTest {
     }
 
     @Test
+    fun search_shouldMatchBodyOnlyAndReturnSnippet() = runTest {
+        val repository = HelpRepository(localizedContext(Locale.SIMPLIFIED_CHINESE))
+        val document = repository.getDocumentById("plugin-testing-recovery")!!
+        val bodyOnlyQuery = "进程 generation 会替换"
+
+        assertThat(
+            (document.keywords + document.title + document.summary).any { metadata ->
+                metadata.contains(bodyOnlyQuery, ignoreCase = true)
+            }
+        ).isFalse()
+
+        repository.preloadAllContent()
+        val result = repository.search(bodyOnlyQuery)
+            .single { searchResult -> searchResult.document.id == document.id }
+
+        assertThat(result.matchedContent).contains(bodyOnlyQuery)
+        assertThat(result.relevanceScore).isGreaterThan(0f)
+    }
+
+    @Test
+    fun contentCache_shouldKeepChineseAndEnglishContentIsolated() = runTest {
+        val context = LocaleSwitchingContext(
+            baseContext = RuntimeEnvironment.getApplication(),
+            initialLocale = Locale.SIMPLIFIED_CHINESE,
+        )
+        val repository = HelpRepository(context)
+        val document = repository.getDocumentById("plugin-testing-recovery")!!
+
+        val chineseContent = repository.loadDocumentContent(document).getOrThrow()
+        context.switchTo(Locale.ENGLISH)
+        val englishContent = repository.loadDocumentContent(document).getOrThrow()
+
+        assertThat(chineseContent).contains("runtime 被杀后进程 generation 会替换")
+        assertThat(englishContent).contains("Killing the runtime replaces its process generation")
+        assertThat(englishContent).doesNotContain("runtime 被杀后进程 generation 会替换")
+    }
+
+    @Test
+    fun pluginCourse_shouldLoadEveryChineseAndEnglishArticleByLinkTarget() = runTest {
+        val courseFiles = listOf(
+            "plugin-quick-start.md",
+            "plugin-manifest-compatibility.md",
+            "plugin-script-api.md",
+            "plugin-panels-events.md",
+            "plugin-lsp-troubleshooting.md",
+            "plugin-testing-recovery.md",
+        )
+
+        listOf(Locale.SIMPLIFIED_CHINESE, Locale.ENGLISH).forEach { locale ->
+            val repository = HelpRepository(localizedContext(locale))
+            courseFiles.forEach { fileName ->
+                val content = repository.loadDocumentContentByLinkTarget(fileName).getOrThrow()
+
+                assertThat(content.trim()).isNotEmpty()
+                assertThat(content.length).isGreaterThan(500)
+                assertThat(content).contains("# ")
+
+                internalMarkdownLinkRegex.findAll(content).forEach { match ->
+                    val target = match.groupValues[1]
+                    val resolvedDocument = repository.resolveDocumentByLinkTarget(target)
+                    assertThat(resolvedDocument).isNotNull()
+                }
+            }
+        }
+    }
+
+    @Test
+    fun loadDocumentContentByLinkTarget_shouldRejectUnknownOrExternalTargets() = runTest {
+        val repository = HelpRepository(RuntimeEnvironment.getApplication())
+
+        assertThat(repository.loadDocumentContentByLinkTarget("missing.md").isFailure).isTrue()
+        assertThat(repository.loadDocumentContentByLinkTarget("https://example.com/help.md").isFailure)
+            .isTrue()
+    }
+
+    @Test
+    fun pluginPanelsCourse_shouldUseStableCustomEventId() = runTest {
+        listOf(Locale.SIMPLIFIED_CHINESE, Locale.ENGLISH).forEach { locale ->
+            val repository = HelpRepository(localizedContext(locale))
+            val content = repository.loadDocumentContentByLinkTarget("plugin-panels-events.md").getOrThrow()
+
+            assertThat(content).contains("tina.events.on(\"custom\"")
+            assertThat(content).contains("tina.events.emit(\"custom\"")
+            assertThat(content).doesNotContain("custom.refresh")
+        }
+    }
+
+    @Test
     fun localizedAssetCandidates_shouldPreferEnglishAndFallbackToChinese() {
         assertThat(HelpAssetPathResolver.candidatePaths("getting-started.md", "en-US"))
             .containsExactly(
@@ -97,6 +187,10 @@ class HelpRepositoryTest {
             .isEqualTo("plugins-settings")
         assertThat(repository.resolveDocumentByLinkTarget("help/known-issues.md#common-issues")?.id)
             .isEqualTo("known-issues")
+        assertThat(repository.resolveDocumentByLinkTarget("plugin-script-api.md")?.id)
+            .isEqualTo("plugin-script-api")
+        assertThat(repository.resolveDocumentByLinkTarget("plugin-testing-recovery.md")?.id)
+            .isEqualTo("plugin-testing-recovery")
         assertThat(repository.resolveDocumentByLinkTarget("https://example.com/help.md"))
             .isNull()
     }
@@ -107,5 +201,31 @@ class HelpRepositoryTest {
             setLocale(locale)
         }
         return application.createConfigurationContext(configuration)
+    }
+
+    companion object {
+        private val internalMarkdownLinkRegex = Regex(
+            """(?<!!)\[[^]]+]\(([^)#?]+\.md)(?:#[^)]+)?\)"""
+        )
+    }
+
+    private class LocaleSwitchingContext(
+        baseContext: Context,
+        initialLocale: Locale,
+    ) : ContextWrapper(baseContext) {
+        private var localizedResources: Resources = resourcesFor(initialLocale)
+
+        override fun getResources(): Resources = localizedResources
+
+        fun switchTo(locale: Locale) {
+            localizedResources = resourcesFor(locale)
+        }
+
+        private fun resourcesFor(locale: Locale): Resources {
+            val configuration = Configuration(baseContext.resources.configuration).apply {
+                setLocale(locale)
+            }
+            return baseContext.createConfigurationContext(configuration).resources
+        }
     }
 }

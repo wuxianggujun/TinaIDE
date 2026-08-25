@@ -19,6 +19,7 @@ import com.wuxianggujun.tinaide.core.compile.RunConfigurationManager
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.core.lsp.LocationItem
+import com.wuxianggujun.tinaide.core.config.IConfigManager
 import com.wuxianggujun.tinaide.core.packages.PackageManagerImpl
 import com.wuxianggujun.tinaide.core.packages.api.PackageApiClient
 import com.wuxianggujun.tinaide.core.packages.model.GUIPackage
@@ -55,13 +56,13 @@ import com.wuxianggujun.tinaide.ui.compose.components.RenameDialog
 import com.wuxianggujun.tinaide.ui.compose.components.ReplaceDialog
 import com.wuxianggujun.tinaide.ui.compose.components.RunConfigDialog
 import com.wuxianggujun.tinaide.ui.compose.components.TinaAlertDialog
-import com.wuxianggujun.tinaide.ui.compose.components.TinaDangerOutlinedButton
 import com.wuxianggujun.tinaide.ui.compose.components.TinaDialogContentColumn
 import com.wuxianggujun.tinaide.ui.compose.components.TinaDialogMessageCard
 import com.wuxianggujun.tinaide.ui.compose.components.TinaDialogTitleText
-import com.wuxianggujun.tinaide.ui.compose.components.TinaPrimaryButton
 import com.wuxianggujun.tinaide.ui.compose.components.TinaTextButton
+import com.wuxianggujun.tinaide.ui.compose.components.TinaThreeActionDialog
 import com.wuxianggujun.tinaide.ui.compose.components.UnsavedChangesOnExitDialog
+import com.wuxianggujun.tinaide.ui.compose.components.WorkspaceEditPreviewDialog
 import com.wuxianggujun.tinaide.ui.compose.state.DialogState
 import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorActionsState
 import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState
@@ -75,6 +76,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.koin.compose.koinInject
 import timber.log.Timber
+import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveEditorCommandResult
+import com.wuxianggujun.tinaide.ui.compose.state.editor.ReplaceAllInActiveEditorResult
 
 private const val BUILTIN_APK_TEMPLATE_NATIVE = "builtin:native_activity"
 private const val BUILTIN_APK_TEMPLATE_SDL3 = "builtin:sdl3"
@@ -160,6 +163,7 @@ internal fun MainActivityDialogsHost(
 
     MainActivityRunConfigDialog(
         state = uiState.buildUiState,
+        editorContainerState = dependencies.editorContainerState,
         onPersistRunConfigManager = callbacks.onPersistRunConfigManager,
     )
 
@@ -207,7 +211,7 @@ internal fun MainActivityDialogsSection(
     editorManager: IEditorManager,
     saveScope: CoroutineScope,
     onCloseProject: (forgetSession: Boolean) -> Unit,
-    onPersistRunConfigManager: (RunConfigurationManager) -> Unit,
+    onPersistRunConfigManager: (RunConfigurationManager) -> Boolean,
     onShowUnsavedExitDialogChange: (Boolean) -> Unit,
     onFinish: () -> Unit,
 ) {
@@ -262,26 +266,47 @@ internal fun MainActivityEditorDialogs(
             onActionClick = { action ->
                 val tabId = state.codeActionsTabId ?: return@CodeActionsMenu
                 state.codeActionsLoading = true
+                state.showCodeActionsMenu = false
                 uiScope.launch {
+                    var workspaceEditCancelled = false
                     val success = runCatching {
                         editorContainerState.executeCodeAction(
                             tabId = tabId,
                             action = action,
-                            onApplyEdit = { edit -> actionsViewModel.applyWorkspaceEdit(editorContainerState, edit) }
+                            onApplyEdit = { edit ->
+                                actionsViewModel.applyWorkspaceEdit(
+                                    editorContainerState = editorContainerState,
+                                    edit = edit,
+                                    confirmMultiFileEdit = { preview ->
+                                        val confirmed = state.requestWorkspaceEditConfirmation(preview)
+                                        if (!confirmed) workspaceEditCancelled = true
+                                        confirmed
+                                    },
+                                )
+                            },
                         )
                     }.getOrDefault(false)
 
                     state.codeActionsLoading = false
-                    state.showCodeActionsMenu = false
 
                     if (success) {
                         context.toastSuccess(Strings.code_action_executed.strOr(context))
+                    } else if (workspaceEditCancelled) {
+                        state.showCodeActionsMenu = true
                     } else {
                         context.toastError(Strings.code_action_failed.strOr(context))
                     }
                 }
             },
             onDismiss = { state.dismissCodeActions() }
+        )
+    }
+
+    state.workspaceEditPreview?.let { preview ->
+        WorkspaceEditPreviewDialog(
+            preview = preview,
+            onConfirm = state::confirmWorkspaceEdit,
+            onDismiss = state::dismissWorkspaceEditPreview,
         )
     }
 
@@ -388,12 +413,12 @@ internal fun MainActivityFileDialogs(
             onGoToLine = { lineNumber ->
                 dialogState.closeGotoLineDialog()
                 when (editorContainerState.requestGoToPositionInActiveEditableEditor(lineNumber - 1, 0)) {
-                    EditorContainerState.ActiveEditorCommandResult.SUCCESS -> Unit
-                    EditorContainerState.ActiveEditorCommandResult.NO_OPEN_FILE -> {
+                    ActiveEditorCommandResult.SUCCESS -> Unit
+                    ActiveEditorCommandResult.NO_OPEN_FILE -> {
                         context.toastInfo(Strings.toast_no_open_file.strOr(context))
                     }
 
-                    EditorContainerState.ActiveEditorCommandResult.UNSUPPORTED_EDITOR -> {
+                    ActiveEditorCommandResult.UNSUPPORTED_EDITOR -> {
                         context.toastInfo(Strings.toast_file_not_support_format.strOr(context))
                     }
                 }
@@ -410,19 +435,19 @@ internal fun MainActivityFileDialogs(
                 dialogState.closeReplaceDialog()
                 if (findText.isEmpty()) return@ReplaceDialog
                 when (val result = editorContainerState.requestReplaceAllInActiveEditor(findText, replaceText)) {
-                    EditorContainerState.ReplaceAllInActiveEditorResult.NoOpenFile -> {
+                    ReplaceAllInActiveEditorResult.NoOpenFile -> {
                         context.toastInfo(Strings.toast_no_open_file.strOr(context))
                     }
 
-                    EditorContainerState.ReplaceAllInActiveEditorResult.UnsupportedEditor -> {
+                    ReplaceAllInActiveEditorResult.UnsupportedEditor -> {
                         context.toastInfo(Strings.toast_file_not_support_format.strOr(context))
                     }
 
-                    EditorContainerState.ReplaceAllInActiveEditorResult.NoMatches -> {
+                    ReplaceAllInActiveEditorResult.NoMatches -> {
                         context.toastInfo(Strings.toast_no_matches.strOr(context))
                     }
 
-                    is EditorContainerState.ReplaceAllInActiveEditorResult.Success -> {
+                    is ReplaceAllInActiveEditorResult.Success -> {
                         context.toastSuccess(Strings.toast_replaced.strOr(context, result.count))
                     }
                 }
@@ -438,47 +463,29 @@ internal fun MainActivityCloseProjectDialog(
 ) {
     if (!dialogState.showCloseProjectDialog) return
 
-    TinaAlertDialog(
-        onDismissRequest = { dialogState.closeCloseProjectDialog() },
-        title = { TinaDialogTitleText(stringResource(Strings.dialog_close_project_title)) },
-        text = {
-            TinaDialogContentColumn {
-                TinaDialogMessageCard(
-                    message = stringResource(Strings.dialog_close_project_message)
-                )
-            }
+    TinaThreeActionDialog(
+        title = stringResource(Strings.dialog_close_project_title),
+        message = stringResource(Strings.dialog_close_project_message),
+        primaryText = stringResource(Strings.btn_close_project),
+        secondaryText = stringResource(Strings.btn_close_and_forget),
+        onPrimary = {
+            dialogState.closeCloseProjectDialog()
+            onCloseProject(false)
         },
-        confirmButton = {
-            TinaPrimaryButton(
-                text = stringResource(Strings.btn_close_project),
-                onClick = {
-                    dialogState.closeCloseProjectDialog()
-                    onCloseProject(false)
-                },
-            )
+        onSecondary = {
+            dialogState.closeCloseProjectDialog()
+            onCloseProject(true)
         },
-        dismissButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TinaDangerOutlinedButton(
-                    text = stringResource(Strings.btn_close_and_forget),
-                    onClick = {
-                        dialogState.closeCloseProjectDialog()
-                        onCloseProject(true)
-                    }
-                )
-                TinaTextButton(
-                    text = stringResource(Strings.btn_cancel),
-                    onClick = { dialogState.closeCloseProjectDialog() }
-                )
-            }
-        }
+        onDismiss = { dialogState.closeCloseProjectDialog() },
+        secondaryIsDanger = true,
     )
 }
 
 @Composable
 internal fun MainActivityRunConfigDialog(
     state: MainActivityBuildUiState,
-    onPersistRunConfigManager: (RunConfigurationManager) -> Unit,
+    editorContainerState: EditorContainerState,
+    onPersistRunConfigManager: (RunConfigurationManager) -> Boolean,
 ) {
     val context = LocalContext.current
     val currentConfig = state.editingConfig ?: return
@@ -495,10 +502,19 @@ internal fun MainActivityRunConfigDialog(
             } else {
                 state.runConfigManager.updateConfig(newConfig)
             }
-            state.updateRunConfigManager(updated)
-            onPersistRunConfigManager(updated)
-            state.closeRunConfigDialog()
-            context.toastSuccess(Strings.toast_run_config_saved.strOr(context))
+            if (
+                state.commitRunConfigManager(
+                    updated = updated,
+                    persist = onPersistRunConfigManager,
+                    onSelectedSingleFileCppStandardChanged =
+                        editorContainerState::refreshOpenCxxEditorsForCompileConfigChange,
+                )
+            ) {
+                state.closeRunConfigDialog()
+                context.toastSuccess(Strings.toast_run_config_saved.strOr(context))
+            } else {
+                context.toastError(Strings.toast_run_config_save_failed.strOr(context))
+            }
         },
         onDismiss = state::closeRunConfigDialog
     )
@@ -533,17 +549,19 @@ internal fun MainActivityApkPackageDialog(
     if (!state.showApkPackageDialog) return
 
     val context = LocalContext.current
+    val configManager: IConfigManager = koinInject()
     val pluginLogManager = remember(context) {
         com.wuxianggujun.tinaide.plugin.PluginLogManager.getInstance(context.applicationContext)
     }
     val pluginManager = remember(context) { PluginManager.getInstance(context.applicationContext) }
-    val packageManager = remember(context) {
+    val packageManager = remember(context, configManager) {
+        // packagesModule 以 factory 注册 PackageManager；此处按需构造，避免 Compose 层硬取 GlobalContext。
         val appContext = context.applicationContext
         PackageManagerImpl(
             context = appContext,
             apiClient = PackageApiClient.getInstance(appContext),
             installStateStore = LocalInstallStateStore(appContext),
-            prootEnv = PRootEnvironment(appContext)
+            prootEnv = PRootEnvironment(appContext, configManager),
         )
     }
     var availablePackages by remember { mutableStateOf<List<GUIPackage>>(emptyList()) }

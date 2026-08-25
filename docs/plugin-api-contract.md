@@ -8,12 +8,14 @@
 | `name` | 是 | 稳定 | 展示名称。 |
 | `version` | 是 | 稳定 | 插件版本。 |
 | `apiVersion` | 否 | 稳定 | 当前固定为 `1`，省略时默认 `1`。宿主会拒绝其他版本。 |
+| `minAppVersion` | 否 | 稳定 | 插件要求的最低 TinaIDE 版本。省略时保持历史兼容；明确高于当前宿主时，Registry 不展示更新，宿主也拒绝安装、启用和运行。 |
 | `type` | 否 | 稳定 | 当前重点支持 `script`、`hybrid`、`lsp`。 |
 | `main` | `script`/`hybrid` 必填逻辑项 | 稳定 | 省略时默认 `main.lua`，宿主要求对应文件存在。 |
 | `permissions` | 否 | 稳定 | 必需权限声明。未声明的宿主 API 调用会被拒绝。 |
-| `optionalPermissions` | 否 | 实验 | 预留给后续“按需授权”流程，当前只参与声明校验。 |
-| `activationEvents` | 否 | 实验 | 保留字段，当前事件总线仍以运行时订阅为主。 |
+| `optionalPermissions` | 否 | 稳定 | 按需授权声明。用户可在插件详情页单项授予或撤销；未显式授予时调用会被拒绝。 |
+| `activationEvents` | 否 | 稳定 | 仅适用于 LSP 插件；apiVersion 1 支持 `onLanguage:<languageId>`，且语言必须由 `languageServers` 声明。 |
 | `contributions.commands` / `menus` | 否 | 稳定 | 已用于命令与菜单贡献。 |
+| `contributions.panels` | 否 | 稳定 | `script` / `hybrid` 可声明文本面板，并通过 `tina.panels.*` 发布内容。 |
 | `requires` | 否 | 稳定 | 依赖声明提示字段；宿主解析并展示/诊断提示，但不检测真实安装状态，也不自动安装依赖。 |
 | `configuration` | 否 | 稳定 | 插件配置 schema；宿主在插件详情页自动生成设置 UI，并提供 `tina.config.*` 读写。 |
 | `locales` | 否 | 稳定 | 插件用户可见元数据的多语言覆盖文件；宿主按当前 Locale 自动选择。 |
@@ -71,6 +73,7 @@ locale 文件只覆盖用户可见字段，不覆盖 `id`、`version`、`type`�
 - `tina.apiVersion`
 - `tina.log.*`
 - `tina.events.*`
+- `tina.panels.*`
 - `tina.editor.*`
 - `tina.diagnostics.*`
 - `tina.workspace.*`
@@ -80,6 +83,8 @@ locale 文件只覆盖用户可见字段，不覆盖 `id`、`version`、`type`�
 - `tina.clipboard.*`
 - `tina.network.*`
 - `tina.db.*`
+- `tina.storage.*`
+- `tina.ui.*`
 
 实验字段：
 
@@ -90,7 +95,7 @@ locale 文件只覆盖用户可见字段，不覆盖 `id`、`version`、`type`�
 宿主在调用 API 前会做两层校验：
 
 1. **manifest 声明**：权限必须出现在 `permissions` 或 `optionalPermissions`
-2. **运行时授权**：除 L0 基础权限外，必须已授予
+2. **运行时授权**：`permissions` 中的 L0 基础权限自动可用，其他必需权限需要安装确认；`optionalPermissions` 无论风险级别都必须由用户显式授予
 
 当前支持的权限标识：
 
@@ -123,9 +128,14 @@ locale 文件只覆盖用户可见字段，不覆盖 `id`、`version`、`type`�
 | --- | --- | --- | --- |
 | `readFile(path)` | `workspace.read` / `file.read` | 稳定 | 成功返回文本；失败返回 `nil, error`。 |
 | `writeFile(path, content)` | `workspace.write` / `file.write` | 稳定 | 成功返回 `true`；失败返回 `false, error`。 |
-| `findFiles(pattern, maxResults)` | `workspace.read` / `file.read` | 稳定 | 返回相对路径数组；`pattern` 支持 `*`、`?`、`**/`，默认 `**/*`，结果最多 1000 条。 |
+| `findFiles(pattern, maxResults)` | `workspace.read` / `file.read` | 稳定 | 返回按相对路径升序排列的数组；`pattern` 支持 `*`、`?`、`**/`，默认 `**/*`，结果最多 1000 条。 |
 
-`findFiles` 会跳过常见重目录：`.git`、`.gradle`、`.idea`、`.cxx`、`build`、`node_modules`。
+工作区 API 只接受项目相对路径，Unix、Windows drive 和 UNC 绝对路径都会被拒绝。
+`readFile`、`writeFile` 以及兼容 `tina.fs` 的元数据/目录操作不会跟随路径任一层的符号链接；
+单次文件读取或写入的 UTF-8 内容上限为 8 MiB，读写操作按插件限制为每分钟 60 次。
+`findFiles` 会跳过符号链接和常见重目录：`.git`、`.gradle`、`.idea`、`.cxx`、`build`、`node_modules`；
+为避免插件触发无界目录遍历，单次调用最多扫描 50,000 项，每插件每分钟最多调用 12 次；触及上限后停止枚举，返回值只代表已扫描集合中的匹配项，不是完整工作区索引。
+匹配项统一转换为 `/` 相对路径并排序后才应用 `maxResults`；对未触及扫描上限的相同目录树，不会因宿主文件系统遍历顺序不同而返回不同前 N 项。
 
 ### `tina.editor.*`
 
@@ -239,6 +249,42 @@ locale 文件只覆盖用户可见字段，不覆盖 `id`、`version`、`type`�
 插件可通过 `tina.events.on("config.changed", callbackName)` 监听自身配置变化。该事件只会定向派发给配置所属插件，
 不会广播其他插件的配置值。
 
+### `tina.db.*`
+
+`db` 为每个插件提供独立 SQLite 数据库，文件名由完整插件 ID 的 SHA-256 派生，受
+`storage.database` 权限保护。数据库操作在每插件专用单线程执行器中顺序执行，事务中的调用不会跨线程。
+
+| API | 权限 | 稳定性 | 行为 |
+| --- | --- | --- | --- |
+| `execute(sql, params)` | `storage.database` | 稳定 | 执行单条受限 DDL/DML，返回影响行数。 |
+| `query(sql, params)` | `storage.database` | 稳定 | 执行只读查询，返回对象数组。 |
+| `transaction(callback)` | `storage.database` | 稳定 | callback 成功时提交，异常时回滚。 |
+| `tableExists(name)` | `storage.database` | 稳定 | 返回表是否存在。 |
+| `close()` | 无 | 稳定 | 幂等关闭当前插件数据库句柄。 |
+
+当前资源与 SQL 边界：
+
+- 单个数据库上限为 64 MiB；每个插件最多调用数据库 API 300 次/分钟。
+- 单次 query 最多返回 1000 行，编码后的总结果上限为 192 KiB。
+- SQL 最长 64 KiB，只接受单条语句；拒绝分号、多语句、不完整引号/括号和 `ATTACH`、`DETACH`、`PRAGMA`、`VACUUM`、`LOAD_EXTENSION`。
+- query 仅接受 `SELECT`、`EXPLAIN`，以及最终执行 `SELECT` / `VALUES` 的只读 `WITH`；写入型 CTE 不会通过 query API 执行。
+- `params` 必须是标量数组，支持字符串、整数、浮点数、布尔值和 `null`；SQLite `NULL` 会保留其占位符位置。
+
+### `tina.panels.*`
+
+`panels` 是 apiVersion 1 的稳定文本面板 API。插件必须先在 `contributions.panels` 中声明面板 ID，
+然后才能调用：
+
+| API | 权限 | 稳定性 | 行为 |
+| --- | --- | --- | --- |
+| `setContent(panelId, text)` | 无 | 稳定 | 替换当前插件指定面板的文本内容。 |
+| `appendContent(panelId, text)` | 无 | 稳定 | 追加文本。合并后的 UTF-8 内容不得超过 256 KiB。 |
+| `clear(panelId)` | 无 | 稳定 | 清除面板内容。 |
+
+面板内容仅保存在宿主进程内存中；插件禁用、卸载、隔离或 runtime process 死亡时立即清理，
+插件重新激活后应自行重新发布。插件不能写入其他插件或未声明的面板，面板只渲染可选择、可滚动的纯文本，
+不会执行 HTML、Markdown、Lua 或动态 UI 代码。
+
 当前 schema 约束：
 
 - `type` 仅支持 `boolean`、`string`、`number`。
@@ -267,6 +313,10 @@ locale 文件只覆盖用户可见字段，不覆盖 `id`、`version`、`type`�
 | `build.started` / `build.finished` | `rootPath` | 无 |
 | `diagnostics.changed` | `fileUri`、`fileName`、`totalCount`、`errorCount`、`warningCount`、`infoCount`、`hintCount` | `diagnostics` |
 | `config.changed` | `pluginId`、`key`、`value`、`previousValue` | 无 |
+| `custom` | 插件传入的 JSON object 字段 | 无 |
+
+`tina.events.emit("custom", payload)` 只向当前插件自身的 `custom` 订阅者异步派发；插件不能通过
+`emit` 伪造 `editor.saved`、`build.finished` 等宿主事件。未知事件 ID 会被拒绝，重复的同名订阅只保留一份。
 
 ### 实验字段定义
 
@@ -274,9 +324,28 @@ locale 文件只覆盖用户可见字段，不覆盖 `id`、`version`、`type`�
 - `diagnostics`: 列表项当前包含 `{ fileUri, fileName, line, column, endLine, endColumn, message, severity, source, code }`
 - `contentType`: 由宿主编辑器当前内容类型直接透传，后续可能调整
 
+## 运行隔离、自愈与资源边界
+
+`apiVersion 1` 的公开 `tina.*` 语义保持不变，但脚本执行模型已经收紧：
+
+- `script` / `hybrid` 的 Lua 与 LuaJava JNI 只在非导出的 `:plugin_runtime` isolated process 中执行；宿主进程没有 Lua fallback。
+- 隔离进程不接收 `Context`、宿主文件对象或真实私有路径。Lua 源码通过只读 FD 传入，参数与结果只使用有界 JSON / 基础类型。
+- `io`、`debug`、`loadfile`、`dofile`、`package.loadlib`、`java` 和 `luajava` 不可用。`require()` 只允许加载插件目录内由字母、数字、`_`、`-` 和 `.` 组成的纯 Lua 模块名；绝对路径、`..` 与 native module 会被拒绝。
+- 每次 Host API 调用都会重新检查插件 generation、启用/隔离状态、manifest 声明和用户授权。文件访问仍受 Workspace 白名单约束，网络仍受 `networkHosts`、超时与限流约束。
+- 纯 Lua 连续执行默认上限为 5 秒，单次调用总上限为 60 秒；纯 Lua 超时、资源越限或隔离进程死亡会终止并重建 runtime process，不会等待同步 JNI 返回。
+- 插件进程总 PSS 上限为 192 MiB，单次调用增长上限为 64 MiB。Binder JSON 请求和普通响应上限为 256 KiB；Host API 的受支持大响应改走只读 FD，单个最大 8 MiB，每插件最多保留 8 个、合计 16 MiB 的待消费 payload，宿主进程全局最多保留 32 个、合计 64 MiB。Lua 回调直接返回的序列化结果若超过 256 KiB，runtime 会返回有界 `RESOURCE_LIMIT` 响应并隔离当前插件，不会尝试发送超大 Binder transaction。Network body 上限为 8 MiB。
+- 插件包上限为 64 MiB，解压后上限为 256 MiB、4096 项；单项上限 64 MiB、压缩比上限 `100:1`；单个 Lua 文件上限 1 MiB，Lua 源码合计上限 8 MiB。
+- 单条插件日志最多 8 KiB，每插件最多保留 1000 条并有限速；绝对私有路径与常见 Token 字段会脱敏。
+
+新安装的纯 `config` 插件默认启用；`script`、`hybrid`、`lsp`、`system` 等插件默认禁用。升级保留用户原有启用意图。用户明确启用后，启动异常、未处理的事件/命令回调、超时、资源越限、runtime crash、无效贡献或成功启动后的 LSP 异常退出会使当前版本自动进入隔离状态。权限拒绝、普通网络失败、依赖未安装以及 toolchain/Linux 未就绪不会被归因为插件故障。
+
+隔离只会在用户确认“重新启用”或安装严格更高版本后清除；升级采用同文件系统 staging/backup/atomic rename，并在停止旧 runtime 前同步写入安装 journal。进程中断后会恢复旧目录、启用状态和故障状态；journal 损坏时插件子系统 fail-closed。健康插件升级失败时回滚旧版本。
+
 ## 当前宿主保证
 
 - `apiVersion != 1` 的插件会在安装/刷新阶段直接判定为无效。
 - `script` / `hybrid` 插件如果缺少主脚本，会在安装/刷新阶段直接判定为无效。
 - 主脚本执行失败不会再被错误地覆盖成 `ACTIVE`。
+- 启动前会先审计残留的 in-flight journal，审计完成前不会由权限或插件状态 collector 抢先加载插件。
+- disable / uninstall / upgrade 是可等待的串行状态操作；过期 generation 回调不能重新激活插件。
 - 插件日志页支持按插件过滤，插件详情页支持直接重载和跳转日志。

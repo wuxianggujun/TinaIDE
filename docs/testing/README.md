@@ -1,8 +1,53 @@
 # TinaIDE 测试文档
 
-> 最后人工核验：2026-07-11
+> 最后人工核验：2026-08-21
 
 本目录只保留当前仍值得固定维护的测试入口说明。
+
+## 模块优先与共享会话约定
+
+- 先运行改动所属模块：Android library 使用 `:module:testDebugUnitTest` 或 `:module:compileDebugKotlin`；只有 `app` 宿主、ABI/flavor、打包或跨模块集成变化时才运行 `:app:*`。
+- 一次性本地 Gradle 命令统一带 `--no-daemon`，不为单次检查保留 daemon。
+- 若其他会话正在构建，本会话只做 `git diff --check`、路径/类名核对等静态检查，不启动或停止 Gradle。
+- 禁止执行 `gradlew --stop` 影响共享 daemon；清理时只终止本任务明确启动的进程。
+
+## 文本编辑与工作区定向回归
+
+以下测试类已于 2026-07-31 在对应 `src/test` 目录核对存在。按模块分别运行：
+
+```bash
+./gradlew :core:text-engine:testDebugUnitTest --tests "com.wuxianggujun.tinaide.core.textengine.EditHistoryTest" --tests "com.wuxianggujun.tinaide.core.textengine.LineIndexTest" --tests "com.wuxianggujun.tinaide.core.textengine.RopeTextBufferTest" --tests "com.wuxianggujun.tinaide.core.textengine.TextScanKernelTest" --no-daemon --console=plain
+```
+
+```bash
+./gradlew :core:editor-view:testDebugUnitTest --tests "com.wuxianggujun.tinaide.core.editorview.EditorClipboardBridgeTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorInputConnectionEditTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorInputConnectionExtractedTextTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorInputConnectionImeSelectionTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorInputConnectionUtilsTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorInputHostLayerTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorKeyboardShortcutsTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorLineLayoutCacheTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorSelectionContextMenuCoordinatorTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorStateEventTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorStateSemanticTokensTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorStateSurrogatePairTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorStateWordWrapTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorToggleLineCommentTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorUndoRedoCursorTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorUserInputTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorVisualLineMapperTest" --tests "com.wuxianggujun.tinaide.core.editorview.SignatureHelpPopupLayoutResolverTest" --no-daemon --console=plain
+```
+
+```bash
+./gradlew :app:testArm64DebugUnitTest --tests "com.wuxianggujun.tinaide.ui.CompileActionsHelperTest" --tests "com.wuxianggujun.tinaide.ui.compose.components.BottomPanelTabResolutionTest" --tests "com.wuxianggujun.tinaide.ui.compose.components.SwipeableDrawerStateTest" --tests "com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerStateTest" --no-daemon --console=plain
+```
+
+## 诊断 Quick Fix 定向回归
+
+诊断面板或 Code Action 请求边界发生变化时，至少运行：
+
+```powershell
+./gradlew :core:lsp:testDebugUnitTest --tests "com.wuxianggujun.tinaide.core.lsp.LspCodeActionServiceTest" --no-daemon --console=plain
+./gradlew :app:testArm64DebugUnitTest --tests "com.wuxianggujun.tinaide.ui.WorkspaceEditPreviewTest" --tests "com.wuxianggujun.tinaide.ui.compose.components.DiagnosticQuickFixAvailabilityTest" --tests "com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerStateTest" --no-daemon --console=plain
+```
+
+手工回归需覆盖五类场景：语言服务器提供可用 Quick Fix 时显示入口；普通语法错误或 disabled action 不显示入口；编辑器通用 Code Actions 仍可返回 Refactor / Source Action；仅当活动文件返回启用的 `source.fixAll` 时显示“全部修复”；多文件操作显示文件与编辑数量摘要，取消后返回操作列表且不显示失败提示。
+
+## 返回事件与临时 UI 回归
+
+主编辑器手工验证以下顺序：
+
+1. 打开顶栏或底部面板的下拉菜单，按一次系统返回，确认只关闭菜单，工作区仍保持打开。
+2. 展开底部面板，按一次返回，确认面板收起且编辑器仍在当前文件。
+3. 在面板收起后再次返回；若存在未保存修改，应显示退出确认，而不是直接退出。
+4. 打开文件树抽屉并同时保持其他临时状态，确认第一次返回优先关闭抽屉。
+
+对应状态回归测试为 `BottomPanelDragStateTest`；菜单返回行为由 `TinaMenus` 的统一 `BackHandler` 入口覆盖。
 
 ## 文档一致性检查
 
@@ -19,17 +64,92 @@ py tools/checks/check_documentation.py
 编辑器 popup 的共享回归建议固定跑下面两组命令：
 
 ```bash
-./gradlew :core:editor-view:testDebugUnitTest --tests "com.wuxianggujun.tinaide.core.editorview.EditorPopupComposeSmokeTest" --tests "com.wuxianggujun.tinaide.core.editorview.PopupOverlaySharedAnchorIntegrationTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorOverlaysIntegrationTest"
+./gradlew :core:editor-view:testDebugUnitTest --tests "com.wuxianggujun.tinaide.core.editorview.EditorPopupComposeSmokeTest" --tests "com.wuxianggujun.tinaide.core.editorview.PopupOverlaySharedAnchorIntegrationTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorOverlaysIntegrationTest" --no-daemon --console=plain
 ```
 
 ```bash
-./gradlew :core:editor-view:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.wuxianggujun.tinaide.core.editorview.EditorCompletionPopupInstrumentationTest,com.wuxianggujun.tinaide.core.editorview.EditorSharedPopupInstrumentationTest
+./gradlew :core:editor-view:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.wuxianggujun.tinaide.core.editorview.EditorCompletionPopupInstrumentationTest,com.wuxianggujun.tinaide.core.editorview.EditorSharedPopupInstrumentationTest --no-daemon --console=plain
 ```
 
 其中：
 
 - 第一组覆盖 popup 组件 smoke、共享 anchor/layout 回归、`EditorOverlays` 组合场景。
 - 第二组覆盖设备侧补全框、签名提示、选择菜单 popup 的稳定 tag 与交互回归。
+
+## 插件 JVM 稳定性门禁
+
+插件 manifest、权限、Script API、隔离状态机、安装事务、LSP owner 和 Marketplace 回归统一运行：
+
+```powershell
+./gradlew :core:plugin:testDebugUnitTest --no-daemon --console=plain
+```
+
+2026-07-15 的基线为 39 个测试套件、176 项测试，要求 0 failures、0 errors、0 skipped。
+其中包含 workspace 确定性排序、runtime unavailable 单次加载、权限授予后激活，以及并发故障写入线程回收。
+教程目录/文章状态和帮助全文搜索属于 app/feature 帮助测试，不计入这 176 项。测试数变化时应核对 XML，而不是只看 Gradle 的 `BUILD SUCCESSFUL`。
+
+`Dev Static Checks` 会运行该任务，并额外固定执行教程/帮助 JVM 回归和 App 教程文章状态测试。插件、教程或帮助 JVM 步骤失败时会上传：
+
+GitHub Actions 的 `CI=true` 配置只使用官方 Google/Maven Central/Gradle Plugin Portal，避免动态版本解析被国内镜像的临时 metadata 错误阻断；本地非 CI 环境仍保留 Aliyun 镜像优先策略。
+
+- `core/plugin/build/test-results/testDebugUnitTest/`
+- `core/plugin/build/reports/tests/testDebugUnitTest/`
+- `feature/help/build/test-results/testDebugUnitTest/`
+- `feature/help/build/reports/tests/testDebugUnitTest/`
+- `feature/tutorial/build/test-results/testDebugUnitTest/`
+- `feature/tutorial/build/reports/tests/testDebugUnitTest/`
+- `app/build/test-results/testArm64DebugUnitTest/`
+- `app/build/reports/tests/testArm64DebugUnitTest/`
+
+制品名为 `plugin-jvm-test-reports-<run_id>-<run_attempt>`，保留 14 天；成功运行不会上传失败报告。
+最近一次确认的成功记录为 run `29691804039`（提交 `76173ebe4`）；插件、帮助、教程和 App 文章状态两个 Gradle 步骤及最终 Gradle 进程清理均成功。
+
+## 教程与帮助 JVM 稳定性门禁
+
+教程目录、帮助资产和文章加载状态分属不同模块，不能只依赖插件模块测试。提交前可运行：
+
+```powershell
+./gradlew :feature:help:testDebugUnitTest :feature:tutorial:testDebugUnitTest --no-daemon --console=plain
+```
+
+```powershell
+./gradlew :app:testArm64DebugUnitTest \
+  --tests "com.wuxianggujun.tinaide.ui.compose.screens.main.tutorial.TutorialArticleLoadStateTest" \
+  --tests "com.wuxianggujun.tinaide.ui.compose.screens.main.tutorial.TutorialRelatedLearningSupportTest" \
+  --no-daemon --console=plain
+```
+
+两组回归分别覆盖：
+
+- `feature:help`：中英文帮助资源、插件教程正文、全文搜索、正文缓存隔离和站内链接解析；
+- `feature:tutorial`：目录 Loading/Content/Empty 状态、分类排序和教程进度模型；
+- `app`：文章缺失、空正文、加载失败、重试所依赖的 `Content/Error` 状态，以及取消传播和关联学习链接。
+
+CI 中的教程测试只选择与教程页面直接相关的 App 测试，不把无关的 App 全量单元测试混入插件稳定性门禁。
+
+## 插件设备稳定性门禁
+
+连接一台 ADB 设备后，在仓库根目录运行：
+
+```powershell
+pwsh ./tools/testing/plugin-device-gate.ps1
+```
+
+该入口会构建并安装独立的 `core:plugin` instrumentation APK，依次验证：
+
+- isolated runtime 主动终止、PSS 越限、watchdog、Lua 沙箱、generation 和 Binder 载荷限制；
+- debuggable-only `SIGSEGV` 后宿主进程存活、故障插件进入 `RUNTIME_CRASH` quarantine、健康插件在新 runtime PID 恢复；
+- in-flight journal 恢复与 quarantine 状态；
+- `prepare -> adb force-stop -> verify` 两阶段真实进程重启后的 quarantine 持久化。
+
+脚本只操作 `com.wuxianggujun.tinaide.core.plugin.test` 测试包，不会清除 TinaIDE 主 App 数据；结束时默认 force-stop 并卸载测试包。非 `-SkipBuild` 模式使用 `--no-daemon` 构建，不调用全局 `gradlew --stop`，因此不会主动终止其他会话的 Gradle daemon。已提前构建时可传 `-SkipBuild`，排查时可传 `-KeepTestApp` 保留测试包。多设备环境必须传 `-Serial <device>`。
+
+结果解析要求精确测试数；`0 tests`、ignored/assumption skip、instrumentation runner failure、阶段数量不匹配或 force-stop 后测试包进程仍存在均判定失败。手动 workflow 无论成功失败都会上传
+`plugin-device-gate-<run_id>-<run_attempt>`，保留 14 天，内容包括设备信息、原始 instrumentation 输出、logcat、阶段汇总和 verdict。
+
+GitHub Actions 的 `Plugin Device Stability Gate` 是手动触发任务，目标 runner 必须带有 `self-hosted`、`Windows`、`X64`、`android-device` 标签并连接可用设备。未配置设备 runner 时不要把工作流排队状态当作测试通过。
+
+该 workflow 只有进入默认分支后才会在 Actions 页面完成注册。触发时可填写 `serial` 指定 ADB 设备；`skip_full_suite=true` 只运行 force-stop/relaunch 持久化阶段，不能替代完整 isolated runtime/native crash 回归。self-hosted runner 还必须预装 PowerShell 7、Android SDK/ADB，并完成设备 USB 调试授权；`adb devices` 中设备状态必须为 `device` 而不是 `offline` 或 `unauthorized`。
 
 ## 相关指南
 

@@ -31,14 +31,10 @@ class LinuxDistroCatalogRepository(
         fun create(context: Context): LinuxDistroCatalogRepository {
             val appContext = context.applicationContext
             val bundledSource = AndroidAssetLinuxDistroManifestSource(appContext)
-            val cachedSource = CachedLinuxDistroManifestSource(
-                cacheFile = RemoteLinuxDistroManifestSource.defaultCacheFile(appContext),
-                fallback = bundledSource,
-            )
-            val remoteSource = RemoteLinuxDistroManifestSource(
-                context = appContext,
-                fallback = cachedSource,
-            )
+            // Remote manifests are not consumed until the registry publishes a signed manifest.
+            // Existing caches were created from unsigned data and are intentionally ignored.
+            val cachedSource = bundledSource
+            val remoteSource = bundledSource
             return LinuxDistroCatalogRepository(
                 bundledSource = bundledSource,
                 cachedSource = cachedSource,

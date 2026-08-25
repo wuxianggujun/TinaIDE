@@ -2,7 +2,7 @@
 
 [![爱发电](https://img.shields.io/badge/%E7%88%B1%E5%8F%91%E7%94%B5-%E6%94%AF%E6%8C%81%E5%BC%80%E6%BA%90-946ce6?style=flat-square)](https://ifdian.net/a/wuxianggujun)
 
-> 最后人工核验：2026-07-11
+> 最后人工核验：2026-08-21
 >
 > 运行在 Android 设备上的 C/C++ IDE，默认使用 `native tina-toolchain + Android sysroot`；可选提供自研 Linux distro / PRoot 环境。
 
@@ -24,7 +24,8 @@ TinaIDE 是面向手机和平板的移动端 IDE。当前版本的核心变化�
 
 - 原生 C/C++ 工具链：内置 `tina-toolchain`，提供 clang / clang++ / clangd 等能力
 - Android sysroot：按 ABI 安装与校验运行时必需的头文件和库
-- 智能补全：native clangd + LSP，支持诊断、跳转定义、查找引用、悬浮信息
+- 代码智能：native clangd + LSP，支持补全、诊断、按实际可用性展示 Quick Fix、跳转定义、查找引用、重命名与悬浮信息
+- C++ 编译上下文诊断：从编辑器状态栏查看当前文件实际使用的编译数据库、编译器、语言标准、Target、Sysroot、头文件路径、宏和完整参数，并可刷新 clangd 连接
 - 自研编辑器：Tina Editor（Compose + Canvas），支持多标签、增量高亮、会话管理
 - Tree-sitter 高亮：支持 C/C++/CMake 及扩展语言
 - 终端与 Linux 环境：可选 Linux distro / PRoot 终端
@@ -41,10 +42,11 @@ TinaIDE 是面向手机和平板的移动端 IDE。当前版本的核心变化�
 https://github.com/wuxianggujun/TinaIDE-Registry
 ```
 
-该仓库承载 `plugins/index.v2.json`、`packages/index.v2.json`、
-`linux-distro/manifest.v1.json`、单项详情文件、官方插件包、依赖包文件和对应构建脚本。
-当前 Android 主干只读取市场 v2 索引，不再回退旧的 `plugins/index.json` /
-`packages/index.json`；如需服务旧客户端，应在 Registry 仓库显式生成 v1 兼容产物。
+该仓库承载插件 `plugins/index.v3.json` 完整视图、`plugins/index.v2.json` 旧宿主兼容视图、
+依赖包 `packages/index.v2.json`、`linux-distro/manifest.v1.json`、单项详情、发布包和构建脚本。
+`0.18.11+` 客户端从 v3 按 Plugin API 与 `minAppVersion` 选择最高兼容插件版本；旧客户端
+继续读取只包含 `0.17.11 + Plugin API v1` 兼容版本的 v2。市场请求不回退旧的
+`plugins/index.json` / `packages/index.json`；v2/v3 共用同一套不可覆盖的 `.tinaplug` 制品。
 Linux distro manifest 使用独立协议，并按“新鲜缓存 → Registry 多端点 → 过期缓存 →
 内置 asset”回落。Android 主仓库只保留客户端、内置兜底资产和文档口径。
 

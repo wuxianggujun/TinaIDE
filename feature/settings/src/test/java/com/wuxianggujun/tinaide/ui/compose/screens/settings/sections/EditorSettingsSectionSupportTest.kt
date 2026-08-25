@@ -33,7 +33,8 @@ class EditorSettingsSectionSupportTest {
                 currentTheme = "dark",
                 themeEntries = entries,
                 themeValues = values,
-                pluginThemesLabel = "插件主题"
+                pluginThemesLabel = "插件主题",
+                customThemeLabel = "自定义"
             )
         ).isEqualTo("深色")
 
@@ -42,18 +43,20 @@ class EditorSettingsSectionSupportTest {
                 currentTheme = "plugin:oceanic",
                 themeEntries = entries,
                 themeValues = values,
-                pluginThemesLabel = "插件主题"
+                pluginThemesLabel = "插件主题",
+                customThemeLabel = "自定义"
             )
         ).isEqualTo("插件主题")
 
         assertThat(
             EditorSettingsSectionSupport.resolveEditorThemeDisplayName(
-                currentTheme = "custom",
+                currentTheme = "CUSTOM",
                 themeEntries = entries,
                 themeValues = values,
-                pluginThemesLabel = "插件主题"
+                pluginThemesLabel = "插件主题",
+                customThemeLabel = "自定义"
             )
-        ).isEqualTo("custom")
+        ).isEqualTo("自定义")
     }
 
     @Test
@@ -61,11 +64,13 @@ class EditorSettingsSectionSupportTest {
         assertThat(
             EditorSettingsSectionSupport.buildEditorThemeOptions(
                 themeEntries = listOf("浅色", "深色"),
-                themeValues = listOf("light", "dark")
+                themeValues = listOf("light", "dark"),
+                customThemeLabel = "自定义"
             )
         ).containsExactly(
             "light" to "浅色",
-            "dark" to "深色"
+            "dark" to "深色",
+            "CUSTOM" to "自定义"
         ).inOrder()
     }
 

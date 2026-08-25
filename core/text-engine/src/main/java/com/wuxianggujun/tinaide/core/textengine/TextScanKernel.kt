@@ -153,6 +153,14 @@ object TextScanKernel {
         )
     }
 
+    /** Counts wrap segments without allocating the segment-start array. */
+    fun countWrapSegments(lineText: String, wrapColumns: Int, tabSize: Int): Int =
+        countWrapSegmentsKotlin(
+            lineText = lineText,
+            wrapColumns = wrapColumns.coerceAtLeast(1),
+            tabSize = tabSize.coerceAtLeast(1)
+        )
+
     fun buildVisualColumnPrefix(lineText: String, tabSize: Int): IntArray {
         if (lineText.isEmpty()) return intArrayOf(0)
         return backend.buildVisualColumnPrefix(lineText, tabSize.coerceAtLeast(1))
@@ -229,11 +237,11 @@ data class LineWhitespaceInfo(
     val outdentRemoveCount: Int
 )
 
-private const val SIGNATURE_HELP_CONTEXT_SCAN_LIMIT = 32_768
+internal const val SIGNATURE_HELP_CONTEXT_SCAN_LIMIT = 32_768
 private const val WHITESPACE_MARKER_TAB_FLAG = 1
 
-private val SIGNATURE_HELP_CONTROL_KEYWORDS = setOf("if", "for", "while", "when", "catch")
-private val SIGNATURE_HELP_DECLARATION_KEYWORDS = setOf(
+internal val SIGNATURE_HELP_CONTROL_KEYWORDS = setOf("if", "for", "while", "when", "catch")
+internal val SIGNATURE_HELP_DECLARATION_KEYWORDS = setOf(
     "fun",
     "class",
     "interface",
@@ -246,7 +254,7 @@ private val SIGNATURE_HELP_DECLARATION_KEYWORDS = setOf(
     "get",
     "set"
 )
-private val SIGNATURE_HELP_NON_CALL_TERMINALS = SIGNATURE_HELP_CONTROL_KEYWORDS +
+internal val SIGNATURE_HELP_NON_CALL_TERMINALS = SIGNATURE_HELP_CONTROL_KEYWORDS +
     SIGNATURE_HELP_DECLARATION_KEYWORDS +
     setOf("else", "do", "try")
 
@@ -1091,10 +1099,11 @@ private class KotlinTextScanBackend : TextScanBackend {
         var visualColumn = 0
         var index = 0
         while (index < length) {
+            val codeUnitLength = utf16CodePointLengthAt(lineText, index)
             val step = if (lineText[index] == '\t') {
                 safeTabSize - (visualColumn % safeTabSize)
             } else {
-                1
+                codeUnitLength
             }
 
             if (index > segmentStart && visualColumn + step > safeWrapColumns) {
@@ -1108,7 +1117,7 @@ private class KotlinTextScanBackend : TextScanBackend {
             }
 
             visualColumn += step
-            index++
+            index += codeUnitLength
 
             if (visualColumn >= safeWrapColumns && index < length) {
                 if (count >= starts.size) {
@@ -1187,273 +1196,66 @@ private class KotlinTextScanBackend : TextScanBackend {
     }
 }
 
+private fun countWrapSegmentsKotlin(
+    lineText: String,
+    wrapColumns: Int,
+    tabSize: Int
+): Int {
+    val length = lineText.length
+    if (length <= 0) return 1
+    if (lineText.indexOf('\t') < 0 && !lineText.containsUtf16SurrogatePair()) {
+        return ((length - 1) / wrapColumns) + 1
+    }
+
+    var segmentCount = 1
+    var segmentStart = 0
+    var visualColumn = 0
+    var index = 0
+    while (index < length) {
+        val codeUnitLength = utf16CodePointLengthAt(lineText, index)
+        val step = if (lineText[index] == '\t') {
+            tabSize - (visualColumn % tabSize)
+        } else {
+            codeUnitLength
+        }
+
+        if (index > segmentStart && visualColumn + step > wrapColumns) {
+            segmentCount++
+            segmentStart = index
+            visualColumn = 0
+            continue
+        }
+
+        visualColumn += step
+        index += codeUnitLength
+        if (visualColumn >= wrapColumns && index < length) {
+            segmentCount++
+            segmentStart = index
+            visualColumn = 0
+        }
+    }
+    return segmentCount
+}
+
+private fun String.containsUtf16SurrogatePair(): Boolean {
+    for (index in 0 until lastIndex) {
+        if (this[index].isHighSurrogate() && this[index + 1].isLowSurrogate()) return true
+    }
+    return false
+}
+
+private fun utf16CodePointLengthAt(text: String, index: Int): Int =
+    if (
+        text[index].isHighSurrogate() &&
+        index + 1 < text.length &&
+        text[index + 1].isLowSurrogate()
+    ) {
+        2
+    } else {
+        1
+    }
+
 private fun encodeWhitespaceMarker(column: Int, isTab: Boolean): Int = (column shl 1) or if (isTab) WHITESPACE_MARKER_TAB_FLAG else 0
 
 private fun Char.isRenderableWhitespace(): Boolean = this == ' ' || this == '\t'
 
-private enum class SignatureHelpContextKind {
-    CallParen,
-    ControlParen,
-    OtherParen,
-    TrailingLambda,
-    OtherBrace
-}
-
-private data class SignatureHelpDelimiter(
-    val kind: SignatureHelpContextKind
-)
-
-private data class KotlinOpenBracketRecord(
-    val offset: Int,
-    val bracket: Char,
-    val depth: Int
-)
-
-private data class KotlinGuideOpenBracketRecord(
-    val line: Int,
-    val column: Int,
-    val bracket: Char,
-    val depth: Int
-)
-
-private data class KotlinSnapshotOpenBracketRecord(
-    val offset: Int,
-    val line: Int,
-    val column: Int,
-    val bracket: Char,
-    val depth: Int
-)
-
-private enum class SignatureHelpParenKind {
-    Call,
-    Control,
-    Other
-}
-
-private sealed interface SignatureHelpScanToken {
-    data class Identifier(val text: String) : SignatureHelpScanToken
-    data class Symbol(val value: Char) : SignatureHelpScanToken
-    data class ParenClose(val kind: SignatureHelpParenKind) : SignatureHelpScanToken
-}
-
-private fun findForwardMatchingBracket(
-    text: String,
-    openOffset: Int,
-    openChar: Char
-): BracketPairMatchResult? {
-    val closeChar = matchingCloseBracket(openChar) ?: return null
-    var depth = 0
-    for (offset in openOffset until text.length) {
-        when (text[offset]) {
-            openChar -> depth++
-            closeChar -> {
-                depth--
-                if (depth == 0) {
-                    return BracketPairMatchResult(openOffset = openOffset, closeOffset = offset)
-                }
-            }
-        }
-    }
-    return null
-}
-
-private fun findBackwardMatchingBracket(
-    text: String,
-    closeOffset: Int,
-    closeChar: Char
-): BracketPairMatchResult? {
-    val openChar = matchingOpenBracket(closeChar) ?: return null
-    var depth = 0
-    for (offset in closeOffset downTo 0) {
-        when (text[offset]) {
-            closeChar -> depth++
-            openChar -> {
-                depth--
-                if (depth == 0) {
-                    return BracketPairMatchResult(openOffset = offset, closeOffset = closeOffset)
-                }
-            }
-        }
-    }
-    return null
-}
-
-private fun Char.isOpenBracket(): Boolean = this == '(' || this == '[' || this == '{'
-
-private fun Char.isCloseBracket(): Boolean = this == ')' || this == ']' || this == '}'
-
-private fun matchingCloseBracket(ch: Char): Char? = when (ch) {
-    '(' -> ')'
-    '[' -> ']'
-    '{' -> '}'
-    else -> null
-}
-
-private fun matchingOpenBracket(ch: Char): Char? = when (ch) {
-    ')' -> '('
-    ']' -> '['
-    '}' -> '{'
-    else -> null
-}
-
-private fun resolveSignatureHelpParenKind(
-    tokens: List<SignatureHelpScanToken>
-): SignatureHelpContextKind = when {
-    endsWithSignatureHelpCallableExpression(tokens) -> SignatureHelpContextKind.CallParen
-    endsWithSignatureHelpControlKeyword(tokens) -> SignatureHelpContextKind.ControlParen
-    else -> SignatureHelpContextKind.OtherParen
-}
-
-private fun endsWithSignatureHelpControlKeyword(
-    tokens: List<SignatureHelpScanToken>
-): Boolean {
-    val lastIdentifier = tokens.lastOrNull() as? SignatureHelpScanToken.Identifier ?: return false
-    return lastIdentifier.text in SIGNATURE_HELP_CONTROL_KEYWORDS
-}
-
-private fun startsSignatureHelpTrailingLambda(
-    tokens: List<SignatureHelpScanToken>
-): Boolean {
-    val lastToken = tokens.lastOrNull() ?: return false
-    return when (lastToken) {
-        is SignatureHelpScanToken.ParenClose -> lastToken.kind == SignatureHelpParenKind.Call
-        is SignatureHelpScanToken.Identifier,
-        is SignatureHelpScanToken.Symbol -> endsWithSignatureHelpCallableExpression(tokens)
-    }
-}
-
-private fun endsWithSignatureHelpCallableExpression(
-    tokens: List<SignatureHelpScanToken>
-): Boolean {
-    if (tokens.isEmpty()) return false
-    val index = skipTrailingSignatureHelpTypeArguments(tokens, tokens.lastIndex)
-    val token = tokens.getOrNull(index) ?: return false
-
-    return when (token) {
-        is SignatureHelpScanToken.ParenClose -> token.kind == SignatureHelpParenKind.Call
-        is SignatureHelpScanToken.Identifier -> {
-            if (token.text in SIGNATURE_HELP_NON_CALL_TERMINALS) return false
-            val chainStart = findSignatureHelpCallChainStart(tokens, index)
-            !isSignatureHelpDeclarationContext(tokens, chainStart)
-        }
-        is SignatureHelpScanToken.Symbol -> false
-    }
-}
-
-private fun skipTrailingSignatureHelpTypeArguments(
-    tokens: List<SignatureHelpScanToken>,
-    startIndex: Int
-): Int {
-    var index = startIndex
-    val closingToken = tokens.getOrNull(index) as? SignatureHelpScanToken.Symbol ?: return index
-    if (closingToken.value != '>') return index
-
-    var depth = 0
-    while (index >= 0) {
-        when (val token = tokens[index]) {
-            is SignatureHelpScanToken.Symbol -> when (token.value) {
-                '>' -> depth++
-                '<' -> {
-                    depth--
-                    if (depth == 0) {
-                        return index - 1
-                    }
-                }
-            }
-            else -> Unit
-        }
-        index--
-    }
-    return startIndex
-}
-
-private fun findSignatureHelpCallChainStart(
-    tokens: List<SignatureHelpScanToken>,
-    identifierIndex: Int
-): Int {
-    var chainStart = identifierIndex
-    var cursor = identifierIndex - 1
-
-    while (cursor >= 0) {
-        val dotToken = tokens.getOrNull(cursor) as? SignatureHelpScanToken.Symbol ?: break
-        if (dotToken.value != '.') break
-        cursor--
-        val safeCallToken = tokens.getOrNull(cursor) as? SignatureHelpScanToken.Symbol
-        if (safeCallToken?.value == '?') {
-            cursor--
-        }
-        cursor = skipTrailingSignatureHelpTypeArguments(tokens, cursor)
-        if (tokens.getOrNull(cursor) !is SignatureHelpScanToken.Identifier) {
-            break
-        }
-        chainStart = cursor
-        cursor--
-    }
-
-    return chainStart
-}
-
-private fun isSignatureHelpDeclarationContext(
-    tokens: List<SignatureHelpScanToken>,
-    chainStart: Int
-): Boolean {
-    val prefix = tokens.getOrNull(chainStart - 1)
-    if (prefix is SignatureHelpScanToken.Identifier &&
-        prefix.text in SIGNATURE_HELP_DECLARATION_KEYWORDS
-    ) {
-        return true
-    }
-
-    val colon = prefix as? SignatureHelpScanToken.Symbol
-    if (colon?.value == ':') {
-        val owner = tokens.getOrNull(chainStart - 2) as? SignatureHelpScanToken.Identifier
-        if (owner?.text in setOf("class", "interface", "object")) {
-            return true
-        }
-    }
-
-    return false
-}
-
-private fun popLastSignatureHelpParen(
-    stack: MutableList<SignatureHelpDelimiter>
-): SignatureHelpParenKind? {
-    for (index in stack.lastIndex downTo 0) {
-        when (val kind = stack[index].kind) {
-            SignatureHelpContextKind.CallParen -> {
-                stack.removeAt(index)
-                return SignatureHelpParenKind.Call
-            }
-            SignatureHelpContextKind.ControlParen -> {
-                stack.removeAt(index)
-                return SignatureHelpParenKind.Control
-            }
-            SignatureHelpContextKind.OtherParen -> {
-                stack.removeAt(index)
-                return SignatureHelpParenKind.Other
-            }
-            SignatureHelpContextKind.TrailingLambda,
-            SignatureHelpContextKind.OtherBrace -> Unit
-        }
-    }
-    return null
-}
-
-private fun popLastSignatureHelpBrace(
-    stack: MutableList<SignatureHelpDelimiter>
-) {
-    for (index in stack.lastIndex downTo 0) {
-        when (stack[index].kind) {
-            SignatureHelpContextKind.TrailingLambda,
-            SignatureHelpContextKind.OtherBrace -> {
-                stack.removeAt(index)
-                return
-            }
-            SignatureHelpContextKind.CallParen,
-            SignatureHelpContextKind.ControlParen,
-            SignatureHelpContextKind.OtherParen -> Unit
-        }
-    }
-}
-
-private fun Char.isSignatureHelpIdentifierChar(): Boolean = isLetterOrDigit() || this == '_'

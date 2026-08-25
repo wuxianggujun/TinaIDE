@@ -38,13 +38,11 @@ class MainActivityShortcutDispatcherTest {
         prefs.edit().clear().commit()
         KeyboardShortcutManager.initialize(prefs)
         PluginCommandRegistry.clear()
-        PluginCommandRegistry.setRuntimeProvider { null }
     }
 
     @After
     fun tearDown() {
         PluginCommandRegistry.clear()
-        PluginCommandRegistry.setRuntimeProvider { null }
     }
 
     @Test

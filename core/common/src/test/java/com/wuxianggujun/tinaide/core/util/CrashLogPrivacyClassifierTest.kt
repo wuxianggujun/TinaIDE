@@ -17,6 +17,7 @@ class CrashLogPrivacyClassifierTest {
     fun `isUserRuntimeProcess detects isolated native containers`() {
         assertThat(CrashLogPrivacyClassifier.isUserRuntimeProcess(packageName, "$packageName:gui")).isTrue()
         assertThat(CrashLogPrivacyClassifier.isUserRuntimeProcess(packageName, "$packageName:sdl")).isTrue()
+        assertThat(CrashLogPrivacyClassifier.isUserRuntimeProcess(packageName, "$packageName:sdl2")).isTrue()
         assertThat(CrashLogPrivacyClassifier.isUserRuntimeProcess(packageName, packageName)).isFalse()
         assertThat(CrashLogPrivacyClassifier.isUserRuntimeProcess(packageName, "$packageName:toolchain")).isFalse()
     }
@@ -40,6 +41,12 @@ class CrashLogPrivacyClassifierTest {
             CrashLogPrivacyClassifier.isUserRuntimeCrash(
                 packageName,
                 ">>> com.example.tinaide:sdl <<<"
+            )
+        ).isTrue()
+        assertThat(
+            CrashLogPrivacyClassifier.isUserRuntimeCrash(
+                packageName,
+                ">>> com.example.tinaide:sdl2 <<<"
             )
         ).isTrue()
     }

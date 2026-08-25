@@ -1,6 +1,7 @@
 package com.wuxianggujun.tinaide.core.compile.strategy
 
 import android.content.Context
+import android.os.Build
 import com.wuxianggujun.tinaide.cmake.CMake
 import com.wuxianggujun.tinaide.cmake.CMakeDoc
 import com.wuxianggujun.tinaide.cmake.analysis.CMakeAnalyzer
@@ -34,6 +35,7 @@ import com.wuxianggujun.tinaide.core.linux.LinuxEnvironmentProvider
 import com.wuxianggujun.tinaide.core.linux.LinuxRunModePolicy
 import com.wuxianggujun.tinaide.core.linux.UnavailableLinuxEnvironmentProvider
 import com.wuxianggujun.tinaide.core.ndk.AndroidNativeToolchainManager
+import com.wuxianggujun.tinaide.core.packages.PackageAbiCompatibility
 import com.wuxianggujun.tinaide.core.proot.PRootEnvironment
 import com.wuxianggujun.tinaide.core.proot.ToolchainPathResolver
 import com.wuxianggujun.tinaide.project.ProjectMetadataStore
@@ -409,18 +411,28 @@ class CMakeStrategy(
             val expectedBuildType = options.cmakeBuildType.cmakeValue
             if (cachedBuildType == null || cachedBuildType != expectedBuildType) return true
 
-            CMakeConfigurationIdentity.from(options).asCMakeCacheEntries().forEach { (key, expectedValue) ->
-                val cachedValue = readCMakeCacheValue(cacheContent, key) ?: return true
-                if (cachedValue != expectedValue) {
-                    Timber.tag(TAG).d(
-                        "CMake cache identity mismatch: %s cached=%s expected=%s",
-                        key,
-                        cachedValue,
-                        expectedValue
-                    )
-                    return true
-                }
+            val androidAbi = if (isNativeMode(options.resolvedRunMode)) {
+                PackageAbiCompatibility.currentAppAbi(
+                    nativeLibraryDir = context.applicationInfo.nativeLibraryDir,
+                    supportedAbis = Build.SUPPORTED_ABIS,
+                )
+            } else {
+                ""
             }
+            CMakeConfigurationIdentity.from(options, androidAbi)
+                .asCMakeCacheEntries()
+                .forEach { (key, expectedValue) ->
+                    val cachedValue = readCMakeCacheValue(cacheContent, key) ?: return true
+                    if (cachedValue != expectedValue) {
+                        Timber.tag(TAG).d(
+                            "CMake cache identity mismatch: %s cached=%s expected=%s",
+                            key,
+                            cachedValue,
+                            expectedValue
+                        )
+                        return true
+                    }
+                }
         } catch (e: Exception) {
             Timber.tag(TAG).w("Failed to read CMakeCache.txt: %s", e.message)
             return true

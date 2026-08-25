@@ -19,6 +19,9 @@
 5. 需要离线分发时，再运行 `pack.ps1` 或 `pack.sh`
 6. 用“设置 → 插件 → 从文件安装”验证生成的 `.tinaplug`
 
+纯 `config` 插件首次安装后会自动启用，使声明式贡献立即可见；升级会保留用户原有启用状态。
+它没有 Lua/LSP 运行时，安装或列表刷新不会执行第三方插件代码。
+
 ## 当前能力边界
 
 - `editor/context`、`editor/toolbar` 与 `filetree/context` 已可用

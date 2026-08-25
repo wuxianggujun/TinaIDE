@@ -1,7 +1,9 @@
 package com.wuxianggujun.tinaide.core.git.ssh
 
 import android.content.Context
+import android.util.AtomicFile
 import java.io.File
+import java.io.FileNotFoundException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -14,21 +16,43 @@ class GitSshStore(
 ) {
     private val appContext = context.applicationContext
     private val file = File(appContext.filesDir, FILE_NAME)
-    private val mutex = Mutex()
+    private val atomicFile = AtomicFile(file)
 
-    suspend fun read(): GitSshState = mutex.withLock {
+    suspend fun read(): GitSshState = STORE_MUTEX.withLock {
         withContext(Dispatchers.IO) {
-            if (!file.exists()) return@withContext GitSshState()
-            val text = runCatching { file.readText(Charsets.UTF_8) }.getOrNull().orEmpty()
-            if (text.isBlank()) return@withContext GitSshState()
-            runCatching { parseState(JSONObject(text)) }.getOrNull() ?: GitSshState()
+            readUnlocked()
         }
     }
 
-    suspend fun write(state: GitSshState) = mutex.withLock {
+    suspend fun update(transform: (GitSshState) -> GitSshState): GitSshState = STORE_MUTEX.withLock {
         withContext(Dispatchers.IO) {
-            file.parentFile?.mkdirs()
-            file.writeText(toJson(state).toString(2), Charsets.UTF_8)
+            val updated = transform(readUnlocked())
+            writeUnlocked(updated)
+            updated
+        }
+    }
+
+    private fun readUnlocked(): GitSshState {
+        val text = try {
+            atomicFile.openRead().bufferedReader(Charsets.UTF_8).use { it.readText() }
+        } catch (_: FileNotFoundException) {
+            return GitSshState()
+        }
+        if (text.isBlank()) return GitSshState()
+        return runCatching { parseState(JSONObject(text)) }.getOrNull() ?: GitSshState()
+    }
+
+    private fun writeUnlocked(state: GitSshState) {
+        file.parentFile?.mkdirs()
+        val output = atomicFile.startWrite()
+        try {
+            val writer = output.bufferedWriter(Charsets.UTF_8)
+            writer.write(toJson(state).toString(2))
+            writer.flush()
+            atomicFile.finishWrite(output)
+        } catch (error: Throwable) {
+            atomicFile.failWrite(output)
+            throw error
         }
     }
 
@@ -93,5 +117,6 @@ class GitSshStore(
 
     private companion object {
         private const val FILE_NAME = "git-ssh.json"
+        private val STORE_MUTEX = Mutex()
     }
 }

@@ -6,6 +6,14 @@ plugins {
 android {
     namespace = "com.wuxianggujun.tinaide.core.plugin"
 
+    defaultConfig {
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    buildFeatures {
+        aidl = true
+    }
+
     testOptions {
         unitTests.isIncludeAndroidResources = true
     }
@@ -25,4 +33,9 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.lifecycle.viewmodel)
     implementation(libs.luajava.lua54)
+
+    androidTestImplementation(libs.androidx.test.junit)
+    androidTestImplementation(libs.androidx.test.runner)
+    // Library instrumentation tests do not inherit the app module's Lua native runtime.
+    androidTestRuntimeOnly("party.iroiro.luajava:android:${libs.versions.luajava.get()}:lua54@aar")
 }

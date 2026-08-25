@@ -48,6 +48,6 @@ Provider 必须拒绝：
 修改该 Provider 或路径规则后至少运行：
 
 ```powershell
-.\gradlew.bat :app:testArm64DebugUnitTest --tests "com.wuxianggujun.tinaide.provider.MTDataFilesProviderPathSafetyTest" --console=plain
-.\gradlew.bat :app:compileArm64DebugKotlin --console=plain
+.\gradlew.bat :app:testArm64DebugUnitTest --tests "com.wuxianggujun.tinaide.provider.MTDataFilesProviderPathSafetyTest" --no-daemon --console=plain
+.\gradlew.bat :app:compileArm64DebugKotlin --no-daemon --console=plain
 ```

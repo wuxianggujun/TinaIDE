@@ -1,7 +1,10 @@
 package com.wuxianggujun.tinaide.core.editorview
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import com.wuxianggujun.tinaide.core.config.EditorThemeColorKey
 import com.wuxianggujun.tinaide.core.treesitter.HighlightType
+import java.util.Locale
 
 /**
  * TinaEditor 配色方案（编辑器 UI + 语法高亮）。
@@ -231,56 +234,56 @@ data class EditorColorScheme(
                 fallback.background,
                 "4",
                 "WHOLE_BACKGROUND",
-                "editor.background"
+                EditorThemeColorKey.EDITOR_BACKGROUND.wireName
             )
             val foreground = pick(
                 fallback.foreground,
                 "5",
                 "TEXT_NORMAL",
-                "editor.foreground"
+                EditorThemeColorKey.EDITOR_FOREGROUND.wireName
             )
             val gutterBackground = pick(
                 fallback.gutterBackground,
                 "3",
                 "LINE_NUMBER_BACKGROUND",
-                "gutter.background"
+                EditorThemeColorKey.GUTTER_BACKGROUND.wireName
             )
             val gutterDivider = pick(
                 fallback.gutterDivider,
                 "1",
                 "LINE_DIVIDER",
-                "gutter.divider"
+                EditorThemeColorKey.GUTTER_DIVIDER.wireName
             )
 
             val lineNumberForeground = pick(
                 fallback.lineNumberForeground,
                 "2",
                 "LINE_NUMBER",
-                "editor.lineNumber"
+                EditorThemeColorKey.EDITOR_LINE_NUMBER.wireName
             )
             val lineNumberForegroundActive = pick(
                 fallback.lineNumberForegroundActive,
                 "45",
                 "LINE_NUMBER_CURRENT",
-                "editor.lineNumberActive"
+                EditorThemeColorKey.EDITOR_LINE_NUMBER_ACTIVE.wireName
             )
             val selectionBackground = pick(
                 fallback.selectionBackground,
                 "6",
                 "SELECTED_TEXT_BACKGROUND",
-                "editor.selection"
+                EditorThemeColorKey.EDITOR_SELECTION.wireName
             )
             val currentLineBackground = pick(
                 fallback.currentLineBackground,
                 "9",
                 "CURRENT_LINE",
-                "editor.cursorLine"
+                EditorThemeColorKey.EDITOR_CURSOR_LINE.wireName
             )
             val cursor = pick(
                 fallback.cursor,
                 "7",
                 "SELECTION_INSERT",
-                "editor.cursor"
+                EditorThemeColorKey.EDITOR_CURSOR.wireName
             )
             val selectionHandle = pick(
                 fallback.selectionHandle,
@@ -306,26 +309,42 @@ data class EditorColorScheme(
                 "scrollbar.thumbHover"
             )
 
-            val syntaxKeyword = pick(fallback.syntax.keyword, "21", "KEYWORD", "syntax.keyword")
-            val syntaxComment = pick(fallback.syntax.comment, "22", "COMMENT", "syntax.comment")
-            val syntaxOperator = pick(fallback.syntax.operator, "23", "OPERATOR", "syntax.operator")
-            val syntaxLiteral = pick(fallback.syntax.string, "24", "LITERAL", "syntax.string")
-            val syntaxVariable = pick(fallback.syntax.variable, "25", "IDENTIFIER_VAR", "syntax.variable")
-            val syntaxProperty = pick(fallback.syntax.property, "syntax.property")
-            val syntaxType = pick(fallback.syntax.type, "26", "IDENTIFIER_NAME", "syntax.type")
-            val syntaxFunction = pick(fallback.syntax.function, "27", "FUNCTION_NAME", "syntax.function")
-            val syntaxNumber = pick(fallback.syntax.number, "24", "LITERAL", "syntax.number")
-            val syntaxPunctuation = pick(fallback.syntax.punctuation, "23", "OPERATOR", "syntax.punctuation")
-            val syntaxConstant = pick(fallback.syntax.constant, "syntax.constant")
-            val syntaxBuiltin = pick(fallback.syntax.builtin, "syntax.builtin")
+            val syntaxKeyword = pick(fallback.syntax.keyword, "21", "KEYWORD", EditorThemeColorKey.SYNTAX_KEYWORD.wireName)
+            val syntaxComment = pick(fallback.syntax.comment, "22", "COMMENT", EditorThemeColorKey.SYNTAX_COMMENT.wireName)
+            val syntaxOperator = pick(fallback.syntax.operator, "23", "OPERATOR", EditorThemeColorKey.SYNTAX_OPERATOR.wireName)
+            val syntaxLiteral = pick(fallback.syntax.string, "24", "LITERAL", EditorThemeColorKey.SYNTAX_STRING.wireName)
+            val syntaxVariable = pick(fallback.syntax.variable, "25", "IDENTIFIER_VAR", EditorThemeColorKey.SYNTAX_VARIABLE.wireName)
+            val syntaxProperty = parse(EditorThemeColorKey.SYNTAX_PROPERTY.wireName) ?: syntaxVariable
+            val syntaxType = pick(fallback.syntax.type, "26", "IDENTIFIER_NAME", EditorThemeColorKey.SYNTAX_TYPE.wireName)
+            val syntaxFunction = pick(fallback.syntax.function, "27", "FUNCTION_NAME", EditorThemeColorKey.SYNTAX_FUNCTION.wireName)
+            val syntaxNumber = pick(fallback.syntax.number, "24", "LITERAL", EditorThemeColorKey.SYNTAX_NUMBER.wireName)
+            val syntaxPunctuation = pick(fallback.syntax.punctuation, "23", "OPERATOR", EditorThemeColorKey.SYNTAX_PUNCTUATION.wireName)
+            val syntaxConstant = pick(fallback.syntax.constant, EditorThemeColorKey.SYNTAX_CONSTANT.wireName)
+            val syntaxBuiltin = pick(fallback.syntax.builtin, EditorThemeColorKey.SYNTAX_BUILTIN.wireName)
+            val syntaxDeprecated = pick(fallback.syntax.deprecated, EditorThemeColorKey.SYNTAX_DEPRECATED.wireName)
 
-            val rainbowColors = (0 until 6).mapNotNull { index ->
+            val rainbowColors = (0 until 6).map { index ->
                 parse("rainbowBrackets.$index")
                     ?: parse("${256 + index}")
-            }.ifEmpty { fallback.rainbowBracketColors }
+                    ?: fallback.rainbowBracketColors.getOrElse(index) {
+                        DEFAULT_RAINBOW_BRACKET_COLORS[index]
+                    }
+            }
 
             return fallback.copy(
                 rainbowBracketColors = rainbowColors,
+                bracketPairGuide = pick(
+                    fallback.bracketPairGuide,
+                    EditorThemeColorKey.BRACKET_PAIR_GUIDE.wireName
+                ),
+                bracketPairGuideActive = pick(
+                    fallback.bracketPairGuideActive,
+                    EditorThemeColorKey.BRACKET_PAIR_GUIDE_ACTIVE.wireName
+                ),
+                whitespace = pick(
+                    fallback.whitespace,
+                    EditorThemeColorKey.EDITOR_WHITESPACE.wireName
+                ),
                 background = background,
                 foreground = foreground,
                 lineNumberBackground = gutterBackground,
@@ -381,26 +400,26 @@ data class EditorColorScheme(
                 ),
                 diagnosticError = pick(
                     fallback.diagnosticError,
-                    "diagnostic.error",
+                    EditorThemeColorKey.DIAGNOSTIC_ERROR.wireName,
                     "problem.error",
                     "35",
                     "PROBLEM_ERROR"
                 ),
                 diagnosticWarning = pick(
                     fallback.diagnosticWarning,
-                    "diagnostic.warning",
+                    EditorThemeColorKey.DIAGNOSTIC_WARNING.wireName,
                     "problem.warning",
                     "36",
                     "PROBLEM_WARNING"
                 ),
                 diagnosticInfo = pick(
                     fallback.diagnosticInfo,
-                    "diagnostic.info",
+                    EditorThemeColorKey.DIAGNOSTIC_INFO.wireName,
                     "problem.info"
                 ),
                 diagnosticHint = pick(
                     fallback.diagnosticHint,
-                    "diagnostic.hint",
+                    EditorThemeColorKey.DIAGNOSTIC_HINT.wireName,
                     "problem.hint",
                     "37",
                     "PROBLEM_TYPO"
@@ -410,7 +429,7 @@ data class EditorColorScheme(
                     keyword = syntaxKeyword,
                     function = syntaxFunction,
                     variable = syntaxVariable,
-                    property = syntaxProperty.let { if (it == fallback.syntax.property) syntaxVariable else it },
+                    property = syntaxProperty,
                     type = syntaxType,
                     string = syntaxLiteral,
                     number = syntaxNumber,
@@ -418,7 +437,8 @@ data class EditorColorScheme(
                     operator = syntaxOperator,
                     punctuation = syntaxPunctuation,
                     constant = syntaxConstant,
-                    builtin = syntaxBuiltin
+                    builtin = syntaxBuiltin,
+                    deprecated = syntaxDeprecated
                 )
             )
         }
@@ -436,7 +456,46 @@ data class EditorColorScheme(
             }.getOrNull()
         }
     }
+
+    fun toThemeColors(): Map<String, String> = buildMap {
+        put(EditorThemeColorKey.EDITOR_BACKGROUND.wireName, background.toThemeHex())
+        put(EditorThemeColorKey.EDITOR_FOREGROUND.wireName, foreground.toThemeHex())
+        put(EditorThemeColorKey.EDITOR_SELECTION.wireName, selectionBackground.toThemeHex())
+        put(EditorThemeColorKey.EDITOR_CURSOR_LINE.wireName, currentLineBackground.toThemeHex())
+        put(EditorThemeColorKey.EDITOR_CURSOR.wireName, cursor.toThemeHex())
+        put(EditorThemeColorKey.EDITOR_LINE_NUMBER.wireName, lineNumberForeground.toThemeHex())
+        put(EditorThemeColorKey.EDITOR_LINE_NUMBER_ACTIVE.wireName, lineNumberForegroundActive.toThemeHex())
+        put(EditorThemeColorKey.GUTTER_BACKGROUND.wireName, gutterBackground.toThemeHex())
+        put(EditorThemeColorKey.GUTTER_DIVIDER.wireName, gutterDivider.toThemeHex())
+        put(EditorThemeColorKey.EDITOR_WHITESPACE.wireName, whitespace.toThemeHex())
+        put(EditorThemeColorKey.BRACKET_PAIR_GUIDE.wireName, bracketPairGuide.toThemeHex())
+        put(EditorThemeColorKey.BRACKET_PAIR_GUIDE_ACTIVE.wireName, bracketPairGuideActive.toThemeHex())
+        EditorThemeColorKey.entries
+            .filter { it.wireName.startsWith("rainbowBrackets.") }
+            .forEachIndexed { index, key ->
+                rainbowBracketColors.getOrNull(index)?.let { put(key.wireName, it.toThemeHex()) }
+            }
+        put(EditorThemeColorKey.SYNTAX_KEYWORD.wireName, syntax.keyword.toThemeHex())
+        put(EditorThemeColorKey.SYNTAX_FUNCTION.wireName, syntax.function.toThemeHex())
+        put(EditorThemeColorKey.SYNTAX_VARIABLE.wireName, syntax.variable.toThemeHex())
+        put(EditorThemeColorKey.SYNTAX_PROPERTY.wireName, syntax.property.toThemeHex())
+        put(EditorThemeColorKey.SYNTAX_TYPE.wireName, syntax.type.toThemeHex())
+        put(EditorThemeColorKey.SYNTAX_STRING.wireName, syntax.string.toThemeHex())
+        put(EditorThemeColorKey.SYNTAX_NUMBER.wireName, syntax.number.toThemeHex())
+        put(EditorThemeColorKey.SYNTAX_COMMENT.wireName, syntax.comment.toThemeHex())
+        put(EditorThemeColorKey.SYNTAX_OPERATOR.wireName, syntax.operator.toThemeHex())
+        put(EditorThemeColorKey.SYNTAX_PUNCTUATION.wireName, syntax.punctuation.toThemeHex())
+        put(EditorThemeColorKey.SYNTAX_CONSTANT.wireName, syntax.constant.toThemeHex())
+        put(EditorThemeColorKey.SYNTAX_BUILTIN.wireName, syntax.builtin.toThemeHex())
+        put(EditorThemeColorKey.SYNTAX_DEPRECATED.wireName, syntax.deprecated.toThemeHex())
+        put(EditorThemeColorKey.DIAGNOSTIC_ERROR.wireName, diagnosticError.toThemeHex())
+        put(EditorThemeColorKey.DIAGNOSTIC_WARNING.wireName, diagnosticWarning.toThemeHex())
+        put(EditorThemeColorKey.DIAGNOSTIC_INFO.wireName, diagnosticInfo.toThemeHex())
+        put(EditorThemeColorKey.DIAGNOSTIC_HINT.wireName, diagnosticHint.toThemeHex())
+    }
 }
+
+private fun Color.toThemeHex(): String = String.format(Locale.ROOT, "#%08X", toArgb())
 
 data class EditorSyntaxColors(
     val defaultText: Color,

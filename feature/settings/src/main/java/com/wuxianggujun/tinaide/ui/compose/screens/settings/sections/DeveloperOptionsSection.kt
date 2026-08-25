@@ -123,6 +123,15 @@ internal fun DeveloperOptionsSection(
                             val url = DeveloperOptionsSectionSupport.normalizeServerUrlInput(
                                 serverUrlText
                             )
+                            if (!DeveloperOptionsSectionSupport.isServerUrlValid(url)) {
+                                serverUrlFeedback = DeveloperServerUrlFeedback.Invalid
+                                DeveloperOptionsSectionSupport
+                                    .resolveServerUrlFeedbackMessage(serverUrlFeedback)
+                                    ?.let { message ->
+                                        DeveloperToastSpec(message = message).show(context)
+                                    }
+                                return@launch
+                            }
                             serverConfig.setServerUrl(url)
                             val ok = serverConfig.checkServerConnection()
                             val dialogState = DeveloperOptionsSectionSupport.resolveServerUrlSaveResult(

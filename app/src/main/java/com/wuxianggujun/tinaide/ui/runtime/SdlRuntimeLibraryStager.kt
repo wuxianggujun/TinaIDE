@@ -2,7 +2,6 @@ package com.wuxianggujun.tinaide.ui.runtime
 
 import android.content.Context
 import java.io.File
-import java.io.IOException
 import timber.log.Timber
 
 /**
@@ -59,50 +58,25 @@ object SdlRuntimeLibraryStager {
         privatePathPrefixes: List<String>
     ): StageResult {
         return runCatching {
-            if (!stageRootDir.isDirectory && !stageRootDir.mkdirs()) {
-                throw IOException("Cannot create SDL staging root: ${stageRootDir.absolutePath}")
-            }
-            val stageKey = mainLibrary.absolutePath.hashCode().toUInt().toString(16)
-            // stageDir 按项目固定（hashCode），不清空会残留上一次的脏副本。
+            // The stage directory is stable per project and must be cleared to avoid stale copies.
             // 例如曾被误判为依赖而复制进来的 libmediandk.so 等 OS 系统库副本，
             // 即使代码已不再 stage 它们，旧副本仍会在受限 linker 命名空间里被 dlopen 而崩溃。
-            // 因此每次 stage 前先清空该项目目录，保证只保留本次真正需要的库。
-            val stageDir = File(stageRootDir, "${mainLibrary.nameWithoutExtension}.$stageKey")
-            if (stageDir.exists() && !stageDir.deleteRecursively()) {
-                throw IOException("Cannot clean stale SDL staging directory: ${stageDir.absolutePath}")
-            }
-            if (!stageDir.mkdirs() && !stageDir.isDirectory) {
-                throw IOException("Cannot create SDL staging directory: ${stageDir.absolutePath}")
-            }
-
-            val stagedSources = mutableMapOf<String, File>()
-            fun registerSource(source: File) {
-                val canonicalSource = canonicalOrAbsolute(source)
-                val previousSource = stagedSources[source.name]
-                if (previousSource != null && canonicalOrAbsolute(previousSource) != canonicalSource) {
-                    throw IOException(
-                        "Conflicting SDL runtime libraries share filename ${source.name}: " +
-                            "${previousSource.absolutePath} and ${source.absolutePath}"
-                    )
-                }
-                stagedSources[source.name] = source
-            }
-
-            fun stagePublicFile(source: File): File {
-                registerSource(source)
-                return stageFile(source, stageDir)
-            }
+            val stagingArea = NativeRuntimeStagingArea.prepare(
+                stageRootDir = stageRootDir,
+                identityFile = mainLibrary,
+                runtimeName = "SDL",
+            )
 
             fun resolveLibrary(source: File): File {
-                registerSource(source)
+                val canonicalSource = stagingArea.register(source)
                 return if (isPrivateRuntimePath(source, privatePathPrefixes)) {
-                    source
+                    canonicalSource
                 } else {
-                    stageFile(source, stageDir)
+                    stagingArea.copy(canonicalSource)
                 }
             }
 
-            val stagedMain = stagePublicFile(mainLibrary)
+            val stagedMain = stagingArea.copy(mainLibrary)
             val stagedSdl = resolveLibrary(sdlLibrary)
             val stagedPreSdl = linkedSetOf<String>()
             val stagedPreloads = linkedSetOf<String>()
@@ -148,20 +122,11 @@ object SdlRuntimeLibraryStager {
         }
     }
 
-    private fun stageFile(source: File, stageDir: File): File {
-        val target = File(stageDir, source.name)
-        source.copyTo(target, overwrite = true)
-        return target
-    }
-
     private fun isPrivateRuntimePath(file: File, privatePathPrefixes: List<String>): Boolean {
-        val absolutePath = canonicalOrAbsolute(file).path
+        val absolutePath = canonicalRuntimeFile(file).path
         return privatePathPrefixes.any { prefix ->
-            val prefixPath = canonicalOrAbsolute(File(prefix)).path.trimEnd(File.separatorChar)
+            val prefixPath = canonicalRuntimeFile(File(prefix)).path.trimEnd(File.separatorChar)
             absolutePath == prefixPath || absolutePath.startsWith(prefixPath + File.separator)
         }
     }
-
-    private fun canonicalOrAbsolute(file: File): File =
-        runCatching { file.canonicalFile }.getOrDefault(file.absoluteFile)
 }

@@ -57,4 +57,34 @@ class PackageModelsSerializationTest {
         assertThat(info.platform).isEqualTo(Platform.ANDROID)
         assertThat(info.sources.single().supportsRange).isTrue()
     }
+
+    @Test
+    fun downloadInfo_shouldDeserializeAbiSpecificSourceIntegrityMetadata() {
+        val info = json.decodeFromString<DownloadInfo>(
+            """
+            {
+              "package_id": "raylib",
+              "version": "6.0",
+              "platform": "android",
+              "install_type": "download",
+              "sources": [
+                {
+                  "id": 1,
+                  "name": "arm64",
+                  "url": "packages/raylib/6.0/raylib-arm64-v8a.tar.xz",
+                  "priority": 100,
+                  "abi": "arm64-v8a",
+                  "size": 512,
+                  "checksum": "sha256:abc"
+                }
+              ]
+            }
+            """.trimIndent()
+        )
+
+        val source = info.sources.single()
+        assertThat(source.abi).isEqualTo("arm64-v8a")
+        assertThat(source.size).isEqualTo(512)
+        assertThat(source.checksum).isEqualTo("sha256:abc")
+    }
 }

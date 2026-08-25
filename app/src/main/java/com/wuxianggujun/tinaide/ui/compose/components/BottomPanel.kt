@@ -12,6 +12,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.RectangleShape
@@ -27,6 +28,8 @@ import com.wuxianggujun.tinaide.core.git.GitCommit
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.lsp.Diagnostic
 import com.wuxianggujun.tinaide.editor.symbol.ProjectSymbolIndexService
+import com.wuxianggujun.tinaide.plugin.PluginManager
+import com.wuxianggujun.tinaide.plugin.PluginPanelContentStore
 import com.wuxianggujun.tinaide.ui.BottomPanelViewModel
 import com.wuxianggujun.tinaide.ui.DebugViewModel
 import com.wuxianggujun.tinaide.ui.EditorStateViewModel
@@ -40,11 +43,12 @@ import org.koin.compose.koinInject
  * 底部面板组件
  *
  * 包含：
- * - 拖拽手柄
- * - 编辑器工具栏（底部面板未展开时显示）
- * - 底部面板内容（构建日志、诊断、Git）
+ * - 状态栏（带拖拽）
+ * - 可显隐的编辑器快捷符号栏
+ * - 调试工具栏（调试且工具栏位置为底部时）
+ * - 底部面板内容（问题 / 构建 / 输出 等）
  *
- * 注意：终端已移至独立的 TerminalActivity
+ * 注意：终端已移至独立 TerminalActivity；撤销/重做在顶栏左侧。
  */
 @Composable
 fun BottomPanel(
@@ -54,11 +58,12 @@ fun BottomPanel(
     editorStateViewModel: EditorStateViewModel,
     debugViewModel: DebugViewModel,
     projectSymbolIndexService: ProjectSymbolIndexService?,
-    onUndoClick: () -> Unit,
-    onRedoClick: () -> Unit,
-    onSymbolClick: (String) -> Unit,
     onBookmarkNavigate: (filePath: String, line: Int) -> Unit,
     onDiagnosticClick: (Diagnostic) -> Unit,
+    onDiagnosticCodeActionsClick: (Diagnostic) -> Unit,
+    onDiagnosticQuickFixAvailabilityRequest: suspend (Diagnostic) -> Boolean,
+    onDiagnosticFixAllClick: () -> Unit,
+    onDiagnosticFixAllAvailabilityRequest: suspend () -> Boolean,
     modifier: Modifier = Modifier,
     // Git 相关参数
     gitCurrentBranch: String? = null,
@@ -85,8 +90,6 @@ fun BottomPanel(
     // 直接读取状态层收口后的窄语义，避免外层自己拆 tabs/活动态。
     val editorToolBarState = editorContainerState.getActiveEditorToolBarState()
     val hasOpenFiles = editorToolBarState.hasFiles
-    val canUndo = editorToolBarState.canUndo
-    val canRedo = editorToolBarState.canRedo
 
     // 从 DebugViewModel 获取调试状态
     val isActive by debugViewModel.isActive.collectAsStateWithLifecycle()
@@ -100,26 +103,40 @@ fun BottomPanel(
     val diagnosticsSettings = Prefs.devDiagnosticsSettingsFlow.collectAsStateWithLifecycleWhen(
         developerOptionsEnabled
     )
+    val activeTabHasCodeEditor = editorContainerState.activeTabHasAttachedCodeEditor()
     val showDebugBarInBottom = isActive && debugToolbarPosition != DebugToolbarPosition.TOP
-    val showEditorToolBar = !isActive && hasOpenFiles && !bottomPanelState.isNearFullScreen
+    var isEditorSymbolBarVisible by rememberSaveable { mutableStateOf(true) }
+    val canToggleEditorSymbolBar =
+        !isActive && activeTabHasCodeEditor && !bottomPanelState.isNearFullScreen
+    val showEditorSymbolBar =
+        canToggleEditorSymbolBar && isEditorSymbolBarVisible
     val showEditorPerformanceTab = shouldShowEditorPerformanceTab(
         developerOptionsEnabled = developerOptionsEnabled,
         diagnosticsEnabled = diagnosticsSettings.diagnosticsEnabled,
-        activeTabSupportsEditorPerformancePanel = editorContainerState.activeTabSupportsEditorPerformancePanel()
+        activeTabSupportsEditorPerformancePanel = activeTabHasCodeEditor
     )
     val debugStatus = debugViewModel.debugStatus.collectAsStateWithLifecycleWhen(showDebugBarInBottom)
     val breakpoints = debugViewModel.breakpoints.collectAsStateWithLifecycleWhen(isActive)
     val variables = debugViewModel.variables.collectAsStateWithLifecycleWhen(isActive)
     val callStack = debugViewModel.callStack.collectAsStateWithLifecycleWhen(isActive)
     val consoleLines = debugViewModel.consoleLines.collectAsStateWithLifecycleWhen(isActive)
+    val pluginManager = remember(context) { PluginManager.getInstance(context) }
+    val pluginState by pluginManager.pluginStateFlow.collectAsStateWithLifecycle()
+    val pluginPanelContents by PluginPanelContentStore.contents.collectAsStateWithLifecycle()
 
     // 变量详情对话框状态
     var showVariableDetailDialog by remember { mutableStateOf(false) }
     var selectedVariableForDetail by remember { mutableStateOf<DebugVariable?>(null) }
+    var showCxxCompileContextDialog by rememberSaveable { mutableStateOf(false) }
 
-    // 底部面板显示的标签页（构建日志、诊断、符号、Git）
+    // 默认底栏：问题 / 构建；命令打开的次级 Tab 临时并入可见列表
     val normalModeTabs = resolveNormalModeBottomTabs(
-        showEditorPerformanceTab = showEditorPerformanceTab
+        showEditorPerformanceTab = showEditorPerformanceTab,
+        hasPluginPanels = pluginState.resolvedPanels.isNotEmpty(),
+    )
+    val visibleBottomTabs = resolveVisibleBottomPanelTabs(
+        normalModeTabs = normalModeTabs,
+        selectedBottomTab = selectedBottomTab,
     )
     val resolvedBottomTab = resolveSelectedBottomPanelTab(
         selectedBottomTab = selectedBottomTab,
@@ -134,6 +151,8 @@ fun BottomPanel(
     val diagnostics = bottomPanelViewModel.diagnostics.collectAsStateWithLifecycleWhen(
         !isActive && resolvedBottomTab == BottomPanelTab.DIAGNOSTICS
     )
+    val quickFixProbeKey = editorContainerState.getCodeActionProbeContext()
+    val fixAllProbeKey = editorContainerState.getActiveCodeActionProbeContext()
     val buildLogCount by bottomPanelViewModel.buildLogCount.collectAsStateWithLifecycle()
     val runOutputCount by bottomPanelViewModel.runOutputCount.collectAsStateWithLifecycle()
     val normalModeTabBadges = mapOf(
@@ -164,32 +183,40 @@ fun BottomPanel(
                     line = cursorLine,
                     column = cursorColumn,
                     bottomPanelState = bottomPanelState,
-                    onCursorPositionClick = onCursorPositionClick
+                    onStatusClick = if (editorContainerState.activeTabSupportsCxxCompileContext()) {
+                        { showCxxCompileContextDialog = true }
+                    } else {
+                        null
+                    },
+                    onCursorPositionClick = onCursorPositionClick,
+                    isEditorSymbolBarVisible = isEditorSymbolBarVisible,
+                    onToggleEditorSymbolBar = if (canToggleEditorSymbolBar) {
+                        { isEditorSymbolBarVisible = !isEditorSymbolBarVisible }
+                    } else {
+                        null
+                    },
                 )
             }
 
-            // 编辑器工具栏 / 调试工具栏
-            AnimatedVisibility(visible = showDebugBarInBottom || showEditorToolBar) {
-                if (showDebugBarInBottom) {
-                    DebugBar(
-                        debugStatus = debugStatus,
-                        onContinue = { debugViewModel.continueExecution() },
-                        onStepOver = { debugViewModel.stepOver() },
-                        onStepInto = { debugViewModel.stepInto() },
-                        onStepOut = { debugViewModel.stepOut() },
-                        onPause = { debugViewModel.pauseExecution() },
-                        onStop = { debugViewModel.stopSession() },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                } else {
-                    EditorToolBar(
-                        canUndo = canUndo,
-                        canRedo = canRedo,
-                        onUndoClick = onUndoClick,
-                        onRedoClick = onRedoClick,
-                        onSymbolClick = onSymbolClick
-                    )
-                }
+            // 调试工具栏（底栏位置）
+            AnimatedVisibility(visible = showDebugBarInBottom) {
+                DebugBar(
+                    debugStatus = debugStatus,
+                    onContinue = { debugViewModel.continueExecution() },
+                    onStepOver = { debugViewModel.stepOver() },
+                    onStepInto = { debugViewModel.stepInto() },
+                    onStepOut = { debugViewModel.stepOut() },
+                    onPause = { debugViewModel.pauseExecution() },
+                    onStop = { debugViewModel.stopSession() },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            AnimatedVisibility(visible = showEditorSymbolBar) {
+                EditorSymbolBar(
+                    onSymbolClick = { symbol -> editorContainerState.insertTextAtCursor(symbol) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
 
             // 底部面板内容（使用动态高度，跟随拖拽）
@@ -220,11 +247,12 @@ fun BottomPanel(
                                     .weight(1f)
                             )
                         } else {
-                            // 普通模式：显示标签页（构建日志、诊断、Git）
+                            // 普通模式：问题 / 构建（+ 按需性能/插件/命令打开的次级 Tab）
                             BottomPanelTabRow(
                                 selectedTab = resolvedBottomTab,
-                                tabs = normalModeTabs,
+                                tabs = visibleBottomTabs,
                                 badges = normalModeTabBadges,
+                                overflowTabs = resolveOverflowBottomPanelTabs(visibleBottomTabs),
                                 onTabSelected = { tab ->
                                     // 切换标签页时，如果面板未展开则展开
                                     scope.launch {
@@ -286,7 +314,13 @@ fun BottomPanel(
                                     }
                                     BottomPanelTab.DIAGNOSTICS -> DiagnosticsContent(
                                         diagnostics = diagnostics,
-                                        onDiagnosticClick = onDiagnosticClick
+                                        onDiagnosticClick = onDiagnosticClick,
+                                        onDiagnosticCodeActionsClick = onDiagnosticCodeActionsClick,
+                                        quickFixProbeKey = quickFixProbeKey,
+                                        fixAllProbeKey = fixAllProbeKey,
+                                        onQuickFixAvailabilityRequest = onDiagnosticQuickFixAvailabilityRequest,
+                                        onFixAllClick = onDiagnosticFixAllClick,
+                                        onFixAllAvailabilityRequest = onDiagnosticFixAllAvailabilityRequest,
                                     )
                                     BottomPanelTab.PERFORMANCE -> EditorPerformanceContent(
                                         snapshotProvider = if (showEditorPerformanceTab) {
@@ -309,6 +343,11 @@ fun BottomPanel(
                                         bookmarkRepository = bookmarkRepository,
                                         onNavigate = onBookmarkNavigate,
                                         modifier = Modifier.fillMaxSize()
+                                    )
+                                    BottomPanelTab.PLUGINS -> PluginPanelsContent(
+                                        panels = pluginState.resolvedPanels,
+                                        contents = pluginPanelContents,
+                                        modifier = Modifier.fillMaxSize(),
                                     )
                                     BottomPanelTab.GIT -> GitLogPanel(
                                         currentBranch = gitCurrentBranch,
@@ -336,6 +375,15 @@ fun BottomPanel(
                 showVariableDetailDialog = false
                 selectedVariableForDetail = null
             }
+        )
+    }
+
+    if (showCxxCompileContextDialog) {
+        CxxCompileContextDialog(
+            status = editorStatus,
+            context = editorContainerState.getActiveCxxCompileContext(),
+            onReload = editorContainerState::refreshLspConnections,
+            onDismiss = { showCxxCompileContextDialog = false },
         )
     }
 }

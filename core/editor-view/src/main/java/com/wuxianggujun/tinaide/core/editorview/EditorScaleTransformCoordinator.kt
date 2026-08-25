@@ -260,14 +260,15 @@ internal class EditorScaleTransformCoordinator(
                 state.visualLineEndColumn(visualLine).coerceIn(visualStartColumn, lineText.length)
             textPaint.textSize = targetFontPx
             val prefixLayout = lineLayoutCache.getPrefixLayout(
+                state = state,
                 line = docLine,
                 lineText = lineText,
                 textVersion = state.textBuffer.version,
                 paint = textPaint,
-                tabSize = state.config.tabSize
+                lineHeightPx = targetLineHeight,
             )
             val segmentStartXInTextPx =
-                prefixLayout.prefix[visualStartColumn.coerceIn(0, prefixLayout.length)]
+                prefixLayout.segmentStartAdvance(visualStartColumn.coerceIn(0, prefixLayout.length))
             val rawColumn = lineLayoutCache.xToColumn(
                 layout = prefixLayout,
                 contentX = segmentStartXInTextPx + contentX

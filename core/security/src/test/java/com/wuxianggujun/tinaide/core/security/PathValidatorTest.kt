@@ -66,9 +66,20 @@ class PathValidatorTest {
     }
 
     @Test
+    fun `guest path under projects is allowed`() {
+        assertThat(validator.isGuestPathAllowed("/projects/demo/main.c")).isTrue()
+    }
+
+    @Test
     fun `guest path with workspace prefix sibling is rejected`() {
         assertThat(validator.isGuestPathAllowed("/workspace2/main.cpp")).isFalse()
         assertThat(validator.isGuestPathAllowed("/workspace-backup/main.cpp")).isFalse()
+    }
+
+    @Test
+    fun `guest path with projects prefix sibling is rejected`() {
+        assertThat(validator.isGuestPathAllowed("/projects2/main.c")).isFalse()
+        assertThat(validator.isGuestPathAllowed("/projects-backup/main.c")).isFalse()
     }
 
     @Test
@@ -155,6 +166,21 @@ class PathValidatorTest {
     }
 
     @Test
+    fun `guest workDir root and system paths are allowed`() {
+        assertThat(validator.isGuestWorkDirAllowed("/")).isTrue()
+        assertThat(validator.isGuestWorkDirAllowed("/usr/bin")).isTrue()
+        assertThat(validator.isGuestWorkDirAllowed("/bin")).isTrue()
+        assertThat(validator.isGuestWorkDirAllowed("/workspace/build")).isTrue()
+    }
+
+    @Test
+    fun `guest workDir rejects forbidden and unknown paths`() {
+        assertThat(validator.isGuestWorkDirAllowed("/etc/passwd")).isFalse()
+        assertThat(validator.isGuestWorkDirAllowed("/workspace/../etc/shadow")).isFalse()
+        assertThat(validator.isGuestWorkDirAllowed("/proc")).isFalse()
+    }
+
+    @Test
     fun `validateGuestPath exception contains the offending path`() {
         try {
             validator.validateGuestPath("/etc/passwd")
@@ -205,7 +231,7 @@ class PathValidatorTest {
     @Test
     fun `getAllowedGuestPrefixes returns expected prefixes`() {
         val prefixes = validator.getAllowedGuestPrefixes()
-        assertThat(prefixes).containsExactly("/workspace", "/tmp", "/home")
+        assertThat(prefixes).containsExactly("/workspace", "/projects", "/tmp", "/home")
     }
 
     @Test

@@ -97,7 +97,17 @@ class TutorialRepository(
         // Git 基础
         createGitBasicsTutorial(),
         // 插件开发快速开始
-        createPluginQuickStartTutorial()
+        createPluginQuickStartTutorial(),
+        // 插件 manifest 与宿主兼容
+        createPluginManifestCompatibilityTutorial(),
+        // Script API 与权限
+        createPluginScriptApiTutorial(),
+        // 面板与事件
+        createPluginPanelsEventsTutorial(),
+        // LSP 插件排错
+        createPluginLspTroubleshootingTutorial(),
+        // 测试、自愈与发布前检查
+        createPluginTestingRecoveryTutorial()
     )
 
     /**
@@ -267,6 +277,61 @@ class TutorialRepository(
         estimatedMinutes = 12,
         order = 0,
         contentUrl = "help/plugin-quick-start.md"
+    )
+
+    private fun createPluginManifestCompatibilityTutorial(): Tutorial = Tutorial(
+        id = "plugin_manifest_compatibility",
+        titleRes = Strings.help_doc_plugin_manifest_compatibility_title,
+        descriptionRes = Strings.help_doc_plugin_manifest_compatibility_summary,
+        category = TutorialCategory.ADVANCED,
+        type = TutorialType.ARTICLE,
+        estimatedMinutes = 10,
+        order = 1,
+        contentUrl = "help/plugin-manifest-compatibility.md"
+    )
+
+    private fun createPluginScriptApiTutorial(): Tutorial = Tutorial(
+        id = "plugin_script_api",
+        titleRes = Strings.help_doc_plugin_script_api_title,
+        descriptionRes = Strings.help_doc_plugin_script_api_summary,
+        category = TutorialCategory.ADVANCED,
+        type = TutorialType.ARTICLE,
+        estimatedMinutes = 15,
+        order = 2,
+        contentUrl = "help/plugin-script-api.md"
+    )
+
+    private fun createPluginPanelsEventsTutorial(): Tutorial = Tutorial(
+        id = "plugin_panels_events",
+        titleRes = Strings.help_doc_plugin_panels_events_title,
+        descriptionRes = Strings.help_doc_plugin_panels_events_summary,
+        category = TutorialCategory.ADVANCED,
+        type = TutorialType.ARTICLE,
+        estimatedMinutes = 12,
+        order = 3,
+        contentUrl = "help/plugin-panels-events.md"
+    )
+
+    private fun createPluginLspTroubleshootingTutorial(): Tutorial = Tutorial(
+        id = "plugin_lsp_troubleshooting",
+        titleRes = Strings.help_doc_plugin_lsp_troubleshooting_title,
+        descriptionRes = Strings.help_doc_plugin_lsp_troubleshooting_summary,
+        category = TutorialCategory.ADVANCED,
+        type = TutorialType.ARTICLE,
+        estimatedMinutes = 15,
+        order = 4,
+        contentUrl = "help/plugin-lsp-troubleshooting.md"
+    )
+
+    private fun createPluginTestingRecoveryTutorial(): Tutorial = Tutorial(
+        id = "plugin_testing_recovery",
+        titleRes = Strings.help_doc_plugin_testing_recovery_title,
+        descriptionRes = Strings.help_doc_plugin_testing_recovery_summary,
+        category = TutorialCategory.ADVANCED,
+        type = TutorialType.ARTICLE,
+        estimatedMinutes = 12,
+        order = 5,
+        contentUrl = "help/plugin-testing-recovery.md"
     )
 
     /**

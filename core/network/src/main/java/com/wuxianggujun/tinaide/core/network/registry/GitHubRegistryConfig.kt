@@ -6,8 +6,9 @@ object GitHubRegistryConfig {
     const val OWNER = "wuxianggujun"
     const val REPOSITORY = "TinaIDE-Registry"
     const val BRANCH = "main"
-    const val REGISTRY_SCHEMA_VERSION = 2
+    const val REGISTRY_SCHEMA_VERSION = 3
     const val REGISTRY_V2_INTRODUCED_APP_VERSION = "0.17.11"
+    const val REGISTRY_V3_INTRODUCED_APP_VERSION = "0.18.11"
     const val REGISTRY_V1_FALLBACK_REMOVED_APP_VERSION = "0.18.0"
 
     const val GITHUB_RAW_BASE_URL = "https://raw.githubusercontent.com/$OWNER/$REPOSITORY/$BRANCH"
@@ -17,6 +18,7 @@ object GitHubRegistryConfig {
     const val PRIMARY_BASE_URL = GITHUB_RAW_BASE_URL
 
     const val PLUGINS_INDEX_V2_PATH = "plugins/index.v2.json"
+    const val PLUGINS_INDEX_V3_PATH = "plugins/index.v3.json"
     const val PACKAGES_INDEX_V2_PATH = "packages/index.v2.json"
     const val LINUX_DISTRO_MANIFEST_PATH = "linux-distro/manifest.v1.json"
 
@@ -45,6 +47,11 @@ object GitHubRegistryConfig {
 
     fun pluginIndexV2Urls(customProxyPrefix: String? = null): List<RegistryUrl> = indexUrls(
         path = PLUGINS_INDEX_V2_PATH,
+        customProxyPrefix = customProxyPrefix,
+    )
+
+    fun pluginIndexV3Urls(customProxyPrefix: String? = null): List<RegistryUrl> = indexUrls(
+        path = PLUGINS_INDEX_V3_PATH,
         customProxyPrefix = customProxyPrefix,
     )
 
@@ -85,7 +92,9 @@ object GitHubRegistryConfig {
         } else {
             resolveRawUrl(value, GITHUB_RAW_BASE_URL)
         }
-        return (listOf(primaryUrl) + gitHubUrlCandidates(rawGitHubUrl, customProxyPrefix)).distinct()
+        return (listOf(primaryUrl) + gitHubUrlCandidates(rawGitHubUrl, customProxyPrefix))
+            .filter(::isHttpsUrl)
+            .distinct()
     }
 
     fun rewriteGitHubUrl(url: String, proxyPrefix: String?): String {
@@ -125,8 +134,9 @@ object GitHubRegistryConfig {
         val withScheme = if (trimmed.contains("://")) trimmed else "https://$trimmed"
         val withoutQuery = withScheme.substringBefore('?').substringBefore('#')
         val uri = runCatching { URI(withoutQuery) }.getOrNull() ?: return null
-        if (uri.scheme?.lowercase() !in setOf("http", "https")) return null
+        if (!uri.scheme.equals("https", ignoreCase = true)) return null
         if (uri.host.isNullOrBlank()) return null
+        if (uri.userInfo != null) return null
         return withoutQuery.trimEnd('/') + "/"
     }
 
@@ -134,6 +144,14 @@ object GitHubRegistryConfig {
         url.startsWith("https://api.github.com/") ||
         url.startsWith("https://raw.githubusercontent.com/") ||
         url.startsWith("https://objects.githubusercontent.com/")
+
+    private fun isHttpsUrl(url: String): Boolean = runCatching {
+        URI(url).let { uri ->
+            uri.scheme.equals("https", ignoreCase = true) &&
+                !uri.host.isNullOrBlank() &&
+                uri.userInfo == null
+        }
+    }.getOrDefault(false)
 
     private fun unproxiedGitHubUrl(
         url: String,

@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -31,9 +32,24 @@ class TutorialViewModel(application: Application) : AndroidViewModel(application
     private val _uiState = MutableStateFlow(TutorialUiState())
     val uiState: StateFlow<TutorialUiState> = _uiState.asStateFlow()
 
-    // 所有教程（带进度）
-    val tutorialsWithProgress: StateFlow<List<TutorialWithProgress>> =
+    /**
+     * 教程目录加载状态。
+     *
+     * 使用显式 Loading 状态，避免 StateFlow 的空初值在首帧被 UI 误判为“没有教程”。
+     */
+    val tutorialCatalogState: StateFlow<TutorialCatalogUiState> =
         repository.getAllTutorialsWithProgress()
+            .map(::buildTutorialCatalogUiState)
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = TutorialCatalogUiState()
+            )
+
+    // 所有教程（带进度），保留现有消费入口。
+    val tutorialsWithProgress: StateFlow<List<TutorialWithProgress>> =
+        tutorialCatalogState
+            .map { state -> state.tutorials }
             .stateIn(
                 scope = viewModelScope,
                 started = SharingStarted.WhileSubscribed(5000),
@@ -42,13 +58,8 @@ class TutorialViewModel(application: Application) : AndroidViewModel(application
 
     // 按分类分组的教程
     val tutorialsByCategory: StateFlow<Map<TutorialCategory, List<TutorialWithProgress>>> =
-        tutorialsWithProgress
-            .combine(MutableStateFlow(Unit)) { tutorials, _ ->
-                tutorials
-                    .groupBy { it.tutorial.category }
-                    .mapValues { (_, list) -> list.sortedBy { it.tutorial.order } }
-                    .toSortedMap(compareBy { it.order })
-            }
+        tutorialCatalogState
+            .map { state -> state.tutorialsByCategory }
             .stateIn(
                 scope = viewModelScope,
                 started = SharingStarted.WhileSubscribed(5000),
@@ -333,13 +344,32 @@ class TutorialViewModel(application: Application) : AndroidViewModel(application
  * 教程页面 UI 状态
  */
 data class TutorialUiState(
-    val isLoading: Boolean = false,
     val showOnboardingPrompt: Boolean = false,
     val showOnboardingCompleteDialog: Boolean = false,
     val selectedTutorial: Tutorial? = null,
     val showTutorialContent: Boolean = false,
     val expandedCategories: Set<TutorialCategory> = TutorialCategory.entries.toSet(),
     val error: String? = null
+)
+
+/**
+ * 教程目录的显式加载状态。
+ */
+data class TutorialCatalogUiState(
+    val isLoading: Boolean = true,
+    val tutorials: List<TutorialWithProgress> = emptyList(),
+    val tutorialsByCategory: Map<TutorialCategory, List<TutorialWithProgress>> = emptyMap(),
+)
+
+internal fun buildTutorialCatalogUiState(
+    tutorials: List<TutorialWithProgress>,
+): TutorialCatalogUiState = TutorialCatalogUiState(
+    isLoading = false,
+    tutorials = tutorials,
+    tutorialsByCategory = tutorials
+        .groupBy { it.tutorial.category }
+        .mapValues { (_, list) -> list.sortedBy { it.tutorial.order } }
+        .toSortedMap(compareBy { it.order }),
 )
 
 /**

@@ -31,7 +31,7 @@ class SdlRuntimeResolverTest {
             val main = File(artifactDir, "libmain.so").apply {
                 writeText("NEEDED libSDL3.so")
             }
-            val sdl = File(runtimeDir, "libSDL3.so").apply { writeText("sdl") }
+            val sdl = File(runtimeDir, "libSDL3.so").apply { writeSdlRuntime(3) }
 
             val result = SdlRuntimeResolver.resolve(
                 context = appContext(),
@@ -48,6 +48,205 @@ class SdlRuntimeResolverTest {
     }
 
     @Test
+    fun `resolve detects direct SDL2 dependency`() {
+        val tempDir = Files.createTempDirectory("sdl2-runtime-direct-test").toFile()
+        try {
+            val artifactDir = File(tempDir, "build").apply { mkdirs() }
+            val runtimeDir = File(tempDir, "runtime").apply { mkdirs() }
+            val main = File(artifactDir, "libmain.so").apply {
+                writeText("NEEDED libSDL2.so")
+            }
+            val sdl = File(runtimeDir, "libSDL2.so").apply { writeSdlRuntime(2) }
+
+            val result = SdlRuntimeResolver.resolve(
+                context = appContext(),
+                mainLibraryPath = main.absolutePath,
+                extraRuntimeLibDirs = listOf(runtimeDir),
+            )
+
+            assertThat(result).isInstanceOf(SdlRuntimeResolver.ResolveResult.Sdl::class.java)
+            val spec = (result as SdlRuntimeResolver.ResolveResult.Sdl).spec
+            assertThat(spec.requiredSdlMajor).isEqualTo(2)
+            assertThat(File(spec.sdlLibraryPath).canonicalPath).isEqualTo(sdl.canonicalPath)
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `resolve rejects SDL2 built for the unrelocated Android bridge`() {
+        val tempDir = Files.createTempDirectory("sdl2-runtime-legacy-bridge-test").toFile()
+        try {
+            val main = File(tempDir, "libmain.so").apply {
+                writeText("NEEDED libSDL2.so")
+            }
+            File(tempDir, "libSDL2.so").writeText("org/libsdl/app/SDLActivity")
+
+            val result = SdlRuntimeResolver.resolve(
+                context = appContext(),
+                mainLibraryPath = main.absolutePath,
+            )
+
+            assertThat(result).isInstanceOf(SdlRuntimeResolver.ResolveResult.Error::class.java)
+            assertThat((result as SdlRuntimeResolver.ResolveResult.Error).message)
+                .contains("org/libsdl2/app/SDLActivity")
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `resolve finds SDL2 runtime beside main library`() {
+        val tempDir = Files.createTempDirectory("sdl2-runtime-colocated-test").toFile()
+        try {
+            val main = File(tempDir, "libmain.so").apply {
+                writeText("NEEDED libSDL2.so")
+            }
+            val sdl = File(tempDir, "libSDL2.so").apply { writeSdlRuntime(2) }
+
+            val result = SdlRuntimeResolver.resolve(
+                context = appContext(),
+                mainLibraryPath = main.absolutePath,
+            )
+
+            assertThat(result).isInstanceOf(SdlRuntimeResolver.ResolveResult.Sdl::class.java)
+            val spec = (result as SdlRuntimeResolver.ResolveResult.Sdl).spec
+            assertThat(spec.requiredSdlMajor).isEqualTo(2)
+            assertThat(File(spec.sdlLibraryPath).canonicalPath).isEqualTo(sdl.canonicalPath)
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `resolve detects versioned SDL2 ABI soname`() {
+        val tempDir = Files.createTempDirectory("sdl2-runtime-versioned-test").toFile()
+        try {
+            val artifactDir = File(tempDir, "build").apply { mkdirs() }
+            val runtimeDir = File(tempDir, "runtime").apply { mkdirs() }
+            val main = File(artifactDir, "libmain.so").apply {
+                writeText("NEEDED libSDL2-2.0.so.0")
+            }
+            val sdl = File(runtimeDir, "libSDL2-2.0.so.0").apply { writeSdlRuntime(2) }
+
+            val result = SdlRuntimeResolver.resolve(
+                context = appContext(),
+                mainLibraryPath = main.absolutePath,
+                extraRuntimeLibDirs = listOf(runtimeDir),
+            )
+
+            assertThat(result).isInstanceOf(SdlRuntimeResolver.ResolveResult.Sdl::class.java)
+            val spec = (result as SdlRuntimeResolver.ResolveResult.Sdl).spec
+            assertThat(spec.requiredSdlMajor).isEqualTo(2)
+            assertThat(File(spec.sdlLibraryPath).canonicalPath).isEqualTo(sdl.canonicalPath)
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `resolve detects SDL2 through transitive dependency`() {
+        val tempDir = Files.createTempDirectory("sdl2-runtime-transitive-detect-test").toFile()
+        try {
+            val artifactDir = File(tempDir, "build").apply { mkdirs() }
+            val runtimeDir = File(tempDir, "runtime").apply { mkdirs() }
+            val main = File(artifactDir, "libmain.so").apply {
+                writeText("NEEDED libengine.so")
+            }
+            val engine = File(runtimeDir, "libengine.so").apply {
+                writeText("NEEDED libSDL2.so")
+            }
+            File(runtimeDir, "libSDL2.so").writeSdlRuntime(2)
+
+            val result = SdlRuntimeResolver.resolve(
+                context = appContext(),
+                mainLibraryPath = main.absolutePath,
+                extraRuntimeLibDirs = listOf(runtimeDir),
+            )
+
+            assertThat(result).isInstanceOf(SdlRuntimeResolver.ResolveResult.Sdl::class.java)
+            val spec = (result as SdlRuntimeResolver.ResolveResult.Sdl).spec
+            assertThat(spec.requiredSdlMajor).isEqualTo(2)
+            assertThat(spec.preloadLibraryPaths.map { File(it).canonicalPath })
+                .contains(engine.canonicalPath)
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `resolve rejects transitive SDL2 and SDL3 conflict`() {
+        val tempDir = Files.createTempDirectory("sdl-runtime-transitive-conflict-test").toFile()
+        try {
+            val artifactDir = File(tempDir, "build").apply { mkdirs() }
+            val runtimeDir = File(tempDir, "runtime").apply { mkdirs() }
+            val main = File(artifactDir, "libmain.so").apply {
+                writeText("NEEDED libengine2.so libengine3.so")
+            }
+            File(runtimeDir, "libengine2.so").writeText("NEEDED libSDL2.so")
+            File(runtimeDir, "libengine3.so").writeText("NEEDED libSDL3.so")
+
+            val result = SdlRuntimeResolver.resolve(
+                context = appContext(),
+                mainLibraryPath = main.absolutePath,
+                extraRuntimeLibDirs = listOf(runtimeDir),
+            )
+
+            assertThat(result).isInstanceOf(SdlRuntimeResolver.ResolveResult.Error::class.java)
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `resolve rejects configured SDL2 when artifact depends on SDL3`() {
+        val tempDir = Files.createTempDirectory("sdl-runtime-config-conflict-test").toFile()
+        try {
+            val main = File(tempDir, "libmain.so").apply {
+                writeText("NEEDED libSDL3.so")
+            }
+
+            val result = SdlRuntimeResolver.resolve(
+                context = appContext(),
+                mainLibraryPath = main.absolutePath,
+                allowUndetectedSdl = true,
+                preferredSdlMajor = 2,
+            )
+
+            assertThat(result).isInstanceOf(SdlRuntimeResolver.ResolveResult.Error::class.java)
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `resolve uses configured SDL2 before available SDL3 when dependency is undetected`() {
+        val tempDir = Files.createTempDirectory("sdl-runtime-config-fallback-test").toFile()
+        try {
+            val artifactDir = File(tempDir, "build").apply { mkdirs() }
+            val runtimeDir = File(tempDir, "runtime").apply { mkdirs() }
+            val main = File(artifactDir, "libmain.so").apply { writeText("static SDL") }
+            val sdl2 = File(runtimeDir, "libSDL2.so").apply { writeSdlRuntime(2) }
+            File(runtimeDir, "libSDL3.so").writeSdlRuntime(3)
+
+            val result = SdlRuntimeResolver.resolve(
+                context = appContext(),
+                mainLibraryPath = main.absolutePath,
+                extraRuntimeLibDirs = listOf(runtimeDir),
+                allowUndetectedSdl = true,
+                preferredSdlMajor = 2,
+            )
+
+            assertThat(result).isInstanceOf(SdlRuntimeResolver.ResolveResult.Sdl::class.java)
+            val spec = (result as SdlRuntimeResolver.ResolveResult.Sdl).spec
+            assertThat(spec.requiredSdlMajor).isEqualTo(2)
+            assertThat(File(spec.sdlLibraryPath).canonicalPath).isEqualTo(sdl2.canonicalPath)
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `resolve allows statically linked SDL main library without dynamic SDL dependency`() {
         val tempDir = Files.createTempDirectory("sdl-runtime-static-link-test").toFile()
         try {
@@ -56,7 +255,7 @@ class SdlRuntimeResolverTest {
             val main = File(artifactDir, "libmain.so").apply {
                 writeText("statically linked SDL entry point")
             }
-            val sdl = File(runtimeDir, "libSDL3.so").apply { writeText("sdl") }
+            val sdl = File(runtimeDir, "libSDL3.so").apply { writeSdlRuntime(3) }
 
             val result = SdlRuntimeResolver.resolve(
                 context = appContext(),
@@ -87,7 +286,7 @@ class SdlRuntimeResolverTest {
         val decoyRoot = File(installRoot, decoyPackageId)
         try {
             val officialRuntimeDir = File(officialRoot, "lib/$currentAbi").apply { mkdirs() }
-            val officialSdl = File(officialRuntimeDir, "libSDL3.so").apply { writeText("official") }
+            val officialSdl = File(officialRuntimeDir, "libSDL3.so").apply { writeSdlRuntime(3) }
             val officialShared = File(officialRuntimeDir, "libshared.so").apply { writeText("official") }
             val decoyRuntimeDir = File(decoyRoot, "lib/$currentAbi").apply { mkdirs() }
             File(decoyRuntimeDir, "libSDL3.so").writeText("decoy")
@@ -249,4 +448,13 @@ class SdlRuntimeResolverTest {
     }
 
     private fun appContext(): Context = RuntimeEnvironment.getApplication().applicationContext
+
+    private fun File.writeSdlRuntime(major: Int) {
+        val bridgeMarker = when (major) {
+            2 -> "org/libsdl2/app/SDLActivity"
+            3 -> "org/libsdl/app/SDLActivity"
+            else -> error("Unsupported SDL major: $major")
+        }
+        writeText("SDL$major runtime $bridgeMarker", Charsets.US_ASCII)
+    }
 }

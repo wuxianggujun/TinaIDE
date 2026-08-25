@@ -1,24 +1,36 @@
 # TinaIDE 插件 API 指南
 
-> 文档更新：2026-04-23
+> 文档更新：2026-07-14
 > 目标：给插件开发者一份“当前真实可用”的 API 清单，避免继续踩字段存在但宿主没接完的坑。
 
 ---
 
 ## 1. 先看稳定边界
 
-当前建议按两层理解 TinaIDE 插件 API：
-
-- **稳定层**
-  `config` 插件能力、`lsp` 插件能力、脚本插件的基础宿主 API
-- **Beta 层**
-  脚本插件的高级自动化能力，以及尚未完整接入的事件/扩展点
+`apiVersion 1` 中写入本指南和 [插件 API 契约](../plugin-api-contract.md) 的能力均按稳定契约维护。
+未写入契约的新模块或字段仍视为实验能力。
 
 如果你要写给普通用户的教程，主线只推荐：
 
 1. `config`
 2. `lsp`
-3. `script` 作为进阶/Beta
+3. `script` / `hybrid` 作为受权限与隔离边界约束的进阶能力
+
+### 1.1 Script 运行安全边界
+
+Lua 不再运行在 TinaIDE 主进程。宿主通过 Binder 调用非导出的 `:plugin_runtime` isolated process，隔离进程异常、死循环或 native crash 只会终止该进程。宿主会隔离故障插件并恢复其他仍有效的脚本插件。
+
+插件作者需要遵守以下 API v1 边界：
+
+- 不依赖 `io`、`debug`、`loadfile/dofile`、native `loadlib`、Java/luajava 反射。
+- 多文件代码使用受限 `require("module.name")`；模块必须位于插件目录、扩展名为 `.lua`，不能使用绝对路径或 `..`。
+- 宿主对象和真实路径不会进入 Lua；所有文件、编辑器、UI、Clipboard、Network 与 Database 能力都通过 `tina.*` 和权限检查访问。
+- 新安装的 `script`、`hybrid`、`lsp`、`system` 插件默认禁用，需在详情页明确启用；纯 `config` 插件会自动启用，但不会获得或执行 Lua/LSP 运行时。权限等待、自动隔离和 runtime 不可用会显示为不同状态。
+- 被自动隔离的插件必须由用户确认重新启用，或安装严格更高版本后再尝试运行。
+- 市场安装会在写入插件目录前绑定请求的 `pluginId` 与版本，并复用文件安装的权限确认；身份不一致的包会被拒绝。市场下载与系统文件选择器导入都执行 64 MiB 流式上限。
+- 只有 script/hybrid 的必需权限会在安装事务中授予；L0 权限自动授予，其他级别先确认，安装失败时恢复原授权。配置类插件不会被预授予脚本权限。
+
+资源上限、故障分类和恢复规则以 [插件 API 契约](../plugin-api-contract.md) 为准。
 
 ---
 
@@ -46,7 +58,7 @@
 
 - 运行时为 Lua
 - 需要权限声明
-- 当前建议按 Beta 能力对外说明
+- `apiVersion 1` 宿主 API 已稳定；高级能力仍必须遵守权限、资源上限和 isolated process 边界
 
 ### 2.3 `lsp`
 
@@ -76,6 +88,7 @@
 - `tina.network`
 - `tina.commands`
 - `tina.events`
+- `tina.panels`
 
 ### 3.2 使用建议
 
@@ -95,6 +108,7 @@
 - `tina.storage`
 - `tina.db`
 - `tina.network`
+- `tina.panels`
 
 ---
 
@@ -203,14 +217,19 @@
 
 - `readFile` 成功返回文本；失败返回 `nil, error`
 - `writeFile` 成功返回 `true`；失败返回 `false, error`
-- `findFiles` 返回相对路径数组，路径统一使用 `/`
+- `findFiles` 返回相对路径数组，路径统一使用 `/`，并按相对路径升序排列
 
 约束：
 
 - 只能在当前项目根目录下访问
 - 不允许路径逃逸
+- `readFile` / `writeFile` 不跟随路径任一层的符号链接，单次 UTF-8 内容上限为 8 MiB
+- 每插件最多执行 60 次文件读写/分钟
 - `findFiles` 支持 `*`、`?`、`**/`
 - `findFiles` 会跳过 `.git`、`.gradle`、`.idea`、`.cxx`、`build`、`node_modules`
+- `findFiles` 每次最多扫描 50,000 项，每插件每分钟最多调用 12 次
+- `maxResults` 默认 200，限制在 1 到 1000；匹配项排序后才截取前 N 项，未触及扫描上限的同一目录树不受 Windows/Linux 遍历顺序影响
+- 单次调用最多扫描 50,000 项；触及上限时结果只覆盖已扫描集合，不能当作完整工作区索引
 
 权限：
 
@@ -235,6 +254,8 @@
 - 新插件优先使用 `tina.workspace.*`
 - 老插件可以继续使用 `tina.fs.*`
 - 权限仍映射到 `workspace.read` / `workspace.write` 对应的底层文件权限
+- `exists`、`isDirectory`、`listDir`、`mkdir` 与读写 API 使用相同的项目相对路径和 symlink no-follow 策略
+- `listDir` 最多返回 1000 个名称
 
 ### 4.7 `tina.config`
 
@@ -286,6 +307,19 @@
 
 - `storage.database`
 
+隔离与清理：
+
+- 数据库文件名由完整插件 ID 的 SHA-256 派生，不会因 `.` / `_` 归一化产生跨插件碰撞。
+- 旧版数据库仅在同名映射没有其他已安装插件竞争时迁移。
+- 卸载会撤销该插件的权限授权，并清理 `tina.storage` 与 `tina.db` 持久化数据；普通升级不会清理。
+
+资源与 SQL 边界：
+
+- 单插件数据库上限 64 MiB，数据库 API 最多调用 300 次/分钟。
+- `query` 单次最多返回 1000 行，编码结果总计最多 192 KiB。
+- SQL 最长 64 KiB，只允许单条语句；禁止 `ATTACH`、`DETACH`、`PRAGMA`、`VACUUM`、`LOAD_EXTENSION`，query API 会拒绝写入型 CTE。
+- `params` 必须为标量数组，支持字符串、整数、浮点数、布尔值与 `null`；所有操作和事务都在当前插件的单线程数据库执行器中顺序执行。
+
 ### 4.10 `tina.network`
 
 用途：网络请求。
@@ -304,6 +338,7 @@
 约束：
 
 - 使用 `network.fetch` 时，目标主机必须命中白名单
+- HTTP 重定向的每一跳都会重新检查白名单，不能通过首跳允许域名跳转到未声明主机
 - 若要完全放开，需要更高风险权限
 
 ### 4.11 `tina.commands`
@@ -378,6 +413,7 @@
 
 - `tina.events.on(eventId, callbackName)`
 - `tina.events.off(eventId)`
+- `tina.events.emit("custom", payload)`
 - `tina.events.clear()`
 
 当前宿主已接入的事件：
@@ -398,9 +434,7 @@
 - `diagnostics.changed`
 - `config.changed`
 
-当前仅保留 ID、但不建议在教程里承诺已稳定触发的事件：
-
-- `custom`
+`custom` 是插件自身的稳定定向事件。它只会派发给当前插件，不能用于伪造宿主事件；`payload` 必须是 JSON object。
 
 常见事件数据：
 
@@ -430,6 +464,20 @@
 - `editor.selectionChanged` 已在宿主侧做 180ms 防抖
 - `diagnostics.changed` 由 LSP / 内置语言服务诊断变化触发
 - `editor.dirtyChanged` 只在脏状态真正变化时触发
+- 选区文本最多携带 16 Ki 字符；超出时 `selection.textTruncated=true`
+- 单次诊断事件最多携带 32 条详情、每条消息最多 384 字符，并限制 URI、文件名、来源与错误码长度；原始总数仍由 `totalCount` 提供，截断时 `diagnosticsTruncated=true`
+- 宿主拒绝的超大事件载荷属于宿主输入限制，只返回调用错误，不会把健康插件误判为 runtime crash
+
+### 4.13 `tina.panels`
+
+用途：把插件生成的纯文本状态、日志或分析结果显示在编辑器底部“插件”面板。
+
+- manifest 先声明 `contributions.panels`，每个插件最多 16 个面板。
+- `tina.panels.setContent(panelId, text)` 替换内容。
+- `tina.panels.appendContent(panelId, text)` 追加内容。
+- `tina.panels.clear(panelId)` 清除内容。
+- 单面板最多 256 KiB UTF-8 文本；禁用、卸载、隔离或 runtime 死亡会清理内容。
+- 面板不执行 HTML、Markdown、Lua 或动态 UI 代码。
 
 ---
 
@@ -512,14 +560,12 @@ tina.ui.showMessage("Plugin loaded")
 }
 ```
 
----
+## 7. 尚未进入稳定契约的点
 
-## 7. 当前不建议在公开教程里承诺的点
+以下内容没有进入 apiVersion 1 稳定契约，不应对普通用户写成“已支持”：
 
-以下内容在源码中有字段或雏形，但不建议对普通用户写成“稳了”：
-
-- `hybrid` 插件作为主教程入口
-- 所有脚本事件都已完整接入
+- 未写入 [插件 API 契约](../plugin-api-contract.md) 的新命名空间或字段
+- 动态 DEX、任意原生模块、Java/LuaJava 反射和插件自定义 Compose UI
 
 ---
 
@@ -527,8 +573,8 @@ tina.ui.showMessage("Plugin loaded")
 
 如果你要把这套 API 发给用户，我建议文案保持这个口径：
 
-- `config` 和 `lsp` 是正式能力
-- `script` 是进阶/Beta 能力
-- 教程默认只使用“当前宿主已接好”的事件和 API
+- `config`、`lsp`、`script` 和 `hybrid` 的 apiVersion 1 契约是正式能力
+- `script` / `hybrid` 是进阶能力，并受 isolated process、权限、白名单、限流与资源上限约束
+- 教程只使用已写入契约并有测试覆盖的事件和 API
 
 这样最稳，不会再把用户带进“文档说支持，实际没接完”的坑里。

@@ -1,14 +1,14 @@
 package com.wuxianggujun.tinaide.core.format
 
 import android.content.Context
-import com.wuxianggujun.tinaide.core.config.Prefs
+import com.wuxianggujun.tinaide.core.compile.BuildProcessRunner
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.core.lang.CxxFileSupport
 import com.wuxianggujun.tinaide.core.ndk.AndroidNativeToolchainManager
 import com.wuxianggujun.tinaide.core.util.NativeExecutableRunner
 import java.io.File
-import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CancellationException
 import timber.log.Timber
 
 /**
@@ -32,6 +32,7 @@ class NativeCodeFormatter(
     private val toolchainManager = AndroidNativeToolchainManager(appContext)
     private val nativeLibDir = appContext.applicationInfo.nativeLibraryDir
     private val configManager by lazy { ClangFormatConfigManager(appContext) }
+    private val styleResolver = FormatStyleResolver()
 
     companion object {
         private const val TAG = "NativeCodeFormatter"
@@ -83,7 +84,12 @@ class NativeCodeFormatter(
                 timeout = VERSION_CHECK_TIMEOUT
             )
 
-            if (result.exitCode == 0) {
+            if (result.timedOut) {
+                AvailabilityResult.NotAvailable(
+                    path = clangFormatBinary.absolutePath,
+                    reason = formatTimeoutMessage(VERSION_CHECK_TIMEOUT),
+                )
+            } else if (result.exitCode == 0) {
                 val version = result.output.lines().firstOrNull()?.trim()
                 AvailabilityResult.Available(clangFormatBinary.absolutePath, version)
             } else {
@@ -92,6 +98,8 @@ class NativeCodeFormatter(
                     reason = result.output.take(200)
                 )
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Timber.tag(TAG).e(e, "Failed to check clang-format availability")
             AvailabilityResult.NotAvailable(
@@ -142,14 +150,8 @@ class NativeCodeFormatter(
             stdin = content
         )
 
-        return if (result.exitCode == 0) {
-            FormatResult.Success(result.output)
-        } else {
-            FormatResult.Error(
-                message = result.output.ifBlank { Strings.format_failed_simple.strOr(appContext) },
-                exitCode = result.exitCode
-            )
-        }
+        result.toFormatError(FORMAT_TIMEOUT)?.let { return it }
+        return FormatResult.Success(result.output)
     }
 
     /**
@@ -188,18 +190,12 @@ class NativeCodeFormatter(
             timeout = FORMAT_TIMEOUT
         )
 
-        return if (result.exitCode == 0) {
-            if (inPlace) {
-                // inPlace 模式下，clang-format 直接修改文件，stdout 为空
-                FormatResult.Success("")
-            } else {
-                FormatResult.Success(result.output)
-            }
+        result.toFormatError(FORMAT_TIMEOUT)?.let { return it }
+        return if (inPlace) {
+            // inPlace 模式下，clang-format 直接修改文件，stdout 为空
+            FormatResult.Success("")
         } else {
-            FormatResult.Error(
-                message = result.output.ifBlank { Strings.format_failed_simple.strOr(appContext) },
-                exitCode = result.exitCode
-            )
+            FormatResult.Success(result.output)
         }
     }
 
@@ -233,14 +229,8 @@ class NativeCodeFormatter(
             stdin = content
         )
 
-        return if (result.exitCode == 0) {
-            FormatResult.Success(result.output)
-        } else {
-            FormatResult.Error(
-                message = result.output.ifBlank { Strings.format_failed_simple.strOr(appContext) },
-                exitCode = result.exitCode
-            )
-        }
+        result.toFormatError(FORMAT_TIMEOUT)?.let { return it }
+        return FormatResult.Success(result.output)
     }
 
     // ========== 风格解析 ==========
@@ -252,49 +242,18 @@ class NativeCodeFormatter(
      * 1. 如果项目目录中存在 .clang-format 文件，使用 FormatStyle.FILE
      * 2. 否则使用用户在设置中选择的默认风格
      */
-    fun resolveFormatStyle(filePath: String): FormatStyle {
-        val file = File(filePath)
-        val directory = if (file.isDirectory) file else file.parentFile
-
-        return if (hasClangFormatFile(directory)) {
-            Timber.tag(TAG).d("Using project .clang-format for: $filePath")
-            FormatStyle.FILE
-        } else {
-            val userStyle = getUserDefaultStyle()
-            Timber.tag(TAG).d("Using user default style ($userStyle) for: $filePath")
-            userStyle
-        }
-    }
+    fun resolveFormatStyle(filePath: String): FormatStyle = styleResolver.resolve(File(filePath))
 
     /**
      * 获取用户设置的默认格式化风格
      */
-    fun getUserDefaultStyle(): FormatStyle = FormatStyle.fromString(Prefs.codeFormatStyle)
+    fun getUserDefaultStyle(): FormatStyle = styleResolver.getUserDefaultStyle()
 
     /**
      * 检查指定目录或其父目录中是否存在 .clang-format 文件
      */
-    fun hasClangFormatFile(directory: File?, maxDepth: Int = 10): Boolean {
-        var currentDir = directory
-        var depth = 0
-
-        while (currentDir != null && depth < maxDepth) {
-            if (File(currentDir, ".clang-format").let { it.exists() && it.isFile }) {
-                Timber.tag(TAG).d("Found .clang-format at: ${currentDir.absolutePath}")
-                return true
-            }
-            // Windows 风格
-            if (File(currentDir, "_clang-format").let { it.exists() && it.isFile }) {
-                Timber.tag(TAG).d("Found _clang-format at: ${currentDir.absolutePath}")
-                return true
-            }
-
-            currentDir = currentDir.parentFile
-            depth++
-        }
-
-        return false
-    }
+    fun hasClangFormatFile(directory: File?, maxDepth: Int = Int.MAX_VALUE): Boolean =
+        styleResolver.hasClangFormatFile(directory, maxDepth)
 
     // ========== 配置管理委托 ==========
 
@@ -329,7 +288,7 @@ class NativeCodeFormatter(
             add(clangFormatBinary.absolutePath)
 
             // 风格设置
-            add(buildStyleArgument(style))
+            add(style.toClangFormatArgument())
 
             // 假设文件名（用于推断语言）
             add("--assume-filename=$fileName")
@@ -341,27 +300,6 @@ class NativeCodeFormatter(
 
             // 额外参数
             addAll(options.extraArgs)
-        }
-    }
-
-    /**
-     * 构建 --style 参数
-     */
-    private fun buildStyleArgument(style: FormatStyle): String = when (style) {
-        FormatStyle.FILE -> "--style=file"
-        is FormatStyle.Custom -> "--style=${style.config}"
-        else -> {
-            val styleName = when (style) {
-                FormatStyle.LLVM -> "LLVM"
-                FormatStyle.GOOGLE -> "Google"
-                FormatStyle.CHROMIUM -> "Chromium"
-                FormatStyle.MOZILLA -> "Mozilla"
-                FormatStyle.WEBKIT -> "WebKit"
-                FormatStyle.MICROSOFT -> "Microsoft"
-                FormatStyle.GNU -> "GNU"
-                else -> "LLVM"
-            }
-            "--style=$styleName"
         }
     }
 
@@ -399,47 +337,50 @@ class NativeCodeFormatter(
             redirectErrorStream(true)
         }
 
-        val process = processBuilder.start()
-        val output = StringBuilder()
-
-        // 写入 stdin（如果有）
-        if (stdin != null) {
-            process.outputStream.bufferedWriter().use { writer ->
-                writer.write(stdin)
-            }
-        }
-
-        // 读取输出
-        process.inputStream.bufferedReader().use { reader ->
-            reader.lineSequence().forEach { line ->
-                output.appendLine(line)
+        val result = BuildProcessRunner.run(
+            processBuilder = processBuilder,
+            commandLabel = "clang-format:${File(executable).name}",
+            timeoutMs = timeout,
+            stdin = stdin,
+            onOutputLine = { line ->
                 Timber.tag(TAG).v(line)
-            }
-        }
-
-        // 等待进程结束
-        val finished = process.waitFor(timeout, TimeUnit.MILLISECONDS)
-        val exitCode = if (finished) {
-            process.exitValue()
-        } else {
-            process.destroy()
-            -1
-        }
+            },
+        )
 
         CommandResult(
-            exitCode = exitCode,
-            output = output.toString()
+            exitCode = result.exitCode,
+            output = result.output,
+            timedOut = result.timedOut,
         )
+    } catch (e: CancellationException) {
+        throw e
     } catch (e: Exception) {
         Timber.tag(TAG).e(e, "Failed to execute native command")
         CommandResult(
             exitCode = -1,
-            output = "Exception: ${e.message}"
+            output = "Exception: ${e.message}",
+            timedOut = false,
         )
     }
 
+    private fun CommandResult.toFormatError(timeoutMs: Long): FormatResult.Error? = when {
+        timedOut -> FormatResult.Error(
+            message = formatTimeoutMessage(timeoutMs),
+            exitCode = exitCode,
+        )
+        exitCode != 0 -> FormatResult.Error(
+            message = output.ifBlank { Strings.format_failed_simple.strOr(appContext) },
+            exitCode = exitCode,
+        )
+        else -> null
+    }
+
+    private fun formatTimeoutMessage(timeoutMs: Long): String =
+        Strings.format_process_timed_out.strOr(appContext, timeoutMs / 1_000L)
+
     private data class CommandResult(
         val exitCode: Int,
-        val output: String
+        val output: String,
+        val timedOut: Boolean,
     )
 }

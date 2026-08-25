@@ -1,6 +1,7 @@
 package com.wuxianggujun.tinaide.core.compile.cmake
 
 import android.content.Context
+import android.os.Build
 import com.wuxianggujun.tinaide.core.compile.AndroidLinkerCompatibilityFlags
 import com.wuxianggujun.tinaide.core.compile.BuildDiagnosticParser
 import com.wuxianggujun.tinaide.core.compile.BuildProcessRunner
@@ -20,6 +21,7 @@ import com.wuxianggujun.tinaide.core.i18n.str
 import com.wuxianggujun.tinaide.core.ndk.AndroidNativeToolchainManager
 import com.wuxianggujun.tinaide.core.ndk.AndroidSysrootManager
 import com.wuxianggujun.tinaide.core.packages.InstalledPackagePathResolver
+import com.wuxianggujun.tinaide.core.packages.PackageAbiCompatibility
 import com.wuxianggujun.tinaide.core.util.AndroidSystemLinker
 import com.wuxianggujun.tinaide.core.util.DiagnosticLogFormatter
 import com.wuxianggujun.tinaide.core.util.NativeExecutableRunner
@@ -552,6 +554,12 @@ class NativeCMakeBuildExecutor(
             )
         }
 
+        internal fun buildAndroidAbiCMakeArgument(androidAbi: String): String {
+            val normalizedAbi = androidAbi.trim()
+            require(normalizedAbi.isNotEmpty()) { "Android ABI must not be blank" }
+            return "-DANDROID_ABI=$normalizedAbi"
+        }
+
         internal fun buildCMakeExtraEnvironment(
             packageEnvironment: Map<String, String>,
             traceToolchainShim: Boolean
@@ -806,7 +814,11 @@ class NativeCMakeBuildExecutor(
 
         // sysroot 路径（Bionic libc 头文件和库）
         val sysrootManager = AndroidSysrootManager(appContext)
-        NativeSysrootPreparer.ensureInstalled(appContext, options.sysrootProfileId)?.let { message ->
+        NativeSysrootPreparer.ensureInstalled(
+            context = appContext,
+            profileId = options.sysrootProfileId,
+            apiLevel = options.sysrootApiLevel,
+        )?.let { message ->
             Timber.tag(TAG).w(message)
             return ConfigureResult.Error(message)
         }
@@ -849,6 +861,10 @@ class NativeCMakeBuildExecutor(
         val packageEnvironment = buildCompilePackageEnvironment(packagePaths)
 
         val arch = AndroidSysrootManager.Companion.Arch.current()
+        val androidAbi = PackageAbiCompatibility.currentAppAbi(
+            nativeLibraryDir = nativeLibDir,
+            supportedAbis = Build.SUPPORTED_ABIS,
+        )
         val sysrootApiLevel = options.sysrootApiLevel
         val runtimeIdentity = NativeRuntimeIdentity(
             sysrootProfileId = options.sysrootProfileId,
@@ -858,6 +874,7 @@ class NativeCMakeBuildExecutor(
             runMode = "NATIVE",
             compilerType = options.compilerType.name,
             toolchainId = CMakeConfigurationIdentity.cacheToolchainId(options.toolchainId, isNative = true),
+            androidAbi = androidAbi,
             sysrootProfileId = runtimeIdentity.cmakeProfileId,
             sysrootApiLevel = runtimeIdentity.sysrootApiLevel,
             cppStandard = options.cppStandard,
@@ -998,12 +1015,13 @@ class NativeCMakeBuildExecutor(
             add(projectDir.absolutePath)
             add("-B")
             add(buildDir.absolutePath)
-            add("-DCMAKE_BUILD_TYPE=${options.buildType.cmakeValue}")
             add("-G")
             add(options.generator.cmakeValue)
             // 显式指定系统版本，避免 CMake 在 Android 主机上回退读取 $PREFIX/include/android/api-level.h
             // 导致出现 "/include/android/api-level.h" 路径错误。
             add("-DCMAKE_SYSTEM_VERSION=$sysrootApiLevel")
+            // Registry 原生包通过 lib/<ANDROID_ABI> 选择当前 APK 对应的库目录。
+            add(buildAndroidAbiCMakeArgument(androidAbi))
             add("-DCMAKE_C_COMPILER=${cmakeCCompiler.compiler}")
             cmakeCCompiler.arg1?.let { add("-DCMAKE_C_COMPILER_ARG1=$it") }
             add("-DCMAKE_CXX_COMPILER=${cmakeCxxCompiler.compiler}")
@@ -1023,10 +1041,17 @@ class NativeCMakeBuildExecutor(
                     linkerCompatibilityFlags,
                     "-fuse-ld=lld"
                 )
+                val projectLinkerFlags = mergeFlagSegments(linkerFlags, projectLdFlags)
+                val executableLinkerFlags = CMakeLinkPolicy.resolveAndroidExecutableLinkerFlags(
+                    projectLinkerFlags
+                )
+                val sharedLinkerFlags = CMakeLinkPolicy.resolveAndroidSharedLinkerFlags(
+                    projectLinkerFlags
+                )
                 add("-DCMAKE_C_FLAGS=${mergeFlagSegments(cCompileFlags, compilerExecutionFlags, projectCFlags)}")
                 add("-DCMAKE_CXX_FLAGS=${mergeFlagSegments(cxxCompileFlags, compilerExecutionFlags, projectCppFlags)}")
-                add("-DCMAKE_EXE_LINKER_FLAGS=${mergeFlagSegments(linkerFlags, projectLdFlags)}")
-                add("-DCMAKE_SHARED_LINKER_FLAGS=${mergeFlagSegments(linkerFlags, projectLdFlags)}")
+                add("-DCMAKE_EXE_LINKER_FLAGS=$executableLinkerFlags")
+                add("-DCMAKE_SHARED_LINKER_FLAGS=$sharedLinkerFlags")
             }
 
             // 指定 CMAKE_MAKE_PROGRAM（Make/Ninja 共用），避免 CMake 内部回退到错误路径。
@@ -1062,6 +1087,8 @@ class NativeCMakeBuildExecutor(
             cmakeIdentity.asCMakeCacheEntries().forEach { (key, value) ->
                 add("-D$key:STRING=$value")
             }
+            // The run configuration owns this value, so it must win over legacy project arguments.
+            add("-DCMAKE_BUILD_TYPE=${options.buildType.cmakeValue}")
         }
 
         Timber.tag(TAG).i("Configuring CMake project: ${projectDir.name}")

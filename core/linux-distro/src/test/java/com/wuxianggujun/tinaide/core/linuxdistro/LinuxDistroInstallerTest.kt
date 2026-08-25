@@ -162,6 +162,44 @@ class LinuxDistroInstallerTest {
     }
 
     @Test
+    fun installer_shouldRestoreInterruptedReplacementBeforeReusingRootfs() = runBlocking {
+        val tempDir = createTempDirectory("linux-distro-interrupted-replacement").toFile()
+        val archiveContent = "fake archive"
+        val checksum = sha256(archiveContent)
+        val catalog = ManifestLinuxDistroCatalog(LinuxDistroManifestParser.decode(sampleManifest(checksum)))
+        val layout = LinuxDistroInstallLayout(runtimeDir = tempDir).also { it.ensureDirectories() }
+        val targetRootfsDir = layout.rootfsDir("alpine")
+        val backupRootfsDir = File(layout.installedRootfsDir, ".alpine.replace-backup-1").apply {
+            File(this, "bin/sh").apply {
+                parentFile?.mkdirs()
+                writeText("#!/bin/sh\n")
+            }
+        }
+        JsonLinuxDistroInstallMetadataStore().write(
+            backupRootfsDir,
+            installedLinuxDistro(tempDir).copy(
+                rootfsPath = targetRootfsDir.absolutePath,
+                checksum = DistroChecksum(DistroChecksumAlgorithm.SHA256, checksum),
+            ),
+        )
+        var downloadCount = 0
+
+        val result = fakeInstaller(catalog, archiveContent, onDownload = { downloadCount += 1 }).install(
+            LinuxDistroInstallRequest(
+                distroId = "alpine",
+                releaseId = "3.20",
+                architecture = DistroArchitecture.AARCH64,
+                layout = layout,
+            ),
+        )
+
+        assertThat(result.installed).isFalse()
+        assertThat(targetRootfsDir.resolve("bin/sh").isFile).isTrue()
+        assertThat(backupRootfsDir.exists()).isFalse()
+        assertThat(downloadCount).isEqualTo(0)
+    }
+
+    @Test
     fun installer_shouldReinstallExistingRootfsWhenMetadataDoesNotMatch() {
         runBlocking {
             val tempDir = createTempDirectory("linux-distro-metadata-mismatch").toFile()

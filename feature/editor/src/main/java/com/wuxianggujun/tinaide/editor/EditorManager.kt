@@ -21,6 +21,7 @@ import com.wuxianggujun.tinaide.file.IProjectContext
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -58,6 +59,7 @@ class EditorManager(
     private val sessions = LinkedHashMap<String, DocumentSession>()
     private val tabs = mutableListOf<EditorTab>()
     private val sessionStateJobs = mutableMapOf<String, Job>()
+    private var restoreJob: Job? = null
     private var autoSaveIntervalMillis: Long = 60_000L
     private val autoSaveScheduler = AutoSaveScheduler(scope, { autoSaveIntervalMillis }) { session ->
         session.save(SaveReason.AUTO)
@@ -119,6 +121,8 @@ class EditorManager(
             updateStateFlowsLocked()
         }
         jobs.forEach { it.cancel() }
+        restoreJob?.cancel()
+        restoreJob = null
         autoSaveScheduler.cancelAll()
         sessionsToStop.forEach { it.stopFileWatcher() }
         scope.cancel()
@@ -327,6 +331,8 @@ class EditorManager(
 
     private fun onProjectPathChanged(newPath: String?) {
         val normalized = newPath?.takeIf { it.isNotBlank() }
+        restoreJob?.cancel()
+        restoreJob = null
         withStatePersistenceSuspended {
             closeAll()
         }
@@ -337,33 +343,40 @@ class EditorManager(
 
     private fun restoreEditorState(projectPathOverride: String? = currentProjectPath()) {
         val projectPath = projectPathOverride?.takeIf { it.isNotBlank() } ?: return
-        scope.launch {
-            val snapshot = sessionStorage.load(projectPath) ?: return@launch
-            val entries = snapshot.files.mapNotNull { fileSnapshot ->
-                val file = File(fileSnapshot.path)
-                if (file.exists()) {
-                    file to EditorViewState(
-                        cursorLine = fileSnapshot.cursorLine,
-                        cursorColumn = fileSnapshot.cursorColumn,
-                        scrollX = fileSnapshot.scrollX,
-                        scrollY = fileSnapshot.scrollY
-                    )
-                } else {
-                    Timber.tag(TAG).w("Skip restoring editor tab, file missing: %s", fileSnapshot.path)
-                    null
+        restoreJob?.cancel()
+        restoreJob = scope.launch {
+            try {
+                val snapshot = sessionStorage.load(projectPath) ?: return@launch
+                val entries = snapshot.files.mapNotNull { fileSnapshot ->
+                    val file = File(fileSnapshot.path)
+                    if (file.exists()) {
+                        file to EditorViewState(
+                            cursorLine = fileSnapshot.cursorLine,
+                            cursorColumn = fileSnapshot.cursorColumn,
+                            scrollX = fileSnapshot.scrollX,
+                            scrollY = fileSnapshot.scrollY
+                        )
+                    } else {
+                        Timber.tag(TAG).w("Skip restoring editor tab, file missing: %s", fileSnapshot.path)
+                        null
+                    }
                 }
-            }
-            val activeFilePath = snapshot.activeFile?.takeIf { it.isNotBlank() }
-            withStatePersistenceSuspended {
-                entries.forEach { (file, state) -> openFile(file, state) }
-                synchronized(stateLock) {
-                    activeTabId = activeFilePath?.let { desired ->
-                        tabs.firstOrNull { it.file.absolutePath == desired }
-                    }?.id ?: tabs.firstOrNull()?.id
-                    updateStateFlowsLocked()
+                val activeFilePath = snapshot.activeFile?.takeIf { it.isNotBlank() }
+                withStatePersistenceSuspended {
+                    entries.forEach { (file, state) -> openFile(file, state) }
+                    synchronized(stateLock) {
+                        activeTabId = activeFilePath?.let { desired ->
+                            tabs.firstOrNull { it.file.absolutePath == desired }
+                        }?.id ?: tabs.firstOrNull()?.id
+                        updateStateFlowsLocked()
+                    }
                 }
+                persistEditorState()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                Timber.tag(TAG).e(error, "Failed to restore editor state for project: %s", projectPath)
             }
-            persistEditorState()
         }
     }
 

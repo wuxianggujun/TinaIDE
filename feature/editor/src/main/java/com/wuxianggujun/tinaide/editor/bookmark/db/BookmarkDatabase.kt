@@ -18,7 +18,7 @@ import com.wuxianggujun.tinaide.editor.session.db.EditorSessionEntity
         EditorFileStateEntity::class
     ],
     version = 2,
-    exportSchema = false
+    exportSchema = true
 )
 abstract class BookmarkDatabase : RoomDatabase() {
 

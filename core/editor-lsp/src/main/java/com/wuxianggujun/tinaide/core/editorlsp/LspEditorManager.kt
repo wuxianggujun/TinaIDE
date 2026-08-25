@@ -1,0 +1,2411 @@
+package com.wuxianggujun.tinaide.core.editorlsp
+
+import android.content.Context
+import com.wuxianggujun.tinaide.core.config.LspAssistSettings
+import com.wuxianggujun.tinaide.core.config.Prefs
+import com.wuxianggujun.tinaide.core.i18n.Strings
+import com.wuxianggujun.tinaide.core.i18n.str
+import com.wuxianggujun.tinaide.core.lang.CxxFileSupport
+import com.wuxianggujun.tinaide.core.linux.LinuxEnvironmentProvider
+import com.wuxianggujun.tinaide.core.linux.LinuxRunModePolicy
+import com.wuxianggujun.tinaide.core.linux.UnavailableLinuxEnvironmentProvider
+import com.wuxianggujun.tinaide.core.lsp.CompileDatabaseProvider
+import com.wuxianggujun.tinaide.core.lsp.CxxCompileContextInspector
+import com.wuxianggujun.tinaide.core.lsp.CxxCompileContextIssue
+import com.wuxianggujun.tinaide.core.lsp.CxxCompileContextSnapshot
+import com.wuxianggujun.tinaide.core.lsp.Diagnostic
+import com.wuxianggujun.tinaide.core.lsp.DocumentSymbolItem
+import com.wuxianggujun.tinaide.core.lsp.LocationItem
+import com.wuxianggujun.tinaide.core.lsp.LspClientSession
+import com.wuxianggujun.tinaide.core.lsp.LspCodeActionService
+import com.wuxianggujun.tinaide.core.lsp.LspConnectionProvider
+import com.wuxianggujun.tinaide.core.lsp.LspDiagnosticsBridge
+import com.wuxianggujun.tinaide.core.lsp.LspNavigationService
+import com.wuxianggujun.tinaide.core.lsp.NativeClangdConnectionProvider
+import com.wuxianggujun.tinaide.core.lsp.PRootClangdConnectionProvider
+import com.wuxianggujun.tinaide.core.lsp.ProjectSyncManager
+import com.wuxianggujun.tinaide.core.lsp.RemoteLspConfigManager
+import com.wuxianggujun.tinaide.core.lsp.RemoteLspConnectionState
+import com.wuxianggujun.tinaide.core.lsp.RemoteLspSyncMode
+import com.wuxianggujun.tinaide.core.lsp.WorkspaceSymbolItem
+import com.wuxianggujun.tinaide.core.lsp.canonicalizeLspDocumentUri
+import com.wuxianggujun.tinaide.core.ndk.AndroidNativeToolchainManager
+import com.wuxianggujun.tinaide.core.ndk.AndroidSysrootManager
+import com.wuxianggujun.tinaide.core.textengine.Position
+import com.wuxianggujun.tinaide.core.textengine.TextChange
+import com.wuxianggujun.tinaide.core.treesitter.TreeSitterFoldingProvider.FoldRegion
+import com.wuxianggujun.tinaide.file.IFileWatchService
+import com.wuxianggujun.tinaide.plugin.PluginLogLevel
+import com.wuxianggujun.tinaide.plugin.PluginLogManager
+import com.wuxianggujun.tinaide.plugin.lsp.LspPluginInfo
+import com.wuxianggujun.tinaide.plugin.lsp.LspPluginManager
+import com.wuxianggujun.tinaide.plugin.lsp.LspPluginReadinessDiagnostic
+import com.wuxianggujun.tinaide.plugin.lsp.LspServerConfig
+import com.wuxianggujun.tinaide.plugin.lsp.PluginLspConnectionProvider
+import java.io.File
+import java.net.URI
+import java.util.concurrent.CompletableFuture
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import org.eclipse.lsp4j.CompletionContext
+import org.eclipse.lsp4j.CompletionParams
+import org.eclipse.lsp4j.CompletionTriggerKind
+import org.eclipse.lsp4j.Diagnostic as LspDiagnostic
+import org.eclipse.lsp4j.FoldingRangeRequestParams
+import org.eclipse.lsp4j.Hover
+import org.eclipse.lsp4j.HoverParams
+import org.eclipse.lsp4j.InsertReplaceEdit
+import org.eclipse.lsp4j.InlayHintParams
+import org.eclipse.lsp4j.MarkupContent
+import org.eclipse.lsp4j.Registration
+import org.eclipse.lsp4j.SemanticTokensParams
+import org.eclipse.lsp4j.SemanticTokensRangeParams
+import org.eclipse.lsp4j.SignatureHelpParams
+import org.eclipse.lsp4j.TextDocumentIdentifier
+import org.eclipse.lsp4j.TextEdit
+import org.eclipse.lsp4j.Unregistration
+import org.eclipse.lsp4j.WorkspaceEdit
+import org.eclipse.lsp4j.jsonrpc.messages.Either
+import timber.log.Timber
+
+data class PluginLspDependencyNotReadyEvent(
+    val pluginId: String,
+    val pluginName: String,
+    val message: String
+)
+
+sealed interface SemanticTokensRequestResult {
+    data class Success(val tokens: List<SemanticToken>) : SemanticTokensRequestResult
+    data object Unavailable : SemanticTokensRequestResult
+}
+
+class LspEditorManager(
+    private val fileWatchService: IFileWatchService? = null,
+    private val linuxEnvironmentProvider: LinuxEnvironmentProvider = UnavailableLinuxEnvironmentProvider,
+    private val cppStandardOverrideProvider: (File) -> String? = { null },
+) {
+
+    companion object {
+        private const val TAG = "LspEditorManager"
+        private const val COMPLETION_TIMEOUT_SECONDS = 6L
+        private const val HOVER_TIMEOUT_SECONDS = 6L
+        private const val SIGNATURE_HELP_TIMEOUT_SECONDS = 6L
+        private const val SEMANTIC_TOKENS_TIMEOUT_SECONDS = 6L
+        private const val INLAY_HINTS_TIMEOUT_SECONDS = 6L
+        private const val FOLDING_RANGE_TIMEOUT_SECONDS = 6L
+        private const val SHARED_CXX_IDLE_SHUTDOWN_MS = 20_000L
+        private val ROOT_MAKEFILE_NAMES = setOf("Makefile", "makefile", "GNUmakefile")
+
+        internal fun isRootMakeBuildFile(file: File, projectRootPath: String?): Boolean {
+            if (file.name !in ROOT_MAKEFILE_NAMES) return false
+            val projectRoot = projectRootPath
+                ?.takeIf { it.isNotBlank() }
+                ?.let(::File)
+                ?: file.parentFile
+                ?: return false
+            return sameCanonicalFile(file.parentFile, projectRoot)
+        }
+
+        private fun sameCanonicalFile(left: File?, right: File?): Boolean {
+            if (left == null || right == null) return false
+            val leftPath = runCatching { left.canonicalPath }.getOrDefault(left.absolutePath)
+            val rightPath = runCatching { right.canonicalPath }.getOrDefault(right.absolutePath)
+            return leftPath == rightPath
+        }
+    }
+
+    private enum class SessionKind { CXX, PLUGIN, CMAKE, MAKE }
+
+    private data class TabBinding(
+        val tabId: String,
+        val kind: SessionKind,
+        val file: File,
+        val projectRootPath: String?,
+        val textProvider: () -> String,
+    )
+
+    private data class TabSession(
+        val tabId: String,
+        val file: File,
+        val kind: SessionKind,
+        val documentUri: String,
+        val lspSession: LspClientSession? = null,
+        val builtinSession: BuiltinLanguageServiceSession? = null,
+    ) {
+        val isConnected: Boolean
+            get() = when {
+                builtinSession?.isConnected == true -> true
+                lspSession != null -> lspSession.isConnected && lspSession.isCurrentDocument(documentUri)
+                else -> false
+            }
+    }
+
+    private data class SemanticTokensCache(
+        val documentVersion: Long,
+        val cachedLines: IntRange,
+        val tokens: List<SemanticToken>
+    )
+
+    private data class FoldingRangesCache(
+        val documentVersion: Long,
+        val regions: List<FoldRegion>
+    )
+
+    private data class InlayHintsCache(
+        val documentVersion: Long,
+        val cachedLines: IntRange,
+        val hints: List<InlayHint>,
+    )
+
+    private data class LspDiagnosticsCache(
+        val documentVersion: Int,
+        val documentGeneration: Long,
+        val diagnostics: List<LspDiagnostic>,
+    )
+
+    private val stateLock = Any()
+    private val tabRequestTracker = LspTabRequestTracker(stateLock)
+    private val lspScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val compileSetupCache = LspCompileSetupCache(
+        scope = lspScope,
+        linuxEnvironmentProvider = linuxEnvironmentProvider,
+        resolveRunMode = ::resolveClangdRunMode,
+        resolveLanguageId = ::languageIdForFile,
+    )
+    private val sharedCxxSessions = SharedCxxSessionController(
+        scope = lspScope,
+        stateLock = stateLock,
+        idleShutdownMs = SHARED_CXX_IDLE_SHUTDOWN_MS,
+        hasActiveCxxBindings = {
+            tabBindings.values.any { it.kind == SessionKind.CXX }
+        },
+        onIdleReleased = {
+            val projectIsStillIdle = stopFileWatcherIfCxxIdle()
+            if (projectIsStillIdle && isUsingRemoteLsp) {
+                RemoteLspConfigManager.updateConnectionState(RemoteLspConnectionState.DISCONNECTED)
+            }
+        },
+        createSession = ::createLspClientSession,
+    )
+
+    private var lspProjectRoot: String? = null
+    private var lspCompileCommandsDirOverride: String? = null
+    private var isUsingRemoteLsp: Boolean = false
+    private var currentSyncMode: RemoteLspSyncMode? = null
+
+    private val tabSessions = mutableMapOf<String, TabSession>()
+    private val tabBindings = mutableMapOf<String, TabBinding>()
+    private val cxxCompileContexts = mutableMapOf<String, CxxCompileContextSnapshot>()
+    private val attachTokenCache = mutableMapOf<String, Any>()
+    private val lspKnownUris = mutableSetOf<String>()
+    private val lspDiagnosticsByUri = mutableMapOf<String, LspDiagnosticsCache>()
+    private val remoteSyncedProjects = mutableSetOf<String>()
+    private val semanticTokensCache = mutableMapOf<String, SemanticTokensCache>()
+    private val inlayHintsCache = mutableMapOf<String, InlayHintsCache>()
+    private val foldingRangesCache = mutableMapOf<String, FoldingRangesCache>()
+    private val documentVersions = mutableMapOf<String, Long>()
+    private val builtinDiagnosticsRequestTokens = mutableMapOf<String, Any>()
+    private val builtinDiagnosticsJobs = mutableMapOf<String, Job>()
+    private val completionWarmupTabIds = mutableSetOf<String>()
+
+    @Volatile
+    private var foldingRangeEnabled: Boolean = false
+
+    private var lspPluginManager: LspPluginManager? = null
+
+    private val workspaceFileWatcher = LspWorkspaceFileWatcher(
+        stateLock = stateLock,
+        fileWatchService = fileWatchService,
+        projectRootProvider = { lspProjectRoot },
+        collectSessions = {
+            synchronized(stateLock) {
+                buildSet {
+                    tabSessions.values.mapNotNullTo(this) { it.lspSession }
+                    sharedCxxSessions.currentSession()?.let { add(it) }
+                }.toList()
+            }
+        },
+        hasActiveCxxBindings = {
+            tabBindings.values.any { it.kind == SessionKind.CXX }
+        },
+        hasSharedCxxSession = {
+            sharedCxxSessions.currentSession() != null
+        },
+    )
+
+    @Volatile
+    private var assistSettings: LspAssistSettings = LspAssistSettings(
+        signatureHelpEnabled = true,
+        inlayHintsEnabled = true,
+        semanticTokensEnabled = true,
+    )
+
+    var onDiagnosticsChanged: ((fileUri: String, diagnostics: List<Diagnostic>) -> Unit)? = null
+    var onLspStatusChanged: ((tabId: String, status: EditorStatus) -> Unit)? = null
+    var onCxxCompileContextChanged: ((tabId: String, context: CxxCompileContextSnapshot?) -> Unit)? = null
+    var onPluginLspDependencyNotReady: ((PluginLspDependencyNotReadyEvent) -> Unit)? = null
+
+    val codeActionService = LspCodeActionService()
+    val navigationService = LspNavigationService()
+
+    private val lspSupportedExtensions: Set<String> = CxxFileSupport.clangdSupportedExtensions
+
+    fun setLspPluginManager(manager: LspPluginManager) {
+        lspPluginManager = manager
+    }
+
+    fun isDocumentVersionCurrent(tabId: String, expectedVersion: Int): Boolean {
+        val tabSession = synchronized(stateLock) { tabSessions[tabId] } ?: return false
+        return tabSession.lspSession?.currentDocumentVersion(tabSession.documentUri) == expectedVersion
+    }
+
+    fun isLspSupported(file: File): Boolean = resolveAttachmentRoute(file) != LspAttachmentRoute.NONE
+
+    fun supportsBasicNavigation(file: File): Boolean = when (resolveAttachmentRoute(file)) {
+        LspAttachmentRoute.CXX,
+        LspAttachmentRoute.PLUGIN,
+        LspAttachmentRoute.BUILTIN_CMAKE,
+        LspAttachmentRoute.BUILTIN_MAKE -> true
+        LspAttachmentRoute.NONE -> false
+    }
+
+    fun supportsAdvancedNavigation(file: File): Boolean = when (resolveAttachmentRoute(file)) {
+        LspAttachmentRoute.CXX,
+        LspAttachmentRoute.PLUGIN -> true
+        LspAttachmentRoute.BUILTIN_CMAKE,
+        LspAttachmentRoute.BUILTIN_MAKE,
+        LspAttachmentRoute.NONE -> false
+    }
+
+    fun supportsCallHierarchyIncoming(tabId: String, file: File): Boolean = when (resolveAttachmentRoute(file)) {
+        LspAttachmentRoute.CXX,
+        LspAttachmentRoute.PLUGIN -> {
+            val session = synchronized(stateLock) { tabSessions[tabId]?.lspSession }
+            session?.isConnected == true && session.supportsCallHierarchy
+        }
+        LspAttachmentRoute.BUILTIN_CMAKE,
+        LspAttachmentRoute.BUILTIN_MAKE,
+        LspAttachmentRoute.NONE -> false
+    }
+
+    fun supportsRefactorActions(file: File): Boolean = when (resolveAttachmentRoute(file)) {
+        LspAttachmentRoute.CXX,
+        LspAttachmentRoute.PLUGIN -> true
+        LspAttachmentRoute.BUILTIN_CMAKE,
+        LspAttachmentRoute.BUILTIN_MAKE,
+        LspAttachmentRoute.NONE -> false
+    }
+
+    fun supportsHeaderSourceSwitch(file: File): Boolean = resolveAttachmentRoute(file) == LspAttachmentRoute.CXX
+
+    fun attachTinaLsp(
+        context: Context,
+        file: File,
+        tabId: String,
+        projectRootPath: String?,
+        textProvider: () -> String,
+    ): Boolean {
+        val attached = when (resolveAttachmentRoute(file)) {
+            LspAttachmentRoute.CXX -> {
+                attachCxxLsp(context, file, tabId, projectRootPath, textProvider)
+            }
+            LspAttachmentRoute.BUILTIN_CMAKE -> {
+                attachBuiltinCmakeLsp(file, tabId, projectRootPath, textProvider)
+            }
+            LspAttachmentRoute.BUILTIN_MAKE -> {
+                attachBuiltinMakeLsp(file, tabId, projectRootPath, textProvider)
+            }
+            LspAttachmentRoute.PLUGIN -> {
+                attachPluginLspInternal(context, file, tabId, projectRootPath, textProvider)
+            }
+            LspAttachmentRoute.NONE -> false
+        }
+        if (!attached) {
+            updateLspStatus(tabId, EditorStatus.NoLsp)
+            releaseSession(tabId, clearBinding = false)
+            return false
+        }
+        return true
+    }
+
+    private fun resolveAttachmentRoute(file: File): LspAttachmentRoute = LspRoutingSupport.resolveAttachmentRoute(
+        file = file,
+        editorLspEnabled = Prefs.devEditorLspEnabled,
+        builtinCmakeLspEnabled = Prefs.devBuiltinCmakeLspEnabled,
+        cxxExtensions = lspSupportedExtensions,
+        hasPluginServer = lspPluginManager?.getServerConfigForFile(file, file.resolveLspLanguageId()) != null
+    )
+
+    fun onTinaDocumentChanged(tabId: String, change: TextChange, documentVersion: Long) {
+        val tabSession = synchronized(stateLock) { tabSessions[tabId] } ?: return
+        if (!tabSession.isConnected) return
+        // Advance the protocol snapshot before a queued diagnostic can be committed on the main thread.
+        tabSession.lspSession?.let { session ->
+            runCatching {
+                session.didChange(
+                    startLine = change.startLine,
+                    startColumn = change.startColumn,
+                    endLine = change.endLine,
+                    endColumn = change.endColumn,
+                    oldTextLength = change.oldTextLength,
+                    newText = change.newText
+                )
+            }.onFailure { Timber.tag(TAG).d("didChange failed: ${it.message}") }
+        }
+        synchronized(stateLock) {
+            semanticTokensCache.remove(tabId)
+            inlayHintsCache.remove(tabId)
+            foldingRangesCache.remove(tabId)
+            lspDiagnosticsByUri.remove(canonicalizeLspDocumentUri(tabSession.documentUri))
+            documentVersions[tabId] = maxOf(documentVersions[tabId] ?: Long.MIN_VALUE, documentVersion)
+        }
+        tabSession.builtinSession?.didChange(change)
+        if (tabSession.builtinSession != null) {
+            scheduleBuiltinDiagnostics(tabSession)
+        }
+    }
+
+    /**
+     * 文件保存后调用：
+     * 1. 向 LSP server 发送 textDocument/didSave 通知
+     * 2. 若保存的是 CMake / 根 Makefile / compile_commands.json，刷新 compile_commands 并重启 clangd
+     */
+    fun onFileSaved(context: Context, tabId: String, file: File, fullText: String) {
+        // 1. 向当前 tab 的 LSP session 发送 didSave
+        val tabSession = synchronized(stateLock) { tabSessions[tabId] }
+        tabSession?.builtinSession?.takeIf { it.isConnected }?.let {
+            it.didSave(fullText.ifEmpty { null })
+            scheduleBuiltinDiagnostics(tabSession)
+        }
+        tabSession?.takeIf { it.isConnected }?.lspSession?.let {
+            runCatching { it.didSave(fullText.ifEmpty { null }) }
+                .onFailure { e -> Timber.tag(TAG).w(e, "didSave failed for %s", file.name) }
+        }
+
+        val isCmakeFile = file.name.equals("CMakeLists.txt", ignoreCase = true) ||
+            file.extension.equals("cmake", ignoreCase = true)
+        val isCompileCommandsFile = file.name.equals("compile_commands.json", ignoreCase = true)
+        val savedBinding = synchronized(stateLock) { tabBindings[tabId] }
+        val isRootMakefile = isRootMakeBuildFile(file, savedBinding?.projectRootPath)
+
+        // 2. 配置文件 / compile_commands 保存 -> 刷新 compile_commands.json 并重载 clangd
+        if (isCmakeFile || isRootMakefile || isCompileCommandsFile) {
+            val reason = when {
+                isCompileCommandsFile -> "compile_commands"
+                isRootMakefile -> "Makefile"
+                else -> "CMake"
+            }
+            Timber.tag(TAG).i("%s file saved (%s), scheduling LSP reload", reason, file.name)
+            val cxxBinding = synchronized(stateLock) {
+                tabBindings.values.firstOrNull { binding ->
+                    binding.kind == SessionKind.CXX &&
+                        belongsToSameProject(binding, file, savedBinding?.projectRootPath)
+                }
+            }
+            val invalidationFile = cxxBinding?.file ?: file
+            val projectRootPath = cxxBinding?.projectRootPath ?: savedBinding?.projectRootPath
+            val cppStandardOverride = cxxBinding?.file?.let(::resolveCppStandardOverride)
+            compileSetupCache.invalidateForProject(invalidationFile, projectRootPath)
+
+            lspScope.launch(Dispatchers.IO) {
+                val binding = cxxBinding ?: return@launch
+                if (isCompileCommandsFile) {
+                    compileSetupCache.prepareProvidedCompileCommandsForLsp(
+                        context = context,
+                        sourceCompileCommandsFile = file,
+                        projectRootPath = binding.projectRootPath,
+                        cppStandardOverride = cppStandardOverride,
+                    )
+                        ?: return@launch
+                } else {
+                    compileSetupCache.resolve(
+                        context = context,
+                        file = binding.file,
+                        projectRootPath = binding.projectRootPath,
+                        cppStandardOverride = cppStandardOverride,
+                        forceRegenerateFallback = true,
+                    )
+                        ?: return@launch
+                }
+                withContext(Dispatchers.Main) {
+                    Timber.tag(TAG).i("Restarting clangd after %s file change: %s", reason, file.name)
+                    refreshLspConnection(context)
+                }
+            }
+        }
+    }
+
+    private fun belongsToSameProject(
+        binding: TabBinding,
+        savedFile: File,
+        savedProjectRootPath: String?,
+    ): Boolean {
+        val bindingProjectRoot = binding.projectRootPath
+            ?.takeIf { it.isNotBlank() }
+            ?.let(::File)
+            ?: binding.file.parentFile
+            ?: return false
+        val savedProjectRoot = savedProjectRootPath
+            ?.takeIf { it.isNotBlank() }
+            ?.let(::File)
+        if (savedProjectRoot != null) {
+            return sameCanonicalFile(savedProjectRoot, bindingProjectRoot)
+        }
+
+        val rootPath = runCatching { bindingProjectRoot.canonicalPath }.getOrDefault(bindingProjectRoot.absolutePath)
+        val savedFilePath = runCatching { savedFile.canonicalPath }.getOrDefault(savedFile.absolutePath)
+        return savedFilePath == rootPath || savedFilePath.startsWith(rootPath + File.separator)
+    }
+
+    suspend fun requestSemanticTokens(
+        tabId: String,
+        visibleLines: IntRange,
+        documentVersion: Long
+    ): SemanticTokensRequestResult = withContext(Dispatchers.IO) {
+        if (!assistSettings.semanticTokensEnabled) {
+            synchronized(stateLock) { semanticTokensCache.remove(tabId) }
+            return@withContext SemanticTokensRequestResult.Success(emptyList())
+        }
+        if (visibleLines.isEmpty()) return@withContext SemanticTokensRequestResult.Success(emptyList())
+        val versionAccepted = synchronized(stateLock) {
+            val latestVersion = documentVersions[tabId]
+            if (latestVersion != null && documentVersion < latestVersion) {
+                false
+            } else {
+                documentVersions[tabId] = documentVersion
+                true
+            }
+        }
+        if (!versionAccepted) return@withContext SemanticTokensRequestResult.Unavailable
+        val normalizedVisibleLines = normalizeVisibleLines(visibleLines)
+
+        val cached = synchronized(stateLock) { semanticTokensCache[tabId] }
+        if (cached != null &&
+            cached.documentVersion == documentVersion &&
+            cached.cachedLines.containsRange(normalizedVisibleLines)
+        ) {
+            return@withContext SemanticTokensRequestResult.Success(
+                cached.tokens.filterToVisibleLines(normalizedVisibleLines)
+            )
+        }
+
+        val tabSession = synchronized(stateLock) { tabSessions[tabId] }
+            ?: return@withContext SemanticTokensRequestResult.Unavailable
+        if (!tabSession.isConnected) return@withContext SemanticTokensRequestResult.Unavailable
+        tabSession.builtinSession?.let { session ->
+            val tokens = session.requestSemanticTokens()
+            val cachedSuccessfully = synchronized(stateLock) {
+                if (documentVersions[tabId] != documentVersion ||
+                    tabSessions[tabId]?.builtinSession !== session
+                ) {
+                    false
+                } else {
+                    semanticTokensCache[tabId] = SemanticTokensCache(
+                        documentVersion = documentVersion,
+                        cachedLines = 0..Int.MAX_VALUE,
+                        tokens = tokens
+                    )
+                    true
+                }
+            }
+            if (!cachedSuccessfully) return@withContext SemanticTokensRequestResult.Unavailable
+            return@withContext SemanticTokensRequestResult.Success(
+                tokens.filterToVisibleLines(normalizedVisibleLines)
+            )
+        }
+        val session = tabSession.lspSession ?: return@withContext SemanticTokensRequestResult.Unavailable
+        val requestTicket = createTabRequestTicket(tabId, tabSession.documentUri)
+        val requestedLines = expandSemanticRequestLines(normalizedVisibleLines)
+
+        val rangeRequest = SemanticTokensRangeParams().apply {
+            textDocument = TextDocumentIdentifier(tabSession.documentUri)
+            range = org.eclipse.lsp4j.Range(
+                org.eclipse.lsp4j.Position(requestedLines.first, 0),
+                org.eclipse.lsp4j.Position((requestedLines.last + 1).coerceAtLeast(requestedLines.first + 1), 0)
+            )
+        }
+        val fullRequest = SemanticTokensParams().apply {
+            textDocument = TextDocumentIdentifier(tabSession.documentUri)
+        }
+
+        // 策略（最多两次请求，避免最坏 18 秒阻塞）：
+        //   缓存未命中（首次打开）→ 优先请求全量（full），可覆盖整个文档，一次填满缓存；
+        //   缓存命中但区间不覆盖（滚动到新区域）→ 请求可见区间（range），延迟更低；
+        //   range 失败 → fallback 全量。
+        val preferFullFetch = cached == null
+        val fullRawFirst = if (preferFullFetch) {
+            awaitTrackedTabFuture(
+                ticket = requestTicket,
+                future = session.semanticTokensFull(fullRequest),
+                timeoutSeconds = SEMANTIC_TOKENS_TIMEOUT_SECONDS,
+                operation = "semanticTokens/full(${fileNameForLog(tabSession.file)})"
+            )
+        } else {
+            null
+        }
+        // 若 full 未命中（缓存已存在走 range 路径）或 full 失败，则请求 range
+        val rangeRaw = if (fullRawFirst == null) {
+            awaitTrackedTabFuture(
+                ticket = requestTicket,
+                future = session.semanticTokensRange(rangeRequest),
+                timeoutSeconds = SEMANTIC_TOKENS_TIMEOUT_SECONDS,
+                operation = "semanticTokens/range(${fileNameForLog(tabSession.file)})"
+            )
+        } else {
+            null
+        }
+        val raw = fullRawFirst ?: rangeRaw ?: return@withContext SemanticTokensRequestResult.Unavailable
+        val fetchedFullDocument = fullRawFirst != null
+        if (!isTabRequestStillValid(requestTicket)) return@withContext SemanticTokensRequestResult.Unavailable
+
+        val decoded = LspSemanticTokenDecoder.decode(
+            rawData = raw.data.orEmpty(),
+            tokenTypes = session.semanticTokenLegendTypes(),
+            tokenModifiers = session.semanticTokenLegendModifiers()
+        ).asSequence()
+            .filter { token ->
+                token.length > 0 && (fetchedFullDocument || token.line in requestedLines)
+            }
+            .toList()
+        val cachedLines = if (fetchedFullDocument) {
+            0..Int.MAX_VALUE
+        } else {
+            requestedLines
+        }
+
+        val cachedSuccessfully = synchronized(stateLock) {
+            if (documentVersions[tabId] != documentVersion || tabSessions[tabId] !== tabSession) {
+                false
+            } else {
+                semanticTokensCache[tabId] = SemanticTokensCache(
+                    documentVersion = documentVersion,
+                    cachedLines = cachedLines,
+                    tokens = decoded
+                )
+                true
+            }
+        }
+        if (!cachedSuccessfully) return@withContext SemanticTokensRequestResult.Unavailable
+        return@withContext SemanticTokensRequestResult.Success(
+            decoded.filterToVisibleLines(normalizedVisibleLines)
+        )
+    }
+
+    suspend fun requestInlayHints(
+        tabId: String,
+        visibleLines: IntRange,
+        documentVersion: Long,
+    ): InlayHintsRequestResult = withContext(Dispatchers.IO) {
+        if (!assistSettings.inlayHintsEnabled) {
+            synchronized(stateLock) { inlayHintsCache.remove(tabId) }
+            return@withContext InlayHintsRequestResult.Success(emptyList())
+        }
+        if (visibleLines.isEmpty()) return@withContext InlayHintsRequestResult.Success(emptyList())
+
+        val versionAccepted = synchronized(stateLock) {
+            val latestVersion = documentVersions[tabId]
+            if (latestVersion != null && documentVersion < latestVersion) {
+                false
+            } else {
+                documentVersions[tabId] = documentVersion
+                true
+            }
+        }
+        if (!versionAccepted) return@withContext InlayHintsRequestResult.Unavailable
+
+        val normalizedVisibleLines = normalizeVisibleLines(visibleLines)
+        val cached = synchronized(stateLock) { inlayHintsCache[tabId] }
+        if (cached != null &&
+            cached.documentVersion == documentVersion &&
+            cached.cachedLines.containsRange(normalizedVisibleLines)
+        ) {
+            return@withContext InlayHintsRequestResult.Success(
+                cached.hints.filterToVisibleLines(normalizedVisibleLines)
+            )
+        }
+
+        val tabSession = synchronized(stateLock) { tabSessions[tabId] }
+            ?: return@withContext InlayHintsRequestResult.Unavailable
+        if (!tabSession.isConnected || tabSession.builtinSession != null) {
+            return@withContext InlayHintsRequestResult.Unavailable
+        }
+        val session = tabSession.lspSession
+            ?.takeIf { it.supportsInlayHints }
+            ?: return@withContext InlayHintsRequestResult.Unavailable
+        val requestTicket = createTabRequestTicket(tabId, tabSession.documentUri)
+        val requestedLines = expandInlayHintRequestLines(normalizedVisibleLines)
+        val params = InlayHintParams().apply {
+            textDocument = TextDocumentIdentifier(tabSession.documentUri)
+            range = org.eclipse.lsp4j.Range(
+                org.eclipse.lsp4j.Position(requestedLines.first, 0),
+                org.eclipse.lsp4j.Position(
+                    (requestedLines.last + 1).coerceAtLeast(requestedLines.first + 1),
+                    0,
+                ),
+            )
+        }
+        val raw = awaitTrackedTabFuture(
+            ticket = requestTicket,
+            future = session.inlayHint(params),
+            timeoutSeconds = INLAY_HINTS_TIMEOUT_SECONDS,
+            operation = "inlayHint(${fileNameForLog(tabSession.file)})",
+        ) ?: return@withContext InlayHintsRequestResult.Unavailable
+        if (!isTabRequestStillValid(requestTicket)) {
+            return@withContext InlayHintsRequestResult.Unavailable
+        }
+
+        val hints = raw.asSequence()
+            .mapNotNull { hint -> hint.toEditorInlayHintOrNull() }
+            .filter { hint -> hint.line in requestedLines }
+            .distinctBy { hint ->
+                listOf(hint.line, hint.column, hint.label, hint.kind, hint.paddingLeft, hint.paddingRight)
+            }
+            .sortedWith(compareBy(InlayHint::line, InlayHint::column, InlayHint::label))
+            .toList()
+        val cachedSuccessfully = synchronized(stateLock) {
+            if (documentVersions[tabId] != documentVersion || tabSessions[tabId] !== tabSession) {
+                false
+            } else {
+                inlayHintsCache[tabId] = InlayHintsCache(
+                    documentVersion = documentVersion,
+                    cachedLines = requestedLines,
+                    hints = hints,
+                )
+                true
+            }
+        }
+        if (!cachedSuccessfully) return@withContext InlayHintsRequestResult.Unavailable
+        InlayHintsRequestResult.Success(hints.filterToVisibleLines(normalizedVisibleLines))
+    }
+
+    suspend fun requestCompletion(
+        tabId: String,
+        position: Position,
+        triggerChar: Char?
+    ): CompletionFetchResult = withContext(Dispatchers.IO) {
+        val tabSession = synchronized(stateLock) { tabSessions[tabId] }
+            ?: return@withContext CompletionFetchResult.TransientFailure(reason = "missing_tab_session")
+        if (!tabSession.isConnected) {
+            return@withContext CompletionFetchResult.TransientFailure(reason = "session_not_connected")
+        }
+        tabSession.builtinSession?.let { session ->
+            return@withContext session.requestCompletion(position, triggerChar)
+        }
+        val session = tabSession.lspSession
+            ?: return@withContext CompletionFetchResult.TransientFailure(reason = "missing_lsp_session")
+        val requestTicket = createTabRequestTicket(tabId, tabSession.documentUri)
+
+        val params = buildCompletionParams(tabSession.documentUri, position, triggerChar)
+        val future = session.completion(params)
+            ?: return@withContext CompletionFetchResult.TransientFailure(reason = "lsp_no_future")
+        val result = awaitTrackedTabFuture(
+            ticket = requestTicket,
+            future = future,
+            timeoutSeconds = COMPLETION_TIMEOUT_SECONDS,
+            operation = "completion(${fileNameForLog(tabSession.file)})"
+        ) ?: return@withContext CompletionFetchResult.TransientFailure(reason = "lsp_completion_timeout")
+
+        val lspItems = when {
+            result.isLeft -> result.left.orEmpty()
+            result.isRight -> result.right?.items.orEmpty()
+            else -> emptyList()
+        }
+
+        CompletionFetchResult.Success(
+            lspItems.mapNotNull { item ->
+                val mainTextEdit = if (item.textEdit == null) {
+                    null
+                } else {
+                    normalizeMainCompletionTextEdit(item) ?: return@mapNotNull null
+                }
+                val additionalTextEdits = normalizeAdditionalCompletionTextEdits(item)
+                    ?: return@mapNotNull null
+                CompletionItem(
+                    label = item.label.orEmpty(),
+                    kind = mapCompletionKind(item.kind),
+                    detail = item.detail,
+                    documentation = extractDocumentation(item.documentation),
+                    insertText = normalizeInsertText(item),
+                    textEdit = mainTextEdit,
+                    additionalTextEdits = additionalTextEdits,
+                    sortText = item.sortText,
+                    filterText = item.filterText,
+                    source = CompletionSource.LSP,
+                    snippetText = extractSnippetText(item)
+                )
+            }
+        )
+    }
+
+    fun releaseLspEditor(tabId: String) = releaseSession(tabId, true)
+
+    fun hasActiveLspConnection(tabId: String): Boolean {
+        val tabSession = synchronized(stateLock) { tabSessions[tabId] }
+        return tabSession?.isConnected == true
+    }
+
+    suspend fun requestCodeActions(
+        tabId: String,
+        startLine: Int,
+        startColumn: Int,
+        endLine: Int,
+        endColumn: Int,
+        onlyKinds: List<String> = emptyList(),
+    ): List<LspCodeActionService.CodeActionItem> = withLspTabSession(tabId) { tabSession, session ->
+        val requestTicket = createTabRequestTicket(tabId, tabSession.documentUri)
+        val documentSnapshot = session.currentDocumentSnapshot(tabSession.documentUri)
+        val documentUriKey = canonicalizeLspDocumentUri(tabSession.documentUri)
+        val diagnostics = synchronized(stateLock) {
+            lspDiagnosticsByUri[documentUriKey]
+                ?.takeIf { cached ->
+                    documentSnapshot != null &&
+                        cached.documentVersion == documentSnapshot.version &&
+                        cached.documentGeneration == documentSnapshot.generation
+                }
+                ?.diagnostics
+                .orEmpty()
+        }
+        val result = codeActionService.requestCodeActions(
+            documentUri = tabSession.documentUri,
+            startLine = startLine,
+            startColumn = startColumn,
+            endLine = endLine,
+            endColumn = endColumn,
+            diagnostics = diagnostics,
+            onlyKinds = onlyKinds,
+            codeActionRequest = { params, timeoutSeconds ->
+                awaitTrackedTabFuture(
+                    ticket = requestTicket,
+                    future = session.codeAction(params),
+                    timeoutSeconds = timeoutSeconds,
+                    operation = "codeAction(${fileNameForLog(tabSession.file)})",
+                    propagateFailure = true,
+                )
+            }
+        )
+        if (isTabRequestStillValid(requestTicket)) result else emptyList()
+    } ?: emptyList()
+
+    suspend fun executeCodeAction(
+        tabId: String,
+        action: LspCodeActionService.CodeActionItem,
+        onApplyEdit: suspend (WorkspaceEdit) -> Boolean
+    ) = withLspTabSession(tabId) { tabSession, session ->
+        val requestTicket = createTabRequestTicket(tabId, tabSession.documentUri)
+        val result = codeActionService.executeCodeAction(
+            item = action,
+            resolveCodeActionRequest = { unresolved, timeoutSeconds ->
+                awaitTrackedTabFuture(
+                    ticket = requestTicket,
+                    future = session.resolveCodeAction(unresolved),
+                    timeoutSeconds = timeoutSeconds,
+                    operation = "resolveCodeAction(${fileNameForLog(tabSession.file)})"
+                )
+            },
+            executeCommandRequest = { params, timeoutSeconds ->
+                awaitTrackedTabFuture(
+                    ticket = requestTicket,
+                    future = session.executeCommand(params),
+                    timeoutSeconds = timeoutSeconds,
+                    operation = "executeCodeAction(${fileNameForLog(tabSession.file)})"
+                )
+            },
+            onApplyEdit = { edit ->
+                if (isTabRequestStillValid(requestTicket)) {
+                    onApplyEdit(edit)
+                } else {
+                    false
+                }
+            }
+        )
+        result && isTabRequestStillValid(requestTicket)
+    } ?: false
+
+    suspend fun prepareRename(tabId: String, line: Int, column: Int) = withLspTabSession(tabId) { tabSession, session ->
+        val requestTicket = createTabRequestTicket(tabId, tabSession.documentUri)
+        val result = codeActionService.prepareRename(
+            documentUri = tabSession.documentUri,
+            line = line,
+            column = column,
+            prepareRenameRequest = { params, timeoutSeconds ->
+                awaitTrackedTabFuture(
+                    ticket = requestTicket,
+                    future = session.prepareRename(params),
+                    timeoutSeconds = timeoutSeconds,
+                    operation = "prepareRename(${fileNameForLog(tabSession.file)})"
+                )
+            }
+        )
+        result.takeIf { isTabRequestStillValid(requestTicket) }
+    }
+
+    suspend fun rename(
+        tabId: String,
+        line: Int,
+        column: Int,
+        newName: String,
+        onApplyEdit: suspend (WorkspaceEdit) -> Boolean
+    ): LspCodeActionService.RenameResult {
+        val tabSession = synchronized(stateLock) { tabSessions[tabId] }
+            ?: return LspCodeActionService.RenameResult(false, error = Strings.lsp_error_editor_not_found.str())
+        val session = tabSession.lspSession
+            ?: return LspCodeActionService.RenameResult(false, error = Strings.lsp_error_not_connected.str())
+        if (!tabSession.isConnected) {
+            return LspCodeActionService.RenameResult(false, error = Strings.lsp_error_not_connected.str())
+        }
+        val requestTicket = createTabRequestTicket(tabId, tabSession.documentUri)
+        val result = codeActionService.rename(
+            documentUri = tabSession.documentUri,
+            line = line,
+            column = column,
+            newName = newName,
+            renameRequest = { params, timeoutSeconds ->
+                awaitTrackedTabFuture(
+                    ticket = requestTicket,
+                    future = session.rename(params),
+                    timeoutSeconds = timeoutSeconds,
+                    operation = "rename(${fileNameForLog(tabSession.file)})"
+                )
+            },
+            onApplyEdit = { edit ->
+                if (isTabRequestStillValid(requestTicket)) {
+                    onApplyEdit(edit)
+                } else {
+                    false
+                }
+            }
+        )
+        return if (isTabRequestStillValid(requestTicket)) {
+            result
+        } else {
+            LspCodeActionService.RenameResult(false, error = Strings.lsp_error_not_connected.str())
+        }
+    }
+
+    suspend fun gotoDefinition(tabId: String, line: Int, column: Int): List<LocationItem> {
+        val tabSession = synchronized(stateLock) { tabSessions[tabId] } ?: return emptyList()
+        if (!tabSession.isConnected) return emptyList()
+        tabSession.builtinSession?.let { session ->
+            return withContext(Dispatchers.Default) {
+                session.gotoDefinition(Position(line, column))
+            }
+        }
+        return withLspTabSession(tabId) { currentTabSession, session ->
+            val requestTicket = createTabRequestTicket(tabId, currentTabSession.documentUri)
+            val result = navigationService.gotoDefinition(
+                documentUri = currentTabSession.documentUri,
+                line = line,
+                column = column,
+                definitionRequest = { params, timeoutSeconds ->
+                    awaitTrackedTabFuture(
+                        ticket = requestTicket,
+                        future = session.definition(params),
+                        timeoutSeconds = timeoutSeconds,
+                        operation = "definition(${fileNameForLog(currentTabSession.file)})"
+                    )
+                }
+            )
+            if (isTabRequestStillValid(requestTicket)) result else emptyList()
+        } ?: emptyList()
+    }
+
+    suspend fun findReferences(tabId: String, line: Int, column: Int): List<LocationItem> {
+        val tabSession = synchronized(stateLock) { tabSessions[tabId] } ?: return emptyList()
+        if (!tabSession.isConnected) return emptyList()
+        tabSession.builtinSession?.let { session ->
+            return withContext(Dispatchers.Default) {
+                session.findReferences(Position(line, column))
+            }
+        }
+        return withLspTabSession(tabId) { currentTabSession, session ->
+            val requestTicket = createTabRequestTicket(tabId, currentTabSession.documentUri)
+            val result = navigationService.findReferences(
+                documentUri = currentTabSession.documentUri,
+                line = line,
+                column = column,
+                includeDeclaration = true,
+                referencesRequest = { params, timeoutSeconds ->
+                    awaitTrackedTabFuture(
+                        ticket = requestTicket,
+                        future = session.references(params),
+                        timeoutSeconds = timeoutSeconds,
+                        operation = "references(${fileNameForLog(currentTabSession.file)})"
+                    )
+                }
+            )
+            if (isTabRequestStillValid(requestTicket)) result else emptyList()
+        } ?: emptyList()
+    }
+
+    suspend fun gotoTypeDefinition(tabId: String, line: Int, column: Int): List<LocationItem> = withLspTabSession(tabId) { tabSession, session ->
+        val requestTicket = createTabRequestTicket(tabId, tabSession.documentUri)
+        val result = navigationService.gotoTypeDefinition(
+            documentUri = tabSession.documentUri,
+            line = line,
+            column = column,
+            typeDefinitionRequest = { params, timeoutSeconds ->
+                awaitTrackedTabFuture(
+                    ticket = requestTicket,
+                    future = session.typeDefinition(params),
+                    timeoutSeconds = timeoutSeconds,
+                    operation = "typeDefinition(${fileNameForLog(tabSession.file)})"
+                )
+            }
+        )
+        if (isTabRequestStillValid(requestTicket)) result else emptyList()
+    } ?: emptyList()
+
+    suspend fun gotoImplementation(tabId: String, line: Int, column: Int): List<LocationItem> = withLspTabSession(tabId) { tabSession, session ->
+        val requestTicket = createTabRequestTicket(tabId, tabSession.documentUri)
+        val result = navigationService.gotoImplementation(
+            documentUri = tabSession.documentUri,
+            line = line,
+            column = column,
+            implementationRequest = { params, timeoutSeconds ->
+                awaitTrackedTabFuture(
+                    ticket = requestTicket,
+                    future = session.implementation(params),
+                    timeoutSeconds = timeoutSeconds,
+                    operation = "implementation(${fileNameForLog(tabSession.file)})"
+                )
+            }
+        )
+        if (isTabRequestStillValid(requestTicket)) result else emptyList()
+    } ?: emptyList()
+
+    suspend fun callHierarchyIncomingCalls(tabId: String, line: Int, column: Int): List<LocationItem> = withLspTabSession(tabId) { tabSession, session ->
+        val requestTicket = createTabRequestTicket(tabId, tabSession.documentUri)
+        val result = navigationService.callHierarchyIncomingCalls(
+            documentUri = tabSession.documentUri,
+            line = line,
+            column = column,
+            prepareRequest = { params, timeoutSeconds ->
+                awaitTrackedTabFuture(
+                    ticket = requestTicket,
+                    future = session.prepareCallHierarchy(params),
+                    timeoutSeconds = timeoutSeconds,
+                    operation = "prepareCallHierarchy(${fileNameForLog(tabSession.file)})"
+                )
+            },
+            incomingCallsRequest = { params, timeoutSeconds ->
+                awaitTrackedTabFuture(
+                    ticket = requestTicket,
+                    future = session.callHierarchyIncomingCalls(params),
+                    timeoutSeconds = timeoutSeconds,
+                    operation = "callHierarchy/incomingCalls(${fileNameForLog(tabSession.file)})"
+                )
+            }
+        )
+        if (isTabRequestStillValid(requestTicket)) result else emptyList()
+    } ?: emptyList()
+    suspend fun switchSourceHeader(tabId: String): String? {
+        val resultUri = withLspTabSession(tabId) { tabSession, session ->
+            val requestTicket = createTabRequestTicket(tabId, tabSession.documentUri)
+            val result = navigationService.switchSourceHeader(
+                documentUri = tabSession.documentUri,
+                customRequest = { method, params, timeoutSeconds ->
+                    awaitTrackedTabFuture(
+                        ticket = requestTicket,
+                        future = session.customRequest(method, params),
+                        timeoutSeconds = timeoutSeconds,
+                        operation = "switchSourceHeader/request(${fileNameForLog(tabSession.file)})"
+                    )
+                },
+                executeCommandRequest = { params, timeoutSeconds ->
+                    awaitTrackedTabFuture(
+                        ticket = requestTicket,
+                        future = session.executeCommand(params),
+                        timeoutSeconds = timeoutSeconds,
+                        operation = "switchSourceHeader/execute(${fileNameForLog(tabSession.file)})"
+                    )
+                }
+            )
+            result.takeIf { isTabRequestStillValid(requestTicket) }
+        } ?: return null
+        return runCatching { File(URI(resultUri)).absolutePath }.getOrElse { resultUri.removePrefix("file://") }
+    }
+
+    suspend fun workspaceSymbol(tabId: String, query: String): List<WorkspaceSymbolItem> = withLspTabSession(tabId) { tabSession, session ->
+        val requestTicket = createTabRequestTicket(tabId, tabSession.documentUri)
+        val result = navigationService.workspaceSymbol(query) { params, timeoutSeconds ->
+            awaitTrackedTabFuture(
+                ticket = requestTicket,
+                future = session.symbol(params),
+                timeoutSeconds = timeoutSeconds,
+                operation = "workspaceSymbol(${fileNameForLog(tabSession.file)})"
+            )
+        }
+        if (isTabRequestStillValid(requestTicket)) result else emptyList()
+    } ?: emptyList()
+
+    suspend fun resolveWorkspaceSymbol(tabId: String, item: WorkspaceSymbolItem): WorkspaceSymbolItem? = withLspTabSession(tabId) { tabSession, session ->
+        val requestTicket = createTabRequestTicket(tabId, tabSession.documentUri)
+        val result = navigationService.resolveWorkspaceSymbol(item) { unresolved, timeoutSeconds ->
+            awaitTrackedTabFuture(
+                ticket = requestTicket,
+                future = session.resolveWorkspaceSymbol(unresolved),
+                timeoutSeconds = timeoutSeconds,
+                operation = "workspaceSymbol/resolve(${fileNameForLog(tabSession.file)})"
+            )
+        }
+        result.takeIf { isTabRequestStillValid(requestTicket) }
+    }
+
+    suspend fun documentSymbols(tabId: String): List<DocumentSymbolItem> {
+        val tabSession = synchronized(stateLock) { tabSessions[tabId] } ?: return emptyList()
+        if (!tabSession.isConnected) return emptyList()
+        tabSession.builtinSession?.let { session ->
+            return withContext(Dispatchers.Default) { session.documentSymbols() }
+        }
+        return withLspTabSession(tabId) { currentTabSession, session ->
+            val requestTicket = createTabRequestTicket(tabId, currentTabSession.documentUri)
+            val result = navigationService.documentSymbols(currentTabSession.documentUri) { params, timeoutSeconds ->
+                awaitTrackedTabFuture(
+                    ticket = requestTicket,
+                    future = session.documentSymbol(params),
+                    timeoutSeconds = timeoutSeconds,
+                    operation = "documentSymbols(${fileNameForLog(currentTabSession.file)})"
+                )
+            }
+            if (isTabRequestStillValid(requestTicket)) result else emptyList()
+        } ?: emptyList()
+    }
+
+    suspend fun requestHoverMarkdown(tabId: String, line: Int, column: Int): String? {
+        val tabSession = synchronized(stateLock) { tabSessions[tabId] } ?: return null
+        if (!tabSession.isConnected) return null
+        tabSession.builtinSession?.let { session ->
+            return withContext(Dispatchers.Default) {
+                session.hover(Position(line, column))
+            }
+        }
+        return withLspTabSession(tabId) { currentTabSession, session ->
+            val requestTicket = createTabRequestTicket(tabId, currentTabSession.documentUri)
+            val params = HoverParams().apply {
+                textDocument = TextDocumentIdentifier(currentTabSession.documentUri)
+                position = org.eclipse.lsp4j.Position(line, column)
+            }
+            val result = awaitTrackedTabFuture(
+                ticket = requestTicket,
+                future = session.hover(params),
+                timeoutSeconds = HOVER_TIMEOUT_SECONDS,
+                operation = "hover(${fileNameForLog(currentTabSession.file)})"
+            ) ?: return@withLspTabSession null
+            result.toMarkdown()
+        }
+    }
+
+    suspend fun requestSignatureHelp(tabId: String, line: Int, column: Int): SignatureHelpResult? {
+        if (!assistSettings.signatureHelpEnabled) return null
+        val tabSession = synchronized(stateLock) { tabSessions[tabId] } ?: return null
+        if (!tabSession.isConnected) return null
+        tabSession.builtinSession?.let { session ->
+            return withContext(Dispatchers.Default) {
+                session.requestSignatureHelp(Position(line, column))
+            }
+        }
+        return withLspTabSession(tabId) { currentTabSession, session ->
+            val requestTicket = createTabRequestTicket(tabId, currentTabSession.documentUri)
+            val params = SignatureHelpParams().apply {
+                textDocument = TextDocumentIdentifier(currentTabSession.documentUri)
+                position = org.eclipse.lsp4j.Position(line, column)
+            }
+            val result = awaitTrackedTabFuture(
+                ticket = requestTicket,
+                future = session.signatureHelp(params),
+                timeoutSeconds = SIGNATURE_HELP_TIMEOUT_SECONDS,
+                operation = "signatureHelp(${fileNameForLog(currentTabSession.file)})"
+            ) ?: return@withLspTabSession null
+            val signatures = result.signatures.orEmpty()
+                .mapNotNull { info -> info.label?.takeIf { it.isNotBlank() } }
+            if (signatures.isEmpty()) return@withLspTabSession null
+            SignatureHelpResult(
+                signatures = signatures,
+                activeSignature = (result.activeSignature?.toInt() ?: 0).coerceIn(0, signatures.lastIndex),
+                activeParameter = (result.activeParameter?.toInt() ?: 0).coerceAtLeast(0)
+            )
+        }
+    }
+
+    fun setAssistSettings(settings: LspAssistSettings) {
+        val previous = assistSettings
+        assistSettings = settings
+        if (previous.semanticTokensEnabled && !settings.semanticTokensEnabled) {
+            synchronized(stateLock) { semanticTokensCache.clear() }
+        }
+        if (previous.inlayHintsEnabled && !settings.inlayHintsEnabled) {
+            synchronized(stateLock) { inlayHintsCache.clear() }
+        }
+    }
+
+    fun onLspFoldingRangeEnabledChanged(enabled: Boolean) {
+        foldingRangeEnabled = enabled
+        if (!enabled) {
+            synchronized(stateLock) { foldingRangesCache.clear() }
+        }
+    }
+
+    suspend fun requestFoldingRanges(
+        tabId: String,
+        documentVersion: Long
+    ): List<FoldRegion>? = withContext(Dispatchers.IO) {
+        if (!foldingRangeEnabled) {
+            synchronized(stateLock) { foldingRangesCache.remove(tabId) }
+            return@withContext null
+        }
+
+        val cached = synchronized(stateLock) { foldingRangesCache[tabId] }
+        if (cached != null && cached.documentVersion == documentVersion) {
+            return@withContext cached.regions
+        }
+
+        val tabSession = synchronized(stateLock) { tabSessions[tabId] } ?: return@withContext null
+        if (!tabSession.isConnected) return@withContext null
+        if (tabSession.builtinSession != null) return@withContext null
+        val session = tabSession.lspSession ?: return@withContext null
+        val requestTicket = createTabRequestTicket(tabId, tabSession.documentUri)
+
+        val params = FoldingRangeRequestParams().apply {
+            textDocument = TextDocumentIdentifier(tabSession.documentUri)
+        }
+
+        val raw = awaitTrackedTabFuture(
+            ticket = requestTicket,
+            future = session.foldingRange(params),
+            timeoutSeconds = FOLDING_RANGE_TIMEOUT_SECONDS,
+            operation = "foldingRange(${fileNameForLog(tabSession.file)})"
+        ) ?: return@withContext null
+
+        val regions = raw.asSequence()
+            .mapNotNull { range ->
+                val startLine = range.startLine
+                val endLine = range.endLine
+                if (endLine <= startLine) null else FoldRegion(startLine = startLine, endLine = endLine)
+            }
+            .distinct()
+            .sortedWith(compareBy<FoldRegion> { it.startLine }.thenByDescending { it.endLine })
+            .toList()
+
+        synchronized(stateLock) {
+            foldingRangesCache[tabId] = FoldingRangesCache(
+                documentVersion = documentVersion,
+                regions = regions
+            )
+        }
+        return@withContext regions
+    }
+
+    /**
+     * 让内存中的 compile setup 缓存整体失效。
+     *
+     * 依赖包安装/卸载后调用：即使当前没有打开的 C/C++ 编辑器，也需要清除缓存，
+     * 确保下次 attach 时重新走 [CompileDatabaseProvider.prepare] 的包指纹校验，
+     * 避免复用过时的 compile_commands.json 导致头文件假错。
+     */
+    fun invalidateCompileSetupCache() {
+        compileSetupCache.clear()
+    }
+
+    fun refreshLspConnection(context: Context) {
+        val bindings = synchronized(stateLock) { tabBindings.toMap() }
+        if (bindings.isEmpty()) return
+        compileSetupCache.clear()
+        disposeProject()
+        bindings.values.forEach { binding ->
+            attachTinaLsp(
+                context = context,
+                file = binding.file,
+                tabId = binding.tabId,
+                projectRootPath = binding.projectRootPath,
+                textProvider = binding.textProvider
+            )
+        }
+    }
+
+    fun findCompileCommandsJson(): String? {
+        val dir = lspCompileCommandsDirOverride ?: return null
+        val file = File(dir, "compile_commands.json")
+        return file.absolutePath.takeIf { file.isFile }
+    }
+
+    fun release() {
+        disposeProject()
+        lspScope.cancel()
+    }
+
+    private fun attachCxxLsp(
+        context: Context,
+        file: File,
+        tabId: String,
+        projectRootPath: String?,
+        textProvider: () -> String,
+    ): Boolean {
+        registerBinding(TabBinding(tabId, SessionKind.CXX, file, projectRootPath, textProvider))
+        return if (RemoteLspConfigManager.config.isValid()) {
+            attachRemoteCxxLsp(file, tabId, projectRootPath, textProvider)
+        } else {
+            attachLocalCxxLsp(context, file, tabId, projectRootPath, textProvider)
+        }
+    }
+
+    private fun attachLocalCxxLsp(
+        context: Context,
+        file: File,
+        tabId: String,
+        projectRootPath: String?,
+        textProvider: () -> String,
+    ): Boolean {
+        val cppStandardOverride = resolveCppStandardOverride(file)
+        val compileAttachToken = Any()
+        synchronized(stateLock) {
+            attachTokenCache[tabId] = compileAttachToken
+        }
+        // resolveClangdRunMode() 已在 Linux 环境不可用时回退 NATIVE，与编译链路一致。
+        val runMode = resolveClangdRunMode()
+        Timber.tag(TAG).i("attachLocalCxxLsp: file=%s, runMode=%s, projectRoot=%s", file.name, runMode, projectRootPath)
+        if (runMode == LinuxRunModePolicy.RunMode.NATIVE) {
+            val toolchain = AndroidNativeToolchainManager(context)
+            val sysroot = AndroidSysrootManager(context)
+            if (!toolchain.isInstalled() || !sysroot.isInstalled()) {
+                Timber.tag(TAG).i("attachLocalCxxLsp: toolchain installed=%b, sysroot installed=%b — will auto-install", toolchain.isInstalled(), sysroot.isInstalled())
+                updateLspStatus(tabId, EditorStatus.Connecting)
+                lspScope.launch {
+                    val toolchainResult = withContext(Dispatchers.IO) {
+                        if (toolchain.isInstalled()) Result.success(Unit) else toolchain.install { }
+                    }
+                    val sysrootResult = withContext(Dispatchers.IO) {
+                        if (sysroot.isInstalled()) Result.success(Unit) else sysroot.install { }
+                    }
+                    if (!isCompileAttachCurrent(tabId, file, compileAttachToken)) {
+                        return@launch
+                    }
+                    if (toolchainResult.isSuccess && sysrootResult.isSuccess) {
+                        Timber.tag(TAG).i("attachLocalCxxLsp: auto-install success, retrying attach")
+                        attachLocalCxxLsp(context, file, tabId, projectRootPath, textProvider)
+                    } else {
+                        Timber.tag(TAG).w(
+                            "attachLocalCxxLsp: auto-install failed — toolchain=%s, sysroot=%s",
+                            toolchainResult.exceptionOrNull()?.message,
+                            sysrootResult.exceptionOrNull()?.message
+                        )
+                        updateLspStatus(tabId, EditorStatus.Error)
+                        updateCxxCompileContext(
+                            tabId,
+                            CxxCompileContextSnapshot.unavailable(
+                                file = file,
+                                workspaceRoot = resolveContextWorkspace(file, projectRootPath),
+                                issue = CxxCompileContextIssue.TOOLCHAIN_SETUP_FAILED,
+                            ),
+                        )
+                    }
+                }
+                return true
+            }
+        }
+
+        updateLspStatus(tabId, EditorStatus.Connecting)
+        lspScope.launch {
+            val compileSetup = resolveCompileSetup(
+                context = context,
+                file = file,
+                projectRootPath = projectRootPath,
+                cppStandardOverride = cppStandardOverride,
+            )
+            if (!isCompileAttachCurrent(tabId, file, compileAttachToken)) {
+                return@launch
+            }
+            if (compileSetup == null) {
+                Timber.tag(TAG).w("attachLocalCxxLsp: compile setup unavailable, setting NoLsp")
+                updateLspStatus(tabId, EditorStatus.NoLsp)
+                releaseSession(
+                    tabId = tabId,
+                    clearBinding = true,
+                    expectedAttachToken = compileAttachToken,
+                )
+                updateCxxCompileContext(
+                    tabId,
+                    CxxCompileContextSnapshot.unavailable(
+                        file = file,
+                        workspaceRoot = resolveContextWorkspace(file, projectRootPath),
+                        issue = CxxCompileContextIssue.COMPILE_SETUP_UNAVAILABLE,
+                    ),
+                )
+                return@launch
+            }
+
+            val compileContext = withContext(Dispatchers.IO) {
+                CxxCompileContextInspector.inspect(
+                    prepared = compileSetup.prepared,
+                    compileCommandsDir = compileSetup.compileCommandsDir,
+                )
+            }
+            if (!isCompileAttachCurrent(tabId, file, compileAttachToken)) {
+                return@launch
+            }
+            updateCxxCompileContext(tabId, compileContext)
+
+            val prepared = compileSetup.prepared
+            val workspaceRoot = prepared.workspaceRoot.absolutePath
+            val compileCommandsDir = compileSetup.compileCommandsDir.absolutePath
+            if (lspProjectRoot != workspaceRoot || isUsingRemoteLsp || lspCompileCommandsDirOverride != compileCommandsDir) {
+                disposeProject(clearBindings = false)
+                lspProjectRoot = workspaceRoot
+                lspCompileCommandsDirOverride = compileCommandsDir
+                isUsingRemoteLsp = false
+            }
+
+            startSharedCxxAttach(
+                tabId = tabId,
+                file = file,
+                workspaceRoot = workspaceRoot,
+                languageId = languageIdForFile(file),
+                textProvider = textProvider,
+                warmupCompletionOnReady = prepared.projectType != CompileDatabaseProvider.ProjectType.CMAKE_PROJECT
+            ) {
+                when (resolveClangdRunMode()) {
+                    LinuxRunModePolicy.RunMode.NATIVE ->
+                        NativeClangdConnectionProvider(
+                            context,
+                            workspaceRoot,
+                            compileSetup.compileCommandsDir.absolutePath
+                        )
+
+                    LinuxRunModePolicy.RunMode.PROOT ->
+                        PRootClangdConnectionProvider(
+                            context = context,
+                            workingDir = workspaceRoot,
+                            compileCommandsDir = compileSetup.compileCommandsDir.absolutePath,
+                            linuxEnvironment = linuxEnvironmentProvider.get(),
+                        )
+                }
+            }
+        }
+        return true
+    }
+
+    private fun attachRemoteCxxLsp(
+        file: File,
+        tabId: String,
+        projectRootPath: String?,
+        textProvider: () -> String,
+    ): Boolean {
+        val cfg = RemoteLspConfigManager.config
+        val projectRoot = projectRootPath ?: file.parentFile?.absolutePath ?: return false
+        if (lspProjectRoot != projectRoot || !isUsingRemoteLsp) {
+            disposeProject(clearBindings = false)
+            lspProjectRoot = projectRoot
+            lspCompileCommandsDirOverride = null
+            isUsingRemoteLsp = true
+        }
+
+        updateCxxCompileContext(
+            tabId,
+            CxxCompileContextSnapshot.remote(file, File(projectRoot)),
+        )
+
+        return startSharedCxxAttach(
+            tabId = tabId,
+            file = file,
+            workspaceRoot = projectRoot,
+            languageId = languageIdForFile(file),
+            textProvider = textProvider,
+            remote = true
+        ) {
+            val provider = RemoteLspAttachSupport.createProvider(
+                host = cfg.getNormalizedHostForConnection(),
+                port = cfg.port,
+                ext = file.extension.lowercase(),
+            )
+            provider.setClientWorkspaceRootUri(File(projectRoot).toURI().toString())
+            provider.setRemoteWorkspaceRootUri(cfg.remoteWorkspaceRootUri.takeIf { it.isNotBlank() })
+
+            val projectRootFile = File(projectRoot)
+            val effectiveMode = RemoteLspAttachSupport.resolveEffectiveSyncMode(cfg.syncMode, projectRootFile)
+            currentSyncMode = effectiveMode
+
+            val alreadySynced = synchronized(stateLock) { projectRoot in remoteSyncedProjects }
+            val synced = RemoteLspAttachSupport.syncProjectIfNeeded(
+                projectRoot = projectRootFile,
+                provider = provider,
+                syncMode = effectiveMode,
+                alreadySynced = alreadySynced,
+            )
+            if (synced && !alreadySynced) {
+                synchronized(stateLock) { remoteSyncedProjects.add(projectRoot) }
+            }
+            provider
+        }
+    }
+
+    private fun attachBuiltinCmakeLsp(
+        file: File,
+        tabId: String,
+        projectRootPath: String?,
+        textProvider: () -> String,
+    ): Boolean = attachBuiltinLanguageSession(
+        file = file,
+        tabId = tabId,
+        projectRootPath = projectRootPath,
+        textProvider = textProvider,
+        kind = SessionKind.CMAKE
+    ) { documentUri ->
+        CMakeLanguageServiceSession(
+            file = file,
+            documentUri = documentUri,
+            textProvider = textProvider
+        )
+    }
+
+    private fun attachBuiltinMakeLsp(
+        file: File,
+        tabId: String,
+        projectRootPath: String?,
+        textProvider: () -> String,
+    ): Boolean = attachBuiltinLanguageSession(
+        file = file,
+        tabId = tabId,
+        projectRootPath = projectRootPath,
+        textProvider = textProvider,
+        kind = SessionKind.MAKE
+    ) { documentUri ->
+        MakeLanguageServiceSession(
+            file = file,
+            documentUri = documentUri,
+            textProvider = textProvider,
+            caseSensitiveProvider = { Prefs.completionCaseSensitive }
+        )
+    }
+
+    private fun attachBuiltinLanguageSession(
+        file: File,
+        tabId: String,
+        projectRootPath: String?,
+        textProvider: () -> String,
+        kind: SessionKind,
+        sessionFactory: (documentUri: String) -> BuiltinLanguageServiceSession,
+    ): Boolean {
+        registerBinding(TabBinding(tabId, kind, file, projectRootPath, textProvider))
+        releaseSession(tabId, clearBinding = false)
+        updateLspStatus(tabId, EditorStatus.Connecting)
+        val documentUri = file.toURI().toString()
+        val session = sessionFactory(documentUri)
+        synchronized(stateLock) {
+            tabSessions[tabId] = TabSession(
+                tabId = tabId,
+                file = file,
+                kind = kind,
+                documentUri = documentUri,
+                builtinSession = session
+            )
+        }
+        updateLspStatus(tabId, EditorStatus.Ready)
+        scheduleBuiltinDiagnostics(
+            TabSession(
+                tabId = tabId,
+                file = file,
+                kind = kind,
+                documentUri = documentUri,
+                builtinSession = session
+            )
+        )
+        return true
+    }
+
+    private fun attachPluginLspInternal(
+        context: Context,
+        file: File,
+        tabId: String,
+        projectRootPath: String?,
+        textProvider: () -> String,
+    ): Boolean {
+        val pluginManager = lspPluginManager ?: return false
+        val ext = file.extension.lowercase()
+        val detectedLanguageId = languageIdForFile(file)
+        val (pluginInfo, serverConfig) = pluginManager.getServerConfigForFile(file, detectedLanguageId) ?: return false
+        val readiness = pluginManager.inspectPluginReadiness(pluginInfo.pluginId)
+        if (!readiness.ready) {
+            val message = readiness.toPluginReadinessMessage()
+            pluginManager.markServerStartupFailed(pluginInfo.pluginId, message)
+            onPluginLspDependencyNotReady?.invoke(
+                PluginLspDependencyNotReadyEvent(
+                    pluginId = pluginInfo.pluginId,
+                    pluginName = pluginInfo.pluginName,
+                    message = message,
+                )
+            )
+            logPluginLspEvent(
+                context = context,
+                pluginInfo = pluginInfo,
+                serverConfig = serverConfig,
+                file = file,
+                level = PluginLogLevel.WARN,
+                message = message,
+                eventCode = "lsp.toolchain.not_ready",
+            )
+            return false
+        }
+        val projectRoot = projectRootPath ?: file.parentFile?.absolutePath ?: return false
+        registerBinding(TabBinding(tabId, SessionKind.PLUGIN, file, projectRootPath, textProvider))
+
+        return startAttach(
+            tabId = tabId,
+            file = file,
+            kind = SessionKind.PLUGIN,
+            workspaceRoot = projectRoot,
+            languageId = serverConfig.resolveDocumentLanguageId(detectedLanguageId, ext),
+            textProvider = textProvider,
+            initializationOptions = serverConfig.initializationOptions,
+            onAttachSuccess = {
+                pluginManager.markServerStartupSucceeded(pluginInfo.pluginId)
+                logPluginLspEvent(
+                    context = context,
+                    pluginInfo = pluginInfo,
+                    serverConfig = serverConfig,
+                    file = file,
+                    level = PluginLogLevel.INFO,
+                    message = Strings.lsp_plugin_log_server_ready.str(serverConfig.name),
+                    eventCode = "lsp.server.ready",
+                )
+            },
+            onAttachFailure = { error ->
+                val message = Strings.lsp_plugin_log_server_failed.str(
+                    serverConfig.name,
+                    error.message ?: error.javaClass.simpleName,
+                )
+                pluginManager.markServerStartupFailed(pluginInfo.pluginId, message)
+                logPluginLspEvent(
+                    context = context,
+                    pluginInfo = pluginInfo,
+                    serverConfig = serverConfig,
+                    file = file,
+                    level = PluginLogLevel.ERROR,
+                    message = message,
+                    stackTrace = error.stackTraceToString(),
+                    eventCode = "lsp.server.start_failed",
+                )
+            }
+        ) { onOwnerStopped ->
+            PluginLspConnectionProvider(
+                config = serverConfig,
+                ownerPluginId = pluginInfo.pluginId,
+                workingDir = projectRoot,
+                projectRoot = projectRoot,
+                linuxEnvironmentProvider = linuxEnvironmentProvider,
+                onStderrLine = { line ->
+                    val message = if (line.contains("command not found", ignoreCase = true)) {
+                        Strings.lsp_plugin_error_server_command_not_found.str(
+                            serverConfig.server.command ?: serverConfig.id,
+                        )
+                    } else {
+                        Strings.lsp_plugin_log_server_stderr.str(line)
+                    }
+                    logPluginLspEvent(
+                        context = context,
+                        pluginInfo = pluginInfo,
+                        serverConfig = serverConfig,
+                        file = file,
+                        level = PluginLogLevel.WARN,
+                        message = message,
+                        eventCode = "lsp.server.stderr",
+                    )
+                },
+                onUnexpectedExit = { message ->
+                    pluginManager.reportUnexpectedServerExit(pluginInfo.pluginId, message)
+                },
+                onOwnerStopped = onOwnerStopped,
+            )
+        }
+    }
+
+    private fun LspPluginReadinessDiagnostic.toPluginReadinessMessage(): String = when {
+        failedRequiredToolchains.isNotEmpty() -> Strings.lsp_plugin_error_required_toolchains_failed.str(
+            failedRequiredToolchains.joinToString()
+        )
+        missingRequiredToolchains.isNotEmpty() -> Strings.lsp_plugin_error_required_toolchains_missing.str(
+            missingRequiredToolchains.joinToString()
+        )
+        !lastError.isNullOrBlank() -> lastError.orEmpty()
+        else -> Strings.lsp_plugin_error_required_toolchains_missing.str(Strings.error_unknown.str())
+    }
+
+    private fun logPluginLspEvent(
+        context: Context,
+        pluginInfo: LspPluginInfo,
+        serverConfig: LspServerConfig,
+        file: File,
+        level: PluginLogLevel,
+        message: String,
+        eventCode: String,
+        stackTrace: String? = null,
+    ) {
+        PluginLogManager.getInstance(context.applicationContext).log(
+            pluginId = pluginInfo.pluginId,
+            pluginName = pluginInfo.pluginName,
+            level = level,
+            message = message,
+            stackTrace = stackTrace,
+            eventCode = eventCode,
+            attributes = mapOf(
+                "serverId" to serverConfig.id,
+                "serverName" to serverConfig.name,
+                "file" to file.name,
+                "path" to file.absolutePath,
+            ),
+        )
+    }
+
+    private fun createLspClientSession(
+        provider: LspConnectionProvider,
+        workspaceRoot: String,
+        file: File,
+    ): LspClientSession {
+        val diagnosticsBridge = LspDiagnosticsBridge { uri, diagnostics ->
+            onDiagnosticsChanged?.invoke(uri, diagnostics)
+        }
+        lateinit var session: LspClientSession
+        session = LspClientSession(
+            connectionProvider = provider,
+            documentUri = file.toURI().toString(),
+            workspaceRootUri = File(workspaceRoot).toURI().toString(),
+            diagnosticsConsumer = { uri, _, currentDocumentUri, documentVersion, documentGeneration, diagnostics, sessionCommitIfCurrent ->
+                val canonicalUri = canonicalizeLspDocumentUri(uri)
+                val currentDocumentUriKey = canonicalizeLspDocumentUri(currentDocumentUri)
+                val fileName = runCatching { File(URI(canonicalUri)).name }.getOrElse { file.name }
+                diagnosticsBridge.publish(
+                    fileUri = canonicalUri,
+                    fileName = fileName,
+                    data = diagnostics,
+                    commitIfCurrent = { commit ->
+                        var committed = false
+                        val sessionIsCurrent = sessionCommitIfCurrent {
+                            synchronized(stateLock) {
+                                val isAttached = tabSessions.values.any { tabSession ->
+                                    tabSession.lspSession === session &&
+                                        canonicalizeLspDocumentUri(tabSession.documentUri) ==
+                                        currentDocumentUriKey
+                                }
+                                if (isAttached) {
+                                    commit()
+                                    committed = true
+                                }
+                            }
+                        }
+                        sessionIsCurrent && committed
+                    },
+                    onAccepted = {
+                        synchronized(stateLock) {
+                            lspKnownUris.add(canonicalUri)
+                            lspDiagnosticsByUri[canonicalUri] = LspDiagnosticsCache(
+                                documentVersion = documentVersion,
+                                documentGeneration = documentGeneration,
+                                diagnostics = diagnostics.toList(),
+                            )
+                        }
+                    },
+                )
+            },
+            registrationConsumer = { registrations -> onCapabilityRegistered(registrations) },
+            unregistrationConsumer = { unregistrations -> onCapabilityUnregistered(unregistrations) },
+            protocolFailureConsumer = { error ->
+                (provider as? PluginLspConnectionProvider)?.reportProtocolFailure(error)
+            },
+        )
+        return session
+    }
+
+    private fun cancelPendingSharedCxxShutdown() {
+        sharedCxxSessions.cancelPendingShutdown()
+    }
+
+    private fun scheduleSharedCxxShutdownIfIdle() {
+        sharedCxxSessions.scheduleIdleShutdownIfNeeded()
+    }
+
+    private fun nextRequestGeneration(tabId: String): List<CompletableFuture<*>> =
+        tabRequestTracker.invalidateTab(tabId)
+
+    private fun createTabRequestTicket(tabId: String, documentUri: String): LspTabRequestTicket =
+        tabRequestTracker.createTicket(tabId, documentUri)
+
+    private fun isTabRequestStillValid(ticket: LspTabRequestTicket): Boolean =
+        tabRequestTracker.isStillValid(ticket) { tabId ->
+            val tabSession = synchronized(stateLock) { tabSessions[tabId] }
+            tabSession?.let {
+                LspTrackedTabRequestState(
+                    documentUri = it.documentUri,
+                    isConnected = it.isConnected
+                )
+            }
+        }
+
+    private fun trackTabFuture(tabId: String, future: CompletableFuture<*>) {
+        tabRequestTracker.trackFuture(tabId, future)
+    }
+
+    private fun untrackTabFuture(tabId: String, future: CompletableFuture<*>) {
+        tabRequestTracker.untrackFuture(tabId, future)
+    }
+
+    private suspend fun resolveCompileSetup(
+        context: Context,
+        file: File,
+        projectRootPath: String?,
+        cppStandardOverride: String?,
+    ): LspCompileSetupCache.Setup? = compileSetupCache.resolve(
+        context = context,
+        file = file,
+        projectRootPath = projectRootPath,
+        cppStandardOverride = cppStandardOverride,
+    )
+
+    private fun resolveCppStandardOverride(file: File): String? = runCatching {
+        cppStandardOverrideProvider(file)
+    }.onFailure { error ->
+        Timber.tag(TAG).w(error, "Failed to resolve C++ standard override for %s", file.absolutePath)
+    }.getOrNull()
+
+    private fun isCompileAttachCurrent(tabId: String, file: File, token: Any): Boolean =
+        synchronized(stateLock) {
+            attachTokenCache[tabId] === token && tabBindings[tabId]?.file?.absolutePath == file.absolutePath
+        }
+
+    private fun startSharedCxxAttach(
+        tabId: String,
+        file: File,
+        workspaceRoot: String,
+        languageId: String,
+        textProvider: () -> String,
+        remote: Boolean = false,
+        initializationOptions: Any? = null,
+        warmupCompletionOnReady: Boolean = false,
+        providerFactory: suspend () -> LspConnectionProvider,
+    ): Boolean {
+        Timber.tag(TAG).i(
+            "startSharedCxxAttach: file=%s, languageId=%s, remote=%b",
+            file.name,
+            languageId,
+            remote
+        )
+        cancelPendingSharedCxxShutdown()
+        releaseSession(tabId, clearBinding = false)
+        cancelPendingSharedCxxShutdown()
+        val token = Any()
+        synchronized(stateLock) { attachTokenCache[tabId] = token }
+        updateLspStatus(tabId, EditorStatus.Connecting)
+        if (remote) RemoteLspConfigManager.updateConnectionState(RemoteLspConnectionState.CONNECTING)
+
+        lspScope.launch {
+            val attachStartedAt = System.nanoTime()
+            runCatchingPreservingCancellation {
+                val snapshot = runCatching { textProvider() }.getOrDefault("")
+                val documentUri = file.toURI().toString()
+                sharedCxxSessions.obtainOrCreate(
+                    file = file,
+                    workspaceRoot = workspaceRoot,
+                    documentUri = documentUri,
+                    languageId = languageId,
+                    initialText = snapshot,
+                    initializationOptions = initializationOptions,
+                    providerFactory = providerFactory,
+                    commitSessionIfCurrent = { session, commit ->
+                        registerPendingLspSession(
+                            tabId = tabId,
+                            token = token,
+                            file = file,
+                            kind = SessionKind.CXX,
+                            session = session,
+                            commit = commit,
+                        )
+                    },
+                )
+            }.onSuccess { session ->
+                val committed = synchronized(stateLock) {
+                    if (attachTokenCache[tabId] !== token) {
+                        false
+                    } else {
+                        tabSessions[tabId] = TabSession(
+                            tabId = tabId,
+                            file = file,
+                            kind = SessionKind.CXX,
+                            documentUri = file.toURI().toString(),
+                            lspSession = session,
+                        )
+                        updateLspStatus(tabId, EditorStatus.Ready)
+                        if (remote) {
+                            RemoteLspConfigManager.updateConnectionState(RemoteLspConnectionState.CONNECTED)
+                        }
+                        true
+                    }
+                }
+                if (!committed) {
+                    Timber.tag(TAG).w(
+                        "startSharedCxxAttach: token stale after activation, discarding result for %s",
+                        file.name
+                    )
+                    scheduleSharedCxxShutdownIfIdle()
+                    return@onSuccess
+                }
+                if (!hasWorkspaceFileWatcher()) {
+                    startFileWatcher(workspaceRoot)
+                }
+                Timber.tag(TAG).i(
+                    "startSharedCxxAttach: shared clangd ready for %s in %dms",
+                    file.name,
+                    elapsedMillis(attachStartedAt)
+                )
+                if (warmupCompletionOnReady) {
+                    scheduleCompletionWarmup(tabId, file)
+                }
+            }.onFailure { e ->
+                Timber.tag(
+                    TAG
+                ).w(e, "startSharedCxxAttach: activation failed for %s — %s: %s", file.name, e.javaClass.simpleName, e.message)
+                releaseSession(
+                    tabId = tabId,
+                    clearBinding = false,
+                    expectedAttachToken = token,
+                    onCurrentAttachment = {
+                        updateLspStatus(tabId, EditorStatus.Error)
+                        val failedContext = cxxCompileContexts[tabId]
+                            ?.copy(issue = CxxCompileContextIssue.CLANGD_START_FAILED)
+                            ?: CxxCompileContextSnapshot.unavailable(
+                                file = file,
+                                workspaceRoot = File(workspaceRoot),
+                                issue = CxxCompileContextIssue.CLANGD_START_FAILED,
+                            )
+                        updateCxxCompileContext(tabId, failedContext)
+                        if (remote) {
+                            RemoteLspConfigManager.updateConnectionState(
+                                RemoteLspConnectionState.ERROR,
+                                e.message ?: Strings.lsp_error_connection_failed.str(),
+                            )
+                        }
+                    },
+                )
+            }
+        }
+        return true
+    }
+
+    private fun startAttach(
+        tabId: String,
+        file: File,
+        kind: SessionKind,
+        workspaceRoot: String,
+        languageId: String,
+        textProvider: () -> String,
+        remote: Boolean = false,
+        initializationOptions: Any? = null,
+        warmupCompletionOnReady: Boolean = false,
+        onAttachSuccess: (() -> Unit)? = null,
+        onAttachFailure: ((Throwable) -> Unit)? = null,
+        providerFactory: suspend (onOwnerStopped: () -> Unit) -> LspConnectionProvider,
+    ): Boolean {
+        Timber.tag(TAG).i("startAttach: file=%s, kind=%s, languageId=%s, remote=%b", file.name, kind, languageId, remote)
+        releaseSession(tabId, clearBinding = false)
+        val token = Any()
+        synchronized(stateLock) { attachTokenCache[tabId] = token }
+        updateLspStatus(tabId, EditorStatus.Connecting)
+        if (remote) RemoteLspConfigManager.updateConnectionState(RemoteLspConnectionState.CONNECTING)
+        val ownerStopHandler = PluginLspOwnerStopHandler(
+            transitionIfCurrent = {
+                releaseSession(
+                    tabId = tabId,
+                    clearBinding = false,
+                    expectedAttachToken = token,
+                    onCurrentAttachment = {
+                        updateLspStatus(tabId, EditorStatus.NoLsp)
+                    },
+                )
+            },
+        )
+
+        val onOwnerStopped: () -> Unit = {
+            lspScope.launch {
+                if (ownerStopHandler.handle()) {
+                    Timber.tag(TAG).i("Plugin LSP owner stopped; releasing session for %s", file.name)
+                }
+            }
+            Unit
+        }
+
+        lspScope.launch {
+            runCatchingPreservingCancellation {
+                Timber.tag(TAG).d("startAttach: creating connection provider...")
+                val provider = providerFactory(onOwnerStopped)
+                Timber.tag(TAG).d("startAttach: provider created: %s", provider.javaClass.simpleName)
+                val session = createLspClientSession(provider, workspaceRoot, file)
+                try {
+                    val registered = registerPendingLspSession(
+                        tabId = tabId,
+                        token = token,
+                        file = file,
+                        kind = kind,
+                        session = session,
+                    )
+                    if (!registered) {
+                        throw CancellationException("LSP attachment is no longer current")
+                    }
+                    val snapshot = runCatching { textProvider() }.getOrDefault("")
+                    Timber.tag(TAG).d("startAttach: calling session.connect(languageId=%s, textLen=%d)...", languageId, snapshot.length)
+                    withContext(Dispatchers.IO) {
+                        session.connect(languageId, snapshot, initializationOptions).getOrThrow()
+                    }
+                } catch (error: Throwable) {
+                    withContext(NonCancellable + Dispatchers.IO) {
+                        runCatching { session.close() }
+                    }
+                    throw error
+                }
+                Timber.tag(TAG).i("startAttach: session.connect() succeeded for %s", file.name)
+                session
+            }.onSuccess { session ->
+                val committed = synchronized(stateLock) {
+                    if (attachTokenCache[tabId] !== token) {
+                        false
+                    } else {
+                        tabSessions[tabId] = TabSession(
+                            tabId = tabId,
+                            file = file,
+                            kind = kind,
+                            documentUri = file.toURI().toString(),
+                            lspSession = session,
+                        )
+                        updateLspStatus(tabId, EditorStatus.Ready)
+                        if (remote) {
+                            RemoteLspConfigManager.updateConnectionState(RemoteLspConnectionState.CONNECTED)
+                        }
+                        onAttachSuccess?.invoke()
+                        true
+                    }
+                }
+                if (!committed) {
+                    Timber.tag(TAG).w("startAttach: token stale after connect, discarding session for %s", file.name)
+                    runCatching { session.close() }
+                    return@onSuccess
+                }
+                // CXX session 建立后启动文件监听（只需一个 watcher 覆盖整个 workspace）
+                if (kind == SessionKind.CXX && !hasWorkspaceFileWatcher()) {
+                    startFileWatcher(workspaceRoot)
+                }
+                Timber.tag(TAG).i("startAttach: LSP ready for %s", file.name)
+                if (warmupCompletionOnReady) {
+                    scheduleCompletionWarmup(tabId, file)
+                }
+            }.onFailure { e ->
+                Timber.tag(TAG).w(e, "startAttach: LSP attach failed for %s — %s: %s", file.name, e.javaClass.simpleName, e.message)
+                releaseSession(
+                    tabId = tabId,
+                    clearBinding = false,
+                    expectedAttachToken = token,
+                    onCurrentAttachment = {
+                        onAttachFailure?.invoke(e)
+                        updateLspStatus(tabId, EditorStatus.Error)
+                        if (remote) {
+                            RemoteLspConfigManager.updateConnectionState(
+                                RemoteLspConnectionState.ERROR,
+                                e.message ?: Strings.lsp_error_connection_failed.str(),
+                            )
+                        }
+                    },
+                )
+            }
+        }
+        return true
+    }
+
+    private inline fun <T> runCatchingPreservingCancellation(block: () -> T): Result<T> = try {
+        Result.success(block())
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (error: Throwable) {
+        Result.failure(error)
+    }
+
+    private fun resolveClangdRunMode(): LinuxRunModePolicy.RunMode = LinuxRunModePolicy.resolve(Prefs.clangdRunMode, linuxEnvironmentProvider.get().isAvailable())
+
+    private fun releaseSession(
+        tabId: String,
+        clearBinding: Boolean,
+        expectedAttachToken: Any? = null,
+        onCurrentAttachment: (() -> Unit)? = null,
+    ): Boolean {
+        var clearedCxxCompileContext = false
+        val (releaseState, cancelledRequests) = synchronized(stateLock) {
+            if (expectedAttachToken != null && attachTokenCache[tabId] !== expectedAttachToken) {
+                return false
+            }
+            onCurrentAttachment?.invoke()
+            val requests = nextRequestGeneration(tabId)
+            attachTokenCache.remove(tabId)
+            semanticTokensCache.remove(tabId)
+            inlayHintsCache.remove(tabId)
+            documentVersions.remove(tabId)
+            completionWarmupTabIds.remove(tabId)
+            if (clearBinding) {
+                tabBindings.remove(tabId)
+                clearedCxxCompileContext = cxxCompileContexts.remove(tabId) != null
+            }
+            val removed = tabSessions.remove(tabId)
+            removed?.let { tabSession ->
+                val diagnosticUris = setOf(
+                    tabSession.documentUri,
+                    canonicalizeLspDocumentUri(tabSession.documentUri),
+                )
+                diagnosticUris.forEach { uri ->
+                    lspKnownUris.remove(uri)
+                    lspDiagnosticsByUri.remove(uri)
+                    onDiagnosticsChanged?.invoke(uri, emptyList())
+                }
+            }
+            Triple(
+                sharedCxxSessions.currentSession(),
+                builtinDiagnosticsJobs.remove(tabId).also {
+                    builtinDiagnosticsRequestTokens.remove(tabId)
+                },
+                removed,
+            ) to requests
+        }
+        if (clearedCxxCompileContext) {
+            onCxxCompileContextChanged?.invoke(tabId, null)
+        }
+        val (sharedSession, diagnosticsJob, removed) = releaseState
+        cancelledRequests.forEach { future -> future.cancel(true) }
+        diagnosticsJob?.cancel()
+        removed?.let { tabSession ->
+            tabSession.builtinSession?.close()
+            tabSession.lspSession?.let { session ->
+                if (tabSession.kind == SessionKind.CXX && session === sharedSession) {
+                    lspScope.launch(Dispatchers.IO) {
+                        runCatching { session.closeDocument(tabSession.documentUri) }
+                    }
+                } else {
+                    lspScope.launch(Dispatchers.IO) { runCatching { session.close() } }
+                }
+            }
+        }
+        scheduleSharedCxxShutdownIfIdle()
+        return true
+    }
+
+    private fun registerBinding(binding: TabBinding) {
+        synchronized(stateLock) { tabBindings[binding.tabId] = binding }
+    }
+
+    private fun updateCxxCompileContext(tabId: String, context: CxxCompileContextSnapshot) {
+        synchronized(stateLock) { cxxCompileContexts[tabId] = context }
+        onCxxCompileContextChanged?.invoke(tabId, context)
+    }
+
+    private fun resolveContextWorkspace(file: File, projectRootPath: String?): File =
+        projectRootPath
+            ?.takeIf(String::isNotBlank)
+            ?.let(::File)
+            ?: file.parentFile
+            ?: file
+
+    private fun registerPendingLspSession(
+        tabId: String,
+        token: Any,
+        file: File,
+        kind: SessionKind,
+        session: LspClientSession,
+        commit: () -> Unit = {},
+    ): Boolean = synchronized(stateLock) {
+        if (attachTokenCache[tabId] !== token) {
+            false
+        } else {
+            tabSessions[tabId] = TabSession(
+                tabId = tabId,
+                file = file,
+                kind = kind,
+                documentUri = file.toURI().toString(),
+                lspSession = session,
+            )
+            commit()
+            true
+        }
+    }
+
+    private fun disposeProject(clearBindings: Boolean = true) {
+        cancelPendingSharedCxxShutdown()
+        clearDiagnosticsInUi()
+        val diagnosticsJobs = synchronized(stateLock) {
+            builtinDiagnosticsRequestTokens.clear()
+            builtinDiagnosticsJobs.values.toList().also { builtinDiagnosticsJobs.clear() }
+        }
+        diagnosticsJobs.forEach { job -> job.cancel() }
+        val sharedSession = sharedCxxSessions.takeForDispose()
+        val clearedCxxCompileContextTabIds = mutableListOf<String>()
+        val (sessions, inflightRequests) = synchronized(stateLock) {
+            attachTokenCache.clear()
+            semanticTokensCache.clear()
+            inlayHintsCache.clear()
+            documentVersions.clear()
+            completionWarmupTabIds.clear()
+            val inflight = tabRequestTracker.drainAll()
+            if (clearBindings) {
+                tabBindings.clear()
+                clearedCxxCompileContextTabIds += cxxCompileContexts.keys
+                cxxCompileContexts.clear()
+            }
+            val all = tabSessions.values.toList()
+            tabSessions.clear()
+            lspDiagnosticsByUri.clear()
+            all to inflight
+        }
+        clearedCxxCompileContextTabIds.forEach { tabId ->
+            onCxxCompileContextChanged?.invoke(tabId, null)
+        }
+        inflightRequests.forEach { future -> future.cancel(true) }
+        val uniqueLspSessions = buildSet {
+            sessions.mapNotNullTo(this) { it.lspSession }
+            sharedSession?.let { add(it) }
+        }
+        sessions.forEach { tabSession ->
+            tabSession.builtinSession?.close()
+        }
+        uniqueLspSessions.forEach { session -> runCatching { session.close() } }
+        stopFileWatcher()
+        lspProjectRoot = null
+        lspCompileCommandsDirOverride = null
+        currentSyncMode = null
+        remoteSyncedProjects.clear()
+        if (isUsingRemoteLsp) {
+            RemoteLspConfigManager.updateConnectionState(RemoteLspConnectionState.DISCONNECTED)
+            ProjectSyncManager.reset()
+        }
+        isUsingRemoteLsp = false
+    }
+
+    private fun clearDiagnosticsInUi() {
+        val callback = onDiagnosticsChanged ?: return
+        val uris = synchronized(stateLock) { lspKnownUris.toList() }
+        uris.forEach { callback(it, emptyList()) }
+        synchronized(stateLock) { lspKnownUris.clear() }
+    }
+
+    private fun updateLspStatus(tabId: String, status: EditorStatus) {
+        onLspStatusChanged?.invoke(tabId, status)
+    }
+
+    private fun scheduleBuiltinDiagnostics(tabSession: TabSession) {
+        val builtinSession = tabSession.builtinSession ?: return
+        val requestToken = Any()
+        val previousJob = synchronized(stateLock) {
+            builtinDiagnosticsRequestTokens[tabSession.tabId] = requestToken
+            builtinDiagnosticsJobs.remove(tabSession.tabId)
+        }
+        previousJob?.cancel()
+
+        val job = lspScope.launch(Dispatchers.Default) {
+            val diagnostics = runCatchingPreservingCancellation { builtinSession.currentDiagnostics() }
+                .getOrElse { error ->
+                    Timber.tag(TAG).w(error, "builtin diagnostics failed for %s", tabSession.file.name)
+                    emptyList()
+                }
+            val stillActive = synchronized(stateLock) {
+                val current = tabSessions[tabSession.tabId]
+                if (current?.builtinSession === builtinSession &&
+                    builtinDiagnosticsRequestTokens[tabSession.tabId] === requestToken
+                ) {
+                    lspKnownUris.add(tabSession.documentUri)
+                    true
+                } else {
+                    false
+                }
+            }
+            if (stillActive) {
+                onDiagnosticsChanged?.invoke(tabSession.documentUri, diagnostics)
+            }
+        }
+        synchronized(stateLock) {
+            if (builtinDiagnosticsRequestTokens[tabSession.tabId] === requestToken) {
+                builtinDiagnosticsJobs[tabSession.tabId] = job
+            } else {
+                job.cancel()
+            }
+        }
+        job.invokeOnCompletion {
+            synchronized(stateLock) {
+                if (builtinDiagnosticsJobs[tabSession.tabId] === job) {
+                    builtinDiagnosticsJobs.remove(tabSession.tabId)
+                }
+            }
+        }
+    }
+
+    private fun scheduleCompletionWarmup(tabId: String, file: File) {
+        val scheduled = synchronized(stateLock) {
+            tabSessions.containsKey(tabId) && completionWarmupTabIds.add(tabId)
+        }
+        if (!scheduled) return
+
+        lspScope.launch(Dispatchers.IO) {
+            try {
+                when (val result = requestCompletion(tabId, Position(0, 0), triggerChar = null)) {
+                    is CompletionFetchResult.Success -> {
+                        Timber.tag(TAG).d(
+                            "completion warmup finished for %s, candidates=%d",
+                            file.name,
+                            result.items.size
+                        )
+                    }
+
+                    is CompletionFetchResult.TransientFailure -> {
+                        Timber.tag(TAG).d(
+                            "completion warmup skipped for %s: %s",
+                            file.name,
+                            result.reason ?: "unknown"
+                        )
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (t: Throwable) {
+                Timber.tag(TAG).d(t, "completion warmup failed for %s", file.name)
+            } finally {
+                synchronized(stateLock) { completionWarmupTabIds.remove(tabId) }
+            }
+        }
+    }
+
+    private fun buildCompletionParams(
+        documentUri: String,
+        position: Position,
+        triggerChar: Char?
+    ): CompletionParams = CompletionParams().apply {
+        textDocument = TextDocumentIdentifier(documentUri)
+        this.position = org.eclipse.lsp4j.Position(position.line, position.column)
+        context = CompletionContext().apply {
+            if (triggerChar == null) {
+                triggerKind = CompletionTriggerKind.Invoked
+            } else {
+                triggerKind = CompletionTriggerKind.TriggerCharacter
+                triggerCharacter = triggerChar.toString()
+            }
+        }
+    }
+
+    private suspend fun <T> awaitTrackedTabFuture(
+        ticket: LspTabRequestTicket,
+        future: CompletableFuture<T>?,
+        timeoutSeconds: Long,
+        operation: String,
+        propagateFailure: Boolean = false,
+    ): T? {
+        if (future == null) {
+            if (propagateFailure) error("$operation is unavailable")
+            return null
+        }
+        if (!isTabRequestStillValid(ticket)) {
+            future.cancel(true)
+            if (propagateFailure) throw CancellationException("$operation was invalidated")
+            return null
+        }
+
+        val startedAt = System.nanoTime()
+        trackTabFuture(ticket.tabId, future)
+        return try {
+            val result = awaitLspFuture(future, timeoutSeconds, operation, propagateFailure)
+            if (!isTabRequestStillValid(ticket)) {
+                future.cancel(true)
+                Timber.tag(TAG).d("%s discarded after tab switch", operation)
+                if (propagateFailure) throw CancellationException("$operation was invalidated")
+                null
+            } else {
+                Timber.tag(TAG).d("%s finished in %dms", operation, elapsedMillis(startedAt))
+                result
+            }
+        } finally {
+            untrackTabFuture(ticket.tabId, future)
+        }
+    }
+
+    private suspend fun <T> awaitLspFuture(
+        future: CompletableFuture<T>?,
+        timeoutSeconds: Long,
+        operation: String,
+        propagateFailure: Boolean = false,
+    ): T? {
+        if (future == null) {
+            if (propagateFailure) error("$operation is unavailable")
+            return null
+        }
+        return try {
+            withTimeout(timeoutSeconds * 1000L) {
+                future.awaitCancellable()
+            }
+        } catch (timeout: TimeoutCancellationException) {
+            future.cancel(true)
+            Timber.tag(TAG).w("%s timed out after %ds", operation, timeoutSeconds)
+            if (propagateFailure) throw IllegalStateException("$operation timed out", timeout)
+            null
+        } catch (cancelled: CancellationException) {
+            future.cancel(true)
+            throw cancelled
+        } catch (t: Throwable) {
+            future.cancel(true)
+            Timber.tag(TAG).w(t, "%s failed", operation)
+            if (propagateFailure) throw t
+            null
+        }
+    }
+
+    private suspend fun <T> CompletableFuture<T>.awaitCancellable(): T = suspendCancellableCoroutine { continuation ->
+        whenComplete { value, error ->
+            if (!continuation.isActive) return@whenComplete
+            if (error == null) {
+                continuation.resume(value)
+            } else {
+                continuation.resumeWithException(error)
+            }
+        }
+        continuation.invokeOnCancellation { cancel(true) }
+    }
+
+
+    private fun startFileWatcher(workspaceRoot: String) {
+        workspaceFileWatcher.start(workspaceRoot)
+    }
+
+    private fun hasWorkspaceFileWatcher(): Boolean = workspaceFileWatcher.isActive()
+
+    private fun stopFileWatcher() {
+        workspaceFileWatcher.stop()
+    }
+
+    private fun stopFileWatcherIfCxxIdle(): Boolean = workspaceFileWatcher.stopIfCxxIdle()
+
+    private fun onCapabilityRegistered(registrations: List<Registration>) {
+        workspaceFileWatcher.onCapabilityRegistered(registrations)
+    }
+
+    private fun onCapabilityUnregistered(unregistrations: List<Unregistration>) {
+        workspaceFileWatcher.onCapabilityUnregistered(unregistrations)
+    }
+
+
+    private suspend fun <T> withLspTabSession(
+        tabId: String,
+        block: suspend (TabSession, LspClientSession) -> T
+    ): T? {
+        val tabSession = synchronized(stateLock) { tabSessions[tabId] } ?: return null
+        val session = tabSession.lspSession ?: return null
+        if (!tabSession.isConnected) return null
+        return block(tabSession, session)
+    }
+
+}

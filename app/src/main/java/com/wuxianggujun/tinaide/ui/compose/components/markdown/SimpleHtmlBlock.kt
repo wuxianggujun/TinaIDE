@@ -25,6 +25,8 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import com.wuxianggujun.tinaide.core.i18n.Strings
+import com.wuxianggujun.tinaide.core.i18n.str
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 import org.jsoup.nodes.Node
@@ -157,9 +159,10 @@ private fun RenderHtmlElement(
         "img" -> {
             val src = element.attr("src")
             val alt = element.attr("alt")
-            if (src.isNotBlank()) {
+            val safeImageUrl = MarkdownUrlPolicy.safeImageUrlOrNull(src)
+            if (safeImageUrl != null) {
                 AsyncImage(
-                    model = src,
+                    model = safeImageUrl,
                     contentDescription = alt.ifBlank { null },
                     contentScale = ContentScale.FillWidth,
                     modifier = Modifier
@@ -183,7 +186,9 @@ private fun RenderHtmlElement(
         }
 
         "details" -> {
-            val summary = element.selectFirst("summary")?.text() ?: "Details"
+            val summary = element.selectFirst("summary")?.text()
+                ?.takeIf(String::isNotBlank)
+                ?: Strings.markdown_html_details.str()
             Text(
                 text = buildAnnotatedString {
                     withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) {
@@ -204,9 +209,10 @@ private fun RenderHtmlElement(
         "progress" -> {
             val value = element.attr("value").toFloatOrNull()
             val max = element.attr("max").toFloatOrNull() ?: 100f
-            if (value != null) {
+            if (value != null && value.isFinite() && max.isFinite() && max > 0f) {
+                val percentage = (value / max * 100f).coerceIn(0f, 100f).toInt()
                 Text(
-                    text = "[Progress: ${(value / max * 100).toInt()}%]",
+                    text = Strings.markdown_html_progress.str(percentage),
                     modifier = Modifier.padding(vertical = 2.dp),
                 )
             }
@@ -282,8 +288,9 @@ private fun AnnotatedString.Builder.appendHtmlElement(
         }
         "a" -> {
             val href = element.attr("href")
-            if (href.isNotBlank()) {
-                withLink(LinkAnnotation.Url(href)) {
+            val safeUrl = MarkdownUrlPolicy.safeLinkUrlOrNull(href)
+            if (safeUrl != null) {
+                withLink(LinkAnnotation.Url(safeUrl)) {
                     withStyle(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline)) {
                         element.childNodes().forEach { appendHtmlNode(it, linkColor, codeBackground) }
                     }

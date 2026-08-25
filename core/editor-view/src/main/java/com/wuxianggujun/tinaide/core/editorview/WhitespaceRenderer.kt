@@ -32,7 +32,6 @@ internal class WhitespaceRenderer {
         if (textBuffer.lineCount <= 0) return
 
         val color = state.colorScheme.whitespace
-        val tabSize = state.config.tabSize
         val textVersion = frameContext.textVersion
         val lineHeightPx = state.lineHeightPx
         val visibleRange = state.visibleDocumentLines
@@ -52,13 +51,12 @@ internal class WhitespaceRenderer {
             if (markers.isEmpty()) continue
 
             val prefixLayout = lineLayoutCache.getPrefixLayout(
+                state = state,
                 line = docLine,
                 lineText = lineText,
                 textVersion = textVersion,
                 paint = textPaint,
-                tabSize = tabSize
             )
-            val prefix = prefixLayout.prefix
             val visualLine = state.visualLineForDocLine(docLine)
             val y = state.visualLineTopInViewport(visualLine)
             val centerY = y + lineHeightPx / 2f
@@ -67,8 +65,8 @@ internal class WhitespaceRenderer {
                 val isTab = TextScanKernel.whitespaceMarkerIsTab(marker)
                 val safeStartColumn = col.coerceIn(0, prefixLayout.length)
                 val safeEndColumn = (col + 1).coerceIn(safeStartColumn, prefixLayout.length)
-                val x1 = textStartX + prefix[safeStartColumn]
-                val x2 = textStartX + prefix[safeEndColumn]
+                val x1 = textStartX + prefixLayout.textStartAdvance(safeStartColumn)
+                val x2 = textStartX + prefixLayout.textEndAdvance(safeEndColumn)
 
                 if (!isTab) {
                     val dotX = (x1 + x2) / 2f

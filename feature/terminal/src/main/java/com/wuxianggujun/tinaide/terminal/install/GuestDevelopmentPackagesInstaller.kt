@@ -19,9 +19,7 @@ import kotlinx.coroutines.withContext
 
 class GuestDevelopmentPackagesInstaller(
     private val context: Context,
-    private val linuxEnvironmentProvider: LinuxEnvironmentProvider = runCatching {
-        org.koin.core.context.GlobalContext.get().getOrNull<LinuxEnvironmentProvider>()
-    }.getOrNull() ?: UnavailableLinuxEnvironmentProvider,
+    private val linuxEnvironmentProvider: LinuxEnvironmentProvider = UnavailableLinuxEnvironmentProvider,
 ) : IGuestDevPackagesInstaller {
 
     override suspend fun inspectStatus(): GuestDevPackagesStatus = withContext(Dispatchers.IO) {

@@ -28,7 +28,8 @@ data class PluginMarketplaceUiState(
     val downloadingPlugins: Map<String, Float> = emptyMap(),
     val installedPlugins: Set<String> = emptySet(),
     val updatablePlugins: Set<String> = emptySet(),
-    val selectedPluginId: String? = null
+    val selectedPluginId: String? = null,
+    val pendingInstall: MarketplacePendingPluginInstall? = null,
 )
 
 class PluginMarketplaceViewModel(application: Application) : AndroidViewModel(application) {
@@ -185,15 +186,17 @@ class PluginMarketplaceViewModel(application: Application) : AndroidViewModel(ap
     fun installPlugin(plugin: PluginSummary) {
         val pluginId = plugin.pluginId
         if (_uiState.value.downloadingPlugins.containsKey(pluginId)) return
-        if (downloadJobs.containsKey(pluginId)) return
+        if (downloadJobs.isNotEmpty()) return
+        if (_uiState.value.pendingInstall != null) return
+        if (repository.getInstalledVersion(pluginId) == plugin.latestVersion) return
 
         val job = viewModelScope.launch {
             _uiState.update {
                 it.copy(downloadingPlugins = it.downloadingPlugins + (pluginId to 0f))
             }
 
-            val result = try {
-                repository.downloadAndInstallPlugin(
+            val preparation = try {
+                repository.preparePluginInstall(
                     pluginId = pluginId,
                     version = plugin.latestVersion,
                     onProgress = { downloaded, total ->
@@ -213,38 +216,27 @@ class PluginMarketplaceViewModel(application: Application) : AndroidViewModel(ap
                 throw e
             }
 
-            _uiState.update {
-                val newDownloading = it.downloadingPlugins - pluginId
-                val newInstalled = if (result.isSuccess) {
-                    it.installedPlugins + pluginId
-                } else {
-                    it.installedPlugins
-                }
-                val newUpdatable = it.updatablePlugins - pluginId
-                val throwable = result.exceptionOrNull()
-                val errorMessage = if (throwable != null) {
-                    val reason = throwable.message?.trim()?.takeIf { msg -> msg.isNotBlank() }
-                        ?: throwable.cause?.message?.trim()?.takeIf { msg -> msg.isNotBlank() }
-                        ?: throwable.toString()
-                    Strings.toast_plugins_install_failed.str(reason)
-                } else {
-                    null
-                }
-
-                it.copy(
-                    downloadingPlugins = newDownloading,
-                    installedPlugins = newInstalled,
-                    updatablePlugins = newUpdatable,
-                    error = errorMessage
+            val pending = preparation.getOrNull()
+            if (pending == null) {
+                applyInstallResult(
+                    pluginId,
+                    Result.failure<Any?>(checkNotNull(preparation.exceptionOrNull())),
                 )
-            }
-
-            if (result.isSuccess) {
-                loadPlugins()
+            } else if (pending.needsUserConfirmation) {
+                _uiState.update {
+                    it.copy(
+                        downloadingPlugins = it.downloadingPlugins - pluginId,
+                        pendingInstall = pending,
+                    )
+                }
+            } else {
+                applyInstallResult(pluginId, repository.confirmPluginInstall(pending))
             }
         }
         downloadJobs[pluginId] = job
-        job.invokeOnCompletion { downloadJobs.remove(pluginId) }
+        job.invokeOnCompletion {
+            if (downloadJobs[pluginId] === job) downloadJobs.remove(pluginId)
+        }
     }
 
     /**
@@ -256,6 +248,55 @@ class PluginMarketplaceViewModel(application: Application) : AndroidViewModel(ap
         _uiState.update {
             it.copy(downloadingPlugins = it.downloadingPlugins - pluginId)
         }
+    }
+
+    fun confirmPendingInstall() {
+        val pending = _uiState.value.pendingInstall ?: return
+        _uiState.update {
+            it.copy(
+                pendingInstall = null,
+                downloadingPlugins = it.downloadingPlugins + (pending.requestedPluginId to 0f),
+            )
+        }
+        val job = viewModelScope.launch {
+            applyInstallResult(
+                pending.requestedPluginId,
+                repository.confirmPluginInstall(pending),
+            )
+        }
+        downloadJobs[pending.requestedPluginId] = job
+        job.invokeOnCompletion {
+            if (downloadJobs[pending.requestedPluginId] === job) {
+                downloadJobs.remove(pending.requestedPluginId)
+            }
+        }
+    }
+
+    fun dismissPendingInstall() {
+        val pending = _uiState.value.pendingInstall ?: return
+        repository.discardPendingInstall(pending)
+        _uiState.update { it.copy(pendingInstall = null) }
+    }
+
+    private fun applyInstallResult(pluginId: String, result: Result<*>) {
+        _uiState.update {
+            val throwable = result.exceptionOrNull()
+            val reason = throwable?.message?.trim()?.takeIf { message -> message.isNotBlank() }
+                ?: throwable?.cause?.message?.trim()?.takeIf { message -> message.isNotBlank() }
+                ?: throwable?.toString()
+            it.copy(
+                downloadingPlugins = it.downloadingPlugins - pluginId,
+                installedPlugins = if (result.isSuccess) it.installedPlugins + pluginId else it.installedPlugins,
+                updatablePlugins = if (result.isSuccess) it.updatablePlugins - pluginId else it.updatablePlugins,
+                error = reason?.let { message -> Strings.toast_plugins_install_failed.str(message) },
+            )
+        }
+        if (result.isSuccess) loadPlugins()
+    }
+
+    override fun onCleared() {
+        _uiState.value.pendingInstall?.let(repository::discardPendingInstall)
+        super.onCleared()
     }
 
     fun clearError() {

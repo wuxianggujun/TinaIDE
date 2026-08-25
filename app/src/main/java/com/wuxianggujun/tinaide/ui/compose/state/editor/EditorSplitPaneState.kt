@@ -3,18 +3,18 @@ package com.wuxianggujun.tinaide.ui.compose.state.editor
 import androidx.compose.runtime.mutableStateMapOf
 
 internal class EditorSplitPaneState {
-    private val paneByTabId = mutableStateMapOf<String, EditorContainerState.EditorPaneId>()
+    private val paneByTabId = mutableStateMapOf<String, EditorPaneId>()
     private val mirroredIdsByPane =
-        mutableStateMapOf<EditorContainerState.EditorPaneId, Set<String>>()
-    private val activeIdByPane = mutableStateMapOf<EditorContainerState.EditorPaneId, String>()
+        mutableStateMapOf<EditorPaneId, Set<String>>()
+    private val activeIdByPane = mutableStateMapOf<EditorPaneId, String>()
 
     val activeTabIds: Collection<String>
         get() = activeIdByPane.values
 
-    fun mirroredTabIdsByPane(): Map<EditorContainerState.EditorPaneId, Set<String>> =
+    fun mirroredTabIdsByPane(): Map<EditorPaneId, Set<String>> =
         mirroredIdsByPane
 
-    fun activeTabIdsByPane(): Map<EditorContainerState.EditorPaneId, String> = activeIdByPane
+    fun activeTabIdsByPane(): Map<EditorPaneId, String> = activeIdByPane
 
     fun clear() {
         paneByTabId.clear()
@@ -30,22 +30,22 @@ internal class EditorSplitPaneState {
         activeIdByPane.clear()
     }
 
-    fun paneFor(tabId: String, isSplitEnabled: Boolean): EditorContainerState.EditorPaneId =
+    fun paneFor(tabId: String, isSplitEnabled: Boolean): EditorPaneId =
         if (isSplitEnabled) {
-            paneByTabId[tabId] ?: EditorContainerState.EditorPaneId.PRIMARY
+            paneByTabId[tabId] ?: EditorPaneId.PRIMARY
         } else {
-            EditorContainerState.EditorPaneId.PRIMARY
+            EditorPaneId.PRIMARY
         }
 
-    fun setPane(tabId: String, pane: EditorContainerState.EditorPaneId) {
+    fun setPane(tabId: String, pane: EditorPaneId) {
         paneByTabId[tabId] = pane
     }
 
-    fun setPaneIfAbsent(tabId: String, pane: EditorContainerState.EditorPaneId) {
+    fun setPaneIfAbsent(tabId: String, pane: EditorPaneId) {
         paneByTabId.putIfAbsent(tabId, pane)
     }
 
-    fun moveAllTabsToPane(pane: EditorContainerState.EditorPaneId) {
+    fun moveAllTabsToPane(pane: EditorPaneId) {
         paneByTabId.keys.toList().forEach { tabId ->
             paneByTabId[tabId] = pane
         }
@@ -77,19 +77,19 @@ internal class EditorSplitPaneState {
             .forEach(activeIdByPane::remove)
     }
 
-    fun ensurePaneForTabs(tabIds: Iterable<String>, pane: EditorContainerState.EditorPaneId) {
+    fun ensurePaneForTabs(tabIds: Iterable<String>, pane: EditorPaneId) {
         tabIds.forEach { tabId ->
             paneByTabId.putIfAbsent(tabId, pane)
         }
     }
 
-    fun activeTabId(pane: EditorContainerState.EditorPaneId): String? = activeIdByPane[pane]
+    fun activeTabId(pane: EditorPaneId): String? = activeIdByPane[pane]
 
-    fun setActiveTabId(pane: EditorContainerState.EditorPaneId, tabId: String) {
+    fun setActiveTabId(pane: EditorPaneId, tabId: String) {
         activeIdByPane[pane] = tabId
     }
 
-    fun removeActiveTabsExceptPane(keptPane: EditorContainerState.EditorPaneId) {
+    fun removeActiveTabsExceptPane(keptPane: EditorPaneId) {
         activeIdByPane.keys
             .filter { it != keptPane }
             .toList()
@@ -104,20 +104,20 @@ internal class EditorSplitPaneState {
             .forEach(activeIdByPane::remove)
     }
 
-    fun removeActiveTab(pane: EditorContainerState.EditorPaneId) {
+    fun removeActiveTab(pane: EditorPaneId) {
         activeIdByPane.remove(pane)
     }
 
     fun isMirroredToPane(
         tabId: String,
-        pane: EditorContainerState.EditorPaneId,
+        pane: EditorPaneId,
         isSplitEnabled: Boolean,
     ): Boolean = isSplitEnabled && mirroredIdsByPane[pane]?.contains(tabId) == true
 
     fun addMirroredTabToPane(
-        pane: EditorContainerState.EditorPaneId,
+        pane: EditorPaneId,
         tabId: String,
-        ownerPane: EditorContainerState.EditorPaneId,
+        ownerPane: EditorPaneId,
     ) {
         if (ownerPane == pane) return
         mirroredIdsByPane[pane] = mirroredIdsByPane[pane].orEmpty() + tabId
@@ -148,7 +148,7 @@ internal class EditorSplitPaneState {
 
     fun pruneMirroredTabs(
         liveTabIds: Set<String>,
-        resolveOwnerPane: (String) -> EditorContainerState.EditorPaneId,
+        resolveOwnerPane: (String) -> EditorPaneId,
     ) {
         mirroredIdsByPane.keys.toList().forEach { pane ->
             val updated = mirroredIdsByPane[pane]

@@ -58,10 +58,10 @@ description: TinaIDE 数据层、安全、权限、路径、敏感信息和文�
 ## 验证
 
 ```powershell
-./gradlew :core:database:testDebugUnitTest --console=plain
-./gradlew :core:security:testDebugUnitTest --console=plain
-./gradlew :core:storage:testDebugUnitTest --console=plain
-./gradlew :rikkahub:embedded:compileDebugKotlin --console=plain
+./gradlew :core:database:testDebugUnitTest --no-daemon --console=plain
+./gradlew :core:security:testDebugUnitTest --no-daemon --console=plain
+./gradlew :core:storage:testDebugUnitTest --no-daemon --console=plain
+./gradlew :rikkahub:embedded:compileDebugKotlin --no-daemon --console=plain
 ```
 
 - 数据库变更跑对应 DAO/migration 测试。

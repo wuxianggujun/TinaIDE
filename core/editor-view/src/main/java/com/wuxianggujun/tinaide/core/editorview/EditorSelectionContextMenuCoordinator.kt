@@ -77,6 +77,7 @@ internal class EditorSelectionContextMenuCoordinator(
 
     fun onCut(selectedText: String?) {
         selectedText?.let {
+            interactionController.prepareForExternalEdit()
             copyTextToClipboard(it)
             state.replaceSelection("")
             interactionController.syncSelectionToIme()
@@ -86,6 +87,7 @@ internal class EditorSelectionContextMenuCoordinator(
 
     fun onPaste() {
         readClipboardText()?.let {
+            interactionController.prepareForExternalEdit()
             state.replaceSelection(it)
             interactionController.syncSelectionToIme()
         }
@@ -95,6 +97,7 @@ internal class EditorSelectionContextMenuCoordinator(
     fun onSelectAll(
         anchorInViewportPx: IntOffset
     ) {
+        interactionController.prepareForExternalEdit()
         state.selectAll()
         interactionController.syncSelectionToIme()
         onContextMenuOffsetChanged(anchorInViewportPx)

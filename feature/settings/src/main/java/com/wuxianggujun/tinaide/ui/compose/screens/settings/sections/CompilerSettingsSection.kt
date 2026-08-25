@@ -19,12 +19,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.wuxianggujun.tinaide.core.config.IConfigManager
 import com.wuxianggujun.tinaide.core.format.FormatStyle
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.ndk.AndroidNativeToolchainManager
 import com.wuxianggujun.tinaide.core.ndk.AndroidSysrootManager
 import com.wuxianggujun.tinaide.core.ndk.SysrootProfileInfo
 import com.wuxianggujun.tinaide.core.ndk.displayLabel
+import com.wuxianggujun.tinaide.core.proot.PRootEnvironment
 import com.wuxianggujun.tinaide.ui.compose.components.TinaConfirmDialog
 import com.wuxianggujun.tinaide.ui.compose.components.TinaSingleChoiceDialog
 import com.wuxianggujun.tinaide.ui.compose.components.TinaSliderDialog
@@ -37,11 +39,16 @@ import com.wuxianggujun.tinaide.ui.compose.screens.settings.components.SettingsC
 import java.io.File
 import java.util.Locale
 import kotlinx.coroutines.launch
+import org.koin.compose.koinInject
 
 @Composable
 internal fun CompilerSettingsSection(viewModel: SettingsViewModel) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val appConfigManager: IConfigManager = koinInject()
+    val prootEnv = remember(context, appConfigManager) {
+        PRootEnvironment(context.applicationContext, appConfigManager)
+    }
     val state by viewModel.uiState.collectAsState()
     val threadsSuffix = stringResource(Strings.threads_format, 1).substringAfter(" ")
     val tasksSuffix = stringResource(Strings.tasks_format, 1).substringAfter(" ")
@@ -67,7 +74,6 @@ internal fun CompilerSettingsSection(viewModel: SettingsViewModel) {
     var showCmakeRunModeDialog by remember { mutableStateOf(false) }
     var showClangFormatRunModeDialog by remember { mutableStateOf(false) }
     var showMakeRunModeDialog by remember { mutableStateOf(false) }
-    var showCmakeBuildTypeDialog by remember { mutableStateOf(false) }
     var showCmakeGeneratorDialog by remember { mutableStateOf(false) }
     var showCmakeParallelJobsDialog by remember { mutableStateOf(false) }
     var showFormatStyleDialog by remember { mutableStateOf(false) }
@@ -341,17 +347,6 @@ internal fun CompilerSettingsSection(viewModel: SettingsViewModel) {
                 showDivider = true
             )
         }
-
-        val cmakeBuildTypeDisplayName =
-            CompilerSettingsSectionSupport.resolveCmakeBuildTypeDisplayLabel(
-                state.cmakeBuildType
-            )?.let { stringResource(it) } ?: state.cmakeBuildType
-        SettingsClickableItem(
-            title = stringResource(Strings.settings_build_type),
-            value = cmakeBuildTypeDisplayName,
-            onClick = { showCmakeBuildTypeDialog = true },
-            showDivider = true
-        )
 
         val cmakeGeneratorDisplayName =
             CompilerSettingsSectionSupport.resolveCmakeGeneratorDisplayLabel(
@@ -668,22 +663,6 @@ internal fun CompilerSettingsSection(viewModel: SettingsViewModel) {
         )
     }
 
-    if (showCmakeBuildTypeDialog) {
-        val options = CompilerSettingsSectionSupport.buildCmakeBuildTypeOptions().map { option ->
-            option.value to stringResource(option.labelRes)
-        }
-        TinaSingleChoiceDialog(
-            title = stringResource(Strings.dialog_title_cmake_build_type),
-            options = options,
-            selectedValue = state.cmakeBuildType,
-            onSelected = { value ->
-                viewModel.setCmakeBuildType(value)
-                showCmakeBuildTypeDialog = false
-            },
-            onDismiss = { showCmakeBuildTypeDialog = false }
-        )
-    }
-
     if (showCmakeGeneratorDialog) {
         val options = CompilerSettingsSectionSupport.buildCmakeGeneratorOptions().map { option ->
             option.value to stringResource(option.labelRes)
@@ -721,8 +700,7 @@ internal fun CompilerSettingsSection(viewModel: SettingsViewModel) {
             message = stringResource(Strings.dialog_message_redeploy),
             onConfirm = {
                 showReinstallDialog = false
-                val prootEnv = com.wuxianggujun.tinaide.core.proot.PRootEnvironment(context)
-                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+                scope.launch {
                     try {
                         Toast.makeText(context, toastRedeploying, Toast.LENGTH_SHORT).show()
                         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {

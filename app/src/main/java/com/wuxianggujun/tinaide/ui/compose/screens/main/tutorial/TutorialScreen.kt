@@ -42,7 +42,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -56,6 +55,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.wuxianggujun.tinaide.R
 import com.wuxianggujun.tinaide.core.help.HelpDocument
@@ -76,10 +76,37 @@ import com.wuxianggujun.tinaide.ui.compose.components.TinaTopBar
 import com.wuxianggujun.tinaide.ui.compose.components.tinaBackAction
 import com.wuxianggujun.tinaide.ui.compose.screens.settings.SettingsRoute
 import com.wuxianggujun.tinaide.ui.wizard.NewProjectWizardActivity
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
 
 private const val PLUGIN_QUICK_START_TUTORIAL_ID = "plugin_quick_start"
+
+internal sealed interface TutorialArticleLoadState {
+    data object Loading : TutorialArticleLoadState
+
+    data class Content(val markdown: String) : TutorialArticleLoadState
+
+    data object Error : TutorialArticleLoadState
+}
+
+internal suspend fun loadTutorialArticle(
+    contentUrl: String?,
+    loadContent: suspend (String) -> Result<String>,
+): TutorialArticleLoadState {
+    if (contentUrl.isNullOrBlank()) return TutorialArticleLoadState.Error
+
+    return try {
+        val content = loadContent(contentUrl).getOrThrow()
+        if (content.isBlank()) {
+            TutorialArticleLoadState.Error
+        } else {
+            TutorialArticleLoadState.Content(content)
+        }
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (_: Throwable) {
+        TutorialArticleLoadState.Error
+    }
+}
 
 /**
  * 教程屏幕
@@ -95,8 +122,9 @@ fun TutorialScreen(
     val helpRepository = remember(context.applicationContext) {
         HelpRepository(context.applicationContext)
     }
-    val uiState by viewModel.uiState.collectAsState()
-    val tutorialsByCategory by viewModel.tutorialsByCategory.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val catalogState by viewModel.tutorialCatalogState.collectAsStateWithLifecycle()
+    val tutorialsByCategory = catalogState.tutorialsByCategory
 
     val selectedTutorial = uiState.selectedTutorial
     val showContent = uiState.showTutorialContent && selectedTutorial != null
@@ -135,6 +163,7 @@ fun TutorialScreen(
                 },
                 resolveTutorialByLinkTarget = viewModel::resolveTutorialByLinkTarget,
                 resolveHelpDocumentByLinkTarget = helpRepository::resolveDocumentByLinkTarget,
+                loadTutorialContent = helpRepository::loadDocumentContentByLinkTarget,
                 onLinkClick = { target ->
                     if (target.startsWith("#")) {
                         return@TutorialArticleContent
@@ -161,6 +190,15 @@ fun TutorialScreen(
                     .fillMaxSize()
                     .padding(padding)
             )
+        } else if (catalogState.isLoading) {
+            Box(
+                modifier = modifier
+                    .fillMaxSize()
+                    .padding(padding),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator()
+            }
         } else if (tutorialsByCategory.isEmpty()) {
             // 空状态
             Box(
@@ -227,6 +265,7 @@ private fun TutorialArticleContent(
     onOpenPluginSettings: () -> Unit,
     resolveTutorialByLinkTarget: (String) -> Tutorial?,
     resolveHelpDocumentByLinkTarget: (String) -> HelpDocument?,
+    loadTutorialContent: suspend (String) -> Result<String>,
     onLinkClick: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -240,38 +279,19 @@ private fun TutorialArticleContent(
             .toSet()
     }
 
-    var isLoading by remember(contentUrl) { mutableStateOf(false) }
-    var errorMessage by remember(contentUrl) { mutableStateOf<String?>(null) }
-    var markdown by remember(contentUrl) { mutableStateOf<String?>(null) }
+    var loadState by remember(contentUrl) {
+        mutableStateOf<TutorialArticleLoadState>(TutorialArticleLoadState.Loading)
+    }
+    var retryRequest by remember(contentUrl) { mutableStateOf(0) }
 
-    LaunchedEffect(contentUrl, helpLoadFailedMessage) {
-        if (contentUrl.isNullOrBlank()) {
-            errorMessage = helpLoadFailedMessage
-            markdown = null
-            isLoading = false
-            return@LaunchedEffect
-        }
-
-        isLoading = true
-        errorMessage = null
-        markdown = null
-
-        runCatching {
-            withContext(Dispatchers.IO) {
-                context.assets.open(contentUrl).bufferedReader().use { it.readText() }
-            }
-        }.onSuccess { raw ->
-            markdown = sanitizeTutorialMarkdown(raw)
-            isLoading = false
-        }.onFailure {
-            errorMessage = helpLoadFailedMessage
-            isLoading = false
-        }
+    LaunchedEffect(contentUrl, helpLoadFailedMessage, retryRequest) {
+        loadState = TutorialArticleLoadState.Loading
+        loadState = loadTutorialArticle(contentUrl, loadTutorialContent)
     }
 
     Column(modifier = modifier) {
-        when {
-            isLoading -> {
+        when (val currentState = loadState) {
+            TutorialArticleLoadState.Loading -> {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -282,9 +302,9 @@ private fun TutorialArticleContent(
                 }
             }
 
-            markdown != null -> {
+            is TutorialArticleLoadState.Content -> {
                 val articlePresentation = TutorialRelatedLearningSupport.buildPresentation(
-                    markdown = markdown!!,
+                    markdown = currentState.markdown,
                     currentTutorialId = tutorial.id,
                     resolveTutorial = resolveTutorialByLinkTarget,
                     resolveHelpDocument = resolveHelpDocumentByLinkTarget,
@@ -326,18 +346,24 @@ private fun TutorialArticleContent(
                 }
             }
 
-            else -> {
-                Box(
+            TutorialArticleLoadState.Error -> {
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f),
-                    contentAlignment = Alignment.Center
+                        .weight(1f)
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
                 ) {
                     Text(
-                        text = errorMessage ?: stringResource(Strings.help_load_failed),
+                        text = helpLoadFailedMessage,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.error
                     )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(onClick = { retryRequest += 1 }) {
+                        Text(text = stringResource(Strings.action_retry))
+                    }
                 }
             }
         }
@@ -630,16 +656,6 @@ private fun TutorialContinueLearningCard(
 }
 
 /**
- * 清理帮助文档中偶发的“`n+”伪换行标记，避免 Markdown 渲染异常。
- *
- * 这些标记通常来自生成/拷贝过程中的转义问题，优先在渲染前做一次兜底修复。
- */
-private fun sanitizeTutorialMarkdown(raw: String): String = raw
-    .replace("`n+- ", "`\n- ")
-    .replace("`n+-", "`\n- ")
-    .replace("`n+", "`\n")
-
-/**
  * 教程分类标题
  */
 @Composable
@@ -848,31 +864,39 @@ private fun TutorialCard(
 
                 ProgressStatus.IN_PROGRESS -> {
                     Column {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
+                        if (tutorial.type == TutorialType.ARTICLE) {
                             Text(
-                                text = stringResource(Strings.tutorial_progress, progress),
+                                text = stringResource(Strings.tutorial_reading),
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary
+                                color = MaterialTheme.colorScheme.primary,
                             )
-                            Text(
-                                text = stringResource(Strings.tutorial_continue),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary
+                        } else {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = stringResource(Strings.tutorial_progress, progress),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    text = stringResource(Strings.tutorial_continue),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            LinearProgressIndicator(
+                                progress = { progress / 100f },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(4.dp)
+                                    .clip(RoundedCornerShape(2.dp)),
+                                color = MaterialTheme.colorScheme.primary,
+                                trackColor = MaterialTheme.colorScheme.surfaceVariant,
                             )
                         }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        LinearProgressIndicator(
-                            progress = { progress / 100f },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(4.dp)
-                                .clip(RoundedCornerShape(2.dp)),
-                            color = MaterialTheme.colorScheme.primary,
-                            trackColor = MaterialTheme.colorScheme.surfaceVariant,
-                        )
                         Spacer(modifier = Modifier.height(8.dp))
                         Button(
                             onClick = onClick,

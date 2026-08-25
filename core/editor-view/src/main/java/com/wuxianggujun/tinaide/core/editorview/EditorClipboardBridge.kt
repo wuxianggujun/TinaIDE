@@ -8,18 +8,23 @@ import android.os.SystemClock
  */
 internal object EditorClipboardBridge {
     private const val COPY_CACHE_TTL_MS = 120_000L
-    private const val IME_LARGE_PASTE_THRESHOLD_CHARS = 512
+    private const val KNOWN_TRUNCATION_LIMIT_CHARS = 512
+    private const val TRUNCATION_LIMIT_TOLERANCE_CHARS = 8
+
+    private data class CopiedTextSnapshot(
+        val text: String,
+        val copiedAtUptimeMs: Long,
+    )
 
     @Volatile
-    private var lastCopiedText: String? = null
-
-    @Volatile
-    private var lastCopiedAtUptimeMs: Long = 0L
+    private var lastCopied: CopiedTextSnapshot? = null
 
     fun rememberCopiedText(text: String) {
         if (text.isEmpty()) return
-        lastCopiedText = text
-        lastCopiedAtUptimeMs = SystemClock.uptimeMillis()
+        lastCopied = CopiedTextSnapshot(
+            text = text,
+            copiedAtUptimeMs = SystemClock.uptimeMillis(),
+        )
     }
 
     /**
@@ -28,7 +33,7 @@ internal object EditorClipboardBridge {
     fun recoverPossiblyTruncatedClipboardText(systemText: String?): String? {
         val source = systemText?.takeIf { it.isNotEmpty() } ?: return null
         val cached = recentCopiedText() ?: return source
-        return if (cached.length > source.length && cached.startsWith(source)) {
+        return if (isRecoverableTruncatedPrefix(source, cached)) {
             cached
         } else {
             source
@@ -41,10 +46,8 @@ internal object EditorClipboardBridge {
      */
     fun recoverPossiblyTruncatedImeCommitText(rawText: String): String {
         if (rawText.isEmpty()) return rawText
-        val likelyPaste = rawText.length >= IME_LARGE_PASTE_THRESHOLD_CHARS || rawText.indexOf('\n') >= 0
-        if (!likelyPaste) return rawText
         val cached = recentCopiedText() ?: return rawText
-        return if (cached.length > rawText.length && cached.startsWith(rawText)) {
+        return if (isRecoverableTruncatedPrefix(rawText, cached)) {
             cached
         } else {
             rawText
@@ -52,9 +55,18 @@ internal object EditorClipboardBridge {
     }
 
     private fun recentCopiedText(): String? {
-        val text = lastCopiedText ?: return null
-        val now = SystemClock.uptimeMillis()
-        if (now - lastCopiedAtUptimeMs > COPY_CACHE_TTL_MS) return null
-        return text
+        val snapshot = lastCopied ?: return null
+        if (!isRecentCopy(snapshot.copiedAtUptimeMs, SystemClock.uptimeMillis())) return null
+        return snapshot.text
+    }
+
+    internal fun isRecentCopy(copiedAtUptimeMs: Long, nowUptimeMs: Long): Boolean =
+        nowUptimeMs - copiedAtUptimeMs in 0L..COPY_CACHE_TTL_MS
+
+    private fun isRecoverableTruncatedPrefix(candidate: String, cached: String): Boolean {
+        val minimumTruncatedLength = KNOWN_TRUNCATION_LIMIT_CHARS - TRUNCATION_LIMIT_TOLERANCE_CHARS
+        return candidate.length in minimumTruncatedLength..KNOWN_TRUNCATION_LIMIT_CHARS &&
+            cached.length > KNOWN_TRUNCATION_LIMIT_CHARS &&
+            cached.startsWith(candidate)
     }
 }

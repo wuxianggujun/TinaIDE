@@ -1,5 +1,6 @@
 package com.wuxianggujun.tinaide.ui.compose.screens.main
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -26,6 +28,7 @@ import com.wuxianggujun.tinaide.ui.EditorStateViewModel
 import com.wuxianggujun.tinaide.ui.MainActivityActionsDelegate
 import com.wuxianggujun.tinaide.ui.MainActivityBottomPanelActionBridge
 import com.wuxianggujun.tinaide.ui.MainActivityNavigationDelegate
+import com.wuxianggujun.tinaide.ui.MainActivityNavigationHelper
 import com.wuxianggujun.tinaide.ui.compose.components.BottomPanel
 import com.wuxianggujun.tinaide.ui.compose.components.BottomPanelSecondaryBarHeight
 import com.wuxianggujun.tinaide.ui.compose.components.EditorContainer
@@ -33,8 +36,11 @@ import com.wuxianggujun.tinaide.ui.compose.components.EditorStatusBarHeight
 import com.wuxianggujun.tinaide.ui.compose.components.SwipeableDrawerState
 import com.wuxianggujun.tinaide.ui.compose.components.rememberBottomPanelDragState
 import com.wuxianggujun.tinaide.ui.compose.state.DialogState
+import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveEditorCommandResult
 import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState
 import com.wuxianggujun.tinaide.ui.compose.state.git.GitUiState
+import kotlinx.coroutines.launch
+import org.eclipse.lsp4j.CodeActionKind
 import org.koin.compose.koinInject
 
 @Composable
@@ -74,10 +80,16 @@ internal fun MainActivityBottomPanelHost(
             minHeight = 0.dp,
             maxHeight = maxPanelHeight
         )
+        val bottomPanelScope = rememberCoroutineScope()
         BindMainActivityBottomPanelState(
             bottomPanelState = bottomPanelState,
             bottomPanelController = bottomPanelController,
         )
+        // 底部面板展开时，返回应先收起面板；抽屉打开时由上层 BackHandler 优先处理。
+        BackHandler(enabled = drawerState.isClosed && bottomPanelState.isExpanded) {
+            // BottomPanelDragState 的动画必须在协程中执行。
+            bottomPanelScope.launch { bottomPanelState.collapse() }
+        }
         val bottomPanelImeModifier = if (drawerState.isClosed) {
             Modifier
                 .windowInsetsPadding(WindowInsets.ime)
@@ -127,16 +139,83 @@ internal fun MainActivityBottomPanelHost(
                     debugViewModel = debugViewModel,
                     projectSymbolIndexService = projectSymbolIndexService,
                     modifier = Modifier.fillMaxWidth(),
-                    onUndoClick = { actionsDelegate.performUndo(editorContainerState) },
-                    onRedoClick = { actionsDelegate.performRedo(editorContainerState) },
-                    onSymbolClick = { symbol ->
-                        editorContainerState.insertTextAtCursor(symbol)
-                    },
                     onBookmarkNavigate = { filePath, line ->
                         actionsDelegate.navigateToBookmark(editorContainerState, filePath, line)
                     },
                     onDiagnosticClick = { diagnostic ->
                         navigationDelegate.navigateToDiagnostic(editorContainerState, diagnostic)
+                    },
+                    onDiagnosticCodeActionsClick = { diagnostic ->
+                        val file = MainActivityNavigationHelper.resolveDiagnosticFile(diagnostic)
+                        val navigated = editorContainerState.openFileAndGoToPosition(
+                            file = file,
+                            line = diagnostic.line,
+                            column = diagnostic.column,
+                        )
+                        val tabId = if (navigated) {
+                            editorContainerState.findOpenTabIdByFileOrNull(file)
+                        } else {
+                            null
+                        }
+                        if (tabId != null) {
+                            editorContainerState.onLspCodeActionsRequested?.invoke(
+                                tabId,
+                                diagnostic.line,
+                                diagnostic.column,
+                                diagnostic.endLine,
+                                diagnostic.endColumn,
+                                listOf(CodeActionKind.QuickFix),
+                            )
+                        }
+                    },
+                    onDiagnosticQuickFixAvailabilityRequest = { diagnostic ->
+                        val file = MainActivityNavigationHelper.resolveDiagnosticFile(diagnostic)
+                        val tabId = editorContainerState.findOpenTabIdByFileOrNull(file)
+                        if (
+                            tabId == null ||
+                            !editorContainerState.hasActiveLspConnection(tabId)
+                        ) {
+                            false
+                        } else {
+                            editorContainerState.requestCodeActions(
+                                tabId = tabId,
+                                startLine = diagnostic.line,
+                                startColumn = diagnostic.column,
+                                endLine = diagnostic.endLine,
+                                endColumn = diagnostic.endColumn,
+                                onlyKinds = listOf(CodeActionKind.QuickFix),
+                            ).any { action -> action.isEnabled }
+                        }
+                    },
+                    onDiagnosticFixAllClick = {
+                        editorContainerState.getActiveDocumentCodeActionTarget()?.let { target ->
+                            editorContainerState.onLspCodeActionsRequested?.invoke(
+                                target.tabId,
+                                0,
+                                0,
+                                target.endLine,
+                                target.endColumn,
+                                listOf(CodeActionKind.SourceFixAll),
+                            )
+                        }
+                    },
+                    onDiagnosticFixAllAvailabilityRequest = {
+                        val target = editorContainerState.getActiveDocumentCodeActionTarget()
+                        if (
+                            target == null ||
+                            !editorContainerState.hasActiveLspConnection(target.tabId)
+                        ) {
+                            false
+                        } else {
+                            editorContainerState.requestCodeActions(
+                                tabId = target.tabId,
+                                startLine = 0,
+                                startColumn = 0,
+                                endLine = target.endLine,
+                                endColumn = target.endColumn,
+                                onlyKinds = listOf(CodeActionKind.SourceFixAll),
+                            ).any { action -> action.isEnabled }
+                        }
                     },
                     gitCurrentBranch = gitUiState.status.branch,
                     gitBranches = gitUiState.branches,
@@ -150,15 +229,15 @@ internal fun MainActivityBottomPanelHost(
                     fileEncoding = fileEncoding,
                     onCursorPositionClick = {
                         when (editorContainerState.getActiveEditableEditorCommandAvailability()) {
-                            EditorContainerState.ActiveEditorCommandResult.SUCCESS -> {
+                            ActiveEditorCommandResult.SUCCESS -> {
                                 dialogState.openGotoLineDialog()
                             }
 
-                            EditorContainerState.ActiveEditorCommandResult.NO_OPEN_FILE -> {
+                            ActiveEditorCommandResult.NO_OPEN_FILE -> {
                                 callbacks.onNoOpenFile()
                             }
 
-                            EditorContainerState.ActiveEditorCommandResult.UNSUPPORTED_EDITOR -> {
+                            ActiveEditorCommandResult.UNSUPPORTED_EDITOR -> {
                                 callbacks.onUnsupportedEditor()
                             }
                         }

@@ -31,6 +31,217 @@
 
 ## [Unreleased]
 
+暂无已记录变更。
+
+## [0.18.24] - 2026-08-25
+
+### Changed
+
+- CMake 构建类型统一由项目运行配置管理，支持为同一项目分别保存 Debug、Release、RelWithDebInfo 与 MinSizeRel；旧版全局值会在首次加载旧运行配置时迁移并持久化。
+
+### Fixed
+
+- 修复项目级 `CMake Args` 可通过 `CMAKE_BUILD_TYPE` 覆盖当前运行配置的问题；设置页会拒绝冲突参数，构建执行端也保证运行配置最终生效。
+- 修复 [Issue #10](https://github.com/wuxianggujun/TinaIDE/issues/10)：Android 14+ 平板外接触控板的双指滚动在编辑器、设置和文件列表等 Compose 页面失效。现在由共享 Activity 兼容层规范化触控板事件，同时保留指针、坐标、轴值和历史采样数据。
+
+### Tests
+
+- 新增触控板双指滚动事件兼容层回归测试，覆盖 Android 版本、输入来源、事件分类和事件字段保留。
+
+### Verification
+
+- `pwsh ./tools/build-apk.ps1`：Debug Arm64 APK 构建成功，`BUILD SUCCESSFUL`，生成 `app-arm64-v8a-debug.apk`。
+- `git diff --check` 通过。
+
+## [0.18.23] - 2026-08-23
+
+### Added
+
+- 新增 C/C++ 编译上下文诊断中心：点击编辑器状态栏的语言服务状态，可查看当前文件实际使用的 clangd 模式、`compile_commands.json` 来源与更新时间、命令匹配方式、编译器、语言标准、Target、工具链、Sysroot、Clang resource directory、头文件搜索路径、预处理宏和完整编译参数，并可直接刷新编译上下文与语言服务连接。
+- 编译上下文支持结构化解析 `compile_commands.json` 的 `arguments` 与 `command` 两种格式；头文件缺少直接条目时，可从相关源文件推断编译命令，并明确展示数据库缺失、格式损坏、命令未命中、工具链准备失败和 clangd 启动失败等状态。
+- 多文件 Code Action 在应用 `WorkspaceEdit` 前会显示项目相对路径、受影响文件数和编辑数量；取消预览会返回操作列表，不再误报为执行失败。
+- “问题”面板新增条件式 Fix All：仅当当前活动文件的语言服务器返回启用的 `source.fixAll` action 时显示，并在点击后重新请求最新操作；多文件修改继续经过 WorkspaceEdit 预览。
+
+### Fixed
+
+- 修复编辑器在下拉菜单或底部面板展开时按返回可能直接退出工作区的问题：现在会先关闭菜单、收起底部面板或关闭文件树抽屉，再进入未保存退出确认和 Activity 返回流程。
+- C/C++ 编译上下文改为按编辑器标签页保存并使用 Compose 可观察状态，刷新、标签关闭、ID 重映射和全局清理后界面会同步更新，避免状态已变化但诊断弹窗仍显示旧内容。
+- 修复“问题”面板对所有诊断无条件显示“查看修复”的问题：当前仅对可见诊断按需探测 Quick Fix，只有语言服务器返回未禁用修复时才显示入口；诊断请求同时限定 `quickfix` 并过滤误返回的 Refactor / Source Action，通用 Code Actions 不受影响。
+- 修复 App 与内嵌 RikkaHub 的 `usesCleartextTraffic` manifest 合并冲突；宿主继续保持禁止明文流量。
+- 修复部分 Redmi/HyperOS 设备将 `/data/user/0` 与 `/data/data` 解析为同一应用目录时，Android sysroot 解包被误判为 `tar entry escapes target directory` 的问题；路径穿越与符号链接防护保持启用。
+
+### Tests
+
+- 新增底部面板展开后收起的返回行为回归测试，并补充菜单、底部面板、文件树抽屉的手工返回优先级检查项。
+- 新增编译数据库解析、头文件命令推断和编译上下文状态生命周期测试，并通过 LSP、编辑器状态、App arm64 Debug 编译与国际化检查。
+- 新增 Code Action kind 限定、服务端越界响应过滤与诊断 Quick Fix 按可用性显示的回归测试。
+- 新增 WorkspaceEdit 预览解析测试，覆盖多文件摘要、项目目录越界、资源操作拒绝、文档版本和容量限制。
+- 新增 SourceFixAll 严格 kind 过滤和整文档 UTF-16 范围测试，避免普通 Command 或 Quick Fix 误触发批量修复入口。
+- 新增 Android 应用数据目录 canonical alias 回归测试；`:core:common:testDebugUnitTest` 共 81 项测试全部通过。
+
+### Documentation
+
+- 更新 README、开发指南及 App 内中英文 LSP 帮助，补充 C++ 编译上下文诊断入口、字段含义和排障流程。
+- 补充诊断 Quick Fix 的显示条件、通用 Code Actions 边界、定向测试命令与后续编辑器体验路线。
+- 更新 App 内中英文已知问题，补充旧版本 sysroot 解包路径别名报错的升级与重新部署指引。
+
+### Verification
+
+- `py tools/checks/check_all.py`、`py tools/i18n/check_all.py` 与 `git diff --check` 全部通过。
+- 本地 ARM64 Release 构建通过，版本为 `0.18.23`（APK `versionCode=18242`）。
+- R8、Lint、ZipAlign、V2 签名及 tina-toolchain assets 校验全部通过。
+
+## [0.18.20] - 2026-08-19
+
+### Fixed
+
+- 移除已不再存在的 LSP metadata cache 直接删除操作基线，恢复发布前维护检查。
+
+### Changed
+
+- CMake、根 Makefile、项目元数据与单文件运行配置现在共用同一套 C++ 标准解析规则；切换单文件标准后会刷新已打开文件的 clangd 连接。
+- 外部 CMake、Bear 或用户提供的 `compile_commands.json` 会按来源与内容哈希识别并保持权威，仅 TinaIDE 生成的 fallback 数据库会自动重建。
+- Windows APK 构建脚本统一使用 `--no-daemon --console=plain`；Release 构建还会串行执行 R8/Lint 并关闭文件监听，避免多 ABI 并发分析耗尽 Gradle heap。
+
+### Fixed
+
+- 修复项目已经使用 C++20、clangd 仍按旧标准分析，导致代码可以编译但 LSP 持续误报的问题；fallback 编译命令中的最终 `-std=` 现在不会被额外 C++ flags 内的旧参数覆盖。
+- 修复保存根 `CMakeLists.txt`、`Makefile`、`makefile` 或 `GNUmakefile` 后 clangd 未及时刷新，以及配置保存、并发 attach 期间旧 compile setup 可能覆盖新连接的问题。
+- 修复输入 `/** ... */` 多行文档注释后，中间行继续复用旧代码高亮，以及过期 semantic token 或彩虹括号颜色覆盖注释色的问题。
+- 修复 Android C++ 可执行文件依赖 TinaIDE 私有 `libc++_shared.so`、复制到其他终端后因运行库版本不匹配而无法启动的问题；单文件与 CMake 可执行链路现在默认静态链接 libc++，共享库链路保持不变，并自动使旧构建缓存失效。
+- 自定义与内置 Android sysroot 现在会校验 `libc++_static.a`、`libc++abi.a` 及各 API 的 `libc++.a`，缺失时在构建前给出明确路径，避免到链接阶段才失败。
+
+### Tests
+
+- 新增 C++ 标准解析、CMake/Makefile/单文件 override、可执行文件 libc++ 链接与缓存失效策略、sysroot 静态运行库完整性、fallback 内容哈希、外部 compile database 保护和运行配置刷新回归测试。
+- 新增 Tree-sitter changed ranges、多行文档注释缓存失效与注释颜色优先级回归测试。
+
+## [0.18.19] - 2026-08-18
+
+### Fixed
+
+- 修复编辑器 Inlay Hint 直接覆盖参数、返回类型等源代码的问题；提示现作为虚拟宽度参与行内布局、软换行与横向滚动范围计算，代码文本、光标、选区、诊断、括号高亮与触摸命中会共同避让提示区域。
+
+### Tests
+
+- 新增 Inlay Hint 布局回归测试，覆盖参数前预留空间、行尾类型提示、同列多提示、提示区域命中、缓存失效、软换行与横向滚动范围。
+
+## [0.18.18] - 2026-08-18
+
+### Added
+
+- 新增 clangd/LSP Quick Fix：编辑器诊断和“问题”面板可查询、展示并执行服务器提供的修复操作，支持携带诊断上下文、延迟 resolve、`WorkspaceEdit` 与命令组合操作。
+- 新增编辑器 Inlay Hint 渲染，支持按文档版本更新参数名、类型等内联提示，避免旧请求结果覆盖新内容。
+- 恢复并扩展编辑器底部快捷符号栏，补充常用运算符与标点，支持从状态栏显隐，并为侧栏边缘手势预留安全区域。
+- 新增独立 `NativeActivity` 图形运行模式与宿主桥接库，raylib 等非 SDL 图形库可以继续使用普通 `main` 入口。
+- SDL2、SDL3 与 NativeActivity 运行界面共用悬浮返回、退出确认和可选日志面板，切换渲染库时保持一致操作习惯。
+- 依赖包 Registry 协议支持按 ABI 下载源及每个制品独立的大小、SHA-256 元数据。
+
+### Changed
+
+- LSP 诊断按文档 URI、版本与请求世代过滤过期结果，共享 clangd 会话切换也会校验当前标签绑定，降低快速切换或关闭文件时的状态串扰。
+- 图形运行调度拆分为 SDL2、SDL3、NativeActivity 三种明确协议，运行时装载、独立进程退出和动态库 staging 统一由共享宿主能力管理。
+- native 依赖库打包改为同时生成旧客户端通用包和 `arm64-v8a`、`x86_64` 独立归档；新客户端按当前 App 实际 native ABI 选择制品。
+- SDL2 Registry 包版本提升为 `2.32.10.2`（上游仍为 `2.32.10`，`packageRevision=2`），使已安装旧包的用户能够收到 HID JNI 重定位修复，并保留 `2.32.10` 历史制品不被覆盖。
+
+### Fixed
+
+- 修复 Android 16/edge-to-edge 场景下编辑器底部符号栏未可靠避让输入法、可能被 IME 遮挡的问题；主工作区明确使用 `adjustResize`，并保留 RikkaHub 抽屉的独立 `ADJUST_NOTHING` 行为。
+- 修复 SDL2 运行时的 HID JNI 导出仍指向未重定位的 `org.libsdl.app`、导致启动时在 `HIDDeviceRegisterCallback()` 崩溃的问题；旧运行时包会降级禁用可选 HIDAPI，新构建包会校验全部 HID JNI 导出。
+- 修复 SDL2/SDL3 共享库目标全部链接失败（`ld.lld: error: cannot open libmain.so`）的问题：注入的 `-Wl,-rpath,$ORIGIN` 未做 shell 转义，Ninja 经 `/bin/sh -c` 执行链接命令时 `$ORIGIN` 被展开为空串，clang 的 `-Wl` 逗号拆分丢弃空段后裸 `-rpath` 吞掉 `-soname`，使 `libmain.so` 变成链接器输入文件。现改为注入 `-Wl,-rpath,\$ORIGIN` 并自动修正历史未转义形态，同时通过 `TINA_LINK_POLICY_VERSION` 缓存键强制旧构建目录重新 configure。
+- 修复格式化入口写死 `FormatStyle.FILE`，导致用户切换格式化配置后没有反应的问题；现在每次格式化都会实时读取设置，并向上查找 `.clang-format` 或 `_clang-format`。
+- 修复运行配置保存失败时界面仍切换并提示成功、实际编译继续读取旧配置的问题；配置现仅在持久化成功后提交到界面状态。
+- 修复文本缓冲区相同内容替换分支返回可空派发状态，导致 `core:text-engine` 无法通过 Kotlin 编译的问题。
+- 修复 SDL 的 `SDL_main` 入口约定污染 raylib 等图形库，导致共享库运行时找不到普通 `main` 的问题。
+- 修复版本化 SONAME 缺失时错误回退到其他主版本动态库，以及 CMake 重复注入 `$ORIGIN` RUNPATH 的问题。
+- 修复 ARM64 用户下载 native 依赖包时同时下载 x86_64 库的问题；ABI 独立源存在时不再回退到双 ABI 通用包。
+- 修复依赖包下载未校验 Registry 声明的制品大小、可能继续安装截断文件或错误制品的问题。
+- 修复下载归档成功安装后删除了错误缓存文件、实际归档仍残留的问题。
+- 修复 native clang-format 在主线程同步读取进程输出、超时无法生效的问题，并避免异步格式化结果覆盖已切换或继续编辑的文件。
+- 修复遗留 `FILE` 默认风格在项目缺少 `.clang-format` 时导致格式化失败，以及单次格式化跨 native/PRoot 模式执行的问题。
+
+### Removed
+
+### Tests
+
+- 新增 LSP Code Action、诊断 URI/版本桥接、共享 clangd 竞态、Inlay Hint 模型与渲染状态回归测试。
+- 新增格式化风格解析、图形运行协议、raylib NativeActivity 契约、动态库 SONAME 解析、ABI 下载源选择与 Registry 序列化回归测试。
+- 新增格式化进程 stdin/超时与编辑器条件回写回归测试。
+- 新增依赖包下载大小校验与相对 URL 补全后 ABI/大小/checksum/range 元数据保留测试。
+- Registry 校验新增 ABI 元数据一致性、单源大小与 SHA-256，以及独立归档不得夹带其他 ABI 库的检查。
+
+### Documentation
+
+- 更新 SDL/raylib 图形运行说明、统一悬浮返回外壳、项目创建与构建帮助，以及 native 依赖包按 ABI 发布、source 选择和大小/checksum 完整性校验规范。
+
+## [0.18.12] - 2026-07-25
+
+### Added
+
+- 新增 `TinaThreeActionDialog`：三动作确认统一为竖排全宽按钮（主操作 / 次要或危险 / 取消），避免小屏横排挤成一团。
+- 工作区侧栏新增 **符号** Tab（文件 | 符号 | Git | AI），大纲与文件树同属侧栏导航。
+- 命令「符号大纲」改为打开侧栏符号页，不再占用底栏次级 Tab。
+- 顶栏溢出菜单按 **文件 / 视图 / 工程** 分组展示，并补充保存全部、格式化、书签等精选入口。
+- Run 区瘦身后，顶栏左侧提供撤销 / 重做（与右侧保存分离，降低误触）。
+
+### Changed
+
+#### 工作区信息架构与布局
+
+- 顶栏常驻收敛为 **配置 + Run**；构建 / 调试 / 终端运行进入 Run 菜单，小屏与平板统一简洁主操作。
+- 底栏默认 Tab 收敛为 **问题 / 构建 / 输出**；Git、大纲、符号、书签不再默认铺满底栏（命令仍可临时打开）。
+- 底栏默认展开高度由约 45% 调整为约 **34%**，给编辑器更多空间。
+- **移除底部符号快捷栏**（`EditorToolBar`），编辑操作统一到顶栏，交互更一致。
+- 调试工具栏默认位置改为 **顶部**（`DebugToolbarPosition.TOP`），设置说明推荐顶栏，减少顶/底双控件迷路。
+- 退出工作区相关文案统一为 **「退出到项目列表」**，对话框同步说明返回门户。
+- 侧栏 Tab 图标与标签略收边距；顶栏操作图标略缩小，避免挤布局（不做单独「极窄屏」分支）。
+
+#### 对话框与交互
+
+- 未保存退出、关闭未保存文件、外部修改冲突、退出项目列表等确认框统一竖排三动作。
+- Git 提交历史、合并冲突、同步（Pull/Fetch/Push）、APK 构建结果/证书操作等多按钮场景改为竖排全宽。
+- 构建失败时自动切换到底栏 **诊断** 并展开，便于点行跳转。
+
+#### 架构与依赖注入
+
+- 将 `LspEditorManager` 从 `app` 下沉到 `:core:editor-lsp`，并继续拆出 compile setup 缓存、共享 CXX 会话、Remote LSP 辅助、workspace 文件监视、补全/Hover 映射与纯工具函数。
+- 编辑器状态拆出 `CodeEditorRuntime`、`EditorLspNavigationFacade`、`EditorCodeCallbackRegistry`、`EditorContainerModels` 等，降低 `EditorContainerState` 体量。
+- 运行时链路统一构造注入 `LinuxEnvironmentProvider` / `IConfigManager`：终端、CodeFormatter、CompileDatabaseProvider、PRootClangd、PRootEnvironment、MainActivityActions 等去掉 `GlobalContext` 硬取；`PRootBootstrap` 启动时 `bindDependencies`。
+- Guest 路径：`PathValidator` 支持 `/projects`，并在 `PRootManager` execute/interactive 边界校验 guest workDir。
+- Hex 查看器与分析 UI 大文件拆分：chrome/content/keyboard、footer、workbench、分析面板，以及 ELF/DEX/Archive 对话框与解析/模型/过滤/IO 分层。
+- 设置/包管理/工作区/插件详情/安装页/FileTree 等超大 UI 继续按 composable 边界拆分。
+- CMake 命令模型按 find / list-string-file / target / install-export 分文件。
+
+### Fixed
+
+- 修复 Android 10 平板已授予存储权限后，公共 `Documents/TinaIDE` 目录仍可能无法创建项目的问题；恢复 API 29 legacy storage 兼容，并确保已授权分支使用最新的 Compose 创建回调。
+- 修复命令面板打开书签等路径展开底栏时，因协程缺少 `MonotonicFrameClock` 导致 `Animatable.animateTo` 崩溃的问题；无 FrameClock 时退化为 `snapTo`。
+- 修复 PROOT 不可用时 LSP 误设 `NoLsp` 的死分支语义，与 `LinuxRunModePolicy` 回退 native 对齐。
+- 修复/清理 RikkaHub 迁移后残留的 AI 模型列表 API 与孤儿测试，以及未使用的仓储与调试 stub 协议代码（见 Removed）。
+
+### Removed
+
+- 删除未使用的 `TinaServerApi.getAiModels` 与相关 DTO。
+- 删除孤儿测试 `AiConfigTest`（生产 `AiConfig`/`AiProvider` 源文件已不存在）。
+- 删除未使用的 `LocalUserContentRepository`（DI 仅使用 `HybridUserContentRepository`）。
+- 删除调试 stub：`DebugTransport`、`DebugCommand`/`DebugResponse`、`DebugSessionScaffold`/`DebugSessionStore` 及相关误导测试命名；生产调试保留 LLDB + `DebugSessionService`/`BreakpointStore`。
+- 将仅 androidTest 使用的 `AndroidElfExecutor` 从主 APK 源码移出到 `app` androidTest。
+- 移除底部 `EditorToolBar` 符号快捷栏实现。
+
+### Tests
+
+- 新增 Android 10 公共存储 Manifest 契约测试，防止 `requestLegacyExternalStorage` 兼容配置再次丢失。
+
+### Documentation
+
+- 补充公共/私有项目目录、Android 10/11+ 文件权限差异和“已授权仍创建失败”的排查步骤，并同步 App 内中英文帮助。
+- 清理编译/门户中过时的「AI 工具」「P3 stub」等注释，口径对齐当前 RikkaHub 嵌入与 native 默认链路。
+
+### Notes for Testers
+
+- 请重点验收：顶栏 Run 菜单与左侧撤销/重做、侧栏符号、溢出菜单分组、构建失败自动打开诊断、未保存/退出/冲突对话框竖排按钮、Git 同步与 APK 结果按钮布局、命令打开书签不再崩溃。
+- 已安装用户若曾手动将调试工具栏设为底部，设置项会保留原值；新装/重置后默认顶部。
+
 ## [0.18.11] - 2026-07-13
 
 ### Changed

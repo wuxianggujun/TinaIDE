@@ -4,7 +4,6 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.getValue
@@ -16,11 +15,13 @@ import androidx.lifecycle.lifecycleScope
 import com.gyf.immersionbar.ktx.immersionBar
 import com.wuxianggujun.tinaide.core.config.IConfigManager
 import com.wuxianggujun.tinaide.core.config.Prefs
+import com.wuxianggujun.tinaide.core.packages.PackageManagerNavigation
 import com.wuxianggujun.tinaide.plugin.EditorThemeIndex
 import com.wuxianggujun.tinaide.plugin.PluginHostLogSources
 import com.wuxianggujun.tinaide.plugin.PluginLogManager
 import com.wuxianggujun.tinaide.plugin.PluginManager
 import com.wuxianggujun.tinaide.plugin.lsp.LspPluginManager
+import com.wuxianggujun.tinaide.ui.TinaComponentActivity
 import com.wuxianggujun.tinaide.ui.compose.screens.help.HelpScreen
 import com.wuxianggujun.tinaide.ui.compose.screens.help.HelpViewModel
 import com.wuxianggujun.tinaide.ui.compose.screens.packages.PackageManagerScreen
@@ -97,10 +98,17 @@ internal object SettingsActivitySupport {
     fun extractInitialPackageSearchQuery(intent: Intent): String? = intent.getStringExtra(
         SettingsActivity.EXTRA_INITIAL_PACKAGE_SEARCH_QUERY
     )?.takeUnless { it.isBlank() }
+        ?: PackageManagerNavigation.extractInitialSearchQuery(intent)
 
     fun resolveInitialRoute(routeId: String?): SettingsRoute = routeId?.takeUnless { it.isBlank() }?.let(initialRoutes::get) ?: SettingsRoute.Root
 
-    fun resolveInitialRoute(intent: Intent): SettingsRoute = resolveInitialRoute(extractInitialRouteId(intent))
+    fun resolveInitialRoute(intent: Intent): SettingsRoute = if (
+        PackageManagerNavigation.isPackageManagerIntent(intent)
+    ) {
+        SettingsRoute.Packages
+    } else {
+        resolveInitialRoute(extractInitialRouteId(intent))
+    }
 }
 
 internal data class SettingsNavigationState(
@@ -146,7 +154,7 @@ internal object SettingsActivityNavigationSupport {
  * 使用 Compose 导航管理设置页面的层级结构。
  */
 class SettingsActivity :
-    ComponentActivity(),
+    TinaComponentActivity(),
     KoinComponent {
 
     companion object {

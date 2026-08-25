@@ -33,6 +33,8 @@
 7. 用“设置 → 插件 → 从文件安装”验证生成的 `.tinaplug`
 8. 如果你需要事件、工作区读写或诊断快照，改用 `script-basic`
 
+首次安装后插件默认禁用。进入详情页确认权限并明确启用。Lua 只在 isolated plugin runtime 中执行；不要依赖 `io`、`debug`、`loadfile/dofile`、native `loadlib` 或 Java/luajava 反射。未处理的命令回调异常会使当前插件版本自动隔离。
+
 ## 当前建议
 
 - 第一版优先把命令入口和权限边界跑通

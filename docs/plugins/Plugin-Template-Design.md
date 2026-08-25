@@ -76,8 +76,10 @@
 它们用于离线打包、CI 校验和把 `.tinaplug` 分发给其他用户；IDE 内开发时，
 “运行”按钮就是最短闭环。
 
-安装后默认 **不需要重启 IDE**。插件管理器会刷新安装态和启用态；脚本、LSP、
-菜单、主题等消费方应监听插件状态并热更新。极少数缓存场景只需要重开相关
+安装后默认 **不需要重启 IDE**。纯 `config` 模板插件首次安装会自动启用，因此项目模板、
+菜单和主题可以立即出现；`script`、`hybrid`、`lsp`、`system` 等插件首次安装仍需在详情页
+明确启用。升级保留原有启用意图。插件管理器会刷新安装态和启用态；脚本、LSP、菜单、
+主题等消费方应监听插件状态并热更新。极少数缓存场景只需要重开相关
 编辑器或重新触发能力，不应要求用户重启整个 IDE。
 
 这条路径最大的优点是：**用户始终待在 IDE 已有工作流里**。
@@ -123,7 +125,7 @@ tinaide.plugin.starters/
       },
       {
         "id": "script-command",
-        "name": "Tina Script Command Plugin (Beta)",
+        "name": "Tina Script Command Plugin",
         "description": "Lua command plugin starter with editor actions and menus.",
         "templatePath": "templates/tina-script-command-plugin.zip",
         "buildSystem": "plugin",
@@ -131,7 +133,7 @@ tinaide.plugin.starters/
       },
       {
         "id": "script-basic",
-        "name": "Tina Script Plugin (Beta)",
+        "name": "Tina Script Plugin",
         "description": "Lua automation and event plugin starter.",
         "templatePath": "templates/tina-script-plugin.zip",
         "buildSystem": "plugin",
@@ -210,12 +212,10 @@ CMake/Make 工程。所以 `projectTemplates.buildSystem` 应声明为：
 - `contributions.menus["editor/toolbar"]`
 - `contributions.keybindings`
 - `contributions.fileIcons`
+- `contributions.panels`（适合 script / hybrid 模板按需演示）
 
-不建议默认塞进去的字段：
-
-- `panels`
-
-原因很简单：`keybindings` 已可用但会增加第一版模板的学习成本；`panels` 仍未提供 UI 入口。
+`keybindings` 和 `panels` 都已可用，但会增加第一版模板的学习成本；基础模板可在 README 中说明，
+由需要快捷键或底部文本面板的插件作者按需启用。
 
 推荐示例 `manifest.json`：
 
@@ -281,7 +281,7 @@ CMake/Make 工程。所以 `projectTemplates.buildSystem` 应声明为：
 
 基于当前源码现状，更稳妥的发布策略是：
 
-- 先把 `script-command` 标成 **Beta**
+- 为 `script-command` 明确标注权限、隔离和资源限制
 - 等宿主把脚本插件的公开加载链路补齐后，再把它提升为正式模板
 
 原因是脚本运行时、权限和 API 模块已经存在，但仓库里暂时看不到一个像
@@ -576,8 +576,7 @@ v1 只做下面这些：
 
 - 一个模板插件
 - 四个 starter zip
-- 其中 `config-basic`、`lsp-basic` 作为正式模板
-- `script-command`、`script-basic` 作为 Beta 模板
+- `config-basic`、`lsp-basic`、`script-command`、`script-basic` 均使用 apiVersion 1 稳定契约
 - 每个 starter 各自的 `README` 和打包脚本
 - 文档里明确区分“已实现能力”和“保留字段”
 
@@ -618,8 +617,8 @@ v1 不做：
 它内部提供四种模板：
 
 - `Tina Config Plugin`：正式
-- `Tina Script Command Plugin`：Beta
-- `Tina Script Plugin`：Beta
+- `Tina Script Command Plugin`：正式
+- `Tina Script Plugin`：正式
 - `Tina LSP Plugin`：正式
 
 这样设计最符合你当前源码现状，也最容易在后续真正落成一个可安装插件，

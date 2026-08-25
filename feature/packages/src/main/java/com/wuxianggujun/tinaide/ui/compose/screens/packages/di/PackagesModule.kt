@@ -13,7 +13,7 @@ val packagesModule = module {
     factory<PackageManager> {
         val apiClient = PackageApiClient.getInstance(get())
         val installStateStore = LocalInstallStateStore(get())
-        val prootEnv = PRootEnvironment(get())
+        val prootEnv = PRootEnvironment(context = get(), configManager = get())
         PackageManagerImpl(get(), apiClient, installStateStore, prootEnv = prootEnv)
     }
     viewModel { PackageManagerViewModel(get(), get()) }

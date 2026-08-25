@@ -8,6 +8,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.wuxianggujun.tinaide.core.commands.HostCommandExecutor
+import com.wuxianggujun.tinaide.core.i18n.Strings
+import com.wuxianggujun.tinaide.core.i18n.strOr
+import com.wuxianggujun.tinaide.extensions.toastError
 import com.wuxianggujun.tinaide.plugin.PluginManager
 import com.wuxianggujun.tinaide.ui.DebugViewModel
 import com.wuxianggujun.tinaide.ui.MainActivityActionsDelegate
@@ -17,6 +20,8 @@ import com.wuxianggujun.tinaide.ui.compose.components.DebugStatus
 import com.wuxianggujun.tinaide.ui.compose.components.SwipeableDrawerState
 import com.wuxianggujun.tinaide.ui.compose.state.DialogState
 import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState
+import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveEditorCommandResult
+import com.wuxianggujun.tinaide.ui.compose.state.editor.SplitEditorLayout
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -61,6 +66,9 @@ internal fun MainActivityTopBarHost(
     val canNavigateForward = editorContainerState.canNavigateForward()
     val canMoveTabToSecondaryPane = editorContainerState.canMoveActiveTabToSecondaryPane()
     val canCopyTabToSecondaryPane = editorContainerState.canCopyActiveTabToSecondaryPane()
+    val editorToolBarState = editorContainerState.getActiveEditorToolBarState()
+    val canUndo = editorToolBarState.canUndo
+    val canRedo = editorToolBarState.canRedo
 
     val topBarCallbacks = rememberMainActivityTopBarCallbacks(
         drawerState = drawerState,
@@ -113,12 +121,22 @@ internal fun MainActivityTopBarHost(
     MainActivityTopBar(
         isCompiling = isCompiling,
         isDirty = isDirty,
+        canUndo = canUndo,
+        canRedo = canRedo,
         isDebugActive = isDebugActive,
         debugStatus = debugStatus,
         runConfigManager = buildUiState.runConfigManager,
         onRunConfigManagerChange = { updated ->
-            buildUiState.updateRunConfigManager(updated)
-            callbacks.onPersistRunConfigManager(updated)
+            if (
+                !buildUiState.commitRunConfigManager(
+                    updated = updated,
+                    persist = callbacks.onPersistRunConfigManager,
+                    onSelectedSingleFileCppStandardChanged =
+                        editorContainerState::refreshOpenCxxEditorsForCompileConfigChange,
+                )
+            ) {
+                context.toastError(Strings.toast_run_config_save_failed.strOr(context))
+            }
         },
         onEditConfig = buildUiState::startEditingConfig,
         onShowRunConfigDialog = buildUiState::openRunConfigDialog,
@@ -173,6 +191,8 @@ private fun rememberMainActivityTopBarCallbacks(
         onDebug = { compileDelegate.onDebugProject() },
         onSave = { actionsDelegate.saveCurrentFile(editorContainerState) },
         onSaveAll = { actionsDelegate.saveAllFiles(editorContainerState) },
+        onUndo = { editorContainerState.undoInActiveTab() },
+        onRedo = { editorContainerState.redoInActiveTab() },
         onFormatCode = { actionsDelegate.formatCode(editorContainerState) },
         onNavigateBack = { editorContainerState.navigateBack() },
         onNavigateForward = { editorContainerState.navigateForward() },
@@ -191,15 +211,15 @@ private fun rememberMainActivityTopBarCallbacks(
         onCopyTabToSecondaryPane = { editorContainerState.copyActiveTabToSecondaryPane() },
         onGotoLine = {
             when (editorContainerState.getActiveEditableEditorCommandAvailability()) {
-                EditorContainerState.ActiveEditorCommandResult.SUCCESS -> {
+                ActiveEditorCommandResult.SUCCESS -> {
                     dialogState.openGotoLineDialog()
                 }
 
-                EditorContainerState.ActiveEditorCommandResult.NO_OPEN_FILE -> {
+                ActiveEditorCommandResult.NO_OPEN_FILE -> {
                     screenCallbacks.onNoOpenFile()
                 }
 
-                EditorContainerState.ActiveEditorCommandResult.UNSUPPORTED_EDITOR -> {
+                ActiveEditorCommandResult.UNSUPPORTED_EDITOR -> {
                     screenCallbacks.onUnsupportedEditor()
                 }
             }

@@ -6,7 +6,7 @@ import kotlin.math.max
 /**
  * 轻量 Rope 实现，针对大文本编辑场景。
  */
-class Rope {
+internal class Rope {
 
     private sealed class Node {
         abstract val length: Int
@@ -81,6 +81,25 @@ class Rope {
         return buildString(end - start) {
             appendSubstring(root, start, end, this)
         }
+    }
+
+    /** Compares without flattening the rope into a temporary String. */
+    fun contentEquals(other: CharSequence): Boolean {
+        if (length != other.length) return false
+
+        var otherOffset = 0
+        var matches = true
+        forEachChunk { chunk ->
+            if (!matches) return@forEachChunk
+            for (index in chunk.indices) {
+                if (chunk[index] != other[otherOffset + index]) {
+                    matches = false
+                    break
+                }
+            }
+            otherOffset += chunk.length
+        }
+        return matches
     }
 
     fun charAt(offset: Int): Char {

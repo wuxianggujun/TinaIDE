@@ -15,7 +15,7 @@ CMake, Make, and clang-format can use native or proot modes. The proot choice ap
 
 The default compilation host is still the native tina-toolchain with an Android sysroot. Use proot only for workflows that require the Linux guest environment.
 
-Available build types include Debug, Release, RelWithDebInfo, and MinSizeRel. Generators include Unix Makefiles and Ninja. CMake Parallel Jobs controls CMake build concurrency separately from the global compilation-thread preference.
+Build type is configured by the selected run configuration in the project workspace, so Compiler Settings no longer keeps a competing global value. The first load of an older project copies the legacy global value into that project's run configurations. Generators include Unix Makefiles and Ninja. CMake Parallel Jobs controls CMake build concurrency separately from the global compilation-thread preference.
 
 ## Formatting
 
@@ -31,9 +31,10 @@ The page shows:
 - import toolchain;
 - import sysroot.
 
-The NDK Runtime affects the compiler sysroot, C++ headers, libc++_shared.so injection, APK packaging, and the headers visible to clangd.
+The NDK Runtime selects the compiler sysroot and C++ headers, the libc++ version statically linked into command-line C++ executables, the `libc++_shared.so` used by NativeActivity/SDL shared libraries and APK export, and the headers visible to clangd.
 
 Toolchain archives can use tar.gz, tar.xz, or tar. Import extracts, validates, installs, registers, and activates the toolchain. Sysroots are imported separately.
+An imported sysroot must include `libc++_shared.so`, `libc++_static.a`, `libc++abi.a`, and the `libc++.a` linker script in every API directory.
 
 Changing the NDK Runtime does not change the selected run target. An NDK shared-library template may still run its test executable until you select the library target or SDL mode.
 

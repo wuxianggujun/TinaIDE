@@ -2,7 +2,6 @@ package com.wuxianggujun.tinaide.ui
 
 import android.content.Intent
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
@@ -44,7 +43,7 @@ import org.koin.core.component.get
  * 当用户打开项目后，跳转到 MainActivity 进行编辑
  */
 class MainPortalActivity :
-    ComponentActivity(),
+    TinaComponentActivity(),
     KoinComponent {
 
     private var sessionCleanupJob: Job? = null
@@ -53,7 +52,7 @@ class MainPortalActivity :
     override fun onStart() {
         super.onStart()
         // 用户一旦回到主页即归零项目会话内存态（FileWatcher 同步移除），
-        // 保证从主页进入的设置页/插件/AI 工具等拿到 null，而不是被上次会话污染。
+        // 保证从主页进入的设置页/插件/工作区等拿到 null，而不是被上次会话污染。
         // 偏好键 ConfigKeys.CurrentProject 保留，进入 MainActivity 时再通过
         // projectSession.restoreLastSession() 恢复。
         val projectSession: IProjectSession = get()

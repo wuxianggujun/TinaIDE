@@ -7,6 +7,7 @@ data class PluginStateSnapshot(
     val enabledPluginIds: Set<String> = emptySet(),
     val installedVersions: Map<String, String> = emptyMap(),
     val enabledCapabilities: Set<String> = emptySet(),
+    val resolvedPanels: List<ResolvedPluginPanel> = emptyList(),
 ) {
     fun isInstalled(pluginId: String): Boolean = pluginId in installedPluginIds
 
@@ -30,6 +31,17 @@ internal object PluginStateSnapshotFactory {
                 .map { it.trim() }
                 .filter { it.isNotBlank() }
                 .toSet(),
+            resolvedPanels = enabledPlugins.flatMap { plugin ->
+                plugin.manifest.contributions?.panels.orEmpty().map { panel ->
+                    ResolvedPluginPanel(
+                        pluginId = plugin.manifest.id,
+                        pluginName = plugin.manifest.name,
+                        panelId = panel.id,
+                        title = panel.title,
+                        icon = panel.icon,
+                    )
+                }
+            },
         )
     }
 }

@@ -7,6 +7,9 @@ import com.wuxianggujun.tinaide.core.compile.ProjectRunConfigBootstrapper
 import com.wuxianggujun.tinaide.core.config.NewProjectSourceLocation
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
+import com.wuxianggujun.tinaide.core.packages.InstalledPackageMetadataReader
+import com.wuxianggujun.tinaide.core.packages.model.Platform
+import com.wuxianggujun.tinaide.core.packages.store.LocalInstallStateStore
 import com.wuxianggujun.tinaide.project.AndroidApiLevel
 import com.wuxianggujun.tinaide.project.BuiltInProjectTemplates
 import com.wuxianggujun.tinaide.project.CppStandard
@@ -154,7 +157,8 @@ class NewProjectWizardViewModel(
         projectPath: String,
         availableTemplates: List<ProjectTemplateOption>,
         onSuccess: (File) -> Unit,
-        onError: (String) -> Unit
+        onError: (String) -> Unit,
+        onMissingPackages: (List<String>) -> Unit = {},
     ) {
         val currentState = _state.value
 
@@ -185,6 +189,22 @@ class NewProjectWizardViewModel(
         _state.update { it.copy(isCreating = true) }
 
         viewModelScope.launch {
+            val missingPackages = withContext(ioDispatcher) {
+                val appContext = context.applicationContext
+                val installStateStore = LocalInstallStateStore(appContext)
+                selectedTemplate.requiredPackages
+                    .distinct()
+                    .filterNot { packageId ->
+                        installStateStore.isInstalled(packageId, Platform.ANDROID) &&
+                            InstalledPackageMetadataReader.read(appContext, packageId) != null
+                    }
+            }
+            if (missingPackages.isNotEmpty()) {
+                _state.update { it.copy(isCreating = false) }
+                onMissingPackages(missingPackages)
+                return@launch
+            }
+
             val result = withContext(ioDispatcher) {
                 ProjectCreationService.createProject(
                     projectRoot = File(projectPath),
@@ -214,6 +234,17 @@ class NewProjectWizardViewModel(
                     onSuccess(result.projectDir)
                 }
                 is ProjectCreationResult.Failure -> {
+                    val projectRoot = File(projectPath)
+                    Timber.tag(TAG).w(
+                        "Project creation failed: reason=%s root=%s detail=%s " +
+                            "rootExists=%s rootIsDirectory=%s rootCanWrite=%s",
+                        result.reason,
+                        projectRoot.absolutePath,
+                        result.detail,
+                        projectRoot.exists(),
+                        projectRoot.isDirectory,
+                        projectRoot.canWrite(),
+                    )
                     val message = when (result.reason) {
                         ProjectCreationFailure.EMPTY_NAME -> Strings.error_project_name_empty.strOr(context)
                         ProjectCreationFailure.INVALID_NAME -> Strings.error_project_name_invalid_chars.strOr(context)

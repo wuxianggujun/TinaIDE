@@ -45,6 +45,26 @@ interface BookmarkDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertBookmarks(bookmarks: List<BookmarkEntity>)
 
+    @Transaction
+    suspend fun replaceProjectBookmarks(projectPath: String, bookmarks: List<BookmarkEntity>) {
+        deleteAllBookmarks(projectPath)
+        insertBookmarks(bookmarks)
+    }
+
+    @Query(
+        """
+        UPDATE bookmarks
+        SET project_path = :newProjectPath,
+            file_path = CASE
+                WHEN file_path = :oldProjectPath OR substr(file_path, 1, length(:oldProjectPath) + 1) = :oldProjectPath || '/'
+                THEN :newProjectPath || substr(file_path, length(:oldProjectPath) + 1)
+                ELSE file_path
+            END
+        WHERE project_path = :oldProjectPath
+        """
+    )
+    suspend fun migrateProjectPath(oldProjectPath: String, newProjectPath: String): Int
+
     /**
      * 更新书签
      */

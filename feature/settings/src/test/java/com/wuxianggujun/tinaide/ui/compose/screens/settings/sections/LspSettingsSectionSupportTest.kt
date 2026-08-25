@@ -162,6 +162,18 @@ class LspSettingsSectionSupportTest {
         assertThat(
             LspSettingsSectionSupport.validateRemoteHost("example.com")
         ).isNull()
+        assertThat(
+            LspSettingsSectionSupport.validateRemoteHost("example.com/path")
+        ).isEqualTo(Strings.editor_lsp_hint_host_input)
+        assertThat(
+            LspSettingsSectionSupport.validateRemoteHost("user@example.com")
+        ).isEqualTo(Strings.editor_lsp_hint_host_input)
+        assertThat(
+            LspSettingsSectionSupport.validateRemoteHost("a".repeat(254))
+        ).isEqualTo(Strings.editor_lsp_hint_host_input)
+        assertThat(
+            LspSettingsSectionSupport.validateRemoteHost("::1")
+        ).isNull()
     }
 
     @Test

@@ -21,6 +21,8 @@ Set at least:
 - id
 - name
 - version
+- apiVersion (the current stable value is 1)
+- minAppVersion (only when a newer host capability is truly required)
 - type
 - description
 - author.name
@@ -33,6 +35,7 @@ Example:
       "id": "com.example.my-first-plugin",
       "name": "My First Plugin",
       "version": "0.1.0",
+      "apiVersion": 1,
       "type": "config",
       "description": "My first TinaIDE plugin.",
       "author": {
@@ -45,6 +48,8 @@ Example:
     }
 
 The id may contain letters, digits, periods, underscores, and hyphens. It cannot be a path or contain two consecutive path-traversal dots.
+
+The example omits minAppVersion so a plugin with no newer host dependency remains compatible with older IDEs. Add or raise it only for a capability that really requires a newer TinaIDE; an older IDE will not offer an incompatible plugin update.
 
 ## 3. Add a theme
 
@@ -79,7 +84,7 @@ For a plugin project, Run:
 3. hot-installs it into TinaIDE;
 4. refreshes installed-plugin state.
 
-Normally the IDE does not need to restart.
+Normally the IDE does not need to restart. A newly installed plugin remains disabled; open its details, review permissions, and explicitly enable it.
 
 ## 6. Package and verify
 
@@ -91,6 +96,8 @@ Then open **Settings → Plugins → Install plugin from file** and install the 
 
 Errors block installation. Warnings can be confirmed. Script and hybrid plugins may require a separate permission confirmation.
 
+Installation uses staging and an atomic swap. A failed upgrade of a healthy enabled plugin restores the previous version. Package size, entry count, expanded size, per-entry size, and compression ratio are bounded before activation.
+
 ## Troubleshooting
 
 - No plugin template: install or enable TinaIDE Plugin Starters.
@@ -100,7 +107,14 @@ Errors block installation. Warnings can be confirmed. Script and hybrid plugins 
 
 ## Continue learning
 
+Advanced script and hybrid plugins may declare optionalPermissions for on-demand grants. They may also declare contributions.panels and publish bounded plain text through tina.panels.setContent, appendContent, and clear.
+
 - [Plugin settings](plugins-settings.md)
+- [Plugin Manifest and Version Compatibility](plugin-manifest-compatibility.md)
+- [Script API and Least Privilege](plugin-script-api.md)
+- [Plugin Panels and Events](plugin-panels-events.md)
+- [LSP Plugin Development and Troubleshooting](plugin-lsp-troubleshooting.md)
+- [Plugin Testing, Recovery, and Preflight](plugin-testing-recovery.md)
 - [Create a project](create-project.md)
 - [Build a project](build-project.md)
 - [Known issues](known-issues.md)

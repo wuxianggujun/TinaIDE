@@ -28,7 +28,8 @@ py tools/checks/check_documentation.py
 
 The check validates:
 
-- local Markdown links in the current fact documents and App help assets;
+- local Markdown links across `docs/`, both root READMEs, and App help assets;
+- inline repository paths in current fact documents, plus known source paths left behind after module moves;
 - one-to-one registration between `HelpRepository`, default help assets, and `help/en/*.md`;
 - `minSdk`, `targetSdk`, and `compileSdk` facts in both root READMEs and the documentation status against `app/build.gradle.kts`;
 - Registry paths for plugin, package, and Linux distro metadata across both root READMEs and current Registry documentation;

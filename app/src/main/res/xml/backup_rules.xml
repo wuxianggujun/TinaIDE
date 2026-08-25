@@ -6,4 +6,9 @@
     <exclude domain="sharedpref" path="plugin_permissions.xml" />
     <exclude domain="sharedpref" path="tina_server_config.xml" />
     <exclude domain="sharedpref" path="tinaide_config.xml" />
+    <exclude domain="sharedpref" path="plugin_storage.xml" />
+    <exclude domain="sharedpref" path="tina_plugin_configuration.xml" />
+    <exclude domain="sharedpref" path="remote_lsp_credentials.xml" />
+    <exclude domain="sharedpref" path="git_ssh_known_hosts.xml" />
+    <exclude domain="sharedpref" path="tinaide_editor_split_state.xml" />
 </full-backup-content>

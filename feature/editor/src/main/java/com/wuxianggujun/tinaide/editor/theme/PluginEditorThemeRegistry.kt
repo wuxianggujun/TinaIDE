@@ -65,9 +65,12 @@ class PluginEditorThemeRegistry(
                     runCatching {
                         JsonSerializer.decodeFromFile<ThemeConfig>(themeFile)
                     }.onSuccess { config ->
+                        val normalizedConfig = config.copy(
+                            colors = PluginThemeColorResolver.resolve(config)
+                        )
                         // 额外兜底：配置可能为空字符串或仅含空字段
-                        if (isValidThemeConfig(config)) {
-                            result[themeId] = config
+                        if (isValidThemeConfig(normalizedConfig)) {
+                            result[themeId] = normalizedConfig
                         } else {
                             Timber.tag(TAG).w("Invalid theme config (null or missing required fields): $themeId")
                         }

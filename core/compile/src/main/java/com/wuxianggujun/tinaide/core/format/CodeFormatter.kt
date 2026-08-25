@@ -27,29 +27,34 @@ import java.io.File
 class CodeFormatter(
     private val context: Context,
     private val prootManager: PRootManager? = null,
-    private val linuxEnvironmentProvider: LinuxEnvironmentProvider = runCatching {
-        org.koin.core.context.GlobalContext.get().getOrNull<LinuxEnvironmentProvider>()
-    }.getOrNull() ?: UnavailableLinuxEnvironmentProvider,
+    private val linuxEnvironmentProvider: LinuxEnvironmentProvider = UnavailableLinuxEnvironmentProvider,
 ) {
     companion object {
         private const val TAG = "CodeFormatter"
     }
 
-    // 根据配置选择执行器
-    private val useNativeMode: Boolean
-        get() = LinuxRunModePolicy.resolve(
+    // 每次格式化命令创建一个实例，并在首次使用时固定执行模式，避免同一命令跨后端执行。
+    private val useNativeMode: Boolean by lazy {
+        LinuxRunModePolicy.resolve(
             configuredMode = Prefs.clangFormatRunMode,
             linuxEnvironmentAvailable = linuxEnvironmentProvider.get().isAvailable()
         ) == LinuxRunModePolicy.RunMode.NATIVE
+    }
+
+    private val styleResolver = FormatStyleResolver()
+
+    private val resolvedProotManager by lazy {
+        prootManager
+            ?: (linuxEnvironmentProvider.get() as? PRootEnvironment)
+                ?.getPRootManager()
+            ?: error("PRootManager is required for PRoot mode")
+    }
 
     // PRoot 执行器（懒加载）
     private val prootFormatter by lazy {
-        val resolvedProotManager = prootManager
-            ?: (linuxEnvironmentProvider.get() as? PRootEnvironment)
-                ?.getPRootManager()
         PRootCodeFormatter(
             context,
-            requireNotNull(resolvedProotManager) { "PRootManager is required for PRoot mode" }
+            resolvedProotManager,
         )
     }
 
@@ -75,20 +80,12 @@ class CodeFormatter(
     /**
      * 检查文件是否支持格式化
      */
-    fun isSupported(file: File): Boolean = if (useNativeMode) {
-        nativeFormatter.isSupported(file)
-    } else {
-        prootFormatter.isSupported(file)
-    }
+    fun isSupported(file: File): Boolean = file.extension.lowercase() in supportedExtensions
 
     /**
      * 检查文件是否支持格式化（通过扩展名）
      */
-    fun isSupported(extension: String): Boolean = if (useNativeMode) {
-        nativeFormatter.isSupported(extension)
-    } else {
-        prootFormatter.isSupported(extension)
-    }
+    fun isSupported(extension: String): Boolean = extension.removePrefix(".").lowercase() in supportedExtensions
 
     /**
      * 检查 clang-format 是否可用
@@ -123,30 +120,34 @@ class CodeFormatter(
      * 格式化代码内容
      *
      * @param content 要格式化的代码内容
-     * @param fileName 文件名（用于推断语言类型）
-     * @param style 格式化风格（默认自动检测）
+     * @param sourceFile Android 宿主文件，用于解析项目配置、推断语言并转换 PRoot 路径
      * @param options 额外的格式化选项
      * @return 格式化结果
      */
     suspend fun format(
         content: String,
-        fileName: String,
-        style: FormatStyle? = null,
+        sourceFile: File,
         options: FormatOptions = FormatOptions()
-    ): FormatResult = if (useNativeMode) {
-        nativeFormatter.format(content, fileName, style, options)
-    } else {
-        prootFormatter.format(content, fileName, style, options)
+    ): FormatResult {
+        val effectiveStyle = styleResolver.resolve(sourceFile)
+        val hostFilePath = sourceFile.absolutePath
+
+        return if (useNativeMode) {
+            nativeFormatter.format(content, hostFilePath, effectiveStyle, options)
+        } else {
+            prootFormatter.format(
+                content = content,
+                fileName = resolvedProotManager.toGuestPath(hostFilePath),
+                style = effectiveStyle,
+                options = options,
+            )
+        }
     }
 
     /**
      * 格式化文件
      *
-     * 注意：
-     * - 原生模式：操作 Android 主机文件系统
-     * - PRoot 模式：操作 PRoot guest 文件系统
-     *
-     * @param filePath 文件路径
+     * @param filePath Android 宿主文件路径
      * @param style 格式化风格（默认自动检测）
      * @param options 额外的格式化选项
      * @param inPlace 是否直接修改文件
@@ -157,17 +158,28 @@ class CodeFormatter(
         style: FormatStyle? = null,
         options: FormatOptions = FormatOptions(),
         inPlace: Boolean = false
-    ): FormatResult = if (useNativeMode) {
-        nativeFormatter.formatFile(filePath, style, options, inPlace)
-    } else {
-        prootFormatter.formatGuestFile(filePath, style, options, inPlace)
+    ): FormatResult {
+        val sourceFile = File(filePath)
+        val effectiveStyle = style ?: styleResolver.resolve(sourceFile)
+        val hostFilePath = sourceFile.absolutePath
+
+        return if (useNativeMode) {
+            nativeFormatter.formatFile(hostFilePath, effectiveStyle, options, inPlace)
+        } else {
+            prootFormatter.formatGuestFile(
+                guestFilePath = resolvedProotManager.toGuestPath(hostFilePath),
+                style = effectiveStyle,
+                options = options,
+                inPlace = inPlace,
+            )
+        }
     }
 
     /**
      * 格式化选中的代码范围
      *
      * @param content 完整的代码内容
-     * @param fileName 文件名
+     * @param fileName Android 宿主文件路径
      * @param startLine 起始行（1-based）
      * @param endLine 结束行（1-based）
      * @param style 格式化风格（默认自动检测）
@@ -179,10 +191,22 @@ class CodeFormatter(
         startLine: Int,
         endLine: Int,
         style: FormatStyle? = null
-    ): FormatResult = if (useNativeMode) {
-        nativeFormatter.formatRange(content, fileName, startLine, endLine, style)
-    } else {
-        prootFormatter.formatRange(content, fileName, startLine, endLine, style)
+    ): FormatResult {
+        val sourceFile = File(fileName)
+        val effectiveStyle = style ?: styleResolver.resolve(sourceFile)
+        val hostFilePath = sourceFile.absolutePath
+
+        return if (useNativeMode) {
+            nativeFormatter.formatRange(content, hostFilePath, startLine, endLine, effectiveStyle)
+        } else {
+            prootFormatter.formatRange(
+                content = content,
+                fileName = resolvedProotManager.toGuestPath(hostFilePath),
+                startLine = startLine,
+                endLine = endLine,
+                style = effectiveStyle,
+            )
+        }
     }
 
     // ========== 风格解析 ==========
@@ -194,29 +218,18 @@ class CodeFormatter(
      * 1. 如果项目目录中存在 .clang-format 文件，使用 FormatStyle.FILE
      * 2. 否则使用用户在设置中选择的默认风格
      */
-    fun resolveFormatStyle(filePath: String): FormatStyle = if (useNativeMode) {
-        nativeFormatter.resolveFormatStyle(filePath)
-    } else {
-        prootFormatter.resolveFormatStyle(filePath)
-    }
+    fun resolveFormatStyle(filePath: String): FormatStyle = styleResolver.resolve(File(filePath))
 
     /**
      * 获取用户设置的默认格式化风格
      */
-    fun getUserDefaultStyle(): FormatStyle = if (useNativeMode) {
-        nativeFormatter.getUserDefaultStyle()
-    } else {
-        prootFormatter.getUserDefaultStyle()
-    }
+    fun getUserDefaultStyle(): FormatStyle = styleResolver.getUserDefaultStyle()
 
     /**
      * 检查指定目录或其父目录中是否存在 .clang-format 文件
      */
-    fun hasClangFormatFile(directory: File?, maxDepth: Int = 10): Boolean = if (useNativeMode) {
-        nativeFormatter.hasClangFormatFile(directory, maxDepth)
-    } else {
-        prootFormatter.hasClangFormatFile(directory, maxDepth)
-    }
+    fun hasClangFormatFile(directory: File?, maxDepth: Int = Int.MAX_VALUE): Boolean =
+        styleResolver.hasClangFormatFile(directory, maxDepth)
 
     // ========== 配置管理委托 ==========
 

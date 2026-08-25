@@ -1,10 +1,13 @@
-package com.wuxianggujun.tinaide.ui
+﻿package com.wuxianggujun.tinaide.ui
 
 import com.wuxianggujun.tinaide.plugin.script.api.CursorPosition
 import com.wuxianggujun.tinaide.plugin.script.api.EditorSelection
 import com.wuxianggujun.tinaide.plugin.script.api.PluginActiveEditor
 import com.wuxianggujun.tinaide.plugin.script.api.PluginEditorBridge
 import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState
+import com.wuxianggujun.tinaide.ui.compose.state.editor.TextEditOperation
+import com.wuxianggujun.tinaide.ui.compose.state.editor.SelectionSnapshot
+import com.wuxianggujun.tinaide.ui.compose.state.editor.CursorSnapshot
 import java.io.File
 
 /**
@@ -57,7 +60,7 @@ class TinaPluginEditorBridge(
         return if (line != null && column != null) {
             state.applyTextEditsInActiveTab(
                 edits = listOf(
-                    EditorContainerState.TextEditOperation(
+                    TextEditOperation(
                         startLine = line,
                         startColumn = column,
                         endLine = line,
@@ -88,7 +91,7 @@ class TinaPluginEditorBridge(
     }
 }
 
-private fun EditorContainerState.SelectionSnapshot.toPluginSelection(): EditorSelection = EditorSelection(
+private fun SelectionSnapshot.toPluginSelection(): EditorSelection = EditorSelection(
     startLine = startLine,
     startColumn = startColumn,
     endLine = endLine,
@@ -96,7 +99,7 @@ private fun EditorContainerState.SelectionSnapshot.toPluginSelection(): EditorSe
     text = text
 )
 
-private fun EditorContainerState.CursorSnapshot.toCollapsedPluginSelection(): EditorSelection = EditorSelection(
+private fun CursorSnapshot.toCollapsedPluginSelection(): EditorSelection = EditorSelection(
     startLine = line,
     startColumn = column,
     endLine = line,
@@ -104,4 +107,4 @@ private fun EditorContainerState.CursorSnapshot.toCollapsedPluginSelection(): Ed
     text = ""
 )
 
-private fun EditorContainerState.CursorSnapshot.toPluginCursorPosition(): CursorPosition = CursorPosition(line = line, column = column)
+private fun CursorSnapshot.toPluginCursorPosition(): CursorPosition = CursorPosition(line = line, column = column)

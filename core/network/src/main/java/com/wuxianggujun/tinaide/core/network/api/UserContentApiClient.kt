@@ -5,6 +5,7 @@ import com.wuxianggujun.tinaide.core.i18n.str
 import com.wuxianggujun.tinaide.core.network.ApiEnvelopeParser
 import com.wuxianggujun.tinaide.core.network.ApiResult
 import com.wuxianggujun.tinaide.core.network.OkHttpClientProvider
+import com.wuxianggujun.tinaide.core.network.readUtf8Limited
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -26,6 +27,7 @@ class UserContentApiClient private constructor(
 
     companion object {
         private const val TAG = "UserContentApiClient"
+        private const val MAX_API_RESPONSE_BYTES = 8 * 1024 * 1024
 
         @Volatile
         private var instance: UserContentApiClient? = null
@@ -113,21 +115,21 @@ class UserContentApiClient private constructor(
         }
     }
 
-    private inline fun <reified T> parseResponse(response: okhttp3.Response): ApiResult<T> {
-        val responseBody = response.body?.string()
+    private inline fun <reified T> parseResponse(response: okhttp3.Response): ApiResult<T> = response.use { closedResponse ->
+        val responseBody = closedResponse.body?.readUtf8Limited(MAX_API_RESPONSE_BYTES)
         if (responseBody.isNullOrEmpty()) {
-            return ApiResult.Error(response.code, Strings.error_response_empty.str())
+            return ApiResult.Error(closedResponse.code, Strings.error_response_empty.str())
         }
-        return ApiEnvelopeParser.parseToApiResult<T>(responseBody, response.code, TAG)
+        return ApiEnvelopeParser.parseToApiResult<T>(responseBody, closedResponse.code, TAG)
     }
 
-    private fun parseUnitResponse(response: okhttp3.Response): ApiResult<Unit> {
-        val responseBody = response.body?.string()
+    private fun parseUnitResponse(response: okhttp3.Response): ApiResult<Unit> = response.use { closedResponse ->
+        val responseBody = closedResponse.body?.readUtf8Limited(MAX_API_RESPONSE_BYTES)
         if (responseBody.isNullOrEmpty()) {
             // Unit 类型：空响应视为成功
             return ApiResult.Success(Unit)
         }
-        return ApiEnvelopeParser.checkOk(responseBody, response.code)
+        return ApiEnvelopeParser.checkOk(responseBody, closedResponse.code)
     }
 }
 

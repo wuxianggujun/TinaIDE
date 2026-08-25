@@ -1,6 +1,6 @@
 # 插件教程维护记录
 
-> 文档更新：2026-04-26
+> 文档更新：2026-07-16
 > 目标：记录插件教程从“像普通新建项目”到“新建插件项目闭环”的修正过程、设计决策和后续维护规则。
 
 ---
@@ -19,6 +19,55 @@
 - 教程、starter README、Registry 模板包和排查文档的说法不完全一致。
 
 本轮目标不是新增复杂系统，而是把现有项目模板能力收束成一个清晰、可验收、可维护的插件开发闭环。
+
+### 1.1 2026-07 教程完整性补强
+
+后续走查发现，教程目录虽然已有插件快速开始，但课程密度不足；教程详情还绕过帮助中心，
+直接读取固定 asset，缺少统一的语言选择、缓存和缺失资源回退。这会让部分语言环境或资源
+不同步时出现空白/加载失败体验。
+
+本轮补强：
+
+- 教程详情复用 `HelpRepository.loadDocumentContentByLinkTarget()`，统一 UTF-8、本地化、缓存与回退。
+- 插件课程从 1 篇扩展为 6 篇：快速开始、Manifest 兼容、Script API、面板事件、LSP 排错、测试自愈。
+- 6 篇课程全部提供中文与英文 asset，并互相形成站内“继续学习”链路。
+- 增加目录唯一性、链接解析、双语资源存在性和非空内容测试。
+- 不修改插件公开 API、`apiVersion 1` 或旧 IDE 兼容选择协议。
+
+### 1.2 2026-07-15 教程加载与搜索稳定性补强
+
+继续走查教程界面时确认，空白体验不只来自内容缺失，也可能由加载状态表达不完整或搜索缓存键不一致造成：
+
+- 帮助正文缓存按 `language:documentId` 写入，但全文搜索曾按裸 `documentId` 读取，导致只出现在正文中的关键词无法命中。
+- 教程目录首次加载时没有显式 Loading 状态，数据返回前可能短暂显示“暂无教程”。
+- 教程文章初始状态可能先显示错误，加载失败后也缺少直接重试入口。
+- ARTICLE 教程处于进行中时使用并不存在的百分比，界面会显示误导性的 `0%`。
+
+本轮补强：
+
+- 全文搜索统一复用带语言维度的正文缓存键，正文关键词可命中，中文和英文缓存互不串用。
+- 教程目录增加显式 Loading 状态；只有加载完成且结果为空时才显示空状态。
+- 教程文章以 Loading 状态开始，读取失败后显示错误和“重试”，重试会重新执行正文加载；页面切换产生的协程取消继续向上传播，不会伪装成加载失败。
+- ARTICLE 教程进行中时显示“阅读中 / Reading in progress”，不再伪造百分比进度。
+- 新增 `HelpRepositoryTest` 正文搜索和语言缓存隔离用例、`TutorialCatalogUiStateTest` 目录状态用例、
+  `TutorialArticleLoadStateTest` 文章成功、缺失、失败和异常用例。
+
+这些改动只收紧教程展示和回归测试，不改变插件 manifest、公开 API 或 Registry 兼容协议。
+
+### 1.3 2026-07-15 稳定性与 CI 收口
+
+教程加载与搜索稳定性补强完成后，插件 Script API/JVM 回归进入 CI，并暴露出两个只在不同文件系统顺序或并发时序下出现的问题：
+
+- `tina.workspace.findFiles()` 曾在遍历过程中提前截断，导致 Windows/Linux 或不同文件创建顺序返回不同前 N 项。
+- 插件状态流和权限流分别收集初始值，可能在启动时对同一 script 插件执行两次同步；runtime service 不可用时，第二次加载会把已稳定的 `RUNTIME_UNAVAILABLE` 短暂覆盖成 `LOADING`。
+
+最终处理：
+
+- workspace 搜索在 50,000 项扫描上限内收集结果，按统一 `/` 相对路径排序后再应用 `maxResults`。
+- `ScriptPluginManager` 使用单一 `combine(pluginStateFlow, grantsFlow)` 同步入口，消除首次重复加载，同时保留后续权限变化触发。
+- 协程取消继续向上传播；并发故障存储测试使用整组 deadline 并等待 executor 退出，避免失败后污染后续测试。
+- `Dev Static Checks` 在插件 JVM 步骤失败时上传 XML/HTML 报告，远端失败不再只留下测试类和行号。
+- 不修改 manifest、公开 `apiVersion 1`、Registry v2/v3 或旧宿主兼容选择逻辑。
 
 ---
 
@@ -254,14 +303,15 @@ CompileActionsHelper
 - `app/src/test/java/com/wuxianggujun/tinaide/plugindev/AndroidPluginProjectActionsTest.kt`
 - `app/src/test/java/com/wuxianggujun/tinaide/ui/CompileActionsHelperTest.kt`
 - `feature/help/src/test/java/com/wuxianggujun/tinaide/core/help/HelpRepositoryTest.kt`
+- `core/plugin/src/test/java/com/wuxianggujun/tinaide/plugin/script/api/PluginWorkspaceFileAccessTest.kt`
+- `core/plugin/src/test/java/com/wuxianggujun/tinaide/plugin/script/ScriptPluginManagerTest.kt`
+- `core/plugin/src/test/java/com/wuxianggujun/tinaide/plugin/PluginFaultStoreTest.kt`
 
 ---
 
-## 6. 本轮已做的轻量验证
+## 6. 本轮验证记录
 
-未运行 Gradle 编译 / 测试，因为本轮用户明确要求不需要编译测试。
-
-已做轻量验证：
+截至 2026-07-16，本轮累计验证：
 
 - `git diff --check`
 - 尾随空白扫描
@@ -269,11 +319,20 @@ CompileActionsHelper
 - 旧误导文案扫描
 - starter 源模板与发布 zip 关键文件一致性比对
 - 4 个 starter 的 `validate.ps1` 校验
+- `./gradlew :core:plugin:testDebugUnitTest --no-daemon --console=plain`
+  - 39 个测试套件、176 项测试
+  - 0 failures / 0 errors / 0 skipped
+- `./gradlew :core:plugin:ktlintCheck --no-daemon --console=plain`
+- GitHub Actions `Dev Static Checks` run `29429731887`
+  - 插件 JVM 回归通过
+  - `:app:compileArm64DebugKotlin` 通过
+  - Gradle 清理步骤通过
 
 说明：
 
 - starter 校验中的 `{{PROJECT_NAME}}` 警告属于模板占位符预期行为。
 - Windows 下 `LF will be replaced by CRLF` 是 Git 换行提示，不是内容错误。
+- 本次 JVM/CI 收口没有重新执行真机 instrumentation；设备结论只引用路线图中 2026-07-14 的既有验收记录。
 
 ---
 
@@ -288,6 +347,7 @@ CompileActionsHelper
 3. `docs/plugins/Plugin-Tutorial-Acceptance-Checklist.md`
 4. `docs/plugins/Plugin-Project-Template-Wizard-Troubleshooting.md`
 5. `docs/plugins/README.md`
+6. `feature/help/src/main/assets/help/en/plugin-quick-start.md` 及相关英文课程 asset
 
 如果新增用户侧失败场景，优先更新应用内 `plugin-quick-start.md` 的“快速排错 FAQ”。
 
@@ -314,7 +374,17 @@ CompileActionsHelper
 5. `CompileActionsHelper` 是否仍正确处理 `LaunchSpec.PluginInstalled`。
 6. 应用内 FAQ 是否仍描述真实行为。
 
-### 7.4 修改命令 / 菜单模型时
+### 7.4 修改 Script API、运行时状态或稳定性门禁时
+
+必须同步检查：
+
+1. `docs/plugin-api-contract.md` 与 `docs/plugins/Plugin-API-Guide.md` 的公开语义。
+2. 中英文 App 内 Script API / 测试自愈帮助。
+3. `PluginWorkspaceFileAccessTest`、`ScriptPluginManagerTest` 和 `PluginFaultStoreTest`。
+4. `docs/testing/README.md` 的 JVM 与设备入口是否仍真实可执行。
+5. CI 失败报告是否只在失败时上传，设备 workflow 是否已在默认分支注册并有真实 runner。
+
+### 7.5 修改命令 / 菜单模型时
 
 必须同步检查：
 
@@ -335,7 +405,8 @@ CompileActionsHelper
 - 为插件项目接入断点调试。
 - 引入动态 DEX 插件能力。
 - 放宽脚本 / hybrid 权限确认模型。
-- 运行 Gradle 编译 / 测试。
+- 新增 `apiVersion 2` 或修改 Registry 兼容选择协议。
+- 把尚未运行的设备 workflow 写成“真机已通过”。
 
 这些都不是本轮修复“插件教程入口和闭环混乱”的必要条件。
 
@@ -345,13 +416,15 @@ CompileActionsHelper
 
 建议按优先级继续：
 
-1. **P0：真实设备走查**
-   - 按 `Plugin-Tutorial-Acceptance-Checklist.md` 从入口到热安装完整走一遍。
-2. **P1：截图或短视频补充**
+1. **P0：设备门禁基础设施**
+   - 将 `Plugin Device Stability Gate` 注册到默认分支，并接入带 `android-device` 标签的 self-hosted runner。
+2. **P0：真实设备教程走查**
+   - 按 `Plugin-Tutorial-Acceptance-Checklist.md` 从入口到热安装完整走一遍，单独记录设备、ABI 和结果。
+3. **P1：截图或短视频补充**
    - 给应用内教程补几张关键界面截图或简短动图。
-3. **P1：插件日志入口增强**
+4. **P1：插件日志入口增强**
    - 在热安装成功提示后，引导用户查看插件日志。
-4. **P2：模板字段可视化说明**
+5. **P2：模板字段可视化说明**
    - 后续可把 `manifest.json` 常见字段做成轻量说明卡。
-5. **P2：脚本 API 示例矩阵**
+6. **P2：脚本 API 示例矩阵**
    - 按 `tina.editor`、`tina.commands`、`tina.workspace` 分组维护最小示例。

@@ -1,6 +1,7 @@
 package com.wuxianggujun.tinaide.core.compile.strategy
 
 import android.content.Context
+import com.wuxianggujun.tinaide.core.compile.AndroidCppRuntimeLinkage
 import com.wuxianggujun.tinaide.core.compile.AndroidLinkerCompatibilityFlags
 import com.wuxianggujun.tinaide.core.compile.BuildDiagnostic
 import com.wuxianggujun.tinaide.core.compile.BuildDiagnosticParser
@@ -54,6 +55,16 @@ class SingleFileStrategy(
         private const val TAG = "SingleFileStrategy"
         private val SOURCE_EXTENSIONS: Set<String> = CxxFileSupport.singleFileBuildSourceExtensions
         private val CPP_EXTENSIONS: Set<String> = CxxFileSupport.cxxSourceExtensions
+
+        internal fun mergeCompileFlagsWithStandard(
+            isCpp: Boolean,
+            standard: String,
+            extraCompileFlags: List<String>,
+        ): List<String> = if (isCpp) {
+            extraCompileFlags + "-std=$standard"
+        } else {
+            listOf("-std=$standard") + extraCompileFlags
+        }
 
         internal fun describeFsNode(file: File?): String {
             if (file == null) return "<null>"
@@ -231,7 +242,11 @@ class SingleFileStrategy(
             return fail(emitter, msg)
         }
 
-        NativeSysrootPreparer.ensureInstalled(appContext, options.sysrootProfileId)?.let { err ->
+        NativeSysrootPreparer.ensureInstalled(
+            context = appContext,
+            profileId = options.sysrootProfileId,
+            apiLevel = apiLevel,
+        )?.let { err ->
             Timber.tag(TAG).e(err)
             return fail(emitter, err, BuildDiagnosticParser.parse(err))
         }
@@ -254,7 +269,6 @@ class SingleFileStrategy(
             add(mainSource.absolutePath)
             add("-o")
             add(outputPath)
-            add("-std=$cppStandard")
             if (options.compilerType == CompilerType.CLANG) add("-fintegrated-cc1")
             if (options.preferSharedLibraryForRun) {
                 add("-shared")
@@ -263,9 +277,15 @@ class SingleFileStrategy(
             add(resolveOptimizationFlag(options))
             if (options.generateDebugInfo) add("-g")
             add("-Wall")
-            addAll(extraCompileFlags)
+            addAll(mergeCompileFlagsWithStandard(isCpp, cppStandard, extraCompileFlags))
             addAll(sysrootFlags)
             addAll(linkerCompatibilityFlags)
+            addAll(
+                AndroidCppRuntimeLinkage.flagsForOutput(
+                    isCpp = isCpp,
+                    outputIsSharedLibrary = options.preferSharedLibraryForRun,
+                )
+            )
             for (dir in packagePaths.includeDirs) add("-I${dir.absolutePath}")
             for (dir in packagePaths.libDirs) add("-L${dir.absolutePath}")
             for (library in packagePaths.linkLibraries) add("-l$library")

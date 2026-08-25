@@ -2,6 +2,7 @@ package com.wuxianggujun.tinaide.ui.compose.components
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -109,8 +110,12 @@ fun GitMergeConflictDialog(
                 }
             }
         },
+        // 工作流多动作：竖排全宽，避免 confirm/dismiss 各塞一排横钮
         confirmButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 TinaPrimaryButton(
                     text = when (conflictKind) {
                         GitConflictKind.REBASE -> stringResource(Strings.git_conflict_continue_rebase)
@@ -118,7 +123,8 @@ fun GitMergeConflictDialog(
                         GitConflictKind.NONE -> stringResource(Strings.git_conflict_continue_generic)
                     },
                     onClick = onContinue,
-                    enabled = canAct && conflictKind != GitConflictKind.NONE && conflicts.isEmpty()
+                    enabled = canAct && conflictKind != GitConflictKind.NONE && conflicts.isEmpty(),
+                    modifier = Modifier.fillMaxWidth(),
                 )
                 TinaSecondaryButton(
                     text = stringResource(Strings.git_conflict_mark_resolved),
@@ -126,31 +132,31 @@ fun GitMergeConflictDialog(
                         val targets = if (selectedList.isEmpty()) conflicts else selectedList
                         onMarkResolved(targets)
                     },
-                    enabled = canAct && conflicts.isNotEmpty()
+                    enabled = canAct && conflicts.isNotEmpty(),
+                    modifier = Modifier.fillMaxWidth(),
                 )
-            }
-        },
-        dismissButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (conflictKind == GitConflictKind.REBASE) {
                     TinaOutlinedButton(
                         text = stringResource(Strings.git_conflict_skip_rebase),
                         onClick = onSkipRebase,
-                        enabled = canAct
+                        enabled = canAct,
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
                 TinaDangerButton(
                     text = stringResource(Strings.git_conflict_abort),
                     onClick = onAbort,
-                    enabled = canAct
+                    enabled = canAct,
+                    modifier = Modifier.fillMaxWidth(),
                 )
                 TinaTextButton(
                     text = stringResource(Strings.btn_close),
                     onClick = onDismiss,
-                    enabled = !isBusy
+                    enabled = !isBusy,
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
-        }
+        },
     )
 }
 
@@ -193,21 +199,27 @@ private fun ConflictFileCard(
             )
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
             TinaTextButton(
                 text = stringResource(Strings.git_conflict_open_file),
                 onClick = onOpenFile,
-                enabled = !isBusy
+                enabled = !isBusy,
+                modifier = Modifier.fillMaxWidth(),
             )
             TinaOutlinedButton(
                 text = stringResource(Strings.git_conflict_use_ours),
                 onClick = onUseOurs,
-                enabled = !isBusy
+                enabled = !isBusy,
+                modifier = Modifier.fillMaxWidth(),
             )
             TinaOutlinedButton(
                 text = stringResource(Strings.git_conflict_use_theirs),
                 onClick = onUseTheirs,
-                enabled = !isBusy
+                enabled = !isBusy,
+                modifier = Modifier.fillMaxWidth(),
             )
         }
     }

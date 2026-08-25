@@ -52,14 +52,15 @@ import com.wuxianggujun.tinaide.ui.compose.components.editor.EditorTabState
 import com.wuxianggujun.tinaide.ui.compose.components.editor.EmptyEditorView
 import com.wuxianggujun.tinaide.ui.compose.components.editor.TinaCodeEditorPage
 import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState
-import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState.EditorPaneId
-import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState.SplitEditorLayout
+import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorPaneId
+import com.wuxianggujun.tinaide.ui.compose.state.editor.SplitEditorLayout
 import com.wuxianggujun.tinaide.ui.compose.viewer.HexViewerScreen
 import com.wuxianggujun.tinaide.ui.compose.viewer.ImagePreviewScreen
 import com.wuxianggujun.tinaide.ui.compose.viewer.LargeTextViewerScreen
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import timber.log.Timber
+import com.wuxianggujun.tinaide.ui.compose.state.editor.PluginLspDependencyAlert
 
 /**
  * 编辑器容器组件

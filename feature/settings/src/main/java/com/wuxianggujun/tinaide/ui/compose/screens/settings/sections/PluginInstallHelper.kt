@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
+import com.wuxianggujun.tinaide.plugin.InstalledPlugin
 import com.wuxianggujun.tinaide.plugin.PluginDiagnosticsReport
 import com.wuxianggujun.tinaide.plugin.PluginDoctor
 import com.wuxianggujun.tinaide.plugin.PluginManager
@@ -13,6 +14,7 @@ import com.wuxianggujun.tinaide.plugin.script.PluginPermission
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 
 data class PendingPluginInstall(
@@ -54,11 +56,18 @@ suspend fun previewPluginInstall(
     runCatching {
         val inputStream = context.contentResolver.openInputStream(uri)
             ?: uri.resolveFileUriOrNull()?.inputStream()
-        inputStream?.use { input ->
-            destFile.outputStream().use { output -> input.copyTo(output) }
+        val copiedWithinLimit = inputStream?.use { input ->
+            destFile.outputStream().use { output ->
+                PluginInstallHelperSupport.copyAtMost(
+                    input = input,
+                    output = output,
+                    maxBytes = ZipUtils.MAX_PACKAGE_BYTES,
+                )
+            }
         } ?: return@runCatching PluginInstallPreview.Failed(
             Strings.plugin_error_cannot_read_file.strOr(context)
         )
+        require(copiedWithinLimit) { Strings.plugin_error_package_too_large.strOr(context) }
 
         createPluginInstallPreview(context, destFile)
     }.getOrElse { throwable ->
@@ -99,14 +108,20 @@ internal fun createPluginInstallPreview(
 }
 
 suspend fun finishPluginInstall(
-    context: Context,
     pluginManager: PluginManager,
     pluginFile: File,
+    expectedManifest: PluginManifest,
     toastPluginsInstalledTemplate: String,
-    toastPluginsInstallFailedTemplate: String
-): PluginInstallOutcome = withContext(Dispatchers.IO) {
+    toastPluginsInstallFailedTemplate: String,
+    permissions: Set<PluginPermission> = emptySet(),
+): PluginInstallOutcome = withContext(NonCancellable + Dispatchers.IO) {
     try {
-        val result = pluginManager.install(pluginFile).map { installed -> installed.manifest }
+        val result = pluginManager.installWithPermissions(
+            zipFile = pluginFile,
+            pluginId = expectedManifest.id,
+            version = expectedManifest.version,
+            permissions = permissions,
+        ).map(InstalledPlugin::manifest)
         PluginInstallHelperSupport.buildInstallOutcome(
             result = result,
             installedTemplate = toastPluginsInstalledTemplate,

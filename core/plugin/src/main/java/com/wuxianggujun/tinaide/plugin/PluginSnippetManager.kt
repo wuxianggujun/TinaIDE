@@ -4,6 +4,7 @@ import com.wuxianggujun.tinaide.core.ServiceLifecycle
 import com.wuxianggujun.tinaide.core.common.snippet.expandSnippetToPlainText
 import com.wuxianggujun.tinaide.core.serialization.JsonSerializer
 import java.io.File
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -37,7 +38,13 @@ class PluginSnippetManager(
         )
         scope.launch {
             pluginManager.enabledPluginsFlow.collect { plugins ->
-                reloadFromInstalledPlugins(plugins)
+                try {
+                    reloadFromInstalledPlugins(plugins)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    Timber.tag(TAG).e(error, "Failed to refresh plugin snippet contributions")
+                }
             }
         }
     }

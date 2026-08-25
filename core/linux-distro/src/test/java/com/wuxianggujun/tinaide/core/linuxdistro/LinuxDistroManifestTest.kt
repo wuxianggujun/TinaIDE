@@ -68,7 +68,7 @@ class LinuxDistroManifestTest {
                           "format": "TAR_GZ",
                           "checksum": {
                             "algorithm": "SHA256",
-                            "value": "ABC123"
+                            "value": "${"AB".repeat(32)}"
                           }
                         }
                       ]
@@ -116,7 +116,7 @@ class LinuxDistroManifestTest {
                           "format": "TAR_GZ",
                           "checksum": {
                             "algorithm": "SHA256",
-                            "value": "ABC123"
+                            "value": "${"AB".repeat(32)}"
                           }
                         }
                       ]
@@ -162,7 +162,7 @@ class LinuxDistroManifestTest {
                         architecture = DistroArchitecture.AARCH64,
                         url = "https://example.test/rootfs.tar.gz",
                         format = DistroArchiveFormat.TAR_GZ,
-                        checksum = DistroChecksum(DistroChecksumAlgorithm.SHA256, "abc123")
+                        checksum = DistroChecksum(DistroChecksumAlgorithm.SHA256, "ab".repeat(32))
                     )
                 )
             )

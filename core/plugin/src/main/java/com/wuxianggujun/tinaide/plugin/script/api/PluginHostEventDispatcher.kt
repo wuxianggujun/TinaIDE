@@ -14,6 +14,14 @@ import kotlinx.coroutines.launch
  * `PluginEventBus.emit()` 的挂起接口。
  */
 object PluginHostEventDispatcher {
+    // Reserve space for JSON escaping and envelope fields below the 256 KiB Binder payload limit.
+    internal const val MAX_SELECTION_TEXT_CHARS = 16 * 1024
+    internal const val MAX_DIAGNOSTICS_PER_EVENT = 32
+    internal const val MAX_DIAGNOSTIC_URI_CHARS = 256
+    internal const val MAX_DIAGNOSTIC_FILE_NAME_CHARS = 96
+    internal const val MAX_DIAGNOSTIC_MESSAGE_CHARS = 384
+    internal const val MAX_DIAGNOSTIC_METADATA_CHARS = 48
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     fun emit(eventId: String, data: Map<String, Any?> = emptyMap()) {
@@ -134,22 +142,27 @@ object PluginHostEventDispatcher {
     }
 
     fun emitDiagnosticsChanged(fileUri: String, diagnostics: List<Diagnostic>) {
+        emit(
+            eventId = PluginEvent.DIAGNOSTICS_CHANGED.id,
+            data = diagnosticsPayload(fileUri, diagnostics),
+        )
+    }
+
+    internal fun diagnosticsPayload(fileUri: String, diagnostics: List<Diagnostic>): Map<String, Any?> {
         val errors = diagnostics.count { it.severity == Diagnostic.Severity.ERROR }
         val warnings = diagnostics.count { it.severity == Diagnostic.Severity.WARNING }
         val infos = diagnostics.count { it.severity == Diagnostic.Severity.INFO }
         val hints = diagnostics.count { it.severity == Diagnostic.Severity.HINT }
-        emit(
-            eventId = PluginEvent.DIAGNOSTICS_CHANGED.id,
-            data = mapOf(
-                "fileUri" to fileUri,
-                "fileName" to diagnostics.firstOrNull()?.fileName,
-                "totalCount" to diagnostics.size,
-                "errorCount" to errors,
-                "warningCount" to warnings,
-                "infoCount" to infos,
-                "hintCount" to hints,
-                "diagnostics" to diagnostics.map { it.toEventMap() }
-            )
+        return mapOf(
+            "fileUri" to fileUri.take(MAX_DIAGNOSTIC_URI_CHARS),
+            "fileName" to diagnostics.firstOrNull()?.fileName?.take(MAX_DIAGNOSTIC_FILE_NAME_CHARS),
+            "totalCount" to diagnostics.size,
+            "errorCount" to errors,
+            "warningCount" to warnings,
+            "infoCount" to infos,
+            "hintCount" to hints,
+            "diagnosticsTruncated" to (diagnostics.size > MAX_DIAGNOSTICS_PER_EVENT),
+            "diagnostics" to diagnostics.take(MAX_DIAGNOSTICS_PER_EVENT).map { it.toEventMap() },
         )
     }
 
@@ -229,7 +242,8 @@ data class EditorSelectionPayload(
     val endColumn: Int
 ) {
     fun toMap(): Map<String, Any?> = mapOf(
-        "text" to text,
+        "text" to text.take(PluginHostEventDispatcher.MAX_SELECTION_TEXT_CHARS),
+        "textTruncated" to (text.length > PluginHostEventDispatcher.MAX_SELECTION_TEXT_CHARS),
         "startLine" to startLine,
         "startColumn" to startColumn,
         "endLine" to endLine,
@@ -238,14 +252,14 @@ data class EditorSelectionPayload(
 }
 
 private fun Diagnostic.toEventMap(): Map<String, Any?> = mapOf(
-    "fileUri" to fileUri,
-    "fileName" to fileName,
+    "fileUri" to fileUri.take(PluginHostEventDispatcher.MAX_DIAGNOSTIC_URI_CHARS),
+    "fileName" to fileName.take(PluginHostEventDispatcher.MAX_DIAGNOSTIC_FILE_NAME_CHARS),
     "line" to line,
     "column" to column,
     "endLine" to endLine,
     "endColumn" to endColumn,
-    "message" to message,
+    "message" to message.take(PluginHostEventDispatcher.MAX_DIAGNOSTIC_MESSAGE_CHARS),
     "severity" to severity.name.lowercase(),
-    "source" to source,
-    "code" to code
+    "source" to source?.take(PluginHostEventDispatcher.MAX_DIAGNOSTIC_METADATA_CHARS),
+    "code" to code?.take(PluginHostEventDispatcher.MAX_DIAGNOSTIC_METADATA_CHARS)
 )

@@ -5,6 +5,7 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MonotonicFrameClock
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -13,6 +14,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import kotlin.coroutines.coroutineContext
 
 /**
  * 底部面板高度预设
@@ -24,7 +26,8 @@ object PanelHeightPreset {
     const val COLLAPSED = 0f
 
     /** 默认展开高度（构建日志、诊断等） */
-    const val DEFAULT = 0.45f
+    /** 默认约 1/3 屏，给编辑器更多空间；仍可拖到半屏/全屏 */
+    const val DEFAULT = 0.34f
 
     /** 终端默认高度（较小，保持编辑器可见） */
     const val TERMINAL = 0.30f
@@ -105,12 +108,10 @@ class BottomPanelDragState(
      * 收起面板
      */
     suspend fun collapse() {
-        heightAnimatable.animateTo(
-            targetValue = minHeight,
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioMediumBouncy,
-                stiffness = Spring.StiffnessMedium
-            )
+        animateHeightTo(
+            targetHeight = minHeight,
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium,
         )
     }
 
@@ -141,12 +142,10 @@ class BottomPanelDragState(
      */
     private suspend fun animateToFraction(fraction: Float) {
         val targetHeight = minHeight + (maxHeight - minHeight) * fraction.coerceIn(0f, 1f)
-        heightAnimatable.animateTo(
-            targetValue = targetHeight,
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioNoBouncy,
-                stiffness = Spring.StiffnessMediumLow
-            )
+        animateHeightTo(
+            targetHeight = targetHeight,
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMediumLow,
         )
     }
 
@@ -163,12 +162,34 @@ class BottomPanelDragState(
      */
     suspend fun animateToHeight(targetHeight: Float) {
         val clamped = targetHeight.coerceIn(minHeight, maxHeight)
+        animateHeightTo(
+            targetHeight = clamped,
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMediumLow,
+        )
+    }
+
+    /**
+     * 命令面板 / lifecycleScope 等非 Composition 协程没有 [MonotonicFrameClock]，
+     * 此时 [Animatable.animateTo] 会抛 IllegalStateException；退化为 snap，保证可展开。
+     */
+    private suspend fun animateHeightTo(
+        targetHeight: Float,
+        dampingRatio: Float,
+        stiffness: Float,
+        initialVelocity: Float = 0f,
+    ) {
+        if (coroutineContext[MonotonicFrameClock] == null) {
+            heightAnimatable.snapTo(targetHeight)
+            return
+        }
         heightAnimatable.animateTo(
-            targetValue = clamped,
+            targetValue = targetHeight,
             animationSpec = spring(
-                dampingRatio = Spring.DampingRatioNoBouncy,
-                stiffness = Spring.StiffnessMediumLow
-            )
+                dampingRatio = dampingRatio,
+                stiffness = stiffness,
+            ),
+            initialVelocity = initialVelocity,
         )
     }
 
@@ -193,7 +214,7 @@ class BottomPanelDragState(
     /**
      * 拖拽结束，根据速度和位置决定目标状态
      *
-     * 三个吸附目标：收起（0%）、默认（DEFAULT=45%）、全屏（100%）
+     * 三个吸附目标：收起（0%）、默认（DEFAULT≈34%）、全屏（100%）
      * - 快速向上/向下滑动：直接吸附到全屏/收起
      * - 慢速释放：吸附到距当前高度最近的预设点（收起、默认、全屏）
      */
@@ -227,13 +248,11 @@ class BottomPanelDragState(
 
         if (targetHeight == currentHeight) return
 
-        heightAnimatable.animateTo(
-            targetValue = targetHeight,
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioNoBouncy,
-                stiffness = Spring.StiffnessMediumLow
-            ),
-            initialVelocity = -velocity
+        animateHeightTo(
+            targetHeight = targetHeight,
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMediumLow,
+            initialVelocity = -velocity,
         )
     }
 }

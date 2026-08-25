@@ -51,7 +51,7 @@ class BottomPanelViewModel(
     private val _diagnostics = MutableStateFlow<List<Diagnostic>>(emptyList())
     val diagnostics: StateFlow<List<Diagnostic>> = _diagnostics.asStateFlow()
 
-    private val _selectedBottomTab = MutableStateFlow(BottomPanelTab.BUILD_LOG)
+    private val _selectedBottomTab = MutableStateFlow(BottomPanelTab.DIAGNOSTICS)
     val selectedBottomTab: StateFlow<BottomPanelTab> = _selectedBottomTab.asStateFlow()
 
     private val pendingOutputLock = Any()

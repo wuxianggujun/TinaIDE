@@ -27,5 +27,6 @@ dependencies {
     // JGit
     implementation(libs.jgit)
     implementation(libs.jgit.ssh.apache)
+    implementation(libs.bouncycastle.prov)
     implementation("org.slf4j:slf4j-nop:1.7.36")
 }

@@ -129,13 +129,5 @@ class RemoteLspUriMapper {
 
     private fun normalizeRootUri(uri: String): String = normalizeFileUri(uri).trimEnd('/') + "/"
 
-    private fun normalizeFileUri(uri: String): String {
-        if (!uri.startsWith("file:")) return uri
-        return when {
-            uri.startsWith("file:///") -> uri
-            uri.startsWith("file://") -> uri
-            uri.startsWith("file:/") -> "file:///" + uri.removePrefix("file:/")
-            else -> uri
-        }
-    }
+    private fun normalizeFileUri(uri: String): String = canonicalizeLspDocumentUri(uri)
 }

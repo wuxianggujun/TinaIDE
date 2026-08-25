@@ -1,5 +1,6 @@
 package com.wuxianggujun.tinaide.ui.compose.screens.main
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -21,13 +22,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.annotation.StringRes
 import com.wuxianggujun.tinaide.core.commands.HostCommands
 import com.wuxianggujun.tinaide.core.compile.RunConfiguration
 import com.wuxianggujun.tinaide.core.compile.RunConfigurationManager
@@ -42,8 +43,10 @@ import com.wuxianggujun.tinaide.ui.compose.components.RunConfigSelector
 import com.wuxianggujun.tinaide.ui.compose.components.TinaDropdownMenu
 import com.wuxianggujun.tinaide.ui.compose.components.TinaDropdownMenuDivider
 import com.wuxianggujun.tinaide.ui.compose.components.TinaDropdownMenuItem
+import com.wuxianggujun.tinaide.ui.compose.components.TinaDropdownMenuSectionHeader
+import com.wuxianggujun.tinaide.ui.compose.components.TinaDropdownMenuSectionTitle
 import com.wuxianggujun.tinaide.ui.compose.icons.rememberTinaPainter
-import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState.SplitEditorLayout
+import com.wuxianggujun.tinaide.ui.compose.state.editor.SplitEditorLayout
 
 internal class TopBarCallbacks(
     val onOpenDrawer: () -> Unit,
@@ -55,6 +58,8 @@ internal class TopBarCallbacks(
     val onDebug: () -> Unit,
     val onSave: () -> Unit,
     val onSaveAll: () -> Unit,
+    val onUndo: () -> Unit = {},
+    val onRedo: () -> Unit = {},
     val onFormatCode: () -> Unit,
     val onGotoLine: () -> Unit,
     val onNavigateBack: () -> Unit = {},
@@ -94,6 +99,8 @@ internal fun MainActivityTopBar(
     scrollBehavior: TopAppBarScrollBehavior? = null,
     isCompiling: Boolean,
     isDirty: Boolean,
+    canUndo: Boolean = false,
+    canRedo: Boolean = false,
     isDebugActive: Boolean,
     debugStatus: DebugStatus,
     runConfigManager: RunConfigurationManager,
@@ -115,10 +122,9 @@ internal fun MainActivityTopBar(
             val screenWidthPx = LocalWindowInfo.current.containerSize.width
             val compactTitleWidthPx = with(LocalDensity.current) { 360.dp.toPx() }
             val useCompactTitleLayout = screenWidthPx < compactTitleWidthPx
-            Row(
+            Box(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically
+                contentAlignment = Alignment.CenterEnd,
             ) {
                 if (showDebugBarInTop) {
                     DebugBar(
@@ -133,6 +139,8 @@ internal fun MainActivityTopBar(
                     )
                 } else if (!isDebugActive) {
                     val defaultRunConfigName = stringResource(Strings.run_config_default_name)
+                    // 手机：配置更短；平板/宽屏：配置名更宽。Build/Debug 默认进 Run 菜单，避免顶栏图标墙。
+                    val isWideTopBar = screenWidthPx >= with(LocalDensity.current) { 600.dp.toPx() }
                     RunConfigSelector(
                         configManager = runConfigManager,
                         onSelectConfig = { id ->
@@ -162,17 +170,40 @@ internal fun MainActivityTopBar(
                         isDebugEnabled = !isCompiling,
                         buildIconRes = Drawables.ic_build,
                         debugIconRes = Drawables.ic_debug,
-                        runTint = Color(0xFF4CAF50),
+                        runTint = MaterialTheme.colorScheme.primary,
                         disabledTint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                        configSegmentMaxWidth = if (useCompactTitleLayout) 72.dp else 110.dp,
-                        showBuildButton = true
+                        configSegmentMaxWidth = when {
+                            useCompactTitleLayout -> 72.dp
+                            isWideTopBar -> 140.dp
+                            else -> 110.dp
+                        },
+                        // 默认只常驻「配置 + Run」；平板也不默认铺 Build/Debug 图标，保持简洁
+                        showBuildButton = false,
+                        showDebugButton = false,
                     )
                 }
             }
         },
         navigationIcon = {
-            IconButton(onClick = callbacks.onOpenDrawer) {
-                Icon(Icons.Default.Menu, stringResource(Strings.content_desc_open_file_tree))
+            // 左侧：文件树 + 撤销/重做（与右侧保存/溢出分开，降低误触）
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = callbacks.onOpenDrawer) {
+                    Icon(Icons.Default.Menu, stringResource(Strings.content_desc_open_file_tree))
+                }
+                if (!isDebugActive) {
+                    EditHistoryActionButton(
+                        iconRes = Drawables.ic_undo,
+                        contentDescription = stringResource(Strings.content_desc_undo),
+                        enabled = canUndo,
+                        onClick = callbacks.onUndo,
+                    )
+                    EditHistoryActionButton(
+                        iconRes = Drawables.ic_redo,
+                        contentDescription = stringResource(Strings.content_desc_redo),
+                        enabled = canRedo,
+                        onClick = callbacks.onRedo,
+                    )
+                }
             }
         },
         actions = {
@@ -216,9 +247,22 @@ private fun MainActivityOverflowMenu(
         expanded = expanded,
         onDismissRequest = { expanded = false }
     ) {
-        commands.forEachIndexed { index, command ->
-            if (index == MAIN_ACTIVITY_OVERFLOW_PRIMARY_COMMAND_COUNT) {
-                TinaDropdownMenuDivider()
+        var previousSection: OverflowMenuSection? = null
+        commands.forEach { command ->
+            val section = command.overflowSection()
+            if (previousSection != section) {
+                if (previousSection != null) {
+                    TinaDropdownMenuDivider()
+                }
+                // 工程区仅「退出」一项时不显示分组标题，只保留分隔
+                if (section.titleRes != 0) {
+                    TinaDropdownMenuSectionHeader {
+                        TinaDropdownMenuSectionTitle(
+                            text = stringResource(section.titleRes)
+                        )
+                    }
+                }
+                previousSection = section
             }
             TinaDropdownMenuItem(
                 text = { Text(command.title.resolve(context)) },
@@ -232,7 +276,66 @@ private fun MainActivityOverflowMenu(
     }
 }
 
-private const val MAIN_ACTIVITY_OVERFLOW_PRIMARY_COMMAND_COUNT = 2
+/**
+ * 溢出菜单展示分组（与 HostCommandCategory 解耦，避免退出工程被归到「文件」导致结构乱）。
+ */
+private enum class OverflowMenuSection(
+    @param:StringRes val titleRes: Int,
+) {
+    FILE(Strings.menu_section_file),
+    VIEW(Strings.menu_section_view),
+    PROJECT(0),
+}
+
+private fun MainActivityCommand.overflowSection(): OverflowMenuSection = when (id) {
+    HostCommands.EDITOR_SAVE_ALL,
+    HostCommands.EDITOR_FORMAT,
+    -> OverflowMenuSection.FILE
+
+    HostCommands.VIEW_COMMAND_PALETTE,
+    "view.globalSearch",
+    HostCommands.VIEW_BOOKMARKS,
+    HostCommands.VIEW_TOGGLE_TERMINAL,
+    HostCommands.VIEW_SETTINGS,
+    -> OverflowMenuSection.VIEW
+
+    HostCommands.PROJECT_CLOSE,
+    -> OverflowMenuSection.PROJECT
+
+    else -> when (category) {
+        MainActivityCommandCategory.FILE,
+        MainActivityCommandCategory.CODE,
+        -> OverflowMenuSection.FILE
+
+        MainActivityCommandCategory.BUILD -> OverflowMenuSection.PROJECT
+
+        MainActivityCommandCategory.VIEW,
+        MainActivityCommandCategory.TERMINAL,
+        MainActivityCommandCategory.PLUGIN,
+        -> OverflowMenuSection.VIEW
+    }
+}
+
+@Composable
+private fun EditHistoryActionButton(
+    iconRes: Int,
+    contentDescription: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    IconButton(onClick = onClick, enabled = enabled) {
+        Icon(
+            painter = rememberTinaPainter(iconRes),
+            contentDescription = contentDescription,
+            tint = if (enabled) {
+                MaterialTheme.colorScheme.onSurface
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+            },
+            modifier = Modifier.size(18.dp)
+        )
+    }
+}
 
 @Composable
 private fun SaveActionButton(
@@ -248,7 +351,7 @@ private fun SaveActionButton(
             } else {
                 MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
             },
-            modifier = Modifier.size(20.dp)
+            modifier = Modifier.size(18.dp)
         )
     }
 }

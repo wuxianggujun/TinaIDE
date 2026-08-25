@@ -3,6 +3,7 @@ package com.wuxianggujun.tinaide.storage
 import android.content.Context
 import android.os.Build
 import android.os.Environment
+import com.wuxianggujun.tinaide.project.ProjectIdentity
 import java.io.File
 
 /**
@@ -59,6 +60,19 @@ import java.io.File
  */
 object ProjectPaths {
 
+    private fun requireSafePathComponent(value: String, label: String): String {
+        require(
+            value.isNotBlank() &&
+                value.length <= 255 &&
+                value != "." &&
+                value != ".." &&
+                '/' !in value &&
+                '\\' !in value &&
+                '\u0000' !in value
+        ) { "Invalid $label" }
+        return value
+    }
+
     // ============ 1. 私有源码目录 ============
 
     /**
@@ -71,7 +85,8 @@ object ProjectPaths {
     /**
      * 获取单个项目的私有源码目录
      */
-    fun getPrivateProjectDir(context: Context, projectName: String): File = File(getPrivateProjectsRoot(context), projectName)
+    fun getPrivateProjectDir(context: Context, projectName: String): File =
+        File(getPrivateProjectsRoot(context), requireSafePathComponent(projectName, "project name"))
 
     /**
      * 获取私有源码根目录路径（字符串）
@@ -102,7 +117,8 @@ object ProjectPaths {
     /**
      * 获取单个项目的公有源码目录。
      */
-    fun getPublicProjectDir(context: Context, projectName: String): File = File(getPublicProjectsRoot(context), projectName)
+    fun getPublicProjectDir(context: Context, projectName: String): File =
+        File(getPublicProjectsRoot(context), requireSafePathComponent(projectName, "project name"))
 
     /**
      * 判断给定路径是否位于默认公有源码根目录下。
@@ -123,7 +139,8 @@ object ProjectPaths {
      *
      * 以稳定的 projectId 作为目录名，避免项目重命名后工作区抖动。
      */
-    fun getProjectWorkspaceDir(context: Context, projectId: String): File = File(getWorkspaceRoot(context), projectId)
+    fun getProjectWorkspaceDir(context: Context, projectId: String): File =
+        File(getWorkspaceRoot(context), ProjectIdentity.requireValid(projectId))
 
     // ============ 4. 项目构建目录 ============
 

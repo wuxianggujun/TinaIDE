@@ -3,9 +3,12 @@ package com.wuxianggujun.tinaide.ui.compose.screens.main
 import android.app.Activity
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.dp
+import com.wuxianggujun.tinaide.core.compile.BuildSystem
+import com.wuxianggujun.tinaide.core.compile.BuildSystemDetector
 import com.wuxianggujun.tinaide.extensions.toastError
 import com.wuxianggujun.tinaide.extensions.toastInfo
 import com.wuxianggujun.tinaide.ui.BindMainActivityFileTreeState
+import java.io.File
 import kotlinx.coroutines.CoroutineScope
 
 @Composable
@@ -37,6 +40,22 @@ internal fun MainActivityScreenHost(
     val editorHostState = rememberMainActivityEditorHostState(
         editorManager = services.editorManager,
         projectRootPathProvider = { projectSnapshot.rootPath },
+        cppStandardOverrideProvider = cppStandardOverrideProvider@{ file ->
+            val projectRoot = projectSnapshot.projectRoot ?: return@cppStandardOverrideProvider null
+            val projectPath = runCatching { projectRoot.canonicalPath }.getOrNull()
+                ?: return@cppStandardOverrideProvider null
+            val filePath = runCatching { file.canonicalPath }.getOrNull()
+                ?: return@cppStandardOverrideProvider null
+            val belongsToCurrentProject = filePath == projectPath ||
+                filePath.startsWith(projectPath + File.separator)
+            if (!belongsToCurrentProject) return@cppStandardOverrideProvider null
+
+            if (BuildSystemDetector.detect(projectRoot) == BuildSystem.SINGLE_FILE) {
+                mainScreenState.buildUiState.runConfigManager.selectedConfig.singleFileCppStandard
+            } else {
+                null
+            }
+        },
         onLspDiagnosticsChanged = viewModels.bottomPanel::replaceDiagnosticsForFile,
     )
 

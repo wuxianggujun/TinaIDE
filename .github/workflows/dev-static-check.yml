@@ -38,6 +38,10 @@ jobs:
       - name: Run i18n checks
         run: python3 tools/i18n/check_all.py
 
+      - name: Test plugin device gate result parser
+        shell: pwsh
+        run: ./tools/testing/plugin-device-gate-result.tests.ps1
+
       - name: Restore tina-toolchain assets
         run: bash tools/ci/restore-tina-toolchain-assets.sh arm64
 
@@ -69,14 +73,43 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Compile app Kotlin
+      - name: Run plugin, help, and tutorial JVM tests
         run: |
-          ./gradlew :app:compileArm64DebugKotlin --no-daemon --configure-on-demand \
-            -Ptina.devAbi=arm64 \
-            -Ptina.buildProotFromSource=false \
+          ./gradlew -Ptina.devAbi=arm64 -Ptina.buildProotFromSource=false \
+            :core:plugin:testDebugUnitTest :feature:help:testDebugUnitTest :feature:tutorial:testDebugUnitTest \
+            --no-daemon --configure-on-demand \
             -Dorg.gradle.internal.http.connectionTimeout=120000 \
             -Dorg.gradle.internal.http.socketTimeout=120000 \
             -Dorg.gradle.internal.repository.max.retries=4
+
+      - name: Run app storage contract and tutorial JVM tests
+        run: |
+          ./gradlew -Ptina.devAbi=arm64 -Ptina.buildProotFromSource=false \
+            :app:testArm64DebugUnitTest \
+            --tests "com.wuxianggujun.tinaide.storage.Android10StorageManifestContractTest" \
+            --tests "com.wuxianggujun.tinaide.ui.compose.screens.main.tutorial.TutorialArticleLoadStateTest" \
+            --tests "com.wuxianggujun.tinaide.ui.compose.screens.main.tutorial.TutorialRelatedLearningSupportTest" \
+            --no-daemon --configure-on-demand \
+            -Dorg.gradle.internal.http.connectionTimeout=120000 \
+            -Dorg.gradle.internal.http.socketTimeout=120000 \
+            -Dorg.gradle.internal.repository.max.retries=4
+
+      - name: Upload plugin and tutorial JVM failure reports
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: plugin-jvm-test-reports-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            core/plugin/build/test-results/testDebugUnitTest/
+            core/plugin/build/reports/tests/testDebugUnitTest/
+            feature/help/build/test-results/testDebugUnitTest/
+            feature/help/build/reports/tests/testDebugUnitTest/
+            feature/tutorial/build/test-results/testDebugUnitTest/
+            feature/tutorial/build/reports/tests/testDebugUnitTest/
+            app/build/test-results/testArm64DebugUnitTest/
+            app/build/reports/tests/testArm64DebugUnitTest/
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Cleanup Gradle processes
         if: ${{ always() }}

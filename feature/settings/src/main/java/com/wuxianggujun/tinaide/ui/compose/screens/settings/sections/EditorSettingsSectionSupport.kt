@@ -1,6 +1,7 @@
 package com.wuxianggujun.tinaide.ui.compose.screens.settings.sections
 
 import androidx.annotation.StringRes
+import com.wuxianggujun.tinaide.core.config.CUSTOM_EDITOR_THEME_ID
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import java.io.File
 
@@ -24,11 +25,13 @@ internal object EditorSettingsSectionSupport {
         currentTheme: String,
         themeEntries: List<String>,
         themeValues: List<String>,
-        pluginThemesLabel: String
+        pluginThemesLabel: String,
+        customThemeLabel: String
     ): String {
         val index = themeValues.indexOf(currentTheme)
         return when {
             index >= 0 -> themeEntries.getOrNull(index) ?: currentTheme
+            currentTheme == CUSTOM_EDITOR_THEME_ID -> customThemeLabel
             currentTheme.startsWith("plugin:", ignoreCase = true) -> pluginThemesLabel
             else -> currentTheme
         }
@@ -36,8 +39,14 @@ internal object EditorSettingsSectionSupport {
 
     fun buildEditorThemeOptions(
         themeEntries: List<String>,
-        themeValues: List<String>
-    ): List<Pair<String, String>> = themeValues.zip(themeEntries)
+        themeValues: List<String>,
+        customThemeLabel: String
+    ): List<Pair<String, String>> = buildList {
+        addAll(themeValues.zip(themeEntries))
+        if (themeValues.none { it == CUSTOM_EDITOR_THEME_ID }) {
+            add(CUSTOM_EDITOR_THEME_ID to customThemeLabel)
+        }
+    }
 
     @StringRes
     fun resolveRenderWhitespaceLabel(mode: String): Int = when (mode) {

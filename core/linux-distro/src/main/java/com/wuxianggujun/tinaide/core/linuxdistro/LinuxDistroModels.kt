@@ -1,6 +1,7 @@
 package com.wuxianggujun.tinaide.core.linuxdistro
 
 import com.wuxianggujun.tinaide.core.common.io.TarExtractor
+import java.net.URI
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 
@@ -65,7 +66,11 @@ data class DistroChecksum(
     val value: String,
 ) {
     init {
-        require(value.isNotBlank()) { "Checksum value must not be blank." }
+        when (algorithm) {
+            DistroChecksumAlgorithm.SHA256 -> require(value.matches(Regex("(?i)^[0-9a-f]{64}$"))) {
+                "SHA-256 checksum must contain exactly 64 hexadecimal characters."
+            }
+        }
     }
 
     @Transient
@@ -85,11 +90,11 @@ data class DistroMirrorRule(
     val replaceWith: String,
 ) {
     init {
-        require(matchPrefix.startsWith("https://") || matchPrefix.startsWith("http://")) {
-            "Mirror matchPrefix must be http(s): $matchPrefix"
+        require(matchPrefix.isStrictHttpsUrl()) {
+            "Mirror matchPrefix must use a valid HTTPS URL"
         }
-        require(replaceWith.startsWith("https://") || replaceWith.startsWith("http://")) {
-            "Mirror replaceWith must be http(s): $replaceWith"
+        require(replaceWith.isStrictHttpsUrl()) {
+            "Mirror replaceWith must use a valid HTTPS URL"
         }
     }
 
@@ -108,10 +113,13 @@ data class DistroArtifact(
     val signatureUrl: String? = null,
 ) {
     init {
-        require(url.startsWith("https://") || url.startsWith("http://")) {
-            "Artifact URL must be http(s): $url"
+        require(url.isStrictHttpsUrl()) {
+            "Artifact URL must use a valid HTTPS URL"
         }
         require(sizeBytes == null || sizeBytes > 0L) { "Artifact size must be positive when provided." }
+        require(signatureUrl == null || signatureUrl.isStrictHttpsUrl()) {
+            "Artifact signature URL must use a valid HTTPS URL"
+        }
     }
 }
 
@@ -166,3 +174,10 @@ data class ResolvedDistroArtifact(
 )
 
 internal fun String.isSafeId(): Boolean = isNotBlank() && all { char -> char.isLetterOrDigit() || char == '-' || char == '_' || char == '.' }
+
+internal fun String.isStrictHttpsUrl(): Boolean = runCatching {
+    val uri = URI(this)
+    uri.scheme.equals("https", ignoreCase = true) &&
+        !uri.host.isNullOrBlank() &&
+        uri.userInfo == null
+}.getOrDefault(false)

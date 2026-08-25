@@ -1,7 +1,6 @@
 package com.wuxianggujun.tinaide.settings
 
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.clickable
@@ -45,6 +44,7 @@ import com.wuxianggujun.tinaide.core.config.Prefs
 import com.wuxianggujun.tinaide.core.i18n.Raw
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.serialization.JsonSerializer
+import com.wuxianggujun.tinaide.ui.TinaComponentActivity
 import com.wuxianggujun.tinaide.ui.compose.components.TinaAlertDialog
 import com.wuxianggujun.tinaide.ui.compose.components.TinaDialogContentColumn
 import com.wuxianggujun.tinaide.ui.compose.components.TinaDialogTitleText
@@ -62,7 +62,7 @@ import kotlinx.serialization.json.jsonPrimitive
  *
  * 从 `res/raw/aboutlibraries.json` 读取并展示开源许可信息（自维护，避免引入额外依赖）。
  */
-class OpenSourceLicensesActivity : ComponentActivity() {
+class OpenSourceLicensesActivity : TinaComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         Prefs.applyTheme() // 应用系统级主题设置

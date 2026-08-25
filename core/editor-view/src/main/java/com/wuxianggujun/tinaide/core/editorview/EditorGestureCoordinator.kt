@@ -436,13 +436,14 @@ internal class EditorGestureCoordinator(
         val visualStartColumn = state.visualLineStartColumn(visualLine).coerceIn(0, lineText.length)
         val visualEndColumn = state.visualLineEndColumn(visualLine).coerceIn(visualStartColumn, lineText.length)
         val prefixLayout = lineLayoutCache.getPrefixLayout(
+            state = state,
             line = line,
             lineText = lineText,
             textVersion = state.textBuffer.version,
             paint = textPaint,
-            tabSize = state.config.tabSize
         )
-        val segmentStartXInText = prefixLayout.prefix[visualStartColumn.coerceIn(0, prefixLayout.length)]
+        val segmentStartXInText =
+            prefixLayout.segmentStartAdvance(visualStartColumn.coerceIn(0, prefixLayout.length))
         val rawColumn = lineLayoutCache.xToColumn(
             layout = prefixLayout,
             contentX = segmentStartXInText + contentX

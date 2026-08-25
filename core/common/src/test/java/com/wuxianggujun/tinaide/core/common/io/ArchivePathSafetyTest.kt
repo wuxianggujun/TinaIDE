@@ -37,6 +37,26 @@ class ArchivePathSafetyTest {
     }
 
     @Test
+    fun requireNoSymlinkComponents_allowsCandidateResolvedFromCanonicalTargetAlias() {
+        val canonicalTarget = tempFolder.newFolder("canonical-target").canonicalFile
+        val aliasedTarget = CanonicalAliasFile(
+            path = File(tempFolder.root, "alias-target").absolutePath,
+            canonicalFile = canonicalTarget,
+        )
+        val candidate = ArchivePathSafety.resolveEntryFile(
+            targetDir = aliasedTarget,
+            entryName = "android-sysroot",
+        )
+
+        ArchivePathSafety.requireNoSymlinkComponents(
+            targetDir = aliasedTarget,
+            candidate = candidate,
+        )
+
+        assertThat(candidate).isEqualTo(File(canonicalTarget, "android-sysroot"))
+    }
+
+    @Test
     fun symlinkTargetMustStayInsideTargetDir() {
         val targetDir = tempFolder.newFolder("target")
         val linkFile = File(targetDir, "bin/tool")
@@ -56,5 +76,12 @@ class ArchivePathSafetyTest {
                 linkTarget = "../../outside"
             )
         }
+    }
+
+    private class CanonicalAliasFile(
+        path: String,
+        private val canonicalFile: File,
+    ) : File(path) {
+        override fun getCanonicalFile(): File = canonicalFile
     }
 }

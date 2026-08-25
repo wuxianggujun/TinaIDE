@@ -2,6 +2,7 @@ package com.wuxianggujun.tinaide.core.compile
 
 import com.wuxianggujun.tinaide.core.linux.LinuxRunModePolicy
 import java.io.File
+import kotlinx.serialization.Serializable
 
 // 构建流水线共用模型。实际构建策略接口位于 strategy/BuildStrategy.kt。
 
@@ -104,11 +105,16 @@ data class BuildOptions(
     }
 }
 
-enum class CMakeBuildTypeOption(val cmakeValue: String) {
-    DEBUG("Debug"),
-    RELEASE("Release"),
-    REL_WITH_DEB_INFO("RelWithDebInfo"),
-    MIN_SIZE_REL("MinSizeRel");
+@Serializable
+enum class CMakeBuildTypeOption(
+    val cmakeValue: String,
+    val generalBuildType: BuildType,
+    val generatesDebugInfo: Boolean,
+) {
+    DEBUG("Debug", BuildType.DEBUG, true),
+    RELEASE("Release", BuildType.RELEASE, false),
+    REL_WITH_DEB_INFO("RelWithDebInfo", BuildType.DEBUG, true),
+    MIN_SIZE_REL("MinSizeRel", BuildType.RELEASE, false);
 
     companion object {
         fun fromValue(value: String?): CMakeBuildTypeOption = when (value?.trim()) {

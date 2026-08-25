@@ -23,47 +23,6 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import timber.log.Timber
 
-sealed interface EditorCompletionFetchResult {
-    data class Success(val items: List<EditorCompletionItem>) : EditorCompletionFetchResult
-    data class TransientFailure(val reason: String? = null) : EditorCompletionFetchResult
-}
-
-sealed interface CompletionUiState {
-    data object Hidden : CompletionUiState
-    data class Loading(
-        val previousItems: List<EditorCompletionItem>,
-        val query: String,
-        val selectedIndex: Int,
-        val requestId: Long
-    ) : CompletionUiState
-
-    data class Visible(
-        val items: List<EditorCompletionItem>,
-        val query: String,
-        val selectedIndex: Int,
-        val requestId: Long
-    ) : CompletionUiState
-}
-
-sealed interface HoverUiState {
-    data object Hidden : HoverUiState
-    data object Loading : HoverUiState
-    data class Visible(val markdown: String) : HoverUiState
-}
-
-sealed interface SignatureHelpUiState {
-    data object Hidden : SignatureHelpUiState
-    data class Loading(
-        val previousResult: SignatureHelpResult?,
-        val requestId: Long
-    ) : SignatureHelpUiState
-
-    data class Visible(
-        val result: SignatureHelpResult,
-        val requestId: Long
-    ) : SignatureHelpUiState
-}
-
 @Stable
 class EditorState(
     override val textBuffer: TextBuffer,
@@ -217,6 +176,9 @@ class EditorState(
     internal var semanticTokensVersion by mutableStateOf(0L)
         private set
 
+    internal var inlayHintsVersion by mutableStateOf(0L)
+        private set
+
     /**
      * 统一的 styling 版本号：每次 syntax 或 semantic 更新都推进，最晚到达者负责递增。
      *
@@ -238,8 +200,9 @@ class EditorState(
             override val viewportWidthPx: Float get() = this@EditorState.viewportWidthPx
             override val cursorLine: Int get() = this@EditorState.cursorLine
             override val visibleLines: IntRange get() = this@EditorState.visibleLines
-            override val wordWrapEnabled: Boolean get() = config.wordWrap
+            override val wordWrapEnabled: Boolean get() = this@EditorState.config.wordWrap
             override val isWordWrapLayoutFrozen: Boolean get() = this@EditorState.isWordWrapLayoutFrozen()
+            override val inlayHintsVersion: Long get() = this@EditorState.inlayHintsVersion
 
             override fun lineVisualColumns(lineText: String): Int = lineVisualColumnsForWidth(lineText)
 
@@ -249,25 +212,29 @@ class EditorState(
                 map: EditorVisualLineMapper.VisualLineMap,
                 visualLine: Int
             ): Int = this@EditorState.resolveVisibleIndexForVisualLine(map, visualLine)
+
+            override fun maxInlayExpandedLineVisualColumns(): Int =
+                this@EditorState.maxInlayExpandedLineVisualColumns()
         }
     )
 
     // 视觉行映射（folding + wordWrap）委托给 [EditorVisualLineMapper]：该类维护视觉行映射缓存与
-    // 按文档行的 wrap segmentCount 缓存，行为与原内联实现严格一致（见该类文档说明的两处刻意保留现状）。
+    // 按文档行的 wrap segmentCount 缓存，并在原有行为上纳入 Inlay Hint 虚拟宽度。
     // 折叠层产出的 lineMap() 经 Host 注入，转接到 [EditorFoldingManager]。
     private val visualLineMapper = EditorVisualLineMapper(
         object : EditorVisualLineMapper.Host {
             override val textBuffer: TextBuffer get() = this@EditorState.textBuffer
             override val charWidthPx: Float get() = this@EditorState.charWidthPx
             override val viewportWidthPx: Float get() = this@EditorState.viewportWidthPx
-            override val wordWrapEnabled: Boolean get() = config.wordWrap
-            override val tabSize: Int get() = config.tabSize
-            override val codeFoldingEnabled: Boolean get() = config.codeFolding
+            override val wordWrapEnabled: Boolean get() = this@EditorState.config.wordWrap
+            override val tabSize: Int get() = this@EditorState.config.tabSize
+            override val codeFoldingEnabled: Boolean get() = this@EditorState.config.codeFolding
             override val frozenWordWrapColumns: Int? get() = this@EditorState.frozenWordWrapColumns
             override val foldRegionsDocumentVersion: Long get() = foldingManager.foldRegionsDocumentVersion
             override val foldDataVersion: Int get() = foldingManager.foldDataVersion
-            override val wordWrapLayoutCache: EditorWordWrapLayoutCache get() = this@EditorState.wordWrapLayoutCache
-
+            override val inlayHintsVersion: Long get() = this@EditorState.inlayHintsVersion
+            override fun inlayHintsForLine(line: Int): List<EditorInlayHint> =
+                activeInlayHintsForLine(line)
             override fun lineMap(): EditorFoldingManager.LineMap = foldingManager.lineMap()
         }
     )
@@ -279,8 +246,8 @@ class EditorState(
     private val foldingManager = EditorFoldingManager(
         object : EditorFoldingManager.Host {
             override val textBuffer: TextBuffer get() = this@EditorState.textBuffer
-            override val codeFoldingEnabled: Boolean get() = config.codeFolding
-            override val tabSize: Int get() = config.tabSize
+            override val codeFoldingEnabled: Boolean get() = this@EditorState.config.codeFolding
+            override val tabSize: Int get() = this@EditorState.config.tabSize
             override val gutterDecorations get() = this@EditorState.gutterDecorations
             override val diagnosticLinesSorted: IntArray get() = this@EditorState.diagnosticLinesSorted
             override val cursorOffset: Int get() = this@EditorState.cursorOffset
@@ -313,7 +280,7 @@ class EditorState(
         object : EditorCompletionController.Host {
             override val textBuffer: TextBuffer get() = this@EditorState.textBuffer
             override val cursorPosition: Position get() = this@EditorState.cursorPosition
-            override val completionCaseSensitive: Boolean get() = config.completionCaseSensitive
+            override val completionCaseSensitive: Boolean get() = this@EditorState.config.completionCaseSensitive
             override val onRequestCompletion: (suspend (Position, Char?) -> EditorCompletionFetchResult)?
                 get() = this@EditorState.onRequestCompletion
 
@@ -369,6 +336,12 @@ class EditorState(
     var highlighter by mutableStateOf<SyntaxHighlighter?>(null)
     var semanticTokens by mutableStateOf<List<SemanticToken>>(emptyList())
     var semanticTokensByLine by mutableStateOf<Map<Int, List<SemanticToken>>>(emptyMap())
+    var inlayHints by mutableStateOf<List<EditorInlayHint>>(emptyList())
+        private set
+    var inlayHintsByLine by mutableStateOf<Map<Int, List<EditorInlayHint>>>(emptyMap())
+        private set
+    var inlayHintsDocumentVersion by mutableStateOf(-1L)
+        private set
     var diagnostics by mutableStateOf<List<EditorDiagnostic>>(emptyList())
     var diagnosticsByLine by mutableStateOf<Map<Int, List<EditorDiagnostic>>>(emptyMap())
     private var diagnosticLinesSortedRef: Map<Int, List<EditorDiagnostic>>? = null
@@ -450,10 +423,26 @@ class EditorState(
         if (currentByLine.isEmpty()) return
 
         val startLine = change.startLine.coerceAtLeast(0)
+        if (
+            change.lineDelta == 0 &&
+            change.endLine == change.startLine &&
+            change.oldLineBreakCount == 0 &&
+            !change.newText.contains('\n')
+        ) {
+            applySingleLineTextChangeToSemanticTokens(
+                currentByLine = currentByLine,
+                line = startLine,
+                editStartColumn = change.startColumn.coerceAtLeast(0),
+                editEndColumn = change.endColumn.coerceAtLeast(change.startColumn),
+                columnDelta = change.newText.length - change.oldTextLength
+            )
+            return
+        }
+
         val oldChangedEndLine = when {
             change.startColumn == 0 &&
                 change.endColumn == 0 &&
-                change.oldText.endsWith('\n') ->
+                change.oldTextEndsWithLineBreak ->
                 (change.endLine - 1).coerceAtLeast(startLine)
 
             else -> change.endLine.coerceAtLeast(startLine)
@@ -485,6 +474,87 @@ class EditorState(
 
         if (updatedByLine == currentByLine) return
 
+        semanticTokensByLine = updatedByLine
+        semanticTokens = updatedByLine.values.flatten()
+        semanticTokensVersion++
+        bumpStylingVersion()
+    }
+
+    fun clearInlayHints() {
+        if (inlayHints.isEmpty() && inlayHintsByLine.isEmpty() && inlayHintsDocumentVersion < 0L) return
+        inlayHints = emptyList()
+        inlayHintsByLine = emptyMap()
+        inlayHintsDocumentVersion = -1L
+        inlayHintsVersion++
+    }
+
+    private fun activeInlayHintsForLine(line: Int): List<EditorInlayHint> =
+        if (inlayHintsDocumentVersion == textBuffer.version) {
+            inlayHintsByLine[line].orEmpty()
+        } else {
+            emptyList()
+        }
+
+    fun replaceInlayHintsInLines(
+        lines: IntRange,
+        hints: List<EditorInlayHint>,
+        documentVersion: Long,
+    ): Boolean {
+        if (lines.isEmpty() || textBuffer.version != documentVersion) return false
+
+        val updatedByLine = if (inlayHintsDocumentVersion == documentVersion) {
+            inlayHintsByLine.toMutableMap()
+        } else {
+            mutableMapOf()
+        }
+        updatedByLine.keys
+            .filter { line -> line in lines }
+            .forEach(updatedByLine::remove)
+        hints.asSequence()
+            .filter { hint -> hint.line in lines && hint.line >= 0 && hint.column >= 0 && hint.label.isNotBlank() }
+            .groupBy { hint -> hint.line }
+            .forEach { (line, lineHints) ->
+                updatedByLine[line] = lineHints
+                    .distinct()
+                    .sortedWith(compareBy(EditorInlayHint::column, EditorInlayHint::label))
+            }
+
+        val normalizedByLine = updatedByLine.toSortedMap()
+        if (inlayHintsDocumentVersion == documentVersion && inlayHintsByLine == normalizedByLine) return true
+        inlayHintsByLine = normalizedByLine
+        inlayHints = normalizedByLine.values.flatten()
+        inlayHintsDocumentVersion = documentVersion
+        inlayHintsVersion++
+        return true
+    }
+
+    private fun applySingleLineTextChangeToSemanticTokens(
+        currentByLine: Map<Int, List<SemanticToken>>,
+        line: Int,
+        editStartColumn: Int,
+        editEndColumn: Int,
+        columnDelta: Int
+    ) {
+        val currentLineTokens = currentByLine[line] ?: return
+        val isInsertion = editStartColumn == editEndColumn
+        val adjustedLineTokens = currentLineTokens.mapNotNull { token ->
+            val tokenEndColumn = token.startColumn + token.length
+            when {
+                tokenEndColumn <= editStartColumn -> token
+                token.startColumn >= editEndColumn ->
+                    token.copy(startColumn = (token.startColumn + columnDelta).coerceAtLeast(0))
+                isInsertion && token.startColumn < editStartColumn && tokenEndColumn > editStartColumn -> null
+                else -> null
+            }
+        }
+        if (adjustedLineTokens == currentLineTokens) return
+
+        val updatedByLine = LinkedHashMap(currentByLine)
+        if (adjustedLineTokens.isEmpty()) {
+            updatedByLine.remove(line)
+        } else {
+            updatedByLine[line] = adjustedLineTokens
+        }
         semanticTokensByLine = updatedByLine
         semanticTokens = updatedByLine.values.flatten()
         semanticTokensVersion++
@@ -603,7 +673,8 @@ class EditorState(
             lineText = lineText,
             textVersion = textBuffer.version,
             wrapColumns = map.wrapColumns,
-            tabSize = config.tabSize
+            tabSize = config.tabSize,
+            inlayHints = activeInlayHintsForLine(docLine),
         )
         val segmentIndex = layout.segmentIndexForColumn(safeColumn)
         return (firstVisual + segmentIndex).coerceIn(0, map.visualLineCount - 1)
@@ -623,7 +694,8 @@ class EditorState(
             lineText = lineText,
             textVersion = textBuffer.version,
             wrapColumns = map.wrapColumns,
-            tabSize = config.tabSize
+            tabSize = config.tabSize,
+            inlayHints = activeInlayHintsForLine(docLine),
         )
         return layout.startColumnForSegment(segmentIndex).coerceIn(0, lineText.length)
     }
@@ -645,7 +717,8 @@ class EditorState(
             lineText = lineText,
             textVersion = textBuffer.version,
             wrapColumns = map.wrapColumns,
-            tabSize = config.tabSize
+            tabSize = config.tabSize,
+            inlayHints = activeInlayHintsForLine(docLine),
         )
         return layout.endColumnForSegment(segmentIndex).coerceIn(0, lineText.length)
     }
@@ -750,7 +823,11 @@ class EditorState(
         val oldSelection = selectionRange
         val oldX = scrollOffsetXPx
         val oldY = scrollOffsetPx
-        val safeOffset = offset.coerceIn(0, textBuffer.length)
+        val safeOffset = snapOffsetToEditorUnitBoundary(
+            textBuffer = textBuffer,
+            offset = offset,
+            preferAfter = true
+        )
         val pos = textBuffer.offsetToPosition(safeOffset)
         revealLineIfFolded(pos.line)
         val clampedOffset = safeOffset.coerceIn(0, textBuffer.length)
@@ -820,8 +897,16 @@ class EditorState(
         val line = lineFromViewportY(yPx)
         val lineText = textBuffer.getLine(line)
         val contentX = (xPx - textStartXPx + scrollOffsetXPx).coerceAtLeast(0f)
-        val column = (contentX / charWidthPx).toInt().coerceIn(0, lineText.length)
-        moveCursorTo(textBuffer.positionToOffset(line, column))
+        val fractionalColumn = contentX / charWidthPx.coerceAtLeast(1f)
+        val column = fractionalColumn.toInt().coerceIn(0, lineText.length)
+        val rawOffset = textBuffer.positionToOffset(line, column)
+        moveCursorTo(
+            snapOffsetToEditorUnitBoundary(
+                textBuffer = textBuffer,
+                offset = rawOffset,
+                preferAfter = fractionalColumn >= column
+            )
+        )
     }
 
     fun lineFromViewportY(yPx: Float): Int {
@@ -862,6 +947,32 @@ class EditorState(
         editorInsert(this, text)
     }
 
+    /**
+     * Inserts text produced by an explicit user-input control, such as the editor symbol bar.
+     * This keeps virtual controls aligned with IME and hardware-keyboard smart insertion rules.
+     */
+    fun insertUserInput(text: String): Boolean {
+        if (text.isEmpty()) return false
+
+        val selection = selectionRange?.takeUnless(OffsetRange::isEmpty)
+        val startOffset = selection?.start ?: cursorOffset
+        val endOffset = selection?.end ?: cursorOffset
+        val resolved = EditorSmartReplacement.resolve(
+            state = this,
+            startOffset = startOffset,
+            replacement = text,
+            endOffset = endOffset,
+        )
+        val changed = editorReplaceRange(
+            state = this,
+            startOffset = startOffset,
+            endOffset = endOffset,
+            replacement = resolved.replacement,
+            cursorOffsetAfterEdit = resolved.cursorOffsetAfterInsert,
+        )
+        return changed || resolved.cursorOffsetAfterInsert != null
+    }
+
     override fun backspace() {
         editorBackspace(this)
     }
@@ -879,16 +990,7 @@ class EditorState(
             }
         }
         if (cursorOffset <= 0) return
-        val highSurrogate = textBuffer.charAt(cursorOffset - 2)
-        val lowSurrogate = textBuffer.charAt(cursorOffset - 1)
-        val step = if (
-            highSurrogate != null && lowSurrogate != null &&
-            Character.isSurrogatePair(highSurrogate, lowSurrogate)
-        ) {
-            2
-        } else {
-            1
-        }
+        val step = editorUnitLengthBefore(textBuffer, cursorOffset)
         moveCursorToWithOptionalSelection(
             offset = skipFoldBackwardIfHidden(cursorOffset - step),
             extendSelection = extendSelection
@@ -904,16 +1006,7 @@ class EditorState(
             }
         }
         if (cursorOffset >= textBuffer.length) return
-        val highSurrogate = textBuffer.charAt(cursorOffset)
-        val lowSurrogate = textBuffer.charAt(cursorOffset + 1)
-        val step = if (
-            highSurrogate != null && lowSurrogate != null &&
-            Character.isSurrogatePair(highSurrogate, lowSurrogate)
-        ) {
-            2
-        } else {
-            1
-        }
+        val step = editorUnitLengthAfter(textBuffer, cursorOffset)
         moveCursorToWithOptionalSelection(
             offset = skipFoldForwardIfHidden(cursorOffset + step),
             extendSelection = extendSelection
@@ -1008,8 +1101,11 @@ class EditorState(
         val oldSelection = selectionRange
         val oldX = scrollOffsetXPx
         val oldY = scrollOffsetPx
-        val safeStart = startOffset.coerceIn(0, textBuffer.length)
-        val safeEnd = endOffset.coerceIn(0, textBuffer.length)
+        val (safeStart, safeEnd) = snapSelectionToEditorUnitBoundaries(
+            textBuffer = textBuffer,
+            start = startOffset,
+            end = endOffset
+        )
         selectionRange = OffsetRange(safeStart, safeEnd)
         cursorOffset = safeEnd
         if (ensureVisible) {
@@ -1120,7 +1216,11 @@ class EditorState(
     fun startSelection(anchorOffset: Int) {
         val oldCursor = cursorOffset
         val oldSelection = selectionRange
-        val safe = anchorOffset.coerceIn(0, textBuffer.length)
+        val safe = snapOffsetToEditorUnitBoundary(
+            textBuffer = textBuffer,
+            offset = anchorOffset,
+            preferAfter = true
+        )
         selectionRange = OffsetRange(safe, safe)
         cursorOffset = safe
         if (isFocused) {
@@ -1139,8 +1239,14 @@ class EditorState(
         val oldSelection = selectionRange
         val oldX = scrollOffsetXPx
         val oldY = scrollOffsetPx
-        val safe = offset.coerceIn(0, textBuffer.length)
         val current = selectionRange
+        val clampedOffset = offset.coerceIn(0, textBuffer.length)
+        val anchor = current?.anchor ?: cursorOffset
+        val safe = snapOffsetToEditorUnitBoundary(
+            textBuffer = textBuffer,
+            offset = clampedOffset,
+            preferAfter = clampedOffset >= anchor
+        )
         selectionRange = if (current == null) {
             OffsetRange(cursorOffset, safe)
         } else {
@@ -1266,21 +1372,29 @@ class EditorState(
     private var cachedMaxScrollPxVersion = -1L
     private var cachedMaxScrollPxLineHeight = 0f
     private var cachedMaxScrollPxViewportH = 0f
+    private var cachedMaxScrollPxVisualLineCount = -1
     private var cachedMaxScrollPxValue = 0f
 
     private fun maxScrollPx(): Float {
         val version = textBuffer.version
         val lh = lineHeightPx
         val vh = viewportHeightPx
-        if (version == cachedMaxScrollPxVersion && lh == cachedMaxScrollPxLineHeight && vh == cachedMaxScrollPxViewportH) {
+        val visualLines = visualLineCount()
+        if (
+            version == cachedMaxScrollPxVersion &&
+            lh == cachedMaxScrollPxLineHeight &&
+            vh == cachedMaxScrollPxViewportH &&
+            visualLines == cachedMaxScrollPxVisualLineCount
+        ) {
             return cachedMaxScrollPxValue
         }
-        val totalHeight = visualLineCount() * lh
+        val totalHeight = visualLines * lh
         val bottomPadding = vh * 0.5f
         val result = (totalHeight - vh + bottomPadding).coerceAtLeast(0f)
         cachedMaxScrollPxVersion = version
         cachedMaxScrollPxLineHeight = lh
         cachedMaxScrollPxViewportH = vh
+        cachedMaxScrollPxVisualLineCount = visualLines
         cachedMaxScrollPxValue = result
         return result
     }
@@ -1443,6 +1557,24 @@ class EditorState(
 
     private fun lineVisualColumnsForWidth(lineText: String): Int = TextScanKernel.measureVisualColumns(lineText, config.tabSize)
 
+    private fun maxInlayExpandedLineVisualColumns(): Int {
+        if (inlayHintsDocumentVersion != textBuffer.version || inlayHintsByLine.isEmpty()) return 0
+        val maxLineIndex = textBuffer.lineCount - 1
+        var maxColumns = 0
+        inlayHintsByLine.forEach { (line, hints) ->
+            if (line !in 0..maxLineIndex || hints.isEmpty()) return@forEach
+            val expandedColumns = EditorInlayHintColumnLayout.expandedLineColumns(
+                lineText = textBuffer.getLine(line),
+                tabSize = config.tabSize,
+                hints = hints,
+            )
+            if (expandedColumns > maxColumns) {
+                maxColumns = expandedColumns
+            }
+        }
+        return maxColumns
+    }
+
     internal fun isWordChar(c: Char): Boolean = TextScanKernel.isWordChar(c)
 
     internal fun completionQueryFromCursor(): String {
@@ -1491,13 +1623,36 @@ class EditorState(
     fun applyTextBufferChange(change: TextChange) {
         val currentVersion = textBuffer.version
         textVersion = currentVersion
+        clearInlayHints()
         applyTextChangeToSemanticTokens(change)
         foldingManager.adjustFoldRegionsAfterTextChange(change, currentVersion)
         applyWidthSnapshotChange(change, currentVersion)
         wordWrapLayoutCache.applyTextChange(change, currentVersion)
-        // 必须在 wordWrapLayoutCache.applyTextChange 之后调：该方法会移除编辑窗内的旧 wrap 条目，
-        // applyTextChangeToDocSegmentCounts 的重算才会命中新 layout。
+        // segment count 与完整 wrap layout 分开维护；这里只基于当前文本重算编辑窗内的行。
         applyTextChangeToDocSegmentCounts(change, currentVersion)
+        normalizeInteractionOffsetsAfterTextChange()
+    }
+
+    private fun normalizeInteractionOffsetsAfterTextChange() {
+        val range = selectionRange
+        if (range != null) {
+            val (anchor, caret) = snapSelectionToEditorUnitBoundaries(
+                textBuffer = textBuffer,
+                start = range.anchor,
+                end = range.caret
+            )
+            val normalizedRange = OffsetRange(anchor = anchor, caret = caret)
+            if (selectionRange != normalizedRange) selectionRange = normalizedRange
+            if (cursorOffset != caret) cursorOffset = caret
+            return
+        }
+
+        val normalizedCursor = snapOffsetToEditorUnitBoundary(
+            textBuffer = textBuffer,
+            offset = cursorOffset,
+            preferAfter = true
+        )
+        if (cursorOffset != normalizedCursor) cursorOffset = normalizedCursor
     }
 
     internal fun emitEvent(event: EditorEvent) {

@@ -5,12 +5,12 @@ import androidx.compose.runtime.snapshots.SnapshotStateList
 import java.io.File
 
 internal class EditorNavigationHistoryManager(
-    private val currentLocationProvider: () -> EditorContainerState.NavigationHistoryEntry?,
-    private val openLocation: (EditorContainerState.NavigationHistoryEntry) -> Boolean,
+    private val currentLocationProvider: () -> NavigationHistoryEntry?,
+    private val openLocation: (NavigationHistoryEntry) -> Boolean,
     private val maxHistorySize: Int = DEFAULT_MAX_NAVIGATION_HISTORY_SIZE,
 ) {
-    val backStack: SnapshotStateList<EditorContainerState.NavigationHistoryEntry> = mutableStateListOf()
-    val forwardStack: SnapshotStateList<EditorContainerState.NavigationHistoryEntry> = mutableStateListOf()
+    val backStack: SnapshotStateList<NavigationHistoryEntry> = mutableStateListOf()
+    val forwardStack: SnapshotStateList<NavigationHistoryEntry> = mutableStateListOf()
 
     fun canNavigateBack(): Boolean = backStack.isNotEmpty()
 
@@ -26,16 +26,16 @@ internal class EditorNavigationHistoryManager(
         destinationStack = backStack
     )
 
-    fun entryOf(file: File, line: Int, column: Int): EditorContainerState.NavigationHistoryEntry =
-        EditorContainerState.NavigationHistoryEntry(
+    fun entryOf(file: File, line: Int, column: Int): NavigationHistoryEntry =
+        NavigationHistoryEntry(
             filePath = file.absolutePath,
             line = line.coerceAtLeast(0),
             column = column.coerceAtLeast(0)
         )
 
     fun recordTransition(
-        source: EditorContainerState.NavigationHistoryEntry?,
-        target: EditorContainerState.NavigationHistoryEntry
+        source: NavigationHistoryEntry?,
+        target: NavigationHistoryEntry
     ) {
         if (source == null || source.isSameNavigationLocation(target)) return
         pushNavigationEntry(backStack, source)
@@ -48,8 +48,8 @@ internal class EditorNavigationHistoryManager(
     }
 
     private fun navigateHistory(
-        sourceStack: SnapshotStateList<EditorContainerState.NavigationHistoryEntry>,
-        destinationStack: SnapshotStateList<EditorContainerState.NavigationHistoryEntry>
+        sourceStack: SnapshotStateList<NavigationHistoryEntry>,
+        destinationStack: SnapshotStateList<NavigationHistoryEntry>
     ): Boolean {
         val current = currentLocationProvider() ?: return false
         while (sourceStack.isNotEmpty()) {
@@ -65,8 +65,8 @@ internal class EditorNavigationHistoryManager(
     }
 
     private fun pushNavigationEntry(
-        stack: SnapshotStateList<EditorContainerState.NavigationHistoryEntry>,
-        entry: EditorContainerState.NavigationHistoryEntry
+        stack: SnapshotStateList<NavigationHistoryEntry>,
+        entry: NavigationHistoryEntry
     ) {
         if (stack.lastOrNull()?.isSameNavigationLocation(entry) == true) return
         stack.add(entry)
@@ -75,8 +75,8 @@ internal class EditorNavigationHistoryManager(
         }
     }
 
-    private fun EditorContainerState.NavigationHistoryEntry.isSameNavigationLocation(
-        other: EditorContainerState.NavigationHistoryEntry
+    private fun NavigationHistoryEntry.isSameNavigationLocation(
+        other: NavigationHistoryEntry
     ): Boolean = normalizeOpenTabLookupPath(filePath) == normalizeOpenTabLookupPath(other.filePath) &&
         line == other.line &&
         column == other.column

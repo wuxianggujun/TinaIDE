@@ -17,7 +17,18 @@ AVAILABLE_LIBS=(
     "libssh2"
     "libgit2"
     "pcre2"
+    "sdl2"
     "sdl3"
+    "sdl2-image"
+    "sdl2-ttf"
+    "sdl2-mixer"
+    "sdl2-net"
+    "sdl3-image"
+    "sdl3-ttf"
+    "sdl3-mixer"
+    "sdl3-net"
+    "raylib"
+    "box2d"
 )
 
 # ===== 打印帮助 =====
@@ -45,7 +56,12 @@ $(printf '  - %s\n' "${AVAILABLE_LIBS[@]}")
   libssh2  -> openssl, zlib
   libgit2  -> openssl, libssh2, zlib
   curl     -> openssl (可选)
+  sdl2     -> 无依赖 (独立库，Android Java/JNI bridge 已重定位)
   sdl3     -> 无依赖 (独立库)
+  sdl2-*   -> sdl2 (仅 shared)
+  sdl3-*   -> sdl3 (仅 shared)
+  raylib   -> 无依赖 (仅 shared)
+  box2d    -> 无依赖 (仅 static)
 
 建议构建顺序:
   1. zlib
@@ -54,7 +70,9 @@ $(printf '  - %s\n' "${AVAILABLE_LIBS[@]}")
   4. libssh2
   5. curl
   6. libgit2
-  7. sdl3 (独立)
+  7. sdl2 / sdl3
+  8. SDL2 / SDL3 扩展库
+  9. raylib / box2d
 EOF
 }
 
@@ -66,6 +84,12 @@ build_lib() {
 
     local SCRIPT="/build/libs/build-${LIB}.sh"
 
+    case "$LIB" in
+        sdl2-image|sdl2-ttf|sdl2-mixer|sdl2-net|sdl3-image|sdl3-ttf|sdl3-mixer|sdl3-net)
+            SCRIPT="/build/libs/build-sdl-extension.sh"
+            ;;
+    esac
+
     if [ ! -f "$SCRIPT" ]; then
         log_error "Build script not found: ${SCRIPT}"
         return 1
@@ -75,7 +99,28 @@ build_lib() {
     log_info "Building ${LIB} for ${ARCH} (${LINK_TYPE})"
     log_info "=========================================="
 
-    bash "$SCRIPT" "$ARCH" "$LINK_TYPE"
+    if [ "$SCRIPT" = "/build/libs/build-sdl-extension.sh" ]; then
+        bash "$SCRIPT" "$LIB" "$ARCH" "$LINK_TYPE"
+    else
+        bash "$SCRIPT" "$ARCH" "$LINK_TYPE"
+    fi
+}
+
+supports_link_type() {
+    local LIB=$1
+    local LINK_TYPE=$2
+
+    case "$LIB" in
+        sdl2-image|sdl2-ttf|sdl2-mixer|sdl2-net|sdl3-image|sdl3-ttf|sdl3-mixer|sdl3-net|raylib)
+            [ "$LINK_TYPE" = "shared" ]
+            ;;
+        box2d)
+            [ "$LINK_TYPE" = "static" ]
+            ;;
+        *)
+            return 0
+            ;;
+    esac
 }
 
 # ===== 构建所有库 (按依赖顺序) =====
@@ -90,13 +135,29 @@ build_all() {
         "libssh2"
         "curl"
         "libgit2"
+        "sdl2"
+        "sdl3"
+        "sdl2-image"
+        "sdl2-ttf"
+        "sdl2-mixer"
+        "sdl2-net"
+        "sdl3-image"
+        "sdl3-ttf"
+        "sdl3-mixer"
+        "sdl3-net"
+        "raylib"
+        "box2d"
     )
 
     log_info "Building all libraries for ${ARCH} (${LINK_TYPE})"
     log_info "Build order: ${BUILD_ORDER[*]}"
 
     for LIB in "${BUILD_ORDER[@]}"; do
-        build_lib "$LIB" "$ARCH" "$LINK_TYPE"
+        if supports_link_type "$LIB" "$LINK_TYPE"; then
+            build_lib "$LIB" "$ARCH" "$LINK_TYPE"
+        else
+            log_warn "Skipping unsupported combination: ${LIB} (${ARCH}, ${LINK_TYPE})"
+        fi
     done
 
     log_success "All libraries built successfully!"

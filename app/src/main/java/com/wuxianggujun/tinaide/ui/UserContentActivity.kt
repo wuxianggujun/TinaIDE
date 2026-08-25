@@ -1,7 +1,6 @@
 package com.wuxianggujun.tinaide.ui
 
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.Composable
 import com.gyf.immersionbar.ktx.immersionBar
@@ -15,7 +14,7 @@ import com.wuxianggujun.tinaide.ui.theme.TinaIDETheme
  *
  * 承载收藏和下载历史界面
  */
-class UserContentActivity : ComponentActivity() {
+class UserContentActivity : TinaComponentActivity() {
 
     companion object {
         const val EXTRA_CONTENT_TYPE = "extra_content_type"

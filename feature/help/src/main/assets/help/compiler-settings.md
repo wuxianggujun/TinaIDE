@@ -52,9 +52,10 @@
 - CMake 运行模式
 - clang-format 运行模式
 - Make 运行模式
-- CMake Build Type
 - CMake Generator
 - Parallel Jobs
+
+CMake Build Type 已统一到项目工作台的运行配置中；编译器设置不再维护一份会覆盖项目配置的全局值。升级后首次打开旧项目时，旧全局值会写入该项目的运行配置。
 
 ### 运行模式
 
@@ -70,7 +71,7 @@
 - **native**：更接近宿主环境
 - **proot**：更适合依赖 Linux 工具链的场景
 
-### Build Type
+### 运行配置中的 Build Type
 
 当前支持：
 
@@ -78,6 +79,8 @@
 - Release
 - RelWithDebInfo
 - MinSizeRel
+
+这些选项位于项目工作台的运行配置中，不在当前设置页。新建配置时可以分别保存不同构建类型。
 
 如果你不知道选什么：
 
@@ -138,11 +141,13 @@
 
 - 编译参数里的 `--sysroot`
 - C++ 标准库头文件路径
-- 运行时注入的 `libc++_shared.so`
+- 命令行 C++ 可执行文件静态链接的 libc++ 版本
+- NativeActivity / SDL 共享库运行时注入的 `libc++_shared.so`
 - 导出 APK 时打包的 `libc++_shared.so`
 - LSP 看到的 C/C++ 头文件环境
 
 如果第三方库是用不同 NDK 版本构建的，可以导入对应 sysroot 后切换到它，避免 C++ runtime 不匹配。
+导入包必须包含 `libc++_shared.so`、`libc++_static.a`、`libc++abi.a`，以及每个 API 目录中的 `libc++.a` linker script。
 
 注意：
 
@@ -214,7 +219,6 @@
   - 优化等级
   - 编译线程数
   - 运行模式
-  - Build Type
   - Generator
   - Parallel Jobs
   - Format Style

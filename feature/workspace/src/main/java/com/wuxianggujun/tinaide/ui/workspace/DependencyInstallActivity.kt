@@ -3,7 +3,6 @@ package com.wuxianggujun.tinaide.ui.workspace
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
@@ -19,6 +18,7 @@ import com.wuxianggujun.tinaide.core.IAppNavigator
 import com.wuxianggujun.tinaide.core.i18n.Drawables
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.proot.ToolchainConfig
+import com.wuxianggujun.tinaide.ui.TinaComponentActivity
 import com.wuxianggujun.tinaide.ui.compose.components.TinaConfirmDialog
 import com.wuxianggujun.tinaide.ui.theme.TinaIDETheme
 import com.wuxianggujun.tinaide.ui.workspace.components.*
@@ -40,7 +40,7 @@ private const val PACKAGE_LINUX_ROOTFS = "linux-rootfs"
  * Linux 环境由自研 Linux 发行版管理器安装和管理。
  */
 class DependencyInstallActivity :
-    ComponentActivity(),
+    TinaComponentActivity(),
     KoinComponent {
 
     companion object {

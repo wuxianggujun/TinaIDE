@@ -51,6 +51,45 @@ interface EditorSessionDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertFileStates(fileStates: List<EditorFileStateEntity>)
 
+    @Transaction
+    suspend fun replaceProjectSession(
+        projectPath: String,
+        session: EditorSessionEntity,
+        fileStates: List<EditorFileStateEntity>,
+    ) {
+        insertSession(session)
+        deleteFileStates(projectPath)
+        insertFileStates(fileStates)
+    }
+
+    @Query(
+        """
+        UPDATE editor_sessions
+        SET project_path = :newProjectPath,
+            active_file = CASE
+                WHEN active_file = :oldProjectPath OR substr(active_file, 1, length(:oldProjectPath) + 1) = :oldProjectPath || '/'
+                THEN :newProjectPath || substr(active_file, length(:oldProjectPath) + 1)
+                ELSE active_file
+            END
+        WHERE project_path = :oldProjectPath
+        """
+    )
+    suspend fun migrateSessionProjectPath(oldProjectPath: String, newProjectPath: String): Int
+
+    @Query(
+        """
+        UPDATE editor_file_states
+        SET project_path = :newProjectPath,
+            file_path = CASE
+                WHEN file_path = :oldProjectPath OR substr(file_path, 1, length(:oldProjectPath) + 1) = :oldProjectPath || '/'
+                THEN :newProjectPath || substr(file_path, length(:oldProjectPath) + 1)
+                ELSE file_path
+            END
+        WHERE project_path = :oldProjectPath
+        """
+    )
+    suspend fun migrateFileStateProjectPath(oldProjectPath: String, newProjectPath: String): Int
+
     /**
      * 删除项目的会话
      */

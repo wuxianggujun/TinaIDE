@@ -367,6 +367,9 @@ dependencies {
     implementation(libs.compose.material3)
     implementation(libs.compose.material.icons.extended)
     debugImplementation(libs.compose.ui.tooling)
+    testImplementation(platform(libs.compose.bom))
+    testImplementation(libs.compose.ui.test.junit4)
+    debugImplementation(libs.compose.ui.test.manifest)
     implementation(libs.activity.compose)
 
     // 沉浸式状态栏和导航栏（本地源码模块，避免 JitPack 网络超时）

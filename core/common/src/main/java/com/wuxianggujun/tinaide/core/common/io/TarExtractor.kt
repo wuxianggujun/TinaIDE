@@ -56,7 +56,8 @@ object TarExtractor {
 
     enum class SymlinkPolicy {
         RESTRICT_TO_TARGET_DIR,
-        PRESERVE_ARCHIVE_TARGETS
+        PRESERVE_ARCHIVE_TARGETS,
+        REJECT_LINKS,
     }
 
     /**
@@ -65,6 +66,7 @@ object TarExtractor {
      * @param archiveFile tar/tar.gz/tar.xz 文件
      * @param targetDir 解压目标目录
      * @param estimatedTotalEntries 预估条目数（用于进度计算）
+     * @param limits 可选归档展开限制
      * @param progress 进度回调 (0.0 - 1.0)
      */
     fun extract(
@@ -73,11 +75,27 @@ object TarExtractor {
         symlinkPolicy: SymlinkPolicy = SymlinkPolicy.RESTRICT_TO_TARGET_DIR,
         estimatedTotalEntries: Int = 2500,
         ensureActive: () -> Unit = {},
+        limits: ArchiveExtractionLimits? = null,
         progress: (Float) -> Unit = {},
     ) {
+        if (limits != null && archiveFile.length() > limits.maxArchiveBytes) {
+            throw ArchiveLimitException("Archive is larger than the allowed size")
+        }
         FileInputStream(archiveFile).use { fis ->
             BufferedInputStream(fis, BUFFER_SIZE).use { bis ->
-                extract(bis, targetDir, symlinkPolicy, estimatedTotalEntries, ensureActive, progress)
+                ensureActive()
+                val compressionType = detectCompressionType(bis)
+                val tarInput = wrapWithDecompressor(bis, compressionType)
+                extractTarStream(
+                    tarInput = tarInput,
+                    targetDir = targetDir,
+                    symlinkPolicy = symlinkPolicy,
+                    estimatedTotalEntries = estimatedTotalEntries,
+                    ensureActive = ensureActive,
+                    limits = limits,
+                    archiveSizeBytes = archiveFile.length(),
+                    progress = progress,
+                )
             }
         }
     }
@@ -96,12 +114,22 @@ object TarExtractor {
         symlinkPolicy: SymlinkPolicy = SymlinkPolicy.RESTRICT_TO_TARGET_DIR,
         estimatedTotalEntries: Int = 2500,
         ensureActive: () -> Unit = {},
+        limits: ArchiveExtractionLimits? = null,
         progress: (Float) -> Unit = {},
     ) {
         ensureActive()
         val compressionType = detectCompressionType(bufferedInput)
         val tarInput = wrapWithDecompressor(bufferedInput, compressionType)
-        extractTarStream(tarInput, targetDir, symlinkPolicy, estimatedTotalEntries, ensureActive, progress)
+        extractTarStream(
+            tarInput,
+            targetDir,
+            symlinkPolicy,
+            estimatedTotalEntries,
+            ensureActive,
+            limits,
+            archiveSizeBytes = null,
+            progress = progress,
+        )
     }
 
     /**
@@ -114,12 +142,23 @@ object TarExtractor {
         symlinkPolicy: SymlinkPolicy = SymlinkPolicy.RESTRICT_TO_TARGET_DIR,
         estimatedTotalEntries: Int = 2500,
         ensureActive: () -> Unit = {},
+        limits: ArchiveExtractionLimits? = null,
+        archiveSizeBytes: Long? = null,
         progress: (Float) -> Unit = {},
     ) {
         ensureActive()
         val buffered = if (input is BufferedInputStream) input else BufferedInputStream(input, BUFFER_SIZE)
         val tarInput = wrapWithDecompressor(buffered, compressionType)
-        extractTarStream(tarInput, targetDir, symlinkPolicy, estimatedTotalEntries, ensureActive, progress)
+        extractTarStream(
+            tarInput,
+            targetDir,
+            symlinkPolicy,
+            estimatedTotalEntries,
+            ensureActive,
+            limits,
+            archiveSizeBytes,
+            progress,
+        )
     }
 
     /**
@@ -187,9 +226,15 @@ object TarExtractor {
         symlinkPolicy: SymlinkPolicy,
         estimatedTotalEntries: Int,
         ensureActive: () -> Unit,
+        limits: ArchiveExtractionLimits?,
+        archiveSizeBytes: Long?,
         progress: (Float) -> Unit,
     ) {
         var entryCount = 0
+        val budget = limits?.let { extractionLimits ->
+            ArchiveExtractionBudget(extractionLimits, archiveSizeBytes)
+        }
+        ensureDirectory(targetDir)
 
         tarInput.use { tarStream ->
             ensureActive()
@@ -198,13 +243,38 @@ object TarExtractor {
             while (entry != null) {
                 ensureActive()
                 entryCount++
-                val outputFile = ArchivePathSafety.resolveEntryFile(targetDir, entry.name, "tar entry")
+                val safeEntryName = ArchivePathSafety.sanitizeRelativePath(entry.name, "tar entry")
+                val isRootDirectoryPlaceholder =
+                    entry.isDirectory && ArchivePathSafety.isRootDirectoryPlaceholder(entry.name)
+                budget?.beginEntry(entry.name, entry.size, entry.isDirectory)
+                require(safeEntryName.isNotBlank() || isRootDirectoryPlaceholder) {
+                    "Archive contains an empty entry path"
+                }
+                if (isRootDirectoryPlaceholder) {
+                    entry = tarStream.nextEntry
+                    continue
+                }
+
+                val outputFile = ArchivePathSafety.resolveEntryFile(
+                    targetDir,
+                    safeEntryName,
+                    "tar entry",
+                )
+                ArchivePathSafety.requireNoSymlinkComponents(
+                    targetDir = targetDir,
+                    candidate = outputFile,
+                    includeLeaf = !entry.isSymbolicLink,
+                    source = "tar entry",
+                )
 
                 if (entry.isDirectory) {
-                    outputFile.mkdirs()
+                    ensureDirectory(outputFile)
                     applyUnixModeIfPresent(outputFile, entry.mode)
                 } else if (entry.isSymbolicLink) {
-                    outputFile.parentFile?.mkdirs()
+                    require(symlinkPolicy != SymlinkPolicy.REJECT_LINKS) {
+                        "Archive links are not allowed: ${entry.name}"
+                    }
+                    outputFile.parentFile?.let(::ensureDirectory)
                     val linkTarget = when (symlinkPolicy) {
                         SymlinkPolicy.RESTRICT_TO_TARGET_DIR ->
                             ArchivePathSafety.requireSymlinkTargetInsideTargetDir(
@@ -214,9 +284,13 @@ object TarExtractor {
                                 source = "tar symlink target"
                             )
                         SymlinkPolicy.PRESERVE_ARCHIVE_TARGETS -> entry.linkName
+                        SymlinkPolicy.REJECT_LINKS -> error("Unreachable link policy")
                     }
                     recreateSymlink(outputFile, linkTarget)
                 } else if (entry.isLink) {
+                    require(symlinkPolicy != SymlinkPolicy.REJECT_LINKS) {
+                        "Archive links are not allowed: ${entry.name}"
+                    }
                     pendingHardLinks.add(
                         PendingHardLink(
                             linkPath = outputFile,
@@ -228,13 +302,20 @@ object TarExtractor {
                         )
                     )
                 } else {
-                    outputFile.parentFile?.mkdirs()
+                    if (symlinkPolicy == SymlinkPolicy.REJECT_LINKS) {
+                        require(entry.isFile) { "Unsupported archive entry type: ${entry.name}" }
+                    }
+                    outputFile.parentFile?.let(::ensureDirectory)
                     FileOutputStream(outputFile).use { output ->
-                        val buffer = ByteArray(BUFFER_SIZE)
-                        var len: Int
-                        while (tarStream.read(buffer).also { len = it } != -1) {
-                            ensureActive()
-                            output.write(buffer, 0, len)
+                        if (budget != null) {
+                            budget.copyEntry(tarStream, output, entry.name, ensureActive)
+                        } else {
+                            val buffer = ByteArray(BUFFER_SIZE)
+                            var len: Int
+                            while (tarStream.read(buffer).also { len = it } != -1) {
+                                ensureActive()
+                                output.write(buffer, 0, len)
+                            }
                         }
                     }
                     applyUnixModeIfPresent(outputFile, entry.mode)
@@ -254,11 +335,21 @@ object TarExtractor {
                     link.targetPathInTar,
                     "tar hardlink target"
                 )
+                ArchivePathSafety.requireNoSymlinkComponents(
+                    targetDir = targetDir,
+                    candidate = targetFile,
+                    source = "tar hardlink target",
+                )
+                ArchivePathSafety.requireNoSymlinkComponents(
+                    targetDir = targetDir,
+                    candidate = link.linkPath,
+                    source = "tar hardlink entry",
+                )
                 if (!targetFile.exists() || targetFile.isDirectory) {
                     throw IllegalStateException("Hardlink target missing: ${link.targetPathInTar}")
                 }
 
-                link.linkPath.parentFile?.mkdirs()
+                link.linkPath.parentFile?.let(::ensureDirectory)
                 if (link.linkPath.exists()) {
                     link.linkPath.delete()
                 }
@@ -268,7 +359,11 @@ object TarExtractor {
                 } catch (_: Throwable) {
                     FileInputStream(targetFile).use { input ->
                         FileOutputStream(link.linkPath).use { output ->
-                            input.copyTo(output, BUFFER_SIZE)
+                            if (budget != null) {
+                                budget.copyEntry(input, output, link.targetPathInTar, ensureActive)
+                            } else {
+                                input.copyTo(output, BUFFER_SIZE)
+                            }
                         }
                     }
                 }
@@ -294,6 +389,12 @@ object TarExtractor {
             Os.symlink(linkTarget, linkFile.absolutePath)
         } catch (t: Throwable) {
             throw IllegalStateException("Failed to create symlink: ${linkFile.path} -> $linkTarget (${t.message})", t)
+        }
+    }
+
+    private fun ensureDirectory(directory: File) {
+        if ((!directory.exists() && !directory.mkdirs()) || !directory.isDirectory) {
+            throw IllegalStateException("Failed to create archive directory: ${directory.absolutePath}")
         }
     }
 

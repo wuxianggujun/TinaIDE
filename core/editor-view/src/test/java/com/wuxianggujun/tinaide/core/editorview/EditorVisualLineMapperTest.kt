@@ -3,6 +3,7 @@ package com.wuxianggujun.tinaide.core.editorview
 import com.google.common.truth.Truth.assertThat
 import com.wuxianggujun.tinaide.core.textengine.RopeTextBuffer
 import com.wuxianggujun.tinaide.core.textengine.TextBuffer
+import com.wuxianggujun.tinaide.core.textengine.TextChange
 import org.junit.Test
 
 /**
@@ -16,6 +17,22 @@ import org.junit.Test
  */
 class EditorVisualLineMapperTest {
 
+    private class CountingTextBuffer(
+        private val delegate: TextBuffer
+    ) : TextBuffer by delegate {
+        var getLineCallCount: Int = 0
+            private set
+
+        override fun getLine(line: Int): String {
+            getLineCallCount++
+            return delegate.getLine(line)
+        }
+
+        fun resetGetLineCallCount() {
+            getLineCallCount = 0
+        }
+    }
+
     private class FakeMapperHost(
         override val textBuffer: TextBuffer,
         override var charWidthPx: Float = 1f,
@@ -26,10 +43,14 @@ class EditorVisualLineMapperTest {
         override var frozenWordWrapColumns: Int? = null,
         override var foldRegionsDocumentVersion: Long = -1L,
         override var foldDataVersion: Int = 0,
-        override val wordWrapLayoutCache: EditorWordWrapLayoutCache = EditorWordWrapLayoutCache(),
+        override var inlayHintsVersion: Long = 0L,
+        var inlayHintsByLine: Map<Int, List<EditorInlayHint>> = emptyMap(),
         private var lineMapValue: EditorFoldingManager.LineMap
     ) : EditorVisualLineMapper.Host {
         override fun lineMap(): EditorFoldingManager.LineMap = lineMapValue
+
+        override fun inlayHintsForLine(line: Int): List<EditorInlayHint> =
+            inlayHintsByLine[line].orEmpty()
 
         fun setLineMap(map: EditorFoldingManager.LineMap) {
             lineMapValue = map
@@ -183,6 +204,27 @@ class EditorVisualLineMapperTest {
     }
 
     @Test
+    fun visualLineMap_inlayHintUpdateRebuildsWordWrapSegments() {
+        val buffer = RopeTextBuffer().apply { insert(0, "call(1)") }
+        val host = FakeMapperHost(
+            textBuffer = buffer,
+            wordWrapEnabled = true,
+            frozenWordWrapColumns = 8,
+            lineMapValue = identityLineMap(1),
+        )
+        val mapper = EditorVisualLineMapper(host)
+        val withoutHints = mapper.visualLineMap()
+
+        host.inlayHintsByLine = mapOf(0 to listOf(EditorInlayHint(0, 5, "v:")))
+        host.inlayHintsVersion++
+        val withHints = mapper.visualLineMap()
+
+        assertThat(withoutHints.visualLineCount).isEqualTo(1)
+        assertThat(withHints).isNotSameInstanceAs(withoutHints)
+        assertThat(withHints.visualLineCount).isEqualTo(2)
+    }
+
+    @Test
     fun visualLineMap_returnsCachedInstanceWhenEpochUnchanged() {
         val buffer = RopeTextBuffer().apply { insert(0, "a\nb") }
         val host = FakeMapperHost(textBuffer = buffer, lineMapValue = identityLineMap(2))
@@ -222,5 +264,119 @@ class EditorVisualLineMapperTest {
         val second = mapper.visualLineMap()
 
         assertThat(second).isSameInstanceAs(first)
+    }
+
+    @Test
+    fun visualLineMap_wrapParameterChange_shouldOnlyScanVisibleDocumentLines() {
+        val buffer = CountingTextBuffer(RopeTextBuffer("aaaa\nbbbb\ncccc"))
+        val foldedMap = EditorFoldingManager.LineMap(
+            docLineCount = 3,
+            visualToDocLine = intArrayOf(0, 2),
+            docToVisualLine = intArrayOf(0, -1, 1),
+            hiddenDocLine = booleanArrayOf(false, true, false),
+            hiddenOwnerStartLine = intArrayOf(-1, 0, -1)
+        )
+        val host = FakeMapperHost(
+            textBuffer = buffer,
+            wordWrapEnabled = true,
+            frozenWordWrapColumns = 4,
+            lineMapValue = foldedMap
+        )
+        val mapper = EditorVisualLineMapper(host)
+
+        mapper.visualLineMap()
+        assertThat(buffer.getLineCallCount).isEqualTo(2)
+
+        buffer.resetGetLineCallCount()
+        host.frozenWordWrapColumns = 2
+        mapper.visualLineMap()
+
+        assertThat(buffer.getLineCallCount).isEqualTo(2)
+    }
+
+    @Test
+    fun applyTextChangeToDocSegmentCounts_shouldOnlyInvalidateEditedLine() {
+        val rope = RopeTextBuffer("aaaa\nbb\ncccc")
+        val buffer = CountingTextBuffer(rope)
+        val host = FakeMapperHost(
+            textBuffer = buffer,
+            wordWrapEnabled = true,
+            frozenWordWrapColumns = 4,
+            lineMapValue = identityLineMap(3)
+        )
+        val mapper = EditorVisualLineMapper(host)
+        mapper.visualLineMap()
+        buffer.resetGetLineCallCount()
+        var change: TextChange? = null
+        rope.addChangeListener { change = it }
+
+        rope.insert(1, "x")
+        mapper.applyTextChangeToDocSegmentCounts(checkNotNull(change), rope.version)
+        val updated = mapper.visualLineMap()
+
+        assertThat(buffer.getLineCallCount).isEqualTo(1)
+        assertThat(updated.visualLineCountByVisibleIndex.toList()).containsExactly(2, 1, 1).inOrder()
+    }
+
+    @Test
+    fun applyTextChangeToDocSegmentCounts_inconsistentLineDeltaShouldDiscardCacheSafely() {
+        val rope = RopeTextBuffer("aa\nbb")
+        val buffer = CountingTextBuffer(rope)
+        val host = FakeMapperHost(
+            textBuffer = buffer,
+            wordWrapEnabled = true,
+            frozenWordWrapColumns = 2,
+            lineMapValue = identityLineMap(2)
+        )
+        val mapper = EditorVisualLineMapper(host)
+        mapper.visualLineMap()
+        var firstChange: TextChange? = null
+        rope.addChangeListener { change ->
+            if (firstChange == null) firstChange = change
+        }
+        rope.insert(1, "\n")
+        rope.insert(0, "\n")
+        host.setLineMap(identityLineMap(4))
+        buffer.resetGetLineCallCount()
+
+        mapper.applyTextChangeToDocSegmentCounts(
+            change = checkNotNull(firstChange),
+            newVersion = rope.version
+        )
+        val rebuilt = mapper.visualLineMap()
+
+        assertThat(rebuilt.docLineCount).isEqualTo(4)
+        assertThat(rebuilt.visualLineCountByVisibleIndex).hasLength(4)
+        assertThat(buffer.getLineCallCount).isEqualTo(4)
+    }
+
+    @Test
+    fun applyTextChangeToDocSegmentCounts_skippedSameLineEventShouldDiscardCacheSafely() {
+        val rope = RopeTextBuffer("aaaa\nbbbb\ncccc")
+        val buffer = CountingTextBuffer(rope)
+        val host = FakeMapperHost(
+            textBuffer = buffer,
+            wordWrapEnabled = true,
+            frozenWordWrapColumns = 4,
+            lineMapValue = identityLineMap(3)
+        )
+        val mapper = EditorVisualLineMapper(host)
+        mapper.visualLineMap()
+        var latestChange: TextChange? = null
+        rope.addChangeListener { latestChange = it }
+
+        // 刻意漏掉 version=1 的事件；两次编辑均不改变行数，单靠 lineDelta 无法发现缓存已陈旧。
+        rope.insert(0, "zzzz")
+        rope.insert(rope.length, "x")
+        buffer.resetGetLineCallCount()
+
+        mapper.applyTextChangeToDocSegmentCounts(
+            change = checkNotNull(latestChange),
+            newVersion = rope.version
+        )
+        val rebuilt = mapper.visualLineMap()
+
+        assertThat(rebuilt.visualLineCountByVisibleIndex.toList()).containsExactly(2, 1, 2).inOrder()
+        assertThat(buffer.getLineCallCount).isEqualTo(3)
     }
 }

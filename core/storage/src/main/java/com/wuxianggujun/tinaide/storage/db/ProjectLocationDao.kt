@@ -28,4 +28,10 @@ interface ProjectLocationDao {
      */
     @Query("DELETE FROM project_locations WHERE project_id = :projectId")
     suspend fun deleteLocation(projectId: String): Int
+
+    @Query(
+        "DELETE FROM project_locations " +
+            "WHERE source_root_path = :sourceRootPath AND project_id != :projectId"
+    )
+    suspend fun deleteOtherLocationsForSourcePath(sourceRootPath: String, projectId: String): Int
 }

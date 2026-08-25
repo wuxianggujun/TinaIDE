@@ -122,6 +122,7 @@
   <string name="btn_save_and_test">保存并测试</string>
   <string name="toast_tina_server_test_ok">连接成功</string>
   <string name="toast_tina_server_test_failed">连接失败</string>
+  <string name="toast_tina_server_url_invalid">地址无效；远程服务器必须使用 HTTPS，本机调试可使用 localhost 或 127.0.0.1 的 HTTP 地址</string>
   <string name="toast_tina_server_restored_default">已恢复默认地址</string>
 
   <!-- Plugin Database Test Screen -->
@@ -137,6 +138,7 @@
   <string name="git_ssh_generate_key_desc">生成 Ed25519 SSH 密钥对</string>
   <string name="git_ssh_generate_dialog_title">生成 SSH 密钥</string>
   <string name="git_ssh_key_name_label">密钥文件名</string>
+  <string name="git_ssh_key_name_invalid">密钥名须为 1–64 个字符，以字母或数字开头，且只能包含字母、数字、点、下划线或连字符</string>
   <string name="git_ssh_key_comment_label">注释（可选）</string>
   <string name="git_ssh_key_comment_placeholder">例如：your@email.com</string>
   <string name="git_ssh_generate_ok">已生成：%1$s</string>
@@ -153,6 +155,13 @@
   <string name="git_ssh_default_key_none">未设置</string>
   <string name="git_ssh_default_key_pick_title">选择默认密钥</string>
   <string name="git_ssh_default_badge">默认</string>
+  <string name="git_ssh_trusted_hosts_reset_title">重置信任的主机密钥</string>
+  <string name="git_ssh_trusted_hosts_reset_desc">清除 SSH 主机密钥缓存；下次连接时将重新建立信任</string>
+  <string name="git_ssh_trusted_hosts_reset_dialog_title">清除已信任的主机密钥？</string>
+  <string name="git_ssh_trusted_hosts_reset_dialog_message">清除后，下次 SSH 连接会重新记录服务器主机密钥。仅在服务器密钥已确认变更或需要排障时执行。</string>
+  <string name="git_ssh_trusted_hosts_reset_confirm">清除信任记录</string>
+  <string name="git_ssh_trusted_hosts_reset_ok">已清除 SSH 主机密钥信任记录</string>
+  <string name="git_ssh_trusted_hosts_reset_failed">清除 SSH 主机密钥信任记录失败</string>
 
   <string name="git_ssh_error_title">Git SSH 配置错误</string>
   <string name="git_ssh_error_load_failed">加载失败</string>
@@ -169,7 +178,10 @@
   <string name="git_ssh_binding_item_subtitle">密钥：%1$s</string>
   <string name="git_ssh_binding_host_label">Host</string>
   <string name="git_ssh_binding_port_label">端口（可选）</string>
+  <string name="git_ssh_binding_host_invalid">SSH Host 格式无效</string>
+  <string name="git_ssh_binding_port_invalid">SSH 端口必须在 1 到 65535 之间</string>
   <string name="git_ssh_binding_key_label">密钥</string>
+  <string name="git_ssh_private_key_too_large">SSH 私钥文件不能超过 %1$d MiB</string>
   <string name="git_ssh_binding_key_desc">点击选择</string>
   <string name="git_ssh_binding_key_not_selected">未选择</string>
   <string name="git_ssh_binding_key_pick_title">选择密钥</string>
@@ -243,6 +255,8 @@
   <string name="plugins_details_granted_permissions">已授予权限：%1$s</string>
   <string name="plugins_details_runtime_state">运行时状态：%1$s</string>
   <string name="plugins_details_runtime_error">最近错误：%1$s</string>
+  <string name="plugins_details_fault_phase">故障阶段：%1$s</string>
+  <string name="plugins_details_fault_time">隔离时间：%1$s</string>
   <string name="plugins_details_dir">目录：%1$s</string>
   <string name="plugins_details_contrib_summary">贡献：主题 %1$d · 文件树菜单 %2$d · 编辑器菜单 %3$d · 工具栏菜单 %4$d</string>
   <string name="plugins_commands_title">命令贡献</string>
@@ -298,6 +312,8 @@
   <string name="plugins_preflight_guide_runtime">这是运行期问题，建议先查看插件日志、脚本入口和权限授权状态。</string>
   <string name="plugins_preflight_guide_lsp">这是 LSP 依赖问题，建议在插件详情中查看错误日志并修复依赖。</string>
   <string name="plugins_details_optional_permissions">可选权限：%1$s</string>
+  <string name="plugins_optional_permissions_title">可选权限授权</string>
+  <string name="plugins_optional_permissions_description">可按需授予或撤销这些权限。撤销后，后续相关 API 调用会立即被拒绝。</string>
   <string name="plugins_details_permissions_none">无</string>
   <string name="plugins_diagnostics_fix_hint">建议：%1$s</string>
   <string name="plugins_diagnostics_runtime_fix_hint">查看日志与堆栈，修复脚本异常后再手动重载插件。</string>
@@ -321,6 +337,19 @@
   <string name="plugins_runtime_state_active">运行中</string>
   <string name="plugins_runtime_state_error">错误</string>
   <string name="plugins_runtime_state_disabled">已禁用</string>
+  <string name="plugins_runtime_state_waiting_permission">等待授权</string>
+  <string name="plugins_runtime_state_quarantined">已自动隔离</string>
+  <string name="plugins_runtime_state_unavailable">运行服务不可用</string>
+  <string name="plugins_fault_phase_startup">启动</string>
+  <string name="plugins_fault_phase_command">命令回调</string>
+  <string name="plugins_fault_phase_event">事件回调</string>
+  <string name="plugins_fault_phase_api">宿主 API 调用</string>
+  <string name="plugins_fault_phase_lsp">LSP 服务</string>
+  <string name="plugins_fault_phase_contribution">贡献数据</string>
+  <string name="plugins_fault_phase_unknown">未知阶段</string>
+  <string name="dialog_title_plugins_reenable_quarantined">重新启用已隔离插件？</string>
+  <string name="dialog_msg_plugins_reenable_quarantined">%1$s 上次运行时发生严重故障。重新启用后将再次运行插件代码；如果再次失败，系统会立即重新隔离它。</string>
+  <string name="btn_plugins_reenable">重新启用</string>
 
   <string name="dialog_title_plugins_uninstall">卸载插件</string>
   <string name="dialog_msg_plugins_uninstall">确定要卸载“%1$s”吗？</string>
@@ -424,10 +453,16 @@
   <string name="lsp_toolchain_error_no_pip_packages">未配置 pip 包</string>
   <string name="lsp_toolchain_error_pip_failed">pip 安装失败：%1$s</string>
   <string name="lsp_toolchain_error_no_npm_packages">未配置 npm 包</string>
+  <string name="lsp_toolchain_error_packages_invalid">工具链 %1$s 的包名或版本配置不安全</string>
   <string name="lsp_toolchain_error_npm_failed">npm 安装失败：%1$s</string>
   <string name="lsp_toolchain_error_verify_failed">工具链 %1$s 安装验证失败</string>
   <string name="lsp_toolchain_error_download_failed">下载失败：HTTP %1$d %2$s</string>
   <string name="lsp_toolchain_error_empty_download_body">下载响应为空</string>
+  <string name="lsp_toolchain_error_sha256_required">下载工具链必须提供有效的 SHA-256 校验值</string>
+  <string name="lsp_toolchain_error_https_required">下载工具链必须使用 HTTPS</string>
+  <string name="lsp_toolchain_error_extract_path_invalid">工具链解压路径必须位于当前 rootfs 内</string>
+  <string name="lsp_toolchain_error_extract_path_occupied">工具链解压目录 %1$s 已包含非 TinaIDE 管理的文件，请改用独立目录</string>
+  <string name="lsp_toolchain_error_download_too_large">工具链下载内容超过大小限制</string>
   <string name="lsp_plugin_install_progress_title">安装工具链</string>
   <string name="lsp_plugin_install_success">工具链安装完成</string>
   <string name="lsp_plugin_install_failed">工具链安装失败：%1$s</string>
@@ -437,6 +472,64 @@
   <string name="settings_cat_editor_performance">性能</string>
   <string name="settings_editor_theme">编辑器主题</string>
   <string name="settings_editor_theme_summary">选择编辑器配色方案，灰色主题可减少视觉疲劳</string>
+  <string name="settings_editor_theme_custom">自定义主题</string>
+  <string name="settings_editor_theme_custom_active">使用中</string>
+  <string name="settings_editor_theme_customize">自定义编辑器配色</string>
+  <string name="settings_editor_theme_customize_summary">调整编辑器界面、语法高亮、彩虹括号和诊断颜色</string>
+  <string name="settings_editor_theme_customize_title">编辑器配色</string>
+  <string name="settings_editor_theme_base">基础主题</string>
+  <string name="settings_editor_theme_base_gray">灰色</string>
+  <string name="settings_editor_theme_base_dark">深色</string>
+  <string name="settings_editor_theme_base_light">浅色</string>
+  <string name="settings_editor_theme_group_editor">编辑器</string>
+  <string name="settings_editor_theme_group_syntax">语法</string>
+  <string name="settings_editor_theme_group_diagnostics">诊断</string>
+  <string name="settings_editor_theme_hex_color">ARGB 颜色</string>
+  <string name="settings_editor_theme_hex_hint">使用 #RRGGBB、#AARRGGBB 或 0xAARRGGBB</string>
+  <string name="settings_editor_theme_hex_invalid">请输入有效的十六进制颜色</string>
+  <string name="settings_editor_theme_preview_type">int</string>
+  <string name="settings_editor_theme_preview_function">main</string>
+  <string name="settings_editor_theme_preview_open">() {</string>
+  <string name="settings_editor_theme_preview_comment">// TinaIDE 配色预览</string>
+  <string name="settings_editor_theme_preview_keyword">return</string>
+  <string name="settings_editor_theme_preview_number">42</string>
+  <string name="settings_editor_theme_preview_statement_end">;</string>
+  <string name="settings_editor_theme_preview_close">}</string>
+  <string name="settings_editor_color_background">编辑器背景</string>
+  <string name="settings_editor_color_foreground">普通文本</string>
+  <string name="settings_editor_color_selection">选区背景</string>
+  <string name="settings_editor_color_cursor_line">当前行背景</string>
+  <string name="settings_editor_color_cursor">光标</string>
+  <string name="settings_editor_color_line_number">行号</string>
+  <string name="settings_editor_color_line_number_active">当前行号</string>
+  <string name="settings_editor_color_gutter_background">行号区背景</string>
+  <string name="settings_editor_color_gutter_divider">行号区分隔线</string>
+  <string name="settings_editor_color_whitespace">空白符</string>
+  <string name="settings_editor_color_bracket_guide">括号引导线</string>
+  <string name="settings_editor_color_bracket_guide_active">活动括号引导线</string>
+  <string name="settings_editor_color_rainbow_1">彩虹括号 1</string>
+  <string name="settings_editor_color_rainbow_2">彩虹括号 2</string>
+  <string name="settings_editor_color_rainbow_3">彩虹括号 3</string>
+  <string name="settings_editor_color_rainbow_4">彩虹括号 4</string>
+  <string name="settings_editor_color_rainbow_5">彩虹括号 5</string>
+  <string name="settings_editor_color_rainbow_6">彩虹括号 6</string>
+  <string name="settings_editor_color_keyword">关键字</string>
+  <string name="settings_editor_color_function">函数</string>
+  <string name="settings_editor_color_variable">变量</string>
+  <string name="settings_editor_color_property">属性</string>
+  <string name="settings_editor_color_type">类型</string>
+  <string name="settings_editor_color_string">字符串</string>
+  <string name="settings_editor_color_number">数字</string>
+  <string name="settings_editor_color_comment">注释</string>
+  <string name="settings_editor_color_operator">运算符</string>
+  <string name="settings_editor_color_punctuation">标点</string>
+  <string name="settings_editor_color_constant">常量</string>
+  <string name="settings_editor_color_builtin">内置符号</string>
+  <string name="settings_editor_color_deprecated">已弃用符号</string>
+  <string name="settings_editor_color_diagnostic_error">错误</string>
+  <string name="settings_editor_color_diagnostic_warning">警告</string>
+  <string name="settings_editor_color_diagnostic_info">信息</string>
+  <string name="settings_editor_color_diagnostic_hint">提示</string>
   <string name="settings_editor_hardware_acceleration">硬件加速</string>
   <string name="settings_editor_hardware_acceleration_summary">使用 GPU 渲染提升滚动性能。如遇到滚动卡顿或黑屏问题可尝试关闭（需重新打开文件）</string>
   <string name="settings_cat_compiler_options">编译选项</string>
@@ -595,6 +688,9 @@
   <string name="wizard_subtitle_new_project">创建一个新的 C/C++ 项目</string>
   <string name="wizard_title_new_plugin_project">新建插件项目</string>
   <string name="wizard_subtitle_new_plugin_project">选择一个 TinaIDE 插件模板开始开发</string>
+  <string name="wizard_missing_packages_title">缺少模板依赖</string>
+  <string name="wizard_missing_packages_message">创建此项目需要先安装以下 Android 依赖包：%1$s</string>
+  <string name="wizard_open_package_manager">打开包管理器</string>
   <string name="wizard_project_source_location">本次创建位置</string>
   <string name="wizard_btn_next">下一步</string>
   <string name="wizard_btn_previous">上一步</string>
@@ -1001,11 +1097,12 @@
   <string name="settings_project_native_ldlibs">LDLIBS</string>
   <string name="settings_project_native_ldlibs_desc">追加链接库参数（例如 -lSDL3 -lEGL -lGLESv2）</string>
   <string name="settings_project_native_cmake_args">CMake Args</string>
-  <string name="settings_project_native_cmake_args_desc">追加到 CMake configure 阶段（每行一个参数）</string>
+  <string name="settings_project_native_cmake_args_desc">项目共享的 CMake configure 参数（每行一个）</string>
   <string name="settings_project_native_flags_edit_hint">输入原生编译/链接参数。可多行输入，保存时会自动合并为空格分隔。</string>
   <string name="settings_project_native_flags_edit_placeholder">例如：\n-O2 -fPIC\n-DMY_FEATURE=1</string>
-  <string name="settings_project_native_cmake_args_edit_hint">每行一个 CMake 参数。示例：-DXXX=ON</string>
+  <string name="settings_project_native_cmake_args_edit_hint">每行一个 CMake 参数。构建类型请在运行配置中选择。</string>
   <string name="settings_project_native_cmake_args_edit_placeholder">例如：\n-DSDL_TEST=OFF\n-DCMAKE_VERBOSE_MAKEFILE=ON</string>
+  <string name="settings_project_native_cmake_args_build_type_managed">CMAKE_BUILD_TYPE 由运行配置管理，请移除该参数</string>
 
   <string name="btn_ok">确定</string>
 
@@ -1227,7 +1324,6 @@
   <string name="settings_clang_format_run_mode_desc">原生模式格式化速度更快，PRoot 模式兼容性更好</string>
   <string name="settings_make_run_mode">Make 运行模式</string>
   <string name="settings_make_run_mode_desc">原生模式构建速度更快，PRoot 模式兼容性更好</string>
-  <string name="settings_build_type">构建类型</string>
   <string name="settings_generator">生成器</string>
   <string name="settings_parallel_jobs">并行任务数</string>
   <string name="settings_completion_limit">补全候选数量</string>
@@ -1249,11 +1345,6 @@
   <string name="dialog_title_opt_level">优化级别</string>
   <string name="dialog_title_threads">编译线程数</string>
   <string name="dialog_title_completion_limit">补全候选数量</string>
-  <string name="build_type_debug">Debug - 调试模式</string>
-  <string name="build_type_release">Release - 发布模式</string>
-  <string name="build_type_relwithdebinfo">RelWithDebInfo - 带调试信息</string>
-  <string name="build_type_minsizerel">MinSizeRel - 最小体积</string>
-  <string name="dialog_title_cmake_build_type">CMake 构建类型</string>
   <string name="generator_make">Make - 兼容性好</string>
   <string name="generator_ninja">Ninja - 构建更快</string>
   <string name="dialog_title_cmake_generator">CMake 生成器</string>
@@ -1282,7 +1373,7 @@
   <string name="settings_app_theme_desc">选择应用的整体配色方案</string>
   <string name="settings_cat_debug">调试</string>
   <string name="settings_debug_toolbar_position">调试工具栏位置</string>
-  <string name="settings_debug_toolbar_desc">设置调试工具栏的显示位置</string>
+  <string name="settings_debug_toolbar_desc">推荐顶部：与 Run 同槽切换，少占编辑器。底部/两侧可选。</string>
   <string name="dialog_title_select_theme">选择主题</string>
   <string name="dialog_title_debug_toolbar">调试工具栏位置</string>
 
@@ -2132,6 +2223,8 @@
   <string name="content_desc_undo">撤销</string>
   <string name="content_desc_redo">重做</string>
   <string name="content_desc_plugin_editor_toolbar">插件编辑器工具栏</string>
+  <string name="content_desc_show_editor_symbol_bar">显示编辑器快捷符号栏</string>
+  <string name="content_desc_hide_editor_symbol_bar">隐藏编辑器快捷符号栏</string>
   <string name="content_desc_toggle_bookmark">切换书签</string>
   <string name="content_desc_prev_bookmark">上一个书签</string>
   <string name="content_desc_next_bookmark">下一个书签</string>
@@ -2193,9 +2286,18 @@
   <string name="run_config_output_terminal_desc">在独立终端中运行，支持交互输入</string>
   <string name="run_config_output_sdl">SDL 图形运行</string>
   <string name="run_config_output_sdl_desc">在 SDL 图形运行时中启动（输出需为 .so）</string>
+  <string name="run_config_output_native_activity">NativeActivity 图形运行</string>
+  <string name="run_config_output_native_activity_desc">运行 raylib 等 NativeActivity 共享库（入口为普通 main）</string>
 
   <!-- SDL 图形运行选项 -->
   <string name="run_config_sdl_options">SDL 图形运行选项</string>
+  <string name="run_config_sdl_version">SDL 主版本</string>
+  <string name="run_config_sdl_version_auto">自动检测</string>
+  <string name="run_config_sdl_version_auto_desc">优先根据编译产物的 ELF 依赖选择 SDL2 或 SDL3，无法识别时使用项目元数据</string>
+  <string name="run_config_sdl_version_sdl2">SDL2</string>
+  <string name="run_config_sdl_version_sdl2_desc">固定使用 SDL2；若产物实际依赖 SDL3，将阻止启动并提示版本冲突</string>
+  <string name="run_config_sdl_version_sdl3">SDL3</string>
+  <string name="run_config_sdl_version_sdl3_desc">固定使用 SDL3；若产物实际依赖 SDL2，将阻止启动并提示版本冲突</string>
   <string name="run_config_sdl_orientation">屏幕方向</string>
   <string name="run_config_sdl_orientation_auto">自动旋转</string>
   <string name="run_config_sdl_orientation_auto_desc">跟随系统自动旋转设置</string>
@@ -2203,22 +2305,24 @@
   <string name="run_config_sdl_orientation_landscape_desc">强制横屏显示，适合大多数游戏和图形程序</string>
   <string name="run_config_sdl_orientation_portrait">竖屏</string>
   <string name="run_config_sdl_orientation_portrait_desc">强制竖屏显示</string>
-  <string name="run_config_sdl_floating_log">悬浮日志窗口</string>
-  <string name="run_config_sdl_floating_log_desc">在 SDL 图形全屏运行时显示可拖拽的实时日志窗口，方便查看 stdout/stderr 输出</string>
+  <string name="run_config_graphical_options">图形运行界面</string>
+  <string name="run_config_graphical_floating_log">悬浮日志窗口</string>
+  <string name="run_config_graphical_floating_log_desc">在图形全屏运行时显示可拖拽的实时日志窗口，用于查看 stdout/stderr 输出</string>
   <string name="run_config_terminal_options">终端运行选项</string>
   <string name="run_config_show_linker_warnings">显示动态链接器兼容性告警</string>
   <string name="run_config_show_linker_warnings_desc">默认隐藏旧 Android linker 对 AArch64 Auth RELR 标签产生的三类无害告警；开启后原样显示</string>
 
   <!-- 悬浮覆盖层 -->
-  <string name="floating_overlay_exit">退出</string>
-  <string name="floating_overlay_exit_confirm">确定退出 SDL 图形运行界面？</string>
-  <string name="floating_overlay_exit_confirm_yes">退出</string>
+  <string name="floating_overlay_exit">返回编辑器</string>
+  <string name="floating_overlay_exit_confirm">确定返回编辑器并结束当前图形程序？</string>
+  <string name="floating_overlay_exit_confirm_yes">返回</string>
   <string name="floating_overlay_exit_confirm_no">取消</string>
   <string name="floating_overlay_log_title">运行日志</string>
   <string name="floating_overlay_log_empty">暂无日志输出</string>
   <string name="floating_overlay_log_clear">清空</string>
-  <string name="floating_overlay_ball_desc">悬浮控制球</string>
+  <string name="floating_overlay_ball_desc">悬浮返回按钮</string>
   <string name="floating_overlay_double_back_hint">再按一次返回键退出，或点击悬浮球退出</string>
+  <string name="floating_overlay_log_capture_failed">无法读取当前图形程序的运行日志</string>
 
   <string name="sdl_host_title">SDL 运行界面</string>
   <string name="sdl_runtime_error_main_library_missing">缺少待启动的主共享库路径</string>
@@ -2232,11 +2336,30 @@
   <string name="sdl_runtime_stage_failed">准备 SDL 图形运行时失败：%1$s</string>
   <string name="sdl_runtime_error_scan_failed">解析共享库失败：%1$s，原因：%2$s</string>
   <string name="sdl_runtime_error_conflicting_versions">检测到目标同时依赖 SDL2 和 SDL3，无法确定运行时版本。</string>
+  <string name="sdl_runtime_error_configured_version_mismatch">运行配置指定 SDL%1$d，但编译产物实际依赖 SDL%2$d。请修改 SDL 主版本设置或检查链接配置。</string>
   <string name="sdl_runtime_error_sdl_not_found">检测到 SDL%1$d 依赖，但未在包管理器已安装包运行库目录找到 %2$s。请先安装对应 SDL%1$d 包。</string>
   <string name="sdl_runtime_error_sdl_package_broken">检测到已安装的 SDL%1$d 包（%2$s）缺少 %3$s，请在包管理器中重装该包。</string>
+  <string name="sdl_runtime_error_incompatible_android_bridge">SDL%1$d Android JNI bridge 不兼容：%2$s 缺少 %3$s。请安装 TinaIDE 包仓库中的 sdl%1$d 包。</string>
   <string name="sdl_runtime_error_missing_launch_params">SDL 启动参数缺失，无法启动 SDL 运行界面。</string>
   <string name="sdl_runtime_error_invalid_required_major">SDL 主版本参数无效：%1$d（仅支持 2 或 3）</string>
   <string name="sdl_runtime_error_launch_failed">启动 SDL 运行界面失败：%1$s</string>
+  <string name="native_activity_runtime_invalid_shared_library">NativeActivity 图形运行需要共享库（.so），当前目标不可加载：%1$s</string>
+  <string name="native_activity_runtime_no_shared_library_target">NativeActivity 图形运行需要 CMake 共享库目标（.so）。请使用 add_library(... SHARED ...)，并让目标导出普通 main。</string>
+  <string name="native_activity_runtime_auto_selected_shared_library_target">NativeActivity 图形模式已自动切换到共享库目标：%1$s</string>
+  <string name="native_activity_runtime_main_library_missing">缺少 NativeActivity 主共享库路径</string>
+  <string name="native_activity_runtime_dependency_scan_failed">解析 NativeActivity 共享库失败：%1$s</string>
+  <string name="native_activity_runtime_missing_dependencies">NativeActivity 运行依赖不完整：%1$s</string>
+  <string name="native_activity_runtime_sdl_conflict">当前目标依赖 SDL，不能通过 NativeActivity 运行。SDL 项目请选择 SDL 图形运行；raylib 项目不要把 main 重命名为 SDL_main。</string>
+  <string name="native_activity_runtime_stage_failed">准备 NativeActivity 运行库失败：%1$s</string>
+  <string name="native_activity_runtime_launch_failed">启动 NativeActivity 运行界面失败：%1$s</string>
+  <string name="native_activity_runtime_host_not_configured">NativeActivity 运行宿主尚未完成配置</string>
+  <string name="native_activity_runtime_dependency_load_failed">加载 NativeActivity 依赖失败：%1$s</string>
+  <string name="native_activity_runtime_main_load_failed">加载 NativeActivity 主共享库失败：%1$s</string>
+  <string name="native_activity_runtime_entry_missing">共享库未导出 ANativeActivity_onCreate：%1$s</string>
+  <string name="native_activity_runtime_main_entry_missing">raylib 目标未导出普通 main。请移除 SDL_main 宏重定向，或将运行模式切换为 SDL。</string>
+  <string name="native_activity_runtime_bridge_recursion">NativeActivity 入口错误地解析回宿主桥接库</string>
+  <string name="native_activity_runtime_multiple_entries">发现多个不同的 NativeActivity 入口，无法确定应启动哪一个：%1$s</string>
+  <string name="toast_compile_done_opening_native_activity">编译完成，正在打开 NativeActivity 图形界面</string>
   <string name="native_library_missing_libraries_title">缺少运行库</string>
   <string name="native_library_missing_libraries_message">缺少以下运行库：%1$s</string>
   <string name="native_library_missing_libraries_package_hint">建议在包管理器安装 Android 包：%1$s，然后重试。</string>
@@ -2462,6 +2585,8 @@
   <string name="diagnostics_empty">没有诊断信息</string>
   <string name="diagnostics_location">行 %1$d:%2$d</string>
   <string name="diagnostic_copied">诊断信息已复制到剪贴板</string>
+  <string name="diagnostics_view_fixes">查看修复</string>
+  <string name="diagnostics_fix_all">全部修复</string>
 
   <!-- DebugControls -->
   <string name="content_desc_continue">继续</string>
@@ -2473,6 +2598,11 @@
   <!-- CodeActionsMenu -->
   <string name="code_actions_title">代码操作</string>
   <string name="code_actions_empty">没有可用的代码操作</string>
+  <string name="code_actions_load_failed">获取代码操作失败</string>
+  <string name="workspace_edit_preview_title">检查代码操作变更</string>
+  <string name="workspace_edit_preview_summary">将修改 %1$d 个文件，共 %2$d 处编辑</string>
+  <string name="workspace_edit_preview_description">此操作会同时修改多个文件。请确认影响范围后再应用。</string>
+  <string name="workspace_edit_preview_file_edits">%1$d 处编辑</string>
 
   <!-- BuildLogContent -->
   <string name="build_log_empty">暂无构建日志</string>
@@ -2488,6 +2618,9 @@
   <string name="bottom_panel_symbols">符号</string>
   <string name="bottom_panel_bookmarks">书签</string>
   <string name="bottom_panel_git">Git</string>
+  <string name="bottom_panel_plugins">插件</string>
+  <string name="plugin_panel_tab_label">%1$s · %2$s</string>
+  <string name="plugin_panel_empty">插件尚未发布面板内容。</string>
 
   <!-- BookmarksContent -->
   <string name="bookmarks_empty">暂无书签</string>
@@ -2539,6 +2672,7 @@
 
   <!-- DrawerTab -->
   <string name="drawer_tab_files_title">文件</string>
+  <string name="drawer_tab_symbols_title">符号</string>
   <string name="drawer_tab_git_title">Git</string>
   <string name="drawer_tab_rikkahub_title">AI</string>
 
@@ -2620,15 +2754,16 @@
   <string name="menu_bookmark_next">下一个书签</string>
   <string name="menu_bookmark_list">查看书签列表</string>
   <string name="menu_terminal">终端</string>
-  <string name="menu_exit_workspace">退出工作区</string>
+  <string name="menu_exit_workspace">退出到项目列表</string>
   <string name="toast_saved">已保存</string>
   <string name="toast_save_failed">保存失败: %1$s</string>
   <string name="toast_git_branch_switched">已切换到分支: %1$s</string>
-  <string name="dialog_close_project_title">关闭项目</string>
-  <string name="dialog_close_project_message">关闭后可以在项目主页重新打开，默认保留当前会话状态。</string>
-  <string name="btn_close_project">关闭</string>
+  <string name="dialog_close_project_title">退出到项目列表？</string>
+  <string name="dialog_close_project_message">将返回门户项目列表。可随时重新打开，默认保留会话状态。</string>
+  <string name="btn_close_project">退出</string>
   <string name="btn_close_and_forget">关闭并忘记</string>
   <string name="toast_run_config_saved">运行配置已保存</string>
+  <string name="toast_run_config_save_failed">运行配置保存失败</string>
   <string name="toast_git_init_success">Git 仓库初始化成功</string>
   <string name="toast_debug_start_failed">调试启动失败：未获取到可执行文件路径</string>
   <string name="toast_compile_done_starting_debug">编译完成，正在启动调试...</string>
@@ -2651,7 +2786,7 @@
   <string name="toast_save_failed_cancelled">保存失败，已取消%1$s：%2$s</string>
   <string name="toast_auto_saved">已自动保存%1$d个文件</string>
   <string name="action_close_and_forget">关闭并忘记项目</string>
-  <string name="action_close_project">关闭项目</string>
+  <string name="action_close_project">退出到项目列表</string>
   <string name="toast_no_files_to_save">没有需要保存的文件</string>
   <string name="toast_some_files_save_failed">部分文件保存失败</string>
   <string name="toast_files_saved">已保存 %1$d 个文件</string>
@@ -2660,10 +2795,12 @@
   <string name="toast_formatting">正在格式化...</string>
   <string name="toast_clang_format_not_available">clang-format 不可用，请先安装编译工具链</string>
   <string name="toast_format_done">格式化完成</string>
+  <string name="toast_format_source_changed">文件在格式化期间已更改，已保留最新内容</string>
   <string name="toast_code_already_formatted">代码已是格式化状态</string>
   <string name="toast_format_failed">格式化失败: %1$s</string>
   <string name="toast_format_error">格式化出错: %1$s</string>
   <string name="format_failed_simple">格式化失败</string>
+  <string name="format_process_timed_out">clang-format 执行超时（%1$d 秒）</string>
   <string name="toast_preparing_debug">正在准备调试会话...</string>
   <string name="toast_compiling">正在编译...</string>
 
@@ -2707,6 +2844,7 @@
   <string name="compile_sysroot_missing_header">Android sysroot 缺少关键头文件：%1$s</string>
   <string name="compile_sysroot_missing_libcpp_header">Android sysroot 缺少 libc++ 头文件：%1$s</string>
   <string name="compile_sysroot_missing_api_lib_dir">Android sysroot 缺少 API %1$d 库目录：%2$s。请调整 sysrootApiLevel 或重新安装 sysroot。</string>
+  <string name="compile_sysroot_missing_static_libcpp">Android sysroot 缺少静态 libc++ 运行库：%1$s。请重新安装或导入完整的 NDK Runtime。</string>
   <string name="compile_diag_trace_banner">[diag] clang 追踪: %1$s</string>
   <string name="compile_diag_trace_exit_code">[diag] clang 追踪退出码: %1$d</string>
   <string name="compile_diag_phase_compile_failed">%1$s 结论: 编译阶段（cc1）失败</string>
@@ -2818,6 +2956,19 @@ kept=%3$d bytes
   <!-- Remote LSP Server Port -->
   <string name="settings_remote_lsp_port">端口</string>
   <string name="settings_remote_lsp_port_hint">默认：6789</string>
+  <string name="settings_remote_lsp_secure_transport">安全传输（WSS）</string>
+  <string name="settings_remote_lsp_secure_transport_desc">默认使用 TLS；关闭后仅允许连接本机回环地址</string>
+  <string name="settings_remote_lsp_auth_token">认证 Token</string>
+  <string name="settings_remote_lsp_auth_token_hint">输入服务器配置的 Bearer Token；留空将清除</string>
+  <string name="settings_remote_lsp_auth_token_configured">已安全配置</string>
+  <string name="settings_remote_lsp_auth_token_not_configured">未配置</string>
+  <string name="settings_remote_lsp_auth_token_too_long">认证 Token 不能超过 8192 个字符</string>
+  <string name="settings_remote_lsp_auth_token_control_character">认证 Token 不能包含控制字符</string>
+  <string name="settings_remote_lsp_auth_token_save_failed">认证 Token 保存失败</string>
+  <string name="lsp_plugin_toolchain_source_host">下载主机：%1$s</string>
+  <string name="lsp_plugin_toolchain_checksum_verified">完整性：需要 SHA-256 校验</string>
+  <string name="lsp_plugin_toolchain_target_path">目标路径：%1$s</string>
+  <string name="lsp_plugin_toolchain_verify_command">验证命令：%1$s</string>
   <string name="settings_remote_lsp_workspace_root_uri">远端工作区根 URI</string>
   <string name="settings_remote_lsp_workspace_root_uri_hint">例如：file:///C:/Users/me/project</string>
   <string name="settings_remote_lsp_workspace_root_uri_desc">用于远程 clangd 的路径映射；内置同步可留空</string>
@@ -2845,6 +2996,7 @@ kept=%3$d bytes
   <!-- Remote LSP Dialog -->
   <string name="dialog_title_remote_lsp_host">服务器地址</string>
   <string name="dialog_title_remote_lsp_port">服务器端口</string>
+  <string name="dialog_title_remote_lsp_auth_token">远程 LSP 认证</string>
   <string name="dialog_title_remote_lsp_workspace_root_uri">远端工作区根 URI</string>
   <string name="dialog_title_remote_lsp_sync_mode">同步模式</string>
 
@@ -2900,6 +3052,16 @@ kept=%3$d bytes
   <string name="help_doc_create_project_summary">学习如何创建 C/C++ 项目</string>
   <string name="help_doc_plugin_quick_start_title">插件开发快速开始</string>
   <string name="help_doc_plugin_quick_start_summary">先做一个 config 插件，改主题和代码片段，运行热安装，再打包并做安装前预检</string>
+  <string name="help_doc_plugin_manifest_compatibility_title">插件 Manifest 与版本兼容</string>
+  <string name="help_doc_plugin_manifest_compatibility_summary">理解 apiVersion、minAppVersion、插件版本和旧 IDE 的兼容选择规则</string>
+  <string name="help_doc_plugin_script_api_title">Script API 与最小权限</string>
+  <string name="help_doc_plugin_script_api_summary">用命令型 Lua 插件学习 editor、commands、workspace 与权限边界</string>
+  <string name="help_doc_plugin_panels_events_title">插件面板与事件联动</string>
+  <string name="help_doc_plugin_panels_events_summary">声明文本面板，监听宿主事件，并安全更新插件输出</string>
+  <string name="help_doc_plugin_lsp_troubleshooting_title">LSP 插件开发与排错</string>
+  <string name="help_doc_plugin_lsp_troubleshooting_summary">配置 languageServers 与 toolchains，验证启动、退出和 owner 生命周期</string>
+  <string name="help_doc_plugin_testing_recovery_title">插件测试、自愈与发布前检查</string>
+  <string name="help_doc_plugin_testing_recovery_summary">用日志、隔离状态、回滚和兼容门禁完成稳定性验收</string>
   <string name="help_quick_actions_title">快捷操作</string>
   <string name="help_action_create_plugin_project">创建插件项目</string>
   <string name="help_action_open_plugin_settings">打开插件设置</string>
@@ -2991,6 +3153,45 @@ kept=%3$d bytes
     <item>validate</item>
     <item>package</item>
     <item>starter</item>
+  </string-array>
+  <string-array name="help_keywords_plugin_manifest_compatibility">
+    <item>manifest</item>
+    <item>apiVersion</item>
+    <item>minAppVersion</item>
+    <item>兼容</item>
+    <item>旧版本</item>
+    <item>更新</item>
+  </string-array>
+  <string-array name="help_keywords_plugin_script_api">
+    <item>script</item>
+    <item>lua</item>
+    <item>api</item>
+    <item>权限</item>
+    <item>commands</item>
+    <item>editor</item>
+    <item>workspace</item>
+  </string-array>
+  <string-array name="help_keywords_plugin_panels_events">
+    <item>panels</item>
+    <item>events</item>
+    <item>面板</item>
+    <item>事件</item>
+    <item>diagnostics</item>
+  </string-array>
+  <string-array name="help_keywords_plugin_lsp_troubleshooting">
+    <item>lsp</item>
+    <item>languageServers</item>
+    <item>toolchains</item>
+    <item>语言服务器</item>
+    <item>排错</item>
+  </string-array>
+  <string-array name="help_keywords_plugin_testing_recovery">
+    <item>插件日志</item>
+    <item>自动隔离</item>
+    <item>自愈</item>
+    <item>回滚</item>
+    <item>测试</item>
+    <item>quarantine</item>
   </string-array>
   <string-array name="help_keywords_settings_overview">
     <item>设置</item>
@@ -3341,7 +3542,7 @@ kept=%3$d bytes
 
   <!-- 视图切换 -->
   <string name="cmd_view_toggle_file_tree">显示/隐藏文件树</string>
-  <string name="cmd_view_toggle_symbols">显示/隐藏符号面板</string>
+  <string name="cmd_view_toggle_symbols">侧栏符号大纲</string>
   <string name="cmd_view_toggle_terminal">显示/隐藏终端</string>
 
   <!-- Package Installation Groups -->
@@ -3669,6 +3870,19 @@ kept=%3$d bytes
   <string name="plugin_ui_error_prefix">[错误] %1$s</string>
   <string name="plugin_error_file_not_exist">插件文件不存在：%1$s</string>
   <string name="plugin_error_install_failed">插件安装失败</string>
+  <string name="plugin_error_package_too_large">插件包超过 64 MiB 上限</string>
+  <string name="plugin_error_marketplace_id_mismatch">市场插件身份不匹配：请求 %1$s，插件包声明 %2$s</string>
+  <string name="plugin_error_marketplace_version_mismatch">市场插件版本不匹配：请求 %1$s，插件包声明 %2$s</string>
+  <string name="plugin_error_event_payload_too_large">插件事件数据超过宿主传输上限</string>
+  <string name="plugin_permission_update_failed">更新插件权限失败：%1$s</string>
+  <string name="plugin_error_archive_too_many_entries">插件包文件数量超过 4096 项上限</string>
+  <string name="plugin_error_archive_entry_too_large">插件包中的单个文件超过 64 MiB 上限：%1$s</string>
+  <string name="plugin_error_archive_expanded_too_large">插件解压后大小超过 256 MiB 上限</string>
+  <string name="plugin_error_archive_ratio_too_high">插件包包含异常压缩比文件：%1$s</string>
+  <string name="plugin_error_lua_file_too_large">单个 Lua 文件超过 1 MiB 上限：%1$s</string>
+  <string name="plugin_error_lua_sources_too_large">Lua 源码总大小超过 8 MiB 上限</string>
+  <string name="plugin_error_archive_invalid_entry">插件包包含不安全的路径：%1$s</string>
+  <string name="plugin_error_archive_duplicate_entry">插件包包含重复路径：%1$s</string>
   <string name="plugin_error_name_empty">插件名称不能为空</string>
   <string name="plugin_error_version_empty">插件版本不能为空</string>
   <string name="plugin_error_themes_path_invalid">themes 路径不合法：%1$s</string>
@@ -3688,6 +3902,15 @@ kept=%3$d bytes
   <string name="plugin_error_missing_manifest">插件缺少 %1$s</string>
   <string name="plugin_error_api_version_unsupported">不支持的插件 API 版本：%1$d（当前支持 %2$d）</string>
   <string name="plugin_error_permission_unknown">未知插件权限：%1$s</string>
+  <string name="plugin_error_panels_type_invalid">只有 script 或 hybrid 插件可以声明 panels</string>
+  <string name="plugin_error_panels_too_many">单个插件最多声明 %1$d 个面板</string>
+  <string name="plugin_error_panels_duplicate_id">面板 ID 不能重复：%1$s</string>
+  <string name="plugin_error_panel_id_invalid">面板 ID 不合法：%1$s</string>
+  <string name="plugin_error_panel_title_invalid">面板 %1$s 的标题不能为空且不能超过 128 个字符</string>
+  <string name="plugin_error_activation_events_type_invalid">activationEvents 仅适用于 LSP 插件</string>
+  <string name="plugin_error_activation_events_duplicate">activationEvents 不能包含重复项</string>
+  <string name="plugin_error_activation_event_invalid">不支持的 activationEvent：%1$s；apiVersion 1 仅支持 onLanguage:&lt;languageId&gt;</string>
+  <string name="plugin_error_activation_event_language_missing">activationEvent 引用的语言未在 languageServers 中声明：%1$s</string>
   <string name="plugin_error_configuration_key_invalid">配置项 key 不合法：%1$s</string>
   <string name="plugin_error_configuration_type_invalid">配置项 %1$s 的类型不支持：%2$s</string>
   <string name="plugin_error_configuration_default_invalid">配置项 %1$s 的默认值不合法：%2$s</string>
@@ -4041,6 +4264,7 @@ kept=%3$d bytes
   <string name="plugin_marketplace_error_plugin_not_found">未找到插件：%1$s</string>
   <string name="plugin_marketplace_error_plugin_version_not_found">未找到插件版本：%1$s</string>
   <string name="plugin_marketplace_error_download_url_missing">插件未配置下载地址：%1$s</string>
+  <string name="plugin_marketplace_error_integrity_metadata_invalid">插件缺少有效的文件大小或 SHA-256 完整性信息</string>
   <string name="plugin_marketplace_detail_loading">正在加载插件详情...</string>
 
   <!-- Profile & Download History -->
@@ -4087,8 +4311,11 @@ kept=%3$d bytes
   <string name="pkg_manager_package_not_installable">当前包没有可安装的平台版本：%1$s</string>
   <string name="pkg_manager_error_unknown">未知错误</string>
   <string name="pkg_manager_error_package_not_found">未找到包：%1$s</string>
+  <string name="pkg_manager_error_system_package_invalid">Registry 包含无效的系统包名</string>
   <string name="pkg_manager_error_package_versions_not_found">未找到包版本：%1$s</string>
   <string name="pkg_manager_error_download_info_not_found">未找到包下载信息：%1$s/%2$d</string>
+  <string name="pkg_manager_error_no_download_source_for_abi">没有适用于当前 ABI（%1$s）的下载源</string>
+  <string name="pkg_manager_error_download_size_mismatch">下载文件大小不匹配：期望 %1$d 字节，实际 %2$d 字节</string>
   <string name="pkg_manager_retry">重试</string>
   <string name="pkg_manager_update_all">全部更新</string>
   <string name="pkg_manager_check_updates">检查更新</string>
@@ -4253,6 +4480,7 @@ kept=%3$d bytes
   <string name="tutorial_title">教程</string>
   <string name="tutorial_empty">暂无教程</string>
   <string name="tutorial_progress">进度: %1$d%%</string>
+  <string name="tutorial_reading">阅读中</string>
   <string name="tutorial_duration">%1$s 分钟</string>
   <string name="tutorial_start">开始学习</string>
   <string name="tutorial_continue">继续学习</string>
@@ -4566,20 +4794,39 @@ kept=%3$d bytes
   <string name="plugin_error_project_template_path_invalid">project template 路径不合法：%1$s</string>
   <string name="plugin_error_project_template_file_not_exist">project template 文件不存在：%1$s</string>
   <string name="plugin_error_project_template_build_system_invalid">project template 构建系统不合法：%1$s</string>
+  <string name="plugin_error_project_template_duplicate_id">project template ID 重复：%1$s</string>
+  <string name="plugin_error_project_template_archive_invalid">project template 归档无效：%1$s</string>
+  <string name="plugin_error_project_template_required_package_invalid">project template 包含无效的依赖包 ID：%1$s</string>
+  <string name="plugin_error_project_template_required_package_duplicate">project template 依赖包 ID 不能重复</string>
   <string name="plugin_error_apk_export_template_path_invalid">apk export 模板路径不合法：%1$s</string>
   <string name="plugin_error_apk_export_template_file_not_exist">apk export 模板文件不存在：%1$s</string>
   <string name="plugin_error_lsp_language_servers_empty">LSP 插件必须声明 languageServers</string>
+  <string name="plugin_error_lsp_language_server_duplicate_id">LSP 服务器 ID 不能重复：%1$s</string>
   <string name="plugin_error_lsp_languages_empty">LSP 服务器 %1$s 必须声明 languages</string>
   <string name="plugin_error_lsp_file_matches_empty">LSP 服务器 %1$s 必须声明 fileExtensions 或 filePatterns</string>
   <string name="plugin_error_lsp_server_type_invalid">当前仅支持 stdio LSP 服务器：%1$s</string>
   <string name="plugin_error_lsp_server_command_empty">LSP 服务器 %1$s 必须声明启动命令</string>
+  <string name="plugin_error_lsp_server_command_invalid">LSP 服务器 %1$s 的命令、参数或环境变量无效</string>
   <string name="plugin_error_lsp_toolchain_type_invalid">LSP 工具链类型不合法：%1$s。系统包必须使用 system，不再接受 apt/apk。</string>
+  <string name="plugin_error_lsp_toolchain_duplicate_id">LSP 工具链 ID 不能重复：%1$s</string>
   <string name="plugin_error_lsp_toolchain_system_packages_empty">LSP 系统工具链 %1$s 必须声明 packages 或 packagesByManager</string>
+  <string name="plugin_error_lsp_toolchain_packages_invalid">LSP 工具链 %1$s 的包名或版本配置不安全</string>
+  <string name="plugin_error_lsp_toolchain_id_invalid">LSP 工具链 ID 不合法：%1$s</string>
+  <string name="plugin_error_lsp_toolchain_name_empty">LSP 工具链 %1$s 的名称不能为空</string>
+  <string name="plugin_error_lsp_toolchain_verify_command_invalid">LSP 工具链 %1$s 必须声明安全的 verifyCommand</string>
+  <string name="plugin_error_lsp_toolchain_verify_pattern_invalid">LSP 工具链 %1$s 的 verifyPattern 不安全或无效</string>
+  <string name="plugin_error_lsp_toolchain_download_https_required">LSP 工具链 %1$s 的下载地址必须使用 HTTPS</string>
+  <string name="plugin_error_lsp_toolchain_sha256_invalid">LSP 工具链 %1$s 必须提供有效的 SHA-256 校验值</string>
+  <string name="plugin_error_lsp_toolchain_extract_path_invalid">LSP 工具链 %1$s 的解压路径不安全</string>
   <string name="run_config_build_type">构建类型</string>
   <string name="run_config_build_type_debug">Debug</string>
   <string name="run_config_build_type_debug_desc">生成带调试信息的产物，适合开发与排查问题</string>
   <string name="run_config_build_type_release">Release</string>
   <string name="run_config_build_type_release_desc">生成发布优化产物，适合最终运行与性能测试</string>
+  <string name="run_config_build_type_rel_with_deb_info">RelWithDebInfo</string>
+  <string name="run_config_build_type_rel_with_deb_info_desc">启用优化并保留调试信息，适合分析接近发布版的程序</string>
+  <string name="run_config_build_type_min_size_rel">MinSizeRel</string>
+  <string name="run_config_build_type_min_size_rel_desc">以最小产物体积为目标进行发布优化</string>
   <string name="menu_cmake_tools">CMake</string>
   <string name="menu_cmake_open_artifacts_dir">打开构建产物目录</string>
   <string name="menu_cmake_reconfigure">重新配置缓存</string>
@@ -4606,6 +4853,51 @@ kept=%3$d bytes
   <string name="editor_status_remote_error">远程错误</string>
   <string name="editor_status_lsp_error">LSP 错误</string>
   <string name="editor_cursor_position">行 %1$d，列 %2$d</string>
+  <string name="cxx_context_title">C++ 编译上下文</string>
+  <string name="cxx_context_section_status">当前状态</string>
+  <string name="cxx_context_lsp_status">语言服务</string>
+  <string name="cxx_context_preparing">正在准备编译数据库并连接 clangd</string>
+  <string name="cxx_context_unavailable">当前文件还没有可用的 C++ 编译上下文</string>
+  <string name="cxx_context_mode">运行模式</string>
+  <string name="cxx_context_mode_local">本机 clangd</string>
+  <string name="cxx_context_mode_remote">远程 clangd</string>
+  <string name="cxx_context_workspace">工作区</string>
+  <string name="cxx_context_section_database">编译数据库</string>
+  <string name="cxx_context_remote_managed">编译命令由远程语言服务管理，本机无法读取远端的 compile_commands.json。</string>
+  <string name="cxx_context_reload">刷新并重载</string>
+  <string name="cxx_context_value_unavailable">不可用</string>
+  <string name="cxx_context_database_path">文件路径</string>
+  <string name="cxx_context_database_source">来源</string>
+  <string name="cxx_context_source_external">项目生成（CMake/外部工具）</string>
+  <string name="cxx_context_source_fallback">TinaIDE 兜底生成</string>
+  <string name="cxx_context_database_updated_at">更新时间</string>
+  <string name="cxx_context_project_type">项目类型</string>
+  <string name="cxx_context_project_cmake">CMake 项目</string>
+  <string name="cxx_context_project_single_file">单文件项目</string>
+  <string name="cxx_context_project_standalone">独立文件</string>
+  <string name="cxx_context_section_command">当前文件编译命令</string>
+  <string name="cxx_context_command_match">匹配方式</string>
+  <string name="cxx_context_match_exact">精确匹配</string>
+  <string name="cxx_context_match_inferred">根据相关源文件推断</string>
+  <string name="cxx_context_match_missing">未找到匹配命令</string>
+  <string name="cxx_context_matched_source">匹配的源文件</string>
+  <string name="cxx_context_compiler">编译器</string>
+  <string name="cxx_context_standard">语言标准</string>
+  <string name="cxx_context_target">目标平台</string>
+  <string name="cxx_context_toolchain">工具链</string>
+  <string name="cxx_context_sysroot_profile">NDK Runtime</string>
+  <string name="cxx_context_sysroot_profile_value">%1$s（API %2$d）</string>
+  <string name="cxx_context_sysroot">Sysroot</string>
+  <string name="cxx_context_resource_directory">Clang Resource Directory</string>
+  <string name="cxx_context_include_paths">头文件搜索路径</string>
+  <string name="cxx_context_defines">预处理宏</string>
+  <string name="cxx_context_arguments">完整编译参数</string>
+  <string name="cxx_context_issue_database_missing">compile_commands.json 不存在或为空，请刷新编译上下文。</string>
+  <string name="cxx_context_issue_database_invalid">compile_commands.json 格式无效，clangd 可能无法正确索引项目。</string>
+  <string name="cxx_context_issue_command_missing">编译数据库中没有当前文件的命令，clangd 将使用兜底参数。</string>
+  <string name="cxx_context_issue_setup_unavailable">无法准备编译数据库，请检查工具链、Sysroot 和项目配置。</string>
+  <string name="cxx_context_issue_toolchain_failed">工具链或 Sysroot 准备失败，请在工具链设置中检查安装状态。</string>
+  <string name="cxx_context_issue_clangd_failed">clangd 启动失败，请刷新重试并检查 LSP 诊断日志。</string>
   <string name="bottom_panel_performance">性能</string>
   <string name="editor_perf_unavailable">当前没有可用的编辑器性能快照</string>
   <string name="editor_perf_section_frame">帧统计</string>
@@ -4800,4 +5092,9 @@ kept=%3$d bytes
   <string name="hex_elf_jni_hint_symbol">符号：%1$s</string>
   <string name="hex_elf_jni_hint_string">字符串：%1$s</string>
   <string name="hex_signal_elf_jni_registration_hints">JNI 注册线索</string>
+    <string name="error_project_import_recursive_source">无法导入包含 TinaIDE 项目目录的上级目录</string>
+    <string name="error_project_import_symlink">项目目录包含不受支持的符号链接</string>
+    <string name="error_project_import_too_large">项目内容超过导入限制</string>
+    <string name="markdown_html_details">详细信息</string>
+    <string name="markdown_html_progress">[进度：%1$d%%]</string>
 </resources>

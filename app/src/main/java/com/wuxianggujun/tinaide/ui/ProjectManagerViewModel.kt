@@ -8,7 +8,9 @@ import androidx.lifecycle.viewModelScope
 import com.wuxianggujun.tinaide.core.compile.LanguageDetector
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
+import com.wuxianggujun.tinaide.editor.persistence.EditorProjectPathMigration
 import com.wuxianggujun.tinaide.file.IProjectSession
+import com.wuxianggujun.tinaide.project.ProjectCreationService
 import com.wuxianggujun.tinaide.project.ProjectListItem
 import com.wuxianggujun.tinaide.project.ProjectMetadataStore
 import com.wuxianggujun.tinaide.project.ProjectSourceLocation
@@ -19,6 +21,8 @@ import com.wuxianggujun.tinaide.storage.FileDeletionService
 import com.wuxianggujun.tinaide.storage.ProjectLocationManager
 import com.wuxianggujun.tinaide.storage.ProjectPaths
 import com.wuxianggujun.tinaide.storage.StorageManager
+import com.wuxianggujun.tinaide.terminal.persistence.TerminalStateStorage
+import com.wuxianggujun.tinaide.ui.compose.state.editor.SplitEditorSessionStorage
 import com.wuxianggujun.tinaide.update.AppUpdateChecker
 import com.wuxianggujun.tinaide.update.AppUpdateInfo
 import java.io.File
@@ -254,11 +258,36 @@ class ProjectManagerViewModel(
             val sourceResult = deleteTarget(project.dir)
             if (sourceResult !is FileDeletionResult.Success) return sourceResult
 
+            val deletedProjectPath = project.dir.absoluteFile.normalize().path
+            withContext(Dispatchers.IO) {
+                val cleanupFailures = buildList {
+                    runCatching {
+                        EditorProjectPathMigration.clear(getApplication(), deletedProjectPath)
+                    }.exceptionOrNull()?.let(::add)
+                    runCatching {
+                        TerminalStateStorage(getApplication()).clear(deletedProjectPath)
+                    }.exceptionOrNull()?.let(::add)
+                    runCatching {
+                        SplitEditorSessionStorage(getApplication()).clear(deletedProjectPath)
+                    }.exceptionOrNull()?.let(::add)
+                }
+                if (cleanupFailures.isNotEmpty()) {
+                    Timber.tag(TAG).w(
+                        "Failed to clear %d deleted project state store(s): %s",
+                        cleanupFailures.size,
+                        cleanupFailures.joinToString { it.javaClass.simpleName }
+                    )
+                }
+            }
+
             projectId?.let { id ->
                 withContext(Dispatchers.IO) {
-                    runCatching { projectLocationManager.unregisterProject(id, deleteWorkspace = false) }
+                    runCatching { projectLocationManager.unregisterProjectAndAwait(id, deleteWorkspace = false) }
                         .onFailure { error ->
-                            Timber.tag(TAG).w(error, "Failed to unregister deleted project: %s", id)
+                            Timber.tag(TAG).w(
+                                "Failed to unregister deleted project: error=%s",
+                                error.javaClass.simpleName,
+                            )
                         }
                 }
             }
@@ -289,10 +318,19 @@ class ProjectManagerViewModel(
                 val app = getApplication<Application>()
                 val newDir = withContext(NonCancellable + Dispatchers.IO) {
                     ensureProjectFileAccess(dir)
+                    val normalizedName = newName.trim()
+                    if (!ProjectCreationService.isValidProjectName(normalizedName)) {
+                        throw UiMessageException(Strings.error_project_name_invalid)
+                    }
                     val oldDirName = dir.name
+                    val oldProjectPath = dir.absoluteFile.normalize().path
                     val metadata = ProjectMetadataStore.ensure(dir, displayNameFallback = oldDirName)
-
-                    val target = File(dir.parentFile, newName)
+                    val parentDir = dir.parentFile?.canonicalFile
+                        ?: throw UiMessageException(Strings.error_project_name_invalid)
+                    val target = File(parentDir, normalizedName).canonicalFile
+                    if (target.parentFile != parentDir) {
+                        throw UiMessageException(Strings.error_project_name_invalid)
+                    }
                     if (target.exists()) {
                         throw UiMessageException(Strings.error_project_name_exists)
                     }
@@ -301,16 +339,60 @@ class ProjectManagerViewModel(
                     if (!success) {
                         throw RuntimeException(Strings.toast_rename_failed.strOr(app))
                     }
-
-                    runCatching {
-                        val current = ProjectMetadataStore.read(target)
-                        if (current != null) {
-                            ProjectMetadataStore.write(target, current.copy(displayName = newName))
+                    val newProjectPath = target.absoluteFile.normalize().path
+                    var editorMigrated = false
+                    var terminalMigrated = false
+                    var splitSessionMigrated = false
+                    var projectSessionMigrated = false
+                    try {
+                        EditorProjectPathMigration.migrate(app, oldProjectPath, newProjectPath)
+                        editorMigrated = true
+                        TerminalStateStorage(app).migrateProjectPath(oldProjectPath, newProjectPath)
+                        terminalMigrated = true
+                        SplitEditorSessionStorage(app).migrateProjectPath(oldProjectPath, newProjectPath)
+                        splitSessionMigrated = true
+                        if (!ProjectMetadataStore.write(target, metadata.copy(displayName = normalizedName))) {
+                            throw IllegalStateException("Failed to update project metadata after rename")
                         }
-                    }
-
-                    runCatching {
-                        projectLocationManager.registerProject(target)
+                        projectLocationManager.registerProjectAndAwait(target)
+                        projectSession.retargetProjectPath(oldProjectPath, newProjectPath)
+                        projectSessionMigrated = true
+                    } catch (error: Throwable) {
+                        val directoryRestored = target.renameTo(dir)
+                        if (!directoryRestored) {
+                            error.addSuppressed(IllegalStateException("Failed to roll back project directory rename"))
+                            rollbackMigration(error) {
+                                projectLocationManager.registerProjectAndAwait(target)
+                            }
+                        } else {
+                            if (editorMigrated) {
+                                rollbackMigration(error) {
+                                    EditorProjectPathMigration.migrate(app, newProjectPath, oldProjectPath)
+                                }
+                            }
+                            if (terminalMigrated) {
+                                rollbackMigration(error) {
+                                    TerminalStateStorage(app).migrateProjectPath(newProjectPath, oldProjectPath)
+                                }
+                            }
+                            if (splitSessionMigrated) {
+                                rollbackMigration(error) {
+                                    SplitEditorSessionStorage(app).migrateProjectPath(newProjectPath, oldProjectPath)
+                                }
+                            }
+                            if (!ProjectMetadataStore.write(dir, metadata)) {
+                                error.addSuppressed(IllegalStateException("Failed to restore project metadata"))
+                            }
+                            rollbackMigration(error) {
+                                projectLocationManager.registerProjectAndAwait(dir)
+                            }
+                            if (projectSessionMigrated) {
+                                rollbackMigration(error) {
+                                    projectSession.retargetProjectPath(newProjectPath, oldProjectPath)
+                                }
+                            }
+                        }
+                        throw error
                     }
 
                     target
@@ -336,6 +418,10 @@ class ProjectManagerViewModel(
     private fun isEmptyProjectShell(dir: File): Boolean {
         val children = dir.listFiles() ?: return false
         return children.isNotEmpty() && children.all { it.name == ".tinaide" }
+    }
+
+    private suspend fun rollbackMigration(error: Throwable, rollback: suspend () -> Unit) {
+        runCatching { rollback() }.onFailure(error::addSuppressed)
     }
 }
 

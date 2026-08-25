@@ -80,18 +80,13 @@ internal class DiagnosticRenderer(
             if (visualEndColumn <= visualStartColumn) return@forEach
 
             val prefixLayout = lineLayoutCache.getPrefixLayout(
+                state = state,
                 line = line,
                 lineText = lineText,
                 textVersion = textVersion,
                 paint = textPaint,
-                tabSize = state.config.tabSize
             )
-            fun prefixWidth(column: Int): Float {
-                val safeColumn = column.coerceIn(0, prefixLayout.length)
-                return prefixLayout.prefix[safeColumn]
-            }
-
-            val segmentStartXInText = prefixWidth(visualStartColumn)
+            val segmentStartXInText = prefixLayout.segmentStartAdvance(visualStartColumn)
             val lineTop = state.visualLineTopInViewport(visualLine)
             val lineBottom = lineTop + state.lineHeightPx
             val baselineY = lineTop + state.lineHeightPx * 0.78f
@@ -115,8 +110,10 @@ internal class DiagnosticRenderer(
                 segments.forEach { segment ->
                     val startColumn = maxOf(segment.startColumn, visualStartColumn).coerceIn(0, lineText.length)
                     val endColumn = minOf(segment.endColumn, visualEndColumn).coerceIn(startColumn, lineText.length)
-                    val startX = textStartX + (prefixWidth(startColumn) - segmentStartXInText)
-                    val endX = textStartX + (prefixWidth(endColumn) - segmentStartXInText)
+                    val startX =
+                        textStartX + prefixLayout.textStartAdvance(startColumn) - segmentStartXInText
+                    val endX =
+                        textStartX + prefixLayout.textEndAdvance(endColumn) - segmentStartXInText
                     if (endX <= startX) return@forEach
 
                     val color = when (segment.severity) {

@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import com.wuxianggujun.tinaide.core.compile.BuildSystem
 import com.wuxianggujun.tinaide.core.compile.BuildType
 import com.wuxianggujun.tinaide.core.compile.BuildVariables
+import com.wuxianggujun.tinaide.core.compile.CMakeBuildTypeOption
 import com.wuxianggujun.tinaide.core.compile.CompilerType
 import com.wuxianggujun.tinaide.core.compile.OutputMode
 import com.wuxianggujun.tinaide.core.compile.RunConfiguration
@@ -48,6 +49,7 @@ import com.wuxianggujun.tinaide.core.ndk.displayLabel
 import com.wuxianggujun.tinaide.core.ndk.displayName
 import com.wuxianggujun.tinaide.core.ndk.displayVersionLabel
 import com.wuxianggujun.tinaide.project.CppStandard
+import com.wuxianggujun.tinaide.project.ProjectSdlVersion
 import com.wuxianggujun.tinaide.project.getDisplayName
 import com.wuxianggujun.tinaide.ui.compose.icons.rememberTinaPainter
 import java.io.File
@@ -77,6 +79,7 @@ fun RunConfigDialog(
     var args by remember { mutableStateOf(config.args) }
     var workDir by remember { mutableStateOf(config.workDir) }
     var buildType by remember { mutableStateOf(config.buildType) }
+    var cmakeBuildType by remember { mutableStateOf(config.cmakeBuildType) }
     var outputMode by remember { mutableStateOf(config.outputMode) }
     var targetName by remember { mutableStateOf(config.targetName) }
     var targetDropdownExpanded by remember { mutableStateOf(false) }
@@ -201,21 +204,22 @@ fun RunConfigDialog(
         RunConfiguration.parseSingleFileCppStandard(singleFileCppStandard)
     }
     var singleFileCppStandardDropdownExpanded by remember { mutableStateOf(false) }
+    var sdlVersion by remember { mutableStateOf(config.sdlVersion) }
     var sdlOrientation by remember { mutableStateOf(config.sdlOrientation) }
     var enableFloatingLog by remember { mutableStateOf(config.enableFloatingLog) }
     var showLinkerWarnings by remember { mutableStateOf(config.showLinkerWarnings) }
     var showVariablesHelp by remember { mutableStateOf(false) }
 
-    // 目标过滤：SDL 图形运行只加载共享库，终端模式只运行可执行文件。
+    // 目标过滤：图形运行只加载共享库，终端模式只运行可执行文件。
     val selectableTargets = remember(availableTargets, outputMode) {
         availableTargets.filter { target ->
             when {
-                outputMode.isSdlGraphical() -> target.type == TargetInfo.Type.SHARED_LIBRARY
+                outputMode.isSharedLibraryGraphical() -> target.type == TargetInfo.Type.SHARED_LIBRARY
                 else -> target.type == TargetInfo.Type.EXECUTABLE
             }
         }
     }
-    val defaultTargetDescriptionRes = if (outputMode.isSdlGraphical()) {
+    val defaultTargetDescriptionRes = if (outputMode.isSharedLibraryGraphical()) {
         Strings.run_config_build_target_desc_sdl
     } else {
         Strings.run_config_build_target_desc
@@ -223,16 +227,14 @@ fun RunConfigDialog(
     LaunchedEffect(outputMode, buildSystem, availableTargets, targetName) {
         if (buildSystem != BuildSystem.CMAKE || targetName.isBlank()) return@LaunchedEffect
         val selectedTargetType = availableTargets.firstOrNull { it.name == targetName }?.type ?: return@LaunchedEffect
-        if (outputMode.isSdlGraphical() && selectedTargetType != TargetInfo.Type.SHARED_LIBRARY) {
+        if (outputMode.isSharedLibraryGraphical() && selectedTargetType != TargetInfo.Type.SHARED_LIBRARY) {
             targetName = ""
-        } else if (!outputMode.isSdlGraphical() && selectedTargetType == TargetInfo.Type.SHARED_LIBRARY) {
+        } else if (!outputMode.isSharedLibraryGraphical() && selectedTargetType == TargetInfo.Type.SHARED_LIBRARY) {
             targetName = ""
         }
     }
     val isNativeBuildSystem = buildSystem == BuildSystem.CMAKE ||
         buildSystem == BuildSystem.MAKE ||
-        buildSystem == BuildSystem.SINGLE_FILE
-    val showExplicitBuildType = buildSystem == BuildSystem.MAKE ||
         buildSystem == BuildSystem.SINGLE_FILE
     var sysrootApiLevelInput by remember { mutableStateOf(config.sysrootApiLevel?.toString().orEmpty()) }
     val parsedSysrootApiLevel = sysrootApiLevelInput.trim().toIntOrNull()
@@ -294,12 +296,22 @@ fun RunConfigDialog(
                     TextButton(
                         enabled = confirmEnabled,
                         onClick = {
+                            val savedBuildType = if (buildSystem == BuildSystem.CMAKE) {
+                                cmakeBuildType.generalBuildType
+                            } else {
+                                buildType
+                            }
                             onSave(
                                 config.copy(
                                     name = name.trim().ifEmpty { "Debug" },
                                     args = args.trim(),
                                     workDir = workDir.trim(),
-                                    buildType = buildType,
+                                    buildType = savedBuildType,
+                                    cmakeBuildType = if (buildSystem == BuildSystem.CMAKE) {
+                                        cmakeBuildType
+                                    } else {
+                                        config.cmakeBuildType
+                                    },
                                     outputMode = outputMode,
                                     targetName = targetName.trim(),
                                     sourceFileMode = sourceFileMode,
@@ -312,6 +324,7 @@ fun RunConfigDialog(
                                     sysrootApiLevel = parsedSysrootApiLevel,
                                     singleFileCppStandard = RunConfiguration
                                         .normalizeSingleFileCppStandard(singleFileCppStandard),
+                                    sdlVersion = sdlVersion,
                                     sdlOrientation = sdlOrientation,
                                     enableFloatingLog = enableFloatingLog,
                                     showLinkerWarnings = showLinkerWarnings
@@ -342,6 +355,16 @@ fun RunConfigDialog(
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
+
+            if (isNativeBuildSystem) {
+                RunConfigBuildTypeSection(
+                    buildSystem = buildSystem,
+                    buildType = buildType,
+                    onBuildTypeChange = { buildType = it },
+                    cmakeBuildType = cmakeBuildType,
+                    onCmakeBuildTypeChange = { cmakeBuildType = it },
+                )
+            }
 
             // 编译器选择
             ExposedDropdownMenuBox(
@@ -699,11 +722,17 @@ fun RunConfigDialog(
                 }
             } else if (
                 buildSystem == BuildSystem.CMAKE &&
-                outputMode.isSdlGraphical() &&
+                outputMode.isSharedLibraryGraphical() &&
                 availableTargets.isNotEmpty()
             ) {
                 Text(
-                    text = stringResource(Strings.sdl_runtime_no_shared_library_target),
+                    text = stringResource(
+                        if (outputMode.isSdlGraphical()) {
+                            Strings.sdl_runtime_no_shared_library_target
+                        } else {
+                            Strings.native_activity_runtime_no_shared_library_target
+                        }
+                    ),
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodySmall
                 )
@@ -1000,25 +1029,6 @@ fun RunConfigDialog(
                 singleLine = true
             )
 
-            if (showExplicitBuildType) {
-                RunConfigSectionCard(
-                    title = stringResource(Strings.run_config_build_type)
-                ) {
-                    RunConfigOptionRow(
-                        selected = buildType == BuildType.DEBUG,
-                        onClick = { buildType = BuildType.DEBUG },
-                        title = stringResource(Strings.run_config_build_type_debug),
-                        description = stringResource(Strings.run_config_build_type_debug_desc)
-                    )
-                    RunConfigOptionRow(
-                        selected = buildType == BuildType.RELEASE,
-                        onClick = { buildType = BuildType.RELEASE },
-                        title = stringResource(Strings.run_config_build_type_release),
-                        description = stringResource(Strings.run_config_build_type_release_desc)
-                    )
-                }
-            }
-
             RunConfigSectionCard(
                 title = stringResource(Strings.run_config_output_mode)
             ) {
@@ -1033,6 +1043,12 @@ fun RunConfigDialog(
                     onClick = { outputMode = OutputMode.SDL },
                     title = stringResource(Strings.run_config_output_sdl),
                     description = stringResource(Strings.run_config_output_sdl_desc)
+                )
+                RunConfigOptionRow(
+                    selected = outputMode == OutputMode.NATIVE_ACTIVITY,
+                    onClick = { outputMode = OutputMode.NATIVE_ACTIVITY },
+                    title = stringResource(Strings.run_config_output_native_activity),
+                    description = stringResource(Strings.run_config_output_native_activity_desc)
                 )
             }
 
@@ -1054,6 +1070,33 @@ fun RunConfigDialog(
                 RunConfigSectionCard(
                     title = stringResource(Strings.run_config_sdl_options)
                 ) {
+                    Text(
+                        text = stringResource(Strings.run_config_sdl_version),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    RunConfigOptionRow(
+                        selected = sdlVersion == null,
+                        onClick = { sdlVersion = null },
+                        title = stringResource(Strings.run_config_sdl_version_auto),
+                        description = stringResource(Strings.run_config_sdl_version_auto_desc)
+                    )
+                    RunConfigOptionRow(
+                        selected = sdlVersion == ProjectSdlVersion.SDL2,
+                        onClick = { sdlVersion = ProjectSdlVersion.SDL2 },
+                        title = stringResource(Strings.run_config_sdl_version_sdl2),
+                        description = stringResource(Strings.run_config_sdl_version_sdl2_desc)
+                    )
+                    RunConfigOptionRow(
+                        selected = sdlVersion == ProjectSdlVersion.SDL3,
+                        onClick = { sdlVersion = ProjectSdlVersion.SDL3 },
+                        title = stringResource(Strings.run_config_sdl_version_sdl3),
+                        description = stringResource(Strings.run_config_sdl_version_sdl3_desc)
+                    )
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
                     Text(
                         text = stringResource(Strings.run_config_sdl_orientation),
                         style = MaterialTheme.typography.labelSmall,
@@ -1079,13 +1122,18 @@ fun RunConfigDialog(
                         description = stringResource(Strings.run_config_sdl_orientation_portrait_desc)
                     )
 
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                }
+            }
 
+            if (outputMode.isSharedLibraryGraphical()) {
+                RunConfigSectionCard(
+                    title = stringResource(Strings.run_config_graphical_options)
+                ) {
                     RunConfigSwitchRow(
                         checked = enableFloatingLog,
                         onCheckedChange = { enableFloatingLog = it },
-                        title = stringResource(Strings.run_config_sdl_floating_log),
-                        description = stringResource(Strings.run_config_sdl_floating_log_desc)
+                        title = stringResource(Strings.run_config_graphical_floating_log),
+                        description = stringResource(Strings.run_config_graphical_floating_log_desc)
                     )
                 }
             }
@@ -1112,701 +1160,55 @@ fun RunConfigDialog(
 }
 
 @Composable
-private fun RunConfigActionButton(
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true,
-    minSize: Dp = 32.dp,
-    color: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
-    contentPadding: PaddingValues = PaddingValues(6.dp),
-    content: @Composable BoxScope.() -> Unit
-) {
-    TinaPanelSegmentButton(
-        onClick = onClick,
-        modifier = modifier.defaultMinSize(minWidth = minSize, minHeight = minSize),
-        enabled = enabled,
-        minHeight = minSize,
-        color = color,
-        contentPadding = contentPadding,
-        contentAlignment = Alignment.Center,
-        content = content
-    )
-}
-
-@Composable
-private fun RunConfigSectionCard(
-    modifier: Modifier = Modifier,
-    title: String? = null,
-    contentModifier: Modifier = Modifier,
-    color: Color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-    contentPadding: PaddingValues = PaddingValues(12.dp),
-    verticalArrangement: Arrangement.Vertical = Arrangement.spacedBy(8.dp),
-    content: @Composable ColumnScope.() -> Unit
-) {
-    TinaDialogCard(
-        modifier = modifier,
-        contentModifier = contentModifier,
-        contentPadding = contentPadding,
-        color = color,
-        verticalArrangement = verticalArrangement
-    ) {
-        title?.let {
-            Text(
-                text = it,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        content()
-    }
-}
-
-@Composable
-private fun RunConfigInfoCard(
-    message: String,
-    modifier: Modifier = Modifier,
-    title: String? = null
+private fun RunConfigBuildTypeSection(
+    buildSystem: BuildSystem,
+    buildType: BuildType,
+    onBuildTypeChange: (BuildType) -> Unit,
+    cmakeBuildType: CMakeBuildTypeOption,
+    onCmakeBuildTypeChange: (CMakeBuildTypeOption) -> Unit,
 ) {
     RunConfigSectionCard(
-        title = title,
-        modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        title = stringResource(Strings.run_config_build_type)
     ) {
-        Text(
-            text = message,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
-
-@Composable
-private fun RunConfigOptionRow(
-    selected: Boolean,
-    onClick: () -> Unit,
-    title: String,
-    description: String,
-    modifier: Modifier = Modifier
-) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        RadioButton(
-            selected = selected,
-            onClick = onClick
-        )
-        Spacer(modifier = Modifier.width(8.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(title)
-            Text(
-                text = description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+        if (buildSystem == BuildSystem.CMAKE) {
+            RunConfigOptionRow(
+                selected = cmakeBuildType == CMakeBuildTypeOption.DEBUG,
+                onClick = { onCmakeBuildTypeChange(CMakeBuildTypeOption.DEBUG) },
+                title = stringResource(Strings.run_config_build_type_debug),
+                description = stringResource(Strings.run_config_build_type_debug_desc),
             )
-        }
-    }
-}
-
-@Composable
-private fun RunConfigSwitchRow(
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-    title: String,
-    description: String,
-    modifier: Modifier = Modifier
-) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable { onCheckedChange(!checked) },
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(title)
-            Text(
-                text = description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+            RunConfigOptionRow(
+                selected = cmakeBuildType == CMakeBuildTypeOption.RELEASE,
+                onClick = { onCmakeBuildTypeChange(CMakeBuildTypeOption.RELEASE) },
+                title = stringResource(Strings.run_config_build_type_release),
+                description = stringResource(Strings.run_config_build_type_release_desc),
             )
-        }
-        Spacer(modifier = Modifier.width(8.dp))
-        Switch(
-            checked = checked,
-            onCheckedChange = onCheckedChange
-        )
-    }
-}
-
-/**
- * 带变量补全功能的文本输入框
- *
- * 当用户输入 $ 时，会显示变量补全列表
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun VariableTextField(
-    value: String,
-    onValueChange: (String) -> Unit,
-    label: String,
-    placeholder: String,
-    onShowHelp: () -> Unit,
-    modifier: Modifier = Modifier,
-    singleLine: Boolean = true,
-    minLines: Int = 1,
-    maxLines: Int = 1
-) {
-    var showSuggestions by remember { mutableStateOf(false) }
-    var cursorPosition by remember { mutableIntStateOf(0) }
-
-    // 检查是否应该显示变量建议
-    // 当光标前面有 $ 且后面没有完整的变量时显示
-    val shouldShowSuggestions = remember(value, cursorPosition) {
-        if (value.isEmpty()) return@remember false
-
-        // 查找光标前最近的 $
-        val beforeCursor = value.take(cursorPosition.coerceAtMost(value.length))
-        val lastDollar = beforeCursor.lastIndexOf('$')
-
-        if (lastDollar == -1) return@remember false
-
-        // 检查 $ 后面是否已经有完整的变量（以 $ 结尾）
-        val afterDollar = value.substring(lastDollar)
-        val nextDollar = afterDollar.indexOf('$', 1)
-
-        // 如果 $ 后面没有另一个 $，或者光标在两个 $ 之间，显示建议
-        nextDollar == -1 || (lastDollar + nextDollar + 1) > cursorPosition
-    }
-
-    // 获取当前输入的变量前缀（用于过滤）
-    val variablePrefix = remember(value, cursorPosition) {
-        if (value.isEmpty()) return@remember ""
-
-        val beforeCursor = value.take(cursorPosition.coerceAtMost(value.length))
-        val lastDollar = beforeCursor.lastIndexOf('$')
-
-        if (lastDollar == -1) return@remember ""
-
-        beforeCursor.substring(lastDollar)
-    }
-
-    // 过滤匹配的变量
-    val filteredVariables = remember(variablePrefix) {
-        if (variablePrefix.isEmpty()) {
-            BuildVariables.ALL_VARIABLES
+            RunConfigOptionRow(
+                selected = cmakeBuildType == CMakeBuildTypeOption.REL_WITH_DEB_INFO,
+                onClick = { onCmakeBuildTypeChange(CMakeBuildTypeOption.REL_WITH_DEB_INFO) },
+                title = stringResource(Strings.run_config_build_type_rel_with_deb_info),
+                description = stringResource(Strings.run_config_build_type_rel_with_deb_info_desc),
+            )
+            RunConfigOptionRow(
+                selected = cmakeBuildType == CMakeBuildTypeOption.MIN_SIZE_REL,
+                onClick = { onCmakeBuildTypeChange(CMakeBuildTypeOption.MIN_SIZE_REL) },
+                title = stringResource(Strings.run_config_build_type_min_size_rel),
+                description = stringResource(Strings.run_config_build_type_min_size_rel_desc),
+            )
         } else {
-            BuildVariables.ALL_VARIABLES.filter {
-                it.name.startsWith(variablePrefix, ignoreCase = true)
-            }
-        }
-    }
-
-    Box(modifier = modifier) {
-        OutlinedTextField(
-            value = value,
-            onValueChange = { newValue ->
-                onValueChange(newValue)
-                // 简单估算光标位置（实际上 Compose 的 TextField 不直接暴露光标位置）
-                cursorPosition = newValue.length
-                showSuggestions = newValue.contains("$") && !newValue.endsWith("$")
-            },
-            label = { Text(label) },
-            placeholder = { Text(placeholder) },
-            supportingText = {
-                Text(stringResource(Strings.run_config_variable_hint))
-            },
-            trailingIcon = {
-                RunConfigActionButton(
-                    onClick = onShowHelp,
-                    minSize = 28.dp,
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f)
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.Help,
-                        contentDescription = stringResource(Strings.run_config_variable_help),
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-            },
-            singleLine = singleLine,
-            minLines = if (singleLine) 1 else minLines,
-            maxLines = if (singleLine) 1 else maxLines,
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        // 变量补全下拉菜单
-        TinaDropdownMenu(
-            expanded = showSuggestions && shouldShowSuggestions && filteredVariables.isNotEmpty(),
-            onDismissRequest = { showSuggestions = false },
-            modifier = Modifier
-                .heightIn(max = 200.dp)
-                .widthIn(min = 250.dp)
-        ) {
-            filteredVariables.forEach { variable ->
-                TinaDropdownMenuItem(
-                    text = {
-                        Column {
-                            Text(
-                                text = variable.name,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Text(
-                                text = stringResource(variable.descriptionResId),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                            )
-                        }
-                    },
-                    onClick = {
-                        // 插入变量
-                        val beforeCursor = value.take(cursorPosition.coerceAtMost(value.length))
-                        val lastDollar = beforeCursor.lastIndexOf('$')
-
-                        val newValue = if (lastDollar != -1) {
-                            // 替换从 $ 开始的部分
-                            value.substring(0, lastDollar) + variable.name + value.substring(cursorPosition.coerceAtMost(value.length))
-                        } else {
-                            // 直接插入
-                            value + variable.name
-                        }
-
-                        onValueChange(newValue)
-                        showSuggestions = false
-                    }
-                )
-            }
-        }
-    }
-}
-
-/**
- * 变量帮助对话框
- */
-@Composable
-fun VariablesHelpDialog(
-    onDismiss: () -> Unit
-) {
-    TinaAlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            TinaDialogTitleText(stringResource(Strings.run_config_available_variables))
-        },
-        text = {
-            TinaDialogContentColumn {
-                TinaDialogMessageCard(
-                    message = stringResource(Strings.run_config_variables_desc)
-                )
-                RunConfigSectionCard(
-                    contentModifier = Modifier
-                        .heightIn(max = 420.dp)
-                        .verticalScroll(rememberScrollState()),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.14f),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    BuildVariables.ALL_VARIABLES.forEach { variable ->
-                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text(
-                                text = variable.name,
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Text(
-                                text = stringResource(variable.descriptionResId),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TinaTextButton(
-                text = stringResource(Strings.btn_close),
-                onClick = onDismiss
+            RunConfigOptionRow(
+                selected = buildType == BuildType.DEBUG,
+                onClick = { onBuildTypeChange(BuildType.DEBUG) },
+                title = stringResource(Strings.run_config_build_type_debug),
+                description = stringResource(Strings.run_config_build_type_debug_desc),
             )
-        }
-    )
-}
-
-/**
- * 运行配置选择器（CLion 风格，放在运行按钮左边）
- * 支持多配置选择、添加、复制、删除
- */
-@Composable
-fun RunConfigSelector(
-    configManager: RunConfigurationManager,
-    onSelectConfig: (String) -> Unit,
-    onAddConfig: () -> Unit,
-    onEditConfig: () -> Unit,
-    onDuplicateConfig: (String) -> Unit,
-    onDeleteConfig: (String) -> Unit,
-    modifier: Modifier = Modifier,
-    onBuild: (() -> Unit)? = null,
-    onRun: () -> Unit = {},
-    onRebuildAndRun: () -> Unit = {},
-    onRunInTerminal: () -> Unit = {},
-    onDebug: () -> Unit = {},
-    isBuildEnabled: Boolean = true,
-    isRunEnabled: Boolean = true,
-    isDebugEnabled: Boolean = true,
-    buildIconRes: Int = 0,
-    debugIconRes: Int = 0,
-    runTint: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color(0xFF4CAF50),
-    disabledTint: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color.Gray,
-    configSegmentMaxWidth: Dp = 84.dp,
-    showBuildButton: Boolean = true
-) {
-    var expanded by remember { mutableStateOf(false) }
-    val currentConfig = configManager.selectedConfig
-
-    Box(modifier = modifier) {
-        // 配置 + 运行 + 构建 + 调试四段式工具条
-        TinaOverlayPanelSurface(
-            shape = MaterialTheme.shapes.small,
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-            tonalElevation = 0.dp,
-            shadowElevation = 0.dp,
-            modifier = Modifier.height(32.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                // 左侧：配置名称 + 下拉箭头（可点击展开菜单）
-                TinaPanelSegmentButton(
-                    onClick = { expanded = true },
-                    modifier = Modifier
-                        .height(32.dp)
-                        .widthIn(max = configSegmentMaxWidth),
-                    contentPadding = PaddingValues(start = 6.dp, end = 2.dp),
-                    contentAlignment = Alignment.CenterStart
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Text(
-                            text = currentConfig.displayName(),
-                            style = MaterialTheme.typography.bodySmall,
-                            maxLines = 1,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false)
-                        )
-                        Icon(
-                            imageVector = Icons.Default.ArrowDropDown,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                }
-
-                // 分隔线
-                VerticalDivider(
-                    modifier = Modifier.height(20.dp),
-                    thickness = 1.dp,
-                    color = MaterialTheme.colorScheme.outlineVariant
-                )
-
-                // 中间：运行按钮（▶）
-                RunActionButton(
-                    enabled = isRunEnabled,
-                    runTint = runTint,
-                    disabledTint = disabledTint,
-                    onRun = onRun,
-                    onRebuildAndRun = onRebuildAndRun,
-                    onRunInTerminal = onRunInTerminal,
-                    onEditConfig = onEditConfig
-                )
-
-                // 分隔线
-                VerticalDivider(
-                    modifier = Modifier.height(20.dp),
-                    thickness = 1.dp,
-                    color = MaterialTheme.colorScheme.outlineVariant
-                )
-
-                if (showBuildButton && onBuild != null && buildIconRes != 0) {
-                    TinaPanelSegmentButton(
-                        onClick = onBuild,
-                        enabled = isBuildEnabled,
-                        modifier = Modifier.size(32.dp),
-                        contentPadding = PaddingValues(0.dp)
-                    ) {
-                        Icon(
-                            painter = rememberTinaPainter(buildIconRes),
-                            contentDescription = stringResource(Strings.cmd_project_build),
-                            tint = if (isBuildEnabled) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                disabledTint
-                            },
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-
-                    VerticalDivider(
-                        modifier = Modifier.height(20.dp),
-                        thickness = 1.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant
-                    )
-                }
-
-                // 右侧：调试按钮（🪲）
-                TinaPanelSegmentButton(
-                    onClick = onDebug,
-                    enabled = isDebugEnabled,
-                    modifier = Modifier.size(32.dp),
-                    contentPadding = PaddingValues(0.dp)
-                ) {
-                    if (debugIconRes != 0) {
-                        Icon(
-                            painter = rememberTinaPainter(debugIconRes),
-                            contentDescription = null,
-                            tint = if (isDebugEnabled) runTint else disabledTint,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
-            }
-        }
-
-        // 下拉菜单 - 限制最大高度，支持滚动
-        TinaDropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            modifier = Modifier.heightIn(max = 300.dp) // 限制下拉菜单最大高度
-        ) {
-            // 配置列表
-            configManager.configurations.forEach { config ->
-                val isSelected = config.id == configManager.selectedId
-                TinaDropdownMenuItem(
-                    text = {
-                        Column(modifier = Modifier.widthIn(max = 180.dp)) {
-                            Text(
-                                text = config.displayName(),
-                                style = MaterialTheme.typography.bodyMedium,
-                                maxLines = 1,
-                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                            )
-                            if (config.args.isNotEmpty()) {
-                                Text(
-                                    text = stringResource(Strings.run_config_args_label_with_variable, config.args),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-                    },
-                    onClick = {
-                        onSelectConfig(config.id)
-                        expanded = false
-                    },
-                    leadingIcon = {
-                        if (isSelected) {
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        } else {
-                            Spacer(modifier = Modifier.size(24.dp))
-                        }
-                    },
-                    trailingIcon = {
-                        // 仅当有多个配置时显示删除按钮
-                        if (configManager.configurations.size > 1) {
-                            RunConfigActionButton(
-                                onClick = {
-                                    onDeleteConfig(config.id)
-                                },
-                                minSize = 24.dp,
-                                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.24f),
-                                contentPadding = PaddingValues(4.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Delete,
-                                    contentDescription = stringResource(Strings.content_desc_delete),
-                                    modifier = Modifier.size(14.dp),
-                                    tint = MaterialTheme.colorScheme.error
-                                )
-                            }
-                        }
-                    }
-                )
-            }
-
-            TinaDropdownMenuDivider()
-            TinaDropdownMenuSectionHeader {
-                TinaDropdownMenuSectionTitle(
-                    text = stringResource(Strings.action_more)
-                )
-            }
-
-            // 添加新配置
-            TinaDropdownMenuItem(
-                text = { Text(stringResource(Strings.action_add_config)) },
-                onClick = {
-                    expanded = false
-                    onAddConfig()
-                },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = null
-                    )
-                }
-            )
-
-            // 复制当前配置
-            TinaDropdownMenuItem(
-                text = { Text(stringResource(Strings.action_copy_config)) },
-                onClick = {
-                    expanded = false
-                    onDuplicateConfig(currentConfig.id)
-                },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.ContentCopy,
-                        contentDescription = null
-                    )
-                }
-            )
-
-            // 编辑当前配置
-            TinaDropdownMenuItem(
-                text = { Text(stringResource(Strings.action_edit_config)) },
-                onClick = {
-                    expanded = false
-                    onEditConfig()
-                },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.Settings,
-                        contentDescription = null
-                    )
-                }
+            RunConfigOptionRow(
+                selected = buildType == BuildType.RELEASE,
+                onClick = { onBuildTypeChange(BuildType.RELEASE) },
+                title = stringResource(Strings.run_config_build_type_release),
+                description = stringResource(Strings.run_config_build_type_release_desc),
             )
         }
     }
 }
 
-@Composable
-private fun RunActionButton(
-    enabled: Boolean,
-    runTint: Color,
-    disabledTint: Color,
-    onRun: () -> Unit,
-    onRebuildAndRun: () -> Unit,
-    onRunInTerminal: () -> Unit,
-    onEditConfig: () -> Unit,
-) {
-    var menuExpanded by remember { mutableStateOf(false) }
-    val interactionSource = remember { MutableInteractionSource() }
-
-    LaunchedEffect(enabled) {
-        if (!enabled) {
-            menuExpanded = false
-        }
-    }
-
-    Box(
-        modifier = Modifier.size(32.dp)
-    ) {
-        TinaPanelSegmentButton(
-            onClick = {},
-            enabled = enabled,
-            modifier = Modifier.matchParentSize(),
-            contentPadding = PaddingValues(0.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.PlayArrow,
-                contentDescription = null,
-                tint = if (enabled) runTint else disabledTint,
-                modifier = Modifier.size(20.dp)
-            )
-        }
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .combinedClickable(
-                    enabled = enabled,
-                    role = Role.Button,
-                    interactionSource = interactionSource,
-                    indication = null,
-                    onClick = onRun,
-                    onLongClick = { menuExpanded = true },
-                )
-        )
-        RunMenu(
-            expanded = menuExpanded,
-            onDismiss = { menuExpanded = false },
-            onRun = onRun,
-            onRebuildAndRun = onRebuildAndRun,
-            onRunInTerminal = onRunInTerminal,
-            onEditConfig = onEditConfig,
-        )
-    }
-}
-
-/**
- * 运行菜单（长按运行按钮弹出）
- */
-@Composable
-fun RunMenu(
-    expanded: Boolean,
-    onDismiss: () -> Unit,
-    onRun: () -> Unit,
-    onRebuildAndRun: () -> Unit,
-    onRunInTerminal: () -> Unit,
-    onEditConfig: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    TinaDropdownMenu(
-        expanded = expanded,
-        onDismissRequest = onDismiss,
-        modifier = modifier
-    ) {
-        TinaDropdownMenuItem(
-            text = { Text(stringResource(Strings.action_run)) },
-            onClick = {
-                onDismiss()
-                onRun()
-            }
-        )
-        TinaDropdownMenuItem(
-            text = { Text(stringResource(Strings.action_rebuild_and_run)) },
-            onClick = {
-                onDismiss()
-                onRebuildAndRun()
-            }
-        )
-        TinaDropdownMenuItem(
-            text = { Text(stringResource(Strings.action_run_in_terminal)) },
-            onClick = {
-                onDismiss()
-                onRunInTerminal()
-            }
-        )
-        TinaDropdownMenuDivider()
-        TinaDropdownMenuSectionHeader {
-            TinaDropdownMenuSectionTitle(
-                text = stringResource(Strings.action_more)
-            )
-        }
-        TinaDropdownMenuItem(
-            text = { Text(stringResource(Strings.action_edit_run_config)) },
-            onClick = {
-                onDismiss()
-                onEditConfig()
-            }
-        )
-    }
-}

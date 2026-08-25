@@ -19,14 +19,20 @@ description: TinaIDE 构建、Gradle、ABI、CI、发布、签名和 R8 排障�
 ## 常用命令
 
 ```powershell
-./gradlew :app:compileArm64DebugKotlin --console=plain
-./gradlew :app:assembleArm64Debug --console=plain
-./gradlew -Ptina.devAbi=x86_64 :app:assembleX86_64Debug --console=plain
-./gradlew :app:assembleDebugAllAbi --console=plain
-./gradlew :app:assembleArm64Release --console=plain
-./gradlew ktlintCheck --console=plain
+./gradlew :core:editor-view:compileDebugKotlin --no-daemon --console=plain
+./gradlew :core:editor-view:testDebugUnitTest --no-daemon --console=plain
+./gradlew :app:compileArm64DebugKotlin --no-daemon --console=plain
+./gradlew :app:assembleArm64Debug --no-daemon --console=plain
+./gradlew -Ptina.devAbi=x86_64 :app:assembleX86_64Debug --no-daemon --console=plain
+./gradlew :app:assembleDebugAllAbi --no-daemon --console=plain
+./gradlew :app:assembleArm64Release --no-daemon --console=plain
+./gradlew ktlintCheck --no-daemon --console=plain
 ```
 
+- 改动 Android library 时，先运行该模块的 `testDebugUnitTest` 或 `compileDebugKotlin`；不要把 `:app:compileArm64DebugKotlin` 当成所有 Kotlin 改动的默认验证。
+- 仅当 `app` 宿主、ABI/flavor、打包、签名或跨模块集成变化时，才运行对应 `:app:*` 任务。
+- 一次性本地命令统一使用 `--no-daemon`，让本次构建进程自行退出。
+- 若其他会话正在构建，本会话只做静态检查，不启动或停止 Gradle。禁止执行 `gradlew --stop` 影响共享 daemon，只回收本任务明确启动的进程。
 - Windows 辅助脚本存在：`tools/build-apk.ps1`。
 - `tools/build-apk.ps1 -Universal` 会临时写 `app/build.gradle.kts`，执行前必须确认影响。
 
@@ -63,6 +69,6 @@ description: TinaIDE 构建、Gradle、ABI、CI、发布、签名和 R8 排障�
 ## 验证
 
 - 文档或脚本变更至少检查 `git diff -- AGENTS.md .agents tools build-logic app/build.gradle.kts`。
-- 构建逻辑变更先跑最小目标：`:app:compileArm64DebugKotlin`。
+- 构建逻辑变更先跑受影响模块的最小 compile/test；只有 app convention、宿主集成或 flavor 受影响时才跑 `:app:compileArm64DebugKotlin`。
 - ABI 或 packaging 变更跑对应 assemble。
 - R8/Release 变更需要用户明确接受版本/mapping 副作用后再跑目标 release assemble，并检查 keep 规则是否在正确模块。

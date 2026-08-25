@@ -13,7 +13,14 @@ import com.wuxianggujun.tinaide.core.linuxdistro.DistroRelease
 import com.wuxianggujun.tinaide.core.linuxdistro.LinuxDistroManifest
 import com.wuxianggujun.tinaide.core.linuxdistro.LinuxDistroManifestParser
 import com.wuxianggujun.tinaide.core.linuxdistro.LinuxDistroManifestSource
+import io.mockk.mockk
 import kotlin.io.path.createTempDirectory
+import okhttp3.Interceptor
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Test
 
 class LinuxDistroCatalogRepositoryTest {
@@ -107,6 +114,46 @@ class LinuxDistroCatalogRepositoryTest {
         assertThat(fallbackSource.loadCount).isEqualTo(1)
     }
 
+    @Test
+    fun remoteManifestSource_shouldAtomicallyReplaceCacheWithValidatedManifest() {
+        val cacheDirectory = createTempDirectory("remote-linux-distro-cache").toFile()
+        val cacheFile = cacheDirectory.resolve("manifest.cache.json")
+        val remoteManifest = manifest("remote")
+        val client = OkHttpClient.Builder()
+            .addInterceptor(
+                Interceptor { chain ->
+                    Response.Builder()
+                        .request(chain.request())
+                        .protocol(Protocol.HTTP_1_1)
+                        .code(200)
+                        .message("OK")
+                        .body(
+                            LinuxDistroManifestParser.encode(remoteManifest)
+                                .toResponseBody("application/json".toMediaType())
+                        )
+                        .build()
+                }
+            )
+            .build()
+        val fallbackSource = RecordingManifestSource(manifest("bundled"))
+        val source = RemoteLinuxDistroManifestSource(
+            context = mockk(relaxed = true),
+            fallback = fallbackSource,
+            client = client,
+            cacheFile = cacheFile,
+            manifestUrls = listOf("https://registry.test/linux-distros.json"),
+        )
+
+        val loaded = source.loadManifest()
+
+        assertThat(loaded.distros.single().id).isEqualTo("remote")
+        assertThat(LinuxDistroManifestParser.decode(cacheFile.readText(Charsets.UTF_8)))
+            .isEqualTo(remoteManifest)
+        assertThat(cacheDirectory.listFiles().orEmpty().map { it.name })
+            .containsExactly(cacheFile.name)
+        assertThat(fallbackSource.loadCount).isEqualTo(0)
+    }
+
     private class RecordingManifestSource(
         private val manifest: LinuxDistroManifest,
     ) : LinuxDistroManifestSource {
@@ -140,7 +187,7 @@ class LinuxDistroCatalogRepositoryTest {
                         architecture = DistroArchitecture.AARCH64,
                         url = "https://example.test/$id/rootfs.tar.gz",
                         format = DistroArchiveFormat.TAR_GZ,
-                        checksum = DistroChecksum(DistroChecksumAlgorithm.SHA256, "abc123"),
+                        checksum = DistroChecksum(DistroChecksumAlgorithm.SHA256, "ab".repeat(32)),
                     )
                 ),
             )

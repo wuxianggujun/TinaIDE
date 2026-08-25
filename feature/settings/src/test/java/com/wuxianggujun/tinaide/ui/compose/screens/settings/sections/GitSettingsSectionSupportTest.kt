@@ -326,6 +326,21 @@ class GitSettingsSectionSupportTest {
                 notSelectedLabel = "未选择",
             )
         ).isEqualTo("未选择")
+
+        assertThat(GitSettingsSectionSupport.validateSshBindingHost("github.com")).isNull()
+        assertThat(GitSettingsSectionSupport.validateSshBindingHost("host/path"))
+            .isEqualTo(Strings.git_ssh_binding_host_invalid)
+        assertThat(GitSettingsSectionSupport.validateSshBindingPort("")).isNull()
+        assertThat(GitSettingsSectionSupport.validateSshBindingPort("65535")).isNull()
+        assertThat(GitSettingsSectionSupport.validateSshBindingPort("bad"))
+            .isEqualTo(Strings.git_ssh_binding_port_invalid)
+        assertThat(GitSettingsSectionSupport.validateSshBindingPort("65536"))
+            .isEqualTo(Strings.git_ssh_binding_port_invalid)
+        assertThat(
+            runCatching {
+                GitSettingsSectionSupport.resolveBindingDraft("github.com", "id_ed25519", "bad")
+            }.isFailure
+        ).isTrue()
     }
 
     @Test

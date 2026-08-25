@@ -5,15 +5,20 @@ import com.wuxianggujun.tinaide.core.i18n.str
 import com.wuxianggujun.tinaide.core.lang.CxxFileSupport
 import com.wuxianggujun.tinaide.core.serialization.JsonSerializer
 import com.wuxianggujun.tinaide.project.CppStandard
+import com.wuxianggujun.tinaide.project.ProjectApkExportSupportResolver
+import com.wuxianggujun.tinaide.project.ProjectApkExportType
 import com.wuxianggujun.tinaide.project.ProjectMetadata
 import com.wuxianggujun.tinaide.project.ProjectMetadataStore
+import com.wuxianggujun.tinaide.project.ProjectSdlVersion
 import java.io.File
 import java.util.UUID
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import timber.log.Timber
 
-private const val RUN_CONFIG_SCHEMA_CURRENT = 5
+private const val RUN_CONFIG_SCHEMA_CURRENT = 8
+private const val RUN_CONFIG_SCHEMA_NATIVE_ACTIVITY = 7
+private const val RUN_CONFIG_SCHEMA_CMAKE_BUILD_TYPE = 8
 
 /**
  * 源文件模式 - 决定编译哪个源文件
@@ -59,6 +64,9 @@ data class RunConfiguration(
     val args: String = "", // 命令行参数（支持变量）
     val workDir: String = "", // 工作目录（相对路径，支持变量）
     val buildType: BuildType = BuildType.DEBUG,
+
+    /** CMake 构建类型。schema 8 起由每个运行配置独立持有。 */
+    val cmakeBuildType: CMakeBuildTypeOption = CMakeBuildTypeOption.DEBUG,
     val outputMode: OutputMode = OutputMode.TERMINAL,
     val targetName: String = "", // CMake 构建目标（留空表示默认目标）
 
@@ -117,15 +125,17 @@ data class RunConfiguration(
     val singleFileCppStandard: String? = null,
 
     /**
+     * SDL 主版本覆盖项（仅 outputMode == SDL 时生效）。
+     * null 表示优先从 ELF 依赖和项目元数据自动检测。
+     */
+    val sdlVersion: ProjectSdlVersion? = null,
+
+    /**
      * SDL 图形运行的屏幕方向（仅 outputMode == SDL 时生效）。
      */
     val sdlOrientation: SdlOrientation = SdlOrientation.AUTO,
 
-    /**
-     * 是否在 SDL 图形运行下显示悬浮日志窗口（仅 outputMode == SDL 时生效）。
-     *
-     * 启用后可在全屏 SDL/ImGui 等图形程序中实时查看 stdout/stderr 输出。
-     */
+    /** 是否在图形运行宿主中显示悬浮日志窗口。悬浮返回按钮始终显示。 */
     val enableFloatingLog: Boolean = false,
 
     /**
@@ -141,7 +151,8 @@ data class RunConfiguration(
         sysrootProfileId = sysrootProfileId?.trim()?.takeIf { it.isNotEmpty() },
         customCCompiler = normalizeCompilerPath(customCCompiler),
         customCppCompiler = normalizeCompilerPath(customCppCompiler),
-        singleFileCppStandard = normalizeSingleFileCppStandard(singleFileCppStandard)
+        singleFileCppStandard = normalizeSingleFileCppStandard(singleFileCppStandard),
+        sdlVersion = sdlVersion.takeIf { outputMode == OutputMode.SDL },
     )
 
     /**
@@ -245,6 +256,7 @@ data class RunConfiguration(
     fun outputModeDisplayName(): String = when (outputMode) {
         OutputMode.TERMINAL -> Strings.run_config_output_terminal.str()
         OutputMode.SDL -> Strings.run_config_output_sdl.str()
+        OutputMode.NATIVE_ACTIVITY -> Strings.run_config_output_native_activity.str()
     }
 
     companion object {
@@ -310,7 +322,10 @@ data class RunConfigurationManager(
         /**
          * 从项目目录加载配置
          */
-        fun load(projectPath: String): RunConfigurationManager {
+        fun load(
+            projectPath: String,
+            legacyCMakeBuildType: CMakeBuildTypeOption = CMakeBuildTypeOption.DEBUG,
+        ): RunConfigurationManager {
             val configFile = configFile(projectPath)
             return try {
                 if (configFile.exists()) {
@@ -328,10 +343,20 @@ data class RunConfigurationManager(
                             schemaVersion = RUN_CONFIG_SCHEMA_CURRENT,
                             configurations = validConfigs
                         )
-                        val normalizedConfigManager = normalizeManager(sanitizedManager)
+                        val projectMetadata = resolveProjectMetadata(projectPath)
+                        val buildTypeMigratedManager = migrateLegacyCMakeBuildType(
+                            manager = normalizeManager(sanitizedManager),
+                            sourceSchemaVersion = rawManager.schemaVersion,
+                            legacyCMakeBuildType = legacyCMakeBuildType,
+                        )
+                        val normalizedConfigManager = migrateLegacyNativeActivityMode(
+                            manager = buildTypeMigratedManager,
+                            sourceSchemaVersion = rawManager.schemaVersion,
+                            metadata = projectMetadata,
+                        )
                         val targetRepair = CMakeRunTargetResolver.repairBlankTargets(
                             normalizedConfigManager,
-                            resolveProjectMetadata(projectPath)
+                            projectMetadata
                         )
                         val repairedConfigManager = targetRepair.manager
                         val normalizedSelectedId = repairedConfigManager.selectedId
@@ -438,6 +463,7 @@ data class RunConfigurationManager(
                 ?.let(::File)
                 ?.takeIf { it.exists() }
                 ?: return null
+            ProjectApkExportSupportResolver.ensureDetected(projectRoot)
             return ProjectMetadataStore.read(projectRoot)
         }
 
@@ -447,6 +473,50 @@ data class RunConfigurationManager(
                 manager
             } else {
                 manager.copy(configurations = normalizedConfigs)
+            }
+        }
+
+        private fun migrateLegacyCMakeBuildType(
+            manager: RunConfigurationManager,
+            sourceSchemaVersion: Int,
+            legacyCMakeBuildType: CMakeBuildTypeOption,
+        ): RunConfigurationManager {
+            if (sourceSchemaVersion >= RUN_CONFIG_SCHEMA_CMAKE_BUILD_TYPE) return manager
+
+            return manager.copy(
+                configurations = manager.configurations.map { config ->
+                    config.copy(cmakeBuildType = legacyCMakeBuildType)
+                }
+            )
+        }
+
+        private fun migrateLegacyNativeActivityMode(
+            manager: RunConfigurationManager,
+            sourceSchemaVersion: Int,
+            metadata: ProjectMetadata?,
+        ): RunConfigurationManager {
+            if (
+                sourceSchemaVersion >= RUN_CONFIG_SCHEMA_NATIVE_ACTIVITY ||
+                metadata?.apkExportType != ProjectApkExportType.NATIVE_ACTIVITY ||
+                metadata?.getSdlVersionOrNull() != null
+            ) {
+                return manager
+            }
+
+            val migratedConfigurations = manager.configurations.map { config ->
+                if (config.outputMode == OutputMode.SDL) {
+                    config.copy(
+                        outputMode = OutputMode.NATIVE_ACTIVITY,
+                        sdlVersion = null,
+                    )
+                } else {
+                    config
+                }
+            }
+            return if (migratedConfigurations == manager.configurations) {
+                manager
+            } else {
+                manager.copy(configurations = migratedConfigurations)
             }
         }
     }
@@ -527,9 +597,19 @@ enum class OutputMode {
     /**
      * 在 SDL 图形运行时中运行（加载共享库）
      */
-    SDL;
+    SDL,
+
+    /**
+     * 在 Android NativeActivity 中运行共享库。
+     *
+     * 该模式用于 raylib 等导出 ANativeActivity_onCreate 的运行时，入口仍为普通 main，
+     * 不经过 SDL_main。
+     */
+    NATIVE_ACTIVITY;
 
     fun isSdlGraphical(): Boolean = this == SDL
+
+    fun isSharedLibraryGraphical(): Boolean = this == SDL || this == NATIVE_ACTIVITY
 }
 
 /**

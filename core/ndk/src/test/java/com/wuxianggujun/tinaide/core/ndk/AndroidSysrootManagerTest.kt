@@ -43,11 +43,57 @@ class AndroidSysrootManagerTest {
         createMinimalSysroot(
             root = defaultProfileDir,
             arch = AndroidSysrootManager.Companion.Arch.ARM64,
-            includeCxxRuntime = false,
+            includeCxxSharedRuntime = false,
         )
 
         assertThat(manager.isInstalled(AndroidSysrootManager.Companion.Arch.ARM64)).isFalse()
         assertThat(manager.getActiveProfile(AndroidSysrootManager.Companion.Arch.ARM64)).isNull()
+    }
+
+    @Test
+    fun isInstalled_shouldRejectSysrootWithoutStaticLibcxxRuntime() {
+        val defaultProfileDir = manager.getConfigManager().getProfileDir("builtin-ndk-r27c-arm64")
+        createMinimalSysroot(
+            root = defaultProfileDir,
+            arch = AndroidSysrootManager.Companion.Arch.ARM64,
+            includeCxxStaticRuntime = false,
+        )
+
+        assertThat(manager.isInstalled(AndroidSysrootManager.Companion.Arch.ARM64)).isFalse()
+        assertThat(
+            manager.findMissingStaticCppRuntimeFile(
+                apiLevel = 28,
+                arch = AndroidSysrootManager.Companion.Arch.ARM64,
+            )
+        ).isEqualTo(
+            File(
+                defaultProfileDir,
+                "usr/lib/${AndroidSysrootManager.Companion.Arch.ARM64.triple}/libc++_static.a",
+            )
+        )
+    }
+
+    @Test
+    fun isInstalled_shouldRejectSysrootWithoutApiLibcxxLinkerScript() {
+        val defaultProfileDir = manager.getConfigManager().getProfileDir("builtin-ndk-r27c-arm64")
+        createMinimalSysroot(
+            root = defaultProfileDir,
+            arch = AndroidSysrootManager.Companion.Arch.ARM64,
+            includeApiCxxLinkerScript = false,
+        )
+
+        assertThat(manager.isInstalled(AndroidSysrootManager.Companion.Arch.ARM64)).isFalse()
+        assertThat(
+            manager.findMissingStaticCppRuntimeFile(
+                apiLevel = 28,
+                arch = AndroidSysrootManager.Companion.Arch.ARM64,
+            )
+        ).isEqualTo(
+            File(
+                defaultProfileDir,
+                "usr/lib/${AndroidSysrootManager.Companion.Arch.ARM64.triple}/28/libc++.a",
+            )
+        )
     }
 
     @Test
@@ -245,7 +291,9 @@ class AndroidSysrootManagerTest {
     private fun createMinimalSysroot(
         root: File,
         arch: AndroidSysrootManager.Companion.Arch,
-        includeCxxRuntime: Boolean = true,
+        includeCxxSharedRuntime: Boolean = true,
+        includeCxxStaticRuntime: Boolean = true,
+        includeApiCxxLinkerScript: Boolean = true,
         includeApiLevelHeader: Boolean = true,
         apiLevel: Int = 28,
     ) {
@@ -255,9 +303,16 @@ class AndroidSysrootManagerTest {
             File(root, "usr/include/android/api-level.h").writeText("#define __ANDROID_API__ $apiLevel\n")
         }
         val runtimeDir = File(root, "usr/lib/${arch.triple}").apply { mkdirs() }
-        File(runtimeDir, apiLevel.toString()).mkdirs()
-        if (includeCxxRuntime) {
+        val apiRuntimeDir = File(runtimeDir, apiLevel.toString()).apply { mkdirs() }
+        if (includeCxxSharedRuntime) {
             File(runtimeDir, "libc++_shared.so").writeText("runtime")
+        }
+        if (includeCxxStaticRuntime) {
+            File(runtimeDir, "libc++_static.a").writeText("runtime")
+            File(runtimeDir, "libc++abi.a").writeText("runtime")
+        }
+        if (includeApiCxxLinkerScript) {
+            File(apiRuntimeDir, "libc++.a").writeText("INPUT(-lc++_static -lc++abi)\n")
         }
     }
 

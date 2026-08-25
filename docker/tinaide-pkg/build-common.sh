@@ -68,6 +68,7 @@ setup_toolchain() {
     export NM="${TOOLCHAIN}/bin/llvm-nm"
     export OBJCOPY="${TOOLCHAIN}/bin/llvm-objcopy"
     export OBJDUMP="${TOOLCHAIN}/bin/llvm-objdump"
+    export READELF="${TOOLCHAIN}/bin/llvm-readelf"
 
     # 16KB 页对齐 (Android 15+ 要求)
     export CFLAGS="-O2 -fPIC"
@@ -151,6 +152,67 @@ git_clone_with_mirror() {
 
     log_warn "Mirror failed, trying GitHub directly..."
     git clone --depth 1 $BRANCH_ARG "$GITHUB_URL" "$DIR"
+}
+
+# Check out an exact upstream ref and verify its commit. This keeps package
+# builds reproducible while tolerating transient GitHub/mirror failures.
+git_checkout_exact() {
+    local REPO=$1
+    local DIR=$2
+    local REF=$3
+    local EXPECTED_COMMIT=$4
+    local GITHUB_URL="https://github.com/${REPO}.git"
+    local MAX_RETRIES=5
+
+    if [ ! -d "$DIR/.git" ]; then
+        rm -rf "$DIR"
+        mkdir -p "$DIR"
+        git -C "$DIR" init -q
+        git -C "$DIR" remote add origin "$GITHUB_URL"
+    else
+        git -C "$DIR" remote set-url origin "$GITHUB_URL"
+    fi
+
+    for ATTEMPT in $(seq 1 "$MAX_RETRIES"); do
+        log_info "Fetching ${REPO}@${REF} (attempt ${ATTEMPT}/${MAX_RETRIES})"
+        if git -C "$DIR" fetch --force --depth 1 origin "$REF" && \
+           git -C "$DIR" checkout --detach --force FETCH_HEAD; then
+            local ACTUAL_COMMIT
+            ACTUAL_COMMIT="$(git -C "$DIR" rev-parse HEAD)"
+            if [ "$ACTUAL_COMMIT" = "$EXPECTED_COMMIT" ]; then
+                return 0
+            fi
+            log_error "Unexpected commit for ${REPO}@${REF}: ${ACTUAL_COMMIT}"
+        fi
+
+        if [ "$ATTEMPT" -lt "$MAX_RETRIES" ]; then
+            log_warn "Fetch failed; retrying after 20 seconds"
+            sleep 20
+        fi
+    done
+
+    log_error "Failed to fetch verified source ${REPO}@${REF}"
+    return 1
+}
+
+git_submodule_update_with_retry() {
+    local DIR=$1
+    shift
+    local MAX_RETRIES=5
+
+    git -C "$DIR" submodule sync --recursive
+    for ATTEMPT in $(seq 1 "$MAX_RETRIES"); do
+        if git -C "$DIR" submodule update --init --depth 1 "$@"; then
+            return 0
+        fi
+        if [ "$ATTEMPT" -lt "$MAX_RETRIES" ]; then
+            log_warn "Submodule fetch failed; retrying after 20 seconds"
+            sleep 20
+        fi
+    done
+
+    log_error "Failed to initialize submodules in ${DIR}: $*"
+    return 1
 }
 
 # ===== 打包辅助函数 =====

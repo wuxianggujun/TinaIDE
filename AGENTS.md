@@ -1,6 +1,6 @@
 # AGENTS.md — 项目协作与开发规则（精简版）
 
-本文件用于约束你在本项目中的工作方式与输出标准。**本项目仅允许使用两个 MCP：`ace-tool` 与 `context7`**。除此之外，不引入也不提及其他 MCP。
+本文件用于约束你在本项目中的工作方式与输出标准。项目代码检索优先使用 FastCtx 或 `rg`，框架与库的官方文档可使用 `context7`。
 
 ---
 
@@ -95,7 +95,7 @@ TinaIDE 是 Android 上的 C/C++ IDE。当前默认运行链路是 **native tina
 
 - `app/`：启动、导航、DI 装配、跨模块协调；不要堆领域逻辑。
 - `core/`：无界面复用能力和运行时基础设施，如 i18n、designsystem、storage、security、database、compile、lsp、plugin、tree-sitter。
-- `feature/`：用户可见功能切片，如 AI、设置、工作区、编辑器、帮助。
+- `feature/`：用户可见功能切片，如设置、工作区、编辑器、帮助、教程。
 - `external/`：第三方源码或本地 fork；改动前先确认上游边界和子模块状态。
 - `tools/`：构建、i18n、toolchain、插件 starter、APK/R8 分析等脚本。
 - `build-logic/`：Gradle convention plugins；ABI 聚合、版本递增、toolchain assets 校验、Tree-sitter 生成、mapping 备份等已有能力不要重复实现。
@@ -103,16 +103,20 @@ TinaIDE 是 Android 上的 C/C++ IDE。当前默认运行链路是 **native tina
 **常用命令**：
 
 ```bash
-./gradlew :app:compileArm64DebugKotlin --console=plain
-./gradlew :app:assembleArm64Debug --console=plain
-./gradlew -Ptina.devAbi=x86_64 :app:assembleX86_64Debug --console=plain
-./gradlew :app:assembleDebugAllAbi --console=plain
-./gradlew ktlintCheck --console=plain
-./gradlew :rikkahub:embedded:compileDebugKotlin --console=plain
-./gradlew :core:editor-view:testDebugUnitTest --tests "com.wuxianggujun.tinaide.core.editorview.EditorPopupComposeSmokeTest" --tests "com.wuxianggujun.tinaide.core.editorview.PopupOverlaySharedAnchorIntegrationTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorOverlaysIntegrationTest" --console=plain
+./gradlew :core:text-engine:testDebugUnitTest --no-daemon --console=plain
+./gradlew :core:editor-view:compileDebugKotlin --no-daemon --console=plain
+./gradlew :core:editor-view:testDebugUnitTest --tests "com.wuxianggujun.tinaide.core.editorview.EditorPopupComposeSmokeTest" --tests "com.wuxianggujun.tinaide.core.editorview.PopupOverlaySharedAnchorIntegrationTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorOverlaysIntegrationTest" --no-daemon --console=plain
+./gradlew :app:compileArm64DebugKotlin --no-daemon --console=plain
+./gradlew :app:assembleArm64Debug --no-daemon --console=plain
+./gradlew -Ptina.devAbi=x86_64 :app:assembleX86_64Debug --no-daemon --console=plain
+./gradlew :app:assembleDebugAllAbi --no-daemon --console=plain
+./gradlew ktlintCheck --no-daemon --console=plain
+./gradlew :rikkahub:embedded:compileDebugKotlin --no-daemon --console=plain
 ```
 
-后台运行测试时设置最大超时时间 60s。`connectedDebugAndroidTest` 需要设备或模拟器；`app/src/androidTest` 的 native toolchain / PRoot smoke 依赖 ABI、设备和资产准备，`assumeTrue` 跳过不等于完整验证。
+- 验证从改动所属模块开始：Android library 优先运行 `:module:testDebugUnitTest` 或 `:module:compileDebugKotlin`；只有 `app` 宿主、ABI、打包或跨模块集成发生变化时才运行 `:app:*`。
+- 一次性本地 Gradle 命令统一带 `--no-daemon`。若其他会话正在构建，本会话只做静态检查，不启动或停止 Gradle；禁止用 `gradlew --stop` 终止共享 daemon，只回收本任务明确启动的进程。
+- 后台运行测试时设置最大超时时间 60s。`connectedDebugAndroidTest` 需要设备或模拟器；`app/src/androidTest` 的 native toolchain / PRoot smoke 依赖 ABI、设备和资产准备，`assumeTrue` 跳过不等于完整验证。
 
 **项目专属 skills 路由**：
 
@@ -145,45 +149,44 @@ TinaIDE 是 Android 上的 C/C++ IDE。当前默认运行链路是 **native tina
 - App 内帮助不直接读取 `docs/`；面向用户的帮助内容需同步检查 `feature/help/src/main/assets/help/*.md`。
 - RikkaHub 的模型、渠道和 API Key 由 `external/rikkahub` 自身数据层维护；TinaIDE 主仓库禁止新增旁路 API Key 存储、日志、导出配置或崩溃上报。
 - 项目、日志、缓存、配置路径优先走 `ProjectPaths`；Host/Guest 文件访问必须走白名单校验。
-- 修改 `tools/plugin-starters/**` 后必须同步检查 bundled starter zip：`app/src/main/assets/bundled_plugins/tinaide.plugin.starters/templates/*.zip`。
+- 修改 `tools/plugin-starters/**` 后必须重新构建并检查 starter zip：`tools/plugin-starters/dist/tinaide.plugin.starters/templates/*.zip`。
 
 **完成修改后的验证清单**：
 
 - 先运行与改动最贴近的模块测试；多数 `core/*`、`feature/*` 模块通过 `tina.android.library` 自动获得 JUnit、Truth、Robolectric、MockK、coroutines-test。
-- Kotlin/Android 改动至少运行目标模块 `compileArm64DebugKotlin` 或更小的 compile task。
+- Kotlin/Android library 改动至少运行目标模块 `testDebugUnitTest` 或 `compileDebugKotlin`；仅 `app` 宿主/集成改动使用 `compileArm64DebugKotlin` 等 `app` flavor task。
 - UI 文案变更同步 `values/strings.xml` 与 `values-en/strings.xml`，并运行 i18n 检查（Windows 可用 `py tools/i18n/check_all.py`）。
 - 新增依赖或反射/JNI/序列化能力时检查 `docs/proguard-rules-reference.md` 和对应模块 `consumer-rules.pro`。
 - 文档/skill 变更至少检查 `git diff`、Markdown frontmatter、引用路径是否真实存在。
 
 ---
 
-## 4. MCP 使用规则（仅 `ace-tool` 与 `context7`）
+## 4. 工具使用规则
 
 ### 4.1 核心策略
 
-- **审慎单选**：每轮对话最多调用 **1 个 MCP**（`ace-tool` 与 `context7` 二选一）。
-- **序贯调用**：若确需两者，必须分两轮串行：先说明理由与预期产出，再进入下一轮调用。
+- **本地优先**：代码、配置和跨文件引用优先使用 FastCtx 或 `rg` 检索。
+- **外部文档**：仅在需要核对框架 API、版本差异或迁移指南时使用 `context7`。
 - **最小范围**：参数要精确（限定目录、文件、关键词、topic），避免全量扫描。
-- **可追溯性**：每次调用后必须输出【MCP 调用简报】（见第 9 节模板）。
+- **可追溯性**：外部文档调用后输出【文档调用简报】（见第 10 节模板）。
 
 ---
 
-## 5. MCP：`ace-tool` 使用约定（代码/项目）
+## 5. 本地代码检索约定
 
-**适用场景**：代码检索、架构分析、跨文件引用、重构、文档生成、项目知识管理。
+**适用场景**：代码检索、架构分析、跨文件引用、重构和项目知识梳理。
 
 **常用能力**：
 
-- `search_context`：按自然语言/关键词检索代码上下文（优先用它定位，再做分析）。
-- `enhance_prompt`：把含糊需求增强为可执行的开发方向与任务清单。
-- `get_current_config`：首次进入项目先检查配置。
-- `activate_project`：需要切换项目时使用。
-- `execute_shell_command`：运行**非交互式**命令（只在确有必要时用）。
+- `inspect_local_file`：读取已知文件或小范围文件段。
+- `grep`：查找已知标识符、字符串或配置键的所有引用。
+- `glob`：按文件名或扩展名定位文件。
+- FastCtx 不可用时，使用 `rg` 作为本地检索后备。
 
 **范围控制**：
 
 - 尽量限制到相关目录（如 `app/src/main/java`, `tools/` 等）。
-- 使用包含/排除模式（`paths_include_glob` / `paths_exclude_glob`）减少噪声。
+- 遵守项目 `.ignore` / `.gitignore`，并排除构建产物、缓存和大体积目录。
 
 ---
 
@@ -206,9 +209,9 @@ TinaIDE 是 Android 上的 C/C++ IDE。当前默认运行链路是 **native tina
 ## 7. 错误处理与降级
 
 - **429 限流**：退避 20 秒，并缩小查询范围（更精确关键词/更小目录/topic 更聚焦）。
-- **5xx / 超时**：仅重试 1 次，退避 2 秒；仍失败则换更小范围或改用另一 MCP（下一轮）。
+- **5xx / 超时**：仅重试 1 次，退避 2 秒；仍失败则改用本地文档或明确说明无法核验。
 - **无结果**：
-  1) 缩小范围或换关键词再用 `ace-tool`
+  1) 缩小范围或换关键词，再用 FastCtx 或 `rg` 检索
   2) 若是 API/框架问题，用 `context7` 查官方文档
   3) 仍无结论：向用户索要关键信息（文件路径/接口名/报错栈/版本号）
   4) 最终：给出保守建议并明确不确定性
@@ -250,7 +253,7 @@ TinaIDE 是 Android 上的 C/C++ IDE。当前默认运行链路是 **native tina
 
 在新增类/工具函数/模块前，必须先做“复用检查”，优先复用已有实现，避免重复造轮子：
 
-- 先检索：用 `ace-tool.search_context` 按意图搜索（功能描述 + 关键词），确认是否已有同类实现。
+- 先检索：用 FastCtx `grep` 或 `rg` 按功能描述和关键词搜索，确认是否已有同类实现。
 - 再落地：若发现相似代码，优先抽取为公共能力或直接复用既有类/方法。
 - 交付时说明：在变更说明里写清”复用了哪些已有能力/为什么不复用”。
 
@@ -303,22 +306,22 @@ TinaIDE 已移除自研 `feature:ai`、聊天仓储、渠道仓储和工具调�
 RikkaHub 集成相关静态验证优先使用：
 
 ```bash
-./gradlew :rikkahub:embedded:compileDebugKotlin --console=plain
-./gradlew :app:compileArm64DebugKotlin --console=plain
+./gradlew :rikkahub:embedded:compileDebugKotlin --no-daemon --console=plain
+./gradlew :app:compileArm64DebugKotlin --no-daemon --console=plain
 ```
 
 如果只改主仓库入口或文档，至少检查 `git diff`、相关路径是否真实存在，以及帮助资产中的 RikkaHub 说明是否同步。
 
 ---
 
-## 10. MCP 调用简报模板（必须附在调用后）
+## 10. 文档调用简报模板（必须附在调用后）
 
-【MCP 调用简报】
+【文档调用简报】
 
-服务: ace-tool / context7
-触发: 代码上下文搜索 / 需求增强 / 配置检查 / 文档查询
-参数: 项目根路径（或库标识）、查询内容、范围限制（目录/关键词/topic）
-结果: 命中代码片段 / 返回文档要点（概述即可）
+服务: context7
+触发: 框架 API / 版本差异 / 迁移指南 / 官方文档查询
+参数: 库标识、topic、内容范围
+结果: 返回文档要点和可核验来源
 状态: 成功 / 失败（含错误码与下一步）
 ## Codex 搜索排除策略
 
@@ -344,7 +347,6 @@ RikkaHub 集成相关静态验证优先使用：
 - `log/`
 - `tmp/`
 - `temp/`
-- `.ace-tool/`
 - `app/.local/`
 - `app/src/*/assets/tina-toolchain/archive/`
 - `external/llvm-build-libs/`

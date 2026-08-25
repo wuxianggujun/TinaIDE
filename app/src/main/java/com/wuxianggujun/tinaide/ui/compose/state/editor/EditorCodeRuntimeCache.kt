@@ -21,12 +21,12 @@ internal class EditorCodeRuntimeCache(
     private val openTabsProvider: () -> List<EditorTabState>,
 ) {
     private val runtimesByTabId =
-        java.util.LinkedHashMap<String, EditorContainerState.CodeEditorRuntime>(16, 0.75f, true)
+        java.util.LinkedHashMap<String, CodeEditorRuntime>(16, 0.75f, true)
 
-    fun getOrCreate(tab: EditorTabState): EditorContainerState.CodeEditorRuntime {
+    fun getOrCreate(tab: EditorTabState): CodeEditorRuntime {
         val runtime = runtimesByTabId.getOrPut(tab.id) {
             val buffer = RopeTextBuffer()
-            EditorContainerState.CodeEditorRuntime(
+            CodeEditorRuntime(
                 buffer = buffer,
                 editorState = EditorState(
                     textBuffer = buffer,
@@ -117,16 +117,5 @@ internal class EditorCodeRuntimeCache(
     fun release() {
         runtimesByTabId.values.forEach { it.dispose() }
         runtimesByTabId.clear()
-    }
-
-    private fun EditorContainerState.CodeEditorRuntime.retargetFile(newFile: File) {
-        if (editorState.file?.absolutePath == newFile.absolutePath) return
-
-        resetDocumentBinding()
-        resetStateBindings()
-        clearLanguageServices()
-        editorState.clearSemanticTokens()
-        editorState.clearFoldRegions()
-        editorState.retargetFile(newFile)
     }
 }

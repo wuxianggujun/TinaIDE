@@ -71,6 +71,7 @@ import com.wuxianggujun.tinaide.plugin.marketplace.PluginMarketplaceSelectionSup
 import com.wuxianggujun.tinaide.plugin.marketplace.PluginSummary
 import com.wuxianggujun.tinaide.plugin.marketplace.PluginVersion
 import com.wuxianggujun.tinaide.ui.compose.components.PluginCardSkeleton
+import com.wuxianggujun.tinaide.ui.compose.components.PluginPermissionDialog
 import com.wuxianggujun.tinaide.ui.compose.components.TinaAlertDialog
 import com.wuxianggujun.tinaide.ui.compose.components.TinaBackHandlers
 import com.wuxianggujun.tinaide.ui.compose.components.TinaCard
@@ -98,6 +99,8 @@ fun MarketScreen(
     viewModel: MarketScreenViewModel = koinViewModel()
 ) {
     val context = LocalContext.current
+    val permissionDeniedText = stringResource(Strings.toast_plugins_permission_denied)
+    // 默认「插件」；包管理为第二 Tab，不抢首屏
     var selectedTab by remember { mutableIntStateOf(0) }
     val pluginState by viewModel.pluginState.collectAsState()
     val packageState by viewModel.packageState.collectAsState()
@@ -133,6 +136,23 @@ fun MarketScreen(
         if (PluginMarketplaceSelectionSupport.shouldClosePluginDetails(pluginState.selectedPluginId, selectedPlugin)) {
             viewModel.closePluginDetails()
         }
+    }
+
+    pluginState.pendingInstall?.let { pending ->
+        PluginPermissionDialog(
+            pluginName = pending.manifest.name,
+            permissions = pending.permissions,
+            onConfirm = viewModel::confirmPendingPluginInstall,
+            onDeny = {
+                viewModel.dismissPendingPluginInstall()
+                Toast.makeText(
+                    context,
+                    permissionDeniedText,
+                    Toast.LENGTH_SHORT,
+                ).show()
+            },
+            onDismiss = viewModel::dismissPendingPluginInstall,
+        )
     }
 
     // 如果选中了插件，显示详情页面；拦截返回手势，防止直接退出 APP

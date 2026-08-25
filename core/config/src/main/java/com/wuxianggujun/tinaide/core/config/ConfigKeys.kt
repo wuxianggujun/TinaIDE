@@ -1,7 +1,7 @@
 package com.wuxianggujun.tinaide.core.config
 
 /**
- * 类型安全的配置键定义（按 AI 方案）
+ * 类型安全的配置键定义。
  */
 sealed class ConfigKey<T>(val key: String, val default: T) {
 
@@ -9,7 +9,7 @@ sealed class ConfigKey<T>(val key: String, val default: T) {
     object Theme : ConfigKey<AppTheme>("ui.theme", AppTheme.DEFAULT)
     object DebugToolbarPositionMode : ConfigKey<String>(
         key = "ui.debug.toolbar.position",
-        default = "bottom"
+        default = "top"
     )
 
     // 面板可见性：ui.panel.<PANEL_NAME> -> Boolean
@@ -79,6 +79,12 @@ sealed class ConfigKey<T>(val key: String, val default: T) {
     object RemoteLspPort : ConfigKey<Int>(
         key = "lsp.remote.port",
         default = 6789
+    )
+
+    /** Whether the remote WebSocket uses TLS. Cleartext is allowed only for loopback hosts. */
+    object RemoteLspSecureTransport : ConfigKey<Boolean>(
+        key = "lsp.remote.secure_transport",
+        default = true,
     )
 
     /**
@@ -197,6 +203,7 @@ object ConfigKeys {
     val RemoteLspEnabled = ConfigKey.RemoteLspEnabled
     val RemoteLspHost = ConfigKey.RemoteLspHost
     val RemoteLspPort = ConfigKey.RemoteLspPort
+    val RemoteLspSecureTransport = ConfigKey.RemoteLspSecureTransport
     val RemoteLspSyncMode = ConfigKey.RemoteLspSyncMode
     val RemoteLspSyncMethod = ConfigKey.RemoteLspSyncMethod
     val RemoteLspRsyncModule = ConfigKey.RemoteLspRsyncModule

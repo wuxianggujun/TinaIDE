@@ -4,6 +4,7 @@ import androidx.annotation.StringRes
 import com.wuxianggujun.tinaide.core.git.GitCredential
 import com.wuxianggujun.tinaide.core.git.ssh.GitSshHostBinding
 import com.wuxianggujun.tinaide.core.git.ssh.GitSshKeyMeta
+import com.wuxianggujun.tinaide.core.git.ssh.GitSshManager
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.network.registry.GitHubRegistryConfig
 import com.wuxianggujun.tinaide.core.network.registry.GitHubRegistryProxySettings
@@ -115,11 +116,32 @@ internal object GitSettingsSectionSupport {
         host: String,
         keyName: String,
         port: String,
-    ): GitSshHostBinding = GitSshHostBinding(
-        host = host.trim(),
-        keyName = keyName.trim(),
-        port = port.trim().toIntOrNull(),
-    )
+    ): GitSshHostBinding {
+        val normalizedPort = port.trim()
+        require(validateSshBindingHost(host) == null) { "SSH host is invalid" }
+        require(validateSshBindingPort(normalizedPort) == null) { "SSH port is invalid" }
+        return GitSshHostBinding(
+            host = host.trim(),
+            keyName = keyName.trim(),
+            port = normalizedPort.takeIf(String::isNotEmpty)?.toInt(),
+        )
+    }
+
+    @StringRes
+    fun validateSshBindingHost(input: String): Int? =
+        if (GitSshManager.isValidHost(input)) null else Strings.git_ssh_binding_host_invalid
+
+    @StringRes
+    fun validateSshBindingPort(input: String): Int? {
+        val normalized = input.trim()
+        if (normalized.isEmpty()) return null
+        val port = normalized.toIntOrNull()
+        return if (port != null && port in 1..65535) {
+            null
+        } else {
+            Strings.git_ssh_binding_port_invalid
+        }
+    }
 
     fun resolveBindingKeyDisplayValue(
         keyName: String,

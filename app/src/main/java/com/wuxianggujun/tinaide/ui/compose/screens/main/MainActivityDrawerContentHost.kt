@@ -41,13 +41,15 @@ internal fun MainActivityDrawerContentHost(
     val gitStatusMap = remember(gitUiState.status) {
         GitStatusHelper.buildGitStatusMap(gitUiState.status)
     }
-
     DrawerContent(
         projectName = projectName,
         fileTreeState = fileTreeState,
         pluginManager = koinInject(),
         hostCommandExecutor = hostCommandExecutor,
         drawerOpen = drawerState.isOpen,
+        editorContainerState = editorContainerState,
+        selectedDrawerTab = drawerState.selectedTab,
+        onDrawerTabSelected = { tab -> drawerState.selectedTab = tab },
         fileCallbacks = DrawerFileCallbacks(
             onFileClick = { file ->
                 editorContainerState.openFile(file)

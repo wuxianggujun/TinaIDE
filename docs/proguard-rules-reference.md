@@ -68,7 +68,7 @@ R8 对代码执行三项操作：
 |------|----------|----------|
 | `core:lsp` | lsp4j 字段名 + 服务接口 + jsonrpc 框架 | Gson 反射序列化 + 动态代理 |
 | `core:network` | msgpack buffer 类 | `Class.forName()` 动态加载 |
-| `core:git` | JGit NLS + ServiceLoader + SSHD 警告抑制 | 反射加载 ResourceBundle + Transport |
+| `core:git` | JGit NLS + ServiceLoader + SSHD 警告抑制；BouncyCastle Ed25519 provider | 反射加载 ResourceBundle + Transport；Android 9-12 的 Ed25519 兼容生成 |
 | `core:tree-sitter` | grammar TSLanguage 子类 | `Class.forName()` 加载语法绑定 |
 | `core:plugin` | LuaJava JNI + 回调接口 | JNI native 方法 + Lua↔Java 互调 |
 | `core:apk-builder` | BouncyCastle JCA provider + apksig ASN.1 注解反射 + ARSCLib 告警抑制 | JcaContentSignerBuilder 内部 SPI/反射算法查找；apksig 签名时通过运行时注解和反射解析 X.509/PKCS#7 模型 |
@@ -107,7 +107,7 @@ R8 对代码执行三项操作：
 | **LuaJava** | 4.1.0 | JNI native 方法 + Lua↔Java 反射回调 | `core:plugin/consumer-rules.pro` | `-keep class` + `-keepclasseswithmembernames` native |
 | **zstd-jni** | 1.5.5-11 | JNI native 加载（`Zstd` 类名已由 R8 保留） | 无需额外（JNI 全局规则覆盖） | — |
 | **xcrash** | — | JNI 崩溃回调 (`crashCallback`/`traceCallback`) | `external/xcrash/proguard-rules.pro` | `-keep class` NativeHandler |
-| **SDL3** | — | JNI 从 native 侧通过硬编码类名反射调用 Java 层 | `app/proguard-rules.pro` | `-keep class org.libsdl.app.** { *; }` |
+| **SDL2 / SDL3** | — | JNI 从 native 侧通过硬编码类名调用 Java 层 | `app/proguard-rules.pro` | 保留 `org.libsdl2.app.**` 与 `org.libsdl.app.**` |
 | **Termux Terminal** | — | JNI + View XML 构造函数 | `feature:terminal/consumer-rules.pro` | `-keep class` JNI + View 构造 |
 | **JLatexMath** | 1.3 | 反射加载字体资源和符号映射配置文件 | `app/proguard-rules.pro` | `-keep class ru.noties.jlatexmath.** { *; }` |
 | **Jsoup** | 1.22.1 | 安全网（自带 consumer-rules，但保险起见保留核心类；其可选 `re2j` 依赖在 Android 未引入时需抑制 R8 告警） | `app/proguard-rules.pro` | `-keep class org.jsoup.** { *; }` + `-dontwarn com.google.re2j.**` |
@@ -265,7 +265,7 @@ rg -n "com.example.library|关键反射模型" app/build/outputs/mapping/arm64Re
 |------|------|------|------|
 | 2026-03-07 | `ClassCastException` in LspClientSession.connect | lsp4j 响应模型类（`InitializeResult`、`ServerCapabilities` 等）被 R8 删除。`-keepclassmembers` 只保留字段名不阻止类删除；仅通过 Gson 反射实例化的类被 R8 判定为死代码 | `core:lsp/consumer-rules.pro` 从 `-keepclassmembers` 改为 `-keep class org.eclipse.lsp4j.** { <fields>; }` 阻止类删除 |
 | 2026-03-07 | `ClassNotFoundException: MessageBufferU` | msgpack `MessageBuffer.<clinit>` 通过 `Class.forName()` 加载 `MessageBufferU`，R8 将其当死代码删除 | `core:network/consumer-rules.pro` 添加 `-keep class org.msgpack.core.buffer.** { *; }` |
-| 2026-03-07 | Tree-sitter `TSParser$Native.newParser()` JNI 解析失败 | Tree-sitter JNI 字段名被混淆 | 添加 `external/tina-android-tree-sitter/consumer-rules.pro`（完整 JNI 规则）|
+| 2026-03-07 | Tree-sitter `TSParser$Native.newParser()` JNI 解析失败 | Tree-sitter JNI 字段名被混淆 | 添加 `external/tina-android-tree-sitter/android-tree-sitter/consumer-rules.pro`（完整 JNI 规则）|
 | 2026-03-24 | `R8: Missing class com.google.re2j.Matcher/Pattern` | Jsoup 1.22.1 引用了可选的 `re2j` 正则实现；Android app 未打入该依赖，release 混淆阶段触发缺失类检查 | `app/proguard-rules.pro` 添加 `-dontwarn com.google.re2j.**` |
 | 2026-03-07 | `UnsatisfiedLinkError: TSParser$Native.newParser()` native library 未加载 | external 模块 `build.gradle.kts` 缺少 `consumerProguardFiles` 声明，consumer-rules.pro 从未被 AGP 合并；R8 将 `TreeSitter` 类（含 `System.loadLibrary` 调用）标记为 `REMOVED`，native library 永远不会被加载 | 1) 在 `external/.../build.gradle.kts` 添加 `consumerProguardFiles("consumer-rules.pro")`；2) 在 `app/proguard-rules.pro` 添加安全网 `-keep class com.itsaky.androidide.treesitter.** { *; }` |
 | 2026-04-19 | 预防性补齐：`core:apk-builder` 引入 BouncyCastle 后 `consumer-rules.pro` 仍为空 | 新模块 `core:apk-builder`（2026-04 commit `8837f2d9b` 起活跃）通过 `JcaX509v3CertificateBuilder` / `JcaContentSignerBuilder("SHA256withRSA")` 生成/签名 p12 keystore。BC 在 `build(privateKey)` 内部按算法字符串 SPI/反射加载实现类，release 下易出 `NoSuchAlgorithmException` | 在 `core:apk-builder/consumer-rules.pro` 精确 keep BC 的 `jcajce/jce/cert/operator` 子包 + `-dontwarn javax.naming.**`；ARSCLib 仅保留 `-dontwarn` 安全网 |

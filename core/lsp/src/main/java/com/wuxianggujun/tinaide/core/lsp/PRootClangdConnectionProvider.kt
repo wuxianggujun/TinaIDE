@@ -4,7 +4,6 @@ import android.content.Context
 import com.wuxianggujun.tinaide.core.config.ClangdSettings
 import com.wuxianggujun.tinaide.core.config.Prefs
 import com.wuxianggujun.tinaide.core.linux.LinuxEnvironment
-import com.wuxianggujun.tinaide.core.linux.LinuxEnvironmentProvider
 import com.wuxianggujun.tinaide.core.linux.LinuxInteractiveProcess
 import com.wuxianggujun.tinaide.core.linux.UnavailableLinuxEnvironment
 import com.wuxianggujun.tinaide.core.proot.ToolchainPathResolver
@@ -22,19 +21,11 @@ class PRootClangdConnectionProvider(
     private val workingDir: String,
     private val compileCommandsDir: String,
     private val clangdSettings: ClangdSettings = Prefs.clangdSettingsFlow.value,
-    private val linuxEnvironmentOverride: LinuxEnvironment? = null,
+    private val linuxEnvironment: LinuxEnvironment = UnavailableLinuxEnvironment,
 ) : LspConnectionProvider {
 
     companion object {
         private const val TAG = "PRootClangd"
-    }
-
-    private val linuxEnvironment: LinuxEnvironment by lazy {
-        linuxEnvironmentOverride ?: runCatching {
-            org.koin.core.context.GlobalContext.get()
-                .getOrNull<LinuxEnvironmentProvider>()
-                ?.get()
-        }.getOrNull() ?: UnavailableLinuxEnvironment
     }
 
     private val toolchainPathResolver by lazy {

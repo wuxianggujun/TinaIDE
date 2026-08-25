@@ -277,7 +277,7 @@ class EditorOverlaysIntegrationTest {
         }
         composeRule.waitForIdle()
 
-        composeRule.onNodeWithTag(SELECTION_CONTEXT_MENU_TEXT_GROUP_TAG).performClick()
+        composeRule.onNodeWithTag(SELECTION_CONTEXT_MENU_MORE_ACTION_TAG).performClick()
         composeRule.onNodeWithTag(SELECTION_CONTEXT_MENU_SELECT_ALL_ACTION_TAG).performClick()
         composeRule.waitForIdle()
 

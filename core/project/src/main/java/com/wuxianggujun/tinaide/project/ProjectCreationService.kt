@@ -26,7 +26,7 @@ object ProjectCreationService {
             return ProjectCreationResult.Failure(ProjectCreationFailure.EMPTY_NAME)
         }
 
-        if (!isSafeProjectName(normalizedName)) {
+        if (!isValidProjectName(normalizedName)) {
             return ProjectCreationResult.Failure(
                 reason = ProjectCreationFailure.INVALID_NAME,
                 detail = normalizedName
@@ -111,7 +111,7 @@ object ProjectCreationService {
         return ProjectCreationResult.Success(projectDir)
     }
 
-    private fun isSafeProjectName(projectName: String): Boolean {
+    fun isValidProjectName(projectName: String): Boolean {
         if (File(projectName).isAbsolute) return false
         return SAFE_PROJECT_NAME_REGEX.matches(projectName)
     }

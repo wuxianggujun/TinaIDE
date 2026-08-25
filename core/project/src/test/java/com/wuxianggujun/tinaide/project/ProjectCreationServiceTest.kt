@@ -10,6 +10,14 @@ import org.junit.Test
 class ProjectCreationServiceTest {
 
     @Test
+    fun `project name validation is reusable by rename flows`() {
+        assertThat(ProjectCreationService.isValidProjectName("Safe_Project-1")).isTrue()
+        assertThat(ProjectCreationService.isValidProjectName("../escaped")).isFalse()
+        assertThat(ProjectCreationService.isValidProjectName("nested/project")).isFalse()
+        assertThat(ProjectCreationService.isValidProjectName(" ")).isFalse()
+    }
+
+    @Test
     fun `createProject rejects names that can escape project root`() {
         val projectRoot = Files.createTempDirectory("project-create-root").toFile()
         val templateZip = createTemplateZip()
@@ -57,7 +65,7 @@ class ProjectCreationServiceTest {
 
             assertThat(result).isInstanceOf(ProjectCreationResult.Success::class.java)
             val projectDir = (result as ProjectCreationResult.Success).projectDir
-            assertThat(projectDir.parentFile.canonicalFile).isEqualTo(projectRoot.canonicalFile)
+            assertThat(projectDir.parentFile?.canonicalFile).isEqualTo(projectRoot.canonicalFile)
             assertThat(projectDir.name).isEqualTo("Safe_Project-1")
             assertThat(projectDir.resolve("README.md").readText(Charsets.UTF_8))
                 .contains("# Safe_Project-1")

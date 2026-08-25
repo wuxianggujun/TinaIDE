@@ -11,6 +11,7 @@ import com.wuxianggujun.tinaide.editor.session.SaveReason
 import com.wuxianggujun.tinaide.editor.session.SaveResult
 import com.wuxianggujun.tinaide.file.IProjectContext
 import com.wuxianggujun.tinaide.storage.ProjectDirStructure
+import com.wuxianggujun.tinaide.ui.runtime.GraphicalRuntimeLaunchRequest
 import java.io.File
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -54,20 +55,13 @@ class CompileActionsHelper(
     }
 
     /**
-     * 上次执行模式
-     */
-    var lastExecutionMode: CompileProjectUseCase.ExecutionMode = CompileProjectUseCase.ExecutionMode.RUN
-        private set
-
-    /**
      * UI 事件流
      */
     sealed class UiEvent {
         data class ShowToast(val message: String, val type: ToastType) : UiEvent()
         data class OpenTerminal(val command: String, val workDir: String?, val backend: TerminalBackend = TerminalBackend.HOST) : UiEvent()
-        data class OpenSdl(
-            val libraryPath: String,
-            val environment: Map<String, String> = emptyMap(),
+        data class OpenGraphicalRuntime(
+            val request: GraphicalRuntimeLaunchRequest,
         ) : UiEvent()
         data class RevealInProjectTree(val file: File, val selectTarget: Boolean = false) : UiEvent()
     }
@@ -197,6 +191,8 @@ class CompileActionsHelper(
             event.message
         }
         emitToast(message, ToastType.ERROR)
+        // 编译器输出属于 BUILD 通道；LSP diagnostics 可能来自旧文件或上一次分析，
+        // 在没有本次构建来源标识时不能据此切走失败日志。
         showBuildLog()
         finishCompileUi()
     }
@@ -211,11 +207,6 @@ class CompileActionsHelper(
             }
             ExecutionProcessState.RUNNING -> {
                 uiBridge.setCompiling(true)
-                // RUN 模式下：程序开始运行时切到"构建日志"页签
-                if (lastExecutionMode == CompileProjectUseCase.ExecutionMode.RUN) {
-                    uiBridge.showBuildLog()
-                    uiBridge.expandBottomPanel()
-                }
             }
             ExecutionProcessState.STOPPED -> {
                 uiBridge.setCompiling(false)
@@ -252,7 +243,6 @@ class CompileActionsHelper(
         }
 
         processController.reset()
-        lastExecutionMode = operation.mode
         prepareForCompile()
         uiBridge.setCompiling(true)
         progressToast?.let { emitToast(it, ToastType.INFO) }
@@ -353,6 +343,7 @@ class CompileActionsHelper(
     private fun handleRunLikeSuccess(report: CompileProjectUseCase.Report) {
         when (val launch = report.launch) {
             is CompileProjectUseCase.LaunchSpec.Sdl -> handleSdlLaunchSuccess(launch)
+            is CompileProjectUseCase.LaunchSpec.NativeActivity -> handleNativeActivityLaunchSuccess(launch)
             is CompileProjectUseCase.LaunchSpec.PluginInstalled -> handlePluginInstallSuccess(launch)
             is CompileProjectUseCase.LaunchSpec.Terminal -> {
                 handleTerminalLaunchSuccess(launch, report.artifact)
@@ -370,9 +361,32 @@ class CompileActionsHelper(
     private fun handleSdlLaunchSuccess(launch: CompileProjectUseCase.LaunchSpec.Sdl) {
         emitToast(Strings.toast_compile_done_opening_sdl.strOr(context), ToastType.SUCCESS)
         uiEventsChannel.trySend(
-            UiEvent.OpenSdl(
-                libraryPath = launch.libraryPath,
-                environment = launch.environment,
+            UiEvent.OpenGraphicalRuntime(
+                request = GraphicalRuntimeLaunchRequest.Sdl(
+                    libraryPath = launch.libraryPath,
+                    environment = launch.environment,
+                    preferredSdlMajor = launch.preferredSdlMajor,
+                    orientation = launch.orientation,
+                    enableFloatingLog = launch.enableFloatingLog,
+                ),
+            )
+        )
+    }
+
+    private fun handleNativeActivityLaunchSuccess(
+        launch: CompileProjectUseCase.LaunchSpec.NativeActivity,
+    ) {
+        emitToast(
+            Strings.toast_compile_done_opening_native_activity.strOr(context),
+            ToastType.SUCCESS,
+        )
+        uiEventsChannel.trySend(
+            UiEvent.OpenGraphicalRuntime(
+                request = GraphicalRuntimeLaunchRequest.NativeActivity(
+                    libraryPath = launch.libraryPath,
+                    environment = launch.environment,
+                    enableFloatingLog = launch.enableFloatingLog,
+                ),
             )
         )
     }

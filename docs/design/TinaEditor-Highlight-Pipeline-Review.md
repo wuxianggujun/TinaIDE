@@ -87,7 +87,7 @@
 LSP 侧请求 full/range semantic tokens 并写入 `editorState.semanticTokensByLine`，供 `TextRenderer` 消费。
 
 关键位置：
-- `app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/LspEditorManager.kt`
+- `core/editor-lsp/src/main/java/com/wuxianggujun/tinaide/core/editorlsp/LspEditorManager.kt`
 - `app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/editor/TinaCodeEditorPage.kt`
 
 ---
@@ -134,7 +134,7 @@ LSP 侧请求 full/range semantic tokens 并写入 `editorState.semanticTokensBy
 - 不再依赖 `semanticTokensByLine` 的对象引用，避免 range 合并后重复 miss
 
 关键位置：
-- `app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/LspSemanticTokenDecoder.kt`
+- `core/editor-lsp/src/main/java/com/wuxianggujun/tinaide/core/editorlsp/LspSemanticTokenDecoder.kt`
 - `LspEditorManager.requestSemanticTokens(...)`
 - `TinaCodeEditorPage.applySemanticTokens(...)`
 - `TextRenderer.resolveVisibleSemanticSegments(...)`

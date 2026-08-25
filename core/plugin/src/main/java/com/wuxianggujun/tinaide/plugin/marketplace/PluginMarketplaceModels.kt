@@ -1,5 +1,7 @@
 package com.wuxianggujun.tinaide.plugin.marketplace
 
+import com.wuxianggujun.tinaide.plugin.PluginCompatibility
+import com.wuxianggujun.tinaide.plugin.PluginManifestValidator
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -41,6 +43,8 @@ data class PluginVersion(
     val fileHash: String? = null,
     @SerialName("download_url")
     val downloadUrl: String? = null,
+    @SerialName("api_version")
+    val apiVersion: Int = 1,
     @SerialName("min_app_version")
     val minAppVersion: String? = null,
     val changelog: String? = null,
@@ -73,6 +77,23 @@ data class PluginDetail(
 ) {
     fun latestVersionEntry(): PluginVersion? = versions.maxWithOrNull(
         compareBy<PluginVersion> { it.versionCode }.thenBy { it.version }
+    )
+
+    internal fun latestCompatibleVersionEntry(hostVersion: String?): PluginVersion? = versions
+        .asSequence()
+        .filter { version ->
+            version.apiVersion == PluginManifestValidator.SUPPORTED_API_VERSION &&
+                PluginCompatibility.evaluate(hostVersion, version.minAppVersion).isCompatible
+        }
+        .maxWithOrNull(compareBy<PluginVersion> { it.versionCode }.thenBy { it.version })
+
+    internal fun compatibleWith(hostVersion: String?): PluginDetail = copy(
+        versions = versions
+            .filter { version ->
+                version.apiVersion == PluginManifestValidator.SUPPORTED_API_VERSION &&
+                    PluginCompatibility.evaluate(hostVersion, version.minAppVersion).isCompatible
+            }
+            .sortedWith(compareByDescending<PluginVersion> { it.versionCode }.thenByDescending { it.version }),
     )
 }
 

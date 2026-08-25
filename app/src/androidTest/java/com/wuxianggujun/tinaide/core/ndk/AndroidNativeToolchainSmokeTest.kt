@@ -1,11 +1,10 @@
-package com.wuxianggujun.tinaide.core.ndk
+﻿package com.wuxianggujun.tinaide.core.ndk
 
 import android.os.Build
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.LargeTest
 import androidx.test.platform.app.InstrumentationRegistry
 import com.wuxianggujun.tinaide.core.ndk.AndroidSysrootManager
-import com.wuxianggujun.tinaide.core.util.AndroidElfExecutor
 import java.io.File
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals

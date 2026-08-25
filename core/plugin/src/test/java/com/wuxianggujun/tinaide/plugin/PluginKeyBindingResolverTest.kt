@@ -11,8 +11,10 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class PluginKeyBindingResolverTest {
 
     private lateinit var pluginDir: File
@@ -21,13 +23,11 @@ class PluginKeyBindingResolverTest {
     fun setUp() {
         pluginDir = Files.createTempDirectory("plugin-keybinding-resolver").toFile()
         PluginCommandRegistry.clear()
-        PluginCommandRegistry.setRuntimeProvider { null }
     }
 
     @After
     fun tearDown() {
         PluginCommandRegistry.clear()
-        PluginCommandRegistry.setRuntimeProvider { null }
         pluginDir.deleteRecursively()
     }
 

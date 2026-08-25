@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -45,7 +46,8 @@ private val TinaDialogSectionSpacing = 12.dp
  *
  * ## 对话框类型
  * - TinaAlertDialog: 基础对话框
- * - TinaConfirmDialog: 确认对话框
+ * - TinaConfirmDialog: 确认对话框（主操作 + 取消）
+ * - TinaThreeActionDialog: 三动作对话框（主 / 次或危险 / 取消，竖排全宽）
  * - TinaInfoDialog: 信息对话框
  * - TinaErrorDialog: 错误对话框
  * - TinaInputDialog: 输入对话框（受控）
@@ -428,6 +430,71 @@ fun TinaConfirmDialog(
 }
 
 /**
+ * 三动作对话框（竖排全宽按钮）
+ *
+ * 用于「保存 / 丢弃 / 取消」「重载 / 保留 / 取消」等三选一场景。
+ * **禁止**把两个操作横排塞进 confirmButton 再塞 cancel——小屏会挤成一团。
+ *
+ * 布局：
+ * ```
+ * [ 主操作 primary ]
+ * [ 次要/危险 secondary ]
+ * [ 取消 dismiss ]
+ * ```
+ */
+@Composable
+fun TinaThreeActionDialog(
+    title: String,
+    message: String,
+    primaryText: String,
+    secondaryText: String,
+    onPrimary: () -> Unit,
+    onSecondary: () -> Unit,
+    onDismiss: () -> Unit,
+    dismissText: String? = null,
+    secondaryIsDanger: Boolean = true,
+    icon: @Composable (() -> Unit)? = null,
+) {
+    val actualDismissText = dismissText ?: stringResource(Strings.btn_cancel)
+    TinaAlertDialog(
+        onDismissRequest = onDismiss,
+        title = { TinaDialogTitleText(title) },
+        text = { TinaDialogMessageCard(message = message) },
+        icon = icon,
+        confirmButton = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                TinaPrimaryButton(
+                    text = primaryText,
+                    onClick = onPrimary,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (secondaryIsDanger) {
+                    TinaDangerOutlinedButton(
+                        text = secondaryText,
+                        onClick = onSecondary,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                } else {
+                    TinaOutlinedButton(
+                        text = secondaryText,
+                        onClick = onSecondary,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                TinaTextButton(
+                    text = actualDismissText,
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+    )
+}
+
+/**
  * 信息对话框（只有一个关闭按钮）
  *
  * 用于展示信息，用户只需知晓
@@ -607,6 +674,7 @@ fun TinaValidatedInputDialog(
     validator: @Composable (String) -> String? = { null },
     hint: (@Composable (String) -> String?)? = null,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
     allowEmpty: Boolean = false,
     onConfirm: (String) -> Unit,
     onDismiss: () -> Unit
@@ -629,6 +697,7 @@ fun TinaValidatedInputDialog(
                 isError = errorMessage != null,
                 errorText = errorMessage,
                 keyboardOptions = keyboardOptions,
+                visualTransformation = visualTransformation,
                 singleLine = true
             )
         },

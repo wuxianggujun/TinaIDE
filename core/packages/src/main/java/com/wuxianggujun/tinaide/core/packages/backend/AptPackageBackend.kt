@@ -1,5 +1,7 @@
 package com.wuxianggujun.tinaide.core.packages.backend
 
+import com.wuxianggujun.tinaide.core.i18n.Strings
+import com.wuxianggujun.tinaide.core.i18n.str
 import com.wuxianggujun.tinaide.core.packages.model.*
 import com.wuxianggujun.tinaide.core.proot.GuestSystemPackageManager
 import com.wuxianggujun.tinaide.core.proot.PRootEnvironment
@@ -22,6 +24,11 @@ class ApkPackageBackend(
         version: String,
         progress: (InstallProgressEvent) -> Unit
     ): InstallResult {
+        if (!GuestSystemPackageManager.isSafePackageArgument(systemPackage)) {
+            val error = InstallError.UnknownError(Strings.pkg_manager_error_system_package_invalid.str())
+            progress(InstallProgressEvent.Failed(error))
+            return InstallResult.Failure(packageId, error)
+        }
         if (!isInstalling.compareAndSet(false, true)) {
             return InstallResult.Failure(
                 packageId,
@@ -87,6 +94,12 @@ class ApkPackageBackend(
         packageId: String,
         systemPackage: String
     ): UninstallResult {
+        if (!GuestSystemPackageManager.isSafePackageArgument(systemPackage)) {
+            return UninstallResult.Failure(
+                packageId,
+                UninstallError.UnknownError(Strings.pkg_manager_error_system_package_invalid.str())
+            )
+        }
         if (!prootEnv.isInstalled()) {
             return UninstallResult.Failure(
                 packageId,
@@ -113,7 +126,13 @@ class ApkPackageBackend(
         }
     }
 
-    suspend fun isPackageInstalled(systemPackage: String): Boolean = prootEnv.queryInstalledPackageVersions(listOf(systemPackage))[systemPackage] != null
+    suspend fun isPackageInstalled(systemPackage: String): Boolean {
+        if (!GuestSystemPackageManager.isSafePackageArgument(systemPackage)) return false
+        return prootEnv.queryInstalledPackageVersions(listOf(systemPackage))[systemPackage] != null
+    }
 
-    suspend fun getInstalledVersion(systemPackage: String): String? = prootEnv.queryInstalledPackageVersions(listOf(systemPackage))[systemPackage]
+    suspend fun getInstalledVersion(systemPackage: String): String? {
+        if (!GuestSystemPackageManager.isSafePackageArgument(systemPackage)) return null
+        return prootEnv.queryInstalledPackageVersions(listOf(systemPackage))[systemPackage]
+    }
 }

@@ -35,7 +35,7 @@ internal class EditorTabLifecycleCoordinator(
 
     fun retainOnlyTabPaneState(
         keptTabId: String,
-        keptPane: EditorContainerState.EditorPaneId,
+        keptPane: EditorPaneId,
     ) {
         splitPaneState.removeTabsExcept(keptTabId)
         splitPaneState.removeActiveTabsExceptPane(keptPane)

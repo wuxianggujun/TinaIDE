@@ -9,9 +9,19 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.io.OutputStream
+import java.io.PipedInputStream
+import java.io.PipedOutputStream
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import org.junit.After
 import org.junit.Test
 
 class PluginLspConnectionProviderTest {
+
+    @After
+    fun tearDown() {
+        PluginLspSessionRegistry.closeAll()
+    }
 
     @Test
     fun `start should reject socket and websocket before resolving linux environment`() {
@@ -38,6 +48,7 @@ class PluginLspConnectionProviderTest {
 
     @Test
     fun `start should fail before interactive process when command is missing`() {
+        PluginLspSessionRegistry.activate("pylsp")
         val environment = RecordingLinuxEnvironment(
             probeResult = LinuxExecutionResult(
                 exitCode = 127,
@@ -74,6 +85,98 @@ class PluginLspConnectionProviderTest {
         assertThat(stderrLines).containsExactly("LSP server command not found: pylsp")
     }
 
+    @Test
+    fun `unexpected process exit should report failure after successful start`() {
+        PluginLspSessionRegistry.activate("plugin.python")
+        val process = StubInteractiveProcess(running = false)
+        val environment = RecordingLinuxEnvironment(
+            probeResult = successfulProbe(),
+            interactiveProcess = process,
+        )
+        val exitReported = CountDownLatch(1)
+        val failures = mutableListOf<String>()
+        val provider = PluginLspConnectionProvider(
+            config = lspServerConfig(type = "stdio"),
+            ownerPluginId = "plugin.python",
+            workingDir = "/workspace",
+            projectRoot = "/workspace",
+            linuxEnvironmentProvider = StaticLinuxEnvironmentProvider(environment),
+            onUnexpectedExit = { message ->
+                failures += message
+                exitReported.countDown()
+            },
+        )
+
+        provider.start()
+
+        assertThat(exitReported.await(2, TimeUnit.SECONDS)).isTrue()
+        assertThat(failures).containsExactly("LSP server 'pylsp' exited unexpectedly")
+        provider.close()
+    }
+
+    @Test
+    fun `session registry should close only providers owned by selected plugin`() {
+        val firstProcess = BlockingInteractiveProcess()
+        val secondProcess = BlockingInteractiveProcess()
+        var firstOwnerStopCount = 0
+        var secondOwnerStopCount = 0
+        val firstProvider = providerForOwner(
+            ownerPluginId = "plugin.first",
+            process = firstProcess,
+            onOwnerStopped = { firstOwnerStopCount += 1 },
+        )
+        val secondProvider = providerForOwner(
+            ownerPluginId = "plugin.second",
+            process = secondProcess,
+            onOwnerStopped = { secondOwnerStopCount += 1 },
+        )
+
+        firstProvider.start()
+        secondProvider.start()
+        PluginLspSessionRegistry.closeAll("plugin.first")
+
+        assertThat(firstProcess.destroyed).isTrue()
+        assertThat(secondProcess.destroyed).isFalse()
+        assertThat(firstOwnerStopCount).isEqualTo(1)
+        assertThat(secondOwnerStopCount).isEqualTo(0)
+
+        PluginLspSessionRegistry.closeAll("plugin.second")
+        assertThat(secondProcess.destroyed).isTrue()
+        assertThat(secondOwnerStopCount).isEqualTo(1)
+    }
+
+    @Test
+    fun `normal provider close should not report owner stop`() {
+        val process = BlockingInteractiveProcess()
+        var ownerStopCount = 0
+        val provider = providerForOwner(
+            ownerPluginId = "plugin.first",
+            process = process,
+            onOwnerStopped = { ownerStopCount += 1 },
+        )
+
+        provider.start()
+        provider.close()
+
+        assertThat(process.destroyed).isTrue()
+        assertThat(ownerStopCount).isEqualTo(0)
+    }
+
+    @Test
+    fun `session registry should reject a startup lease invalidated by owner stop`() {
+        val ownerPluginId = "plugin.racing"
+        PluginLspSessionRegistry.activate(ownerPluginId)
+        val lease = checkNotNull(PluginLspSessionRegistry.acquire(ownerPluginId))
+        val provider = providerForOwner(
+            ownerPluginId = ownerPluginId,
+            process = BlockingInteractiveProcess(),
+        )
+
+        PluginLspSessionRegistry.closeAll(ownerPluginId)
+
+        assertThat(PluginLspSessionRegistry.register(lease, provider)).isFalse()
+    }
+
     private fun lspServerConfig(type: String): LspServerConfig = LspServerConfig(
         id = "pylsp",
         name = "Python Language Server",
@@ -83,6 +186,34 @@ class PluginLspConnectionProviderTest {
             type = type,
             command = "pylsp",
         ),
+    )
+
+    private fun providerForOwner(
+        ownerPluginId: String,
+        process: LinuxInteractiveProcess,
+        onOwnerStopped: () -> Unit = {},
+    ): PluginLspConnectionProvider {
+        PluginLspSessionRegistry.activate(ownerPluginId)
+        return PluginLspConnectionProvider(
+            config = lspServerConfig(type = "stdio"),
+            ownerPluginId = ownerPluginId,
+            workingDir = "/workspace",
+            projectRoot = "/workspace",
+            linuxEnvironmentProvider = StaticLinuxEnvironmentProvider(
+                RecordingLinuxEnvironment(
+                    probeResult = successfulProbe(),
+                    interactiveProcess = process,
+                ),
+            ),
+            onOwnerStopped = onOwnerStopped,
+        )
+    }
+
+    private fun successfulProbe() = LinuxExecutionResult(
+        exitCode = 0,
+        stdout = "/usr/bin/pylsp\n",
+        stderr = "",
+        durationMs = 1,
     )
 
     private class StaticLinuxEnvironmentProvider(
@@ -100,6 +231,7 @@ class PluginLspConnectionProviderTest {
 
     private class RecordingLinuxEnvironment(
         private val probeResult: LinuxExecutionResult,
+        private val interactiveProcess: LinuxInteractiveProcess = StubInteractiveProcess(),
     ) : LinuxEnvironment {
         val executedCommands = mutableListOf<ExecutedCommand>()
         var interactiveStarted = false
@@ -128,19 +260,44 @@ class PluginLspConnectionProviderTest {
             env: Map<String, String>,
         ): LinuxInteractiveProcess {
             interactiveStarted = true
-            return StubInteractiveProcess()
+            return interactiveProcess
         }
 
         override fun toGuestPath(hostPath: String): String = hostPath
     }
 
-    private class StubInteractiveProcess : LinuxInteractiveProcess {
+    private class StubInteractiveProcess(
+        private var running: Boolean = false,
+    ) : LinuxInteractiveProcess {
         override val stdin: OutputStream = ByteArrayOutputStream()
         override val stdout: InputStream = ByteArrayInputStream(ByteArray(0))
         override val stderr: InputStream = ByteArrayInputStream(ByteArray(0))
 
-        override fun isRunning(): Boolean = false
+        override fun isRunning(): Boolean = running
         override fun waitFor(timeout: Long): Int = 0
-        override fun destroy() = Unit
+        override fun destroy() {
+            running = false
+        }
+    }
+
+    private class BlockingInteractiveProcess : LinuxInteractiveProcess {
+        private val stderrWriter = PipedOutputStream()
+        override val stdin: OutputStream = ByteArrayOutputStream()
+        override val stdout: InputStream = ByteArrayInputStream(ByteArray(0))
+        override val stderr: InputStream = PipedInputStream(stderrWriter)
+
+        @Volatile
+        var destroyed: Boolean = false
+            private set
+
+        override fun isRunning(): Boolean = !destroyed
+
+        override fun waitFor(timeout: Long): Int = if (destroyed) 0 else -1
+
+        override fun destroy() {
+            destroyed = true
+            stderrWriter.close()
+            stderr.close()
+        }
     }
 }

@@ -33,6 +33,7 @@ internal class EditorRenderer(
     private val selectionRenderer = SelectionRenderer()
     private val cursorRenderer = CursorRenderer()
     private val diagnosticRenderer = DiagnosticRenderer()
+    private val inlayHintRenderer = InlayHintRenderer()
     private val bracketPairGuideRenderer = BracketPairGuideRenderer()
     private val matchingBracketRenderer = MatchingBracketHighlightRenderer()
     private val wordOccurrenceRenderer = WordOccurrenceHighlightRenderer()
@@ -138,6 +139,13 @@ internal class EditorRenderer(
                         textStartX = textStartX,
                         lineLayoutCache = lineLayoutCache
                     )
+                    inlayHintRenderer.draw(
+                        drawScope = this,
+                        frameContext = frameContext,
+                        textStartX = textStartX,
+                        textPaint = textPaint,
+                        lineLayoutCache = lineLayoutCache
+                    )
                     whitespaceRenderer.drawWhitespace(
                         drawScope = this,
                         frameContext = frameContext,
@@ -224,6 +232,13 @@ internal class EditorRenderer(
                         frameContext = frameContext,
                         textPaint = textPaint,
                         textStartX = textStartX,
+                        lineLayoutCache = lineLayoutCache
+                    )
+                    inlayHintRenderer.draw(
+                        drawScope = this,
+                        frameContext = frameContext,
+                        textStartX = textStartX,
+                        textPaint = textPaint,
                         lineLayoutCache = lineLayoutCache
                     )
                     whitespaceRenderer.drawWhitespace(
@@ -398,11 +413,11 @@ internal class EditorRenderer(
             tabSize = state.config.tabSize
         ).trailingWhitespaceStart
         val prefixLayout = lineLayoutCache.getPrefixLayout(
+            state = state,
             line = docLine,
             lineText = lineText,
             textVersion = state.textBuffer.version,
             paint = textPaint,
-            tabSize = state.config.tabSize
         )
         val textEndX = prefixLayout.prefix[trimmedEndColumn.coerceIn(0, prefixLayout.length)]
         val badgeLeft = textEndX + textRenderer.badgeMargin
@@ -424,11 +439,11 @@ internal class EditorRenderer(
             tabSize = state.config.tabSize
         ).trailingWhitespaceStart
         val startPrefixLayout = lineLayoutCache.getPrefixLayout(
+            state = state,
             line = foldStartLine,
             lineText = startLineText,
             textVersion = state.textBuffer.version,
             paint = textPaint,
-            tabSize = state.config.tabSize
         )
         val safeTrimmedEndCol = trimmedEndCol.coerceIn(0, startPrefixLayout.length)
         val startLineEndX = startPrefixLayout.prefix[safeTrimmedEndCol]
@@ -447,11 +462,11 @@ internal class EditorRenderer(
             tabSize = state.config.tabSize
         ).leadingWhitespaceEnd
         val endPrefixLayout = lineLayoutCache.getPrefixLayout(
+            state = state,
             line = endLine,
             lineText = endLineText,
             textVersion = state.textBuffer.version,
             paint = textPaint,
-            tabSize = state.config.tabSize
         )
         val safeTrimStartCol = trimStartCol.coerceIn(0, endPrefixLayout.length)
         val trimStartX = endPrefixLayout.prefix[safeTrimStartCol]

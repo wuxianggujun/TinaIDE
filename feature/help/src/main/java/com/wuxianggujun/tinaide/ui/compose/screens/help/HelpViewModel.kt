@@ -7,6 +7,7 @@ import com.wuxianggujun.tinaide.core.help.HelpCategory
 import com.wuxianggujun.tinaide.core.help.HelpDocument
 import com.wuxianggujun.tinaide.core.help.HelpRepository
 import com.wuxianggujun.tinaide.core.help.HelpSearchResult
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -17,9 +18,13 @@ import timber.log.Timber
  * 帮助中心 ViewModel
  * 管理帮助文档的加载、搜索和显示状态
  */
-class HelpViewModel(application: Application) : AndroidViewModel(application) {
+class HelpViewModel @JvmOverloads constructor(
+    application: Application,
+    private val repository: HelpRepository = HelpRepository(application),
+) : AndroidViewModel(application) {
 
-    private val repository = HelpRepository(application)
+    private var contentLoadGeneration = 0L
+    private var searchGeneration = 0L
 
     // UI 状态
     private val _uiState = MutableStateFlow(HelpUiState())
@@ -103,37 +108,67 @@ class HelpViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun selectDocumentInternal(document: HelpDocument) {
+        val loadGeneration = ++contentLoadGeneration
+        _documentContent.value = null
+        _uiState.value = _uiState.value.copy(
+            selectedDocument = document,
+            isLoadingContent = true,
+            error = null,
+        )
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(
-                selectedDocument = document,
-                isLoadingContent = true
-            )
-
             val result = repository.loadDocumentContent(document)
             result.onSuccess { content ->
+                if (!isCurrentContentLoad(document, loadGeneration)) return@onSuccess
+                if (content.isBlank()) {
+                    _documentContent.value = null
+                    _uiState.value = _uiState.value.copy(
+                        isLoadingContent = false,
+                        error = "Help document content is blank",
+                    )
+                    return@onSuccess
+                }
                 _documentContent.value = content
                 _uiState.value = _uiState.value.copy(isLoadingContent = false)
             }.onFailure { error ->
+                if (error is CancellationException) throw error
+                if (!isCurrentContentLoad(document, loadGeneration)) return@onFailure
+                _documentContent.value = null
                 _uiState.value = _uiState.value.copy(
                     isLoadingContent = false,
-                    error = error.message
+                    error = error.message ?: "Unable to load help document",
                 )
             }
         }
     }
 
     /**
+     * Retry the currently selected document after a transient asset/load failure.
+     */
+    fun retrySelectedDocument() {
+        _uiState.value.selectedDocument?.let(::selectDocumentInternal)
+    }
+
+    private fun isCurrentContentLoad(document: HelpDocument, generation: Long): Boolean =
+        generation == contentLoadGeneration && _uiState.value.selectedDocument?.id == document.id
+
+    /**
      * 清除选中的文档（返回列表）
      */
     fun clearSelectedDocument() {
-        _uiState.value = _uiState.value.copy(selectedDocument = null)
+        contentLoadGeneration++
         _documentContent.value = null
+        _uiState.value = _uiState.value.copy(
+            selectedDocument = null,
+            error = null,
+            isLoadingContent = false,
+        )
     }
 
     /**
      * 搜索文档
      */
     fun search(query: String) {
+        val generation = ++searchGeneration
         _uiState.value = _uiState.value.copy(searchQuery = query)
 
         if (query.isBlank()) {
@@ -142,9 +177,12 @@ class HelpViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
+        _searchResults.value = emptyList()
         viewModelScope.launch {
+            if (!isCurrentSearch(query, generation)) return@launch
             _uiState.value = _uiState.value.copy(isSearching = true)
             val results = repository.search(query)
+            if (!isCurrentSearch(query, generation)) return@launch
             _searchResults.value = results
             _uiState.value = _uiState.value.copy(isSearching = false)
         }
@@ -154,9 +192,13 @@ class HelpViewModel(application: Application) : AndroidViewModel(application) {
      * 清除搜索
      */
     fun clearSearch() {
-        _uiState.value = _uiState.value.copy(searchQuery = "")
+        searchGeneration++
+        _uiState.value = _uiState.value.copy(searchQuery = "", isSearching = false)
         _searchResults.value = emptyList()
     }
+
+    private fun isCurrentSearch(query: String, generation: Long): Boolean =
+        generation == searchGeneration && _uiState.value.searchQuery == query
 
     /**
      * 清除错误

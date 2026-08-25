@@ -34,6 +34,7 @@ class ExternalZipTemplateInstallTest {
             assertThat(tempDir.resolve("src/main.cpp").readText()).contains("#include <SDL3/SDL_main.h>")
             assertThat(tempDir.resolve("src/main.cpp").readText()).contains("\"HelloSDL3\"")
             assertThat(ProjectMetadataStore.read(tempDir)?.apkExportType).isEqualTo(ProjectApkExportType.SDL3)
+            assertThat(ProjectMetadataStore.read(tempDir)?.sdlVersion).isEqualTo(ProjectSdlVersion.SDL3)
         } finally {
             tempDir.deleteRecursively()
         }

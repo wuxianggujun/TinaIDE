@@ -63,7 +63,7 @@ class BookmarkStateStorage(context: Context) {
      * 自动处理数据库升级后的实体读取和相对路径还原。
      */
     suspend fun load(projectPath: String): ProjectBookmarkState? = withContext(Dispatchers.IO) {
-        return@withContext runCatching {
+        try {
             val entities = bookmarkDao.getBookmarks(projectPath)
             val bookmarks = entities.map { entity ->
                 entity.toDomainModel().copy(
@@ -71,16 +71,22 @@ class BookmarkStateStorage(context: Context) {
                 )
             }
             ProjectBookmarkState(bookmarks = bookmarks).normalized()
-        }.onFailure { e ->
-            Timber.tag(TAG).e(e, "Failed to load bookmark state for project: %s", projectPath)
-        }.getOrNull()
+        } catch (e: Exception) {
+            Timber.tag(TAG).e("Failed to load bookmark state: %s", e.javaClass.simpleName)
+            throw e
+        }
     }
 
     /**
      * 保存书签状态
      */
     suspend fun save(projectPath: String, state: ProjectBookmarkState) = withContext(Dispatchers.IO) {
-        runCatching {
+        try {
+            val projectDir = File(projectPath)
+            if (!projectDir.isDirectory) {
+                Timber.tag(TAG).w("Skipped saving bookmark state for missing project")
+                return@withContext
+            }
             val normalized = state.copy(
                 bookmarks = state.bookmarks.map { bm ->
                     bm.copy(filePath = toPersistedPath(projectPath, bm.filePath))
@@ -88,15 +94,21 @@ class BookmarkStateStorage(context: Context) {
             ).normalized()
 
             // 先删除旧数据，再插入新数据
-            bookmarkDao.deleteAllBookmarks(projectPath)
             val entities = normalized.bookmarks.map { bookmark ->
                 BookmarkEntity.fromDomainModel(projectPath, bookmark)
             }
-            bookmarkDao.insertBookmarks(entities)
+            bookmarkDao.replaceProjectBookmarks(projectPath, entities)
 
-            Timber.tag(TAG).d("Saved bookmark state for project: %s (count=%d)", projectPath, normalized.bookmarks.size)
-        }.onFailure { e ->
-            Timber.tag(TAG).e(e, "Failed to save bookmark state for project: %s", projectPath)
+            if (!projectDir.isDirectory) {
+                bookmarkDao.deleteAllBookmarks(projectPath)
+                Timber.tag(TAG).w("Discarded bookmark state written while project moved")
+                return@withContext
+            }
+
+            Timber.tag(TAG).d("Saved bookmark state: count=%d", normalized.bookmarks.size)
+        } catch (e: Exception) {
+            Timber.tag(TAG).e("Failed to save bookmark state: %s", e.javaClass.simpleName)
+            throw e
         }
     }
 
@@ -104,11 +116,12 @@ class BookmarkStateStorage(context: Context) {
      * 清空书签状态
      */
     suspend fun clear(projectPath: String) = withContext(Dispatchers.IO) {
-        runCatching {
+        try {
             val count = bookmarkDao.deleteAllBookmarks(projectPath)
-            Timber.tag(TAG).d("Cleared bookmark state for project: %s (deleted=%d)", projectPath, count)
-        }.onFailure { e ->
-            Timber.tag(TAG).e(e, "Failed to clear bookmark state for project: %s", projectPath)
+            Timber.tag(TAG).d("Cleared bookmark state: deleted=%d", count)
+        } catch (e: Exception) {
+            Timber.tag(TAG).e("Failed to clear bookmark state: %s", e.javaClass.simpleName)
+            throw e
         }
     }
 
@@ -116,8 +129,6 @@ class BookmarkStateStorage(context: Context) {
      * 检查书签是否存在
      */
     suspend fun exists(projectPath: String): Boolean = withContext(Dispatchers.IO) {
-        return@withContext runCatching {
-            bookmarkDao.getBookmarksCount(projectPath) > 0
-        }.getOrElse { false }
+        bookmarkDao.getBookmarksCount(projectPath) > 0
     }
 }

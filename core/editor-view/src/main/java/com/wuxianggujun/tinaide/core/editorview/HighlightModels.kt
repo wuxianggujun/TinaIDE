@@ -8,6 +8,21 @@ data class SemanticToken(
     val tokenModifiers: Set<SemanticTokenModifier> = emptySet()
 )
 
+data class EditorInlayHint(
+    val line: Int,
+    val column: Int,
+    val label: String,
+    val kind: EditorInlayHintKind = EditorInlayHintKind.OTHER,
+    val paddingLeft: Boolean = false,
+    val paddingRight: Boolean = false,
+)
+
+enum class EditorInlayHintKind {
+    PARAMETER,
+    TYPE,
+    OTHER,
+}
+
 enum class SemanticTokenType {
     NAMESPACE,
     TYPE,

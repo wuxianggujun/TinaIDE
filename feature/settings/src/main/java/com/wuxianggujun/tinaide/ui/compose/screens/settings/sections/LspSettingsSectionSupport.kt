@@ -121,14 +121,8 @@ internal object LspSettingsSectionSupport {
     fun validateRemoteHost(input: String): Int? {
         val trimmed = input.trim()
         return when {
-            trimmed.contains(" ") -> Strings.editor_lsp_hint_host_input
-            trimmed.startsWith("ws://") ||
-                trimmed.startsWith("wss://") ||
-                trimmed.startsWith("http://") ||
-                trimmed.startsWith("https://") -> {
-                Strings.editor_lsp_hint_host_input
-            }
-
+            trimmed.isEmpty() -> null
+            !RemoteLspConfig(host = trimmed).hasValidHostSyntax() -> Strings.editor_lsp_hint_host_input
             else -> null
         }
     }
@@ -136,7 +130,12 @@ internal object LspSettingsSectionSupport {
     @StringRes
     fun resolveRemoteHostHint(input: String): Int? {
         val trimmed = input.trim()
-        return if (trimmed == "127.0.0.1" || trimmed.equals("localhost", ignoreCase = true)) {
+        return if (
+            trimmed == "127.0.0.1" ||
+            trimmed == "::1" ||
+            trimmed == "[::1]" ||
+            trimmed.equals("localhost", ignoreCase = true)
+        ) {
             Strings.editor_lsp_hint_localhost
         } else {
             null

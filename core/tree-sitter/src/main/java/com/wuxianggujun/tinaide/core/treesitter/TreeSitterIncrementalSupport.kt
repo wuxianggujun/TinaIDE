@@ -28,7 +28,7 @@ internal data class HighlightLineCacheChange(
             val oldChangedEndLine = when {
                 change.startColumn == 0 &&
                     change.endColumn == 0 &&
-                    change.oldText.endsWith('\n') ->
+                    change.oldTextEndsWithLineBreak ->
                     (change.endLine - 1).coerceAtLeast(startLine)
 
                 else -> change.endLine.coerceAtLeast(startLine)
@@ -37,9 +37,9 @@ internal data class HighlightLineCacheChange(
             val isSingleLineEdit = lineDelta == 0 &&
                 change.startLine == change.endLine &&
                 !change.newText.contains('\n') &&
-                !change.oldText.contains('\n')
+                change.oldLineBreakCount == 0
             val columnDelta = if (isSingleLineEdit) {
-                change.newText.length - change.oldText.length
+                change.newText.length - change.oldTextLength
             } else {
                 0
             }

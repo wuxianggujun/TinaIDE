@@ -68,6 +68,7 @@ import com.wuxianggujun.tinaide.plugin.marketplace.PluginSummary
 import com.wuxianggujun.tinaide.ui.compose.components.DetailHeaderCard
 import com.wuxianggujun.tinaide.ui.compose.components.DetailIconPlaceholder
 import com.wuxianggujun.tinaide.ui.compose.components.DetailInfoCard
+import com.wuxianggujun.tinaide.ui.compose.components.PluginPermissionDialog
 import com.wuxianggujun.tinaide.ui.compose.components.TinaBackHandlers
 import com.wuxianggujun.tinaide.ui.compose.components.TinaSpacing
 import com.wuxianggujun.tinaide.ui.compose.components.TinaShapes
@@ -82,6 +83,7 @@ fun PluginMarketplaceScreen(
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
+    val permissionDeniedText = stringResource(Strings.toast_plugins_permission_denied)
     val selectedPlugin = PluginMarketplaceSelectionSupport.resolveSelectedPlugin(
         selectedPluginId = uiState.selectedPluginId,
         plugins = uiState.plugins,
@@ -119,6 +121,23 @@ fun PluginMarketplaceScreen(
             onNavigateBack = { viewModel.closePluginDetails() }
         )
         return
+    }
+
+    uiState.pendingInstall?.let { pending ->
+        PluginPermissionDialog(
+            pluginName = pending.manifest.name,
+            permissions = pending.permissions,
+            onConfirm = viewModel::confirmPendingInstall,
+            onDeny = {
+                viewModel.dismissPendingInstall()
+                Toast.makeText(
+                    context,
+                    permissionDeniedText,
+                    Toast.LENGTH_SHORT,
+                ).show()
+            },
+            onDismiss = viewModel::dismissPendingInstall,
+        )
     }
 
     Scaffold(

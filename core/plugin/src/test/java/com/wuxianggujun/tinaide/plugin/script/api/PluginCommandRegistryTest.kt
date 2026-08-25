@@ -4,14 +4,8 @@ import com.google.common.truth.Truth.assertThat
 import com.wuxianggujun.tinaide.core.commands.HostCommandInvocation
 import com.wuxianggujun.tinaide.plugin.script.PluginExecutionResult
 import com.wuxianggujun.tinaide.plugin.script.PluginPermission
-import com.wuxianggujun.tinaide.plugin.script.ScriptPluginRuntime
-import io.mockk.coEvery
-import io.mockk.coVerify
-import io.mockk.every
-import io.mockk.mockk
-import io.mockk.verify
 import java.io.File
-import java.nio.file.Files
+import java.util.concurrent.atomic.AtomicReference
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -21,470 +15,148 @@ class PluginCommandRegistryTest {
     @Before
     fun setUp() {
         PluginCommandRegistry.clear()
-        PluginCommandRegistry.setRuntimeProvider { null }
     }
 
     @After
     fun tearDown() {
         PluginCommandRegistry.clear()
-        PluginCommandRegistry.setRuntimeProvider { null }
     }
 
     @Test
-    fun `register should reject duplicate command ids across plugins`() {
-        val first = PluginCommandRegistry.register(
-            pluginId = "plugin.one",
-            pluginName = "Plugin One",
-            commandId = "plugin.sayHello",
-            callbackName = "handleHello"
-        )
-        val second = PluginCommandRegistry.register(
-            pluginId = "plugin.two",
-            pluginName = "Plugin Two",
-            commandId = "plugin.sayHello",
-            callbackName = "handleHelloAgain"
-        )
-
-        assertThat(first.isSuccess).isTrue()
-        assertThat(second.isFailure).isTrue()
-        assertThat(second.exceptionOrNull()?.message).contains("already registered")
-        assertThat(
-            PluginCommandRegistry.registrationIssue(
-                commandId = "plugin.sayHello",
-                pluginId = "plugin.two",
-            )?.message
-        ).contains("already registered")
-    }
-
-    @Test
-    fun `register should clear registration issue after command registers successfully`() {
+    fun `register rejects duplicate command ids and clears conflict after owner removal`() {
         PluginCommandRegistry.register(
             pluginId = "plugin.one",
             pluginName = "Plugin One",
             commandId = "plugin.sayHello",
-            callbackName = "handleHello"
+            callbackName = "handleHello",
         ).getOrThrow()
-        PluginCommandRegistry.register(
+
+        val duplicate = PluginCommandRegistry.register(
             pluginId = "plugin.two",
             pluginName = "Plugin Two",
             commandId = "plugin.sayHello",
-            callbackName = "handleHelloAgain"
+            callbackName = "handleHelloAgain",
         )
 
-        PluginCommandRegistry.unregisterAll("plugin.one")
-        val retry = PluginCommandRegistry.register(
-            pluginId = "plugin.two",
-            pluginName = "Plugin Two",
-            commandId = "plugin.sayHello",
-            callbackName = "handleHelloAgain"
-        )
-
-        assertThat(retry.isSuccess).isTrue()
+        assertThat(duplicate.isFailure).isTrue()
         assertThat(
-            PluginCommandRegistry.registrationIssue(
-                commandId = "plugin.sayHello",
-                pluginId = "plugin.two",
-            )
-        ).isNull()
-    }
-
-    @Test
-    fun `unregisterAll should clear registration issues blocked by removed plugin`() {
-        PluginCommandRegistry.register(
-            pluginId = "plugin.one",
-            pluginName = "Plugin One",
-            commandId = "plugin.sayHello",
-            callbackName = "handleHello"
-        ).getOrThrow()
-        PluginCommandRegistry.register(
-            pluginId = "plugin.two",
-            pluginName = "Plugin Two",
-            commandId = "plugin.sayHello",
-            callbackName = "handleHelloAgain"
-        )
-
-        assertThat(
-            PluginCommandRegistry.registrationIssue(
-                commandId = "plugin.sayHello",
-                pluginId = "plugin.two",
-            )?.conflictingPluginId
+            PluginCommandRegistry.registrationIssue("plugin.sayHello", "plugin.two")
+                ?.conflictingPluginId,
         ).isEqualTo("plugin.one")
 
         PluginCommandRegistry.unregisterAll("plugin.one")
 
         assertThat(
-            PluginCommandRegistry.registrationIssue(
-                commandId = "plugin.sayHello",
-                pluginId = "plugin.two",
-            )
+            PluginCommandRegistry.registrationIssue("plugin.sayHello", "plugin.two"),
         ).isNull()
-    }
-
-    @Test
-    fun `stateRevision should advance when command registration state changes`() {
-        val initialRevision = PluginCommandRegistry.stateRevision.value
-
-        PluginCommandRegistry.register(
-            pluginId = "plugin.one",
-            pluginName = "Plugin One",
-            commandId = "plugin.sayHello",
-            callbackName = "handleHello"
-        ).getOrThrow()
-        val registeredRevision = PluginCommandRegistry.stateRevision.value
-
-        PluginCommandRegistry.register(
-            pluginId = "plugin.two",
-            pluginName = "Plugin Two",
-            commandId = "plugin.sayHello",
-            callbackName = "handleHelloAgain"
-        )
-        val failedRegistrationRevision = PluginCommandRegistry.stateRevision.value
-
-        PluginCommandRegistry.unregisterAll("plugin.one")
-        val unregisteredRevision = PluginCommandRegistry.stateRevision.value
-
-        assertThat(registeredRevision).isGreaterThan(initialRevision)
-        assertThat(failedRegistrationRevision).isGreaterThan(registeredRevision)
-        assertThat(unregisteredRevision).isGreaterThan(failedRegistrationRevision)
-    }
-
-    @Test
-    fun `dispatch should invoke runtime callback with invocation payload`() {
-        val runtime = mockk<ScriptPluginRuntime>()
-        every { runtime.checkPermission(PluginPermission.COMMAND_EXECUTE) } returns true
-        coEvery { runtime.callFunction("handleHello", any()) } returns PluginExecutionResult.Success(Unit)
-        PluginCommandRegistry.setRuntimeProvider { pluginId ->
-            if (pluginId == "plugin.one") runtime else null
-        }
-        PluginCommandRegistry.register(
-            pluginId = "plugin.one",
-            pluginName = "Plugin One",
-            commandId = "plugin.sayHello",
-            callbackName = "handleHello",
-            title = "Say hello"
-        ).getOrThrow()
-        val targetFile = File("C:/workspace/src/Main.kt")
-
-        val dispatched = PluginCommandRegistry.dispatch(
-            commandId = "plugin.sayHello",
-            invocation = HostCommandInvocation(
-                file = targetFile,
-                isDirectory = false,
-                isDirty = true
-            )
-        )
-
-        assertThat(dispatched).isTrue()
-        coVerify(timeout = 1_000, exactly = 1) {
-            runtime.callFunction(
-                "handleHello",
-                match<Map<String, Any?>> { payload ->
-                    payload["commandId"] == "plugin.sayHello" &&
-                        payload["filePath"] == targetFile.absolutePath &&
-                        payload["fileName"] == targetFile.name &&
-                        payload["isDirectory"] == false &&
-                        payload["isDirty"] == true
-                }
-            )
-        }
-    }
-
-    @Test
-    fun `dispatchWithResult should record execution issue when runtime callback fails`() {
-        val runtime = mockk<ScriptPluginRuntime>()
-        every { runtime.checkPermission(PluginPermission.COMMAND_EXECUTE) } returns true
-        coEvery { runtime.callFunction("handleHello", any()) } returns PluginExecutionResult.Error("Boom")
-        PluginCommandRegistry.setRuntimeProvider { pluginId ->
-            if (pluginId == "plugin.one") runtime else null
-        }
-        PluginCommandRegistry.register(
-            pluginId = "plugin.one",
-            pluginName = "Plugin One",
-            commandId = "plugin.sayHello",
-            callbackName = "handleHello",
-            title = "Say hello"
-        ).getOrThrow()
-        val revisionBeforeDispatch = PluginCommandRegistry.stateRevision.value
-
-        val result = PluginCommandRegistry.dispatchWithResult(
-            commandId = "plugin.sayHello",
-            invocation = HostCommandInvocation()
-        )
-
-        assertThat(result.handled).isTrue()
-        waitUntil {
-            PluginCommandRegistry.executionIssue(
+        assertThat(
+            PluginCommandRegistry.register(
+                pluginId = "plugin.two",
+                pluginName = "Plugin Two",
                 commandId = "plugin.sayHello",
-                pluginId = "plugin.one",
-            ) != null
-        }
-        val issue = PluginCommandRegistry.executionIssue(
-            commandId = "plugin.sayHello",
-            pluginId = "plugin.one",
-        )
-        assertThat(issue?.message).isEqualTo("Boom")
-        assertThat(PluginCommandRegistry.stateRevision.value).isGreaterThan(revisionBeforeDispatch)
+                callbackName = "handleHelloAgain",
+            ).isSuccess,
+        ).isTrue()
     }
 
     @Test
-    fun `dispatchWithResult should record timeout and runtime permission execution issues`() {
-        val runtime = mockk<ScriptPluginRuntime>()
-        every { runtime.checkPermission(PluginPermission.COMMAND_EXECUTE) } returns true
-        coEvery { runtime.callFunction("handleHello", any()) } returns PluginExecutionResult.Timeout
-        PluginCommandRegistry.setRuntimeProvider { pluginId ->
-            if (pluginId == "plugin.one") runtime else null
-        }
+    fun `dispatch invokes isolated runtime callback with bounded host payload`() {
+        val invocationRef = AtomicReference<Map<String, Any?>>()
+        PluginCommandRegistry.setRuntimeAccess(
+            callbackInvoker = { _, _, payload ->
+                invocationRef.set(payload)
+                PluginExecutionResult.Success(Unit)
+            },
+            permissionChecker = { _, permission ->
+                PluginCommandAvailability(permission == PluginPermission.COMMAND_EXECUTE)
+            },
+        )
         PluginCommandRegistry.register(
             pluginId = "plugin.one",
             pluginName = "Plugin One",
             commandId = "plugin.sayHello",
             callbackName = "handleHello",
-            title = "Say hello"
         ).getOrThrow()
+        val target = File("workspace/src/Main.kt")
 
-        PluginCommandRegistry.dispatchWithResult(
-            commandId = "plugin.sayHello",
-            invocation = HostCommandInvocation()
-        )
-
-        waitUntil {
-            PluginCommandRegistry.executionIssue(
+        assertThat(
+            PluginCommandRegistry.dispatch(
                 commandId = "plugin.sayHello",
-                pluginId = "plugin.one",
-            )?.message == "Command execution timed out"
-        }
-        coEvery { runtime.callFunction("handleHello", any()) } returns PluginExecutionResult.PermissionDenied
+                invocation = HostCommandInvocation(file = target, isDirectory = false, isDirty = true),
+            ),
+        ).isTrue()
 
-        PluginCommandRegistry.dispatchWithResult(
-            commandId = "plugin.sayHello",
-            invocation = HostCommandInvocation()
-        )
-
-        waitUntil {
-            PluginCommandRegistry.executionIssue(
-                commandId = "plugin.sayHello",
-                pluginId = "plugin.one",
-            )?.message == "Command execution was denied by runtime permission check"
-        }
+        waitUntil { invocationRef.get() != null }
+        assertThat(invocationRef.get()["commandId"]).isEqualTo("plugin.sayHello")
+        assertThat(invocationRef.get()["filePath"]).isEqualTo(target.absolutePath)
+        assertThat(invocationRef.get()["fileName"]).isEqualTo(target.name)
+        assertThat(invocationRef.get()["isDirectory"]).isEqualTo(false)
+        assertThat(invocationRef.get()["isDirty"]).isEqualTo(true)
     }
 
     @Test
-    fun `dispatchWithResult should clear execution issue after runtime callback succeeds`() {
-        val runtime = mockk<ScriptPluginRuntime>()
-        every { runtime.checkPermission(PluginPermission.COMMAND_EXECUTE) } returns true
-        coEvery { runtime.callFunction("handleHello", any()) } returns PluginExecutionResult.Error("Boom")
-        PluginCommandRegistry.setRuntimeProvider { pluginId ->
-            if (pluginId == "plugin.one") runtime else null
-        }
+    fun `dispatch records failures and clears issue after callback recovers`() {
+        val nextResult = AtomicReference<PluginExecutionResult>(PluginExecutionResult.Error("Boom"))
+        PluginCommandRegistry.setRuntimeAccess(
+            callbackInvoker = { _, _, _ -> nextResult.get() },
+            permissionChecker = { _, _ -> PluginCommandAvailability(true) },
+        )
         PluginCommandRegistry.register(
             pluginId = "plugin.one",
             pluginName = "Plugin One",
             commandId = "plugin.sayHello",
             callbackName = "handleHello",
-            title = "Say hello"
         ).getOrThrow()
 
-        PluginCommandRegistry.dispatchWithResult(
-            commandId = "plugin.sayHello",
-            invocation = HostCommandInvocation()
-        )
+        assertThat(PluginCommandRegistry.dispatch("plugin.sayHello")).isTrue()
         waitUntil {
-            PluginCommandRegistry.executionIssue(
-                commandId = "plugin.sayHello",
-                pluginId = "plugin.one",
-            ) != null
+            PluginCommandRegistry.executionIssue("plugin.sayHello", "plugin.one")?.message == "Boom"
         }
-        val failedRevision = PluginCommandRegistry.stateRevision.value
-        coEvery { runtime.callFunction("handleHello", any()) } returns PluginExecutionResult.Success(Unit)
 
-        PluginCommandRegistry.dispatchWithResult(
-            commandId = "plugin.sayHello",
-            invocation = HostCommandInvocation()
-        )
-
-        waitUntil {
-            PluginCommandRegistry.executionIssue(
-                commandId = "plugin.sayHello",
-                pluginId = "plugin.one",
-            ) == null
-        }
-        assertThat(PluginCommandRegistry.stateRevision.value).isGreaterThan(failedRevision)
+        nextResult.set(PluginExecutionResult.Success(Unit))
+        assertThat(PluginCommandRegistry.dispatch("plugin.sayHello")).isTrue()
+        waitUntil { PluginCommandRegistry.executionIssue("plugin.sayHello", "plugin.one") == null }
     }
 
     @Test
-    fun `dispatch should reject command when command permission is denied`() {
-        val runtime = mockk<ScriptPluginRuntime>()
-        every { runtime.checkPermission(PluginPermission.COMMAND_EXECUTE) } returns false
-        every {
-            runtime.reportPermissionDenied(
-                "commands",
-                "execute",
-                PluginPermission.COMMAND_EXECUTE
-            )
-        } returns "Permission denied"
-        PluginCommandRegistry.setRuntimeProvider { pluginId ->
-            if (pluginId == "plugin.one") runtime else null
-        }
+    fun `dispatch rejects disabled or unauthorized plugin before callback`() {
+        var callbackInvoked = false
+        PluginCommandRegistry.setRuntimeAccess(
+            callbackInvoker = { _, _, _ ->
+                callbackInvoked = true
+                PluginExecutionResult.Success(Unit)
+            },
+            permissionChecker = { _, _ -> PluginCommandAvailability(false, "Permission denied") },
+        )
         PluginCommandRegistry.register(
             pluginId = "plugin.one",
             pluginName = "Plugin One",
             commandId = "plugin.sayHello",
             callbackName = "handleHello",
-            title = "Say hello"
         ).getOrThrow()
 
-        val dispatched = PluginCommandRegistry.dispatch(
-            commandId = "plugin.sayHello",
-            invocation = HostCommandInvocation()
-        )
-
-        assertThat(dispatched).isFalse()
-        verify(exactly = 1) {
-            runtime.reportPermissionDenied(
-                "commands",
-                "execute",
-                PluginPermission.COMMAND_EXECUTE
-            )
-        }
-        coVerify(exactly = 0) {
-            runtime.callFunction(any(), any())
-        }
-    }
-
-    @Test
-    fun `dispatchWithResult should expose permission denial message`() {
-        val runtime = mockk<ScriptPluginRuntime>()
-        every { runtime.checkPermission(PluginPermission.COMMAND_EXECUTE) } returns false
-        every {
-            runtime.reportPermissionDenied(
-                "commands",
-                "execute",
-                PluginPermission.COMMAND_EXECUTE
-            )
-        } returns "Permission denied"
-        PluginCommandRegistry.setRuntimeProvider { pluginId ->
-            if (pluginId == "plugin.one") runtime else null
-        }
-        PluginCommandRegistry.register(
-            pluginId = "plugin.one",
-            pluginName = "Plugin One",
-            commandId = "plugin.sayHello",
-            callbackName = "handleHello",
-            title = "Say hello"
-        ).getOrThrow()
-
-        val result = PluginCommandRegistry.dispatchWithResult(
-            commandId = "plugin.sayHello",
-            invocation = HostCommandInvocation()
-        )
+        val result = PluginCommandRegistry.dispatchWithResult("plugin.sayHello")
 
         assertThat(result.handled).isFalse()
         assertThat(result.errorMessage).isEqualTo("Permission denied")
-        coVerify(exactly = 0) {
-            runtime.callFunction(any(), any())
-        }
+        assertThat(callbackInvoked).isFalse()
     }
 
     @Test
-    fun `availability should expose permission denial message without logging denial`() {
-        val runtime = mockk<ScriptPluginRuntime>()
-        every { runtime.checkPermission(PluginPermission.COMMAND_EXECUTE) } returns false
-        every {
-            runtime.describePermissionDenial(PluginPermission.COMMAND_EXECUTE)
-        } returns "Permission not granted"
-        PluginCommandRegistry.setRuntimeProvider { pluginId ->
-            if (pluginId == "plugin.one") runtime else null
+    fun `unregisterAll removes every command owned by plugin`() {
+        listOf("hello", "bye").forEach { suffix ->
+            PluginCommandRegistry.register(
+                pluginId = "plugin.one",
+                pluginName = "Plugin One",
+                commandId = "plugin.$suffix",
+                callbackName = "handle$suffix",
+            ).getOrThrow()
         }
-        PluginCommandRegistry.register(
-            pluginId = "plugin.one",
-            pluginName = "Plugin One",
-            commandId = "plugin.sayHello",
-            callbackName = "handleHello",
-            title = "Say hello"
-        ).getOrThrow()
-
-        val availability = PluginCommandRegistry.availability(
-            commandId = "plugin.sayHello",
-            pluginId = "plugin.one"
-        )
-
-        assertThat(availability.available).isFalse()
-        assertThat(availability.errorMessage).isEqualTo("Permission not granted")
-        verify(exactly = 0) {
-            runtime.reportPermissionDenied(any(), any(), any())
-        }
-    }
-
-    @Test
-    fun `dispatch should return false when runtime provider has no runtime`() {
-        PluginCommandRegistry.register(
-            pluginId = "plugin.one",
-            pluginName = "Plugin One",
-            commandId = "plugin.sayHello",
-            callbackName = "handleHello",
-            title = "Say hello"
-        ).getOrThrow()
-
-        val dispatched = PluginCommandRegistry.dispatch(
-            commandId = "plugin.sayHello",
-            invocation = HostCommandInvocation()
-        )
-
-        assertThat(dispatched).isFalse()
-    }
-
-    @Test
-    fun `unregisterAll should remove all commands from plugin`() {
-        PluginCommandRegistry.register(
-            pluginId = "plugin.one",
-            pluginName = "Plugin One",
-            commandId = "plugin.sayHello",
-            callbackName = "handleHello"
-        ).getOrThrow()
-        PluginCommandRegistry.register(
-            pluginId = "plugin.one",
-            pluginName = "Plugin One",
-            commandId = "plugin.sayBye",
-            callbackName = "handleBye"
-        ).getOrThrow()
 
         PluginCommandRegistry.unregisterAll("plugin.one")
 
-        assertThat(PluginCommandRegistry.isRegistered("plugin.sayHello")).isFalse()
-        assertThat(PluginCommandRegistry.isRegistered("plugin.sayBye")).isFalse()
-    }
-
-    @Test
-    fun `commands module should normalize command ids`() {
-        val module = CommandsApiModule()
-
-        assertThat(module.normalizeCommandId(" plugin.sayHello ")).isEqualTo("plugin.sayHello")
-        assertThat(module.normalizeCommandId(" ")).isNull()
-        assertThat(module.normalizeCommandId(null)).isNull()
-    }
-
-    @Test
-    fun `commands module should reject invocation target in sibling directory with shared prefix`() {
-        val projectRoot = Files.createTempDirectory("tina-command-root").toFile()
-        val siblingRoot = File(projectRoot.parentFile, "${projectRoot.name}-escape")
-        try {
-            val projectFile = File(projectRoot, "src/Main.kt").apply {
-                parentFile?.mkdirs()
-                writeText("fun main() = Unit")
-            }
-            val outsideFile = File(siblingRoot, "src/Main.kt").apply {
-                parentFile?.mkdirs()
-                writeText("fun outside() = Unit")
-            }
-            val module = CommandsApiModule { projectRoot.absolutePath }
-
-            assertThat(module.resolveInvocationFile(projectFile.absolutePath)?.canonicalFile)
-                .isEqualTo(projectFile.canonicalFile)
-            assertThat(module.resolveInvocationFile(outsideFile.absolutePath)).isNull()
-        } finally {
-            projectRoot.deleteRecursively()
-            siblingRoot.deleteRecursively()
-        }
+        assertThat(PluginCommandRegistry.isRegistered("plugin.hello")).isFalse()
+        assertThat(PluginCommandRegistry.isRegistered("plugin.bye")).isFalse()
     }
 
     private fun waitUntil(
@@ -493,9 +165,7 @@ class PluginCommandRegistryTest {
     ) {
         val deadline = System.currentTimeMillis() + timeoutMillis
         while (System.currentTimeMillis() < deadline) {
-            if (condition()) {
-                return
-            }
+            if (condition()) return
             Thread.sleep(10)
         }
         assertThat(condition()).isTrue()

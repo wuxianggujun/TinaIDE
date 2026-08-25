@@ -3,6 +3,7 @@ package com.wuxianggujun.tinaide.ui.compose.screens.settings.sections
 import androidx.annotation.StringRes
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.network.server.ServerConfigResponse
+import com.wuxianggujun.tinaide.core.network.server.TinaServerConfig
 
 internal data class DeveloperDiagnosticsControlsState(
     val buildDiagnosticsLogControlEnabled: Boolean,
@@ -28,6 +29,7 @@ internal enum class DeveloperOptionsAction {
 internal enum class DeveloperServerUrlFeedback {
     TestSuccess,
     TestFailure,
+    Invalid,
     RestoredDefault
 }
 
@@ -100,6 +102,8 @@ internal object DeveloperOptionsSectionSupport {
 
     fun normalizeServerUrlInput(input: String): String? = input.trim().ifBlank { null }?.trimEnd('/')
 
+    fun isServerUrlValid(url: String?): Boolean = url == null || TinaServerConfig.isAllowedServerUrl(url)
+
     fun resolveServerUrlSaveResult(
         persistedServerUrl: String,
         connectionOk: Boolean
@@ -126,6 +130,10 @@ internal object DeveloperOptionsSectionSupport {
 
         DeveloperServerUrlFeedback.TestFailure -> {
             DeveloperMessageSpec(Strings.toast_tina_server_test_failed)
+        }
+
+        DeveloperServerUrlFeedback.Invalid -> {
+            DeveloperMessageSpec(Strings.toast_tina_server_url_invalid)
         }
 
         DeveloperServerUrlFeedback.RestoredDefault -> {

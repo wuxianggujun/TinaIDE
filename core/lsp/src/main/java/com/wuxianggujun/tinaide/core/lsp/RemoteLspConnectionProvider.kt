@@ -77,6 +77,8 @@ interface ConnectionStateListener {
 class RemoteLspConnectionProvider(
     private val host: String,
     private val port: Int,
+    private val secureTransport: Boolean = true,
+    private val authenticationToken: String? = null,
     private val connectTimeoutMs: Long = 10_000L,
     private val autoReconnect: Boolean = true,
     private val maxReconnectAttempts: Int = 5
@@ -88,6 +90,8 @@ class RemoteLspConnectionProvider(
         private const val BASE_RECONNECT_DELAY_MS = 1000L // 基础重连延迟
         private const val MAX_RECONNECT_DELAY_MS = 30_000L // 最大重连延迟
         private const val OUTBOUND_RETRY_DELAY_MS = 50L
+        private const val MAX_LSP_MESSAGE_BYTES = 16 * 1024 * 1024
+        private const val MAX_LSP_HEADER_LINE_CHARS = 8 * 1024
     }
 
     // 协程作用域
@@ -179,12 +183,13 @@ class RemoteLspConnectionProvider(
 
     @Throws(IOException::class)
     override fun start() {
-        Timber.tag(TAG).i("Connecting to remote LSP server: ws://$host:$port")
+        Timber.tag(TAG).i("Connecting to remote LSP server: %s", getConnectionInfo())
 
         if (!prepareForManualConnection()) throw closedConnectionException()
 
         // 同步连接（start() 可能被 LSP 框架重复调用，必须幂等）
-        runBlocking {
+        // 强制 IO 调度器，避免在主线程 runBlocking 卡死 UI。
+        runBlocking(Dispatchers.IO) {
             startMutex.withLock {
                 throwIfClosed()
                 ensurePipes()
@@ -199,7 +204,7 @@ class RemoteLspConnectionProvider(
      * 异步启动连接
      */
     suspend fun startAsync(): Result<Unit> {
-        Timber.tag(TAG).i("Async connecting to remote LSP server: ws://$host:$port")
+        Timber.tag(TAG).i("Async connecting to remote LSP server: %s", getConnectionInfo())
 
         if (!prepareForManualConnection()) return Result.failure(closedConnectionException())
 
@@ -223,9 +228,13 @@ class RemoteLspConnectionProvider(
     }
 
     private suspend fun connectWithTimeout(): Result<Unit> {
+        if (authenticationToken.isNullOrBlank()) {
+            return Result.failure(IOException("Remote LSP authentication token is required"))
+        }
         val request = try {
             Request.Builder()
-                .url("ws://$host:$port")
+                .url(getConnectionInfo())
+                .header("Authorization", "Bearer $authenticationToken")
                 .build()
         } catch (error: IllegalArgumentException) {
             return Result.failure(
@@ -316,7 +325,7 @@ class RemoteLspConnectionProvider(
                         IOException(
                             AppStrings.get(
                                 Strings.editor_lsp_connection_failed,
-                                "ws://$host:$port"
+                                getConnectionInfo()
                             )
                         )
                     }
@@ -374,6 +383,13 @@ class RemoteLspConnectionProvider(
 
         override fun onMessage(webSocket: WebSocket, text: String) {
             if (!isCurrentConnection(generation)) return
+            if (text.length > MAX_LSP_MESSAGE_BYTES ||
+                text.toByteArray(Charsets.UTF_8).size > MAX_LSP_MESSAGE_BYTES
+            ) {
+                Timber.tag(TAG).w("Closing remote LSP WebSocket after oversized inbound message")
+                webSocket.close(1009, "Message too large")
+                return
+            }
 
             // 更新延迟（如果是 pong 响应）
             val pingTime = lastPingTime.get()
@@ -416,6 +432,11 @@ class RemoteLspConnectionProvider(
             try {
                 // LSP 消息需要添加 Content-Length 头（按 UTF-8 字节长度）
                 val contentBytes = rewritten.toByteArray(Charsets.UTF_8)
+                if (contentBytes.size > MAX_LSP_MESSAGE_BYTES) {
+                    Timber.tag(TAG).w("Closing remote LSP WebSocket after oversized rewritten message")
+                    webSocket.close(1009, "Message too large")
+                    return
+                }
                 val header = "Content-Length: ${contentBytes.size}\r\n\r\n"
                 synchronized(inputPipeOut) {
                     inputPipeOut.write(header.toByteArray(Charsets.UTF_8))
@@ -430,6 +451,11 @@ class RemoteLspConnectionProvider(
         }
 
         override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
+            if (bytes.size > MAX_LSP_MESSAGE_BYTES) {
+                Timber.tag(TAG).w("Closing remote LSP WebSocket after oversized binary message")
+                webSocket.close(1009, "Message too large")
+                return
+            }
             onMessage(webSocket, bytes.utf8())
         }
 
@@ -471,6 +497,7 @@ class RemoteLspConnectionProvider(
                 return@disconnectBlock
             }
             webSocket = null
+            failPendingRequests(IOException("Remote LSP connection was interrupted"))
             if (connected.getAndSet(false)) {
                 notifyEvent(ConnectionEvent.Disconnected)
                 if (closed.get() || stopping.get()) return@disconnectBlock
@@ -593,6 +620,9 @@ class RemoteLspConnectionProvider(
                 while (isActive && !closed.get()) {
                     val contentLength = readContentLength(outputPipeIn) ?: break
                     if (contentLength <= 0) continue
+                    if (contentLength > MAX_LSP_MESSAGE_BYTES) {
+                        throw IOException("LSP message exceeds the size limit")
+                    }
 
                     val bodyBytes = ByteArray(contentLength)
                     var totalRead = 0
@@ -605,6 +635,11 @@ class RemoteLspConnectionProvider(
                     var message = String(bodyBytes, Charsets.UTF_8)
                     captureInitializeRootUriIfNeeded(message)
                     message = uriMapper.rewriteClientToServer(message)
+                    if (message.length > MAX_LSP_MESSAGE_BYTES ||
+                        message.toByteArray(Charsets.UTF_8).size > MAX_LSP_MESSAGE_BYTES
+                    ) {
+                        throw IOException("Rewritten LSP message exceeds the size limit")
+                    }
                     while (isActive && !closed.get()) {
                         val socket = webSocket.takeIf { connected.get() }
                         if (socket != null && socket.send(message)) break
@@ -641,7 +676,12 @@ class RemoteLspConnectionProvider(
             val b = input.read()
             if (b == -1) return if (sb.isNotEmpty()) sb.toString() else null
             if (b == '\n'.code) break
-            if (b != '\r'.code) sb.append(b.toChar())
+            if (b != '\r'.code) {
+                if (sb.length >= MAX_LSP_HEADER_LINE_CHARS) {
+                    throw IOException("LSP header line exceeds the size limit")
+                }
+                sb.append(b.toChar())
+            }
         }
         return sb.toString()
     }
@@ -686,8 +726,7 @@ class RemoteLspConnectionProvider(
             closeStreams()
 
             val cancellation = CancellationException(closeError.message)
-            pendingRequests.values.forEach { request -> request.cancel(cancellation) }
-            pendingRequests.clear()
+            failPendingRequests(cancellation)
 
             connected.set(false)
             notifyStateChanged(ConnectionState.DISCONNECTED)
@@ -711,7 +750,13 @@ class RemoteLspConnectionProvider(
     /**
      * 获取连接信息
      */
-    fun getConnectionInfo(): String = "ws://$host:$port"
+    fun getConnectionInfo(): String {
+        return RemoteLspConfig(
+            host = host,
+            port = port,
+            secureTransport = secureTransport,
+        ).getWebSocketUrl()
+    }
 
     /**
      * 手动触发重连
@@ -744,6 +789,12 @@ class RemoteLspConnectionProvider(
     fun sendRawMessage(message: String): Boolean {
         if (closed.get() || !connected.get()) {
             Timber.tag(TAG).w("Cannot send message: not connected")
+            return false
+        }
+        if (message.length > MAX_LSP_MESSAGE_BYTES ||
+            message.toByteArray(Charsets.UTF_8).size > MAX_LSP_MESSAGE_BYTES
+        ) {
+            Timber.tag(TAG).w("Rejected oversized remote LSP message")
             return false
         }
         return webSocket?.send(message) ?: false
@@ -782,12 +833,24 @@ class RemoteLspConnectionProvider(
         val sent = sendRawMessage(request.toString())
         if (!sent) {
             pendingRequests.remove(id)
+            deferred.cancel()
             return null
         }
 
-        val response = withTimeoutOrNull(timeoutMs) { deferred.await() }
-        pendingRequests.remove(id)
-        return response
+        return try {
+            withTimeoutOrNull(timeoutMs) { deferred.await() }
+        } finally {
+            pendingRequests.remove(id)
+            if (!deferred.isCompleted) deferred.cancel()
+        }
+    }
+
+    private fun failPendingRequests(cause: Throwable) {
+        pendingRequests.forEach { (id, request) ->
+            if (pendingRequests.remove(id, request)) {
+                request.completeExceptionally(cause)
+            }
+        }
     }
 
     private fun isCurrentConnection(generation: Long): Boolean =
@@ -825,7 +888,10 @@ class RemoteLspConnectionProvider(
         }
 
         return try {
-            // 当前远端工具链（Python/Kotlin 代理）仅保证 tina/syncProject；为稳定性先禁用 chunked
+            ProjectSyncManager.validateSyncFiles(files)
+            if (ProjectSyncManager.shouldUseChunkedTransfer(files)) {
+                return syncProjectChunked(projectName, files, onProgress)
+            }
             val (message, _) = ProjectSyncManager.generateSyncMessage(projectName, files)
             val req = JSONObject(message)
             val params = req.optJSONObject("params") ?: JSONObject()
@@ -852,6 +918,8 @@ class RemoteLspConnectionProvider(
             ProjectSyncManager.markSynced(projectName, files)
             Timber.tag(TAG).i("Project sync completed: $projectName (${files.size} files)")
             true
+        } catch (error: CancellationException) {
+            throw error
         } catch (e: Exception) {
             Timber.tag(TAG).e(e, "Failed to sync project")
             false
@@ -868,7 +936,7 @@ class RemoteLspConnectionProvider(
     ): Boolean {
         val sessionId = ProjectSyncManager.generateSessionId()
         val chunks = ProjectSyncManager.splitIntoChunks(files)
-        val totalSize = files.sumOf { it.size }
+        val totalSize = ProjectSyncManager.validateSyncFiles(files)
 
         Timber.tag(TAG).i("Starting chunked sync: $projectName, ${files.size} files, ${chunks.size} chunks")
 
@@ -881,8 +949,14 @@ class RemoteLspConnectionProvider(
             totalChunks = chunks.size
         )
 
-        if (!sendRawMessage(startMessage)) {
-            Timber.tag(TAG).e("Failed to send sync start message")
+        val startRequest = JSONObject(startMessage)
+        val startResponse = sendJsonRpcRequest(
+            method = startRequest.getString("method"),
+            params = startRequest.getJSONObject("params"),
+            timeoutMs = 60_000L,
+        )
+        if (startResponse == null || startResponse.optJSONObject("error") != null) {
+            Timber.tag(TAG).e("Sync start request failed or was rejected")
             return false
         }
 
@@ -894,10 +968,20 @@ class RemoteLspConnectionProvider(
                 sessionId = sessionId
             )
 
-            if (!sendRawMessage(chunkMessage)) {
-                Timber.tag(TAG).e("Failed to send chunk ${index + 1}/${chunks.size}")
+            val chunkRequest = JSONObject(chunkMessage)
+            val chunkResponse = sendJsonRpcRequest(
+                method = chunkRequest.getString("method"),
+                params = chunkRequest.getJSONObject("params"),
+                timeoutMs = 60_000L,
+            )
+            if (chunkResponse == null || chunkResponse.optJSONObject("error") != null) {
+                Timber.tag(TAG).e("Chunk ${index + 1}/${chunks.size} failed or was rejected")
                 return false
             }
+            chunkResponse.optJSONObject("result")
+                ?.optString("workspaceRoot")
+                ?.takeIf { it.isNotBlank() }
+                ?.let(::setRemoteWorkspaceRootUri)
 
             // 更新进度
             onProgress?.invoke(index + 1, chunks.size)
@@ -905,10 +989,6 @@ class RemoteLspConnectionProvider(
 
             Timber.tag(TAG).d("Sent chunk ${index + 1}/${chunks.size} (${chunk.files.size} files)")
 
-            // 小延迟，避免消息堆积
-            if (index < chunks.size - 1) {
-                kotlinx.coroutines.delay(50)
-            }
         }
 
         ProjectSyncManager.markSynced(projectName, files)
@@ -925,12 +1005,23 @@ class RemoteLspConnectionProvider(
         content: String? = null,
         oldPath: String? = null
     ): Boolean {
+        if (!ProjectSyncManager.isSafeRelativeSyncPath(path) ||
+            (oldPath != null && !ProjectSyncManager.isSafeRelativeSyncPath(oldPath))
+        ) {
+            Timber.tag(TAG).w("Rejected unsafe remote file change path")
+            return false
+        }
         if (!connected.get()) {
             Timber.tag(TAG).w("Cannot send file changed: not connected")
             return false
         }
 
-        val message = ProjectSyncManager.generateFileChangedMessage(type, path, content, oldPath)
+        val message = try {
+            ProjectSyncManager.generateFileChangedMessage(type, path, content, oldPath)
+        } catch (error: IllegalArgumentException) {
+            Timber.tag(TAG).w(error, "Rejected invalid remote file change")
+            return false
+        }
         val success = sendRawMessage(message)
         if (success) {
             Timber.tag(TAG).d("File changed message sent: $type $path")

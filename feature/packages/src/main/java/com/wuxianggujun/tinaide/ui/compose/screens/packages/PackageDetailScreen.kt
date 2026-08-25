@@ -85,7 +85,11 @@ fun PackageDetailScreen(
                             try {
                                 context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(homepage)))
                             } catch (e: Exception) {
-                                Timber.tag(TAG).w(e, "Failed to open URL: %s", homepage)
+                                Timber.tag(TAG).w(
+                                    "Failed to open package homepage host=%s error=%s",
+                                    Uri.parse(homepage).host.orEmpty(),
+                                    e::class.java.simpleName,
+                                )
                                 Toast.makeText(
                                     context,
                                     Strings.toast_open_with_failed.strOr(context, homepage),

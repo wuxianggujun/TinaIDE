@@ -3,11 +3,22 @@ package com.wuxianggujun.tinaide.core.compile
 import com.google.common.truth.Truth.assertThat
 import com.wuxianggujun.tinaide.project.ProjectApkExportType
 import com.wuxianggujun.tinaide.project.ProjectMetadataStore
+import com.wuxianggujun.tinaide.project.ProjectSdlVersion
 import java.io.File
 import java.nio.file.Files
 import org.junit.Test
 
 class RunConfigurationManagerNormalizationTest {
+
+    @Test
+    fun `normalized clears stale SDL version outside SDL output mode`() {
+        val config = RunConfiguration(
+            outputMode = OutputMode.NATIVE_ACTIVITY,
+            sdlVersion = ProjectSdlVersion.SDL3,
+        )
+
+        assertThat(config.normalized().sdlVersion).isNull()
+    }
 
     @Test
     fun `load normalizes current schema values and selected id`() {
@@ -34,7 +45,7 @@ class RunConfigurationManagerNormalizationTest {
 
             val manager = RunConfigurationManager.load(projectRoot.absolutePath)
 
-            assertThat(manager.schemaVersion).isEqualTo(5)
+            assertThat(manager.schemaVersion).isEqualTo(8)
             assertThat(manager.selectedId).isEqualTo("cfg-current")
             assertThat(manager.selectedConfig.buildType).isEqualTo(BuildType.DEBUG)
             assertThat(manager.selectedConfig.singleFileCppStandard).isEqualTo("CPP_20")
@@ -42,7 +53,7 @@ class RunConfigurationManagerNormalizationTest {
             assertThat(manager.selectedConfig.customCppCompiler).isNull()
 
             val persisted = readRunConfig(projectRoot)
-            assertThat(persisted).contains("\"schemaVersion\": 5")
+            assertThat(persisted).contains("\"schemaVersion\": 8")
             assertThat(persisted).contains("\"selectedId\": \"cfg-current\"")
             assertThat(persisted).contains("\"singleFileCppStandard\": \"CPP_20\"")
             assertThat(persisted).contains("\"customCCompiler\": null")
@@ -139,6 +150,117 @@ class RunConfigurationManagerNormalizationTest {
     }
 
     @Test
+    fun `load migrates legacy global cmake build type into every run configuration`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            writeRunConfig(
+                projectRoot,
+                """
+                {
+                  "schemaVersion": 7,
+                  "configurations": [
+                    {
+                      "id": "cfg-debug",
+                      "name": "Debug"
+                    },
+                    {
+                      "id": "cfg-release",
+                      "name": "Release",
+                      "buildType": "RELEASE"
+                    }
+                  ],
+                  "selectedId": "cfg-release"
+                }
+                """.trimIndent()
+            )
+
+            val manager = RunConfigurationManager.load(
+                projectPath = projectRoot.absolutePath,
+                legacyCMakeBuildType = CMakeBuildTypeOption.REL_WITH_DEB_INFO,
+            )
+
+            assertThat(manager.configurations.map { it.cmakeBuildType })
+                .containsExactly(
+                    CMakeBuildTypeOption.REL_WITH_DEB_INFO,
+                    CMakeBuildTypeOption.REL_WITH_DEB_INFO,
+                )
+                .inOrder()
+            val persisted = readRunConfig(projectRoot)
+            assertThat(persisted).contains("\"schemaVersion\": 8")
+            assertThat(persisted).contains("\"cmakeBuildType\": \"REL_WITH_DEB_INFO\"")
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `load preserves explicit cmake build type override`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            writeRunConfig(
+                projectRoot,
+                """
+                {
+                  "schemaVersion": 8,
+                  "configurations": [
+                    {
+                      "id": "cfg-cmake-release",
+                      "name": "Release",
+                      "buildType": "RELEASE",
+                      "cmakeBuildType": "RELEASE"
+                    }
+                  ],
+                  "selectedId": "cfg-cmake-release"
+                }
+                """.trimIndent()
+            )
+
+            val manager = RunConfigurationManager.load(projectRoot.absolutePath)
+
+            assertThat(manager.selectedConfig.buildType).isEqualTo(BuildType.RELEASE)
+            assertThat(manager.selectedConfig.cmakeBuildType)
+                .isEqualTo(CMakeBuildTypeOption.RELEASE)
+            assertThat(readRunConfig(projectRoot)).contains("\"cmakeBuildType\": \"RELEASE\"")
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `load preserves SDL2 run configuration override`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            writeRunConfig(
+                projectRoot,
+                """
+                {
+                  "schemaVersion": 5,
+                  "configurations": [
+                    {
+                      "id": "cfg-sdl2",
+                      "name": "SDL2 Debug",
+                      "outputMode": "SDL",
+                      "sdlVersion": "SDL2"
+                    }
+                  ],
+                  "selectedId": "cfg-sdl2"
+                }
+                """.trimIndent()
+            )
+
+            val manager = RunConfigurationManager.load(projectRoot.absolutePath)
+
+            assertThat(manager.schemaVersion).isEqualTo(8)
+            assertThat(manager.selectedConfig.sdlVersion).isEqualTo(ProjectSdlVersion.SDL2)
+            val persisted = readRunConfig(projectRoot)
+            assertThat(persisted).contains("\"schemaVersion\": 8")
+            assertThat(persisted).contains("\"sdlVersion\": \"SDL2\"")
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `load defaults sdl3 project to sdl output when config file is missing`() {
         val projectRoot = createTempProjectRoot()
         try {
@@ -151,6 +273,97 @@ class RunConfigurationManagerNormalizationTest {
             val manager = RunConfigurationManager.load(projectRoot.absolutePath)
 
             assertThat(manager.selectedConfig.name).isEqualTo("Debug")
+            assertThat(manager.selectedConfig.outputMode).isEqualTo(OutputMode.SDL)
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `load defaults sdl2 project to sdl output when config file is missing`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            ProjectMetadataStore.ensure(
+                projectRoot = projectRoot,
+                displayNameFallback = projectRoot.name,
+                sdlVersion = ProjectSdlVersion.SDL2,
+            )
+
+            val manager = RunConfigurationManager.load(projectRoot.absolutePath)
+
+            assertThat(manager.selectedConfig.name).isEqualTo("Debug")
+            assertThat(manager.selectedConfig.outputMode).isEqualTo(OutputMode.SDL)
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `load migrates legacy raylib sdl mode to native activity`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            ProjectMetadataStore.ensure(
+                projectRoot = projectRoot,
+                displayNameFallback = projectRoot.name,
+                apkExportType = ProjectApkExportType.NATIVE_ACTIVITY,
+                defaultRunTargetName = "main",
+            )
+            writeRunConfig(
+                projectRoot,
+                """
+                {
+                  "schemaVersion": 6,
+                  "configurations": [
+                    {
+                      "id": "cfg-raylib",
+                      "name": "Raylib Debug",
+                      "outputMode": "SDL",
+                      "targetName": "main"
+                    }
+                  ],
+                  "selectedId": "cfg-raylib"
+                }
+                """.trimIndent()
+            )
+
+            val manager = RunConfigurationManager.load(projectRoot.absolutePath)
+
+            assertThat(manager.schemaVersion).isEqualTo(8)
+            assertThat(manager.selectedConfig.outputMode).isEqualTo(OutputMode.NATIVE_ACTIVITY)
+            assertThat(readRunConfig(projectRoot)).contains("\"outputMode\": \"NATIVE_ACTIVITY\"")
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `load keeps schema 7 native project sdl choice explicit`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            ProjectMetadataStore.ensure(
+                projectRoot = projectRoot,
+                displayNameFallback = projectRoot.name,
+                apkExportType = ProjectApkExportType.NATIVE_ACTIVITY,
+            )
+            writeRunConfig(
+                projectRoot,
+                """
+                {
+                  "schemaVersion": 7,
+                  "configurations": [
+                    {
+                      "id": "cfg-explicit-sdl",
+                      "name": "Explicit SDL",
+                      "outputMode": "SDL"
+                    }
+                  ],
+                  "selectedId": "cfg-explicit-sdl"
+                }
+                """.trimIndent()
+            )
+
+            val manager = RunConfigurationManager.load(projectRoot.absolutePath)
+
             assertThat(manager.selectedConfig.outputMode).isEqualTo(OutputMode.SDL)
         } finally {
             projectRoot.deleteRecursively()

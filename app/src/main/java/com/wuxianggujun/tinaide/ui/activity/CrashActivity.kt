@@ -8,7 +8,6 @@ import android.os.Build
 import android.os.Bundle
 import android.view.Window
 import android.widget.Toast
-import androidx.activity.ComponentActivity
 import androidx.activity.addCallback
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -65,6 +64,7 @@ import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.startup.ThemeInitializer
 import com.wuxianggujun.tinaide.storage.ExternalFileIntents
 import com.wuxianggujun.tinaide.ui.MainPortalActivity
+import com.wuxianggujun.tinaide.ui.TinaComponentActivity
 import com.wuxianggujun.tinaide.ui.compose.components.TinaOutlinedButton
 import com.wuxianggujun.tinaide.ui.compose.components.TinaPrimaryButton
 import com.wuxianggujun.tinaide.ui.theme.TinaIDETheme
@@ -79,7 +79,7 @@ import kotlinx.coroutines.launch
  * 崩溃信息展示页面（纯 Compose 实现）
  * 显示 xCrash 生成的完整崩溃日志，支持复制和重启。
  */
-class CrashActivity : ComponentActivity() {
+class CrashActivity : TinaComponentActivity() {
 
     private var crashReport: String = ""
     private var crashSource: String = SOURCE_APP

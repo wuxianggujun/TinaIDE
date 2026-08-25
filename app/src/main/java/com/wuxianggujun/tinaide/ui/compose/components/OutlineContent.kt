@@ -47,6 +47,7 @@ import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState
 import java.io.File
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveDocumentSymbolsTargetResult
 
 @Composable
 fun OutlineContent(
@@ -55,7 +56,7 @@ fun OutlineContent(
 ) {
     val documentSymbolsTarget = editorContainerState.getActiveDocumentSymbolsTargetResult()
     val documentSymbolsTabId =
-        (documentSymbolsTarget as? EditorContainerState.ActiveDocumentSymbolsTargetResult.Available)?.tabId
+        (documentSymbolsTarget as? ActiveDocumentSymbolsTargetResult.Available)?.tabId
     val isDocumentSymbolsAvailable = documentSymbolsTabId != null
 
     var query by remember { mutableStateOf("") }
@@ -65,15 +66,15 @@ fun OutlineContent(
     val collapsed = remember { mutableStateMapOf<String, Boolean>() }
 
     when (documentSymbolsTarget) {
-        EditorContainerState.ActiveDocumentSymbolsTargetResult.NoOpenFile -> {
+        ActiveDocumentSymbolsTargetResult.NoOpenFile -> {
             BoxFill(stringResource(Strings.empty_editor_title), modifier)
             return
         }
-        EditorContainerState.ActiveDocumentSymbolsTargetResult.Unavailable -> {
+        ActiveDocumentSymbolsTargetResult.Unavailable -> {
             BoxFill(stringResource(Strings.lsp_error_not_connected), modifier)
             return
         }
-        is EditorContainerState.ActiveDocumentSymbolsTargetResult.Available -> Unit
+        is ActiveDocumentSymbolsTargetResult.Available -> Unit
     }
 
     val foldingEnabled = query.trim().isBlank()

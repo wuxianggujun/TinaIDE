@@ -26,14 +26,18 @@ class LinuxDistroModelsTest {
 
     @Test
     fun checksum_shouldNormalizeValueAndRejectBlankInput() {
+        val uppercaseChecksum = "AB".repeat(32)
         val checksum = DistroChecksum(
             algorithm = DistroChecksumAlgorithm.SHA256,
-            value = "ABCDEF1234"
+            value = uppercaseChecksum
         )
 
-        assertThat(checksum.normalizedValue).isEqualTo("abcdef1234")
+        assertThat(checksum.normalizedValue).isEqualTo(uppercaseChecksum.lowercase())
         assertThrows(IllegalArgumentException::class.java) {
             DistroChecksum(DistroChecksumAlgorithm.SHA256, " ")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            DistroChecksum(DistroChecksumAlgorithm.SHA256, "ab".repeat(31))
         }
     }
 
@@ -43,8 +47,32 @@ class LinuxDistroModelsTest {
             artifact(url = "file:///tmp/rootfs.tar.gz")
         }
         assertThrows(IllegalArgumentException::class.java) {
+            artifact(url = "https:///rootfs.tar.gz")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            artifact(url = "https://user@example.com/rootfs.tar.gz")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
             artifact(sizeBytes = 0L)
         }
+    }
+
+    @Test
+    fun urlValidationErrors_shouldNotExposeOriginalUrl() {
+        val secret = "private-query-token"
+
+        val artifactError = assertThrows(IllegalArgumentException::class.java) {
+            artifact(url = "http://example.com/rootfs.tar.gz?token=$secret")
+        }
+        val mirrorError = assertThrows(IllegalArgumentException::class.java) {
+            DistroMirrorRule(
+                matchPrefix = "http://example.com/?token=$secret",
+                replaceWith = "https://mirror.example.com/",
+            )
+        }
+
+        assertThat(artifactError).hasMessageThat().doesNotContain(secret)
+        assertThat(mirrorError).hasMessageThat().doesNotContain(secret)
     }
 
     @Test
@@ -104,7 +132,7 @@ class LinuxDistroModelsTest {
         architecture = DistroArchitecture.AARCH64,
         url = url,
         format = DistroArchiveFormat.TAR_GZ,
-        checksum = DistroChecksum(DistroChecksumAlgorithm.SHA256, "abc123"),
+        checksum = DistroChecksum(DistroChecksumAlgorithm.SHA256, "ab".repeat(32)),
         sizeBytes = sizeBytes
     )
 }

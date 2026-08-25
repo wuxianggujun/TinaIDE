@@ -28,6 +28,13 @@ class FingerprintCalculatorTest {
     private val calc = FingerprintCalculator()
 
     @Test
+    fun `fingerprint schema invalidates artifacts built with the old runtime policy`() {
+        val fingerprint = calc.compute(newContext(options = defaultOptions()), sampleSpec())
+
+        assertThat(fingerprint.schemaVersion).isEqualTo(7)
+    }
+
+    @Test
     fun `identical options produce identical fingerprint`() {
         val ctx = newContext(options = defaultOptions())
         val spec = sampleSpec()

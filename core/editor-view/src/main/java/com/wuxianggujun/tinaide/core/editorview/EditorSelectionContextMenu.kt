@@ -1,17 +1,29 @@
 package com.wuxianggujun.tinaide.core.editorview
 
-import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ContentCut
+import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.SelectAll
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -19,18 +31,19 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
-import com.wuxianggujun.tinaide.core.editorview.R
 
 internal const val SELECTION_CONTEXT_MENU_TAG = "editor_selection_context_menu"
-internal const val SELECTION_CONTEXT_MENU_TEXT_GROUP_TAG = "editor_selection_context_menu_group_text"
-internal const val SELECTION_CONTEXT_MENU_CODE_GROUP_TAG = "editor_selection_context_menu_group_code"
+internal const val SELECTION_CONTEXT_MENU_MORE_ACTION_TAG = "editor_selection_context_menu_action_more"
+internal const val SELECTION_CONTEXT_MENU_MORE_MENU_TAG = "editor_selection_context_menu_more_menu"
 internal const val SELECTION_CONTEXT_MENU_COPY_ACTION_TAG = "editor_selection_context_menu_action_copy"
 internal const val SELECTION_CONTEXT_MENU_CUT_ACTION_TAG = "editor_selection_context_menu_action_cut"
 internal const val SELECTION_CONTEXT_MENU_PASTE_ACTION_TAG = "editor_selection_context_menu_action_paste"
@@ -47,6 +60,10 @@ internal const val SELECTION_CONTEXT_MENU_RENAME_SYMBOL_ACTION_TAG = "editor_sel
 internal const val SELECTION_CONTEXT_MENU_SWITCH_HEADER_SOURCE_ACTION_TAG =
     "editor_selection_context_menu_action_switch_header_source"
 internal const val SELECTION_CONTEXT_MENU_HOVER_ACTION_TAG = "editor_selection_context_menu_action_hover"
+
+private val selectionToolbarWidth = 200.dp
+private val selectionToolbarHeight = 56.dp
+private val selectionToolbarButtonSize = 48.dp
 
 @Composable
 internal fun EditorSelectionContextMenu(
@@ -81,10 +98,9 @@ internal fun EditorSelectionContextMenu(
 ) {
     if (!visible) return
 
-    var textMenuExpanded by remember { mutableStateOf(false) }
-    var codeMenuExpanded by remember { mutableStateOf(false) }
+    var moreMenuExpanded by remember { mutableStateOf(false) }
     val popupColors = rememberEditorPopupColors(colorScheme)
-    val hasCodeGroup = peekDefinitionEnabled ||
+    val hasCodeActions = peekDefinitionEnabled ||
         gotoDefinitionEnabled ||
         findReferencesEnabled ||
         gotoTypeDefinitionEnabled ||
@@ -95,10 +111,7 @@ internal fun EditorSelectionContextMenu(
 
     LaunchedEffect(keyboardSelectedAction) {
         when (keyboardSelectedAction) {
-            EditorContextMenuActionId.Copy,
-            EditorContextMenuActionId.Cut,
-            EditorContextMenuActionId.Paste,
-            EditorContextMenuActionId.SelectAll -> textMenuExpanded = true
+            EditorContextMenuActionId.SelectAll,
             EditorContextMenuActionId.PeekDefinition,
             EditorContextMenuActionId.GotoDefinition,
             EditorContextMenuActionId.FindReferences,
@@ -106,216 +119,323 @@ internal fun EditorSelectionContextMenu(
             EditorContextMenuActionId.GotoImplementation,
             EditorContextMenuActionId.CodeActions,
             EditorContextMenuActionId.RenameSymbol,
-            EditorContextMenuActionId.SwitchHeaderSource -> codeMenuExpanded = true
-            else -> Unit
+            EditorContextMenuActionId.SwitchHeaderSource,
+            EditorContextMenuActionId.Hover -> moreMenuExpanded = true
+
+            EditorContextMenuActionId.Copy,
+            EditorContextMenuActionId.Cut,
+            EditorContextMenuActionId.Paste -> moreMenuExpanded = false
+
+            null -> Unit
         }
     }
 
     Popup(
         popupPositionProvider = positionProvider,
         onDismissRequest = onDismiss,
-        // focusable=false 确保菜单弹出时不抢夺编辑器焦点，
-        // 避免：菜单弹出 → 编辑器失焦 → FocusCoordinator 关闭菜单 的循环。
-        // 同时避免用户点击 IME 切换按钮等区域时触发 onDismissRequest 关闭菜单。
         properties = PopupProperties(focusable = false)
     ) {
-        EditorPopupScaffold(
+        EditorPopupSurface(
             colors = popupColors,
             modifier = Modifier
                 .testTag(SELECTION_CONTEXT_MENU_TAG)
-                .width(176.dp),
-            contentModifier = Modifier
-                .fillMaxWidth()
-                .animateContentSize()
-                .padding(vertical = 2.dp)
+                .width(selectionToolbarWidth)
+                .height(selectionToolbarHeight)
         ) {
-            EditorContextMenuGroup(
-                title = stringResource(R.string.editor_context_menu_text_group),
-                tag = SELECTION_CONTEXT_MENU_TEXT_GROUP_TAG,
-                expanded = textMenuExpanded,
-                popupColors = popupColors,
-                onExpandedChange = { textMenuExpanded = !textMenuExpanded }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight()
+                    .padding(horizontal = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                EditorContextMenuAction(
+                EditorContextMenuIconAction(
                     title = stringResource(R.string.editor_context_menu_copy),
+                    icon = Icons.Default.ContentCopy,
                     tag = SELECTION_CONTEXT_MENU_COPY_ACTION_TAG,
                     keyboardSelected = keyboardSelectedAction == EditorContextMenuActionId.Copy,
                     enabled = selectedText != null,
                     popupColors = popupColors,
+                    modifier = Modifier.weight(1f),
                     onClick = onCopy
                 )
-                EditorContextMenuAction(
+                EditorContextMenuIconAction(
                     title = stringResource(R.string.editor_context_menu_cut),
+                    icon = Icons.Default.ContentCut,
                     tag = SELECTION_CONTEXT_MENU_CUT_ACTION_TAG,
                     keyboardSelected = keyboardSelectedAction == EditorContextMenuActionId.Cut,
                     enabled = selectedText != null,
                     popupColors = popupColors,
+                    modifier = Modifier.weight(1f),
                     onClick = onCut
                 )
-                EditorContextMenuAction(
+                EditorContextMenuIconAction(
                     title = stringResource(R.string.editor_context_menu_paste),
+                    icon = Icons.Default.ContentPaste,
                     tag = SELECTION_CONTEXT_MENU_PASTE_ACTION_TAG,
                     keyboardSelected = keyboardSelectedAction == EditorContextMenuActionId.Paste,
                     popupColors = popupColors,
+                    modifier = Modifier.weight(1f),
                     onClick = onPaste
                 )
-                EditorContextMenuAction(
-                    title = stringResource(R.string.editor_context_menu_select_all),
-                    tag = SELECTION_CONTEXT_MENU_SELECT_ALL_ACTION_TAG,
-                    keyboardSelected = keyboardSelectedAction == EditorContextMenuActionId.SelectAll,
+                EditorContextMenuMoreAction(
+                    expanded = moreMenuExpanded,
+                    keyboardSelectedAction = keyboardSelectedAction,
                     popupColors = popupColors,
-                    onClick = onSelectAll
+                    hasCodeActions = hasCodeActions,
+                    hoverEnabled = hoverEnabled,
+                    peekDefinitionEnabled = peekDefinitionEnabled,
+                    gotoDefinitionEnabled = gotoDefinitionEnabled,
+                    findReferencesEnabled = findReferencesEnabled,
+                    gotoTypeDefinitionEnabled = gotoTypeDefinitionEnabled,
+                    gotoImplementationEnabled = gotoImplementationEnabled,
+                    codeActionsEnabled = codeActionsEnabled,
+                    renameSymbolEnabled = renameSymbolEnabled,
+                    switchHeaderSourceEnabled = switchHeaderSourceEnabled,
+                    modifier = Modifier.weight(1f),
+                    onExpandedChange = { moreMenuExpanded = it },
+                    onSelectAll = onSelectAll,
+                    onPeekDefinition = onPeekDefinition,
+                    onGotoDefinition = onGotoDefinition,
+                    onFindReferences = onFindReferences,
+                    onGotoTypeDefinition = onGotoTypeDefinition,
+                    onGotoImplementation = onGotoImplementation,
+                    onCodeActions = onCodeActions,
+                    onRenameSymbol = onRenameSymbol,
+                    onSwitchHeaderSource = onSwitchHeaderSource,
+                    onHover = onHover
                 )
             }
-            if (hasCodeGroup) {
-                EditorPopupDivider(colors = popupColors)
-                EditorContextMenuGroup(
-                    title = stringResource(R.string.editor_context_menu_code_group),
-                    tag = SELECTION_CONTEXT_MENU_CODE_GROUP_TAG,
-                    expanded = codeMenuExpanded,
-                    popupColors = popupColors,
-                    onExpandedChange = { codeMenuExpanded = !codeMenuExpanded }
-                ) {
-                    if (peekDefinitionEnabled) {
-                        EditorContextMenuAction(
-                            title = stringResource(R.string.editor_context_menu_peek_definition),
-                            tag = SELECTION_CONTEXT_MENU_PEEK_DEFINITION_ACTION_TAG,
-                            keyboardSelected = keyboardSelectedAction == EditorContextMenuActionId.PeekDefinition,
-                            popupColors = popupColors,
-                            onClick = onPeekDefinition
-                        )
-                    }
-                    if (gotoDefinitionEnabled) {
-                        EditorContextMenuAction(
-                            title = stringResource(R.string.editor_context_menu_goto_definition),
-                            tag = SELECTION_CONTEXT_MENU_GOTO_DEFINITION_ACTION_TAG,
-                            keyboardSelected = keyboardSelectedAction == EditorContextMenuActionId.GotoDefinition,
-                            popupColors = popupColors,
-                            onClick = onGotoDefinition
-                        )
-                    }
-                    if (findReferencesEnabled) {
-                        EditorContextMenuAction(
-                            title = stringResource(R.string.editor_context_menu_find_references),
-                            tag = SELECTION_CONTEXT_MENU_FIND_REFERENCES_ACTION_TAG,
-                            keyboardSelected = keyboardSelectedAction == EditorContextMenuActionId.FindReferences,
-                            popupColors = popupColors,
-                            onClick = onFindReferences
-                        )
-                    }
-                    if (gotoTypeDefinitionEnabled) {
-                        EditorContextMenuAction(
-                            title = stringResource(R.string.editor_context_menu_goto_type_definition),
-                            tag = SELECTION_CONTEXT_MENU_GOTO_TYPE_DEFINITION_ACTION_TAG,
-                            keyboardSelected = keyboardSelectedAction == EditorContextMenuActionId.GotoTypeDefinition,
-                            popupColors = popupColors,
-                            onClick = onGotoTypeDefinition
-                        )
-                    }
-                    if (gotoImplementationEnabled) {
-                        EditorContextMenuAction(
-                            title = stringResource(R.string.editor_context_menu_goto_implementation),
-                            tag = SELECTION_CONTEXT_MENU_GOTO_IMPLEMENTATION_ACTION_TAG,
-                            keyboardSelected = keyboardSelectedAction == EditorContextMenuActionId.GotoImplementation,
-                            popupColors = popupColors,
-                            onClick = onGotoImplementation
-                        )
-                    }
-                    if (codeActionsEnabled) {
-                        EditorContextMenuAction(
-                            title = stringResource(R.string.editor_context_menu_code_actions),
-                            tag = SELECTION_CONTEXT_MENU_CODE_ACTIONS_ACTION_TAG,
-                            keyboardSelected = keyboardSelectedAction == EditorContextMenuActionId.CodeActions,
-                            popupColors = popupColors,
-                            onClick = onCodeActions
-                        )
-                    }
-                    if (renameSymbolEnabled) {
-                        EditorContextMenuAction(
-                            title = stringResource(R.string.editor_context_menu_rename_symbol),
-                            tag = SELECTION_CONTEXT_MENU_RENAME_SYMBOL_ACTION_TAG,
-                            keyboardSelected = keyboardSelectedAction == EditorContextMenuActionId.RenameSymbol,
-                            popupColors = popupColors,
-                            onClick = onRenameSymbol
-                        )
-                    }
-                    if (switchHeaderSourceEnabled) {
-                        EditorContextMenuAction(
-                            title = stringResource(R.string.editor_context_menu_switch_header_source),
-                            tag = SELECTION_CONTEXT_MENU_SWITCH_HEADER_SOURCE_ACTION_TAG,
-                            keyboardSelected = keyboardSelectedAction == EditorContextMenuActionId.SwitchHeaderSource,
-                            popupColors = popupColors,
-                            onClick = onSwitchHeaderSource
-                        )
-                    }
-                }
-            }
-            EditorPopupDivider(colors = popupColors)
-            EditorContextMenuAction(
-                title = stringResource(R.string.editor_context_menu_hover),
-                tag = SELECTION_CONTEXT_MENU_HOVER_ACTION_TAG,
-                keyboardSelected = keyboardSelectedAction == EditorContextMenuActionId.Hover,
-                enabled = hoverEnabled,
-                popupColors = popupColors,
-                onClick = onHover
-            )
         }
     }
 }
 
 @Composable
-private fun EditorContextMenuGroup(
+private fun EditorContextMenuIconAction(
     title: String,
+    icon: ImageVector,
     tag: String,
-    expanded: Boolean,
+    keyboardSelected: Boolean,
     popupColors: EditorPopupColors,
-    onExpandedChange: () -> Unit,
-    content: @Composable () -> Unit
-) {
-    EditorPopupActionButton(
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag(tag),
-        onClick = onExpandedChange,
-        colors = popupColors,
-        contentPadding = editorPopupCompactActionPadding
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(text = title)
-            Icon(
-                imageVector = if (expanded) Icons.Default.ExpandMore else Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                contentDescription = null,
-                tint = popupColors.secondaryTextColor
-            )
-        }
-    }
-    if (expanded) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 4.dp)
-        ) {
-            content()
-        }
-    }
-}
-
-@Composable
-private fun EditorContextMenuAction(
-    title: String,
-    tag: String,
-    popupColors: EditorPopupColors,
-    keyboardSelected: Boolean = false,
+    modifier: Modifier = Modifier,
     enabled: Boolean = true,
     onClick: () -> Unit
 ) {
-    EditorPopupActionButton(
+    Box(
+        modifier = modifier.fillMaxHeight(),
+        contentAlignment = Alignment.Center
+    ) {
+        IconButton(
+            modifier = Modifier
+                .size(selectionToolbarButtonSize)
+                .background(
+                    color = if (keyboardSelected && enabled) {
+                        popupColors.selectedSurfaceColor
+                    } else {
+                        popupColors.containerColor
+                    },
+                    shape = RoundedCornerShape(6.dp)
+                )
+                .testTag(tag),
+            enabled = enabled,
+            onClick = onClick
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = title,
+                tint = if (enabled) {
+                    popupColors.primaryTextColor
+                } else {
+                    popupColors.secondaryTextColor.copy(alpha = 0.45f)
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun EditorContextMenuMoreAction(
+    expanded: Boolean,
+    keyboardSelectedAction: EditorContextMenuActionId?,
+    popupColors: EditorPopupColors,
+    hasCodeActions: Boolean,
+    hoverEnabled: Boolean,
+    peekDefinitionEnabled: Boolean,
+    gotoDefinitionEnabled: Boolean,
+    findReferencesEnabled: Boolean,
+    gotoTypeDefinitionEnabled: Boolean,
+    gotoImplementationEnabled: Boolean,
+    codeActionsEnabled: Boolean,
+    renameSymbolEnabled: Boolean,
+    switchHeaderSourceEnabled: Boolean,
+    modifier: Modifier = Modifier,
+    onExpandedChange: (Boolean) -> Unit,
+    onSelectAll: () -> Unit,
+    onPeekDefinition: () -> Unit,
+    onGotoDefinition: () -> Unit,
+    onFindReferences: () -> Unit,
+    onGotoTypeDefinition: () -> Unit,
+    onGotoImplementation: () -> Unit,
+    onCodeActions: () -> Unit,
+    onRenameSymbol: () -> Unit,
+    onSwitchHeaderSource: () -> Unit,
+    onHover: () -> Unit
+) {
+    val moreTitle = stringResource(R.string.editor_context_menu_more)
+    val runOverflowAction: (() -> Unit) -> Unit = { action ->
+        onExpandedChange(false)
+        action()
+    }
+    Box(
+        modifier = modifier.fillMaxHeight(),
+        contentAlignment = Alignment.Center
+    ) {
+        IconButton(
+            modifier = Modifier
+                .size(selectionToolbarButtonSize)
+                .background(
+                    color = if (expanded) popupColors.selectedSurfaceColor else popupColors.containerColor,
+                    shape = RoundedCornerShape(6.dp)
+                )
+                .testTag(SELECTION_CONTEXT_MENU_MORE_ACTION_TAG),
+            onClick = { onExpandedChange(!expanded) }
+        ) {
+            Icon(
+                imageVector = Icons.Default.MoreVert,
+                contentDescription = moreTitle,
+                tint = popupColors.primaryTextColor
+            )
+        }
+
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { onExpandedChange(false) },
+            modifier = Modifier
+                .testTag(SELECTION_CONTEXT_MENU_MORE_MENU_TAG)
+                .widthIn(min = 196.dp, max = 280.dp)
+                .heightIn(max = 320.dp),
+            properties = PopupProperties(focusable = false),
+            shape = RoundedCornerShape(editorPopupCornerRadius),
+            containerColor = popupColors.containerColor,
+            tonalElevation = 0.dp,
+            shadowElevation = editorPopupElevation,
+            border = BorderStroke(editorPopupBorderWidth, popupColors.borderColor)
+        ) {
+            EditorContextMenuOverflowAction(
+                title = stringResource(R.string.editor_context_menu_select_all),
+                icon = Icons.Default.SelectAll,
+                tag = SELECTION_CONTEXT_MENU_SELECT_ALL_ACTION_TAG,
+                keyboardSelected = keyboardSelectedAction == EditorContextMenuActionId.SelectAll,
+                popupColors = popupColors,
+                onClick = { runOverflowAction(onSelectAll) }
+            )
+
+            if (hasCodeActions) {
+                EditorPopupDivider(colors = popupColors)
+            }
+            if (peekDefinitionEnabled) {
+                EditorContextMenuOverflowAction(
+                    title = stringResource(R.string.editor_context_menu_peek_definition),
+                    tag = SELECTION_CONTEXT_MENU_PEEK_DEFINITION_ACTION_TAG,
+                    keyboardSelected = keyboardSelectedAction == EditorContextMenuActionId.PeekDefinition,
+                    popupColors = popupColors,
+                    onClick = { runOverflowAction(onPeekDefinition) }
+                )
+            }
+            if (gotoDefinitionEnabled) {
+                EditorContextMenuOverflowAction(
+                    title = stringResource(R.string.editor_context_menu_goto_definition),
+                    tag = SELECTION_CONTEXT_MENU_GOTO_DEFINITION_ACTION_TAG,
+                    keyboardSelected = keyboardSelectedAction == EditorContextMenuActionId.GotoDefinition,
+                    popupColors = popupColors,
+                    onClick = { runOverflowAction(onGotoDefinition) }
+                )
+            }
+            if (findReferencesEnabled) {
+                EditorContextMenuOverflowAction(
+                    title = stringResource(R.string.editor_context_menu_find_references),
+                    tag = SELECTION_CONTEXT_MENU_FIND_REFERENCES_ACTION_TAG,
+                    keyboardSelected = keyboardSelectedAction == EditorContextMenuActionId.FindReferences,
+                    popupColors = popupColors,
+                    onClick = { runOverflowAction(onFindReferences) }
+                )
+            }
+            if (gotoTypeDefinitionEnabled) {
+                EditorContextMenuOverflowAction(
+                    title = stringResource(R.string.editor_context_menu_goto_type_definition),
+                    tag = SELECTION_CONTEXT_MENU_GOTO_TYPE_DEFINITION_ACTION_TAG,
+                    keyboardSelected = keyboardSelectedAction == EditorContextMenuActionId.GotoTypeDefinition,
+                    popupColors = popupColors,
+                    onClick = { runOverflowAction(onGotoTypeDefinition) }
+                )
+            }
+            if (gotoImplementationEnabled) {
+                EditorContextMenuOverflowAction(
+                    title = stringResource(R.string.editor_context_menu_goto_implementation),
+                    tag = SELECTION_CONTEXT_MENU_GOTO_IMPLEMENTATION_ACTION_TAG,
+                    keyboardSelected = keyboardSelectedAction == EditorContextMenuActionId.GotoImplementation,
+                    popupColors = popupColors,
+                    onClick = { runOverflowAction(onGotoImplementation) }
+                )
+            }
+            if (codeActionsEnabled) {
+                EditorContextMenuOverflowAction(
+                    title = stringResource(R.string.editor_context_menu_code_actions),
+                    tag = SELECTION_CONTEXT_MENU_CODE_ACTIONS_ACTION_TAG,
+                    keyboardSelected = keyboardSelectedAction == EditorContextMenuActionId.CodeActions,
+                    popupColors = popupColors,
+                    onClick = { runOverflowAction(onCodeActions) }
+                )
+            }
+            if (renameSymbolEnabled) {
+                EditorContextMenuOverflowAction(
+                    title = stringResource(R.string.editor_context_menu_rename_symbol),
+                    tag = SELECTION_CONTEXT_MENU_RENAME_SYMBOL_ACTION_TAG,
+                    keyboardSelected = keyboardSelectedAction == EditorContextMenuActionId.RenameSymbol,
+                    popupColors = popupColors,
+                    onClick = { runOverflowAction(onRenameSymbol) }
+                )
+            }
+            if (switchHeaderSourceEnabled) {
+                EditorContextMenuOverflowAction(
+                    title = stringResource(R.string.editor_context_menu_switch_header_source),
+                    tag = SELECTION_CONTEXT_MENU_SWITCH_HEADER_SOURCE_ACTION_TAG,
+                    keyboardSelected = keyboardSelectedAction == EditorContextMenuActionId.SwitchHeaderSource,
+                    popupColors = popupColors,
+                    onClick = { runOverflowAction(onSwitchHeaderSource) }
+                )
+            }
+
+            if (hoverEnabled) {
+                EditorPopupDivider(colors = popupColors)
+                EditorContextMenuOverflowAction(
+                    title = stringResource(R.string.editor_context_menu_hover),
+                    tag = SELECTION_CONTEXT_MENU_HOVER_ACTION_TAG,
+                    keyboardSelected = keyboardSelectedAction == EditorContextMenuActionId.Hover,
+                    popupColors = popupColors,
+                    onClick = { runOverflowAction(onHover) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun EditorContextMenuOverflowAction(
+    title: String,
+    tag: String,
+    keyboardSelected: Boolean,
+    popupColors: EditorPopupColors,
+    icon: ImageVector? = null,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
+    val disabledColor = popupColors.secondaryTextColor.copy(alpha = 0.45f)
+    DropdownMenuItem(
+        text = { Text(title) },
+        onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp)
             .background(
                 if (keyboardSelected && enabled) {
                     popupColors.selectedSurfaceColor
@@ -324,14 +444,24 @@ private fun EditorContextMenuAction(
                 }
             )
             .testTag(tag),
-        onClick = onClick,
         enabled = enabled,
-        colors = popupColors,
-        contentPadding = editorPopupCompactActionPadding
-    ) {
-        Text(
-            text = title,
-            modifier = Modifier.fillMaxWidth()
+        leadingIcon = if (icon != null) {
+            {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null
+                )
+            }
+        } else {
+            null
+        },
+        colors = MenuDefaults.itemColors(
+            textColor = popupColors.primaryTextColor,
+            leadingIconColor = popupColors.secondaryTextColor,
+            trailingIconColor = popupColors.secondaryTextColor,
+            disabledTextColor = disabledColor,
+            disabledLeadingIconColor = disabledColor,
+            disabledTrailingIconColor = disabledColor
         )
-    }
+    )
 }

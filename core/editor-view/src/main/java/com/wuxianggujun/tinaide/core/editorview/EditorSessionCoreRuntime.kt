@@ -179,13 +179,13 @@ private fun bindColumnXResolverEffect(
             val lineText = lineTextLookup.lineText(safeLine)
             val safeColumn = column.coerceIn(0, lineText.length)
             val prefixLayout = lineLayoutCache.getPrefixLayout(
+                state = state,
                 line = safeLine,
                 lineText = lineText,
                 textVersion = state.textBuffer.version,
                 paint = textPaint,
-                tabSize = state.config.tabSize
             )
-            prefixLayout.prefix[safeColumn]
+            prefixLayout.textStartAdvance(safeColumn)
         }
     }
     DisposableEffect(state, columnXResolver) {

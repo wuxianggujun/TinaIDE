@@ -7,9 +7,17 @@ import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import com.wuxianggujun.tinaide.core.common.io.TarExtractor
+import com.wuxianggujun.tinaide.core.common.io.ArchiveExtractionBudget
+import com.wuxianggujun.tinaide.core.common.io.ArchiveExtractionLimits
+import com.wuxianggujun.tinaide.core.common.io.ArchivePathSafety
+import com.wuxianggujun.tinaide.core.common.io.ZipArchiveValidator
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
+import com.wuxianggujun.tinaide.project.ProjectIdentity
+import com.wuxianggujun.tinaide.project.ProjectMetadata
+import com.wuxianggujun.tinaide.project.ProjectMetadataStore
 import java.io.File
+import java.nio.file.Files
 import java.util.UUID
 import java.util.zip.ZipFile
 import kotlinx.coroutines.Dispatchers
@@ -19,6 +27,17 @@ import timber.log.Timber
 object ProjectImporter {
 
     private const val TAG = "ProjectImporter"
+    private const val MEBIBYTE = 1024L * 1024L
+    private const val COPY_BUFFER_SIZE = 32 * 1024
+    private const val MAX_DIRECTORY_DEPTH = 64
+    private val archiveLimits = ArchiveExtractionLimits(
+        maxArchiveBytes = 256L * MEBIBYTE,
+        maxExpandedBytes = 1024L * MEBIBYTE,
+        maxEntryBytes = 256L * MEBIBYTE,
+        maxEntryCount = 50_000,
+        maxCompressionRatio = 500L,
+        maxPathDepth = MAX_DIRECTORY_DEPTH,
+    )
 
     private val tarSuffixes = listOf(
         ".tar.gz",
@@ -55,14 +74,20 @@ object ProjectImporter {
                 throw IllegalStateException(Strings.error_create_project_dir.strOr(context))
             }
 
-            val targetName = sanitizeProjectName(projectDir.name)
+            val targetName = ProjectImportNamePolicy.projectName(projectDir.name)
             val targetDir = File(projectsRoot, targetName)
             val sourcePath = runCatching { projectDir.canonicalPath }.getOrElse { projectDir.absolutePath }
             val targetPath = runCatching { targetDir.canonicalPath }.getOrElse { targetDir.absolutePath }
+            val projectsRootPath = projectsRoot.canonicalPath
 
             if (sourcePath == targetPath) {
-                projectLocationManager.registerProject(projectDir)
+                projectLocationManager.registerProjectAndAwait(projectDir)
                 return@runCatching projectDir
+            }
+            if (projectsRootPath == sourcePath ||
+                projectsRootPath.startsWith(sourcePath.trimEnd(File.separatorChar) + File.separator)
+            ) {
+                throw IllegalArgumentException(Strings.error_project_import_recursive_source.strOr(context))
             }
 
             if (targetDir.exists()) {
@@ -75,28 +100,126 @@ object ProjectImporter {
                 throw IllegalStateException(Strings.toast_import_failed.strOr(context))
             }
 
+            var publishedProjectDir: File? = null
+            var importedMetadata: ProjectMetadata? = null
             try {
-                val copied = projectDir.copyRecursively(
-                    target = copiedProjectDir,
-                    overwrite = false
-                ) { _, _ ->
-                    OnErrorAction.TERMINATE
-                }
-                if (!copied) {
-                    throw IllegalStateException(Strings.toast_import_failed.strOr(context))
-                }
+                copyDirectoryWithBudget(context, projectDir, copiedProjectDir)
 
                 if (!copiedProjectDir.renameTo(targetDir)) {
                     throw IllegalStateException(Strings.toast_import_failed.strOr(context))
                 }
+                publishedProjectDir = targetDir
+                importedMetadata = ensureUniqueImportedProjectIdentity(
+                    projectDir = targetDir,
+                    projectsRoot = projectsRoot,
+                    projectLocationManager = projectLocationManager,
+                )
 
-                projectLocationManager.registerProject(targetDir)
+                projectLocationManager.registerProjectAndAwait(targetDir)
                 targetDir
+            } catch (error: Throwable) {
+                publishedProjectDir?.let { published ->
+                    importedMetadata?.id?.let { projectId ->
+                        unregisterImportedProjectMapping(
+                            projectLocationManager = projectLocationManager,
+                            projectId = projectId,
+                            projectDir = published,
+                            error = error,
+                        )
+                    }
+                    if (published.exists() && !published.deleteRecursively()) {
+                        error.addSuppressed(IllegalStateException("Failed to roll back imported project"))
+                    }
+                }
+                throw error
             } finally {
                 if (stagingDir.exists()) {
                     stagingDir.deleteRecursively()
                 }
             }
+        }
+    }
+
+    private fun copyDirectoryWithBudget(context: Context, sourceRoot: File, targetRoot: File) {
+        if (Files.isSymbolicLink(sourceRoot.toPath())) {
+            throw IllegalArgumentException(Strings.error_project_import_symlink.strOr(context))
+        }
+        val canonicalSourceRoot = sourceRoot.canonicalFile
+        val canonicalTargetRoot = targetRoot.canonicalFile
+        if (!targetRoot.mkdirs()) {
+            throw IllegalStateException(Strings.toast_import_failed.strOr(context))
+        }
+
+        var entryCount = 0
+        var copiedBytes = 0L
+        val pendingDirectories = ArrayDeque<DirectoryCopyEntry>()
+        pendingDirectories.add(DirectoryCopyEntry(canonicalSourceRoot, canonicalTargetRoot, depth = 0))
+
+        while (pendingDirectories.isNotEmpty()) {
+            val current = pendingDirectories.removeLast()
+            val children = current.source.listFiles()
+                ?: throw IllegalStateException(Strings.toast_import_failed.strOr(context))
+            for (child in children) {
+                entryCount++
+                if (entryCount > archiveLimits.maxEntryCount) {
+                    throw IllegalArgumentException(Strings.error_project_import_too_large.strOr(context))
+                }
+                if (Files.isSymbolicLink(child.toPath())) {
+                    throw IllegalArgumentException(Strings.error_project_import_symlink.strOr(context))
+                }
+
+                val canonicalChild = child.canonicalFile
+                requireContainedPath(context, canonicalSourceRoot, canonicalChild)
+                val destination = File(current.target, child.name).canonicalFile
+                requireContainedPath(context, canonicalTargetRoot, destination)
+
+                when {
+                    canonicalChild.isDirectory -> {
+                        val childDepth = current.depth + 1
+                        if (childDepth > MAX_DIRECTORY_DEPTH) {
+                            throw IllegalArgumentException(Strings.error_project_import_too_large.strOr(context))
+                        }
+                        if (!destination.mkdir()) {
+                            throw IllegalStateException(Strings.toast_import_failed.strOr(context))
+                        }
+                        pendingDirectories.add(DirectoryCopyEntry(canonicalChild, destination, childDepth))
+                    }
+                    canonicalChild.isFile -> {
+                        val declaredSize = canonicalChild.length()
+                        if (declaredSize > archiveLimits.maxEntryBytes) {
+                            throw IllegalArgumentException(Strings.error_project_import_too_large.strOr(context))
+                        }
+                        canonicalChild.inputStream().use { input ->
+                            destination.outputStream().use { output ->
+                                val buffer = ByteArray(COPY_BUFFER_SIZE)
+                                var fileBytes = 0L
+                                while (true) {
+                                    val read = input.read(buffer)
+                                    if (read < 0) break
+                                    fileBytes += read.toLong()
+                                    copiedBytes += read.toLong()
+                                    if (fileBytes > archiveLimits.maxEntryBytes ||
+                                        copiedBytes > archiveLimits.maxExpandedBytes
+                                    ) {
+                                        throw IllegalArgumentException(
+                                            Strings.error_project_import_too_large.strOr(context)
+                                        )
+                                    }
+                                    output.write(buffer, 0, read)
+                                }
+                            }
+                        }
+                    }
+                    else -> throw IllegalArgumentException(Strings.error_project_import_symlink.strOr(context))
+                }
+            }
+        }
+    }
+
+    private fun requireContainedPath(context: Context, root: File, candidate: File) {
+        val rootPath = root.path.trimEnd(File.separatorChar)
+        require(candidate.path == rootPath || candidate.path.startsWith(rootPath + File.separator)) {
+            Strings.error_project_import_symlink.strOr(context)
         }
     }
 
@@ -123,6 +246,7 @@ object ProjectImporter {
             val tempArchive = copyArchiveToCache(context, uri, displayName)
             val stagingDir = File(projectsRoot, ".import-${UUID.randomUUID()}")
             var importedProjectDir: File? = null
+            var importedMetadata: ProjectMetadata? = null
 
             if (!stagingDir.mkdirs()) {
                 tempArchive.delete()
@@ -132,11 +256,30 @@ object ProjectImporter {
             try {
                 extractArchive(context, tempArchive, stagingDir, displayName)
                 importedProjectDir = finalizeImportedProject(context, stagingDir, projectsRoot, displayName)
-                projectLocationManager.registerProject(importedProjectDir)
+                importedMetadata = ensureUniqueImportedProjectIdentity(
+                    projectDir = importedProjectDir,
+                    projectsRoot = projectsRoot,
+                    projectLocationManager = projectLocationManager,
+                )
+                projectLocationManager.registerProjectAndAwait(importedProjectDir)
                 importedProjectDir
-            } catch (t: Throwable) {
-                importedProjectDir?.deleteRecursively()
-                throw t
+            } catch (error: Throwable) {
+                importedProjectDir?.let { projectDir ->
+                    importedMetadata?.id?.let { projectId ->
+                        unregisterImportedProjectMapping(
+                            projectLocationManager = projectLocationManager,
+                            projectId = projectId,
+                            projectDir = projectDir,
+                            error = error,
+                        )
+                    }
+                }
+                importedProjectDir?.let { projectDir ->
+                    if (projectDir.exists() && !projectDir.deleteRecursively()) {
+                        error.addSuppressed(IllegalStateException("Failed to roll back imported project"))
+                    }
+                }
+                throw error
             } finally {
                 runCatching { tempArchive.delete() }
                 if (stagingDir.exists()) {
@@ -150,14 +293,29 @@ object ProjectImporter {
         val cacheDir = File(context.cacheDir, "project-imports").apply { mkdirs() }
         val tempArchive = File(
             cacheDir,
-            "project-import-${System.currentTimeMillis()}-${sanitizeFileName(displayName)}"
+            "project-import-${UUID.randomUUID()}-${ProjectImportNamePolicy.cacheFileName(displayName)}"
         )
 
-        context.contentResolver.openInputStream(uri)?.use { input ->
-            tempArchive.outputStream().use { output ->
-                input.copyTo(output)
-            }
-        } ?: throw IllegalArgumentException(Strings.error_invalid_project_archive.strOr(context))
+        try {
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                tempArchive.outputStream().use { output ->
+                    val buffer = ByteArray(COPY_BUFFER_SIZE)
+                    var copiedBytes = 0L
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        copiedBytes += read.toLong()
+                        if (copiedBytes > archiveLimits.maxArchiveBytes) {
+                            throw IllegalArgumentException(Strings.error_project_import_too_large.strOr(context))
+                        }
+                        output.write(buffer, 0, read)
+                    }
+                }
+            } ?: throw IllegalArgumentException(Strings.error_invalid_project_archive.strOr(context))
+        } catch (error: Throwable) {
+            runCatching { tempArchive.delete() }.onFailure(error::addSuppressed)
+            throw error
+        }
 
         return tempArchive
     }
@@ -169,8 +327,13 @@ object ProjectImporter {
         displayName: String
     ) {
         when (detectArchiveKind(archiveFile, displayName)) {
-            ArchiveKind.ZIP -> extractZip(archiveFile, targetDir)
-            ArchiveKind.TAR -> TarExtractor.extract(archiveFile, targetDir)
+            ArchiveKind.ZIP -> extractZip(context, archiveFile, targetDir)
+            ArchiveKind.TAR -> TarExtractor.extract(
+                archiveFile,
+                targetDir,
+                symlinkPolicy = TarExtractor.SymlinkPolicy.REJECT_LINKS,
+                limits = archiveLimits,
+            )
             null -> throw IllegalArgumentException(Strings.error_invalid_project_archive.strOr(context))
         }
     }
@@ -192,7 +355,7 @@ object ProjectImporter {
         val sourceDir = topLevelEntries.singleOrNull()
             ?.takeIf { it.isDirectory }
             ?: stagingDir
-        val projectName = sanitizeProjectName(
+        val projectName = ProjectImportNamePolicy.projectName(
             if (sourceDir == stagingDir) stripArchiveSuffix(displayName) else sourceDir.name
         )
         val targetDir = File(projectsRoot, projectName)
@@ -212,22 +375,25 @@ object ProjectImporter {
         return targetDir
     }
 
-    private fun extractZip(archiveFile: File, targetDir: File) {
+    private fun extractZip(context: Context, archiveFile: File, targetDir: File) {
+        ZipArchiveValidator.validate(archiveFile, archiveLimits)
+        val budget = ArchiveExtractionBudget(archiveLimits, archiveFile.length())
         ZipFile(archiveFile).use { zip ->
             val entries = zip.entries()
             while (entries.hasMoreElements()) {
                 val entry = entries.nextElement()
-                val safeName = sanitizeArchivePath(entry.name)
-                if (safeName.isBlank()) continue
+                val safeName = ArchivePathSafety.sanitizeRelativePath(entry.name)
+                if (safeName.isBlank()) throw IllegalArgumentException("Invalid archive path: ${entry.name}")
+                budget.beginEntry(safeName, entry.size)
 
-                val entryFile = File(targetDir, safeName)
+                val entryFile = ArchivePathSafety.resolveEntryFile(targetDir, safeName, "project archive entry")
                 if (entry.isDirectory) {
-                    entryFile.mkdirs()
+                    ensureDirectory(context, entryFile)
                 } else {
-                    entryFile.parentFile?.mkdirs()
+                    entryFile.parentFile?.let { ensureDirectory(context, it) }
                     zip.getInputStream(entry).use { input ->
                         entryFile.outputStream().use { output ->
-                            input.copyTo(output)
+                            budget.copyEntry(input, output, safeName)
                         }
                     }
                 }
@@ -235,15 +401,52 @@ object ProjectImporter {
         }
     }
 
-    private fun sanitizeArchivePath(path: String): String {
-        var normalized = path.replace('\\', '/')
-        while (normalized.startsWith("./")) normalized = normalized.removePrefix("./")
-        while (normalized.startsWith("/")) normalized = normalized.removePrefix("/")
-
-        if (normalized == ".." || normalized.startsWith("../") || normalized.contains("/../")) {
-            throw IllegalArgumentException("Invalid archive path: $path")
+    private fun ensureDirectory(context: Context, directory: File) {
+        if ((!directory.exists() && !directory.mkdirs()) || !directory.isDirectory) {
+            throw IllegalStateException(Strings.toast_import_failed.strOr(context))
         }
-        return normalized
+    }
+
+    private fun ensureUniqueImportedProjectIdentity(
+        projectDir: File,
+        projectsRoot: File,
+        projectLocationManager: ProjectLocationManager,
+    ): ProjectMetadata {
+        val metadata = ProjectMetadataStore.ensure(projectDir, displayNameFallback = projectDir.name)
+        val projectPath = projectDir.canonicalOrAbsolutePath()
+        val registeredConflict = projectLocationManager.getProjectLocation(metadata.id)
+            ?.takeIf { it.sourceRootPath != projectPath }
+            ?.let { File(it.sourceRootPath).isDirectory }
+            ?: false
+        val managedConflict = projectsRoot.listFiles()
+            .orEmpty()
+            .asSequence()
+            .filter { it.isDirectory && it.canonicalOrAbsolutePath() != projectPath }
+            .mapNotNull(ProjectMetadataStore::read)
+            .any { it.id == metadata.id }
+        if (!registeredConflict && !managedConflict) return metadata
+
+        val reidentified = metadata.copy(id = ProjectIdentity.create())
+        check(ProjectMetadataStore.write(projectDir, reidentified)) {
+            "Failed to assign a unique imported project identity"
+        }
+        return reidentified
+    }
+
+    private suspend fun unregisterImportedProjectMapping(
+        projectLocationManager: ProjectLocationManager,
+        projectId: String,
+        projectDir: File,
+        error: Throwable,
+    ) {
+        val expectedPath = projectDir.canonicalOrAbsolutePath()
+        val mappedToImportedProject = projectLocationManager.getProjectLocation(projectId)
+            ?.sourceRootPath == expectedPath
+        if (!mappedToImportedProject) return
+
+        runCatching {
+            projectLocationManager.unregisterProjectAndAwait(projectId, deleteWorkspace = false)
+        }.onFailure(error::addSuppressed)
     }
 
     private fun detectArchiveKind(archiveFile: File, displayName: String): ArchiveKind? {
@@ -270,23 +473,6 @@ object ProjectImporter {
 
     private fun shouldIgnoreTopLevelEntry(file: File): Boolean = file.name == "__MACOSX" || file.name == ".DS_Store"
 
-    private fun sanitizeProjectName(rawName: String): String {
-        val normalized = rawName
-            .substringAfterLast('/')
-            .substringAfterLast('\\')
-            .trim()
-            .replace(Regex("[\\\\/:*?\"<>|]"), "_")
-            .trim('.')
-
-        return normalized.ifBlank { "imported_project" }
-    }
-
-    private fun sanitizeFileName(rawName: String): String = rawName
-        .substringAfterLast('/')
-        .substringAfterLast('\\')
-        .replace(Regex("[\\\\/:*?\"<>|]"), "_")
-        .ifBlank { "imported_project.zip" }
-
     private fun stripArchiveSuffix(fileName: String): String {
         val matchedSuffix = tarSuffixes
             .plus(".zip")
@@ -312,12 +498,22 @@ object ProjectImporter {
 
     private fun resolveDirectoryFromTreeUri(context: Context, uri: Uri): File? {
         val documentId = runCatching { DocumentsContract.getTreeDocumentId(uri) }
-            .onFailure { Timber.tag(TAG).w(it, "Failed to resolve tree document id: %s", uri) }
+            .onFailure { error ->
+                Timber.tag(TAG).w(
+                    "Failed to resolve tree document id: provider=%s, error=%s",
+                    uri.authority.orEmpty().ifBlank { "<unknown>" },
+                    error::class.java.simpleName,
+                )
+            }
             .getOrNull()
             ?: return null
 
         val resolved = resolveDocumentIdToFile(context, documentId)
-        Timber.tag(TAG).d("Resolved tree uri %s to %s", uri, resolved?.absolutePath)
+        Timber.tag(TAG).d(
+            "Tree document resolution completed: provider=%s, resolved=%s",
+            uri.authority.orEmpty().ifBlank { "<unknown>" },
+            resolved != null,
+        )
         return resolved
     }
 
@@ -362,8 +558,12 @@ object ProjectImporter {
     private fun takePersistablePermission(context: Context, uri: Uri, flags: Int) {
         runCatching {
             context.contentResolver.takePersistableUriPermission(uri, flags)
-        }.onFailure {
-            Timber.tag(TAG).d(it, "Persistable permission not granted for %s", uri)
+        }.onFailure { error ->
+            Timber.tag(TAG).d(
+                "Persistable permission not granted: provider=%s, error=%s",
+                uri.authority.orEmpty().ifBlank { "<unknown>" },
+                error::class.java.simpleName,
+            )
         }
     }
 
@@ -371,4 +571,12 @@ object ProjectImporter {
         ZIP,
         TAR
     }
+
+    private data class DirectoryCopyEntry(
+        val source: File,
+        val target: File,
+        val depth: Int,
+    )
+
+    private fun File.canonicalOrAbsolutePath(): String = runCatching { canonicalPath }.getOrElse { absolutePath }
 }

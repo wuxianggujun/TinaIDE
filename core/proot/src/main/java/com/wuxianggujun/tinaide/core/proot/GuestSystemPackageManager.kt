@@ -149,6 +149,7 @@ object GuestSystemPackageManager {
         force: Boolean = false,
     ): LinuxExecutionResult {
         require(packages.isNotEmpty()) { "packages must not be empty" }
+        require(packages.all(::isSafePackageArgument)) { "packages contain an unsafe package argument" }
         val spec = GuestPackageManagerSpecs.resolve(packageManager) ?: return unsupportedResult(packageManager)
         return linuxEnvironment.execute(
             command = spec.installCommand(packages, force),
@@ -165,6 +166,7 @@ object GuestSystemPackageManager {
         timeoutMs: Long,
     ): LinuxExecutionResult {
         require(packages.isNotEmpty()) { "packages must not be empty" }
+        require(packages.all(::isSafePackageArgument)) { "packages contain an unsafe package argument" }
         val spec = GuestPackageManagerSpecs.resolve(packageManager) ?: return unsupportedResult(packageManager)
         return linuxEnvironment.execute(
             command = spec.removeCommand(packages),
@@ -182,6 +184,7 @@ object GuestSystemPackageManager {
     ): Map<String, String?> {
         val requested = packages.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
         if (requested.isEmpty()) return emptyMap()
+        require(requested.all(::isSafePackageArgument)) { "packages contain an unsafe package argument" }
 
         val spec = GuestPackageManagerSpecs.resolve(packageManager)
             ?: return requested.associateWith { null }
@@ -301,6 +304,7 @@ object GuestSystemPackageManager {
     ): Boolean {
         val normalized = packageName.trim()
         if (normalized.isEmpty()) return false
+        if (!isSafePackageArgument(normalized)) return false
         val spec = GuestPackageManagerSpecs.resolve(packageManager) ?: return false
         val result = when (packageManager) {
             RootfsPackageManager.APK -> linuxEnvironment.execute(
@@ -392,4 +396,13 @@ object GuestSystemPackageManager {
     }
 
     private fun shellEscape(value: String): String = "'" + value.replace("'", "'\\''") + "'"
+
+    fun isSafePackageArgument(value: String): Boolean =
+        value == value.trim() &&
+            value.length in 1..MAX_PACKAGE_ARGUMENT_LENGTH &&
+            SYSTEM_PACKAGE_ARGUMENT.matches(value)
+
+    private const val MAX_PACKAGE_ARGUMENT_LENGTH = 256
+    private val SYSTEM_PACKAGE_ARGUMENT =
+        Regex("^[A-Za-z0-9][A-Za-z0-9+._:@~-]*(?:=[A-Za-z0-9][A-Za-z0-9+._:~*-]*)?$")
 }

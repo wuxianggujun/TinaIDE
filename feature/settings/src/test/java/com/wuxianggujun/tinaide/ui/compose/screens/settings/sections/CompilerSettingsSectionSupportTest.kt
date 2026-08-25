@@ -58,13 +58,6 @@ class CompilerSettingsSectionSupportTest {
         ).isNull()
 
         assertThat(
-            CompilerSettingsSectionSupport.resolveCmakeBuildTypeDisplayLabel("Debug")
-        ).isEqualTo(Strings.build_type_debug)
-        assertThat(
-            CompilerSettingsSectionSupport.resolveCmakeBuildTypeDisplayLabel("Custom")
-        ).isNull()
-
-        assertThat(
             CompilerSettingsSectionSupport.resolveCmakeGeneratorDisplayLabel("Unix Makefiles")
         ).isEqualTo(Strings.generator_make)
         assertThat(
@@ -81,15 +74,6 @@ class CompilerSettingsSectionSupportTest {
             CompilerSettingsOptionSpec("O1", Strings.opt_level_o1),
             CompilerSettingsOptionSpec("O2", Strings.opt_dialog_o2),
             CompilerSettingsOptionSpec("O3", Strings.opt_level_o3)
-        ).inOrder()
-
-        assertThat(
-            CompilerSettingsSectionSupport.buildCmakeBuildTypeOptions()
-        ).containsExactly(
-            CompilerSettingsOptionSpec("Debug", Strings.build_type_debug),
-            CompilerSettingsOptionSpec("Release", Strings.build_type_release),
-            CompilerSettingsOptionSpec("RelWithDebInfo", Strings.build_type_relwithdebinfo),
-            CompilerSettingsOptionSpec("MinSizeRel", Strings.build_type_minsizerel)
         ).inOrder()
 
         assertThat(

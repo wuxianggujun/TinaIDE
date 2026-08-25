@@ -46,6 +46,22 @@ enum class ProjectApkExportType {
 }
 
 /**
+ * 项目使用的 SDL 主版本。
+ *
+ * 该字段只描述 SDL 图形运行能力，不代表项目一定支持 APK 导出。
+ */
+@Serializable
+enum class ProjectSdlVersion(val major: Int) {
+    SDL2(2),
+    SDL3(3),
+    ;
+
+    companion object {
+        fun fromMajor(major: Int?): ProjectSdlVersion? = entries.firstOrNull { it.major == major }
+    }
+}
+
+/**
  * 项目元数据
  *
  * @property id 项目唯一标识符（UUID）
@@ -73,10 +89,10 @@ data class ProjectMetadata(
     /**
      * project.json schema 版本。
      *
-     * - 新写入始终使用 2
+     * - 新写入始终使用当前 schema
      * - 读取阶段由 ProjectMetadataStore 做当前 schema 的字段归一化
      */
-    val schemaVersion: Int = 3,
+    val schemaVersion: Int = 5,
     val id: String,
     val displayName: String,
     val createdAt: Long,
@@ -90,6 +106,8 @@ data class ProjectMetadata(
     val primaryLanguage: String? = null,
     /** 项目支持的 APK 导出类型，null 表示当前项目不支持导出 APK */
     val apkExportType: ProjectApkExportType? = null,
+    /** SDL 图形运行主版本；null 表示不是 SDL 项目或需要从产物自动检测 */
+    val sdlVersion: ProjectSdlVersion? = null,
     /** 最后打开此项目的 IDE 版本（如 "1.0.50"） */
     val lastOpenedIdeVersion: String? = null,
     /** 最后打开时间戳 */
@@ -151,6 +169,12 @@ data class ProjectMetadata(
     fun getApkExportTypeOrNull(): ProjectApkExportType? = apkExportType
 
     /**
+     * 获取项目 SDL 主版本，并兼容 schema 3 及更早版本的 SDL3 元数据。
+     */
+    fun getSdlVersionOrNull(): ProjectSdlVersion? = sdlVersion
+        ?: ProjectSdlVersion.SDL3.takeIf { apkExportType == ProjectApkExportType.SDL3 }
+
+    /**
      * 获取项目元数据中的原生 API Level（合法范围 21-35）。
      */
     fun getNativeApiLevelOrNull(): Int? = nativeApiLevel?.takeIf { it in 21..35 }
@@ -193,7 +217,8 @@ data class ProjectMetadata(
     /**
      * 获取项目级 CMake 参数（去空、去重）。
      */
-    fun normalizedNativeCMakeArgs(): List<String> = normalizeStringEntries(nativeCMakeArgs)
+    fun normalizedNativeCMakeArgs(): List<String> =
+        ProjectCMakeArgumentPolicy.sanitize(nativeCMakeArgs)
 
     fun normalizedDefaultRunTargetName(): String? = normalizeTargetName(defaultRunTargetName)
 

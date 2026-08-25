@@ -1,6 +1,8 @@
 package com.wuxianggujun.tinaide.core.linuxdistro
 
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.LinkOption
 
 class LinuxDistroManager(
     private val catalog: LinuxDistroCatalog,
@@ -33,27 +35,36 @@ class LinuxDistroManager(
         rootfsConfig: LinuxDistroRootfsConfig = LinuxDistroRootfsConfig(),
         progress: (LinuxDistroInstallProgress) -> Unit = {},
     ): LinuxDistroInstallResult {
-        val result = installer.install(
-            request = LinuxDistroInstallRequest(
-                distroId = distroId,
-                architecture = architecture,
-                layout = layout,
-                releaseId = releaseId,
-                reinstall = reinstall,
-                rootfsConfig = rootfsConfig,
-            ),
-            progress = progress,
+        val request = LinuxDistroInstallRequest(
+            distroId = distroId,
+            architecture = architecture,
+            layout = layout,
+            releaseId = releaseId,
+            reinstall = reinstall,
+            rootfsConfig = rootfsConfig,
         )
-        registry.upsert(result.installation)
-        return result
+        return withLinuxDistroMutationLock(layout.rootfsDir(distroId)) {
+            installer.installUnderMutationLock(request, progress).also { result ->
+                registry.upsert(result.installation)
+            }
+        }
     }
 
-    fun uninstall(distroId: String): Boolean {
+    suspend fun uninstall(distroId: String): Boolean {
         require(distroId.isSafeId()) { "Unsafe distro id: $distroId" }
         val rootfsDir = layout.rootfsDir(distroId)
-        val deletedRootfs = rootfsDir.exists() && rootfsDir.deleteRecursively()
-        val removedRegistry = registry.remove(distroId)
-        return deletedRootfs || removedRegistry
+        return withLinuxDistroMutationLock(rootfsDir) {
+            val rootfsPath = rootfsDir.toPath()
+            val rootfsExisted = Files.exists(rootfsPath, LinkOption.NOFOLLOW_LINKS)
+            check(!Files.isSymbolicLink(rootfsPath)) {
+                "Linux distro rootfs target must not be a symbolic link"
+            }
+            check(!rootfsExisted || rootfsDir.deleteRecursively()) {
+                "Failed to delete linux distro rootfs"
+            }
+            val removedRegistry = registry.remove(distroId)
+            rootfsExisted || removedRegistry
+        }
     }
 
     fun refreshInstalledFromDisk(): List<InstalledLinuxDistro> {

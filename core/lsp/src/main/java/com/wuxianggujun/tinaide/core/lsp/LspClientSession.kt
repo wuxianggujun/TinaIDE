@@ -2,7 +2,9 @@ package com.wuxianggujun.tinaide.core.lsp
 
 import android.os.Process
 import java.io.File
+import java.util.concurrent.CancellationException
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CompletionException
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
@@ -37,6 +39,8 @@ import org.eclipse.lsp4j.FoldingRangeRequestParams
 import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.HoverParams
 import org.eclipse.lsp4j.ImplementationParams
+import org.eclipse.lsp4j.InlayHint
+import org.eclipse.lsp4j.InlayHintParams
 import org.eclipse.lsp4j.InitializeParams
 import org.eclipse.lsp4j.InitializedParams
 import org.eclipse.lsp4j.Location
@@ -89,9 +93,18 @@ class LspClientSession(
     private val connectionProvider: LspConnectionProvider,
     documentUri: String,
     private val workspaceRootUri: String?,
-    private val diagnosticsConsumer: (fileUri: String, diagnostics: List<org.eclipse.lsp4j.Diagnostic>) -> Unit,
+    private val diagnosticsConsumer: (
+        fileUri: String,
+        publishedVersion: Int?,
+        currentDocumentUri: String,
+        documentVersion: Int,
+        documentGeneration: Long,
+        diagnostics: List<org.eclipse.lsp4j.Diagnostic>,
+        commitIfCurrent: (commit: () -> Unit) -> Boolean,
+    ) -> Unit,
     private val registrationConsumer: (registrations: List<Registration>) -> Unit = {},
     private val unregistrationConsumer: (unregistrations: List<Unregistration>) -> Unit = {},
+    private val protocolFailureConsumer: (Throwable) -> Unit = {},
     private val tag: String = "LspClientSession",
 ) : LspSession,
     AutoCloseable {
@@ -100,6 +113,7 @@ class LspClientSession(
         private const val INITIALIZE_TIMEOUT_SECONDS = 15L
         private const val SHUTDOWN_TIMEOUT_SECONDS = 5L
         private const val METHOD_PREPARE_CALL_HIERARCHY = "textDocument/prepareCallHierarchy"
+        private const val METHOD_INLAY_HINT = "textDocument/inlayHint"
     }
 
     private val lock = Any()
@@ -114,13 +128,30 @@ class LspClientSession(
     private var listenFuture: Future<*>? = null
     private var currentDocumentUri: String = documentUri
     private var version: Int = 0
+    private var documentGeneration: Long = 0L
     private var semanticTokenTypes: List<String> = emptyList()
     private var semanticTokenModifiers: List<String> = emptyList()
 
     @Volatile
     private var staticServerSupportsCallHierarchy: Boolean = false
+    @Volatile
+    private var staticServerSupportsInlayHints: Boolean = false
     private val capabilityLock = Any()
     private val dynamicCallHierarchyRegistrationIds = mutableSetOf<String>()
+    private val dynamicInlayHintRegistrationIds = mutableSetOf<String>()
+
+    private data class DiagnosticsSnapshot(
+        val currentDocumentUri: String,
+        val documentVersion: Int,
+        val documentGeneration: Long,
+        val publishedUri: String?,
+        val publishedVersion: Int?,
+    )
+
+    data class DocumentSnapshot(
+        val version: Int,
+        val generation: Long,
+    )
 
     override val documentUri: String
         get() = synchronized(lock) { currentDocumentUri }
@@ -129,6 +160,12 @@ class LspClientSession(
         get() = staticServerSupportsCallHierarchy ||
             synchronized(capabilityLock) {
                 dynamicCallHierarchyRegistrationIds.isNotEmpty()
+            }
+
+    val supportsInlayHints: Boolean
+        get() = staticServerSupportsInlayHints ||
+            synchronized(capabilityLock) {
+                dynamicInlayHintRegistrationIds.isNotEmpty()
             }
 
     @Volatile
@@ -155,7 +192,29 @@ class LspClientSession(
                 connectionProvider.start()
                 Timber.tag(tag).i("connect: connectionProvider started, creating launcher...")
                 val client = SessionLanguageClient(
-                    diagnosticsConsumer = diagnosticsConsumer,
+                    diagnosticsConsumer = { uri, publishedVersion, diagnostics ->
+                        val snapshot = captureDiagnosticsSnapshot(uri, publishedVersion)
+                        if (snapshot != null) {
+                            diagnosticsConsumer(
+                                uri,
+                                publishedVersion,
+                                snapshot.currentDocumentUri,
+                                snapshot.documentVersion,
+                                snapshot.documentGeneration,
+                                diagnostics,
+                            ) { commit ->
+                                commitIfDiagnosticsSnapshotCurrent(snapshot, commit)
+                            }
+                        } else {
+                            Timber.tag(tag).d(
+                                "Ignoring stale publishDiagnostics uri=%s version=%s currentUri=%s currentVersion=%s",
+                                uri,
+                                publishedVersion,
+                                this.documentUri,
+                                currentProtocolVersion(),
+                            )
+                        }
+                    },
                     onRegisterCapability = { registrations ->
                         registerDynamicServerCapabilities(registrations)
                         registrationConsumer(registrations)
@@ -177,7 +236,7 @@ class LspClientSession(
                 launcher = createdLauncher
                 languageServer = server
                 remoteEndpoint = createdLauncher.remoteEndpoint
-                listenFuture = createdLauncher.startListening()
+                listenFuture = createdLauncher.startListening().also(::monitorProtocolListener)
                 Timber.tag(tag).i("connect: launcher listening, sending initialize request...")
 
                 val initializeParams = InitializeParams().apply {
@@ -196,8 +255,10 @@ class LspClientSession(
                 }
 
                 staticServerSupportsCallHierarchy = false
+                staticServerSupportsInlayHints = false
                 synchronized(capabilityLock) {
                     dynamicCallHierarchyRegistrationIds.clear()
+                    dynamicInlayHintRegistrationIds.clear()
                 }
 
                 val initializeResult = server.initialize(initializeParams)
@@ -208,6 +269,7 @@ class LspClientSession(
                 )
                 val serverCapabilities = initializeResult.capabilities
                 staticServerSupportsCallHierarchy = serverCapabilities.supportsCallHierarchyProvider()
+                staticServerSupportsInlayHints = serverCapabilities.supportsInlayHintProvider()
 
                 server.initialized(InitializedParams())
 
@@ -242,6 +304,32 @@ class LspClientSession(
         initialText = initialText,
         initializationOptions = initializationOptions
     )
+
+    /**
+     * Atomically validates an external attachment and activates its document.
+     * The callback must invoke its activation lambda only while that attachment is current.
+     */
+    fun activateDocumentIfCurrent(
+        documentUri: String,
+        languageId: String,
+        initialText: String,
+        commitIfCurrent: (activate: () -> Unit) -> Boolean,
+    ): Result<Unit> {
+        if (closed.get()) return Result.failure(IllegalStateException("Session already closed"))
+
+        return runCatching {
+            synchronized(lock) {
+                check(isConnected) { "Session is not connected" }
+                require(documentUri.isNotBlank()) { "documentUri must not be blank" }
+                val committed = commitIfCurrent {
+                    activateDocumentLocked(documentUri, languageId, initialText)
+                }
+                if (!committed) {
+                    throw CancellationException("LSP attachment is no longer current")
+                }
+            }
+        }
+    }
 
     fun didChange(
         startLine: Int,
@@ -314,13 +402,65 @@ class LspClientSession(
     }
 
     fun isCurrentDocument(documentUri: String): Boolean = synchronized(lock) {
-        isConnected && currentDocumentUri == documentUri
+        isConnected && lspDocumentUrisEquivalent(currentDocumentUri, documentUri)
     }
 
     fun currentDocumentVersion(documentUri: String? = null): Int? = synchronized(lock) {
         if (!isConnected || version <= 0) return@synchronized null
-        if (documentUri != null && currentDocumentUri != documentUri) return@synchronized null
+        if (documentUri != null && !lspDocumentUrisEquivalent(currentDocumentUri, documentUri)) {
+            return@synchronized null
+        }
         version
+    }
+
+    fun currentDocumentSnapshot(documentUri: String? = null): DocumentSnapshot? = synchronized(lock) {
+        if (!isConnected || version <= 0) return@synchronized null
+        if (documentUri != null && !lspDocumentUrisEquivalent(currentDocumentUri, documentUri)) {
+            return@synchronized null
+        }
+        DocumentSnapshot(version = version, generation = documentGeneration)
+    }
+
+    private fun currentProtocolVersion(): Int = synchronized(lock) { version }
+
+    private fun captureDiagnosticsSnapshot(
+        publishedUri: String?,
+        publishedVersion: Int?,
+    ): DiagnosticsSnapshot? = synchronized(lock) {
+        if (!acceptsDiagnosticsVersion(
+                currentDocumentUri = currentDocumentUri,
+                currentDocumentVersion = version,
+                publishedUri = publishedUri,
+                publishedVersion = publishedVersion,
+            )
+        ) {
+            return@synchronized null
+        }
+        DiagnosticsSnapshot(
+            currentDocumentUri = currentDocumentUri,
+            documentVersion = version,
+            documentGeneration = documentGeneration,
+            publishedUri = publishedUri,
+            publishedVersion = publishedVersion,
+        )
+    }
+
+    private fun commitIfDiagnosticsSnapshotCurrent(
+        snapshot: DiagnosticsSnapshot,
+        commit: () -> Unit,
+    ): Boolean = synchronized(lock) {
+        val isCurrent = isConnected &&
+            version == snapshot.documentVersion &&
+            documentGeneration == snapshot.documentGeneration &&
+            lspDocumentUrisEquivalent(currentDocumentUri, snapshot.currentDocumentUri) &&
+            acceptsDiagnosticsVersion(
+                currentDocumentUri = currentDocumentUri,
+                currentDocumentVersion = version,
+                publishedUri = snapshot.publishedUri,
+                publishedVersion = snapshot.publishedVersion,
+            )
+        if (isCurrent) commit()
+        isCurrent
     }
 
     fun didChangeWatchedFiles(changes: List<FileEvent>) {
@@ -351,6 +491,12 @@ class LspClientSession(
         val server = synchronized(lock) { languageServer } ?: return null
         if (!isConnected) return null
         return server.textDocumentService.semanticTokensRange(params)
+    }
+
+    fun inlayHint(params: InlayHintParams): CompletableFuture<List<InlayHint>>? {
+        val server = synchronized(lock) { languageServer } ?: return null
+        if (!isConnected || !supportsInlayHints) return null
+        return server.textDocumentService.inlayHint(params)
     }
 
     fun semanticTokenLegendTypes(): List<String> = synchronized(lock) {
@@ -410,24 +556,32 @@ class LspClientSession(
     }
 
     private fun registerDynamicServerCapabilities(registrations: List<Registration>) {
-        val ids = registrations
+        val callHierarchyIds = registrations
             .filter { it.method == METHOD_PREPARE_CALL_HIERARCHY }
             .map { it.id }
-        if (ids.isEmpty()) return
+        val inlayHintIds = registrations
+            .filter { it.method == METHOD_INLAY_HINT }
+            .map { it.id }
+        if (callHierarchyIds.isEmpty() && inlayHintIds.isEmpty()) return
 
         synchronized(capabilityLock) {
-            dynamicCallHierarchyRegistrationIds.addAll(ids)
+            dynamicCallHierarchyRegistrationIds.addAll(callHierarchyIds)
+            dynamicInlayHintRegistrationIds.addAll(inlayHintIds)
         }
     }
 
     private fun unregisterDynamicServerCapabilities(unregistrations: List<Unregistration>) {
-        val ids = unregistrations
+        val callHierarchyIds = unregistrations
             .filter { it.method == METHOD_PREPARE_CALL_HIERARCHY }
             .map { it.id }
-        if (ids.isEmpty()) return
+        val inlayHintIds = unregistrations
+            .filter { it.method == METHOD_INLAY_HINT }
+            .map { it.id }
+        if (callHierarchyIds.isEmpty() && inlayHintIds.isEmpty()) return
 
         synchronized(capabilityLock) {
-            dynamicCallHierarchyRegistrationIds.removeAll(ids.toSet())
+            dynamicCallHierarchyRegistrationIds.removeAll(callHierarchyIds.toSet())
+            dynamicInlayHintRegistrationIds.removeAll(inlayHintIds.toSet())
         }
     }
 
@@ -512,12 +666,34 @@ class LspClientSession(
         semanticTokenTypes = emptyList()
         semanticTokenModifiers = emptyList()
         staticServerSupportsCallHierarchy = false
+        staticServerSupportsInlayHints = false
         synchronized(capabilityLock) {
             dynamicCallHierarchyRegistrationIds.clear()
+            dynamicInlayHintRegistrationIds.clear()
         }
 
         runCatching { connectionProvider.close() }
         executor.shutdownNow()
+    }
+
+    private fun org.eclipse.lsp4j.ServerCapabilities?.supportsInlayHintProvider(): Boolean {
+        val provider = this?.inlayHintProvider ?: return false
+        return when {
+            provider.isLeft -> provider.left == true
+            provider.isRight -> provider.right != null
+            else -> false
+        }
+    }
+
+    private fun monitorProtocolListener(future: Future<*>) {
+        (future as? CompletableFuture<*>)?.whenComplete { _, error ->
+            if (error == null || closed.get()) return@whenComplete
+            val cause = (error as? CompletionException)?.cause ?: error
+            runCatching { protocolFailureConsumer(cause) }
+                .onFailure { callbackError ->
+                    Timber.tag(tag).w(callbackError, "LSP protocol failure callback failed")
+                }
+        }
     }
 
     private fun activateDocumentLocked(
@@ -526,8 +702,8 @@ class LspClientSession(
         text: String,
     ) {
         val server = languageServer ?: return
-        if (currentDocumentUri == documentUri) {
-            sendDidChangeFullLocked(server, documentUri, text)
+        if (lspDocumentUrisEquivalent(currentDocumentUri, documentUri)) {
+            sendDidChangeFullLocked(server, currentDocumentUri, text)
             return
         }
         closeCurrentDocumentLocked(server)
@@ -542,6 +718,8 @@ class LspClientSession(
     ) {
         currentDocumentUri = documentUri
         version = 1
+        // didOpen resets the protocol version, so generation prevents A -> B -> A ABA matches.
+        documentGeneration++
         server.textDocumentService.didOpen(
             DidOpenTextDocumentParams(
                 TextDocumentItem(documentUri, languageId, version, text)
@@ -568,7 +746,7 @@ class LspClientSession(
         expectedDocumentUri: String? = null,
     ) {
         val current = currentDocumentUri.takeIf { it.isNotBlank() } ?: return
-        if (expectedDocumentUri != null && current != expectedDocumentUri) return
+        if (expectedDocumentUri != null && !lspDocumentUrisEquivalent(current, expectedDocumentUri)) return
         server.textDocumentService.didClose(
             DidCloseTextDocumentParams(TextDocumentIdentifier(current))
         )
@@ -720,6 +898,9 @@ class LspClientSession(
                 overlappingTokenSupport = true
                 multilineTokenSupport = true
             }
+            inlayHint = org.eclipse.lsp4j.InlayHintCapabilities().apply {
+                dynamicRegistration = true
+            }
         }
 
         return ClientCapabilities().apply {
@@ -729,14 +910,14 @@ class LspClientSession(
     }
 
     private class SessionLanguageClient(
-        private val diagnosticsConsumer: (fileUri: String, diagnostics: List<org.eclipse.lsp4j.Diagnostic>) -> Unit,
+        private val diagnosticsConsumer: (fileUri: String, version: Int?, diagnostics: List<org.eclipse.lsp4j.Diagnostic>) -> Unit,
         private val onRegisterCapability: (registrations: List<Registration>) -> Unit,
         private val onUnregisterCapability: (unregistrations: List<Unregistration>) -> Unit,
     ) : LanguageClient {
         override fun telemetryEvent(`object`: Any?) = Unit
 
         override fun publishDiagnostics(diagnostics: PublishDiagnosticsParams) {
-            diagnosticsConsumer(diagnostics.uri, diagnostics.diagnostics.orEmpty())
+            diagnosticsConsumer(diagnostics.uri, diagnostics.version, diagnostics.diagnostics.orEmpty())
         }
 
         override fun showMessage(messageParams: MessageParams) = Unit
@@ -755,4 +936,21 @@ class LspClientSession(
             return CompletableFuture.completedFuture(null)
         }
     }
+}
+
+/**
+ * Versioned diagnostics are valid only for the document snapshot that is currently open.
+ * Servers that do not provide a version remain compatible with the LSP optional field.
+ */
+internal fun acceptsDiagnosticsVersion(
+    currentDocumentUri: String,
+    currentDocumentVersion: Int,
+    publishedUri: String?,
+    publishedVersion: Int?,
+): Boolean {
+    if (publishedUri == null || !lspDocumentUrisEquivalent(publishedUri, currentDocumentUri)) {
+        return false
+    }
+    return publishedVersion == null ||
+        (currentDocumentVersion > 0 && publishedVersion == currentDocumentVersion)
 }

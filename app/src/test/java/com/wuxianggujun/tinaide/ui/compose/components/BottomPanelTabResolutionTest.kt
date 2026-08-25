@@ -39,24 +39,23 @@ class BottomPanelTabResolutionTest {
     }
 
     @Test
-    fun `resolveNormalModeBottomTabs removes performance when gate is closed`() {
+    fun `resolveNormalModeBottomTabs keeps primary tabs and optional performance`() {
         val visibleTabs = resolveNormalModeBottomTabs(showEditorPerformanceTab = true)
         val hiddenTabs = resolveNormalModeBottomTabs(showEditorPerformanceTab = false)
 
         assertThat(visibleTabs).contains(BottomPanelTab.PERFORMANCE)
         assertThat(hiddenTabs).doesNotContain(BottomPanelTab.PERFORMANCE)
+        // 默认仅展示有稳定生产数据的问题/构建；无 writer 的运行输出隐藏，导航工具走 overflow。
         assertThat(hiddenTabs).containsExactly(
-            BottomPanelTab.BUILD_LOG,
             BottomPanelTab.DIAGNOSTICS,
-            BottomPanelTab.OUTLINE,
-            BottomPanelTab.SYMBOLS,
-            BottomPanelTab.BOOKMARKS,
-            BottomPanelTab.GIT
+            BottomPanelTab.BUILD_LOG,
         ).inOrder()
+        assertThat(hiddenTabs).doesNotContain(BottomPanelTab.GIT)
+        assertThat(hiddenTabs).doesNotContain(BottomPanelTab.SYMBOLS)
     }
 
     @Test
-    fun `resolveSelectedBottomPanelTab falls back to build log when selected tab becomes unavailable`() {
+    fun `resolveSelectedBottomPanelTab falls back to diagnostics when selected tab becomes unavailable`() {
         val hiddenTabs = resolveNormalModeBottomTabs(showEditorPerformanceTab = false)
 
         assertThat(
@@ -64,12 +63,12 @@ class BottomPanelTabResolutionTest {
                 selectedBottomTab = BottomPanelTab.PERFORMANCE,
                 normalModeTabs = hiddenTabs
             )
-        ).isEqualTo(BottomPanelTab.BUILD_LOG)
+        ).isEqualTo(BottomPanelTab.DIAGNOSTICS)
     }
 
     @Test
-    fun `resolveSelectedBottomPanelTab keeps selected tab when it remains visible`() {
-        val visibleTabs = resolveNormalModeBottomTabs(showEditorPerformanceTab = true)
+    fun `resolveSelectedBottomPanelTab keeps secondary tab when opened by command`() {
+        val visibleTabs = resolveNormalModeBottomTabs(showEditorPerformanceTab = false)
 
         assertThat(
             resolveSelectedBottomPanelTab(
@@ -77,6 +76,52 @@ class BottomPanelTabResolutionTest {
                 normalModeTabs = visibleTabs
             )
         ).isEqualTo(BottomPanelTab.BOOKMARKS)
+        assertThat(
+            resolveVisibleBottomPanelTabs(
+                normalModeTabs = visibleTabs,
+                selectedBottomTab = BottomPanelTab.BOOKMARKS,
+            )
+        ).contains(BottomPanelTab.BOOKMARKS)
+    }
+
+    @Test
+    fun `resolveOverflowBottomPanelTabs exposes secondary tabs not already visible`() {
+        val visibleTabs = resolveNormalModeBottomTabs(showEditorPerformanceTab = false) + BottomPanelTab.OUTLINE
+
+        assertThat(resolveOverflowBottomPanelTabs(visibleTabs)).containsExactly(
+            BottomPanelTab.SYMBOLS,
+            BottomPanelTab.BOOKMARKS,
+            BottomPanelTab.GIT,
+        ).inOrder()
+    }
+
+    @Test
+    fun `resolveSelectedBottomPanelTab rejects run output without a production writer`() {
+        val visibleTabs = resolveNormalModeBottomTabs(showEditorPerformanceTab = false)
+
+        assertThat(
+            resolveSelectedBottomPanelTab(
+                selectedBottomTab = BottomPanelTab.RUN_OUTPUT,
+                normalModeTabs = visibleTabs,
+            )
+        ).isEqualTo(BottomPanelTab.DIAGNOSTICS)
+        assertThat(resolveOverflowBottomPanelTabs(visibleTabs))
+            .doesNotContain(BottomPanelTab.RUN_OUTPUT)
+    }
+
+    @Test
+    fun `resolveNormalModeBottomTabs shows plugins only when enabled panels exist`() {
+        val hidden = resolveNormalModeBottomTabs(
+            showEditorPerformanceTab = false,
+            hasPluginPanels = false,
+        )
+        val visible = resolveNormalModeBottomTabs(
+            showEditorPerformanceTab = false,
+            hasPluginPanels = true,
+        )
+
+        assertThat(hidden).doesNotContain(BottomPanelTab.PLUGINS)
+        assertThat(visible).contains(BottomPanelTab.PLUGINS)
     }
 
     @Test

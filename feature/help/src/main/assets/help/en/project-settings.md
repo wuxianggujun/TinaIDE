@@ -48,6 +48,10 @@ Use these fields when project metadata needs extra paths. Do not duplicate paths
 - LDLIBS
 - CMake Args
 
+These values are shared by every run configuration in the project. Debug, Release, and other build types belong to the workspace run configuration instead of being duplicated in Project Settings.
+
+`CMake Args` cannot define `CMAKE_BUILD_TYPE`. The selected run configuration generates that variable so project-wide arguments cannot override its build variant.
+
 The first four are normalized as whitespace-separated text. CMake Args is maintained as a list.
 
 ## Troubleshooting

@@ -5,6 +5,7 @@ import android.os.Build
 import androidx.core.content.edit
 import com.wuxianggujun.tinaide.core.common.AppVersionInfoReader
 import com.wuxianggujun.tinaide.core.config.AppPreferences
+import com.wuxianggujun.tinaide.core.network.readUtf8Limited
 import com.wuxianggujun.tinaide.core.network.registry.GitHubRegistryConfig
 import com.wuxianggujun.tinaide.core.network.registry.GitHubRegistryHttpClientFactory
 import com.wuxianggujun.tinaide.core.network.registry.GitHubRegistryProxyConfig
@@ -44,6 +45,7 @@ class AppUpdateChecker internal constructor(
             val currentVersionName = currentVersionNameProvider(appContext)
             val latest = fetchLatestRelease()
             val release = latest.release
+            AppUpdateEndpoints.requireTrustedRelease(release)
 
             if (release.draft || release.prerelease) return@runCatching null
             if (!AppUpdateVersioning.isRemoteNewer(currentVersionName, release.tagName)) {
@@ -55,17 +57,14 @@ class AppUpdateChecker internal constructor(
                 assets = release.assets,
                 supportedAbis = Build.SUPPORTED_ABIS.toList(),
             )
-            val releasePageUrl = latest.endpoint.rewriteGitHubUrl(release.htmlUrl)
+            val releasePageUrl = release.htmlUrl
             AppUpdateInfo(
                 tagName = release.tagName,
                 releaseName = release.name?.takeIf(String::isNotBlank) ?: release.tagName,
                 currentVersionName = currentVersionName,
                 releaseNotes = release.body?.takeIf(String::isNotBlank),
                 releasePageUrl = releasePageUrl,
-                downloadUrl = preferredAsset
-                    ?.browserDownloadUrl
-                    ?.let(latest.endpoint::rewriteGitHubUrl)
-                    ?: releasePageUrl,
+                downloadUrl = preferredAsset?.browserDownloadUrl ?: releasePageUrl,
                 assetName = preferredAsset?.name,
             )
         }
@@ -105,7 +104,7 @@ class AppUpdateChecker internal constructor(
             if (!response.isSuccessful) {
                 error("${endpoint.name} failed: HTTP ${response.code}")
             }
-            val body = response.body?.string()?.takeIf(String::isNotBlank)
+            val body = response.body?.readUtf8Limited(MAX_RELEASE_RESPONSE_BYTES)?.takeIf(String::isNotBlank)
                 ?: error("${endpoint.name} returned empty body")
             AppUpdateRelease(
                 release = json.decodeFromString<GitHubRelease>(body),
@@ -123,7 +122,8 @@ class AppUpdateChecker internal constructor(
             if (!response.isSuccessful) {
                 error("${endpoint.name} failed: HTTP ${response.code}")
             }
-            val finalUrl = response.request.url.toString()
+            val finalUrl = endpoint.unwrapGitHubUrl(response.request.url.toString())
+                ?: error("${endpoint.name} redirected outside the official TinaIDE repository")
             val tagName = AppUpdateEndpoints.extractReleaseTag(finalUrl)
                 ?: error("${endpoint.name} did not expose a release tag")
             AppUpdateRelease(
@@ -143,6 +143,7 @@ class AppUpdateChecker internal constructor(
 
     private companion object {
         private const val PREF_KEY_DISMISSED_TAG = "app_update_dismissed_tag"
+        private const val MAX_RELEASE_RESPONSE_BYTES = 2 * 1024 * 1024
     }
 }
 
@@ -157,7 +158,14 @@ internal data class AppUpdateEndpoint(
     val url: String,
     val urlPrefix: String? = null,
 ) {
-    fun rewriteGitHubUrl(url: String): String = GitHubRegistryConfig.rewriteGitHubUrl(url, urlPrefix)
+    fun unwrapGitHubUrl(url: String): String? {
+        val normalized = url.trim()
+        val unwrapped = urlPrefix
+            ?.takeIf(normalized::startsWith)
+            ?.let(normalized::removePrefix)
+            ?: normalized
+        return unwrapped.takeIf(GitHubRegistryConfig::isGitHubUrl)
+    }
 }
 
 internal data class AppUpdateRelease(
@@ -221,6 +229,30 @@ internal object AppUpdateEndpoints {
             .substringBefore('/')
             .takeIf(String::isNotBlank)
     }
+
+    fun requireTrustedRelease(release: GitHubRelease) {
+        require(release.tagName.matches(Regex("^[A-Za-z0-9][A-Za-z0-9._+-]{0,99}$"))) {
+            "Invalid TinaIDE release tag"
+        }
+        require(release.htmlUrl == "$GITHUB_REPOSITORY_URL/releases/tag/${release.tagName}") {
+            "Release page is outside the official TinaIDE repository"
+        }
+        release.assets
+            .filter { it.name.endsWith(".apk", ignoreCase = true) }
+            .forEach { asset ->
+                require(asset.name.matches(Regex("^[A-Za-z0-9][A-Za-z0-9._+-]{0,199}\\.apk$", RegexOption.IGNORE_CASE))) {
+                    "Invalid TinaIDE release asset name"
+                }
+                require(
+                    asset.browserDownloadUrl ==
+                        "$GITHUB_REPOSITORY_URL/releases/download/${release.tagName}/${asset.name}"
+                ) {
+                    "Release asset is outside the official TinaIDE repository"
+                }
+            }
+    }
+
+    private const val GITHUB_REPOSITORY_URL = "https://github.com/wuxianggujun/TinaIDE"
 }
 
 internal object AppUpdateVersioning {

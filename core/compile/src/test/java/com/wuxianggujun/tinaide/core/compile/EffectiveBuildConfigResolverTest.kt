@@ -33,7 +33,7 @@ class EffectiveBuildConfigResolverTest {
     }
 
     @Test
-    fun `cmake still follows cmake build type`() {
+    fun `cmake maps effective cmake build type to general build options`() {
         val resolved = EffectiveBuildConfigResolver.resolveBuildTypeAndDebugInfo(
             launch = LaunchIntent.Run(OutputMode.TERMINAL),
             buildSystem = BuildSystem.CMAKE,
@@ -43,6 +43,39 @@ class EffectiveBuildConfigResolverTest {
 
         assertThat(resolved.first).isEqualTo(BuildType.RELEASE)
         assertThat(resolved.second).isFalse()
+    }
+
+    @Test
+    fun `cmake normal run uses run configuration build type`() {
+        val resolved = EffectiveBuildConfigResolver.resolveCMakeBuildType(
+            launch = LaunchIntent.Run(OutputMode.TERMINAL),
+            buildSystem = BuildSystem.CMAKE,
+            configuredBuildType = CMakeBuildTypeOption.RELEASE,
+        )
+
+        assertThat(resolved).isEqualTo(CMakeBuildTypeOption.RELEASE)
+    }
+
+    @Test
+    fun `non cmake build ignores cmake variant`() {
+        val resolved = EffectiveBuildConfigResolver.resolveCMakeBuildType(
+            launch = LaunchIntent.Run(OutputMode.TERMINAL),
+            buildSystem = BuildSystem.MAKE,
+            configuredBuildType = CMakeBuildTypeOption.REL_WITH_DEB_INFO,
+        )
+
+        assertThat(resolved).isEqualTo(CMakeBuildTypeOption.DEBUG)
+    }
+
+    @Test
+    fun `debug launch forces actual cmake debug variant`() {
+        val resolved = EffectiveBuildConfigResolver.resolveCMakeBuildType(
+            launch = LaunchIntent.Debug,
+            buildSystem = BuildSystem.CMAKE,
+            configuredBuildType = CMakeBuildTypeOption.RELEASE,
+        )
+
+        assertThat(resolved).isEqualTo(CMakeBuildTypeOption.DEBUG)
     }
 
     @Test

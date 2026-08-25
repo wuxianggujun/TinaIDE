@@ -62,6 +62,7 @@
   <string name="git_ssh_generate_key_desc">Generate an Ed25519 SSH key pair</string>
   <string name="git_ssh_generate_dialog_title">Generate SSH key</string>
   <string name="git_ssh_key_name_label">Key filename</string>
+  <string name="git_ssh_key_name_invalid">Use 1–64 characters, start with a letter or digit, and include only letters, digits, dots, underscores, or hyphens</string>
   <string name="git_ssh_key_comment_label">Comment (optional)</string>
   <string name="git_ssh_key_comment_placeholder">e.g. your@email.com</string>
   <string name="git_ssh_generate_ok">Generated: %1$s</string>
@@ -78,6 +79,13 @@
   <string name="git_ssh_default_key_none">Not set</string>
   <string name="git_ssh_default_key_pick_title">Select default key</string>
   <string name="git_ssh_default_badge">Default</string>
+  <string name="git_ssh_trusted_hosts_reset_title">Reset trusted host keys</string>
+  <string name="git_ssh_trusted_hosts_reset_desc">Clear cached SSH host keys and establish trust again on the next connection</string>
+  <string name="git_ssh_trusted_hosts_reset_dialog_title">Clear trusted host keys?</string>
+  <string name="git_ssh_trusted_hosts_reset_dialog_message">The next SSH connection will record the server host key again. Use this only after confirming that a server key changed or while troubleshooting.</string>
+  <string name="git_ssh_trusted_hosts_reset_confirm">Clear trust records</string>
+  <string name="git_ssh_trusted_hosts_reset_ok">Cleared trusted SSH host keys</string>
+  <string name="git_ssh_trusted_hosts_reset_failed">Failed to clear trusted SSH host keys</string>
 
   <string name="git_ssh_error_title">Git SSH error</string>
   <string name="git_ssh_error_load_failed">Load failed</string>
@@ -94,7 +102,10 @@
   <string name="git_ssh_binding_item_subtitle">Key: %1$s</string>
   <string name="git_ssh_binding_host_label">Host</string>
   <string name="git_ssh_binding_port_label">Port (optional)</string>
+  <string name="git_ssh_binding_host_invalid">Invalid SSH host</string>
+  <string name="git_ssh_binding_port_invalid">SSH port must be between 1 and 65535</string>
   <string name="git_ssh_binding_key_label">Key</string>
+  <string name="git_ssh_private_key_too_large">SSH private key files must not exceed %1$d MiB</string>
   <string name="git_ssh_binding_key_desc">Tap to choose</string>
   <string name="git_ssh_binding_key_not_selected">Not selected</string>
   <string name="git_ssh_binding_key_pick_title">Select key</string>
@@ -168,6 +179,8 @@
   <string name="plugins_details_granted_permissions">Granted permissions: %1$s</string>
   <string name="plugins_details_runtime_state">Runtime state: %1$s</string>
   <string name="plugins_details_runtime_error">Last error: %1$s</string>
+  <string name="plugins_details_fault_phase">Fault phase: %1$s</string>
+  <string name="plugins_details_fault_time">Quarantined at: %1$s</string>
   <string name="plugins_details_dir">Directory: %1$s</string>
   <string name="plugins_details_contrib_summary">Contributions: themes %1$d · file tree menus %2$d · editor menus %3$d · toolbar menus %4$d</string>
   <string name="plugins_commands_title">Command contributions</string>
@@ -223,6 +236,8 @@
   <string name="plugins_preflight_guide_runtime">This is a runtime issue. Check plugin logs, script entrypoints, and permission grants first.</string>
   <string name="plugins_preflight_guide_lsp">This is an LSP dependency issue. Open the plugin details, review error logs, and repair dependencies.</string>
   <string name="plugins_details_optional_permissions">Optional permissions: %1$s</string>
+  <string name="plugins_optional_permissions_title">Optional permission grants</string>
+  <string name="plugins_optional_permissions_description">Grant or revoke these permissions on demand. Future related API calls are denied immediately after revocation.</string>
   <string name="plugins_details_permissions_none">None</string>
   <string name="plugins_diagnostics_fix_hint">Suggestion: %1$s</string>
   <string name="plugins_diagnostics_runtime_fix_hint">Check logs and stack traces, fix the script error, then reload the plugin manually.</string>
@@ -246,6 +261,19 @@
   <string name="plugins_runtime_state_active">Active</string>
   <string name="plugins_runtime_state_error">Error</string>
   <string name="plugins_runtime_state_disabled">Disabled</string>
+  <string name="plugins_runtime_state_waiting_permission">Waiting for permission</string>
+  <string name="plugins_runtime_state_quarantined">Automatically quarantined</string>
+  <string name="plugins_runtime_state_unavailable">Runtime service unavailable</string>
+  <string name="plugins_fault_phase_startup">Startup</string>
+  <string name="plugins_fault_phase_command">Command callback</string>
+  <string name="plugins_fault_phase_event">Event callback</string>
+  <string name="plugins_fault_phase_api">Host API call</string>
+  <string name="plugins_fault_phase_lsp">LSP server</string>
+  <string name="plugins_fault_phase_contribution">Contribution data</string>
+  <string name="plugins_fault_phase_unknown">Unknown phase</string>
+  <string name="dialog_title_plugins_reenable_quarantined">Re-enable quarantined plugin?</string>
+  <string name="dialog_msg_plugins_reenable_quarantined">%1$s encountered a serious runtime failure. Re-enabling it will run plugin code again; TinaIDE will immediately quarantine it again if it fails.</string>
+  <string name="btn_plugins_reenable">Re-enable</string>
 
   <string name="dialog_title_plugins_uninstall">Uninstall plugin</string>
   <string name="dialog_msg_plugins_uninstall">Are you sure you want to uninstall “%1$s”?</string>
@@ -346,10 +374,16 @@
   <string name="lsp_toolchain_error_no_pip_packages">No pip packages configured</string>
   <string name="lsp_toolchain_error_pip_failed">pip install failed: %1$s</string>
   <string name="lsp_toolchain_error_no_npm_packages">No npm packages configured</string>
+  <string name="lsp_toolchain_error_packages_invalid">Toolchain %1$s contains an unsafe package name or version</string>
   <string name="lsp_toolchain_error_npm_failed">npm install failed: %1$s</string>
   <string name="lsp_toolchain_error_verify_failed">Toolchain %1$s failed installation verification</string>
   <string name="lsp_toolchain_error_download_failed">Download failed: HTTP %1$d %2$s</string>
   <string name="lsp_toolchain_error_empty_download_body">Download response body is empty</string>
+  <string name="lsp_toolchain_error_sha256_required">Download toolchains require a valid SHA-256 checksum</string>
+  <string name="lsp_toolchain_error_https_required">Download toolchains require HTTPS</string>
+  <string name="lsp_toolchain_error_extract_path_invalid">The toolchain extraction path must stay inside the active rootfs</string>
+  <string name="lsp_toolchain_error_extract_path_occupied">Toolchain target %1$s contains files not managed by TinaIDE; use a dedicated directory</string>
+  <string name="lsp_toolchain_error_download_too_large">The toolchain download exceeds the size limit</string>
   <string name="lsp_plugin_install_progress_title">Installing Toolchain</string>
   <string name="lsp_plugin_install_success">Toolchain installation complete</string>
   <string name="lsp_plugin_install_failed">Toolchain installation failed: %1$s</string>
@@ -359,6 +393,64 @@
   <string name="settings_cat_editor_performance">Performance</string>
   <string name="settings_editor_theme">Editor Theme</string>
   <string name="settings_editor_theme_summary">Choose editor color scheme, gray themes can reduce eye strain</string>
+  <string name="settings_editor_theme_custom">Custom theme</string>
+  <string name="settings_editor_theme_custom_active">Active</string>
+  <string name="settings_editor_theme_customize">Customize editor colors</string>
+  <string name="settings_editor_theme_customize_summary">Adjust editor UI, syntax, rainbow bracket, and diagnostic colors</string>
+  <string name="settings_editor_theme_customize_title">Editor Colors</string>
+  <string name="settings_editor_theme_base">Base theme</string>
+  <string name="settings_editor_theme_base_gray">Gray</string>
+  <string name="settings_editor_theme_base_dark">Dark</string>
+  <string name="settings_editor_theme_base_light">Light</string>
+  <string name="settings_editor_theme_group_editor">Editor</string>
+  <string name="settings_editor_theme_group_syntax">Syntax</string>
+  <string name="settings_editor_theme_group_diagnostics">Diagnostics</string>
+  <string name="settings_editor_theme_hex_color">ARGB color</string>
+  <string name="settings_editor_theme_hex_hint">Use #RRGGBB, #AARRGGBB, or 0xAARRGGBB</string>
+  <string name="settings_editor_theme_hex_invalid">Enter a valid hexadecimal color</string>
+  <string name="settings_editor_theme_preview_type">int</string>
+  <string name="settings_editor_theme_preview_function">main</string>
+  <string name="settings_editor_theme_preview_open">() {</string>
+  <string name="settings_editor_theme_preview_comment">// TinaIDE color preview</string>
+  <string name="settings_editor_theme_preview_keyword">return</string>
+  <string name="settings_editor_theme_preview_number">42</string>
+  <string name="settings_editor_theme_preview_statement_end">;</string>
+  <string name="settings_editor_theme_preview_close">}</string>
+  <string name="settings_editor_color_background">Editor background</string>
+  <string name="settings_editor_color_foreground">Plain text</string>
+  <string name="settings_editor_color_selection">Selection background</string>
+  <string name="settings_editor_color_cursor_line">Current line background</string>
+  <string name="settings_editor_color_cursor">Cursor</string>
+  <string name="settings_editor_color_line_number">Line number</string>
+  <string name="settings_editor_color_line_number_active">Active line number</string>
+  <string name="settings_editor_color_gutter_background">Gutter background</string>
+  <string name="settings_editor_color_gutter_divider">Gutter divider</string>
+  <string name="settings_editor_color_whitespace">Whitespace</string>
+  <string name="settings_editor_color_bracket_guide">Bracket guide</string>
+  <string name="settings_editor_color_bracket_guide_active">Active bracket guide</string>
+  <string name="settings_editor_color_rainbow_1">Rainbow bracket 1</string>
+  <string name="settings_editor_color_rainbow_2">Rainbow bracket 2</string>
+  <string name="settings_editor_color_rainbow_3">Rainbow bracket 3</string>
+  <string name="settings_editor_color_rainbow_4">Rainbow bracket 4</string>
+  <string name="settings_editor_color_rainbow_5">Rainbow bracket 5</string>
+  <string name="settings_editor_color_rainbow_6">Rainbow bracket 6</string>
+  <string name="settings_editor_color_keyword">Keyword</string>
+  <string name="settings_editor_color_function">Function</string>
+  <string name="settings_editor_color_variable">Variable</string>
+  <string name="settings_editor_color_property">Property</string>
+  <string name="settings_editor_color_type">Type</string>
+  <string name="settings_editor_color_string">String</string>
+  <string name="settings_editor_color_number">Number</string>
+  <string name="settings_editor_color_comment">Comment</string>
+  <string name="settings_editor_color_operator">Operator</string>
+  <string name="settings_editor_color_punctuation">Punctuation</string>
+  <string name="settings_editor_color_constant">Constant</string>
+  <string name="settings_editor_color_builtin">Built-in symbol</string>
+  <string name="settings_editor_color_deprecated">Deprecated symbol</string>
+  <string name="settings_editor_color_diagnostic_error">Error</string>
+  <string name="settings_editor_color_diagnostic_warning">Warning</string>
+  <string name="settings_editor_color_diagnostic_info">Information</string>
+  <string name="settings_editor_color_diagnostic_hint">Hint</string>
   <string name="settings_editor_hardware_acceleration">Hardware Acceleration</string>
   <string name="settings_editor_hardware_acceleration_summary">Use GPU rendering for better scrolling performance. Disable if you experience stuttering or black screen (requires reopening files)</string>
   <string name="settings_cat_compiler_options">Compiler Options</string>
@@ -521,6 +613,9 @@
   <string name="wizard_subtitle_new_project">Create a new C/C++ project</string>
   <string name="wizard_title_new_plugin_project">New Plugin Project</string>
   <string name="wizard_subtitle_new_plugin_project">Choose a TinaIDE plugin template to start development</string>
+  <string name="wizard_missing_packages_title">Missing Template Dependencies</string>
+  <string name="wizard_missing_packages_message">Install these Android packages before creating this project: %1$s</string>
+  <string name="wizard_open_package_manager">Open Package Manager</string>
   <string name="wizard_project_source_location">Storage For This Project</string>
   <string name="wizard_btn_next">Next</string>
   <string name="wizard_btn_previous">Previous</string>
@@ -795,11 +890,12 @@
   <string name="settings_project_native_ldlibs">LDLIBS</string>
   <string name="settings_project_native_ldlibs_desc">Append link libraries (e.g. -lSDL3 -lEGL -lGLESv2)</string>
   <string name="settings_project_native_cmake_args">CMake Args</string>
-  <string name="settings_project_native_cmake_args_desc">Append to CMake configure stage (one arg per line)</string>
+  <string name="settings_project_native_cmake_args_desc">Project-wide CMake configure arguments (one per line)</string>
   <string name="settings_project_native_flags_edit_hint">Input native compile/link flags. Multi-line is supported and will be merged by spaces when saved.</string>
   <string name="settings_project_native_flags_edit_placeholder">Example:\n-O2 -fPIC\n-DMY_FEATURE=1</string>
-  <string name="settings_project_native_cmake_args_edit_hint">One CMake argument per line. Example: -DXXX=ON</string>
+  <string name="settings_project_native_cmake_args_edit_hint">One CMake argument per line. Select the build type in the run configuration.</string>
   <string name="settings_project_native_cmake_args_edit_placeholder">Example:\n-DSDL_TEST=OFF\n-DCMAKE_VERBOSE_MAKEFILE=ON</string>
+  <string name="settings_project_native_cmake_args_build_type_managed">CMAKE_BUILD_TYPE is managed by the run configuration. Remove this argument.</string>
 
   <string name="btn_ok">OK</string>
 
@@ -1007,7 +1103,6 @@
   <string name="settings_clang_format_run_mode_desc">Native mode is faster, PRoot mode has better compatibility</string>
   <string name="settings_make_run_mode">Make Run Mode</string>
   <string name="settings_make_run_mode_desc">Native mode is faster, PRoot mode has better compatibility</string>
-  <string name="settings_build_type">Build Type</string>
   <string name="settings_generator">Generator</string>
   <string name="settings_parallel_jobs">Parallel Jobs</string>
   <string name="settings_completion_limit">Completion Candidates</string>
@@ -1019,11 +1114,6 @@
   <string name="dialog_title_opt_level">Optimization Level</string>
   <string name="dialog_title_threads">Compiler Threads</string>
   <string name="dialog_title_completion_limit">Completion Candidates</string>
-  <string name="build_type_debug">Debug - Debug Mode</string>
-  <string name="build_type_release">Release - Release Mode</string>
-  <string name="build_type_relwithdebinfo">RelWithDebInfo - With Debug Info</string>
-  <string name="build_type_minsizerel">MinSizeRel - Minimum Size</string>
-  <string name="dialog_title_cmake_build_type">CMake Build Type</string>
   <string name="generator_make">Make - Better Compatibility</string>
   <string name="generator_ninja">Ninja - Faster Build</string>
   <string name="dialog_title_cmake_generator">CMake Generator</string>
@@ -1052,7 +1142,7 @@
   <string name="settings_app_theme_desc">Choose the overall color scheme of the app</string>
   <string name="settings_cat_debug">Debug</string>
   <string name="settings_debug_toolbar_position">Debug Toolbar Position</string>
-  <string name="settings_debug_toolbar_desc">Set the display position of debug toolbar</string>
+  <string name="settings_debug_toolbar_desc">Recommended: Top (same slot as Run). Bottom or both optional.</string>
   <string name="dialog_title_select_theme">Select Theme</string>
   <string name="dialog_title_debug_toolbar">Debug Toolbar Position</string>
 
@@ -1951,6 +2041,7 @@
 
   <!-- DrawerTab -->
   <string name="drawer_tab_files_title">Files</string>
+  <string name="drawer_tab_symbols_title">Symbols</string>
   <string name="drawer_tab_git_title">Git</string>
   <string name="drawer_tab_rikkahub_title">AI</string>
 
@@ -2049,15 +2140,16 @@
   <string name="menu_bookmark_next">Next Bookmark</string>
   <string name="menu_bookmark_list">View Bookmarks</string>
   <string name="menu_terminal">Terminal</string>
-  <string name="menu_exit_workspace">Exit Workspace</string>
+  <string name="menu_exit_workspace">Exit to project list</string>
   <string name="toast_saved">Saved</string>
   <string name="toast_save_failed">Save failed: %1$s</string>
   <string name="toast_git_branch_switched">Switched to branch: %1$s</string>
-  <string name="dialog_close_project_title">Close Project</string>
-  <string name="dialog_close_project_message">You can reopen it from the project home page. Session state is preserved by default.</string>
-  <string name="btn_close_project">Close</string>
+  <string name="dialog_close_project_title">Exit to project list?</string>
+  <string name="dialog_close_project_message">Return to the project home. You can reopen anytime; session state is kept by default.</string>
+  <string name="btn_close_project">Exit</string>
   <string name="btn_close_and_forget">Close and Forget</string>
   <string name="toast_run_config_saved">Run configuration saved</string>
+  <string name="toast_run_config_save_failed">Failed to save run configuration</string>
   <string name="toast_git_init_success">Git repository initialized successfully</string>
   <string name="toast_debug_start_failed">Debug start failed: executable path not found</string>
   <string name="toast_compile_done_starting_debug">Compilation complete, starting debug...</string>
@@ -2080,7 +2172,7 @@
   <string name="toast_save_failed_cancelled">Save failed, %1$s cancelled: %2$s</string>
   <string name="toast_auto_saved">Auto-saved %1$d files</string>
   <string name="action_close_and_forget">Close and forget project</string>
-  <string name="action_close_project">Close project</string>
+  <string name="action_close_project">Exit to project list</string>
   <string name="toast_no_files_to_save">No files to save</string>
   <string name="toast_some_files_save_failed">Some files failed to save</string>
   <string name="toast_files_saved">Saved %1$d files</string>
@@ -2089,10 +2181,12 @@
   <string name="toast_formatting">Formatting...</string>
   <string name="toast_clang_format_not_available">clang-format not available, please install compiler toolchain first</string>
   <string name="toast_format_done">Formatting complete</string>
+  <string name="toast_format_source_changed">The file changed while formatting; the latest content was preserved</string>
   <string name="toast_code_already_formatted">Code is already formatted</string>
   <string name="toast_format_failed">Format failed: %1$s</string>
   <string name="toast_format_error">Format error: %1$s</string>
   <string name="format_failed_simple">Format failed</string>
+  <string name="format_process_timed_out">clang-format timed out after %1$d seconds</string>
   <string name="toast_preparing_debug">Preparing debug session...</string>
   <string name="toast_compiling">Compiling...</string>
 
@@ -2136,6 +2230,7 @@ If you need to verify lower-level source or native submodules, please also check
   <string name="compile_sysroot_missing_header">Android sysroot is missing a required header: %1$s</string>
   <string name="compile_sysroot_missing_libcpp_header">Android sysroot is missing the libc++ header: %1$s</string>
   <string name="compile_sysroot_missing_api_lib_dir">Android sysroot is missing the API %1$d library directory: %2$s. Adjust sysrootApiLevel or reinstall the sysroot.</string>
+  <string name="compile_sysroot_missing_static_libcpp">Android sysroot is missing the static libc++ runtime: %1$s. Reinstall or import a complete NDK Runtime.</string>
   <string name="compile_diag_trace_banner">[diag] clang trace: %1$s</string>
   <string name="compile_diag_trace_exit_code">[diag] clang trace exit code: %1$d</string>
   <string name="compile_diag_phase_compile_failed">%1$s Conclusion: compile stage (cc1) failed</string>
@@ -2272,7 +2367,7 @@ kept=%3$d bytes
 
   <!-- View Toggle -->
   <string name="cmd_view_toggle_file_tree">Toggle File Tree</string>
-  <string name="cmd_view_toggle_symbols">Toggle Symbols Panel</string>
+  <string name="cmd_view_toggle_symbols">Drawer symbols outline</string>
   <string name="cmd_view_toggle_terminal">Toggle Terminal</string>
 
   <!-- Log Management -->
@@ -2619,6 +2714,19 @@ kept=%3$d bytes
   <string name="plugin_ui_error_prefix">[Error] %1$s</string>
   <string name="plugin_error_file_not_exist">Plugin file does not exist: %1$s</string>
   <string name="plugin_error_install_failed">Plugin installation failed</string>
+  <string name="plugin_error_package_too_large">Plugin package exceeds the 64 MiB limit</string>
+  <string name="plugin_error_marketplace_id_mismatch">Marketplace plugin identity mismatch: requested %1$s, package declares %2$s</string>
+  <string name="plugin_error_marketplace_version_mismatch">Marketplace plugin version mismatch: requested %1$s, package declares %2$s</string>
+  <string name="plugin_error_event_payload_too_large">Plugin event data exceeds the host transport limit</string>
+  <string name="plugin_permission_update_failed">Failed to update plugin permission: %1$s</string>
+  <string name="plugin_error_archive_too_many_entries">Plugin package exceeds the 4,096-entry limit</string>
+  <string name="plugin_error_archive_entry_too_large">A plugin file exceeds the 64 MiB limit: %1$s</string>
+  <string name="plugin_error_archive_expanded_too_large">Expanded plugin exceeds the 256 MiB limit</string>
+  <string name="plugin_error_archive_ratio_too_high">Plugin package contains a suspicious compression ratio: %1$s</string>
+  <string name="plugin_error_lua_file_too_large">A Lua file exceeds the 1 MiB limit: %1$s</string>
+  <string name="plugin_error_lua_sources_too_large">Combined Lua sources exceed the 8 MiB limit</string>
+  <string name="plugin_error_archive_invalid_entry">Plugin package contains an unsafe path: %1$s</string>
+  <string name="plugin_error_archive_duplicate_entry">Plugin package contains a duplicate path: %1$s</string>
   <string name="plugin_error_name_empty">Plugin name cannot be empty</string>
   <string name="plugin_error_version_empty">Plugin version cannot be empty</string>
   <string name="plugin_error_themes_path_invalid">Invalid themes path: %1$s</string>
@@ -2638,6 +2746,15 @@ kept=%3$d bytes
   <string name="plugin_error_missing_manifest">Plugin missing %1$s</string>
   <string name="plugin_error_api_version_unsupported">Unsupported plugin API version: %1$d (supported: %2$d)</string>
   <string name="plugin_error_permission_unknown">Unknown plugin permission: %1$s</string>
+  <string name="plugin_error_panels_type_invalid">Only script or hybrid plugins may declare panels</string>
+  <string name="plugin_error_panels_too_many">A plugin may declare at most %1$d panels</string>
+  <string name="plugin_error_panels_duplicate_id">Panel IDs must be unique: %1$s</string>
+  <string name="plugin_error_panel_id_invalid">Invalid panel ID: %1$s</string>
+  <string name="plugin_error_panel_title_invalid">Panel %1$s must have a non-empty title of at most 128 characters</string>
+  <string name="plugin_error_activation_events_type_invalid">activationEvents are supported only for LSP plugins</string>
+  <string name="plugin_error_activation_events_duplicate">activationEvents must not contain duplicates</string>
+  <string name="plugin_error_activation_event_invalid">Unsupported activationEvent: %1$s; apiVersion 1 supports only onLanguage:&lt;languageId&gt;</string>
+  <string name="plugin_error_activation_event_language_missing">The activationEvent language is not declared by languageServers: %1$s</string>
   <string name="plugin_error_configuration_key_invalid">Invalid configuration key: %1$s</string>
   <string name="plugin_error_configuration_type_invalid">Configuration %1$s has unsupported type: %2$s</string>
   <string name="plugin_error_configuration_default_invalid">Configuration %1$s has invalid default value: %2$s</string>
@@ -2872,6 +2989,9 @@ kept=%3$d bytes
   <string name="bottom_panel_diagnostics">Diagnostics</string>
   <string name="bottom_panel_outline">Outline</string>
   <string name="bottom_panel_git">Git</string>
+  <string name="bottom_panel_plugins">Plugins</string>
+  <string name="plugin_panel_tab_label">%1$s · %2$s</string>
+  <string name="plugin_panel_empty">The plugin has not published panel content yet.</string>
   <string name="bottom_panel_symbols">Symbols</string>
   <string name="btn_confirm_cancel_install">Confirm Cancel</string>
   <string name="btn_continue_install">Continue Installation</string>
@@ -2886,7 +3006,12 @@ kept=%3$d bytes
   <string name="run_output_empty">No run output</string>
   <string name="run_output_clipboard_label">Run output</string>
   <string name="code_actions_empty">No available code actions</string>
+  <string name="code_actions_load_failed">Failed to load code actions</string>
   <string name="code_actions_title">Code actions</string>
+  <string name="workspace_edit_preview_title">Review code action changes</string>
+  <string name="workspace_edit_preview_summary">%1$d files will change with %2$d edits</string>
+  <string name="workspace_edit_preview_description">This action updates multiple files. Review the affected files before applying it.</string>
+  <string name="workspace_edit_preview_file_edits">%1$d edits</string>
   <string name="compile_artifact_kind_executable">executable</string>
   <string name="compile_artifact_kind_shared_library">shared library</string>
   <string name="compile_artifact_kind_static_library">static library</string>
@@ -2992,6 +3117,8 @@ kept=%3$d bytes
   <string name="content_desc_next">Next</string>
   <string name="content_desc_next_bookmark">Next bookmark</string>
   <string name="editor_tab_button">TAB</string>
+  <string name="content_desc_show_editor_symbol_bar">Show editor symbol bar</string>
+  <string name="content_desc_hide_editor_symbol_bar">Hide editor symbol bar</string>
   <string name="content_desc_pause">Pause</string>
   <string name="content_desc_prev_bookmark">Previous bookmark</string>
   <string name="content_desc_previous">Previous</string>
@@ -3084,6 +3211,8 @@ kept=%3$d bytes
   <string name="diagnostics_empty">No diagnostics</string>
   <string name="diagnostics_location">Line %1$d:%2$d</string>
   <string name="diagnostic_copied">Diagnostic copied to clipboard</string>
+  <string name="diagnostics_view_fixes">View fixes</string>
+  <string name="diagnostics_fix_all">Fix all</string>
   <string name="dialog_cancel_install_message">Canceling will stop the current installation. You can restart it later.</string>
   <string name="dialog_cancel_install_title">Cancel installation?</string>
   <string name="dialog_message_clear_logs">Clear all log cache? This action cannot be undone.</string>
@@ -3097,6 +3226,7 @@ kept=%3$d bytes
   <string name="dialog_title_installing_zsh">Installing Zsh</string>
   <string name="dialog_title_remote_lsp_host">Server Host</string>
   <string name="dialog_title_remote_lsp_port">Server Port</string>
+  <string name="dialog_title_remote_lsp_auth_token">Remote LSP Authentication</string>
   <string name="dialog_title_remote_lsp_sync_method">Sync Method</string>
   <string name="dialog_title_remote_lsp_sync_mode">Sync Mode</string>
   <string name="dialog_title_remote_lsp_workspace_root_uri">Remote Workspace Root URI</string>
@@ -3240,6 +3370,16 @@ kept=%3$d bytes
   <string name="help_doc_create_project_summary">Learn how to create a C/C++ project</string>
   <string name="help_doc_plugin_quick_start_title">Plugin Development Quick Start</string>
   <string name="help_doc_plugin_quick_start_summary">Build a first config plugin by changing theme and snippets, run to hot-install, then package .tinaplug and verify with install preflight</string>
+  <string name="help_doc_plugin_manifest_compatibility_title">Plugin Manifest and Version Compatibility</string>
+  <string name="help_doc_plugin_manifest_compatibility_summary">Understand apiVersion, minAppVersion, plugin versions, and compatible updates for older IDEs</string>
+  <string name="help_doc_plugin_script_api_title">Script API and Least Privilege</string>
+  <string name="help_doc_plugin_script_api_summary">Build a command-focused Lua plugin with editor, commands, workspace, and permission boundaries</string>
+  <string name="help_doc_plugin_panels_events_title">Plugin Panels and Events</string>
+  <string name="help_doc_plugin_panels_events_summary">Declare text panels, listen to host events, and publish bounded plugin output safely</string>
+  <string name="help_doc_plugin_lsp_troubleshooting_title">LSP Plugin Development and Troubleshooting</string>
+  <string name="help_doc_plugin_lsp_troubleshooting_summary">Configure languageServers and toolchains, then verify startup, exit, and owner lifecycle</string>
+  <string name="help_doc_plugin_testing_recovery_title">Plugin Testing, Recovery, and Preflight</string>
+  <string name="help_doc_plugin_testing_recovery_summary">Use logs, quarantine state, rollback, and compatibility gates for stability acceptance</string>
   <string name="help_quick_actions_title">Quick actions</string>
   <string name="help_action_create_plugin_project">Create Plugin Project</string>
   <string name="help_action_open_plugin_settings">Open Plugin Settings</string>
@@ -3329,6 +3469,44 @@ kept=%3$d bytes
     <item>validate</item>
     <item>package</item>
     <item>starter</item>
+  </string-array>
+  <string-array name="help_keywords_plugin_manifest_compatibility">
+    <item>manifest</item>
+    <item>apiVersion</item>
+    <item>minAppVersion</item>
+    <item>compatibility</item>
+    <item>older IDE</item>
+    <item>update</item>
+  </string-array>
+  <string-array name="help_keywords_plugin_script_api">
+    <item>script</item>
+    <item>lua</item>
+    <item>api</item>
+    <item>permissions</item>
+    <item>commands</item>
+    <item>editor</item>
+    <item>workspace</item>
+  </string-array>
+  <string-array name="help_keywords_plugin_panels_events">
+    <item>panels</item>
+    <item>events</item>
+    <item>diagnostics</item>
+    <item>plugin output</item>
+  </string-array>
+  <string-array name="help_keywords_plugin_lsp_troubleshooting">
+    <item>lsp</item>
+    <item>languageServers</item>
+    <item>toolchains</item>
+    <item>language server</item>
+    <item>troubleshooting</item>
+  </string-array>
+  <string-array name="help_keywords_plugin_testing_recovery">
+    <item>plugin logs</item>
+    <item>quarantine</item>
+    <item>recovery</item>
+    <item>rollback</item>
+    <item>testing</item>
+    <item>preflight</item>
   </string-array>
   <string-array name="help_keywords_settings_overview">
     <item>settings</item>
@@ -3570,9 +3748,18 @@ kept=%3$d bytes
   <string name="run_config_output_terminal_desc">Run in a separate terminal, supports interactive input</string>
   <string name="run_config_output_sdl">SDL Graphical Runtime</string>
   <string name="run_config_output_sdl_desc">Run in the SDL graphical runtime (output must be .so)</string>
+  <string name="run_config_output_native_activity">NativeActivity Graphical Runtime</string>
+  <string name="run_config_output_native_activity_desc">Run a NativeActivity shared library such as raylib (entry point is regular main)</string>
 
   <!-- SDL graphical runtime options -->
   <string name="run_config_sdl_options">SDL Graphical Runtime Options</string>
+  <string name="run_config_sdl_version">SDL Major Version</string>
+  <string name="run_config_sdl_version_auto">Auto Detect</string>
+  <string name="run_config_sdl_version_auto_desc">Choose SDL2 or SDL3 from compiled ELF dependencies first, then fall back to project metadata</string>
+  <string name="run_config_sdl_version_sdl2">SDL2</string>
+  <string name="run_config_sdl_version_sdl2_desc">Require SDL2; startup is blocked with a version conflict if the artifact depends on SDL3</string>
+  <string name="run_config_sdl_version_sdl3">SDL3</string>
+  <string name="run_config_sdl_version_sdl3_desc">Require SDL3; startup is blocked with a version conflict if the artifact depends on SDL2</string>
   <string name="run_config_sdl_orientation">Screen Orientation</string>
   <string name="run_config_sdl_orientation_auto">Auto Rotate</string>
   <string name="run_config_sdl_orientation_auto_desc">Follow system auto-rotation setting</string>
@@ -3580,22 +3767,24 @@ kept=%3$d bytes
   <string name="run_config_sdl_orientation_landscape_desc">Force landscape mode, ideal for most games and graphics programs</string>
   <string name="run_config_sdl_orientation_portrait">Portrait</string>
   <string name="run_config_sdl_orientation_portrait_desc">Force portrait mode</string>
-  <string name="run_config_sdl_floating_log">Floating Log Window</string>
-  <string name="run_config_sdl_floating_log_desc">Show a draggable real-time log window during fullscreen SDL graphical runtime for stdout/stderr output</string>
+  <string name="run_config_graphical_options">Graphical Runtime</string>
+  <string name="run_config_graphical_floating_log">Floating Log Window</string>
+  <string name="run_config_graphical_floating_log_desc">Show a draggable real-time log window for stdout/stderr output during fullscreen graphical runtime</string>
   <string name="run_config_terminal_options">Terminal Run Options</string>
   <string name="run_config_show_linker_warnings">Show Dynamic Linker Compatibility Warnings</string>
   <string name="run_config_show_linker_warnings_desc">Hide the three harmless warnings produced when an older Android linker sees AArch64 Auth RELR tags by default; enable to show them unchanged</string>
 
   <!-- Floating overlay -->
-  <string name="floating_overlay_exit">Exit</string>
-  <string name="floating_overlay_exit_confirm">Exit SDL graphical runtime?</string>
-  <string name="floating_overlay_exit_confirm_yes">Exit</string>
+  <string name="floating_overlay_exit">Back to Editor</string>
+  <string name="floating_overlay_exit_confirm">Return to the editor and stop the current graphical program?</string>
+  <string name="floating_overlay_exit_confirm_yes">Return</string>
   <string name="floating_overlay_exit_confirm_no">Cancel</string>
   <string name="floating_overlay_log_title">Runtime Log</string>
   <string name="floating_overlay_log_empty">No log output yet</string>
   <string name="floating_overlay_log_clear">Clear</string>
-  <string name="floating_overlay_ball_desc">Floating control ball</string>
+  <string name="floating_overlay_ball_desc">Floating back button</string>
   <string name="floating_overlay_double_back_hint">Press back again to exit, or tap the floating ball</string>
+  <string name="floating_overlay_log_capture_failed">Unable to read runtime logs for this graphical program</string>
 
   <string name="sdl_host_title">SDL Runtime</string>
   <string name="sdl_runtime_error_main_library_missing">Missing main shared library path</string>
@@ -3609,11 +3798,30 @@ kept=%3$d bytes
   <string name="sdl_runtime_stage_failed">Failed to stage SDL graphical runtime: %1$s</string>
   <string name="sdl_runtime_error_scan_failed">Failed to scan shared library: %1$s, reason: %2$s</string>
   <string name="sdl_runtime_error_conflicting_versions">Detected dependencies on both SDL2 and SDL3; cannot determine runtime version.</string>
+  <string name="sdl_runtime_error_configured_version_mismatch">The run configuration selects SDL%1$d, but the compiled artifact depends on SDL%2$d. Change the SDL major version setting or check the link configuration.</string>
   <string name="sdl_runtime_error_sdl_not_found">Detected SDL%1$d dependency, but %2$s was not found in package-manager installed runtime library paths. Please install the SDL%1$d package first.</string>
   <string name="sdl_runtime_error_sdl_package_broken">Detected installed SDL%1$d package(s) (%2$s), but %3$s is missing. Please reinstall from the package manager.</string>
+  <string name="sdl_runtime_error_incompatible_android_bridge">Incompatible SDL%1$d Android JNI bridge: %2$s does not contain %3$s. Install the sdl%1$d package from the TinaIDE registry.</string>
   <string name="sdl_runtime_error_missing_launch_params">Missing SDL launch parameters; cannot start SDL runtime UI.</string>
   <string name="sdl_runtime_error_invalid_required_major">Invalid SDL major version parameter: %1$d (only 2 or 3 are supported)</string>
   <string name="sdl_runtime_error_launch_failed">Failed to launch SDL runtime UI: %1$s</string>
+  <string name="native_activity_runtime_invalid_shared_library">NativeActivity graphical run requires a shared library (.so). Current target is not loadable: %1$s</string>
+  <string name="native_activity_runtime_no_shared_library_target">NativeActivity graphical run requires a CMake shared-library target (.so). Use add_library(... SHARED ...) and export a regular main entry point.</string>
+  <string name="native_activity_runtime_auto_selected_shared_library_target">NativeActivity graphical mode automatically selected shared library target: %1$s</string>
+  <string name="native_activity_runtime_main_library_missing">Missing NativeActivity main shared library path</string>
+  <string name="native_activity_runtime_dependency_scan_failed">Failed to inspect NativeActivity shared libraries: %1$s</string>
+  <string name="native_activity_runtime_missing_dependencies">NativeActivity runtime dependencies are incomplete: %1$s</string>
+  <string name="native_activity_runtime_sdl_conflict">This target depends on SDL and cannot run through NativeActivity. Select SDL Graphical Runtime for SDL projects; do not rename main to SDL_main in raylib projects.</string>
+  <string name="native_activity_runtime_stage_failed">Failed to stage NativeActivity runtime libraries: %1$s</string>
+  <string name="native_activity_runtime_launch_failed">Failed to launch NativeActivity runtime UI: %1$s</string>
+  <string name="native_activity_runtime_host_not_configured">The NativeActivity runtime host is not configured</string>
+  <string name="native_activity_runtime_dependency_load_failed">Failed to load a NativeActivity dependency: %1$s</string>
+  <string name="native_activity_runtime_main_load_failed">Failed to load the NativeActivity main shared library: %1$s</string>
+  <string name="native_activity_runtime_entry_missing">The shared library does not export ANativeActivity_onCreate: %1$s</string>
+  <string name="native_activity_runtime_main_entry_missing">The raylib target does not export a regular main. Remove SDL_main macro redirection or switch the run mode to SDL.</string>
+  <string name="native_activity_runtime_bridge_recursion">The NativeActivity entry point resolved back to the host bridge</string>
+  <string name="native_activity_runtime_multiple_entries">Multiple different NativeActivity entry points were found; the runtime cannot choose one: %1$s</string>
+  <string name="toast_compile_done_opening_native_activity">Build complete, opening the NativeActivity graphical runtime</string>
   <string name="native_library_missing_libraries_title">Missing runtime libraries</string>
   <string name="native_library_missing_libraries_message">Missing runtime libraries: %1$s</string>
   <string name="native_library_missing_libraries_package_hint">Install Android package(s) from Package Manager: %1$s, then retry.</string>
@@ -3732,6 +3940,19 @@ kept=%3$d bytes
   <string name="settings_remote_lsp_host_hint">e.g. 192.168.1.100</string>
   <string name="settings_remote_lsp_port">Port</string>
   <string name="settings_remote_lsp_port_hint">Default: 6789</string>
+  <string name="settings_remote_lsp_secure_transport">Secure transport (WSS)</string>
+  <string name="settings_remote_lsp_secure_transport_desc">Uses TLS by default; cleartext connections are restricted to loopback hosts</string>
+  <string name="settings_remote_lsp_auth_token">Authentication token</string>
+  <string name="settings_remote_lsp_auth_token_hint">Enter the server Bearer token; leave empty to clear it</string>
+  <string name="settings_remote_lsp_auth_token_configured">Securely configured</string>
+  <string name="settings_remote_lsp_auth_token_not_configured">Not configured</string>
+  <string name="settings_remote_lsp_auth_token_too_long">Authentication token cannot exceed 8192 characters</string>
+  <string name="settings_remote_lsp_auth_token_control_character">Authentication token cannot contain control characters</string>
+  <string name="settings_remote_lsp_auth_token_save_failed">Failed to save the authentication token</string>
+  <string name="lsp_plugin_toolchain_source_host">Download host: %1$s</string>
+  <string name="lsp_plugin_toolchain_checksum_verified">Integrity: SHA-256 required</string>
+  <string name="lsp_plugin_toolchain_target_path">Target path: %1$s</string>
+  <string name="lsp_plugin_toolchain_verify_command">Verify command: %1$s</string>
   <string name="settings_remote_lsp_rsync_module">rsync module</string>
   <string name="settings_remote_lsp_rsync_module_hint">e.g. tina-workspace</string>
   <string name="settings_remote_lsp_rsync_port">rsync port</string>
@@ -3803,6 +4024,7 @@ kept=%3$d bytes
   <string name="toast_tina_server_restored_default">Restored default URL</string>
   <string name="toast_tina_server_test_failed">Connection failed</string>
   <string name="toast_tina_server_test_ok">Connection successful</string>
+  <string name="toast_tina_server_url_invalid">Invalid URL. Remote servers require HTTPS; localhost or 127.0.0.1 may use HTTP for local testing.</string>
   <string name="toast_upload_logs_failed">Upload failed: %1$s</string>
   <string name="toast_uploading_logs">Uploading logs...</string>
   <string name="toast_zsh_install_success">Zsh installed</string>
@@ -3904,6 +4126,7 @@ kept=%3$d bytes
   <string name="plugin_marketplace_error_plugin_not_found">Plugin not found: %1$s</string>
   <string name="plugin_marketplace_error_plugin_version_not_found">Plugin version not found: %1$s</string>
   <string name="plugin_marketplace_error_download_url_missing">Plugin download URL is not configured: %1$s</string>
+  <string name="plugin_marketplace_error_integrity_metadata_invalid">The plugin is missing a valid file size or SHA-256 integrity value</string>
   <string name="plugin_marketplace_detail_loading">Loading plugin details...</string>
 
   <!-- Profile & Download History -->
@@ -3949,8 +4172,11 @@ kept=%3$d bytes
   <string name="pkg_manager_package_not_installable">This package has no installable platform build: %1$s</string>
   <string name="pkg_manager_error_unknown">Unknown error</string>
   <string name="pkg_manager_error_package_not_found">Package not found: %1$s</string>
+  <string name="pkg_manager_error_system_package_invalid">The registry contains an invalid system package name</string>
   <string name="pkg_manager_error_package_versions_not_found">Package versions not found: %1$s</string>
   <string name="pkg_manager_error_download_info_not_found">Package download info not found: %1$s/%2$d</string>
+  <string name="pkg_manager_error_no_download_source_for_abi">No download source is available for the current ABI (%1$s)</string>
+  <string name="pkg_manager_error_download_size_mismatch">Downloaded file size mismatch: expected %1$d bytes, got %2$d bytes</string>
   <string name="pkg_manager_retry">Retry</string>
   <string name="pkg_manager_update_all">Update All</string>
   <string name="pkg_manager_check_updates">Check Updates</string>
@@ -4114,6 +4340,7 @@ kept=%3$d bytes
   <string name="tutorial_title">Learn</string>
   <string name="tutorial_empty">No tutorials available</string>
   <string name="tutorial_progress">Progress: %1$d%%</string>
+  <string name="tutorial_reading">Reading in progress</string>
   <string name="tutorial_duration">%1$s min</string>
   <string name="tutorial_start">Start Learning</string>
   <string name="tutorial_continue">Continue</string>
@@ -4432,20 +4659,39 @@ kept=%3$d bytes
 <string name="plugin_error_project_template_path_invalid">Invalid project template path: %1$s</string>
   <string name="plugin_error_project_template_file_not_exist">Project template file does not exist: %1$s</string>
   <string name="plugin_error_project_template_build_system_invalid">Invalid project template build system: %1$s</string>
+  <string name="plugin_error_project_template_duplicate_id">Duplicate project template ID: %1$s</string>
+  <string name="plugin_error_project_template_archive_invalid">Invalid project template archive: %1$s</string>
+  <string name="plugin_error_project_template_required_package_invalid">Invalid project template package dependency ID: %1$s</string>
+  <string name="plugin_error_project_template_required_package_duplicate">Project template package dependency IDs must be unique</string>
   <string name="plugin_error_apk_export_template_path_invalid">Invalid APK export template path: %1$s</string>
   <string name="plugin_error_apk_export_template_file_not_exist">APK export template file does not exist: %1$s</string>
   <string name="plugin_error_lsp_language_servers_empty">LSP plugins must declare languageServers</string>
+  <string name="plugin_error_lsp_language_server_duplicate_id">LSP server IDs must be unique: %1$s</string>
   <string name="plugin_error_lsp_languages_empty">LSP server %1$s must declare languages</string>
   <string name="plugin_error_lsp_file_matches_empty">LSP server %1$s must declare fileExtensions or filePatterns</string>
   <string name="plugin_error_lsp_server_type_invalid">Only stdio LSP servers are currently supported: %1$s</string>
   <string name="plugin_error_lsp_server_command_empty">LSP server %1$s must declare a startup command</string>
+  <string name="plugin_error_lsp_server_command_invalid">LSP server %1$s has an invalid command, argument, or environment variable</string>
   <string name="plugin_error_lsp_toolchain_type_invalid">Invalid LSP toolchain type: %1$s. System packages must use system; apt/apk are no longer accepted.</string>
+  <string name="plugin_error_lsp_toolchain_duplicate_id">LSP toolchain IDs must be unique: %1$s</string>
   <string name="plugin_error_lsp_toolchain_system_packages_empty">LSP system toolchain %1$s must declare packages or packagesByManager</string>
+  <string name="plugin_error_lsp_toolchain_packages_invalid">LSP toolchain %1$s contains an unsafe package name or version</string>
+  <string name="plugin_error_lsp_toolchain_id_invalid">Invalid LSP toolchain ID: %1$s</string>
+  <string name="plugin_error_lsp_toolchain_name_empty">LSP toolchain %1$s must have a name</string>
+  <string name="plugin_error_lsp_toolchain_verify_command_invalid">LSP toolchain %1$s must declare a safe verifyCommand</string>
+  <string name="plugin_error_lsp_toolchain_verify_pattern_invalid">LSP toolchain %1$s has an unsafe or invalid verifyPattern</string>
+  <string name="plugin_error_lsp_toolchain_download_https_required">LSP toolchain %1$s must use an HTTPS download URL</string>
+  <string name="plugin_error_lsp_toolchain_sha256_invalid">LSP toolchain %1$s must provide a valid SHA-256 checksum</string>
+  <string name="plugin_error_lsp_toolchain_extract_path_invalid">LSP toolchain %1$s has an unsafe extraction path</string>
     <string name="run_config_build_type">Build Type</string>
     <string name="run_config_build_type_debug">Debug</string>
     <string name="run_config_build_type_debug_desc">Build with debug info for development and troubleshooting</string>
     <string name="run_config_build_type_release">Release</string>
     <string name="run_config_build_type_release_desc">Build optimized artifacts for final runs and performance testing</string>
+    <string name="run_config_build_type_rel_with_deb_info">RelWithDebInfo</string>
+    <string name="run_config_build_type_rel_with_deb_info_desc">Optimize while retaining debug information for release-like diagnostics</string>
+    <string name="run_config_build_type_min_size_rel">MinSizeRel</string>
+    <string name="run_config_build_type_min_size_rel_desc">Optimize release artifacts for the smallest output size</string>
     <string name="menu_cmake_tools">CMake</string>
     <string name="menu_cmake_open_artifacts_dir">Open Build Artifacts</string>
     <string name="menu_cmake_reconfigure">Reconfigure Cache</string>
@@ -4472,6 +4718,51 @@ kept=%3$d bytes
     <string name="editor_status_remote_error">Remote Error</string>
     <string name="editor_status_lsp_error">LSP Error</string>
     <string name="editor_cursor_position">Ln %1$d, Col %2$d</string>
+    <string name="cxx_context_title">C++ Compile Context</string>
+    <string name="cxx_context_section_status">Current Status</string>
+    <string name="cxx_context_lsp_status">Language Service</string>
+    <string name="cxx_context_preparing">Preparing the compile database and connecting to clangd</string>
+    <string name="cxx_context_unavailable">No C++ compile context is available for the current file yet</string>
+    <string name="cxx_context_mode">Run Mode</string>
+    <string name="cxx_context_mode_local">Local clangd</string>
+    <string name="cxx_context_mode_remote">Remote clangd</string>
+    <string name="cxx_context_workspace">Workspace</string>
+    <string name="cxx_context_section_database">Compile Database</string>
+    <string name="cxx_context_remote_managed">Compile commands are managed by the remote language service. The remote compile_commands.json is not available locally.</string>
+    <string name="cxx_context_reload">Refresh and Reload</string>
+    <string name="cxx_context_value_unavailable">Unavailable</string>
+    <string name="cxx_context_database_path">File Path</string>
+    <string name="cxx_context_database_source">Source</string>
+    <string name="cxx_context_source_external">Project-generated (CMake/external tool)</string>
+    <string name="cxx_context_source_fallback">Generated by TinaIDE fallback</string>
+    <string name="cxx_context_database_updated_at">Updated</string>
+    <string name="cxx_context_project_type">Project Type</string>
+    <string name="cxx_context_project_cmake">CMake Project</string>
+    <string name="cxx_context_project_single_file">Single-file Project</string>
+    <string name="cxx_context_project_standalone">Standalone File</string>
+    <string name="cxx_context_section_command">Current File Compile Command</string>
+    <string name="cxx_context_command_match">Match</string>
+    <string name="cxx_context_match_exact">Exact match</string>
+    <string name="cxx_context_match_inferred">Inferred from a related source file</string>
+    <string name="cxx_context_match_missing">No matching command</string>
+    <string name="cxx_context_matched_source">Matched Source</string>
+    <string name="cxx_context_compiler">Compiler</string>
+    <string name="cxx_context_standard">Language Standard</string>
+    <string name="cxx_context_target">Target</string>
+    <string name="cxx_context_toolchain">Toolchain</string>
+    <string name="cxx_context_sysroot_profile">NDK Runtime</string>
+    <string name="cxx_context_sysroot_profile_value">%1$s (API %2$d)</string>
+    <string name="cxx_context_sysroot">Sysroot</string>
+    <string name="cxx_context_resource_directory">Clang Resource Directory</string>
+    <string name="cxx_context_include_paths">Header Search Paths</string>
+    <string name="cxx_context_defines">Preprocessor Defines</string>
+    <string name="cxx_context_arguments">Full Compile Arguments</string>
+    <string name="cxx_context_issue_database_missing">compile_commands.json is missing or empty. Refresh the compile context.</string>
+    <string name="cxx_context_issue_database_invalid">compile_commands.json is invalid. clangd may not index the project correctly.</string>
+    <string name="cxx_context_issue_command_missing">No command exists for this file. clangd will use fallback arguments.</string>
+    <string name="cxx_context_issue_setup_unavailable">The compile database could not be prepared. Check the toolchain, sysroot, and project configuration.</string>
+    <string name="cxx_context_issue_toolchain_failed">The toolchain or sysroot setup failed. Check its installation in Toolchain settings.</string>
+    <string name="cxx_context_issue_clangd_failed">clangd failed to start. Refresh and check the LSP diagnostic logs.</string>
   <string name="bottom_panel_performance">Performance</string>
   <string name="editor_perf_unavailable">No editor performance snapshot is available.</string>
   <string name="editor_perf_section_frame">Frame Metrics</string>
@@ -4666,4 +4957,9 @@ kept=%3$d bytes
   <string name="hex_elf_jni_hint_symbol">symbol: %1$s</string>
   <string name="hex_elf_jni_hint_string">string: %1$s</string>
   <string name="hex_signal_elf_jni_registration_hints">JNI registration hints</string>
+    <string name="error_project_import_recursive_source">Cannot import a parent directory that contains the TinaIDE projects directory</string>
+    <string name="error_project_import_symlink">The project directory contains unsupported symbolic links</string>
+    <string name="error_project_import_too_large">The project content exceeds the import limits</string>
+    <string name="markdown_html_details">Details</string>
+    <string name="markdown_html_progress">[Progress: %1$d%%]</string>
 </resources>

@@ -122,9 +122,27 @@ internal class MainActivityBuildUiState(
         editingConfig = config
     }
 
-    fun updateRunConfigManager(updated: RunConfigurationManager) {
+    fun commitRunConfigManager(
+        updated: RunConfigurationManager,
+        persist: (RunConfigurationManager) -> Boolean,
+        onSelectedSingleFileCppStandardChanged: () -> Unit = {},
+    ): Boolean {
+        val previousCppStandard = selectedSingleFileCppStandard(runConfigManager)
+        if (!persist(updated)) return false
         runConfigManager = updated
+        if (
+            currentBuildSystem == BuildSystem.SINGLE_FILE &&
+            previousCppStandard != selectedSingleFileCppStandard(updated)
+        ) {
+            onSelectedSingleFileCppStandardChanged()
+        }
+        return true
     }
+
+    private fun selectedSingleFileCppStandard(manager: RunConfigurationManager): String? =
+        RunConfiguration.normalizeSingleFileCppStandard(
+            manager.selectedConfig.singleFileCppStandard
+        )
 
     fun openApkPackageDialog() {
         showApkPackageDialog = true

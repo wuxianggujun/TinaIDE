@@ -133,13 +133,15 @@ Basic C/C++ build, run, and clangd completion no longer require PRoot.
 | Bundled Plugins | `assets/bundled_plugins/*` auto install/update on app start |
 | Public Registry | Plugins, packages, and Linux distro metadata are published from `https://github.com/wuxianggujun/TinaIDE-Registry` |
 
-The current Android client reads `plugins/index.v2.json`,
-`packages/index.v2.json`, and `linux-distro/manifest.v1.json`. Marketplace
-requests no longer fall back to legacy `plugins/index.json` /
-`packages/index.json`; legacy v1 artifacts should be generated explicitly in
-the Registry repo only when old clients must be served. The Linux distro
-manifest uses a separate protocol and falls back through fresh cache, Registry
-endpoints, stale cache, and finally the bundled asset.
+TinaIDE 0.18.11 and later read the full `plugins/index.v3.json` history and
+select the highest plugin version compatible with the host Plugin API and
+`minAppVersion`. Older clients keep reading the conservative
+`plugins/index.v2.json` view, while packages remain on `packages/index.v2.json`.
+Marketplace requests do not fall back to legacy `plugins/index.json` /
+`packages/index.json`; v2 and v3 reference the same immutable `.tinaplug`
+artifacts. The Linux distro `linux-distro/manifest.v1.json` uses a separate
+protocol and falls back through fresh cache, Registry endpoints, stale cache,
+and finally the bundled asset.
 
 ### File Preview
 

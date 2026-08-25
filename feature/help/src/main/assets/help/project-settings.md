@@ -130,6 +130,10 @@
 - LDLIBS
 - CMake Args
 
+这些值是项目内所有运行配置共享的基础参数。Debug / Release 等构建类型放在工作台的运行配置中，不在项目设置里重复维护。
+
+`CMake Args` 不能设置 `CMAKE_BUILD_TYPE`。该变量由当前运行配置生成，避免项目共享参数覆盖所选的 Debug / Release 变体。
+
 ### 它们的编辑方式不完全一样
 
 - `CFLAGS / CXXFLAGS / LDFLAGS / LDLIBS`

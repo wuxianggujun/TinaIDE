@@ -1,5 +1,6 @@
 package com.wuxianggujun.tinaide.core.compile
 
+import com.wuxianggujun.tinaide.project.ProjectApkExportSupportResolver
 import com.wuxianggujun.tinaide.project.ProjectMetadataStore
 import java.io.File
 import timber.log.Timber
@@ -17,10 +18,11 @@ object ProjectRunConfigBootstrapper {
         val configFile = RunConfigurationManager.configFile(projectPath)
         if (configFile.exists()) return false
 
+        ProjectApkExportSupportResolver.ensureDetected(projectDir)
         val metadata = ProjectMetadataStore.read(projectDir) ?: return false
         val defaultConfig = CMakeRunTargetResolver.createDefaultRunConfiguration(
             metadata = metadata,
-            requireTargetForNonSdl = true,
+            requireTargetForTerminal = true,
         ) ?: return false
 
         val defaultManager = RunConfigurationManager(

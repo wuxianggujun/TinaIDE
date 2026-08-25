@@ -57,11 +57,17 @@ internal fun createMainActivityCompileHost(
             onError = onToastError,
             onInfo = onToastInfo,
         ),
-        sdlLauncher = ContextCompileSdlLauncher(
-            context = activity,
-            runConfigurationProvider = { compilerViewModel.getRunConfigurationManager().selectedConfig },
-            onError = onToastError,
-            activityStarter = activity::startActivity,
+        graphicalRuntimeLauncher = ContextCompileGraphicalRuntimeLauncher(
+            sdlLauncher = ContextCompileSdlLauncher(
+                context = activity,
+                onError = onToastError,
+                activityStarter = activity::startActivity,
+            ),
+            nativeActivityLauncher = ContextCompileNativeActivityLauncher(
+                context = activity,
+                onError = onToastError,
+                activityStarter = activity::startActivity,
+            ),
         ),
         terminalLauncher = ContextCompileTerminalLauncher(
             context = activity,

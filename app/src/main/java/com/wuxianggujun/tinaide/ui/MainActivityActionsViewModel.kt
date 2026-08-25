@@ -6,16 +6,13 @@ import android.content.ClipboardManager
 import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.wuxianggujun.tinaide.core.config.Prefs
 import com.wuxianggujun.tinaide.core.editor.IBookmarkRepository
 import com.wuxianggujun.tinaide.core.format.CodeFormatter
 import com.wuxianggujun.tinaide.core.format.FormatResult
-import com.wuxianggujun.tinaide.core.format.FormatStyle
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.core.lang.CxxFileSupport
 import com.wuxianggujun.tinaide.core.linux.LinuxEnvironmentProvider
-import com.wuxianggujun.tinaide.core.linux.LinuxRunModePolicy
 import com.wuxianggujun.tinaide.core.linux.UnavailableLinuxEnvironmentProvider
 import com.wuxianggujun.tinaide.editor.IEditorManager
 import com.wuxianggujun.tinaide.editor.io.AtomicTextFileWriter
@@ -25,17 +22,27 @@ import com.wuxianggujun.tinaide.editor.session.SaveResult
 import com.wuxianggujun.tinaide.file.IProjectContext
 import com.wuxianggujun.tinaide.file.IProjectSession
 import com.wuxianggujun.tinaide.storage.ProjectDirStructure
+import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveBookmarkCursorContext
+import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveBookmarkCursorContextResult
+import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveBookmarkTarget
+import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveBookmarkTargetResult
+import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveEditableEditorSnapshot
+import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveEditableEditorSnapshotResult
+import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveEditorCommandResult
+import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveSaveTarget
+import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveSaveTargetResult
+import com.wuxianggujun.tinaide.ui.compose.state.editor.ConditionalEditorTextReplaceResult
 import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState
+import com.wuxianggujun.tinaide.ui.compose.state.editor.TextEditOperation
 import java.io.File
-import java.net.URI
 import java.nio.charset.Charset
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.eclipse.lsp4j.TextEdit
 import org.eclipse.lsp4j.WorkspaceEdit
 import timber.log.Timber
 
@@ -59,13 +66,8 @@ class MainActivityActionsViewModel(
     private val projectContext: IProjectContext,
     private val projectSession: IProjectSession,
     private val bookmarkRepository: IBookmarkRepository,
+    private val linuxEnvironmentProvider: LinuxEnvironmentProvider = UnavailableLinuxEnvironmentProvider,
 ) : AndroidViewModel(application) {
-
-    private val linuxEnvironmentProvider: LinuxEnvironmentProvider by lazy {
-        runCatching {
-            org.koin.core.context.GlobalContext.get().getOrNull<LinuxEnvironmentProvider>()
-        }.getOrNull() ?: UnavailableLinuxEnvironmentProvider
-    }
 
     /**
      * UI 事件（Toast 消息等）
@@ -76,14 +78,9 @@ class MainActivityActionsViewModel(
 
     enum class ToastType { SUCCESS, ERROR, INFO }
 
-    private data class WorkspaceFileEditBatch(
-        val edits: MutableList<TextEdit> = mutableListOf(),
-        var expectedVersion: Int? = null
-    )
-
     private data class OpenWorkspaceEditPlan(
         val tabId: String,
-        val edits: List<EditorContainerState.TextEditOperation>,
+        val edits: List<TextEditOperation>,
         val originalText: String,
         val documentVersion: Long?,
         val expectedLspVersion: Int?
@@ -108,12 +105,12 @@ class MainActivityActionsViewModel(
      */
     fun saveCurrentFile(editorContainerState: EditorContainerState) {
         val saveTarget = when (val result = editorContainerState.getActiveSaveTargetResult()) {
-            EditorContainerState.ActiveSaveTargetResult.NoOpenFile -> {
+            ActiveSaveTargetResult.NoOpenFile -> {
                 showToast(Strings.toast_no_open_file.strOr(context), ToastType.INFO)
                 return
             }
 
-            is EditorContainerState.ActiveSaveTargetResult.Available -> result.target
+            is ActiveSaveTargetResult.Available -> result.target
         }
         viewModelScope.launch {
             val result = editorManager.save(saveTarget.tabId, SaveReason.MANUAL)
@@ -139,18 +136,18 @@ class MainActivityActionsViewModel(
         }
 
         val bookmarkTarget = when (val result = editorContainerState.getActiveBookmarkTargetResult()) {
-            EditorContainerState.ActiveBookmarkTargetResult.NoOpenFile,
-            EditorContainerState.ActiveBookmarkTargetResult.UnsupportedEditor -> {
+            ActiveBookmarkTargetResult.NoOpenFile,
+            ActiveBookmarkTargetResult.UnsupportedEditor -> {
                 showToast(Strings.toast_no_open_file.strOr(context), ToastType.INFO)
                 return
             }
 
-            EditorContainerState.ActiveBookmarkTargetResult.NoBookmarkableLine -> {
+            ActiveBookmarkTargetResult.NoBookmarkableLine -> {
                 showToast(Strings.toast_bookmark_ignored_blank_line.strOr(context), ToastType.INFO)
                 return
             }
 
-            is EditorContainerState.ActiveBookmarkTargetResult.Success -> result.target
+            is ActiveBookmarkTargetResult.Success -> result.target
         }
 
         viewModelScope.launch {
@@ -184,13 +181,13 @@ class MainActivityActionsViewModel(
         }
 
         val bookmarkContext = when (val result = editorContainerState.getActiveBookmarkCursorContextResult()) {
-            EditorContainerState.ActiveBookmarkCursorContextResult.NoOpenFile,
-            EditorContainerState.ActiveBookmarkCursorContextResult.UnsupportedEditor -> {
+            ActiveBookmarkCursorContextResult.NoOpenFile,
+            ActiveBookmarkCursorContextResult.UnsupportedEditor -> {
                 showToast(Strings.toast_no_open_file.strOr(context), ToastType.INFO)
                 return
             }
 
-            is EditorContainerState.ActiveBookmarkCursorContextResult.Success -> result.context
+            is ActiveBookmarkCursorContextResult.Success -> result.context
         }
         val currentLine = bookmarkContext.line
         val currentFilePath = bookmarkContext.file.absolutePath
@@ -314,12 +311,12 @@ class MainActivityActionsViewModel(
                 guessLineCommentToken(file.extension.lowercase())
             }
         ) {
-            EditorContainerState.ActiveEditorCommandResult.SUCCESS -> Unit
-            EditorContainerState.ActiveEditorCommandResult.NO_OPEN_FILE -> {
+            ActiveEditorCommandResult.SUCCESS -> Unit
+            ActiveEditorCommandResult.NO_OPEN_FILE -> {
                 showToast(Strings.toast_no_open_file.strOr(context), ToastType.INFO)
             }
 
-            EditorContainerState.ActiveEditorCommandResult.UNSUPPORTED_EDITOR -> {
+            ActiveEditorCommandResult.UNSUPPORTED_EDITOR -> {
                 showToast(Strings.toast_file_not_support_format.strOr(context), ToastType.INFO)
             }
         }
@@ -332,25 +329,27 @@ class MainActivityActionsViewModel(
      */
     fun formatCode(editorContainerState: EditorContainerState) {
         val formatTarget = when (val result = editorContainerState.snapshotActiveEditableEditorContent()) {
-            EditorContainerState.ActiveEditableEditorSnapshotResult.NoOpenFile -> {
+            ActiveEditableEditorSnapshotResult.NoOpenFile -> {
                 showToast(Strings.toast_no_open_file.strOr(context), ToastType.INFO)
                 return
             }
 
-            EditorContainerState.ActiveEditableEditorSnapshotResult.UnsupportedEditor -> {
+            ActiveEditableEditorSnapshotResult.UnsupportedEditor -> {
                 showToast(Strings.toast_file_not_support_format.strOr(context), ToastType.INFO)
                 return
             }
 
-            is EditorContainerState.ActiveEditableEditorSnapshotResult.Success -> result.snapshot
+            is ActiveEditableEditorSnapshotResult.Success -> result.snapshot
         }
         val file = formatTarget.file
         val content = formatTarget.text
-
-        val extension = file.extension.lowercase()
+        val formatter = CodeFormatter(
+            context = context,
+            linuxEnvironmentProvider = linuxEnvironmentProvider
+        )
 
         // 检查是否支持格式化
-        if (extension !in CxxFileSupport.editorRelatedExtensions) {
+        if (!formatter.isSupported(file)) {
             showToast(Strings.toast_file_type_not_support_format.strOr(context), ToastType.INFO)
             return
         }
@@ -359,35 +358,16 @@ class MainActivityActionsViewModel(
             showToast(Strings.toast_formatting.strOr(context), ToastType.INFO)
 
             try {
-                val formatter = CodeFormatter(
-                    context = context,
-                    linuxEnvironmentProvider = linuxEnvironmentProvider
-                )
-
                 // 检查 clang-format 是否可用
                 if (!formatter.isAvailable()) {
                     showToast(Strings.toast_clang_format_not_available.strOr(context), ToastType.ERROR)
                     return@launch
                 }
 
-                val runMode = LinuxRunModePolicy.resolve(
-                    configuredMode = Prefs.clangFormatRunMode,
-                    linuxEnvironmentAvailable = linuxEnvironmentProvider.get().isAvailable()
-                )
-
-                val filePath = when (runMode) {
-                    LinuxRunModePolicy.RunMode.PROOT -> {
-                        linuxEnvironmentProvider.get().toGuestPath(file.absolutePath)
-                    }
-
-                    LinuxRunModePolicy.RunMode.NATIVE -> file.absolutePath
-                }
-
                 // 执行格式化
                 val result = formatter.format(
                     content = content,
-                    fileName = filePath,
-                    style = FormatStyle.FILE
+                    sourceFile = file,
                 )
 
                 when (result) {
@@ -396,7 +376,7 @@ class MainActivityActionsViewModel(
                         withContext(Dispatchers.Main) {
                             applyFormattedContent(
                                 editorContainerState = editorContainerState,
-                                originalContent = content,
+                                formatTarget = formatTarget,
                                 formattedContent = result.formattedContent
                             )
                         }
@@ -405,6 +385,8 @@ class MainActivityActionsViewModel(
                         showToast(Strings.toast_format_failed.strOr(context, result.message), ToastType.ERROR)
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 showToast(Strings.toast_format_error.strOr(context, e.message ?: ""), ToastType.ERROR)
             }
@@ -416,17 +398,24 @@ class MainActivityActionsViewModel(
      */
     private fun applyFormattedContent(
         editorContainerState: EditorContainerState,
-        originalContent: String,
+        formatTarget: ActiveEditableEditorSnapshot,
         formattedContent: String
     ) {
-        if (formattedContent != originalContent) {
-            if (editorContainerState.replaceActiveTabText(formattedContent)) {
+        when (
+            editorContainerState.replaceTextInTabIfUnchanged(
+                tabId = formatTarget.tabId,
+                expectedText = formatTarget.text,
+                newText = formattedContent,
+            )
+        ) {
+            ConditionalEditorTextReplaceResult.REPLACED ->
                 showToast(Strings.toast_format_done.strOr(context), ToastType.SUCCESS)
-            } else {
+            ConditionalEditorTextReplaceResult.UNCHANGED ->
+                showToast(Strings.toast_code_already_formatted.strOr(context), ToastType.INFO)
+            ConditionalEditorTextReplaceResult.CONTENT_CHANGED ->
+                showToast(Strings.toast_format_source_changed.strOr(context), ToastType.INFO)
+            ConditionalEditorTextReplaceResult.TARGET_UNAVAILABLE ->
                 showToast(Strings.toast_file_not_support_format.strOr(context), ToastType.INFO)
-            }
-        } else {
-            showToast(Strings.toast_code_already_formatted.strOr(context), ToastType.INFO)
         }
     }
 
@@ -470,71 +459,36 @@ class MainActivityActionsViewModel(
     /**
      * 应用 LSP WorkspaceEdit
      */
-    suspend fun applyWorkspaceEdit(
+    internal suspend fun applyWorkspaceEdit(
         editorContainerState: EditorContainerState,
-        edit: WorkspaceEdit
+        edit: WorkspaceEdit,
+        confirmMultiFileEdit: suspend (WorkspaceEditPreview) -> Boolean = { true },
     ): Boolean {
-        val editsByFile = linkedMapOf<File, WorkspaceFileEditBatch>()
-
-        fun addEdits(uri: String, edits: List<TextEdit>, expectedVersion: Int?): Boolean {
-            val file = workspaceUriToFile(uri) ?: return false
-            val batch = editsByFile.getOrPut(file) { WorkspaceFileEditBatch() }
-            if (expectedVersion != null) {
-                val previousVersion = batch.expectedVersion
-                if (previousVersion != null && previousVersion != expectedVersion) return false
-                batch.expectedVersion = expectedVersion
-            }
-            batch.edits.addAll(edits)
-            return true
-        }
-
-        edit.changes.orEmpty().forEach { (uri, edits) ->
-            if (!addEdits(uri, edits, expectedVersion = null)) return false
-        }
-
-        edit.documentChanges.orEmpty().forEach { change ->
-            if (!change.isLeft) return false
-            val documentEdit = change.left
-            val extractedEdits = mutableListOf<TextEdit>()
-            @Suppress("UNCHECKED_CAST")
-            val rawEdits = documentEdit.edits as List<*>
-            rawEdits.forEach { item ->
-                val textEdit = when (item) {
-                    is TextEdit -> item
-                    is org.eclipse.lsp4j.jsonrpc.messages.Either<*, *> -> when {
-                        item.isLeft -> item.left as? TextEdit
-                        item.isRight -> item.right as? TextEdit
-                        else -> null
-                    }
-                    else -> null
-                } ?: return false
-                extractedEdits += textEdit
-            }
-            if (!addEdits(
-                    uri = documentEdit.textDocument.uri,
-                    edits = extractedEdits,
-                    expectedVersion = documentEdit.textDocument.version
-                )
-            ) {
-                return false
-            }
-        }
-
-        if (editsByFile.isEmpty()) return false
+        val projectRoot = projectContext.getCurrentProject()?.rootPath?.let(::File) ?: return false
+        val parsedEdit = WorkspaceEditParser.parse(
+            edit = edit,
+            projectRoot = projectRoot,
+            maxFiles = MAX_WORKSPACE_EDIT_FILES,
+            maxReplacementBytes = MAX_WORKSPACE_EDIT_BYTES,
+        ) ?: return false
+        if (parsedEdit.preview.files.size > 1 && !confirmMultiFileEdit(parsedEdit.preview)) return false
+        if (!isCurrentProjectRoot(parsedEdit.projectRoot)) return false
 
         val openPlans = mutableListOf<OpenWorkspaceEditPlan>()
         val closedPlans = mutableListOf<ClosedWorkspaceEditPlan>()
-        editsByFile.forEach { (file, batch) ->
-            if (batch.edits.isEmpty()) return@forEach
+        parsedEdit.files.forEach { fileEdits ->
+            val file = fileEdits.file
+            if (fileEdits.edits.isEmpty()) return@forEach
             val tabId = editorContainerState.findOpenTabIdByFileOrNull(file)
             if (tabId != null) {
-                if (batch.expectedVersion != null &&
-                    !editorContainerState.isLspDocumentVersionCurrent(tabId, batch.expectedVersion!!)
+                val expectedVersion = fileEdits.expectedVersion
+                if (expectedVersion != null &&
+                    !editorContainerState.isLspDocumentVersionCurrent(tabId, expectedVersion)
                 ) {
                     return false
                 }
-                val mappedEdits = batch.edits.map { textEdit ->
-                    EditorContainerState.TextEditOperation(
+                val mappedEdits = fileEdits.edits.map { textEdit ->
+                    TextEditOperation(
                         startLine = textEdit.range.start.line,
                         startColumn = textEdit.range.start.character,
                         endLine = textEdit.range.end.line,
@@ -544,13 +498,14 @@ class MainActivityActionsViewModel(
                 }
                 val plan = withContext(Dispatchers.Main.immediate) {
                     val originalText = editorContainerState.readTextFromTab(tabId) ?: return@withContext null
-                    val updatedText = WorkspaceTextEditApplier.apply(originalText, batch.edits) ?: return@withContext null
+                    val updatedText = WorkspaceTextEditApplier.apply(originalText, fileEdits.edits)
+                        ?: return@withContext null
                     if (updatedText == originalText) return@withContext OpenWorkspaceEditPlan(
                         tabId = tabId,
                         edits = emptyList(),
                         originalText = originalText,
                         documentVersion = editorContainerState.readTabDocumentVersion(tabId),
-                        expectedLspVersion = batch.expectedVersion
+                        expectedLspVersion = fileEdits.expectedVersion
                     )
                     if (!editorContainerState.canApplyTextEditsInTab(tabId, mappedEdits)) return@withContext null
                     OpenWorkspaceEditPlan(
@@ -558,18 +513,18 @@ class MainActivityActionsViewModel(
                         edits = mappedEdits,
                         originalText = originalText,
                         documentVersion = editorContainerState.readTabDocumentVersion(tabId),
-                        expectedLspVersion = batch.expectedVersion
+                        expectedLspVersion = fileEdits.expectedVersion
                     )
                 } ?: return false
                 openPlans += plan
             } else {
-                if (batch.expectedVersion != null) return false
+                if (fileEdits.expectedVersion != null) return false
                 val plan = withContext(Dispatchers.IO) {
                     runCatching {
                         if (!file.isFile) return@runCatching null
                         val charset = FileCharsetDetector.detect(file)
                         val originalText = file.readText(charset)
-                        val updatedText = WorkspaceTextEditApplier.apply(originalText, batch.edits)
+                        val updatedText = WorkspaceTextEditApplier.apply(originalText, fileEdits.edits)
                             ?: return@runCatching null
                         ClosedWorkspaceEditPlan(file, originalText, updatedText, charset)
                     }.getOrNull()
@@ -654,18 +609,10 @@ class MainActivityActionsViewModel(
         }
     }
 
-    /**
-     * 将 URI 转换为文件
-     */
-    private fun workspaceUriToFile(uri: String): File? = runCatching {
-        val parsed = URI(uri)
-        val file = when {
-            parsed.scheme == null -> File(uri)
-            parsed.scheme.equals("file", ignoreCase = true) -> File(parsed)
-            else -> null
-        }
-        file?.absoluteFile?.toPath()?.normalize()?.toFile()
-    }.getOrNull()
+    private fun isCurrentProjectRoot(expectedRoot: File): Boolean = projectContext.getCurrentProject()?.rootPath
+        ?.let(::File)
+        ?.runCatching { canonicalFile }
+        ?.getOrNull() == expectedRoot
 
     // ============ 项目关闭 ============
 
@@ -690,7 +637,11 @@ class MainActivityActionsViewModel(
             if (forgetSession) {
                 clearCurrentProjectState()
             }
-            projectSession.closeProject()
+            if (forgetSession) {
+                projectSession.closeProject()
+            } else {
+                projectSession.clearInMemorySession()
+            }
         }
 
         return true
@@ -739,5 +690,7 @@ class MainActivityActionsViewModel(
 
     companion object {
         private const val TAG = "MainActionsViewModel"
+        private const val MAX_WORKSPACE_EDIT_FILES = 128
+        private const val MAX_WORKSPACE_EDIT_BYTES = 8L * 1024L * 1024L
     }
 }

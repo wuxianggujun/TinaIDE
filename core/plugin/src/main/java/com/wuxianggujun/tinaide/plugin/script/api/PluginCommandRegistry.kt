@@ -4,7 +4,6 @@ import com.wuxianggujun.tinaide.core.commands.HostCommandInvocation
 import com.wuxianggujun.tinaide.core.commands.HostCommands
 import com.wuxianggujun.tinaide.plugin.script.PluginExecutionResult
 import com.wuxianggujun.tinaide.plugin.script.PluginPermission
-import com.wuxianggujun.tinaide.plugin.script.ScriptPluginRuntime
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CoroutineScope
@@ -65,10 +64,17 @@ object PluginCommandRegistry {
     val stateRevision: StateFlow<Long> = _stateRevision.asStateFlow()
 
     @Volatile
-    private var runtimeProvider: ((String) -> ScriptPluginRuntime?)? = null
+    private var callbackInvoker: (suspend (String, String, Map<String, Any?>) -> PluginExecutionResult)? = null
 
-    fun setRuntimeProvider(provider: (String) -> ScriptPluginRuntime?) {
-        runtimeProvider = provider
+    @Volatile
+    private var permissionChecker: ((String, PluginPermission) -> PluginCommandAvailability)? = null
+
+    fun setRuntimeAccess(
+        callbackInvoker: suspend (String, String, Map<String, Any?>) -> PluginExecutionResult,
+        permissionChecker: (String, PluginPermission) -> PluginCommandAvailability,
+    ) {
+        this.callbackInvoker = callbackInvoker
+        this.permissionChecker = permissionChecker
         signalStateChanged()
     }
 
@@ -214,6 +220,8 @@ object PluginCommandRegistry {
         commandsById.clear()
         registrationIssuesByPluginId.clear()
         executionIssuesByPluginId.clear()
+        callbackInvoker = null
+        permissionChecker = null
         if (changed) {
             signalStateChanged()
         }
@@ -250,16 +258,8 @@ object PluginCommandRegistry {
             return PluginCommandAvailability(available = false)
         }
 
-        val runtime = runtimeProvider?.invoke(command.pluginId)
-            ?: return PluginCommandAvailability(available = false)
-        if (runtime.checkPermission(PluginPermission.COMMAND_EXECUTE)) {
-            return PluginCommandAvailability(available = true)
-        }
-
-        return PluginCommandAvailability(
-            available = false,
-            errorMessage = runtime.describePermissionDenial(PluginPermission.COMMAND_EXECUTE)
-        )
+        return permissionChecker?.invoke(command.pluginId, PluginPermission.COMMAND_EXECUTE)
+            ?: PluginCommandAvailability(available = false)
     }
 
     fun dispatch(
@@ -272,13 +272,10 @@ object PluginCommandRegistry {
         invocation: HostCommandInvocation = HostCommandInvocation()
     ): PluginCommandDispatchResult {
         val command = commandsById[commandId.trim()] ?: return PluginCommandDispatchResult(handled = false)
-        val runtime = runtimeProvider?.invoke(command.pluginId) ?: return PluginCommandDispatchResult(handled = false)
-        if (!runtime.checkPermission(PluginPermission.COMMAND_EXECUTE)) {
-            val errorMessage = runtime.reportPermissionDenied(
-                COMMANDS_API_NAMESPACE,
-                COMMANDS_EXECUTE_METHOD,
-                PluginPermission.COMMAND_EXECUTE
-            )
+        val permission = permissionChecker?.invoke(command.pluginId, PluginPermission.COMMAND_EXECUTE)
+            ?: return PluginCommandDispatchResult(handled = false)
+        if (!permission.available) {
+            val errorMessage = permission.errorMessage ?: "Plugin command permission denied"
             Timber.tag(TAG).w(
                 "Plugin command permission denied before dispatch: commandId=%s pluginId=%s",
                 command.commandId,
@@ -294,7 +291,8 @@ object PluginCommandRegistry {
 
         scope.launch {
             val result = runCatching {
-                runtime.callFunction(command.callbackName, payload)
+                callbackInvoker?.invoke(command.pluginId, command.callbackName, payload)
+                    ?: PluginExecutionResult.Error("Plugin runtime unavailable")
             }.getOrElse { throwable ->
                 val message = throwable.message
                     ?.trim()

@@ -36,7 +36,7 @@ class AppUpdateCheckerTest {
     }
 
     @Test
-    fun checkForUpdate_shouldFallbackToProxyApiAndRewriteReleaseUrls() = runTest {
+    fun checkForUpdate_shouldFallbackToProxyApiAndKeepOfficialReleaseUrls() = runTest {
         val officialUrl = "https://api.github.test/releases/latest"
         val proxyPrefix = "https://proxy.test/"
         val proxyUrl = proxyPrefix + officialUrl
@@ -73,8 +73,8 @@ class AppUpdateCheckerTest {
         assertThat(client.requestedUrls).containsExactly(officialUrl, proxyUrl).inOrder()
         assertThat(update?.tagName).isEqualTo("v0.18.2")
         assertThat(update?.assetName).isEqualTo("TinaIDE-arm64-v8a-release.apk")
-        assertThat(update?.releasePageUrl).isEqualTo(proxyPrefix + releasePageUrl)
-        assertThat(update?.downloadUrl).isEqualTo(proxyPrefix + assetUrl)
+        assertThat(update?.releasePageUrl).isEqualTo(releasePageUrl)
+        assertThat(update?.downloadUrl).isEqualTo(assetUrl)
     }
 
     @Test
@@ -114,8 +114,8 @@ class AppUpdateCheckerTest {
 
         assertThat(client.requestedUrls).containsExactly(officialApiUrl, proxyLatestUrl).inOrder()
         assertThat(update?.tagName).isEqualTo("v0.18.3")
-        assertThat(update?.releasePageUrl).isEqualTo(finalProxyReleaseUrl)
-        assertThat(update?.downloadUrl).isEqualTo(finalProxyReleaseUrl)
+        assertThat(update?.releasePageUrl).isEqualTo(finalReleaseUrl)
+        assertThat(update?.downloadUrl).isEqualTo(finalReleaseUrl)
         assertThat(update?.assetName).isNull()
     }
 
@@ -146,6 +146,45 @@ class AppUpdateCheckerTest {
         assertThat(endpoints[2].urlPrefix).isEqualTo("https://mirror.example.com/")
         assertThat(endpoints[3].url)
             .isEqualTo("https://mirror.example.com/https://github.com/wuxianggujun/TinaIDE/releases/latest")
+    }
+
+    @Test
+    fun appUpdateEndpoints_shouldIgnoreNonApkAssetsWhenValidatingReleaseDownloads() {
+        val tag = "v0.18.4"
+        val release = GitHubRelease(
+            tagName = tag,
+            htmlUrl = "https://github.com/wuxianggujun/TinaIDE/releases/tag/$tag",
+            assets = listOf(
+                GitHubReleaseAsset(
+                    name = "checksums.txt",
+                    browserDownloadUrl = "https://downloads.example.com/checksums.txt",
+                ),
+                GitHubReleaseAsset(
+                    name = "TinaIDE-arm64-v8a-release.apk",
+                    browserDownloadUrl = "https://github.com/wuxianggujun/TinaIDE/releases/download/$tag/" +
+                        "TinaIDE-arm64-v8a-release.apk",
+                ),
+            ),
+        )
+
+        AppUpdateEndpoints.requireTrustedRelease(release)
+    }
+
+    @Test
+    fun appUpdateEndpoints_shouldRejectApkOutsideOfficialRelease() {
+        val tag = "v0.18.4"
+        val release = GitHubRelease(
+            tagName = tag,
+            htmlUrl = "https://github.com/wuxianggujun/TinaIDE/releases/tag/$tag",
+            assets = listOf(
+                GitHubReleaseAsset(
+                    name = "TinaIDE-arm64-v8a-release.apk",
+                    browserDownloadUrl = "https://downloads.example.com/TinaIDE.apk",
+                )
+            ),
+        )
+
+        assertThat(runCatching { AppUpdateEndpoints.requireTrustedRelease(release) }.isFailure).isTrue()
     }
 
     private fun checker(

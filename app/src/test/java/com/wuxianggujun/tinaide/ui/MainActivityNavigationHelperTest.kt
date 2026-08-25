@@ -151,4 +151,23 @@ class MainActivityNavigationHelperTest {
         }
         coVerify(exactly = 1) { bottomPanelController.collapseImmediate() }
     }
+
+    @Test
+    fun `resolveDiagnosticFile should decode file URI for exact code action target`() {
+        val diagnostic = Diagnostic(
+            fileUri = "file:///data/user/0/com.example/cache/Diagnostic%20Target.cpp",
+            fileName = "Diagnostic Target.cpp",
+            line = 2,
+            column = 4,
+            endLine = 2,
+            endColumn = 10,
+            message = "fix available",
+            severity = Diagnostic.Severity.WARNING,
+        )
+
+        val resolved = MainActivityNavigationHelper.resolveDiagnosticFile(diagnostic)
+
+        assertThat(resolved.path.replace('\\', '/'))
+            .endsWith("/data/user/0/com.example/cache/Diagnostic Target.cpp")
+    }
 }

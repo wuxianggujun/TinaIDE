@@ -104,7 +104,10 @@ data class DownloadSource(
     val url: String,
     val region: String? = null,
     val priority: Int,
-    @SerialName("supports_range") val supportsRange: Boolean = true
+    @SerialName("supports_range") val supportsRange: Boolean = true,
+    val abi: String? = null,
+    val size: Long? = null,
+    val checksum: String? = null
 )
 
 @Serializable

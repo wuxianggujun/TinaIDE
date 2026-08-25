@@ -28,6 +28,7 @@ internal object BuildProcessRunner {
         processBuilder: ProcessBuilder,
         commandLabel: String,
         timeoutMs: Long,
+        stdin: String? = null,
         onOutputLine: ((String) -> Unit)? = null,
         forceKillGraceMs: Long = DEFAULT_FORCE_KILL_GRACE_MS,
         readerJoinTimeoutMs: Long = DEFAULT_READER_JOIN_TIMEOUT_MS,
@@ -36,6 +37,7 @@ internal object BuildProcessRunner {
             processBuilder = processBuilder,
             commandLabel = commandLabel,
             timeoutMs = timeoutMs,
+            stdin = stdin,
             onOutputLine = onOutputLine,
             forceKillGraceMs = forceKillGraceMs,
             readerJoinTimeoutMs = readerJoinTimeoutMs,
@@ -46,6 +48,7 @@ internal object BuildProcessRunner {
         processBuilder: ProcessBuilder,
         commandLabel: String,
         timeoutMs: Long,
+        stdin: String?,
         onOutputLine: ((String) -> Unit)?,
         forceKillGraceMs: Long,
         readerJoinTimeoutMs: Long,
@@ -56,10 +59,31 @@ internal object BuildProcessRunner {
         val outputLock = Any()
         val readerDone = CountDownLatch(1)
         val readerError = AtomicReference<Throwable?>(null)
+        val writerDone = CountDownLatch(if (stdin == null) 0 else 1)
+        val writerError = AtomicReference<Throwable?>(null)
 
         try {
             process = processBuilder.start()
             val runningProcess = process
+
+            if (stdin == null) {
+                closeQuietly(runningProcess.outputStream)
+            } else {
+                thread(
+                    name = "BuildProcessRunner-stdin",
+                    isDaemon = true,
+                ) {
+                    try {
+                        runningProcess.outputStream.bufferedWriter(Charsets.UTF_8).use { writer ->
+                            writer.write(stdin)
+                        }
+                    } catch (t: Throwable) {
+                        writerError.set(t)
+                    } finally {
+                        writerDone.countDown()
+                    }
+                }
+            }
 
             thread(
                 name = "BuildProcessRunner-output",
@@ -89,16 +113,27 @@ internal object BuildProcessRunner {
                 -1
             }
 
-            closeProcessStreams(runningProcess)
+            closeQuietly(runningProcess.outputStream)
             if (!readerDone.await(readerJoinTimeoutMs, TimeUnit.MILLISECONDS)) {
                 Timber.tag(TAG).w("Timed out waiting for output reader: %s", commandLabel)
                 BuildDiagnosticsLog.w {
                     "build process output reader still active command=$commandLabel timeoutMs=$readerJoinTimeoutMs"
                 }
+                closeQuietly(runningProcess.inputStream)
             }
             readerError.get()?.let { error ->
                 Timber.tag(TAG).w(error, "Build process output reader failed: %s", commandLabel)
             }
+            if (!writerDone.await(readerJoinTimeoutMs, TimeUnit.MILLISECONDS)) {
+                Timber.tag(TAG).w("Timed out waiting for stdin writer: %s", commandLabel)
+                BuildDiagnosticsLog.w {
+                    "build process stdin writer still active command=$commandLabel timeoutMs=$readerJoinTimeoutMs"
+                }
+            }
+            writerError.get()?.let { error ->
+                Timber.tag(TAG).w(error, "Build process stdin writer failed: %s", commandLabel)
+            }
+            closeQuietly(runningProcess.errorStream)
 
             val durationMs = System.currentTimeMillis() - startedAt
             val result = Result(

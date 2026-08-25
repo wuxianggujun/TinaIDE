@@ -8,7 +8,8 @@ import androidx.compose.ui.Modifier
 fun TinaEditor(
     state: EditorState,
     modifier: Modifier = Modifier,
-    onPerformanceSnapshotReaderChanged: (((() -> EditorRenderPerformanceSnapshot)?) -> Unit)? = null
+    onPerformanceSnapshotReaderChanged: (((() -> EditorRenderPerformanceSnapshot)?) -> Unit)? = null,
+    onExternalEditPreparerChanged: (((() -> Unit)?) -> Unit)? = null
 ) {
     val session = rememberTinaEditorSession(state)
     DisposableEffect(session, onPerformanceSnapshotReaderChanged) {
@@ -17,6 +18,14 @@ fun TinaEditor(
         }
         onDispose {
             onPerformanceSnapshotReaderChanged?.invoke(null)
+        }
+    }
+    DisposableEffect(session, onExternalEditPreparerChanged) {
+        onExternalEditPreparerChanged?.invoke {
+            session.interactionController.prepareForExternalEdit()
+        }
+        onDispose {
+            onExternalEditPreparerChanged?.invoke(null)
         }
     }
     TinaEditorScaffold(

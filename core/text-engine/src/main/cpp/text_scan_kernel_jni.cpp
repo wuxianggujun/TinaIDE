@@ -88,6 +88,14 @@ bool IsAsciiAlphaNumeric(char16_t ch) {
         (ch >= u'A' && ch <= u'Z');
 }
 
+bool IsHighSurrogate(char16_t ch) {
+    return ch >= 0xD800 && ch <= 0xDBFF;
+}
+
+bool IsLowSurrogate(char16_t ch) {
+    return ch >= 0xDC00 && ch <= 0xDFFF;
+}
+
 bool IsIdentifierChar(char16_t ch) {
     if (ch == u'_' || IsAsciiAlphaNumeric(ch)) {
         return true;
@@ -1189,9 +1197,14 @@ std::vector<jint> FindWrapSegmentStarts(
     int visual_column = 0;
     int index = 0;
     while (index < length) {
+        const bool is_surrogate_pair =
+            IsHighSurrogate(line_text[static_cast<size_t>(index)]) &&
+            index + 1 < length &&
+            IsLowSurrogate(line_text[static_cast<size_t>(index + 1)]);
+        const int code_unit_length = is_surrogate_pair ? 2 : 1;
         const int step = line_text[static_cast<size_t>(index)] == u'\t'
             ? safe_tab_size - (visual_column % safe_tab_size)
-            : 1;
+            : code_unit_length;
 
         if (index > segment_start && visual_column + step > safe_wrap_columns) {
             starts.push_back(static_cast<jint>(index));
@@ -1201,7 +1214,7 @@ std::vector<jint> FindWrapSegmentStarts(
         }
 
         visual_column += step;
-        ++index;
+        index += code_unit_length;
 
         if (visual_column >= safe_wrap_columns && index < length) {
             starts.push_back(static_cast<jint>(index));

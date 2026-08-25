@@ -8,6 +8,7 @@ import com.wuxianggujun.tinaide.core.compile.artifact.JsonArtifactStore
 import com.wuxianggujun.tinaide.core.compile.event.BuildEventEmitter
 import com.wuxianggujun.tinaide.core.compile.event.SharedFlowBuildEventEmitter
 import com.wuxianggujun.tinaide.core.compile.launcher.DebugLauncher
+import com.wuxianggujun.tinaide.core.compile.launcher.NativeActivityLauncher
 import com.wuxianggujun.tinaide.core.compile.launcher.SdlLauncher
 import com.wuxianggujun.tinaide.core.compile.launcher.TerminalLauncher
 import com.wuxianggujun.tinaide.core.compile.pipeline.BuildContextFactory
@@ -21,8 +22,6 @@ import com.wuxianggujun.tinaide.core.compile.strategy.BuildStrategyRegistry
 import com.wuxianggujun.tinaide.core.compile.strategy.CMakeStrategy
 import com.wuxianggujun.tinaide.core.compile.strategy.MakeStrategy
 import com.wuxianggujun.tinaide.core.compile.strategy.SingleFileStrategy
-import com.wuxianggujun.tinaide.core.linux.LinuxEnvironmentProvider
-import com.wuxianggujun.tinaide.core.linux.UnavailableLinuxEnvironmentProvider
 import org.koin.android.ext.koin.androidContext
 import org.koin.dsl.module
 
@@ -35,7 +34,7 @@ import org.koin.dsl.module
  * - 每次编译请求拿到独立的 [BuildOrchestrator],避免把无关项目全局串行化
  */
 val compileModule = module {
-    // 进程管理:供 UI 和 AI 执行工具控制当前运行进程
+    // 进程管理：供 UI/编译链路控制当前构建/运行进程（不含独立 Terminal 会话）
     single { ProcessManager() }
 
     // ---------- 产物层 ----------
@@ -57,14 +56,14 @@ val compileModule = module {
     single {
         CMakeStrategy(
             context = androidContext(),
-            linuxEnvironmentProvider = getOrNull<LinuxEnvironmentProvider>() ?: UnavailableLinuxEnvironmentProvider,
+            linuxEnvironmentProvider = get(),
             timeoutConfig = get(),
         )
     }
     single {
         MakeStrategy(
             context = androidContext(),
-            linuxEnvironmentProvider = getOrNull<LinuxEnvironmentProvider>() ?: UnavailableLinuxEnvironmentProvider,
+            linuxEnvironmentProvider = get(),
             timeoutConfig = get(),
         )
     }
@@ -78,8 +77,9 @@ val compileModule = module {
         )
     }
 
-    // ---------- Launcher(P3 stub;P4 接入真实启动逻辑) ----------
+    // ---------- Launcher：校验产物并生成 LaunchDescriptor，由 UI 层真正拉起终端/SDL/调试 ----------
     single { SdlLauncher() }
+    single { NativeActivityLauncher() }
     single { DebugLauncher() }
     single { TerminalLauncher() }
 
@@ -91,6 +91,7 @@ val compileModule = module {
     factory {
         LaunchDispatcher(
             sdlLauncher = get(),
+            nativeActivityLauncher = get(),
             debugLauncher = get(),
             terminalLauncher = get(),
         )

@@ -165,7 +165,8 @@ data class PluginProjectTemplate(
     val primaryLanguage: String = "CPP",
     val isNdkTemplate: Boolean = false,
     val defaultRunTargetName: String? = null,
-    val defaultSdlTargetName: String? = null
+    val defaultSdlTargetName: String? = null,
+    val requiredPackages: List<String> = emptyList(),
 )
 
 @Serializable
@@ -228,6 +229,22 @@ data class PluginPanel(
     val icon: String? = null
 )
 
+/** A manifest-declared text panel exposed by an enabled script or hybrid plugin. */
+data class ResolvedPluginPanel(
+    val pluginId: String,
+    val pluginName: String,
+    val panelId: String,
+    val title: String,
+    val icon: String? = null,
+) {
+    val key: PluginPanelKey = PluginPanelKey(pluginId, panelId)
+}
+
+data class PluginPanelKey(
+    val pluginId: String,
+    val panelId: String,
+)
+
 data class ResolvedPluginFileIcon(
     val pluginId: String,
     val iconSpec: String,
@@ -240,20 +257,21 @@ data class ResolvedPluginFileIcon(
 /**
  * 主题配置（插件贡献）
  *
- * 当前最小实现仅解析 colors（颜色 ID/常量名 -> 颜色值）。
+ * colors 使用 TinaIDE 稳定颜色键；tokenColors 兼容常见 TextMate scope。
  */
 @Serializable
 data class ThemeConfig(
     val name: String,
     val type: String = "dark", // dark, light
-    val colors: Map<String, String>,
+    val colors: Map<String, String> = emptyMap(),
     val tokenColors: List<TokenColor>? = null
 )
 
 @Serializable
 data class TokenColor(
-    val scope: List<String>,
-    val settings: TokenSettings
+    @Serializable(with = StringOrArraySerializer::class)
+    val scope: List<String> = emptyList(),
+    val settings: TokenSettings = TokenSettings()
 )
 
 @Serializable

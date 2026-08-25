@@ -26,7 +26,8 @@ data class ProjectTemplateOption(
     val displayName: String,
     val description: String,
     val spec: ProjectTemplateSpec.Zip,
-    val isRecommended: Boolean = false
+    val isRecommended: Boolean = false,
+    val requiredPackages: List<String> = emptyList(),
 )
 
 object BuiltInProjectTemplates {

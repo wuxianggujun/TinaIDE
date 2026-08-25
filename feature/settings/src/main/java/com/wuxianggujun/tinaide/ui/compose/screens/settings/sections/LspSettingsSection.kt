@@ -26,10 +26,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.wuxianggujun.tinaide.core.config.ClangdSettings
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
+import com.wuxianggujun.tinaide.core.lsp.RemoteLspAuthenticationTokenPolicy
+import com.wuxianggujun.tinaide.core.lsp.RemoteLspAuthenticationTokenValidation
 import com.wuxianggujun.tinaide.core.lsp.RemoteLspConfigManager
 import com.wuxianggujun.tinaide.core.lsp.RemoteLspConnectionState
 import com.wuxianggujun.tinaide.core.lsp.RemoteLspSyncMethod
@@ -54,6 +57,7 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import timber.log.Timber
 
 /**
  * LSP (Language Server Protocol) 设置页面
@@ -102,6 +106,7 @@ internal fun LspSettingsSection(viewModel: SettingsViewModel) {
     // 远程 LSP 对话框状态
     var showHostDialog by remember { mutableStateOf(false) }
     var showPortDialog by remember { mutableStateOf(false) }
+    var showAuthenticationTokenDialog by remember { mutableStateOf(false) }
     var showRemoteWorkspaceRootDialog by remember { mutableStateOf(false) }
     var showSyncModeDialog by remember { mutableStateOf(false) }
     var showSyncMethodDialog by remember { mutableStateOf(false) }
@@ -267,6 +272,27 @@ internal fun LspSettingsSection(viewModel: SettingsViewModel) {
             showDivider = true
         )
 
+        SettingsSwitchItem(
+            title = stringResource(Strings.settings_remote_lsp_secure_transport),
+            subtitle = stringResource(Strings.settings_remote_lsp_secure_transport_desc),
+            checked = remoteLspConfig.secureTransport,
+            onCheckedChange = RemoteLspConfigManager::setSecureTransport,
+            showDivider = true,
+        )
+
+        SettingsClickableItem(
+            title = stringResource(Strings.settings_remote_lsp_auth_token),
+            value = stringResource(
+                if (remoteLspConfig.hasAuthenticationToken) {
+                    Strings.settings_remote_lsp_auth_token_configured
+                } else {
+                    Strings.settings_remote_lsp_auth_token_not_configured
+                },
+            ),
+            onClick = { showAuthenticationTokenDialog = true },
+            showDivider = true,
+        )
+
         SettingsClickableItem(
             title = stringResource(Strings.settings_remote_lsp_workspace_root_uri),
             value = remoteLspConfig.remoteWorkspaceRootUri.ifEmpty {
@@ -375,7 +401,7 @@ internal fun LspSettingsSection(viewModel: SettingsViewModel) {
             } else {
                 OutlinedButton(
                     onClick = {
-                        if (remoteLspConfig.host.isBlank()) {
+                        if (!remoteLspConfig.isValid()) {
                             Toast.makeText(
                                 context,
                                 remoteLspConfigInvalid,
@@ -386,11 +412,24 @@ internal fun LspSettingsSection(viewModel: SettingsViewModel) {
                         isTesting = true
                         testResult = null
                         scope.launch {
-                            val result = testWebSocketConnection(
-                                context = context,
-                                host = remoteLspConfig.host,
-                                port = remoteLspConfig.port
-                            )
+                            val result = runCatching {
+                                testWebSocketConnection(
+                                    context = context,
+                                    host = remoteLspConfig.host,
+                                    port = remoteLspConfig.port,
+                                    secureTransport = remoteLspConfig.secureTransport,
+                                    authenticationToken = RemoteLspConfigManager.getAuthenticationToken(),
+                                )
+                            }.getOrElse { error ->
+                                Timber.tag("LspSettingsSection").e(error, "Remote LSP connection test failed")
+                                WebSocketConnectionTestResult(
+                                    message = Strings.editor_lsp_connection_failed.strOr(
+                                        context,
+                                        Strings.error_unknown.strOr(context),
+                                    ),
+                                    success = false,
+                                )
+                            }
                             isTesting = false
                             testResult = result.message
 
@@ -532,6 +571,42 @@ internal fun LspSettingsSection(viewModel: SettingsViewModel) {
                 showPortDialog = false
             },
             onDismiss = { showPortDialog = false }
+        )
+    }
+
+    if (showAuthenticationTokenDialog) {
+        TinaValidatedInputDialog(
+            title = stringResource(Strings.dialog_title_remote_lsp_auth_token),
+            label = stringResource(Strings.settings_remote_lsp_auth_token),
+            placeholder = stringResource(Strings.settings_remote_lsp_auth_token_hint),
+            initialValue = "",
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            visualTransformation = PasswordVisualTransformation(),
+            allowEmpty = true,
+            validator = { token ->
+                when (RemoteLspAuthenticationTokenPolicy.validate(token)) {
+                    RemoteLspAuthenticationTokenValidation.VALID -> null
+                    RemoteLspAuthenticationTokenValidation.TOO_LONG ->
+                        stringResource(Strings.settings_remote_lsp_auth_token_too_long)
+                    RemoteLspAuthenticationTokenValidation.CONTROL_CHARACTER ->
+                        stringResource(Strings.settings_remote_lsp_auth_token_control_character)
+                }
+            },
+            onConfirm = { token ->
+                runCatching {
+                    RemoteLspConfigManager.setAuthenticationToken(token.takeIf { it.isNotBlank() })
+                }.onSuccess {
+                    showAuthenticationTokenDialog = false
+                }.onFailure { error ->
+                    Timber.tag("LspSettingsSection").e(error, "Failed to persist Remote LSP authentication token")
+                    Toast.makeText(
+                        context,
+                        Strings.settings_remote_lsp_auth_token_save_failed.strOr(context),
+                        Toast.LENGTH_LONG,
+                    ).show()
+                }
+            },
+            onDismiss = { showAuthenticationTokenDialog = false },
         )
     }
 
@@ -699,18 +774,29 @@ private data class WebSocketConnectionTestResult(
 private suspend fun testWebSocketConnection(
     context: Context,
     host: String,
-    port: Int
+    port: Int,
+    secureTransport: Boolean,
+    authenticationToken: String?,
 ): WebSocketConnectionTestResult {
     return withContext(Dispatchers.IO) {
         val startTime = System.currentTimeMillis()
         val trimmedHost = host.trim()
-        val url = com.wuxianggujun.tinaide.core.lsp.RemoteLspConfig(host = trimmedHost, port = port).getWebSocketUrl()
+        val url = com.wuxianggujun.tinaide.core.lsp.RemoteLspConfig(
+            host = trimmedHost,
+            port = port,
+            secureTransport = secureTransport,
+        ).getWebSocketUrl()
         val isLoopbackHost = trimmedHost == "127.0.0.1" || trimmedHost.equals("localhost", ignoreCase = true)
 
         val client = com.wuxianggujun.tinaide.core.network.OkHttpClientProvider.probe
 
         val request = Request.Builder()
             .url(url)
+            .apply {
+                authenticationToken?.takeIf { it.isNotBlank() }?.let { token ->
+                    header("Authorization", "Bearer $token")
+                }
+            }
             .build()
 
         val latch = CountDownLatch(1)

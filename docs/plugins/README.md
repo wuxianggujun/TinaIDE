@@ -1,6 +1,6 @@
 # 插件开发者指南
 
-> 文档更新：2026-06-05
+> 文档更新：2026-07-15
 
 当前仓库已具备“配置插件 + LSP 插件 + 脚本 / hybrid 插件”的基础闭环，
 当前已支持：
@@ -15,6 +15,7 @@
 - APK 导出模板（`contributions.apkExports`）
 - **LSP 插件**：通过插件安装语言服务器，提供代码补全、诊断等功能（`type: "lsp"`）
 - **脚本 / hybrid 插件**：Lua 运行时、权限确认、日志与宿主 API 边界
+- **插件文本面板**：manifest 声明、脚本发布内容、底部面板展示与生命周期清理
 - 内置兜底插件（assets 自动安装；当前包含基础项目模板与 C/C++ snippets）
 
 > 为满足 Google Play 合规性：当前仍不支持动态加载 DEX；脚本 / hybrid
@@ -33,7 +34,7 @@
 | [Plugin-Tutorial-Acceptance-Checklist.md](Plugin-Tutorial-Acceptance-Checklist.md) | 插件教程端到端验收清单 |
 | [Plugin-Tutorial-Maintenance-Log.md](Plugin-Tutorial-Maintenance-Log.md) | 历史参考：插件教程维护记录与设计决策 |
 | [Plugin-Authoring-Tutorial.md](Plugin-Authoring-Tutorial.md) | **插件编写教程（基于模板）** |
-| [Plugin-API-Guide.md](Plugin-API-Guide.md) | **插件 API 指南（稳定 / Beta 边界）** |
+| [Plugin-API-Guide.md](Plugin-API-Guide.md) | **插件 API 指南（apiVersion 1 稳定边界）** |
 | [LSP-Plugin-Development-Guide.md](LSP-Plugin-Development-Guide.md) | **LSP 插件开发指南**（新） |
 | [Plugin-Marketplace-Troubleshooting.md](Plugin-Marketplace-Troubleshooting.md) | 插件市场 Registry 安装与更新排障 |
 
@@ -116,6 +117,11 @@
 - 打包生成 `dist/<id>-<version>.tinaplug`
 - 热安装到当前 TinaIDE
 
+首次安装时，纯声明式 `config` 插件会自动启用，使主题、片段和项目模板立即可见；
+`script`、`hybrid`、`lsp`、`system` 等带运行时或高权限能力的插件仍保持禁用，需在
+“设置 → 插件”详情页检查权限并明确启用。升级始终保留用户原有启用意图，安装或刷新
+列表不会隐式启动可执行插件代码。
+
 点击 `构建` 时只生成 `.tinaplug`，不执行热安装。
 
 ### 5. 手工兜底结构
@@ -141,15 +147,12 @@ my-plugin/
 - `contributions.menus["editor/toolbar"]`：编辑器标签栏右侧插件动作菜单（宿主命令 + 当前插件已注册命令）
 - `contributions.keybindings`：快捷键扩展（JSON 文件声明，宿主命令 + 当前插件已注册命令；用户自定义/内置快捷键优先）
 - `contributions.snippets`：代码片段（补全列表显示 + Snippet 插入）
-- `contributions.projectTemplates`：新建项目模板（插件携带 zip 模板资源）
+- `contributions.projectTemplates`：新建项目模板（插件携带受限校验的 zip 模板资源；可通过模板级 `requiredPackages` 声明创建前必须安装的 Android Registry 包）
 - `contributions.apkExports`：APK 导出模板扩展（插件携带模板 APK，宿主负责通用打包逻辑）
 - `configuration`：插件配置 schema（宿主在插件详情页自动生成设置 UI）
 - `manifest.type = "script" / "hybrid"`：Lua 脚本运行时（需权限确认；不支持 DEX）
+- `contributions.panels`：脚本 / hybrid 文本面板；内容由 `tina.panels.*` 发布，在编辑器底部“插件”面板展示
 - 插件安装/卸载/启用/禁用（本地目录）
-
-已定义但暂未实现（manifest 里写了也不会生效）：
-
-- `contributions.panels`
 
 > 备注（与源码同步）：`editor/toolbar` 已接入编辑器标签栏右侧插件动作菜单，
 > 同时会进入主编辑器命令面板；`keybindings` 已接入 MainActivity 硬件键盘快捷键分发。
@@ -354,18 +357,20 @@ my-plugin.tinaplug
 仓库不再额外保留示例插件目录。直接按本文给出的 `manifest.json` / `theme`
  / `snippet` 示例自行组织目录后打包即可。
 
-## 主题文件格式（最小）
+## 主题文件格式
 
-`themes/*.json` 当前只使用：
+`themes/*.json` 支持：
 
 - `name`: 主题名称
 - `type`: `"dark"` / `"light"`
-- `colors`: `Map<String, String>`
+- `colors`: `Map<String, String>`，可省略
+- `tokenColors`: TextMate scope 配色列表，可省略
 
 其中 `colors` 的 key 支持三类：
 
 - `EditorColorScheme` 的颜色常量名，例如 `WHOLE_BACKGROUND`、`KEYWORD`
 - 纯数字颜色 ID（例如彩虹括号 `256-261`）
+- TinaIDE 稳定分组 key，例如 `editor.background`、`syntax.keyword`
 
 颜色值支持：`#RRGGBB` / `#AARRGGBB` / `0xAARRGGBB`。
 
@@ -377,11 +382,24 @@ my-plugin.tinaplug
 - `folding.iconExpanded` / `folding.iconCollapsed` / `folding.iconWarning`
 - `diagnostic.error` / `diagnostic.warning` / `diagnostic.info` / `diagnostic.hint`
 - `scrollbar.track` / `scrollbar.thumb` / `scrollbar.thumbHover`
-- `syntax.keyword` / `syntax.string` / `syntax.number` / `syntax.comment` / `syntax.function` / `syntax.variable` / `syntax.type` / `syntax.operator` / `syntax.punctuation`
+- `editor.whitespace` / `editor.bracketPairGuide` / `editor.bracketPairGuideActive`
+- `rainbowBrackets.0` 至 `rainbowBrackets.5`
+- `syntax.keyword` / `syntax.string` / `syntax.number` / `syntax.comment` / `syntax.function` / `syntax.variable` / `syntax.property` / `syntax.type` / `syntax.operator` / `syntax.punctuation` / `syntax.constant` / `syntax.builtin` / `syntax.deprecated`
 
 优先级：数字 ID > 常量名 > 分组 key。
 
 （小技巧）颜色值为 `"0"` 会被视为“未设置”，编辑器会回退到内置主题颜色。
+
+`tokenColors[].scope` 可省略，也同时接受单个字符串和字符串数组；逗号分隔或空格分隔的复合 selector 会逐项解析。省略 `scope` 时，`settings.foreground` 作为 `editor.foreground`。宿主会把常见 TextMate scope 映射到上述有限语法分类，例如：
+
+- `keyword`、`storage.modifier` → `syntax.keyword`
+- `entity.name.function`、`support.function` → `syntax.function`
+- `entity.name.type`、`storage.type`、`support.type` → `syntax.type`
+- `variable.other.property` → `syntax.property`
+- `constant.numeric` → `syntax.number`
+- `comment` / `string` / `punctuation` / `variable` → 对应语法分类
+
+同一主题同时提供两种格式时，`colors` 中的 TinaIDE 稳定 key 覆盖从 `tokenColors` 推导出的颜色。当前只消费 `settings.foreground`；`fontStyle` 已保留在模型中，但编辑器尚未渲染粗体、斜体或下划线。
 
 ---
 
@@ -756,7 +774,7 @@ my-plugin.tinaplug
 
 也可以通过写入 `SharedPreferences` 的 `editor_theme` 来选择：
 
-- 内置值：`GRAY` / `DARK` / `LIGHT` / `AUTO`
+- 内置值：`GRAY` / `DARK` / `LIGHT` / `AUTO` / `CUSTOM`
 - 插件主题：`plugin:<pluginId>/<themeRelativePath>`
 
 例如：
@@ -771,8 +789,8 @@ my-plugin.tinaplug
 https://github.com/wuxianggujun/TinaIDE-Registry
 ```
 
-Registry 中的 `sources/plugins/**`、`plugins/index.v2.json` 和详情文件负责当前客户端市场分发；
-v1 兼容索引默认不再生成，只服务旧客户端。主仓库当前随 APK 分发的内置插件位于
+Registry 中的 `sources/plugins/**`、`plugins/index.v3.json` 和 `plugin.v3.json` 负责当前客户端市场分发；
+`plugins/index.v2.json` / `plugin.json` 仅暴露旧宿主可用版本，v1 索引默认不生成。主仓库当前随 APK 分发的内置插件位于
 `app/src/main/assets/bundled_plugins/`，用于首次启动的兜底自动安装：
 
 - `tinaide.project.templates`：基础项目模板
@@ -830,6 +848,4 @@ v1 兼容索引默认不再生成，只服务旧客户端。主仓库当前随 A
 - 直接按本文示例 `manifest.json` 声明 `filetree/context`、`editor/context` 或 `editor/toolbar`
   菜单项即可。
 
-下一步建议（仍以宿主命令扩展和权限收敛为主）：
-
-- 编辑器面板扩展：`contributions.panels`
+后续扩展仍以宿主命令白名单、纯文本安全渲染和权限收敛为边界，不引入动态 DEX 或插件自定义宿主 UI 代码。

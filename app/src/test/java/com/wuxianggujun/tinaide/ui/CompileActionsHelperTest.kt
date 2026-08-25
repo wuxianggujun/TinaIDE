@@ -4,6 +4,7 @@ import android.app.Application
 import com.google.common.truth.Truth.assertThat
 import com.wuxianggujun.tinaide.core.compile.CompileProjectUseCase
 import com.wuxianggujun.tinaide.core.compile.OutputMode
+import com.wuxianggujun.tinaide.core.compile.SdlOrientation
 import com.wuxianggujun.tinaide.core.compile.action.CompileRequest
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
@@ -13,6 +14,7 @@ import com.wuxianggujun.tinaide.editor.session.SaveResult
 import com.wuxianggujun.tinaide.file.IProjectContext
 import com.wuxianggujun.tinaide.file.Project
 import com.wuxianggujun.tinaide.storage.ProjectDirStructure
+import com.wuxianggujun.tinaide.ui.runtime.GraphicalRuntimeLaunchRequest
 import io.mockk.clearMocks
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -248,7 +250,7 @@ class CompileActionsHelperTest {
     }
 
     @Test
-    fun `handleProcessStateChanged reopens build log when run process starts`() = runTest {
+    fun `handleProcessStateChanged keeps current output tab when run process starts`() = runTest {
         helper.runProject()
         clearMocks(uiBridge, answers = false, recordedCalls = true)
 
@@ -256,12 +258,12 @@ class CompileActionsHelperTest {
         advanceUntilIdle()
 
         verify(exactly = 1) { uiBridge.setCompiling(true) }
-        verify(exactly = 1) { uiBridge.showBuildLog() }
-        coVerify(exactly = 1) { uiBridge.expandBottomPanel() }
+        verify(exactly = 0) { uiBridge.showBuildLog() }
+        coVerify(exactly = 0) { uiBridge.expandBottomPanel() }
     }
 
     @Test
-    fun `handleProcessStateChanged keeps build mode from reopening build log`() = runTest {
+    fun `handleProcessStateChanged keeps current output tab in build mode`() = runTest {
         helper.buildProject()
         clearMocks(uiBridge, answers = false, recordedCalls = true)
 
@@ -328,6 +330,74 @@ class CompileActionsHelperTest {
                 workDir = "/tmp/build"
             )
         ).inOrder()
+        verify(exactly = 0) { uiBridge.showBuildLog() }
+    }
+
+    @Test
+    fun `handleCompileSuccess preserves frozen SDL runtime options`() = runTest {
+        val report = CompileProjectUseCase.Report(
+            action = CompileProjectUseCase.Action.RUN,
+            summary = "sdl run ready",
+            launch = CompileProjectUseCase.LaunchSpec.Sdl(
+                libraryPath = "/tmp/libmain.so",
+                environment = mapOf("LD_LIBRARY_PATH" to "/tmp/sdl"),
+                preferredSdlMajor = 3,
+                orientation = SdlOrientation.LANDSCAPE,
+                enableFloatingLog = true,
+            ),
+        )
+
+        val events = captureUiEvents {
+            helper.handleCompileSuccess(CompileEvent.Success(report))
+        }
+
+        assertThat(events).containsExactly(
+            CompileActionsHelper.UiEvent.ShowToast(
+                Strings.toast_compile_done_opening_sdl.strOr(context),
+                CompileActionsHelper.ToastType.SUCCESS,
+            ),
+            CompileActionsHelper.UiEvent.OpenGraphicalRuntime(
+                GraphicalRuntimeLaunchRequest.Sdl(
+                    libraryPath = "/tmp/libmain.so",
+                    environment = mapOf("LD_LIBRARY_PATH" to "/tmp/sdl"),
+                    preferredSdlMajor = 3,
+                    orientation = SdlOrientation.LANDSCAPE,
+                    enableFloatingLog = true,
+                )
+            ),
+        ).inOrder()
+    }
+
+    @Test
+    fun `handleCompileSuccess opens native activity for raylib launch`() = runTest {
+        val report = CompileProjectUseCase.Report(
+            action = CompileProjectUseCase.Action.RUN,
+            summary = "raylib run ready",
+            launch = CompileProjectUseCase.LaunchSpec.NativeActivity(
+                libraryPath = "/tmp/libmain.so",
+                environment = mapOf("LD_LIBRARY_PATH" to "/tmp/raylib"),
+                enableFloatingLog = true,
+            ),
+        )
+
+        val events = captureUiEvents {
+            helper.handleCompileSuccess(CompileEvent.Success(report))
+        }
+
+        assertThat(events).containsExactly(
+            CompileActionsHelper.UiEvent.ShowToast(
+                Strings.toast_compile_done_opening_native_activity.strOr(context),
+                CompileActionsHelper.ToastType.SUCCESS,
+            ),
+            CompileActionsHelper.UiEvent.OpenGraphicalRuntime(
+                GraphicalRuntimeLaunchRequest.NativeActivity(
+                    libraryPath = "/tmp/libmain.so",
+                    environment = mapOf("LD_LIBRARY_PATH" to "/tmp/raylib"),
+                    enableFloatingLog = true,
+                )
+            ),
+        ).inOrder()
+        verify(exactly = 0) { uiBridge.showBuildLog() }
     }
 
     @Test
@@ -356,6 +426,7 @@ class CompileActionsHelperTest {
                 CompileActionsHelper.ToastType.INFO
             )
         )
+        verify(exactly = 0) { uiBridge.showBuildLog() }
     }
 
     @Test
@@ -459,6 +530,28 @@ class CompileActionsHelperTest {
         )
         verify(exactly = 1) { uiBridge.setCompiling(false) }
         verify(atLeast = 1) { uiBridge.showBuildLog() }
+        coVerify(exactly = 1) { uiBridge.expandBottomPanel() }
+    }
+
+    @Test
+    fun `handleCompileError keeps build log selected for build failures`() = runTest {
+        val events = captureUiEvents {
+            helper.handleCompileError(
+                CompileEvent.Error(
+                    action = CompileProjectUseCase.Action.BUILD,
+                    message = "compile failed",
+                    throwable = null
+                )
+            )
+        }
+
+        assertThat(events).containsExactly(
+            CompileActionsHelper.UiEvent.ShowToast(
+                "compile failed",
+                CompileActionsHelper.ToastType.ERROR
+            )
+        )
+        verify(exactly = 1) { uiBridge.showBuildLog() }
         coVerify(exactly = 1) { uiBridge.expandBottomPanel() }
     }
 

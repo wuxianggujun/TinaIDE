@@ -8,6 +8,12 @@ android {
     namespace = "com.wuxianggujun.tinaide.feature.editor"
 }
 
+kapt {
+    arguments {
+        arg("room.schemaLocation", project.file("schemas").absolutePath)
+    }
+}
+
 dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(project.dependencies.project(":core:common"))

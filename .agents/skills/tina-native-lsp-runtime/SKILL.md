@@ -10,7 +10,7 @@ description: TinaIDE native 编译运行、Android sysroot、tina-toolchain asse
 - `core/compile/**`：编译、工具链、sysroot 相关能力。
 - `core/lsp/**`：语言服务 provider、remote/plugin/native 入口。
 - `core/ndk/**`、`core/proot/**`、`core/tree-sitter/**`。
-- `app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/LspEditorManager.kt`。
+- `core/editor-lsp/src/main/java/com/wuxianggujun/tinaide/core/editorlsp/LspEditorManager.kt`。
 - `app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerState.kt`。
 - `app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/editor/TinaCodeEditorPage.kt`。
 - `app/src/arm64/assets/tina-toolchain/current.properties`。
@@ -47,8 +47,8 @@ description: TinaIDE native 编译运行、Android sysroot、tina-toolchain asse
 ## 验证
 
 ```powershell
-./gradlew :app:compileArm64DebugKotlin --console=plain
-./gradlew :app:assembleArm64Debug --console=plain
+./gradlew :app:compileArm64DebugKotlin --no-daemon --console=plain
+./gradlew :app:assembleArm64Debug --no-daemon --console=plain
 pwsh ./tools/verify-tina-toolchain-package.ps1
 ```
 

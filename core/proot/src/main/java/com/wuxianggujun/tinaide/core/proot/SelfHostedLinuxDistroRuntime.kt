@@ -16,7 +16,11 @@ import com.wuxianggujun.tinaide.core.linuxdistro.LinuxDistroManager
 import com.wuxianggujun.tinaide.core.linuxdistro.LinuxDistroRootfsConfig
 import com.wuxianggujun.tinaide.storage.ProjectPaths
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 class SelfHostedLinuxDistroRuntime(
@@ -25,9 +29,11 @@ class SelfHostedLinuxDistroRuntime(
     private val manager: LinuxDistroManager,
     private val profileStore: RootfsProfileStore = RootfsProfileStore(context.applicationContext, configManager),
     private val clock: () -> Long = System::currentTimeMillis,
+    private val runtimeDir: File = defaultRuntimeDir(context.applicationContext),
 ) {
     private val appContext = context.applicationContext
     private val rootfsBootstrapper = LinuxDistroRootfsBootstrapper()
+    private val operationMutex = operationMutexFor(runtimeDir)
 
     data class InstallProgress(
         val phase: Phase,
@@ -56,7 +62,6 @@ class SelfHostedLinuxDistroRuntime(
     )
 
     fun layout(): RuntimeLayout {
-        val runtimeDir = defaultRuntimeDir(appContext)
         val installLayout = LinuxDistroInstallLayout(runtimeDir = runtimeDir)
         return RuntimeLayout(
             runtimeDir = runtimeDir,
@@ -84,57 +89,61 @@ class SelfHostedLinuxDistroRuntime(
         rootfsConfig: LinuxDistroRootfsConfig = LinuxDistroRootfsConfig(),
         progress: (InstallProgress) -> Unit = {},
     ): Result<RootfsProfile> = withContext(Dispatchers.IO) {
-        runCatching {
-            val displayName = resolveDisplayName(distroId)
-            val result = manager.install(
-                distroId = distroId,
-                architecture = architecture,
-                releaseId = releaseId,
-                reinstall = reinstall,
-                rootfsConfig = rootfsConfig,
-            ) { installProgress ->
-                if (installProgress.phase != LinuxDistroInstallPhase.REGISTERING &&
-                    installProgress.phase != LinuxDistroInstallPhase.COMPLETED
-                ) {
-                    progress(installProgress.toRuntimeProgress(displayName))
+        operationMutex.withLock {
+            runCatchingPreservingCancellation {
+                val displayName = resolveDisplayName(distroId)
+                val result = manager.install(
+                    distroId = distroId,
+                    architecture = architecture,
+                    releaseId = releaseId,
+                    reinstall = reinstall,
+                    rootfsConfig = rootfsConfig,
+                ) { installProgress ->
+                    if (installProgress.phase != LinuxDistroInstallPhase.REGISTERING &&
+                        installProgress.phase != LinuxDistroInstallPhase.COMPLETED
+                    ) {
+                        progress(installProgress.toRuntimeProgress(displayName))
+                    }
                 }
+                progress(
+                    InstallProgress(
+                        phase = Phase.CONFIGURING,
+                        progress = 0.90f,
+                        message = Strings.linux_distro_install_phase_configuring.strOr(appContext),
+                    )
+                )
+                bootstrapInstallation(result.installation, result.rootfsDir, progress)
+                progress(
+                    InstallProgress(
+                        phase = Phase.REGISTERING,
+                        progress = 0.96f,
+                        message = Strings.linux_distro_install_phase_registering.strOr(appContext),
+                    )
+                )
+                val savedProfile = registerInstallation(result.installation, makeActive = true)
+                progress(
+                    InstallProgress(
+                        phase = Phase.COMPLETED,
+                        progress = 1f,
+                        message = Strings.linux_distro_install_phase_completed.strOr(appContext, savedProfile.displayName),
+                    )
+                )
+                savedProfile
             }
-            progress(
-                InstallProgress(
-                    phase = Phase.CONFIGURING,
-                    progress = 0.90f,
-                    message = Strings.linux_distro_install_phase_configuring.strOr(appContext),
-                )
-            )
-            bootstrapInstallation(result.installation, result.rootfsDir, progress)
-            progress(
-                InstallProgress(
-                    phase = Phase.REGISTERING,
-                    progress = 0.96f,
-                    message = Strings.linux_distro_install_phase_registering.strOr(appContext),
-                )
-            )
-            val savedProfile = registerInstallation(result.installation, makeActive = true)
-            progress(
-                InstallProgress(
-                    phase = Phase.COMPLETED,
-                    progress = 1f,
-                    message = Strings.linux_distro_install_phase_completed.strOr(appContext, savedProfile.displayName),
-                )
-            )
-            savedProfile
         }
     }
 
     suspend fun uninstallDistro(distroId: String): Result<Boolean> = withContext(Dispatchers.IO) {
-        runCatching {
-            val profileId = LinuxDistroIds.profileIdFor(distroId)
-            val removedProfile = profileStore.getProfile(profileId)?.let {
-                profileStore.deleteProfile(profileId)
-                true
-            } ?: false
-            val removedRootfs = manager.uninstall(distroId)
-            removedProfile || removedRootfs
+        operationMutex.withLock {
+            runCatchingPreservingCancellation {
+                val removedRootfs = manager.uninstall(distroId)
+                val profileId = LinuxDistroIds.profileIdFor(distroId)
+                val removedProfile = profileStore.getProfile(profileId)?.let {
+                    profileStore.deleteProfile(profileId)
+                    true
+                } ?: false
+                removedProfile || removedRootfs
+            }
         }
     }
 
@@ -167,6 +176,14 @@ class SelfHostedLinuxDistroRuntime(
             now = clock(),
         )
         return profileStore.upsertProfile(profile, makeActive = makeActive)
+    }
+
+    private inline fun <T> runCatchingPreservingCancellation(block: () -> T): Result<T> = try {
+        Result.success(block())
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (error: Throwable) {
+        Result.failure(error)
     }
 
     private fun LinuxDistroInstallProgress.toRuntimeProgress(displayName: String): InstallProgress {
@@ -283,6 +300,7 @@ class SelfHostedLinuxDistroRuntime(
                     catalog = catalog,
                     layout = installLayout,
                 ),
+                runtimeDir = installLayout.runtimeDir,
             )
         }
 
@@ -292,5 +310,12 @@ class SelfHostedLinuxDistroRuntime(
             .asSequence()
             .mapNotNull { abi -> DistroArchitecture.fromAndroidAbi(abi) }
             .firstOrNull() ?: DistroArchitecture.AARCH64
+
+        private val operationMutexes = ConcurrentHashMap<String, Mutex>()
+
+        private fun operationMutexFor(runtimeDir: File): Mutex {
+            val key = runtimeDir.toPath().toAbsolutePath().normalize().toString()
+            return operationMutexes.computeIfAbsent(key) { Mutex() }
+        }
     }
 }

@@ -12,6 +12,11 @@
       "com.example.{{PROJECT_NAME}}.wrapSelection": {
         "title": "包裹选区"
       }
+    },
+    "panels": {
+      "status": {
+        "title": "插件状态"
+      }
     }
   }
 }

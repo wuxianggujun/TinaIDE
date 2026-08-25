@@ -1,6 +1,6 @@
 # TinaIDE 文档中心
 
-> 最后人工核验：2026-07-11
+> 最后人工核验：2026-08-13
 
 这里汇总 TinaIDE 当前仍然有效的项目文档，并标出应该优先回看的源码入口。
 
@@ -26,8 +26,8 @@
 - 依赖安装页状态机：`feature/workspace/src/main/java/com/wuxianggujun/tinaide/ui/workspace/DependencyInstallViewModel.kt`
 - Native 工具链与 sysroot：`core/ndk/src/main/java/com/wuxianggujun/tinaide/core/ndk/AndroidNativeToolchainManager.kt`、`core/ndk/src/main/java/com/wuxianggujun/tinaide/core/ndk/AndroidSysrootManager.kt`
 - 编译与运行主流程：`core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/CompileProjectUseCase.kt`
-- 编辑器语言服务分流：`app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/LspEditorManager.kt`
-- 内建 CMake / Make 语言服务：`app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/BuiltinLanguageServiceSession.kt`、`app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/CMakeLanguageServiceSession.kt`、`app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/MakeLanguageServiceSession.kt`
+- 编辑器语言服务分流：`core/editor-lsp/src/main/java/com/wuxianggujun/tinaide/core/editorlsp/LspEditorManager.kt`
+- 内建 CMake / Make 语言服务：`core/editor-lsp/src/main/java/com/wuxianggujun/tinaide/core/editorlsp/BuiltinLanguageServiceSession.kt`、`core/editor-lsp/src/main/java/com/wuxianggujun/tinaide/core/editorlsp/CMakeLanguageServiceSession.kt`、`core/editor-lsp/src/main/java/com/wuxianggujun/tinaide/core/editorlsp/MakeLanguageServiceSession.kt`
 - LSP 会话与连接提供者：`core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/LspClientSession.kt`
 - 插件 LSP：`core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/lsp/LspPluginManager.kt`
 - RikkaHub 入口：`app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/DrawerContent.kt`、`app/src/main/java/com/wuxianggujun/tinaide/settings/SettingsActivity.kt`、`external/rikkahub/embedded`
@@ -57,7 +57,7 @@
 - [Toolchain 构建与同步指南](toolchain-build-guide.md)
 - [ProGuard / R8 规则参考](proguard-rules-reference.md)
 - [自研 Linux 发行版运行时](linux-distro-self-hosted-runtime.md)
-- [游戏引擎插件 SDL 图形运行](game-engine-plugin-sdl.md)
+- [游戏引擎插件图形运行（SDL / NativeActivity）](game-engine-plugin-sdl.md)
 
 ### 使用指南
 

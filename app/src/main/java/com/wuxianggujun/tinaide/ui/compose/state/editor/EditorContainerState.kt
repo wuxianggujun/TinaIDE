@@ -13,7 +13,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.wuxianggujun.tinaide.core.config.CUSTOM_EDITOR_THEME_ID
 import com.wuxianggujun.tinaide.core.config.EditorSettings
+import com.wuxianggujun.tinaide.core.config.EditorThemeBase
 import com.wuxianggujun.tinaide.core.config.LspAssistSettings
 import com.wuxianggujun.tinaide.core.config.Prefs
 import com.wuxianggujun.tinaide.core.config.ThemeManager
@@ -21,6 +23,8 @@ import com.wuxianggujun.tinaide.core.editorlsp.CompletionFetchResult
 import com.wuxianggujun.tinaide.core.editorlsp.CompletionItem
 import com.wuxianggujun.tinaide.core.editorlsp.CompletionItemKind
 import com.wuxianggujun.tinaide.core.editorlsp.CompletionSource
+import com.wuxianggujun.tinaide.core.editorlsp.InlayHint
+import com.wuxianggujun.tinaide.core.editorlsp.InlayHintsRequestResult
 import com.wuxianggujun.tinaide.core.editorlsp.SemanticToken
 import com.wuxianggujun.tinaide.core.editorlsp.SignatureHelpResult
 import com.wuxianggujun.tinaide.core.editorview.EditorColorScheme
@@ -29,15 +33,16 @@ import com.wuxianggujun.tinaide.core.editorview.EditorState
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.core.lang.CxxFileSupport
+import com.wuxianggujun.tinaide.core.linux.LinuxEnvironmentProvider
+import com.wuxianggujun.tinaide.core.linux.UnavailableLinuxEnvironmentProvider
+import com.wuxianggujun.tinaide.core.lsp.CxxCompileContextSnapshot
 import com.wuxianggujun.tinaide.core.lsp.Diagnostic
 import com.wuxianggujun.tinaide.core.lsp.DocumentSymbolItem
 import com.wuxianggujun.tinaide.core.lsp.LocationItem
 import com.wuxianggujun.tinaide.core.lsp.WorkspaceSymbolItem
 import com.wuxianggujun.tinaide.core.packages.PackageDependencyEvents
 import com.wuxianggujun.tinaide.core.textengine.Position
-import com.wuxianggujun.tinaide.core.textengine.RopeTextBuffer
 import com.wuxianggujun.tinaide.core.textengine.TextChange
-import com.wuxianggujun.tinaide.core.textengine.TextChangeListener
 import com.wuxianggujun.tinaide.core.treesitter.TreeSitterFoldingProvider
 import com.wuxianggujun.tinaide.core.treesitter.TreeSitterFoldingProvider.FoldRegion
 import com.wuxianggujun.tinaide.core.treesitter.TreeSitterHighlighter
@@ -56,7 +61,10 @@ import com.wuxianggujun.tinaide.plugin.script.api.EditorSelectionPayload
 import com.wuxianggujun.tinaide.plugin.script.api.PluginHostEventDispatcher
 import com.wuxianggujun.tinaide.search.CodeSearchResult
 import com.wuxianggujun.tinaide.search.SearchOptions
-import com.wuxianggujun.tinaide.ui.compose.components.EditorStatus
+import com.wuxianggujun.tinaide.core.editorlsp.EditorStatus
+import com.wuxianggujun.tinaide.core.editorlsp.LspEditorManager
+import com.wuxianggujun.tinaide.core.editorlsp.SemanticTokensRequestResult
+import com.wuxianggujun.tinaide.core.editorlsp.resolveEditorLanguageId
 import com.wuxianggujun.tinaide.ui.compose.components.editor.ContentType
 import com.wuxianggujun.tinaide.ui.compose.components.editor.EditorTabState
 import com.wuxianggujun.tinaide.ui.compose.components.editor.EditorToolBarState
@@ -64,20 +72,31 @@ import java.io.File
 import java.net.URI
 import java.nio.charset.Charset
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.sync.Mutex
 import org.eclipse.lsp4j.WorkspaceEdit
-import org.koin.core.context.GlobalContext
+import org.koin.compose.koinInject
 import timber.log.Timber
 
-private const val DEFAULT_SPLIT_EDITOR_PRIMARY_RATIO = 0.5f
-private const val MIN_SPLIT_EDITOR_PRIMARY_RATIO = 0.25f
-private const val MAX_SPLIT_EDITOR_PRIMARY_RATIO = 0.75f
+internal const val DEFAULT_SPLIT_EDITOR_PRIMARY_RATIO = 0.5f
+internal const val MIN_SPLIT_EDITOR_PRIMARY_RATIO = 0.25f
+internal const val MAX_SPLIT_EDITOR_PRIMARY_RATIO = 0.75f
 
-private fun coerceSplitEditorPrimaryRatio(ratio: Float): Float = if (ratio.isFinite()) {
+internal fun coerceSplitEditorPrimaryRatio(ratio: Float): Float = if (ratio.isFinite()) {
     ratio.coerceIn(MIN_SPLIT_EDITOR_PRIMARY_RATIO, MAX_SPLIT_EDITOR_PRIMARY_RATIO)
 } else {
     DEFAULT_SPLIT_EDITOR_PRIMARY_RATIO
 }
+
+internal data class CodeActionProbeContext(
+    val filePath: String,
+    val documentVersion: Long?,
+    val isInteractive: Boolean,
+)
+
+internal data class ActiveDocumentCodeActionTarget(
+    val tabId: String,
+    val endLine: Int,
+    val endColumn: Int,
+)
 
 /**
  * 编辑器容器状态管理
@@ -97,345 +116,24 @@ class EditorContainerState(
     private val snippetManager: PluginSnippetManager,
     private val pluginThemeRegistry: PluginEditorThemeRegistry,
     private val projectSymbolIndexServiceProvider: () -> ProjectSymbolIndexService?,
-    private val projectRootPathProvider: () -> String?
+    private val projectRootPathProvider: () -> String?,
+    private val cppStandardOverrideProvider: (File) -> String? = { null },
+    private val fileWatchService: IFileWatchService? = null,
+    private val linuxEnvironmentProvider: LinuxEnvironmentProvider = UnavailableLinuxEnvironmentProvider,
+    private val lspPluginManager: LspPluginManager? = null,
 ) {
     internal companion object {
         const val CODE_EDITOR_RUNTIME_CACHE_LIMIT = 16
     }
 
-    data class TextEditOperation(
-        val startLine: Int,
-        val startColumn: Int,
-        val endLine: Int,
-        val endColumn: Int,
-        val newText: String
-    )
-
-    data class SelectionSnapshot(
-        val text: String,
-        val startLine: Int,
-        val startColumn: Int,
-        val endLine: Int,
-        val endColumn: Int
-    )
-
-    data class CursorSnapshot(
-        val line: Int,
-        val column: Int
-    )
-
-    data class NavigationHistoryEntry(
-        val filePath: String,
-        val line: Int,
-        val column: Int
-    )
-
-    data class ActiveEditableEditorSnapshot(
-        val file: File,
-        val text: String
-    )
-
-    data class ActivePluginEditorContext(
-        val tabId: String,
-        val file: File,
-        val languageId: String
-    )
-
-    data class PluginLspDependencyAlert(
-        val sequence: Long,
-        val pluginId: String,
-        val pluginName: String,
-        val message: String
-    )
-
-    data class ActiveSaveTarget(
-        val tabId: String,
-        val file: File
-    )
-
-    data class ActiveBookmarkCursorContext(
-        val file: File,
-        val line: Int
-    )
-
-    data class ActiveBookmarkTarget(
-        val file: File,
-        val line: Int
-    )
-
-    enum class ActiveEditorCommandResult {
-        SUCCESS,
-        NO_OPEN_FILE,
-        UNSUPPORTED_EDITOR
-    }
-
-    enum class EditorPaneId {
-        PRIMARY,
-        SECONDARY
-    }
-
-    enum class SplitEditorLayout {
-        HORIZONTAL,
-        VERTICAL
-    }
-
-    data class SplitEditorStateSnapshot(
-        val isEnabled: Boolean = false,
-        val focusedPane: EditorPaneId = EditorPaneId.PRIMARY,
-        val layout: SplitEditorLayout = SplitEditorLayout.HORIZONTAL,
-        val primaryRatio: Float = DEFAULT_SPLIT_EDITOR_PRIMARY_RATIO,
-        val tabPaneAssignments: Map<String, EditorPaneId> = emptyMap(),
-        val mirroredFilePathsByPane: Map<EditorPaneId, Set<String>> = emptyMap(),
-        val activeFilePathByPane: Map<EditorPaneId, String> = emptyMap()
-    ) {
-        fun normalized(): SplitEditorStateSnapshot {
-            val sanitizedAssignments = linkedMapOf<String, EditorPaneId>()
-            tabPaneAssignments.forEach { (path, pane) ->
-                if (path.isNotBlank()) sanitizedAssignments[path] = pane
-            }
-
-            val sanitizedMirrors = linkedMapOf<EditorPaneId, Set<String>>()
-            mirroredFilePathsByPane.forEach { (pane, paths) ->
-                val sanitizedPaths = paths.filterTo(linkedSetOf()) { it.isNotBlank() }
-                if (sanitizedPaths.isNotEmpty()) sanitizedMirrors[pane] = sanitizedPaths
-            }
-
-            val sanitizedActivePaths = linkedMapOf<EditorPaneId, String>()
-            activeFilePathByPane.forEach { (pane, path) ->
-                if (path.isNotBlank()) sanitizedActivePaths[pane] = path
-            }
-
-            return copy(
-                primaryRatio = coerceSplitEditorPrimaryRatio(primaryRatio),
-                tabPaneAssignments = sanitizedAssignments,
-                mirroredFilePathsByPane = sanitizedMirrors,
-                activeFilePathByPane = sanitizedActivePaths
-            )
-        }
-    }
-
-    sealed interface ActiveEditableEditorSnapshotResult {
-        object NoOpenFile : ActiveEditableEditorSnapshotResult
-        object UnsupportedEditor : ActiveEditableEditorSnapshotResult
-        data class Success(val snapshot: ActiveEditableEditorSnapshot) : ActiveEditableEditorSnapshotResult
-    }
-
-    sealed interface ReplaceAllInActiveEditorResult {
-        object NoOpenFile : ReplaceAllInActiveEditorResult
-        object UnsupportedEditor : ReplaceAllInActiveEditorResult
-        object NoMatches : ReplaceAllInActiveEditorResult
-        data class Success(val count: Int) : ReplaceAllInActiveEditorResult
-    }
-
-    sealed interface ActiveBookmarkCursorContextResult {
-        object NoOpenFile : ActiveBookmarkCursorContextResult
-        object UnsupportedEditor : ActiveBookmarkCursorContextResult
-        data class Success(val context: ActiveBookmarkCursorContext) : ActiveBookmarkCursorContextResult
-    }
-
-    sealed interface ActiveBookmarkTargetResult {
-        object NoOpenFile : ActiveBookmarkTargetResult
-        object UnsupportedEditor : ActiveBookmarkTargetResult
-        object NoBookmarkableLine : ActiveBookmarkTargetResult
-        data class Success(val target: ActiveBookmarkTarget) : ActiveBookmarkTargetResult
-    }
-
-    sealed interface ActiveDocumentSymbolsTargetResult {
-        object NoOpenFile : ActiveDocumentSymbolsTargetResult
-        object Unavailable : ActiveDocumentSymbolsTargetResult
-        data class Available(val tabId: String) : ActiveDocumentSymbolsTargetResult
-    }
-
-    sealed interface ActiveWorkspaceSymbolsTargetResult {
-        object NoOpenFile : ActiveWorkspaceSymbolsTargetResult
-        object Unavailable : ActiveWorkspaceSymbolsTargetResult
-        data class Available(val tabId: String) : ActiveWorkspaceSymbolsTargetResult
-    }
-
-    sealed interface ActiveSaveTargetResult {
-        object NoOpenFile : ActiveSaveTargetResult
-        data class Available(val target: ActiveSaveTarget) : ActiveSaveTargetResult
-    }
-
-    data class TabToolbarState(
-        val isDirty: Boolean,
-        val canUndo: Boolean,
-        val canRedo: Boolean,
-        val charsetName: String
-    )
-
-    data class ActiveEditorSessionAlertState(
-        val tabId: String,
-        val file: File,
-        val hasExternalModification: Boolean,
-        val lastError: String?
-    )
-
     private sealed interface ActiveEditableEditorBindingResult {
         object NoOpenFile : ActiveEditableEditorBindingResult
         object UnsupportedEditor : ActiveEditableEditorBindingResult
         data class Available(
+            val tabId: String,
             val file: File,
             val callback: CodeEditorCallback
         ) : ActiveEditableEditorBindingResult
-    }
-
-    data class CodeEditorCallback(
-        val goToPosition: (line: Int, column: Int) -> Boolean,
-        val selectAll: () -> Boolean,
-        val replaceSelection: (replacement: String) -> Boolean,
-        val replaceWholeText: (newText: String) -> Boolean,
-        val applyTextEdits: (edits: List<TextEditOperation>) -> Boolean,
-        val validateTextEdits: (edits: List<TextEditOperation>) -> Boolean = { true },
-        val documentVersion: () -> Long? = { null },
-        val toggleLineComment: (commentToken: String) -> Boolean,
-        val replaceAll: (
-            findText: String,
-            replaceText: String,
-            caseSensitive: Boolean,
-            useRegex: Boolean
-        ) -> Int,
-        val undo: () -> Boolean,
-        val redo: () -> Boolean,
-        val insertTextAtCursor: (text: String) -> Unit,
-        val cursorPosition: () -> CursorSnapshot,
-        val setSelectionRange: (startLine: Int, startColumn: Int, endLine: Int, endColumn: Int) -> Boolean,
-        val readAllText: () -> String,
-        val readSelection: () -> SelectionSnapshot?,
-        val readPerformanceSnapshot: () -> EditorRenderPerformanceSnapshot? = { null },
-        val applyEditorSettings: (settings: EditorSettings) -> Unit = {},
-        val applyEditorColorScheme: (scheme: EditorColorScheme) -> Unit = {}
-    )
-
-    internal interface CodeEditorDocumentBinding : DocumentSession.EditorBinding {
-        fun attach()
-
-        fun detach()
-
-        suspend fun <R> withSuppressed(block: suspend () -> R): R
-    }
-
-    internal interface CodeEditorStateBinding {
-        fun attach()
-
-        fun detach()
-    }
-
-    class CodeEditorRuntime(
-        val buffer: RopeTextBuffer,
-        val editorState: EditorState,
-        var syntaxHighlighter: TreeSitterHighlighter? = null,
-        var isTreeSitterSnapshotReady: Boolean = false,
-        var foldingProvider: TreeSitterFoldingProvider? = null,
-        var isContentLoaded: Boolean = false
-    ) {
-        val contentLoadMutex = Mutex()
-
-        private val stateSyncListener = TextChangeListener { change ->
-            editorState.applyTextBufferChange(change)
-            syntaxHighlighter?.applyTextChange(change)
-        }
-        private var documentBinding: CodeEditorDocumentBinding? = null
-        private var documentBindingReferences: Int = 0
-        private data class StateBindingRecord(
-            val binding: CodeEditorStateBinding,
-            var references: Int = 0
-        )
-        private val stateBindings = mutableMapOf<String, StateBindingRecord>()
-
-        init {
-            buffer.addChangeListener(stateSyncListener)
-        }
-
-        internal fun getOrCreateDocumentBinding(
-            factory: () -> CodeEditorDocumentBinding
-        ): CodeEditorDocumentBinding = documentBinding ?: factory().also { documentBinding = it }
-
-        internal fun acquireDocumentBinding(binding: CodeEditorDocumentBinding) {
-            check(documentBinding === binding) { "Document binding does not belong to this editor runtime" }
-            if (documentBindingReferences == 0) {
-                binding.attach()
-            }
-            documentBindingReferences++
-        }
-
-        internal fun releaseDocumentBinding(binding: CodeEditorDocumentBinding) {
-            if (documentBinding !== binding || documentBindingReferences == 0) return
-            documentBindingReferences--
-            if (documentBindingReferences == 0) {
-                binding.detach()
-            }
-        }
-
-        internal fun installSyntaxHighlighter(highlighter: TreeSitterHighlighter?) {
-            if (syntaxHighlighter === highlighter) return
-            syntaxHighlighter?.setOnStateUpdated(null)
-            syntaxHighlighter = highlighter
-            editorState.highlighter = highlighter
-            highlighter?.setOnStateUpdated(editorState::notifyHighlightChanged)
-        }
-
-        internal fun getOrCreateStateBinding(
-            key: String,
-            factory: () -> CodeEditorStateBinding
-        ): CodeEditorStateBinding = stateBindings.getOrPut(key) {
-            StateBindingRecord(factory())
-        }.binding
-
-        internal fun acquireStateBinding(key: String, binding: CodeEditorStateBinding) {
-            val record = stateBindings[key]
-            check(record?.binding === binding) { "State binding does not belong to this editor runtime" }
-            if (record.references == 0) {
-                binding.attach()
-            }
-            record.references++
-        }
-
-        internal fun releaseStateBinding(key: String, binding: CodeEditorStateBinding) {
-            val record = stateBindings[key] ?: return
-            if (record.binding !== binding || record.references == 0) return
-            record.references--
-            if (record.references == 0) {
-                binding.detach()
-            }
-        }
-
-        internal fun clearLanguageServices() {
-            syntaxHighlighter?.setOnStateUpdated(null)
-            if (editorState.highlighter === syntaxHighlighter) {
-                editorState.highlighter = null
-            }
-            syntaxHighlighter?.dispose()
-            foldingProvider?.dispose()
-            syntaxHighlighter = null
-            foldingProvider = null
-            isTreeSitterSnapshotReady = false
-        }
-
-        internal fun resetDocumentBinding() {
-            val binding = documentBinding
-            if (binding != null && documentBindingReferences > 0) {
-                binding.detach()
-            }
-            documentBinding = null
-            documentBindingReferences = 0
-        }
-
-        internal fun resetStateBindings() {
-            stateBindings.values.forEach { record ->
-                if (record.references > 0) {
-                    record.binding.detach()
-                }
-            }
-            stateBindings.clear()
-        }
-
-        internal fun dispose() {
-            resetDocumentBinding()
-            resetStateBindings()
-            clearLanguageServices()
-            buffer.removeChangeListener(stateSyncListener)
-        }
     }
 
     /**
@@ -446,7 +144,9 @@ class EditorContainerState(
     // ========== 子管理器 ==========
 
     private val lspEditorManager = LspEditorManager(
-        fileWatchService = GlobalContext.getOrNull()?.getOrNull<IFileWatchService>(),
+        fileWatchService = fileWatchService,
+        linuxEnvironmentProvider = linuxEnvironmentProvider,
+        cppStandardOverrideProvider = cppStandardOverrideProvider,
     )
     private val searchStateManager = SearchStateManager()
     private val tabManager = EditorTabManager(context, editorManager)
@@ -455,15 +155,9 @@ class EditorContainerState(
         editorManager = editorManager,
         activeTabProvider = { getActiveTab() },
     )
-    private data class CodeEditorCallbackRegistration(
-        val searchCallback: SearchStateManager.CodeViewerCallback,
-        val editorCallback: CodeEditorCallback
-    )
-
-    private val codeEditorCallbacks = mutableMapOf<String, CodeEditorCallback>()
-    private val codeEditorCallbackRegistrations =
-        mutableMapOf<String, LinkedHashMap<Any, CodeEditorCallbackRegistration>>()
     private val splitPaneState = EditorSplitPaneState()
+    // 延迟读取 registry，避免与 codeCallbackRegistry 初始化环。
+    private var attachedCodeEditorTabIdsProvider: () -> Set<String> = { emptySet() }
     private val codeRuntimeCache = EditorCodeRuntimeCache(
         context = context,
         cacheLimit = CODE_EDITOR_RUNTIME_CACHE_LIMIT,
@@ -471,9 +165,17 @@ class EditorContainerState(
         activeTabIdProvider = ::getActiveTabId,
         isSplitEditorEnabledProvider = { isSplitEditorEnabled },
         splitPaneState = splitPaneState,
-        attachedCodeEditorTabIdsProvider = { codeEditorCallbacks.keys.toSet() },
+        attachedCodeEditorTabIdsProvider = { attachedCodeEditorTabIdsProvider() },
         openTabsProvider = { tabs },
     )
+    private val codeCallbackRegistry = EditorCodeCallbackRegistry(
+        context = context,
+        searchStateManager = searchStateManager,
+        codeRuntimeCache = codeRuntimeCache,
+        resolveEditorColorScheme = ::resolveEditorColorScheme,
+    ).also { registry ->
+        attachedCodeEditorTabIdsProvider = { registry.keys() }
+    }
     private val saveAllNotificationTracker = EditorSaveAllNotificationTracker()
 
     private val peekDefinitionState = EditorPeekDefinitionState()
@@ -481,6 +183,14 @@ class EditorContainerState(
     private val diagnosticsState = EditorDiagnosticsState(
         filePathNormalizer = ::fileToNormalizedPath,
         fileUriNormalizer = ::fileUriToNormalizedPath,
+    )
+    private val lspNavigationFacade = EditorLspNavigationFacade(
+        lspEditorManager = lspEditorManager,
+        lspUiState = lspUiState,
+        activeTabProvider = { getActiveTab() },
+        cursorProvider = { getCursorPositionInActiveTab() },
+        selectionProvider = { getSelectionSnapshotInActiveTab() },
+        activeTabTextProvider = { readActiveTabText() },
     )
     val pluginLspDependencyAlert: PluginLspDependencyAlert?
         get() = lspUiState.pluginDependencyAlert
@@ -490,7 +200,7 @@ class EditorContainerState(
         isCodeEditableType = ::isCodeEditableType,
         releaseLspForTab = ::releaseTinaLspForTab,
         clearCodeEditorRuntime = codeRuntimeCache::remove,
-        removeCodeEditorCallback = { tabId -> removeCodeEditorCallbacks(tabId) },
+        removeCodeEditorCallback = codeCallbackRegistry::remove,
         cleanupSearchState = searchStateManager::cleanupForTab,
         dismissPeekDefinitionPanel = ::dismissPeekDefinitionPanel,
         normalizeEditorPaneState = { normalizeEditorPaneState() },
@@ -523,7 +233,7 @@ class EditorContainerState(
         navigationForwardStack = navigationHistoryManager.forwardStack,
         splitPaneState = splitPaneState,
         codeRuntimeCache = codeRuntimeCache,
-        codeEditorCallbacks = codeEditorCallbacks,
+        codeEditorCallbacks = codeCallbackRegistry.mutableCallbacks,
         lspUiState = lspUiState,
         diagnosticsState = diagnosticsState,
         isCodeEditableType = ::isCodeEditableType,
@@ -534,14 +244,13 @@ class EditorContainerState(
     )
 
     init {
-        // 注入 LspPluginManager 到 LspEditorManager
-        GlobalContext.getOrNull()?.getOrNull<LspPluginManager>()?.let {
-            lspEditorManager.setLspPluginManager(it)
-        }
+        lspPluginManager?.let { lspEditorManager.setLspPluginManager(it) }
 
         lspEditorManager.onDiagnosticsChanged = diagnosticsState::handleDiagnosticsChanged
 
         lspEditorManager.onLspStatusChanged = lspUiState::handleStatusChanged
+
+        lspEditorManager.onCxxCompileContextChanged = lspUiState::handleCxxCompileContextChanged
 
         lspEditorManager.onPluginLspDependencyNotReady = lspUiState::handlePluginDependencyNotReady
 
@@ -631,81 +340,63 @@ class EditorContainerState(
      * 当用户在上下文菜单中点击导航操作时触发。
      * 参数：tabId, navigationType（"definition"/"references"/"typeDefinition"/"implementation"/"callHierarchyIncoming"/"switchHeaderSource"）
      */
-    var onLspNavigationRequested: ((tabId: String, navigationType: String) -> Unit)? = null
+    var onLspNavigationRequested: ((tabId: String, navigationType: String) -> Unit)?
+        get() = lspNavigationFacade.onLspNavigationRequested
+        set(value) {
+            lspNavigationFacade.onLspNavigationRequested = value
+        }
 
     /**
      * LSP Code Actions 请求回调
      *
-     * 参数：tabId, startLine, startColumn, endLine, endColumn
+     * 参数：tabId, startLine, startColumn, endLine, endColumn, onlyKinds
      */
-    var onLspCodeActionsRequested: ((tabId: String, startLine: Int, startColumn: Int, endLine: Int, endColumn: Int) -> Unit)? = null
+    var onLspCodeActionsRequested: ((tabId: String, startLine: Int, startColumn: Int, endLine: Int, endColumn: Int, onlyKinds: List<String>) -> Unit)?
+        get() = lspNavigationFacade.onLspCodeActionsRequested
+        set(value) {
+            lspNavigationFacade.onLspCodeActionsRequested = value
+        }
 
     /**
      * LSP Rename 请求回调
      *
      * 参数：tabId, line, column, currentName
      */
-    var onLspRenameRequested: ((tabId: String, line: Int, column: Int, currentName: String) -> Unit)? = null
+    var onLspRenameRequested: ((tabId: String, line: Int, column: Int, currentName: String) -> Unit)?
+        get() = lspNavigationFacade.onLspRenameRequested
+        set(value) {
+            lspNavigationFacade.onLspRenameRequested = value
+        }
 
-    internal fun supportsBasicLspNavigation(file: File): Boolean = lspEditorManager.supportsBasicNavigation(file)
+    internal fun supportsBasicLspNavigation(file: File): Boolean =
+        lspNavigationFacade.supportsBasicLspNavigation(file)
 
-    internal fun supportsAdvancedLspNavigation(file: File): Boolean = lspEditorManager.supportsAdvancedNavigation(file)
+    internal fun supportsAdvancedLspNavigation(file: File): Boolean =
+        lspNavigationFacade.supportsAdvancedLspNavigation(file)
 
-    internal fun supportsActiveCallHierarchyIncoming(): Boolean {
-        val tab = getActiveTab() ?: return false
-        val status = getLspStatus(tab.id)
-        if (!isInteractiveLspStatus(status)) return false
-        return lspEditorManager.supportsCallHierarchyIncoming(tab.id, tab.file)
-    }
+    internal fun supportsActiveCallHierarchyIncoming(): Boolean =
+        lspNavigationFacade.supportsActiveCallHierarchyIncoming()
 
-    internal fun supportsLspRefactorActions(file: File): Boolean = lspEditorManager.supportsRefactorActions(file)
+    internal fun supportsLspRefactorActions(file: File): Boolean =
+        lspNavigationFacade.supportsLspRefactorActions(file)
 
-    internal fun supportsHeaderSourceSwitch(file: File): Boolean = lspEditorManager.supportsHeaderSourceSwitch(file)
+    internal fun supportsLspRefactorActions(tabId: String): Boolean =
+        tabManager.findTab(tabId)?.file?.let(lspNavigationFacade::supportsLspRefactorActions) == true
 
-    internal fun requestActiveLspNavigation(navigationType: String): Boolean {
-        val tab = getActiveTab() ?: return false
-        if (!supportsLspNavigationType(tab.id, tab.file, navigationType)) return false
-        val callback = onLspNavigationRequested ?: return false
-        callback(tab.id, navigationType)
-        return true
-    }
+    internal fun hasActiveLspConnection(tabId: String): Boolean =
+        lspEditorManager.hasActiveLspConnection(tabId)
 
-    internal fun requestActiveLspCodeActions(): Boolean {
-        val tab = getActiveTab() ?: return false
-        if (!supportsLspRefactorActions(tab.file)) return false
-        val callback = onLspCodeActionsRequested ?: return false
-        val cursor = getCursorPositionInActiveTab() ?: return false
-        val selection = getSelectionSnapshotInActiveTab()
-        val startLine = selection?.startLine ?: cursor.line
-        val startColumn = selection?.startColumn ?: cursor.column
-        val endLine = selection?.endLine ?: cursor.line
-        val endColumn = selection?.endColumn ?: cursor.column
+    internal fun supportsHeaderSourceSwitch(file: File): Boolean =
+        lspNavigationFacade.supportsHeaderSourceSwitch(file)
 
-        callback(tab.id, startLine, startColumn, endLine, endColumn)
-        return true
-    }
+    internal fun requestActiveLspNavigation(navigationType: String): Boolean =
+        lspNavigationFacade.requestActiveLspNavigation(navigationType)
 
-    internal fun requestActiveLspRename(): Boolean {
-        val tab = getActiveTab() ?: return false
-        if (!supportsLspRefactorActions(tab.file)) return false
-        val callback = onLspRenameRequested ?: return false
-        val cursor = getCursorPositionInActiveTab() ?: return false
-        val currentName = resolveIdentifierAroundActiveCursor(cursor)
+    internal fun requestActiveLspCodeActions(): Boolean =
+        lspNavigationFacade.requestActiveLspCodeActions()
 
-        callback(tab.id, cursor.line, cursor.column, currentName)
-        return true
-    }
-
-    private fun supportsLspNavigationType(tabId: String, file: File, navigationType: String): Boolean = when (navigationType) {
-        "definition",
-        "peekDefinition",
-        "references" -> supportsBasicLspNavigation(file)
-        "typeDefinition",
-        "implementation" -> supportsAdvancedLspNavigation(file)
-        "callHierarchyIncoming" -> lspEditorManager.supportsCallHierarchyIncoming(tabId, file)
-        "switchHeaderSource" -> supportsHeaderSourceSwitch(file)
-        else -> false
-    }
+    internal fun requestActiveLspRename(): Boolean =
+        lspNavigationFacade.requestActiveLspRename()
 
     internal fun getLspStatus(tabId: String): EditorStatus = lspUiState.getStatus(tabId)
 
@@ -715,6 +406,46 @@ class EditorContainerState(
     internal fun getActiveLspStatus(): EditorStatus {
         val tab = getActiveTab() ?: return EditorStatus.NoLsp
         return getLspStatus(tab.id)
+    }
+
+    internal fun getCodeActionProbeContext(): List<CodeActionProbeContext> = tabs.map(::codeActionProbeContextFor)
+
+    internal fun getActiveCodeActionProbeContext(): CodeActionProbeContext? =
+        getActiveTab()?.let(::codeActionProbeContextFor)
+
+    private fun codeActionProbeContextFor(tab: EditorTabState) =
+        CodeActionProbeContext(
+            filePath = tab.file.absolutePath,
+            documentVersion = lspUiState.getDocumentVersion(tab.id) ?: readTabDocumentVersion(tab.id),
+            isInteractive = getLspStatus(tab.id).isInteractiveForCodeActionProbe(),
+        )
+
+    internal fun getActiveDocumentCodeActionTarget(): ActiveDocumentCodeActionTarget? {
+        val activeTab = getActiveTab() ?: return null
+        val text = readActiveTabText() ?: return null
+        var endLine = 0
+        var endColumn = 0
+        text.forEach { character ->
+            if (character == '\n') {
+                endLine++
+                endColumn = 0
+            } else {
+                endColumn++
+            }
+        }
+        return ActiveDocumentCodeActionTarget(
+            tabId = activeTab.id,
+            endLine = endLine,
+            endColumn = endColumn,
+        )
+    }
+
+    internal fun activeTabSupportsCxxCompileContext(): Boolean =
+        getActiveTab()?.file?.extension?.lowercase() in CxxFileSupport.clangdSupportedExtensions
+
+    internal fun getActiveCxxCompileContext(): CxxCompileContextSnapshot? {
+        val tab = getActiveTab() ?: return null
+        return lspUiState.getCxxCompileContext(tab.id)
     }
 
     internal fun getActiveDocumentSymbolsTargetResult(): ActiveDocumentSymbolsTargetResult {
@@ -752,11 +483,7 @@ class EditorContainerState(
         return getActiveLspStatus()
     }
 
-    private fun getActiveLspTabIdOrNull(): String? {
-        val tab = getActiveTab() ?: return null
-        val status = getLspStatus(tab.id)
-        return tab.id.takeIf { isInteractiveLspStatus(status) }
-    }
+    private fun getActiveLspTabIdOrNull(): String? = lspNavigationFacade.getActiveLspTabIdOrNull()
 
     // ========== 搜索状态代理 ==========
 
@@ -866,34 +593,17 @@ class EditorContainerState(
         goToMatch: (CodeSearchResult) -> Unit,
         editorCallback: CodeEditorCallback
     ) {
-        val registration = CodeEditorCallbackRegistration(
-            searchCallback = SearchStateManager.CodeViewerCallback(
-                search = search,
-                goToMatch = goToMatch
-            ),
-            editorCallback = editorCallback
+        codeCallbackRegistry.bindCodeEditorCallbacks(
+            tabId = tabId,
+            registrationId = registrationId,
+            search = search,
+            goToMatch = goToMatch,
+            editorCallback = editorCallback,
         )
-        codeEditorCallbackRegistrations
-            .getOrPut(tabId) { LinkedHashMap() }[registrationId] = registration
-        activateCodeEditorRegistration(tabId, registration)
     }
 
     internal fun unbindCodeEditorCallbacks(tabId: String, registrationId: Any) {
-        val registrations = codeEditorCallbackRegistrations[tabId] ?: return
-        val removed = registrations.remove(registrationId) ?: return
-        if (registrations.isEmpty()) {
-            codeEditorCallbackRegistrations.remove(tabId)
-        }
-        if (codeEditorCallbacks[tabId] === removed.editorCallback) {
-            val replacement = registrations.values.lastOrNull()
-            if (replacement == null) {
-                codeEditorCallbacks.remove(tabId)
-                searchStateManager.unregisterCodeViewerCallback(tabId)
-            } else {
-                activateCodeEditorRegistration(tabId, replacement)
-            }
-        }
-        codeRuntimeCache.trim()
+        codeCallbackRegistry.unbindCodeEditorCallbacks(tabId, registrationId)
     }
 
     internal fun getOrCreateCodeEditorRuntime(tab: EditorTabState): CodeEditorRuntime =
@@ -913,37 +623,14 @@ class EditorContainerState(
     }
 
     internal fun registerCodeEditorCallback(tabId: String, callback: CodeEditorCallback) {
-        codeEditorCallbacks[tabId] = callback
-        // 新打开的 Editor 立即应用当前配置（避免等待 flow 下一次 emit）
-        runCatching { callback.applyEditorSettings(Prefs.editorSettingsFlow.value) }
-            .onFailure { t ->
-                Timber.tag("EditorContainerState").w(t, "Failed to apply editor settings for tab=%s", tabId)
-            }
-        runCatching { callback.applyEditorColorScheme(resolveEditorColorScheme(context)) }
-            .onFailure { t ->
-                Timber.tag("EditorContainerState").w(t, "Failed to apply editor theme for tab=%s", tabId)
-            }
+        codeCallbackRegistry.register(tabId, callback)
     }
 
     internal fun unregisterCodeEditorCallback(tabId: String) {
-        removeCodeEditorCallbacks(tabId)
+        codeCallbackRegistry.unregister(tabId)
     }
 
-    private fun activateCodeEditorRegistration(
-        tabId: String,
-        registration: CodeEditorCallbackRegistration
-    ) {
-        searchStateManager.registerCodeViewerCallback(tabId, registration.searchCallback)
-        registerCodeEditorCallback(tabId, registration.editorCallback)
-    }
-
-    private fun removeCodeEditorCallbacks(tabId: String) {
-        codeEditorCallbackRegistrations.remove(tabId)
-        codeEditorCallbacks.remove(tabId)
-        searchStateManager.unregisterCodeViewerCallback(tabId)
-    }
-
-    internal fun activeTabSupportsEditorPerformancePanel(): Boolean {
+    internal fun activeTabHasAttachedCodeEditor(): Boolean {
         val tab = getActiveTab() ?: return false
         return hasAttachedCodeEditor(tab.id, tab.contentType)
     }
@@ -969,7 +656,7 @@ class EditorContainerState(
     private fun getActiveCodeEditorCallback(): CodeEditorCallback? {
         val tab = getActiveTab() ?: return null
         if (!hasAttachedCodeEditor(tab.id, tab.contentType)) return null
-        return codeEditorCallbacks[tab.id]
+        return codeCallbackRegistry.get(tab.id)
     }
 
     fun goToPositionInActiveTab(line: Int, column: Int): Boolean {
@@ -1064,6 +751,7 @@ class EditorContainerState(
         ActiveEditableEditorBindingResult.UnsupportedEditor -> ActiveEditableEditorSnapshotResult.UnsupportedEditor
         is ActiveEditableEditorBindingResult.Available -> ActiveEditableEditorSnapshotResult.Success(
             ActiveEditableEditorSnapshot(
+                tabId = activeEditor.tabId,
                 file = activeEditor.file,
                 text = activeEditor.callback.readAllText()
             )
@@ -1132,7 +820,7 @@ class EditorContainerState(
         if (edits.isEmpty()) return false
         val tab = tabManager.findTab(tabId) ?: return false
         if (!isCodeEditableType(tab.contentType)) return false
-        val callback = codeEditorCallbacks[tabId] ?: return false
+        val callback = codeCallbackRegistry.get(tabId) ?: return false
         return callback.applyTextEdits(edits)
     }
 
@@ -1140,19 +828,46 @@ class EditorContainerState(
         if (edits.isEmpty()) return false
         val tab = tabManager.findTab(tabId) ?: return false
         if (!isCodeEditableType(tab.contentType)) return false
-        val callback = codeEditorCallbacks[tabId] ?: return false
+        val callback = codeCallbackRegistry.get(tabId) ?: return false
         return callback.validateTextEdits(edits)
     }
 
     internal fun isLspDocumentVersionCurrent(tabId: String, expectedVersion: Int): Boolean =
         lspEditorManager.isDocumentVersionCurrent(tabId, expectedVersion)
 
-    internal fun readTabDocumentVersion(tabId: String): Long? = codeEditorCallbacks[tabId]?.documentVersion?.invoke()
+    internal fun readTabDocumentVersion(tabId: String): Long? =
+        codeCallbackRegistry.get(tabId)?.documentVersion?.invoke()
 
-    internal fun readTextFromTab(tabId: String): String? = codeEditorCallbacks[tabId]?.readAllText?.invoke()
+    internal fun readTextFromTab(tabId: String): String? =
+        codeCallbackRegistry.get(tabId)?.readAllText?.invoke()
 
     internal fun replaceTextInTab(tabId: String, text: String): Boolean =
-        codeEditorCallbacks[tabId]?.replaceWholeText?.invoke(text) ?: false
+        codeCallbackRegistry.get(tabId)?.replaceWholeText?.invoke(text) ?: false
+
+    internal fun replaceTextInTabIfUnchanged(
+        tabId: String,
+        expectedText: String,
+        newText: String,
+    ): ConditionalEditorTextReplaceResult {
+        val tab = tabManager.findTab(tabId)
+            ?: return ConditionalEditorTextReplaceResult.TARGET_UNAVAILABLE
+        if (!isCodeEditableType(tab.contentType)) {
+            return ConditionalEditorTextReplaceResult.TARGET_UNAVAILABLE
+        }
+        val callback = codeCallbackRegistry.get(tabId)
+            ?: return ConditionalEditorTextReplaceResult.TARGET_UNAVAILABLE
+        if (callback.readAllText() != expectedText) {
+            return ConditionalEditorTextReplaceResult.CONTENT_CHANGED
+        }
+        if (newText == expectedText) {
+            return ConditionalEditorTextReplaceResult.UNCHANGED
+        }
+        return if (callback.replaceWholeText(newText)) {
+            ConditionalEditorTextReplaceResult.REPLACED
+        } else {
+            ConditionalEditorTextReplaceResult.TARGET_UNAVAILABLE
+        }
+    }
 
     fun applyTextEditsInActiveTab(edits: List<TextEditOperation>): Boolean {
         val activeTab = getActiveTab() ?: return false
@@ -1267,12 +982,20 @@ class EditorContainerState(
         return tabs.getOrNull(tabIndex)?.id
     }
 
-    internal fun readTextFromOpenTabIfPresent(file: File): String? = withOpenTabSelected(file) { readActiveTabText() }
+    internal fun isOpenTabDirty(file: File): Boolean? {
+        val tabIndex = findOpenTabIndexByFileOrNull(file) ?: return null
+        return tabs.getOrNull(tabIndex)?.isDirty
+    }
 
-    internal fun updateOpenTabTextIfPresent(file: File, newText: String): Boolean = withOpenTabSelected(file) {
-        replaceActiveTabText(newText)
-        true
-    } ?: false
+    internal fun readTextFromOpenTabIfPresent(file: File): String? {
+        val tabId = findOpenTabIdByFileOrNull(file) ?: return null
+        return readTextFromTab(tabId)
+    }
+
+    internal fun updateOpenTabTextIfPresent(file: File, newText: String): Boolean {
+        val tabId = findOpenTabIdByFileOrNull(file) ?: return false
+        return replaceTextInTab(tabId, newText)
+    }
 
     internal fun requestCloseTabForFile(file: File): Boolean {
         val tabIndex = findOpenTabIndexByFileOrNull(file) ?: return false
@@ -1773,22 +1496,6 @@ class EditorContainerState(
         }.takeIf { it >= 0 }
     }
 
-    private inline fun <T> withOpenTabSelected(file: File, action: () -> T): T? {
-        val tabIndex = findOpenTabIndexByFileOrNull(file) ?: return null
-        val previousIndex = activeTabIndex
-        if (previousIndex != tabIndex) {
-            selectTab(tabIndex)
-        }
-
-        return try {
-            action()
-        } finally {
-            if (previousIndex != tabIndex && previousIndex in tabs.indices) {
-                selectTab(previousIndex)
-            }
-        }
-    }
-
     internal fun getActiveFileOrNull(): File? = getActiveTab()?.file
 
     internal fun getActiveFileAbsolutePathOrNull(): String? = getActiveFileOrNull()?.absolutePath
@@ -1825,10 +1532,11 @@ class EditorContainerState(
 
     fun releaseTinaLspForTab(tabId: String) {
         lspEditorManager.releaseLspEditor(tabId)
-        lspUiState.removeStatus(tabId)
+        lspUiState.removeTab(tabId)
     }
 
     fun notifyTinaTextChanged(tabId: String, change: TextChange, documentVersion: Long) {
+        lspUiState.handleDocumentVersionChanged(tabId, documentVersion)
         lspEditorManager.onTinaDocumentChanged(tabId, change, documentVersion)
     }
 
@@ -1851,6 +1559,16 @@ class EditorContainerState(
         tabId = tabId,
         visibleLines = visibleLines,
         documentVersion = documentVersion
+    )
+
+    internal suspend fun requestLspInlayHints(
+        tabId: String,
+        visibleLines: IntRange,
+        documentVersion: Long,
+    ): InlayHintsRequestResult = lspEditorManager.requestInlayHints(
+        tabId = tabId,
+        visibleLines = visibleLines,
+        documentVersion = documentVersion,
     )
 
     suspend fun requestLspFoldingRanges(
@@ -1884,8 +1602,16 @@ class EditorContainerState(
         startLine: Int,
         startColumn: Int,
         endLine: Int,
-        endColumn: Int
-    ) = lspEditorManager.requestCodeActions(tabId, startLine, startColumn, endLine, endColumn)
+        endColumn: Int,
+        onlyKinds: List<String> = emptyList(),
+    ) = lspEditorManager.requestCodeActions(
+        tabId = tabId,
+        startLine = startLine,
+        startColumn = startColumn,
+        endLine = endLine,
+        endColumn = endColumn,
+        onlyKinds = onlyKinds,
+    )
 
     suspend fun executeCodeAction(
         tabId: String,
@@ -1933,7 +1659,7 @@ class EditorContainerState(
 
     fun updateEditorColorSchemes(context: android.content.Context) {
         val scheme = resolveEditorColorScheme(context)
-        codeEditorCallbacks.forEach { (tabId, callback) ->
+        codeCallbackRegistry.forEach { tabId, callback ->
             runCatching { callback.applyEditorColorScheme(scheme) }
                 .onFailure { t ->
                     Timber.tag("EditorContainerState").w(t, "Failed to apply editor theme for tab=%s", tabId)
@@ -1943,7 +1669,7 @@ class EditorContainerState(
 
     fun updateEditorSettings(context: android.content.Context) {
         val settings = Prefs.editorSettingsFlow.value
-        codeEditorCallbacks.forEach { (tabId, callback) ->
+        codeCallbackRegistry.forEach { tabId, callback ->
             runCatching { callback.applyEditorSettings(settings) }
                 .onFailure { t ->
                     Timber.tag("EditorContainerState").w(t, "Failed to apply editor settings for tab=%s", tabId)
@@ -1953,6 +1679,15 @@ class EditorContainerState(
 
     private fun resolveEditorColorScheme(context: android.content.Context): EditorColorScheme {
         val themeId = Prefs.editorTheme
+        if (themeId == CUSTOM_EDITOR_THEME_ID) {
+            val customTheme = Prefs.customEditorTheme
+            val fallback = when (customTheme.base) {
+                EditorThemeBase.GRAY -> EditorColorScheme.builtinGray()
+                EditorThemeBase.DARK -> EditorColorScheme.builtinDark()
+                EditorThemeBase.LIGHT -> EditorColorScheme.builtinLight()
+            }
+            return EditorColorScheme.fromThemeColors(customTheme.colors, fallback)
+        }
         if (themeId.startsWith(PluginEditorThemeRegistry.THEME_ID_PREFIX)) {
             val themeConfig = pluginThemeRegistry.themesFlow.value[themeId]
             if (themeConfig == null) {
@@ -2001,6 +1736,17 @@ class EditorContainerState(
         if (revision <= lastHandledDependencyRevision) return
         lastHandledDependencyRevision = revision
 
+        refreshOpenCxxEditorsAfterCompileInputsChanged("Dependency revision=$revision")
+    }
+
+    /**
+     * 单文件运行配置中的 C++ 标准变化后，使 clangd 使用新的 `-std` 参数。
+     */
+    fun refreshOpenCxxEditorsForCompileConfigChange() {
+        refreshOpenCxxEditorsAfterCompileInputsChanged("Single-file C++ standard changed")
+    }
+
+    private fun refreshOpenCxxEditorsAfterCompileInputsChanged(reason: String) {
         // 先让编译数据库缓存失效：即使当前没有打开的 C/C++ 编辑器，也要清除内存中的
         // compile setup 缓存。否则在“项目开着 + 装包 + 当前无活跃 C/C++ 文件”时，缓存会残留，
         // 下次打开 C/C++ 文件时会绕过 compile_commands 的包指纹校验，导致头文件假错。
@@ -2013,12 +1759,12 @@ class EditorContainerState(
 
         if (refreshCandidates <= 0) {
             Timber.tag("EditorContainerState")
-                .i("Dependency revision=%d detected, no active C/C++ tab; invalidated compile setup cache only", revision)
+                .i("%s, no active C/C++ tab; invalidated compile setup cache only", reason)
             return
         }
         lspEditorManager.refreshLspConnection(context)
         Timber.tag("EditorContainerState")
-            .i("Dependency revision=%d detected, refreshed %d C/C++ tab(s)", revision, refreshCandidates)
+            .i("%s, refreshed %d C/C++ tab(s)", reason, refreshCandidates)
     }
 
     fun restoreFromManager() {
@@ -2048,8 +1794,7 @@ class EditorContainerState(
     fun release() {
         lspEditorManager.release()
         searchStateManager.release()
-        codeEditorCallbacks.clear()
-        codeEditorCallbackRegistrations.clear()
+        codeCallbackRegistry.clear()
         codeRuntimeCache.release()
         navigationHistoryManager.clear()
         lspUiState.clear()
@@ -2070,57 +1815,25 @@ class EditorContainerState(
 
     private fun isCodeEditableType(contentType: ContentType): Boolean = contentType == ContentType.CODE || contentType == ContentType.JSON
 
-    private fun isInteractiveLspStatus(status: EditorStatus): Boolean = status == EditorStatus.Ready || status == EditorStatus.Busy
-
-    private fun hasAttachedCodeEditor(tabId: String, contentType: ContentType): Boolean = isCodeEditableType(contentType) && codeEditorCallbacks.containsKey(tabId)
+    private fun hasAttachedCodeEditor(tabId: String, contentType: ContentType): Boolean =
+        isCodeEditableType(contentType) && codeCallbackRegistry.contains(tabId)
 
     private fun resolveActiveEditableEditorBindingResult(): ActiveEditableEditorBindingResult {
         val activeTab = getActiveTab() ?: return ActiveEditableEditorBindingResult.NoOpenFile
         if (!hasAttachedCodeEditor(activeTab.id, activeTab.contentType)) {
             return ActiveEditableEditorBindingResult.UnsupportedEditor
         }
-        val callback = codeEditorCallbacks[activeTab.id]
+        val callback = codeCallbackRegistry.get(activeTab.id)
             ?: return ActiveEditableEditorBindingResult.UnsupportedEditor
         return ActiveEditableEditorBindingResult.Available(
+            tabId = activeTab.id,
             file = activeTab.file,
             callback = callback
         )
     }
-
-    private fun resolveIdentifierAroundActiveCursor(cursor: CursorSnapshot): String {
-        val lineText = readActiveTabText()
-            ?.lineSequence()
-            ?.drop(cursor.line)
-            ?.firstOrNull()
-            ?: return ""
-        if (lineText.isEmpty()) return ""
-
-        var anchor = cursor.column.coerceIn(0, lineText.length)
-        if (anchor >= lineText.length || !lineText[anchor].isEditorIdentifierChar()) {
-            val leftIndex = (anchor - 1).coerceAtLeast(0)
-            if (leftIndex >= lineText.length || !lineText[leftIndex].isEditorIdentifierChar()) {
-                return ""
-            }
-            anchor = leftIndex
-        }
-
-        var start = anchor
-        while (start > 0 && lineText[start - 1].isEditorIdentifierChar()) {
-            start--
-        }
-
-        var end = anchor + 1
-        while (end < lineText.length && lineText[end].isEditorIdentifierChar()) {
-            end++
-        }
-
-        return lineText.substring(start, end)
-    }
-
-    private fun Char.isEditorIdentifierChar(): Boolean = isLetterOrDigit() || this == '_' || this == '~'
 }
 
-private fun EditorContainerState.SelectionSnapshot.toEventPayload(): EditorSelectionPayload = EditorSelectionPayload(
+private fun SelectionSnapshot.toEventPayload(): EditorSelectionPayload = EditorSelectionPayload(
     text = text,
     startLine = startLine,
     startColumn = startColumn,
@@ -2143,17 +1856,35 @@ fun rememberEditorContainerState(
     pluginThemeRegistry: PluginEditorThemeRegistry,
     projectSymbolIndexServiceProvider: () -> ProjectSymbolIndexService?,
     projectRootPathProvider: () -> String?,
+    cppStandardOverrideProvider: (File) -> String? = { null },
     onLspDiagnosticsChanged: ((fileUri: String, diagnostics: List<Diagnostic>) -> Unit)? = null
 ): EditorContainerState {
     val context = LocalContext.current
-    val state = remember(editorManager, snippetManager, pluginThemeRegistry, projectSymbolIndexServiceProvider) {
+    val fileWatchService: IFileWatchService = koinInject()
+    val linuxEnvironmentProvider: LinuxEnvironmentProvider = koinInject()
+    val lspPluginManager: LspPluginManager = koinInject()
+    val state = remember(
+        editorManager,
+        snippetManager,
+        pluginThemeRegistry,
+        projectSymbolIndexServiceProvider,
+        projectRootPathProvider,
+        cppStandardOverrideProvider,
+        fileWatchService,
+        linuxEnvironmentProvider,
+        lspPluginManager,
+    ) {
         EditorContainerState(
-            context,
-            editorManager,
-            snippetManager,
-            pluginThemeRegistry,
-            projectSymbolIndexServiceProvider,
-            projectRootPathProvider
+            context = context,
+            editorManager = editorManager,
+            snippetManager = snippetManager,
+            pluginThemeRegistry = pluginThemeRegistry,
+            projectSymbolIndexServiceProvider = projectSymbolIndexServiceProvider,
+            projectRootPathProvider = projectRootPathProvider,
+            cppStandardOverrideProvider = cppStandardOverrideProvider,
+            fileWatchService = fileWatchService,
+            linuxEnvironmentProvider = linuxEnvironmentProvider,
+            lspPluginManager = lspPluginManager,
         )
     }
 
@@ -2186,6 +1917,15 @@ fun rememberEditorContainerState(
     LaunchedEffect(Unit) {
         Prefs.editorThemeFlow.collect { _ ->
             state.updateEditorColorSchemes(context)
+        }
+    }
+
+    // Editing the active custom palette keeps every open editor in sync.
+    LaunchedEffect(Unit) {
+        Prefs.customEditorThemeFlow.collect { _ ->
+            if (Prefs.editorTheme == CUSTOM_EDITOR_THEME_ID) {
+                state.updateEditorColorSchemes(context)
+            }
         }
     }
 

@@ -3,6 +3,7 @@ package com.wuxianggujun.tinaide.core.lsp
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.str
 import java.io.File
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.eclipse.lsp4j.*
@@ -30,8 +31,13 @@ class LspCodeActionService {
         val kind: String?,
         val isPreferred: Boolean,
         val diagnostics: List<String>,
+        val isDisabled: Boolean,
+        val disabledReason: String?,
         internal val action: Either<Command, CodeAction>
-    )
+    ) {
+        val isEnabled: Boolean
+            get() = !isDisabled
+    }
 
     /**
      * 重命名结果
@@ -51,17 +57,26 @@ class LspCodeActionService {
         startColumn: Int,
         endLine: Int,
         endColumn: Int,
+        diagnostics: List<org.eclipse.lsp4j.Diagnostic> = emptyList(),
+        onlyKinds: List<String> = emptyList(),
         codeActionRequest: suspend (CodeActionParams, Long) -> List<Either<Command, CodeAction>>?,
     ): List<CodeActionItem> = withContext(Dispatchers.IO) {
         try {
+            val requestRange = Range(
+                Position(startLine, startColumn),
+                Position(endLine, endColumn)
+            )
             val params = CodeActionParams().apply {
                 textDocument = TextDocumentIdentifier(documentUri)
-                range = Range(
-                    Position(startLine, startColumn),
-                    Position(endLine, endColumn)
-                )
+                range = requestRange
                 context = CodeActionContext().apply {
-                    diagnostics = emptyList()
+                    // LSP servers use these diagnostics to produce diagnostic quick fixes.
+                    this.diagnostics = diagnostics.filter { diagnostic ->
+                        diagnostic.range?.let { it.intersects(requestRange) } == true
+                    }
+                    if (onlyKinds.isNotEmpty()) {
+                        only = onlyKinds
+                    }
                 }
             }
 
@@ -73,6 +88,8 @@ class LspCodeActionService {
                 val kind: String?
                 val isPreferred: Boolean
                 val diagnosticsList: List<String>
+                val isDisabled: Boolean
+                val disabledReason: String?
 
                 when {
                     item.isRight -> {
@@ -81,6 +98,8 @@ class LspCodeActionService {
                         kind = codeAction.kind
                         isPreferred = codeAction.isPreferred == true
                         diagnosticsList = codeAction.diagnostics?.map { it.message } ?: emptyList()
+                        isDisabled = codeAction.disabled != null
+                        disabledReason = codeAction.disabled?.reason
                     }
                     item.isLeft -> {
                         val command = item.left
@@ -88,6 +107,8 @@ class LspCodeActionService {
                         kind = null
                         isPreferred = false
                         diagnosticsList = emptyList()
+                        isDisabled = false
+                        disabledReason = null
                     }
                     else -> return@mapNotNull null
                 }
@@ -97,13 +118,47 @@ class LspCodeActionService {
                     kind = kind,
                     isPreferred = isPreferred,
                     diagnostics = diagnosticsList,
+                    isDisabled = isDisabled,
+                    disabledReason = disabledReason,
                     action = item
                 )
-            }
+            }.filter { item -> item.matchesRequestedKinds(onlyKinds) }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
         } catch (e: Exception) {
             Timber.tag(TAG).w("Failed to get code actions: ${e.message}")
-            emptyList()
+            throw e
         }
+    }
+
+    private fun CodeActionItem.matchesRequestedKinds(onlyKinds: List<String>): Boolean {
+        if (onlyKinds.isEmpty()) return true
+        if (kind == null) {
+            return onlyKinds.none { requestedKind -> requestedKind.requiresExplicitActionKind() }
+        }
+        return onlyKinds.any { requestedKind ->
+            kind == requestedKind || kind.startsWith("$requestedKind.")
+        }
+    }
+
+    private fun String.requiresExplicitActionKind(): Boolean =
+        this == CodeActionKind.SourceFixAll || startsWith("${CodeActionKind.SourceFixAll}.")
+
+    private fun Range.intersects(other: Range): Boolean {
+        val thisStart = start ?: return false
+        val thisEnd = end ?: thisStart
+        val otherStart = other.start ?: return false
+        val otherEnd = other.end ?: otherStart
+
+        // Include boundary points so a cursor at a zero-width diagnostic or at the
+        // end of a diagnostic still receives its quick fix.
+        return comparePositions(thisStart, otherEnd) <= 0 &&
+            comparePositions(otherStart, thisEnd) <= 0
+    }
+
+    private fun comparePositions(left: Position, right: Position): Int = when {
+        left.line != right.line -> left.line.compareTo(right.line)
+        else -> left.character.compareTo(right.character)
     }
 
     /**
@@ -116,31 +171,29 @@ class LspCodeActionService {
         onApplyEdit: suspend (WorkspaceEdit) -> Boolean
     ): Boolean = withContext(Dispatchers.IO) {
         try {
+            if (!item.isEnabled) return@withContext false
+
             val action = item.action
 
             when {
                 action.isRight -> {
                     val codeAction = action.right
 
-                    // 如果有 edit，直接应用
-                    codeAction.edit?.let { edit ->
-                        return@withContext onApplyEdit(edit)
-                    }
-
-                    // 如果有 command，执行命令
-                    codeAction.command?.let { command ->
-                        return@withContext executeCommand(executeCommandRequest, command)
-                    }
+                    executeCodeActionPayload(
+                        codeAction = codeAction,
+                        executeCommandRequest = executeCommandRequest,
+                        onApplyEdit = onApplyEdit,
+                    )?.let { return@withContext it }
 
                     // 如果需要 resolve
                     val resolved = resolveCodeActionRequest(codeAction, TIMEOUT_SECONDS)
-
-                    resolved?.edit?.let { edit ->
-                        return@withContext onApplyEdit(edit)
-                    }
-
-                    resolved?.command?.let { command ->
-                        return@withContext executeCommand(executeCommandRequest, command)
+                    if (resolved?.disabled != null) return@withContext false
+                    resolved?.let { resolvedAction ->
+                        executeCodeActionPayload(
+                            codeAction = resolvedAction,
+                            executeCommandRequest = executeCommandRequest,
+                            onApplyEdit = onApplyEdit,
+                        )?.let { return@withContext it }
                     }
                 }
 
@@ -150,10 +203,30 @@ class LspCodeActionService {
             }
 
             false
+        } catch (cancellation: CancellationException) {
+            throw cancellation
         } catch (e: Exception) {
             Timber.tag(TAG).w("Failed to execute code action: ${e.message}")
             false
         }
+    }
+
+    /** Returns null when the action still needs resolve. */
+    private suspend fun executeCodeActionPayload(
+        codeAction: CodeAction,
+        executeCommandRequest: suspend (ExecuteCommandParams, Long) -> Any?,
+        onApplyEdit: suspend (WorkspaceEdit) -> Boolean,
+    ): Boolean? {
+        var executed = false
+        codeAction.edit?.let { edit ->
+            if (!onApplyEdit(edit)) return false
+            executed = true
+        }
+        codeAction.command?.let { command ->
+            if (!executeCommand(executeCommandRequest, command)) return false
+            executed = true
+        }
+        return if (executed) true else null
     }
 
     private suspend fun executeCommand(
@@ -165,6 +238,8 @@ class LspCodeActionService {
             TIMEOUT_SECONDS
         )
         true
+    } catch (cancellation: CancellationException) {
+        throw cancellation
     } catch (e: Exception) {
         Timber.tag(TAG).w("Failed to execute command: ${e.message}")
         false
@@ -188,6 +263,8 @@ class LspCodeActionService {
             val result = prepareRenameRequest(params, TIMEOUT_SECONDS)
 
             parsePrepareRenameResult(result)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
         } catch (e: Exception) {
             Timber.tag(TAG).w("Failed to prepare rename: ${e.message}")
             null
@@ -241,6 +318,8 @@ class LspCodeActionService {
                 changedFiles = changedFiles.distinct(),
                 error = if (!success) Strings.lsp_error_apply_edit_failed.str() else null
             )
+        } catch (cancellation: CancellationException) {
+            throw cancellation
         } catch (e: Exception) {
             Timber.tag(TAG).w("Failed to rename: ${e.message}")
             RenameResult(false, error = e.message)

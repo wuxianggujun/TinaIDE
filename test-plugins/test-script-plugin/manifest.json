@@ -1,7 +1,8 @@
 {
   "id": "com.tinaide.test.script-tools",
   "name": "Test Script Tools",
-  "version": "1.0.0",
+  "version": "1.1.0",
+  "apiVersion": 1,
   "description": "A test Lua script plugin demonstrating editor and file operations",
   "author": "TinaIDE Test",
   "type": "script",
@@ -12,7 +13,8 @@
     "editor.write",
     "clipboard.read",
     "clipboard.write",
-    "ui.notification"
+    "ui.notification",
+    "command.execute"
   ],
   "contributions": {
     "commands": [

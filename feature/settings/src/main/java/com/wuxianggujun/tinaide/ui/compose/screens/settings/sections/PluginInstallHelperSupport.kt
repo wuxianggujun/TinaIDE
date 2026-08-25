@@ -5,11 +5,15 @@ import com.wuxianggujun.tinaide.plugin.PluginDiagnosticSeverity
 import com.wuxianggujun.tinaide.plugin.PluginDiagnosticsReport
 import com.wuxianggujun.tinaide.plugin.PluginManifest
 import java.io.File
+import java.io.InputStream
+import java.io.OutputStream
 import java.util.Locale
 import java.util.zip.ZipFile
 import kotlinx.serialization.decodeFromString
 
 internal object PluginInstallHelperSupport {
+
+    private const val COPY_BUFFER_BYTES = 8 * 1024
 
     fun buildPreviewTempFile(
         cacheDir: File,
@@ -37,6 +41,23 @@ internal object PluginInstallHelperSupport {
             }
         } catch (_: Exception) {
             null
+        }
+    }
+
+    fun copyAtMost(
+        input: InputStream,
+        output: OutputStream,
+        maxBytes: Long,
+    ): Boolean {
+        require(maxBytes >= 0L) { "Maximum byte count must not be negative" }
+        val buffer = ByteArray(COPY_BUFFER_BYTES)
+        var copied = 0L
+        while (true) {
+            val bytesRead = input.read(buffer)
+            if (bytesRead < 0) return true
+            if (bytesRead > maxBytes - copied) return false
+            output.write(buffer, 0, bytesRead)
+            copied += bytesRead
         }
     }
 
