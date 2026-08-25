@@ -2,7 +2,6 @@ package com.wuxianggujun.tinaide.ui
 
 import android.content.Intent
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
@@ -44,7 +43,7 @@ import org.koin.core.component.get
  * 当用户打开项目后，跳转到 MainActivity 进行编辑
  */
 class MainPortalActivity :
-    ComponentActivity(),
+    TinaComponentActivity(),
     KoinComponent {
 
     private var sessionCleanupJob: Job? = null

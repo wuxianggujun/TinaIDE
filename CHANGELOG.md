@@ -31,6 +31,10 @@
 
 ## [Unreleased]
 
+暂无已记录变更。
+
+## [0.18.24] - 2026-08-25
+
 ### Changed
 
 - CMake 构建类型统一由项目运行配置管理，支持为同一项目分别保存 Debug、Release、RelWithDebInfo 与 MinSizeRel；旧版全局值会在首次加载旧运行配置时迁移并持久化。
@@ -38,6 +42,16 @@
 ### Fixed
 
 - 修复项目级 `CMake Args` 可通过 `CMAKE_BUILD_TYPE` 覆盖当前运行配置的问题；设置页会拒绝冲突参数，构建执行端也保证运行配置最终生效。
+- 修复 [Issue #10](https://github.com/wuxianggujun/TinaIDE/issues/10)：Android 14+ 平板外接触控板的双指滚动在编辑器、设置和文件列表等 Compose 页面失效。现在由共享 Activity 兼容层规范化触控板事件，同时保留指针、坐标、轴值和历史采样数据。
+
+### Tests
+
+- 新增触控板双指滚动事件兼容层回归测试，覆盖 Android 版本、输入来源、事件分类和事件字段保留。
+
+### Verification
+
+- `pwsh ./tools/build-apk.ps1`：Debug Arm64 APK 构建成功，`BUILD SUCCESSFUL`，生成 `app-arm64-v8a-debug.apk`。
+- `git diff --check` 通过。
 
 ## [0.18.23] - 2026-08-23
 

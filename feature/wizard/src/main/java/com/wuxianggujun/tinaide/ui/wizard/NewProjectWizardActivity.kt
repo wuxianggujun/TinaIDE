@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.material3.AlertDialog
@@ -25,6 +24,7 @@ import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.core.packages.PackageManagerNavigation
 import com.wuxianggujun.tinaide.plugin.PluginManager
 import com.wuxianggujun.tinaide.storage.ProjectPaths
+import com.wuxianggujun.tinaide.ui.TinaComponentActivity
 import com.wuxianggujun.tinaide.ui.theme.TinaIDETheme
 
 /**
@@ -34,7 +34,7 @@ import com.wuxianggujun.tinaide.ui.theme.TinaIDETheme
  * 1. 选择项目模板
  * 2. 配置项目（名称、C++ 标准等）
  */
-class NewProjectWizardActivity : ComponentActivity() {
+class NewProjectWizardActivity : TinaComponentActivity() {
 
     private val viewModel: NewProjectWizardViewModel by viewModels()
 
