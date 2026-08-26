@@ -2,6 +2,7 @@ package com.wuxianggujun.tinaide.ui
 
 import android.os.Bundle
 import android.view.KeyEvent as AndroidKeyEvent
+import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
@@ -103,7 +104,7 @@ import org.koin.androidx.viewmodel.ext.android.viewModel as koinViewModel
  *
  * 使用 Termux 的 terminal-view 和 terminal-emulator 模块
  */
-class TerminalActivity : TinaComponentActivity() {
+class TerminalActivity : ComponentActivity() {
 
     companion object {
         /** Intent extra key: 工作目录路径 */

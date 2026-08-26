@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
+import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -30,7 +31,6 @@ import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.core.proot.InstallLogManager
 import com.wuxianggujun.tinaide.storage.ExternalFileIntents
-import com.wuxianggujun.tinaide.ui.TinaComponentActivity
 import com.wuxianggujun.tinaide.ui.compose.components.TinaBackHandlers
 import com.wuxianggujun.tinaide.ui.compose.components.TinaDialogActionRow
 import com.wuxianggujun.tinaide.ui.compose.components.TinaDropdownMenu
@@ -57,7 +57,7 @@ import org.koin.core.component.inject
  * 显示 PRoot 环境安装过程中的详细日志
  */
 class InstallLogActivity :
-    TinaComponentActivity(),
+    ComponentActivity(),
     KoinComponent {
 
     private val installLogManager: InstallLogManager by inject()
