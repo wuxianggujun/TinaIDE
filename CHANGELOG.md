@@ -33,6 +33,21 @@
 
 暂无已记录变更。
 
+## [0.18.27] - 2026-08-26
+
+### Changed
+
+- 主仓库与内嵌 RikkaHub 统一锁定 Compose BOM `2026.05.01`（Compose UI `1.11.2`），并同步 Material3 与底部表单 API，避免新 Compose 触控板手势路径与嵌入模块版本不一致。
+
+### Fixed
+
+- 深入修复 [Issue #10](https://github.com/wuxianggujun/TinaIDE/issues/10)：移除 v0.18.24 中无法解决 OriginOS 6 HD 触控板问题的 Activity 级事件兼容层，改用 Compose 官方 `ComposeUiFlags.isTrackpadGestureHandlingEnabled = false`，绕过与 vivo Pad 5 Pro 等 Android 16 平板反馈相关的 fake-finger 路径，等待用户复测编辑器、设置和文件列表的双指滚动。
+- 修复 Compose 与内嵌 RikkaHub Material3 版本升级后的 `BottomSheet` API 不兼容，确保宿主和嵌入模块可以使用同一套 Compose 运行时。
+
+### Tests
+
+- 通过 `:rikkahub:embedded:compileDebugKotlin`、`:core:designsystem:compileDebugKotlin` 与 `:app:compileArm64DebugKotlin` 验证；依赖解析确认 Compose UI 为 `1.11.2`，不再包含 `1.12.0-alpha02` 或 `1.12.0-alpha03`。
+
 ## [0.18.24] - 2026-08-25
 
 ### Changed
@@ -42,7 +57,7 @@
 ### Fixed
 
 - 修复项目级 `CMake Args` 可通过 `CMAKE_BUILD_TYPE` 覆盖当前运行配置的问题；设置页会拒绝冲突参数，构建执行端也保证运行配置最终生效。
-- 修复 [Issue #10](https://github.com/wuxianggujun/TinaIDE/issues/10)：Android 14+ 平板外接触控板的双指滚动在编辑器、设置和文件列表等 Compose 页面失效。现在由共享 Activity 兼容层规范化触控板事件，同时保留指针、坐标、轴值和历史采样数据。
+- 针对 [Issue #10](https://github.com/wuxianggujun/TinaIDE/issues/10) 首次加入 Android 14+ 触控板事件兼容层；该 Activity 级方案在 OriginOS 6 HD/vivo Pad 5 Pro 上仍无法恢复 Compose 双指滚动，已由 v0.18.27 的 Compose 官方开关方案替代。
 
 ### Tests
 

@@ -3,6 +3,7 @@ package com.wuxianggujun.tinaide
 import android.content.Intent
 import android.os.Bundle
 import android.view.KeyEvent
+import androidx.activity.ComponentActivity
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.lifecycleScope
 import com.wuxianggujun.tinaide.core.compile.ProcessManager
@@ -31,7 +32,6 @@ import com.wuxianggujun.tinaide.ui.MainActivityNavigationHost
 import com.wuxianggujun.tinaide.ui.MainActivityShortcutDispatcher
 import com.wuxianggujun.tinaide.ui.MainViewModel
 import com.wuxianggujun.tinaide.ui.MainPortalActivity
-import com.wuxianggujun.tinaide.ui.TinaComponentActivity
 import com.wuxianggujun.tinaide.ui.compose.screens.main.MainActivityContentBridges
 import com.wuxianggujun.tinaide.ui.compose.screens.main.MainActivityContentDelegates
 import com.wuxianggujun.tinaide.ui.compose.screens.main.MainActivityContentServices
@@ -61,7 +61,7 @@ import org.koin.core.component.inject
  * - BottomPanel: 纯 Compose 实现
  */
 class MainActivity :
-    TinaComponentActivity(),
+    ComponentActivity(),
     MainActivityExternalFileLauncher,
     KoinComponent {
 

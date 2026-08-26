@@ -4,6 +4,8 @@ import android.app.Activity
 import android.app.Application
 import android.app.Application.ActivityLifecycleCallbacks
 import android.content.Context
+import androidx.compose.ui.ComposeUiFlags
+import androidx.compose.ui.ExperimentalComposeUiApi
 import com.itsaky.androidide.treesitter.TreeSitter
 import com.wuxianggujun.tinaide.core.compile.di.compileModule
 import com.wuxianggujun.tinaide.core.config.IConfigManager
@@ -126,6 +128,7 @@ class TinaApplication : Application() {
         LogProcessRegistry.recordProcess(this, android.os.Process.myPid(), processName)
     }
 
+    @OptIn(ExperimentalComposeUiApi::class)
     override fun onCreate() {
         super.onCreate()
         val processName = Application.getProcessName()
@@ -134,6 +137,10 @@ class TinaApplication : Application() {
             Timber.tag(TAG).i("Restricted process detected, skipping app initialization: %s", processRole)
             return
         }
+
+        // Compose 1.11 keeps the legacy trackpad path behind this official flag.
+        // Newer fake-finger reinterpretation breaks two-finger scrolling on some OriginOS tablets.
+        ComposeUiFlags.isTrackpadGestureHandlingEnabled = false
 
         AppStrings.initialize(this)
         if (processRole != AppProcessRole.HOST) {

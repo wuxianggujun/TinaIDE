@@ -3,6 +3,7 @@ package com.wuxianggujun.tinaide.ui
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import com.wuxianggujun.tinaide.core.config.Prefs
@@ -13,7 +14,7 @@ import org.koin.androidx.viewmodel.ext.android.viewModel as koinViewModel
 /**
  * 全局搜索 Activity
  */
-class GlobalSearchActivity : TinaComponentActivity() {
+class GlobalSearchActivity : ComponentActivity() {
 
     companion object {
         private const val EXTRA_PROJECT_PATH = "project_path"
