@@ -121,6 +121,11 @@ class PRootManager(
         }
     }
 
+    fun isRuntimeSupported(): Boolean = runCatching {
+        ensureSupportedRuntime()
+        prootBinary.isFile
+    }.getOrDefault(false)
+
     fun isInstalled(): Boolean {
         val rootDir = File(rootfsPath)
         return prootBinary.exists() &&

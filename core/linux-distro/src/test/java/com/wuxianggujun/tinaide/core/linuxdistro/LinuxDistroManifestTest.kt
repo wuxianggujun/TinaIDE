@@ -1,6 +1,7 @@
 package com.wuxianggujun.tinaide.core.linuxdistro
 
 import com.google.common.truth.Truth.assertThat
+import java.io.File
 import org.junit.Assert.assertThrows
 import org.junit.Test
 
@@ -144,6 +145,26 @@ class LinuxDistroManifestTest {
 
         assertThat(manifest.mirrors).isEmpty()
         assertThat(ManifestLinuxDistroCatalog(manifest).mirrorRules()).isEmpty()
+    }
+
+    @Test
+    fun bundledManifest_shouldContainAlpineAndUbuntuMirrorRules() {
+        val workingDirectory = File(System.getProperty("user.dir"))
+        val manifestFile = listOf(
+            File(workingDirectory, "src/main/assets/linux-distro/manifest.json"),
+            File(workingDirectory, "core/linux-distro/src/main/assets/linux-distro/manifest.json"),
+        ).firstOrNull { it.isFile }
+        requireNotNull(manifestFile) { "Bundled linux distro manifest not found from ${workingDirectory.absolutePath}" }
+
+        val rules = LinuxDistroManifestParser.decode(manifestFile.readText(Charsets.UTF_8)).mirrors
+
+        assertThat(rules.map { it.replaceWith }).containsAtLeast(
+            "https://mirrors.tuna.tsinghua.edu.cn/alpine/",
+            "https://mirrors.ustc.edu.cn/alpine/",
+            "https://mirrors.aliyun.com/alpine/",
+            "https://mirrors.tuna.tsinghua.edu.cn/ubuntu-cdimage/",
+            "https://mirrors.ustc.edu.cn/ubuntu-cdimage/",
+        )
     }
 
     private fun distro(id: String): DistroDefinition = DistroDefinition(

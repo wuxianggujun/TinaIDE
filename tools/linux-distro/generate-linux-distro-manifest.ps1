@@ -78,6 +78,23 @@ function Assert-SafeId {
     }
 }
 
+function Assert-HttpsUrl {
+    param(
+        [Parameter(Mandatory = $true)][string]$Value,
+        [Parameter(Mandatory = $true)][string]$Description
+    )
+
+    $uri = $null
+    if (
+        -not [System.Uri]::TryCreate($Value, [System.UriKind]::Absolute, [ref]$uri) -or
+        $uri.Scheme -ne [System.Uri]::UriSchemeHttps -or
+        [string]::IsNullOrWhiteSpace($uri.Host) -or
+        -not [string]::IsNullOrWhiteSpace($uri.UserInfo)
+    ) {
+        throw "$Description must use a valid HTTPS URL: $Value"
+    }
+}
+
 function Assert-UniqueKey {
     param(
         [Parameter(Mandatory = $true)][hashtable]$Seen,
@@ -240,6 +257,28 @@ function Convert-ToLinuxDistroManifest {
         throw "Unsupported linux distro source schema: $($Source.schemaVersion)"
     }
 
+    $sourceMirrors = if ($Source.PSObject.Properties.Name -contains "mirrors") {
+        @($Source.mirrors)
+    } else {
+        @()
+    }
+    $seenMirrors = @{}
+    $mirrors = foreach ($mirror in $sourceMirrors) {
+        $matchPrefix = Get-JsonPropertyValue -Object $mirror -Name "matchPrefix" -Description "mirror"
+        $replaceWith = Get-JsonPropertyValue -Object $mirror -Name "replaceWith" -Description "mirror"
+        Assert-HttpsUrl -Value $matchPrefix -Description "Mirror matchPrefix"
+        Assert-HttpsUrl -Value $replaceWith -Description "Mirror replaceWith"
+        if (-not $matchPrefix.EndsWith('/') -or -not $replaceWith.EndsWith('/')) {
+            throw "Mirror prefixes must end with '/': $matchPrefix -> $replaceWith"
+        }
+        Assert-UniqueKey -Seen $seenMirrors -Key "$matchPrefix -> $replaceWith" -Description "mirror rule"
+
+        [ordered]@{
+            matchPrefix = $matchPrefix
+            replaceWith = $replaceWith
+        }
+    }
+
     $seenDistros = @{}
     $distros = foreach ($distro in @($Source.distros)) {
         $distroId = Get-JsonPropertyValue -Object $distro -Name "id" -Description "distro"
@@ -320,6 +359,7 @@ function Convert-ToLinuxDistroManifest {
     return [ordered]@{
         schemaVersion = 1
         generatedAt = $generatedAt
+        mirrors = @($mirrors)
         distros = @($distros)
     }
 }

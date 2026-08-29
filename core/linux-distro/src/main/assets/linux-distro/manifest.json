@@ -1,6 +1,28 @@
 {
   "schemaVersion": 1,
   "generatedAt": "2026-04-28T00:00:00Z",
+  "mirrors": [
+    {
+      "matchPrefix": "https://dl-cdn.alpinelinux.org/alpine/",
+      "replaceWith": "https://mirrors.tuna.tsinghua.edu.cn/alpine/"
+    },
+    {
+      "matchPrefix": "https://dl-cdn.alpinelinux.org/alpine/",
+      "replaceWith": "https://mirrors.ustc.edu.cn/alpine/"
+    },
+    {
+      "matchPrefix": "https://dl-cdn.alpinelinux.org/alpine/",
+      "replaceWith": "https://mirrors.aliyun.com/alpine/"
+    },
+    {
+      "matchPrefix": "https://cdimage.ubuntu.com/cdimage/",
+      "replaceWith": "https://mirrors.tuna.tsinghua.edu.cn/ubuntu-cdimage/"
+    },
+    {
+      "matchPrefix": "https://cdimage.ubuntu.com/cdimage/",
+      "replaceWith": "https://mirrors.ustc.edu.cn/ubuntu-cdimage/"
+    }
+  ],
   "distros": [
     {
       "id": "alpine",

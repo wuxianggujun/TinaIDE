@@ -185,7 +185,7 @@ class SettingsViewModel(
     private val _uiState = MutableStateFlow(
         SettingsUiState.fromPrefs(
             configManager = configManager,
-            linuxEnvironmentEnabled = pluginManager.hasEnabledCapability(PluginCapabilities.LINUX_ENVIRONMENT)
+            linuxEnvironmentEnabled = pluginManager.hasEnabledCapability(PluginCapabilities.LINUX_ENVIRONMENT),
         )
     )
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
@@ -268,18 +268,14 @@ class SettingsViewModel(
 
         viewModelScope.launch {
             pluginManager.enabledCapabilitiesFlow.collect { capabilities ->
-                val linuxEnvironmentEnabled = capabilities.contains(PluginCapabilities.LINUX_ENVIRONMENT)
-                if (!linuxEnvironmentEnabled) {
-                    forceRunModesToNative()
-                }
-                updatePrefsState(linuxEnvironmentEnabled)
+                updatePrefsState(PluginCapabilities.LINUX_ENVIRONMENT in capabilities)
                 refreshProjectDependencyPaths()
             }
         }
     }
 
     fun refreshFromPrefs() {
-        updatePrefsState(_uiState.value.linuxEnvironmentEnabled)
+        updatePrefsState(pluginManager.hasEnabledCapability(PluginCapabilities.LINUX_ENVIRONMENT))
         refreshProjectDependencyPaths()
     }
 
@@ -300,7 +296,13 @@ class SettingsViewModel(
             projectNativeCppFlags = previousState.projectNativeCppFlags,
             projectNativeLdFlags = previousState.projectNativeLdFlags,
             projectNativeLdLibs = previousState.projectNativeLdLibs,
-            projectNativeCMakeArgs = previousState.projectNativeCMakeArgs
+            projectNativeCMakeArgs = previousState.projectNativeCMakeArgs,
+            rootfsProfiles = previousState.rootfsProfiles,
+            activeRootfsProfileId = previousState.activeRootfsProfileId,
+            rootfsInstallInProgress = previousState.rootfsInstallInProgress,
+            rootfsInstallMessage = previousState.rootfsInstallMessage,
+            rootfsInstallProgress = previousState.rootfsInstallProgress,
+            rootfsHealth = previousState.rootfsHealth,
         )
     }
 
@@ -308,21 +310,6 @@ class SettingsViewModel(
         configuredMode = mode,
         linuxEnvironmentAvailable = _uiState.value.linuxEnvironmentEnabled
     )
-
-    private fun forceRunModesToNative() {
-        if (Prefs.clangdRunMode == LinuxRunModePolicy.MODE_PROOT) {
-            Prefs.setClangdRunMode(LinuxRunModePolicy.MODE_NATIVE)
-        }
-        if (Prefs.cmakeRunMode == LinuxRunModePolicy.MODE_PROOT) {
-            Prefs.setCmakeRunMode(LinuxRunModePolicy.MODE_NATIVE)
-        }
-        if (Prefs.clangFormatRunMode == LinuxRunModePolicy.MODE_PROOT) {
-            Prefs.setClangFormatRunMode(LinuxRunModePolicy.MODE_NATIVE)
-        }
-        if (Prefs.makeRunMode == LinuxRunModePolicy.MODE_PROOT) {
-            Prefs.setMakeRunMode(LinuxRunModePolicy.MODE_NATIVE)
-        }
-    }
 
     fun setAppTheme(theme: AppTheme) {
         Prefs.setTheme(theme)

@@ -363,6 +363,45 @@ class LinuxDistroInstallerTest {
     }
 
     @Test
+    fun installer_shouldHonorInjectedPreferredMirrorOrder() = runBlocking {
+        val tempDir = createTempDirectory("linux-distro-preferred-mirror").toFile()
+        val archiveContent = "fake archive"
+        val manifest = LinuxDistroManifestParser.decode(sampleMirrorManifest(sha256(archiveContent)))
+        val attemptedUrls = mutableListOf<String>()
+        val installer = LinuxDistroInstaller(
+            catalog = ManifestLinuxDistroCatalog(manifest),
+            downloader = object : LinuxDistroDownloader {
+                override suspend fun download(
+                    request: DistroDownloadRequest,
+                    progress: (DistroDownloadProgress) -> Unit,
+                ): File {
+                    attemptedUrls += request.url
+                    request.targetFile.writeText(archiveContent)
+                    return request.targetFile
+                }
+            },
+            archiveExtractor = fakeExtractor(),
+            downloadCandidateOrder = { canonicalUrl, mirrorUrls ->
+                listOf(mirrorUrls.last(), canonicalUrl) + mirrorUrls
+            },
+        )
+
+        val result = installer.install(
+            LinuxDistroInstallRequest(
+                distroId = "alpine",
+                releaseId = "3.20",
+                architecture = DistroArchitecture.AARCH64,
+                layout = LinuxDistroInstallLayout(runtimeDir = tempDir),
+            )
+        )
+
+        assertThat(result.installed).isTrue()
+        assertThat(attemptedUrls).containsExactly(
+            "https://mirrors.aliyun.com/alpine/v3.23/alpine-rootfs.tar.gz"
+        )
+    }
+
+    @Test
     fun installer_shouldNotTryMirrorsWhenCancelled() {
         val tempDir = createTempDirectory("linux-distro-cancel").toFile()
         val manifest = LinuxDistroManifestParser.decode(sampleMirrorManifest("0".repeat(64)))
@@ -515,6 +554,10 @@ class LinuxDistroInstallerTest {
             {
               "matchPrefix": "https://dl-cdn.alpinelinux.org/",
               "replaceWith": "https://mirrors.tuna.tsinghua.edu.cn/"
+            },
+            {
+              "matchPrefix": "https://dl-cdn.alpinelinux.org/",
+              "replaceWith": "https://mirrors.aliyun.com/"
             }
           ],
           "distros": [

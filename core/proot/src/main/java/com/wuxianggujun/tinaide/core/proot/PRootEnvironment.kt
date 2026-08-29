@@ -90,9 +90,16 @@ class PRootEnvironment(
         }
     }
 
-    override fun isAvailable(): Boolean = runCatching {
-        !PRootBootstrap.isInstalling() && isInstalled() && !needsUpdate()
-    }.getOrDefault(false)
+    override fun isAvailable(): Boolean {
+        return runCatching {
+            val manager = getPRootManager()
+            !PRootBootstrap.isInstalling() &&
+                isInstalled() &&
+                manager.isRuntimeSupported() &&
+                manager.isInstalled() &&
+                !needsUpdate()
+        }.getOrDefault(false)
+    }
 
     override suspend fun execute(
         command: List<String>,

@@ -33,6 +33,8 @@ class LinuxDistroInstaller(
     private val metadataStore: LinuxDistroInstallMetadataStore = JsonLinuxDistroInstallMetadataStore(),
     private val rootfsProbe: LinuxDistroRootfsProbe = BasicLinuxDistroRootfsProbe,
     private val clock: () -> Long = System::currentTimeMillis,
+    private val downloadCandidateOrder: (canonicalUrl: String, mirrorUrls: List<String>) -> List<String> =
+        { canonicalUrl, mirrorUrls -> listOf(canonicalUrl) + mirrorUrls },
 ) {
 
     suspend fun install(
@@ -285,7 +287,7 @@ class LinuxDistroInstaller(
     /** 规范地址优先，随后按清单镜像规则派生候选（去重）。 */
     private fun downloadCandidates(url: String): List<String> {
         val mirrors = catalog.mirrorRules().mapNotNull { rule -> rule.deriveOrNull(url) }
-        return (listOf(url) + mirrors).distinct()
+        return downloadCandidateOrder(url, mirrors).distinct()
     }
 
     private fun createInstallation(

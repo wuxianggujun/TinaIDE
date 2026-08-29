@@ -10,6 +10,7 @@ import com.wuxianggujun.tinaide.core.linuxdistro.InstalledLinuxDistro
 import com.wuxianggujun.tinaide.core.linuxdistro.LinuxDistroCatalog
 import com.wuxianggujun.tinaide.core.linuxdistro.LinuxDistroIds
 import com.wuxianggujun.tinaide.core.linuxdistro.LinuxDistroInstallLayout
+import com.wuxianggujun.tinaide.core.linuxdistro.LinuxDistroInstaller
 import com.wuxianggujun.tinaide.core.linuxdistro.LinuxDistroInstallPhase
 import com.wuxianggujun.tinaide.core.linuxdistro.LinuxDistroInstallProgress
 import com.wuxianggujun.tinaide.core.linuxdistro.LinuxDistroManager
@@ -28,6 +29,7 @@ class SelfHostedLinuxDistroRuntime(
     configManager: IConfigManager,
     private val manager: LinuxDistroManager,
     private val profileStore: RootfsProfileStore = RootfsProfileStore(context.applicationContext, configManager),
+    private val alpineMirrorManager: AlpineMirrorManager = AlpineMirrorManager(context.applicationContext, configManager),
     private val clock: () -> Long = System::currentTimeMillis,
     private val runtimeDir: File = defaultRuntimeDir(context.applicationContext),
 ) {
@@ -105,6 +107,7 @@ class SelfHostedLinuxDistroRuntime(
                         progress(installProgress.toRuntimeProgress(displayName))
                     }
                 }
+                applyRepositoryConfiguration(result.installation, result.rootfsDir)
                 progress(
                     InstallProgress(
                         phase = Phase.CONFIGURING,
@@ -165,6 +168,14 @@ class SelfHostedLinuxDistroRuntime(
         ) { bootstrapProgress ->
             progress(bootstrapProgress.toRuntimeProgress())
         }
+    }
+
+    private fun applyRepositoryConfiguration(
+        installation: InstalledLinuxDistro,
+        rootfsDir: File,
+    ) {
+        if (installation.packageManager != com.wuxianggujun.tinaide.core.linuxdistro.DistroPackageManager.APK) return
+        alpineMirrorManager.applySelectedMirror(rootfsDir)
     }
 
     private fun registerInstallation(
@@ -293,13 +304,20 @@ class SelfHostedLinuxDistroRuntime(
         ): SelfHostedLinuxDistroRuntime {
             val appContext = context.applicationContext
             val installLayout = LinuxDistroInstallLayout(runtimeDir = defaultRuntimeDir(appContext))
+            val alpineMirrorManager = AlpineMirrorManager(appContext, configManager)
+            val installer = LinuxDistroInstaller(
+                catalog = catalog,
+                downloadCandidateOrder = alpineMirrorManager::orderRootfsDownloadCandidates,
+            )
             return SelfHostedLinuxDistroRuntime(
                 context = appContext,
                 configManager = configManager,
                 manager = LinuxDistroManager(
                     catalog = catalog,
                     layout = installLayout,
+                    installer = installer,
                 ),
+                alpineMirrorManager = alpineMirrorManager,
                 runtimeDir = installLayout.runtimeDir,
             )
         }
