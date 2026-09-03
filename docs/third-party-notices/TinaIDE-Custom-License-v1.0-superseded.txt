@@ -1,0 +1,95 @@
+# TinaIDE Open Source License
+
+Version 1.0, January 2025
+
+Copyright (c) 2025 wuxianggujun
+
+## Preamble
+
+This license applies to **TinaIDE version 1.0.0** source code only. This version is released as open source to contribute to the developer community. Future versions (1.1.0 and beyond) will be developed privately and will not be released under this license.
+
+## Terms and Conditions
+
+### 1. Definitions
+
+- **"Software"** refers to TinaIDE version 1.0.0 source code and associated documentation files.
+- **"Licensor"** refers to the copyright holder, wuxianggujun.
+- **"You"** refers to any individual or legal entity exercising permissions granted by this License.
+- **"Derivative Works"** refers to any work that is based on the Software and for which the editorial revisions, annotations, elaborations, or other modifications represent an original work of authorship.
+
+### 2. Grant of Rights
+
+Subject to the terms of this License, the Licensor hereby grants You a worldwide, royalty-free, non-exclusive license to:
+
+a) **Use** - Run and use the Software for any purpose, including commercial purposes.
+
+b) **Study** - Access and study the source code to understand how the Software works.
+
+c) **Modify** - Create Derivative Works based on the Software.
+
+d) **Distribute** - Redistribute copies of the original Software or your Derivative Works.
+
+### 3. Conditions
+
+The above rights are granted provided that You meet the following conditions:
+
+a) **Attribution** - You must give appropriate credit to the original author (wuxianggujun), provide a link to this license, and indicate if changes were made. You may do so in any reasonable manner, but not in any way that suggests the Licensor endorses You or Your use.
+
+b) **License Notice** - You must include a copy of this License with every copy of the Software or Derivative Works that You distribute.
+
+c) **Source Code Availability** - If You distribute Derivative Works, You must make the source code available under the same license terms.
+
+d) **No Trademark Rights** - This License does not grant permission to use the trade names, trademarks, service marks, or product names of the Licensor, except as required for reasonable and customary use in describing the origin of the Software.
+
+### 4. Scope Limitations
+
+This License applies **only** to TinaIDE version 1.0.0. Specifically:
+
+a) **Version Limitation** - This License covers only the source code tagged or released as version 1.0.0. Any subsequent versions (1.1.0, 2.0.0, etc.) are NOT covered by this License and may be subject to different licensing terms or may not be publicly available.
+
+b) **Binary Releases** - Pre-built APK binaries released by the Licensor for versions beyond 1.0.0 are provided for personal, non-commercial use only. Redistribution, reverse engineering, or modification of such binaries is prohibited without explicit written permission from the Licensor.
+
+c) **No Future Obligations** - The Licensor is under no obligation to release future versions as open source or under any specific license terms.
+
+### 5. Third-Party Components
+
+The Software includes or depends on third-party components, each governed by their respective licenses:
+
+- **LLVM/Clang** - Apache License 2.0 with LLVM Exceptions
+- **Sora Editor** - LGPL-2.1 License
+- **Tree-sitter** - MIT License
+
+You must comply with the license terms of these third-party components when using, modifying, or distributing the Software.
+
+### 6. Disclaimer of Warranty
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+### 7. Limitation of Liability
+
+IN NO EVENT SHALL THE LICENSOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+### 8. Termination
+
+This License and the rights granted hereunder will terminate automatically upon any breach by You of the terms of this License. Upon termination, You must cease all use, modification, and distribution of the Software.
+
+### 9. Miscellaneous
+
+a) This License represents the complete agreement concerning the subject matter hereof.
+
+b) If any provision of this License is held to be unenforceable, such provision shall be reformed only to the extent necessary to make it enforceable.
+
+c) This License shall be governed by the laws of the People's Republic of China, without regard to its conflict of law provisions.
+
+---
+
+## Summary (Not Part of License)
+
+| Permission | Condition | Limitation |
+|------------|-----------|------------|
+| ✅ Commercial use | ⚠️ License and copyright notice | ❌ Liability |
+| ✅ Modification | ⚠️ Same license for derivatives | ❌ Warranty |
+| ✅ Distribution | ⚠️ Attribution required | ❌ Trademark use |
+| ✅ Private use | ⚠️ Source code disclosure | ❌ Future versions |
+
+**Important**: This open source license applies ONLY to version 1.0.0. Future versions will NOT be open source.

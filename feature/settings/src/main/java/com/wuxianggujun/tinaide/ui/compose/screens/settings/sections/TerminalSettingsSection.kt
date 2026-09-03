@@ -451,11 +451,6 @@ internal fun TerminalSettingsSection(linuxEnvironmentEnabled: Boolean) {
                 showDivider = true
             )
 
-            AlpineMirrorSettingsItem(
-                profile = activeLinuxProfile,
-                showDivider = true,
-            )
-
             SettingsClickableItem(
                 title = stringResource(Strings.settings_guest_dev_packages),
                 subtitle = guestDevPackagesSubtitle(),

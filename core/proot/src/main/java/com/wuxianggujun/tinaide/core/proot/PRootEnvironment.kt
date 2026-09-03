@@ -6,6 +6,10 @@ import com.wuxianggujun.tinaide.core.config.IConfigManager
 import com.wuxianggujun.tinaide.core.linux.LinuxEnvironment
 import com.wuxianggujun.tinaide.core.linux.LinuxExecutionResult
 import com.wuxianggujun.tinaide.core.linux.LinuxInteractiveProcess
+import com.wuxianggujun.tinaide.core.linuxdesktop.LinuxDesktopSession
+import com.wuxianggujun.tinaide.core.linuxdesktop.UbuntuDesktopProvisioner
+import com.wuxianggujun.tinaide.core.linuxdesktop.UbuntuDesktopSessionLauncher
+import com.wuxianggujun.tinaide.core.linuxdesktop.UbuntuDesktopSessionOptions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -42,15 +46,23 @@ class PRootEnvironment(
     @Volatile
     private var cachedPRootRootfsPath: String? = null
 
+    private val desktopProvisioner: UbuntuDesktopProvisioner by lazy {
+        UbuntuDesktopProvisioner(this)
+    }
+
+    private val desktopSessionLauncher: UbuntuDesktopSessionLauncher by lazy {
+        UbuntuDesktopSessionLauncher(this)
+    }
+
     fun getPRootManager(): PRootManager {
-        val currentRootfsPath = rootfsProfileStore.getActiveRootfsPath()
+        val currentRootfsPath = requireUbuntuProfile().rootfsPath
         val cached = cachedPRootManager
         if (cached != null && cachedPRootRootfsPath == currentRootfsPath) {
             return cached
         }
 
         return synchronized(this) {
-            val synchronizedPath = rootfsProfileStore.getActiveRootfsPath()
+            val synchronizedPath = requireUbuntuProfile().rootfsPath
             val synchronizedCached = cachedPRootManager
             if (synchronizedCached != null && cachedPRootRootfsPath == synchronizedPath) {
                 synchronizedCached
@@ -63,10 +75,20 @@ class PRootEnvironment(
         }
     }
 
-    fun getActiveGuestPackageManager(): RootfsPackageManager = rootfsProfileStore.getActiveProfile().packageManager
+    fun getActiveGuestPackageManager(): RootfsPackageManager = requireUbuntuProfile().packageManager
+
+    suspend fun inspectUbuntuDesktop(): UbuntuDesktopProvisioner.Status = desktopProvisioner.inspect()
+
+    suspend fun installUbuntuDesktop(
+        progress: (UbuntuDesktopProvisioner.Progress) -> Unit = {},
+    ): Result<UbuntuDesktopProvisioner.InstallResult> = desktopProvisioner.install(progress)
+
+    fun startUbuntuDesktop(
+        options: UbuntuDesktopSessionOptions,
+    ): Result<LinuxDesktopSession> = desktopSessionLauncher.launch(options)
 
     fun isInstalled(): Boolean {
-        val activeProfile = rootfsProfileStore.getActiveProfileOrNull() ?: return false
+        val activeProfile = rootfsProfileStore.getActiveProfileForDistro(DEFAULT_DISTRO_ID) ?: return false
         return rootfsProfileStore.isInstalled(activeProfile)
     }
 
@@ -235,7 +257,7 @@ class PRootEnvironment(
     )
 
     suspend fun checkLinuxDistroHealth(): LinuxDistroRootfsHealthReport {
-        val packageManager = rootfsProfileStore.getActiveProfileOrNull()?.packageManager
+        val packageManager = rootfsProfileStore.getActiveProfileForDistro(DEFAULT_DISTRO_ID)?.packageManager
             ?: RootfsPackageManager.UNKNOWN
         return rootfsHealthChecker.check(
             linuxEnvironment = this,
@@ -253,6 +275,14 @@ class PRootEnvironment(
     }
 
     private fun shellEscape(value: String): String = "'" + value.replace("'", "'\\''") + "'"
+
+    private fun requireUbuntuProfile(): RootfsProfile =
+        rootfsProfileStore.getActiveProfileForDistro(DEFAULT_DISTRO_ID)
+            ?: error("Ubuntu Linux environment is not installed")
+
+    private companion object {
+        const val DEFAULT_DISTRO_ID = SelfHostedLinuxDistroRuntime.DEFAULT_DISTRO_ID
+    }
 }
 
 internal fun buildCommandAvailabilityProbe(command: String): List<String>? {

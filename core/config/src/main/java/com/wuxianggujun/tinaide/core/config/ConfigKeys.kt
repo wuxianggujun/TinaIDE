@@ -162,12 +162,6 @@ sealed class ConfigKey<T>(val key: String, val default: T) {
         default = ""
     )
 
-    /** Selected Alpine rootfs download and APK repository mirror id. */
-    object AlpineRepositoryMirror : ConfigKey<String>(
-        key = "linux.alpine.repository_mirror",
-        default = "tsinghua"
-    )
-
     /**
      * 工作空间配置流程是否已完成
      * 包括：用户已选择工作空间 或 用户已明确跳过
@@ -220,7 +214,6 @@ object ConfigKeys {
     val WorkspaceRootUri = ConfigKey.WorkspaceRootUri
     val SyncMode = ConfigKey.SyncMode
     val RootfsPath = ConfigKey.RootfsPath
-    val AlpineRepositoryMirror = ConfigKey.AlpineRepositoryMirror
     val WorkspaceSetupCompleted = ConfigKey.WorkspaceSetupCompleted
     val MTFileProviderEnabled = ConfigKey.MTFileProviderEnabled
 }

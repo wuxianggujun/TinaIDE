@@ -31,7 +31,88 @@
 
 ## [Unreleased]
 
-暂无已记录变更。
+### Changed
+
+#### 许可证变更：TinaIDE 改用 GPL-3.0-or-later（2026-09-03）
+
+为集成 [termux-x11](https://github.com/termux/termux-x11) 提供的 Android 原生 X server（GPL-3.0），
+整个 TinaIDE 项目从自定义许可证 "TinaIDE Open Source License Version 1.0" 改为 **GPL-3.0-or-later**。
+
+- **根目录 `LICENSE`**：替换为 FSF 官方 GPL-3.0 全文（674 行，18 节）
+- **新增 `COPYRIGHT.md`**：声明 SPDX 标识符、解释许可证变更原因、列出分发要求
+- **新增 `NOTICE.md`**：第三方组件与许可证清单，列出所有随 APK 分发或链接的依赖及其许可证
+- **备份旧许可证**：`docs/third-party-notices/TinaIDE-Custom-License-v1.0-superseded.txt`
+
+旧自定义许可证限定开源范围仅覆盖 1.0.0 版本，并对后续版本的二进制分发施加 "仅个人非商业使用" 限制。
+GPL-3.0 不允许在下游附加非商业限制或后续版本闭源，因此原许可证第 4(a)、4(b) 条已不再适用。
+
+**许可证兼容性审计结果**：
+
+- **PRoot (termux-proot)**：GPL-2.0-or-later（73 个源文件头确认 "any later version"），可升级至 GPL-3.0
+- **termux-terminal**：GPL-3.0-only（部分文件为 AOSP Apache-2.0），已补充根目录 LICENSE
+- **RikkaHub**：**阻塞项** — 采用 "Segmented Dual Licensing"（AGPL-3.0 + 非商业/≤10 用户限制），
+  违反 GPL-3.0 第 7 条禁止 "further restrictions"，**当前无法与 GPL-3.0 的 TinaIDE 合并分发**。
+  需联系作者取得 GPL 兼容授权例外，或将其拆为可选组件。
+- **QQ SDK (`libs/open_sdk_3.5.18.0_r2b95cc45_lite.jar`)**：已删除（proprietary，零引用，dead code）
+
+#### 移除 Alpine Linux 支持，Ubuntu 24.04 成为唯一运行时（2026-09-03）
+
+- **删除 Alpine 镜像管理**：
+  - `core/proot/src/main/java/.../AlpineMirrorManager.kt` 及其单元测试
+  - `feature/settings/.../AlpineMirrorSettingsItem.kt` 设置 UI
+  - `ConfigKeys.AlpineMirrorUrl` 配置项
+  - `tools/linux-distro/generate-linux-distro-manifest.ps1` 的 `Update-AlpineMetadata` 函数
+- **修复 Ubuntu profile 劫持 bug**：`SelfHostedLinuxDistroRuntime.syncInstalledProfiles()` 不再无条件将第一个 Ubuntu profile 提升为 active，
+  仅在无 active Ubuntu profile 时提升（`RootfsProfileStoreTest` 新增 2 个测试覆盖）
+- **文档更新**：
+  - `docs/linux-distro-self-hosted-runtime.md` 移除所有 Alpine 相关内容
+  - `docs/模块功能说明.md` 更新 `:core:linux-distro` 范围
+  - `core/i18n` 中英文资源移除 Alpine 镜像相关字符串
+
+### Added
+
+#### X11 桌面 GUI 支持 — 初步集成 termux-x11（WIP，2026-09-03）
+
+**状态**：骨架实现，等待 libXlorie.so native 构建完成与 JNI 绑定。
+
+- **新增模块 `:core:linux-desktop`**：
+  - `LinuxDesktopService` 接口：管理 X11 服务器生命周期、显示配置、环境变量导出
+  - `X11ServerState` / `X11DisplayConfig` 数据类
+  - `LinuxDesktopServiceImpl` 骨架实现（TODO: JNI 桥接）
+- **新增 submodule `external/termux-x11`**：
+  - 克隆自 [termux/termux-x11](https://github.com/termux/termux-x11)（GPL-3.0-or-later）
+  - 包含 `:lorie` Android library（libXlorie.so，完整 X.Org 栈编译为单个 .so）
+  - 包含 `:shell-loader:stub` 提供 Android 隐藏 API 桩（compileOnly 依赖）
+- **`settings.gradle.kts` 新增模块引用**：
+  - `:core:linux-desktop`
+  - `:termux-x11:lorie`
+  - `:termux-x11:shell-loader-stub`
+- **文档**：`core/linux-desktop/README.md` 说明架构、依赖、构建要求与已知问题
+
+**已知问题**：
+
+1. **Gradle daemon 连接失败**：用户环境 `java.io.IOException: Unable to establish loopback connection`，
+   无法验证 `:termux-x11:lorie` 构建。需修复 Gradle daemon / JDK 配置。
+2. **Windows CMake patch 路径问题**：termux-x11 的 `CMakeLists.txt` 调用 `bash -c "patch ..."` 时，
+   Cygwin 路径与 Windows 路径混用导致 patch 失败。建议首次构建在 WSL / Linux / macOS 环境完成，或使用 AGP 内置 NDK 构建。
+3. **Native 构建依赖**（见 `core/linux-desktop/README.md`）：
+   - NDK 29.0.14206865（termux-x11 pinned 版本）
+   - Python 3、Bison、GNU patch（用于 X.Org 构建脚本与补丁应用）
+
+**未来工作**：
+
+- [ ] JNI 桥接：Kotlin ↔ libXlorie.so（X11 Display 初始化、Surface 绑定、输入事件转换）
+- [ ] PRoot 环境联动：自动导出 `DISPLAY=:0` 和 `XAUTHORITY`
+- [ ] 桌面环境预配置：集成 Xfce / i3wm / Fluxbox 到 Ubuntu rootfs
+- [ ] 触摸输入优化：多点触控 → X11 pointer events 映射
+- [ ] 硬件加速渲染：OpenGL ES passthrough（termux-x11 上游已有实验性实现）
+- [ ] 剪贴板同步：X11 ↔ Android
+- [ ] Wayland 协议支持（termux-x11 上游已有）
+
+### Fixed
+
+- `SelfHostedLinuxDistroRuntime.syncInstalledProfiles()` 不再在每次启动时无条件劫持用户手动选择的 active profile，
+  仅在首次安装（无 active Ubuntu profile）时提升第一个 profile。
 
 ## [0.18.27] - 2026-08-26
 

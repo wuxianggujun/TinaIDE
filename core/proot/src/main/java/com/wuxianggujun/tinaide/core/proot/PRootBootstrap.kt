@@ -69,7 +69,9 @@ object PRootBootstrap {
         val manager = requireConfigManager("getActiveProfile")
             ?: error("PRootBootstrap.bindDependencies must be called before getActiveProfile")
         syncConfiguredRuntimeProfiles(appContext)
-        return RootfsProfileStore(appContext, manager).getActiveProfile()
+        return RootfsProfileStore(appContext, manager)
+            .getActiveProfileForDistro(defaultDistroId())
+            ?: error("Ubuntu Linux rootfs profile is not installed")
     }
 
     fun getActiveRootfsPath(context: Context): String = getActiveProfile(context).rootfsPath
@@ -78,7 +80,8 @@ object PRootBootstrap {
         val appContext = context.applicationContext
         val manager = requireConfigManager("getActiveProfileOrNull") ?: return null
         syncConfiguredRuntimeProfiles(appContext)
-        return RootfsProfileStore(appContext, manager).getActiveProfileOrNull()
+        return RootfsProfileStore(appContext, manager)
+            .getActiveProfileForDistro(defaultDistroId())
     }
 
     private fun hasProfileShell(profile: RootfsProfile): Boolean {

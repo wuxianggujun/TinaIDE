@@ -148,20 +148,19 @@ class LinuxDistroManifestTest {
     }
 
     @Test
-    fun bundledManifest_shouldContainAlpineAndUbuntuMirrorRules() {
-        val workingDirectory = File(System.getProperty("user.dir"))
+    fun bundledManifest_shouldContainUbuntuOnlyAndUbuntuMirrorRules() {
+        val workingDirectory = File(requireNotNull(System.getProperty("user.dir")))
         val manifestFile = listOf(
             File(workingDirectory, "src/main/assets/linux-distro/manifest.json"),
             File(workingDirectory, "core/linux-distro/src/main/assets/linux-distro/manifest.json"),
         ).firstOrNull { it.isFile }
         requireNotNull(manifestFile) { "Bundled linux distro manifest not found from ${workingDirectory.absolutePath}" }
 
-        val rules = LinuxDistroManifestParser.decode(manifestFile.readText(Charsets.UTF_8)).mirrors
+        val manifest = LinuxDistroManifestParser.decode(manifestFile.readText(Charsets.UTF_8))
+        assertThat(manifest.distros.map { it.id }).containsExactly("ubuntu")
+        assertThat(manifest.distros.single().packageManager).isEqualTo(DistroPackageManager.APT)
 
-        assertThat(rules.map { it.replaceWith }).containsAtLeast(
-            "https://mirrors.tuna.tsinghua.edu.cn/alpine/",
-            "https://mirrors.ustc.edu.cn/alpine/",
-            "https://mirrors.aliyun.com/alpine/",
+        assertThat(manifest.mirrors.map { it.replaceWith }).containsAtLeast(
             "https://mirrors.tuna.tsinghua.edu.cn/ubuntu-cdimage/",
             "https://mirrors.ustc.edu.cn/ubuntu-cdimage/",
         )

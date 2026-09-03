@@ -2,7 +2,6 @@ param(
     [string]$RepoRoot,
     [string]$SourceFile,
     [string]$OutputFile,
-    [switch]$RefreshAlpineMetadata,
     [switch]$RefreshUbuntuMetadata,
     [switch]$RefreshRemoteMetadata,
     [switch]$StampNow
@@ -183,42 +182,6 @@ function Find-Sha256InChecksumText {
     return $match.Groups[1].Value.ToLowerInvariant()
 }
 
-function Update-AlpineMetadata {
-    param([Parameter(Mandatory = $true)]$Source)
-
-    foreach ($distro in @($Source.distros)) {
-        $family = Get-JsonPropertyValue -Object $distro -Name "family" -Description "distro"
-        if ($family -ne "ALPINE") {
-            continue
-        }
-
-        foreach ($release in @($distro.releases)) {
-            $version = Get-JsonPropertyValue -Object $release -Name "version" -Description "release"
-            $baseUrl = Get-JsonPropertyValue -Object $release -Name "sourceBaseUrl" -Description "release"
-            $template = Get-JsonPropertyValue -Object $release -Name "sourceFileTemplate" -Description "release"
-
-            foreach ($artifact in @($release.artifacts)) {
-                $sourceArchitecture = Get-JsonPropertyValue -Object $artifact -Name "sourceArchitecture" -Description "artifact"
-                $fileName = $template.Replace("{version}", $version).Replace("{sourceArchitecture}", $sourceArchitecture)
-                $url = "$baseUrl/$sourceArchitecture/$fileName"
-                $checksumUrl = "$url.sha256"
-                $checksumText = (Get-WebText -Url $checksumUrl).Trim()
-                $sha256 = (($checksumText -split '\s+')[0]).ToLowerInvariant()
-
-                if ($sha256 -notmatch '^[0-9a-f]{64}$') {
-                    throw "Invalid SHA-256 from ${checksumUrl}: $checksumText"
-                }
-
-                Set-JsonPropertyValue -Object $artifact -Name "url" -Value $url
-                Set-JsonPropertyValue -Object $artifact -Name "sourceChecksumUrl" -Value $checksumUrl
-                Set-JsonPropertyValue -Object $artifact -Name "sizeBytes" -Value (Get-RemoteContentLength -Url $url)
-                Set-JsonPropertyValue -Object $artifact -Name "signatureUrl" -Value "$url.asc"
-                $artifact.checksum.value = $sha256
-            }
-        }
-    }
-}
-
 function Update-UbuntuMetadata {
     param([Parameter(Mandatory = $true)]$Source)
 
@@ -365,13 +328,10 @@ function Convert-ToLinuxDistroManifest {
 }
 
 $source = Read-JsonFile -Path $SourceFile
-if ($RefreshAlpineMetadata -or $RefreshRemoteMetadata) {
-    Update-AlpineMetadata -Source $source
-}
 if ($RefreshUbuntuMetadata -or $RefreshRemoteMetadata) {
     Update-UbuntuMetadata -Source $source
 }
-if ($RefreshAlpineMetadata -or $RefreshUbuntuMetadata -or $RefreshRemoteMetadata -or $StampNow) {
+if ($RefreshUbuntuMetadata -or $RefreshRemoteMetadata -or $StampNow) {
     Set-JsonPropertyValue -Object $source -Name "generatedAt" -Value ((Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ"))
     Write-Utf8JsonFile -Path $SourceFile -Value $source
 }

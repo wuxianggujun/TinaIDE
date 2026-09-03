@@ -6,6 +6,11 @@ import org.junit.Test
 class PRootBootstrapModelsTest {
 
     @Test
+    fun defaultDistro_shouldBeUbuntu() {
+        assertThat(SelfHostedLinuxDistroRuntime.DEFAULT_DISTRO_ID).isEqualTo("ubuntu")
+    }
+
+    @Test
     fun packageInfo_shouldMatchOnlyExactPackageName() {
         val packageInfo = PRootBootstrap.PackageInfo(
             name = "clang-format",

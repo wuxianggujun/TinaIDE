@@ -58,7 +58,6 @@ core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/runtime/PluginHostData
 core/project/src/main/java/com/wuxianggujun/tinaide/project/ProjectCreationService.kt | deleteRecursively=1 | Failed project creation rollback.
 core/project/src/main/java/com/wuxianggujun/tinaide/project/ProjectMetadata.kt | delete=1 | Atomic project metadata write temporary-file cleanup.
 core/project/src/main/java/com/wuxianggujun/tinaide/project/ProjectTemplateInstaller.kt | deleteRecursively=1,delete=1 | Project template staging cleanup.
-core/proot/src/main/java/com/wuxianggujun/tinaide/core/proot/AlpineMirrorManager.kt | delete=1 | Alpine rootfs repository rollback removes a newly created app-private guest config when no previous file existed.
 core/proot/src/main/java/com/wuxianggujun/tinaide/core/proot/InstallLogManager.kt | delete=2 | PRoot install log cleanup.
 core/proot/src/main/java/com/wuxianggujun/tinaide/core/proot/PRootEnvironment.kt | deleteRecursively=1 | PRoot environment cleanup.
 core/proot/src/main/java/com/wuxianggujun/tinaide/core/proot/PRootManager.kt | delete=1 | PRoot marker/temp file cleanup.

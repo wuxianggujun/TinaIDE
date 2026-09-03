@@ -22,6 +22,7 @@ import com.wuxianggujun.tinaide.core.proot.LinuxDistroRootfsHealthReport
 import com.wuxianggujun.tinaide.core.proot.RootfsDistroRuntime
 import com.wuxianggujun.tinaide.core.proot.RootfsProfile
 import com.wuxianggujun.tinaide.core.proot.RootfsProfileStore
+import com.wuxianggujun.tinaide.core.proot.SelfHostedLinuxDistroRuntime
 import com.wuxianggujun.tinaide.core.proot.toHealthSummary
 import com.wuxianggujun.tinaide.file.IProjectContext
 import com.wuxianggujun.tinaide.plugin.PluginCapabilities
@@ -544,7 +545,10 @@ class SettingsViewModel(
 
             runCatching {
                 val store = RootfsProfileStore(appContext, configManager)
-                val activeProfile = store.setActiveProfile(profileId)
+                val activeProfile = store.setActiveProfileForDistro(
+                    profileId = profileId,
+                    distroId = SelfHostedLinuxDistroRuntime.DEFAULT_DISTRO_ID,
+                )
                 applyRootfsProfilesSnapshot(
                     store = store,
                     inProgress = false,
@@ -823,8 +827,8 @@ class SettingsViewModel(
         message: String = _uiState.value.rootfsInstallMessage,
         progress: Float = _uiState.value.rootfsInstallProgress,
     ) {
-        val activeProfile = store.getActiveProfileOrNull()
-        val profiles = store.listProfiles()
+        val activeProfile = store.getActiveProfileForDistro(SelfHostedLinuxDistroRuntime.DEFAULT_DISTRO_ID)
+        val profiles = store.listProfilesForDistro(SelfHostedLinuxDistroRuntime.DEFAULT_DISTRO_ID)
         _uiState.update {
             it.copy(
                 rootfsPath = activeProfile?.rootfsPath.orEmpty(),
