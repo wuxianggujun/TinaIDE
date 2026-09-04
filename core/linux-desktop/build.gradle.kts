@@ -21,4 +21,6 @@ dependencies {
 
     implementation(libs.timber)
     implementation(libs.kotlinx.coroutines)
+
+    testImplementation(libs.tests.kotlinx.coroutines)
 }

@@ -80,7 +80,7 @@ GPL-3.0 不允许在下游附加非商业限制或后续版本闭源，因此原
 - **新增模块 `:core:linux-desktop`**：
   - `LinuxDesktopService` 接口：管理 X11 服务器生命周期、显示配置、环境变量导出
   - `X11ServerState` / `X11DisplayConfig` 数据类
-  - `LinuxDesktopServiceImpl` 骨架实现（TODO: JNI 桥接）
+  - `LinuxDesktopServiceImpl`：状态机、socket 目录准备与环境变量导出（X server 启动委派给 `X11ServerLauncher`）
 - **新增 submodule `external/termux-x11`**：
   - 指向 fork [wuxianggujun/termux-x11](https://github.com/wuxianggujun/termux-x11) 的 `tinaide-lorie-windows-build` 分支（GPL-3.0-or-later）
   - 上游是 [termux/termux-x11](https://github.com/termux/termux-x11)
@@ -130,19 +130,63 @@ stripped 3.4 MB），并已打进 `termux-x11-lorie-debug.aar` 的 `jni/arm64-v8
   `tina.termuxX11.python`、`tina.termuxX11.bison`、`tina.termuxX11.hostCompiler`、
   `tina.termuxX11.hostToolPath`。
 
+**X server 集成契约已固定（2026-09-04）**：
+
+阅读 lorie native 代码后确定了三条硬约束，`:core:linux-desktop` 按此重写。
+
+- **X server 必须独立进程，不能 in-process**：`lorie/src/main/cpp/lorie/cmdentrypoint.cpp`
+  把 libc 的 `exit()` / `abort()` 覆盖成 `_exit()`，而 X server 主线程执行
+  `exit(dix_main(argc, argv, envp))`。X server 任何一次 `FatalError()` 或正常退出都会
+  **直接终止整个进程**，不走 JVM 关闭流程、不抛异常、不可捕获。若 in-process 启动，
+  X server 崩溃会连带杀死 TinaIDE 主进程（IDE 无提示消失、未保存内容丢失）。
+  上游用 `app_process` 起独立进程正是这个原因。新增 `X11ServerLauncher` 接口固化该边界，
+  与既有 `:sdl` / `:crash` 进程隔离一致。
+- **`$TMPDIR` 是 host X server 与 guest client 唯一的交汇点**：`CmdEntryPoint.start()`
+  不接受 socket 路径参数，它只读 `$TMPDIR` 并把监听地址硬编码为
+  `$TMPDIR/.X11-unix/X<display>`；又用 `dirname($TMPDIR)` 推导 chroot 根去找 xkb 数据与字体。
+  新增 `X11SocketLayout` 把该布局建模为 `<rootfs>/tmp`：host 用绝对路径、guest 用 `/tmp`，
+  同一 inode 两侧都能命中，且 `dirname` 恰好落在 rootfs 根上，从而复用 guest 内
+  `xkb-data` 装出来的真实数据，无需往 APK 塞 xkb 副本。
+- **`LinuxDesktopServiceImpl` 不再伪装成功**：旧骨架在只有 TODO 注释的情况下把状态直接置为
+  `Running`，`getX11EnvironmentVariables()` 会导出一个指向不存在的 X server 的 `DISPLAY`，
+  在 guest 里只表现为难以诊断的 "cannot open display"。现在缺 launcher、rootfs 未安装、
+  xkb 数据缺失、display 格式非法都会明确失败并落到 `X11ServerState.Error`。
+  同时移除 `startX11Server()` 的 `SurfaceView` 参数：渲染 Surface 属于 X server 进程里的
+  `LorieView`，主进程无从提供。不再导出 `XAUTHORITY`（服务器以 `-ac` 启动，
+  socket 位于应用私有 rootfs，隔离由 Android 沙箱负责）。
+  新增 `LinuxDesktopServiceImplTest`（7 个测试）覆盖上述失败路径。
+
+**lorie 库 manifest 污染已修复（2026-09-04）**：
+
+`:termux-x11-lorie` 的库 manifest 按"独立 app"声明组件，合并进 TinaIDE 会多出
+第二个启动图标、一个无障碍服务和 `WRITE_SECURE_SETTINGS` 受保护权限。
+在直接消费者 `:core:linux-desktop` 一侧用 `tools:node="remove"` 挡掉
+`MainActivity` / `LoriePreferences` / `KeyInterceptor` / 两个 receiver 与该权限，
+宿主 app 无需了解 lorie 内部结构。lorie 的 `allowBackup="false"` 与 TinaIDE 冲突，
+由 app 侧 `tools:replace` 保留 TinaIDE 的取值。
+已验证合并产物：lorie 组件为零、`LAUNCHER` 仅 1 个（`MainPortalActivity`）、
+`WRITE_SECURE_SETTINGS` 与无障碍服务均不存在。
+
 **仍未解决**：
 
-1. **JNI 尚未接线**：`LinuxDesktopServiceImpl` 仍是骨架，没有调用 `CmdEntryPoint` / `LorieView`。
-   `LorieView` 还硬依赖 lorie 模块内的 `com.termux.x11.MainActivity`，不能直接丢进 TinaIDE Compose。
-2. **Gradle daemon loopback 失败**：`java.io.IOException: Unable to establish loopback connection`。
+1. **X server 进程宿主尚未实现**：`X11ServerLauncher` 目前只有接口与契约，没有实现类，
+   因此 `startX11Server()` 必然返回失败——图形桌面还不可用（终端里的 Ubuntu 不受影响）。
+   实现时需处理 `LorieView` 对 `com.termux.x11.MainActivity` 的硬依赖：
+   Java 侧有 `findActivity()` / `getPrefs()` / `MainActivity.handler`，
+   native 侧 `activity.cpp:144-146,162-165` 还会 `FindClassOrDie("com/termux/x11/MainActivity")`
+   并按名字读 `LorieView.activity` 字段，因此不能简单把 `LorieView` 丢进 TinaIDE Compose。
+2. **桌面安装与会话入口仍无 UI**：`UbuntuDesktopProvisioner` / `LinuxDesktopSessionLauncher`
+   仅有 API，未注册进 Koin，也没有设置项入口。
+3. **Gradle daemon loopback 失败**：`java.io.IOException: Unable to establish loopback connection`。
    已定位为 JDK 17 / Windows AF_UNIX 临时目录问题（独立 Java 程序调用 `Selector.open()` 同样失败），
    非 Gradle 或本项目依赖问题。当前绕过方式是构建前 `export TEMP=/c/gradle-tmp TMP=/c/gradle-tmp`；
    仅在 `gradle.properties` 的 `org.gradle.jvmargs` 加 `-Djdk.net.unixdomain.tmpdir` 不足以修复 launcher JVM。
 
 **未来工作**：
 
-- [ ] JNI 桥接：Kotlin ↔ libXlorie.so（X11 Display 初始化、Surface 绑定、输入事件转换）
-- [ ] PRoot 环境联动：自动导出 `DISPLAY=:0` 和 `XAUTHORITY`
+- [ ] `X11ServerLauncher` 实现：`:x11` 独立进程宿主 + `CmdEntryPoint` / `LorieView` 接线
+- [ ] PRoot 环境联动：`PRootManager` 把 `<rootfs>/tmp` 绑到 guest `/tmp`（当前绑到 `/dev/shm`），
+      并在 X server Running 后注入 `DISPLAY`
 - [ ] 桌面环境预配置：集成 Xfce / i3wm / Fluxbox 到 Ubuntu rootfs
 - [ ] 触摸输入优化：多点触控 → X11 pointer events 映射
 - [ ] 硬件加速渲染：OpenGL ES passthrough（termux-x11 上游已有实验性实现）

@@ -1,7 +1,5 @@
 package com.wuxianggujun.tinaide.core.linuxdesktop
 
-import android.content.Context
-import android.view.SurfaceView
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -18,13 +16,15 @@ interface LinuxDesktopService {
     /**
      * 启动 X11 服务器。
      *
+     * 这里不接受 `SurfaceView`：X server 运行在独立进程中（原因见 [X11ServerLauncher]），
+     * 渲染用的 Surface 属于那个进程里的 `LorieView`，主进程无从提供。本方法只负责把
+     * 服务器拉起来并拿到可用的 DISPLAY。
+     *
      * @param display X11 显示号（例如 ":0"）
-     * @param surfaceView 用于渲染的 Android SurfaceView
      * @param config 显示配置（分辨率、DPI 等）
      */
     suspend fun startX11Server(
         display: String,
-        surfaceView: SurfaceView,
         config: X11DisplayConfig = X11DisplayConfig.default()
     ): Result<Unit>
 
@@ -43,7 +43,17 @@ interface LinuxDesktopService {
     fun getX11EnvironmentVariables(): Map<String, String>
 
     companion object {
-        fun create(context: Context): LinuxDesktopService = LinuxDesktopServiceImpl(context)
+        /**
+         * @param serverLauncher 独立进程中的 X server 启动器。传 `null` 时
+         *   [startX11Server] 会明确失败——X server 不能 in-process 启动，
+         *   原因见 [X11ServerLauncher]。
+         * @param socketLayoutProvider 提供当前 rootfs 对应的 X11 socket 布局；
+         *   rootfs 未安装时返回 `null`。
+         */
+        fun create(
+            serverLauncher: X11ServerLauncher? = null,
+            socketLayoutProvider: () -> X11SocketLayout? = { null },
+        ): LinuxDesktopService = LinuxDesktopServiceImpl(serverLauncher, socketLayoutProvider)
     }
 }
 
