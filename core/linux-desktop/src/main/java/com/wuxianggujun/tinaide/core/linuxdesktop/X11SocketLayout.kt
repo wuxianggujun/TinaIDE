@@ -20,14 +20,18 @@ import java.io.File
  * 2. 在 guest 里是**同一个** inode，且 guest 路径也叫 `/tmp`（client 端 libX11 同样
  *    按 `/tmp/.X11-unix/X<n>` 拼接，PRoot 不会替它改写路径）。
  *
- * 满足这两点的做法就是把 `<rootfs>/tmp` 同时交给两边：host 用绝对路径，guest 用 `/tmp`。
+ * 满足这两点的做法就是 `<rootfs>/tmp`：host 用绝对路径，guest 用 `/tmp`。PRoot 以
+ * `--rootfs=<rootfsPath>` 启动，guest 的 `/tmp` 本身就解析到 host 的 `<rootfsPath>/tmp`，
+ * 且 `PRootManager.buildPRootCommandLine()` 的 bind 列表里没有任何针对 `/tmp` 的覆盖
+ * （只有 `--bind=<rootfs>/tmp:/dev/shm`，那是把同一目录额外再映射一份到 `/dev/shm`）。
+ * 所以两侧天然是同一个 inode，PRoot 侧无需改动。
+ *
  * 这样 `dirname` 恰好落在 rootfs 根上，lorie 探测 `<rootfs>/usr/share/X11/xkb` 也能命中
  * guest 里 `xkb-data` 装出来的真实数据 —— 无需再往 APK 里塞一份 xkb 副本。
  *
- * 注意：`PRootManager.buildPRootCommandLine()` 目前把 `<rootfs>/tmp` 绑到 guest 的
- * `/dev/shm`，而 guest `/tmp` 用的是 rootfs 内自己的目录。两者都指向 rootfs 内部，
- * 但**不是**同一个路径，所以此处显式以 `<rootfs>/tmp` 为准并要求 PRoot 侧对齐，
- * 而不是假定现有绑定已经够用。
+ * socket 是**真实文件系统路径**而非 abstract socket：生成的 `dix-config.h` 只定义了
+ * `UNIXCONN`，没有 `LOCALCONN` / `HAVE_ABSTRACT_SOCKETS`，因此 `Xtranssock.c` 里的
+ * `TRANS_ABSTRACT` 分支不生效。共享 inode 的前提成立正是基于这一点。
  */
 data class X11SocketLayout(
     /** host 侧可写的 X11 socket 父目录，对应 X server 的 `$TMPDIR` */
@@ -55,10 +59,14 @@ data class X11SocketLayout(
     fun guestDisplay(displayNumber: Int): String = ":$displayNumber"
 
     /**
-     * 准备 socket 目录。X server 只会 bind，不会 mkdir 父目录，所以必须提前建好。
+     * 准备 socket 目录。
      *
-     * 权限设成对 all 可写：guest 里的桌面进程通常以另一个 uid 运行（PRoot 下是
-     * 伪 root），而 abstract/UNIX socket 的连接受父目录权限约束。
+     * X server 自己也会建：`Xtranssock.c` 的 `SocketUNIXCreateListener()` 会调
+     * `trans_mkdir(UNIX_DIR, 0777)`。这里提前建是为了在启动前就暴露"目录不可写"
+     * 这类问题——否则失败只会体现为 X server 进程静默 `_exit()`，没有可读的错误。
+     *
+     * 权限设成对 all 可写：guest 里的桌面进程以 PRoot 的伪 root 身份运行，
+     * 而 UNIX socket 的连接受父目录权限约束。
      */
     fun prepare(): Result<Unit> = runCatching {
         val socketDir = hostSocketDir
@@ -85,6 +93,7 @@ data class X11SocketLayout(
         private const val X11_SOCKET_DIR_NAME = ".X11-unix"
         private const val XKB_RELATIVE_PATH = "usr/share/X11/xkb"
 
+
         /** guest 内的 `/tmp`；libX11 客户端按此路径查找 socket，不可更改。 */
         const val GUEST_TMP_DIR: String = "/tmp"
 
@@ -97,4 +106,18 @@ data class X11SocketLayout(
             guestTmpDir = GUEST_TMP_DIR,
         )
     }
+}
+
+/**
+ * 当前活动 rootfs 对应的 socket 布局来源。
+ *
+ * 用具名接口而不是 `() -> X11SocketLayout?`：后者在 Koin 里注册成
+ * `Function0<*>`，泛型被擦除后会与任何其他 `Function0` 绑定冲突。
+ *
+ * 实现放在 `:core:proot`（它知道 `RootfsProfileStore`），本模块只消费——
+ * `:core:proot` 已经 `implementation` 本模块，反向依赖会成环。
+ */
+fun interface X11SocketLayoutProvider {
+    /** rootfs 未安装时返回 `null`，让启动明确失败而不是指向不存在的路径。 */
+    fun current(): X11SocketLayout?
 }

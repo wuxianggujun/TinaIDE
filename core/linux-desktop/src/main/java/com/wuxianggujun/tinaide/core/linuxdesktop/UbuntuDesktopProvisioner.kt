@@ -153,6 +153,9 @@ class UbuntuDesktopProvisioner(
         private val DESKTOP_PACKAGES = listOf(
             "xfce4",
             "dbus-x11",
+            // X11SocketLayout.hostXkbConfigRoot 指向 <rootfs>/usr/share/X11/xkb，
+            // 缺了它 LinuxDesktopServiceImpl 会在启动 X server 前直接失败。
+            "xkb-data",
             "pulseaudio-utils",
             "fcitx5",
             "fcitx5-frontend-gtk3",

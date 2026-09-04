@@ -17,6 +17,7 @@ import com.wuxianggujun.tinaide.core.i18n.AppStrings
 import com.wuxianggujun.tinaide.core.logging.LogProcessRegistry
 import com.wuxianggujun.tinaide.core.logging.TinaTimber
 import com.wuxianggujun.tinaide.core.proot.PRootBootstrap
+import com.wuxianggujun.tinaide.core.linuxdesktop.di.linuxDesktopModule
 import com.wuxianggujun.tinaide.core.proot.di.prootModule
 import com.wuxianggujun.tinaide.core.util.CrashLogPrivacyClassifier
 import com.wuxianggujun.tinaide.database.di.databaseModule
@@ -191,6 +192,7 @@ class TinaApplication : Application() {
                 workspaceModule,
                 debugModule,
                 prootModule,
+                linuxDesktopModule,
                 compileModule,
                 appModule,
                 appViewModelModule,

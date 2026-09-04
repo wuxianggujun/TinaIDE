@@ -13,9 +13,12 @@ import com.wuxianggujun.tinaide.core.config.MTFileProviderManager
 import com.wuxianggujun.tinaide.core.config.NewProjectSourceLocation
 import com.wuxianggujun.tinaide.core.config.Prefs
 import com.wuxianggujun.tinaide.core.config.ThemeManager
+import com.wuxianggujun.tinaide.core.IAppNavigator
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.core.linux.LinuxRunModePolicy
+import com.wuxianggujun.tinaide.core.linuxdesktop.UbuntuDesktopProvisioner
+import com.wuxianggujun.tinaide.core.linuxdesktop.UbuntuLinuxDesktopCoordinator
 import com.wuxianggujun.tinaide.core.proot.LinuxDistroRootfsHealthLevel
 import com.wuxianggujun.tinaide.core.proot.LinuxDistroRootfsHealthProbe
 import com.wuxianggujun.tinaide.core.proot.LinuxDistroRootfsHealthReport
@@ -37,6 +40,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class SettingsUiState(
     val appTheme: AppTheme,
@@ -89,6 +93,12 @@ data class SettingsUiState(
     val rootfsInstallMessage: String = "",
     val rootfsInstallProgress: Float = 0f,
     val rootfsHealth: RootfsHealthUiState = RootfsHealthUiState(),
+    val linuxDesktopReady: Boolean = false,
+    val linuxDesktopStatusText: String = "",
+    val linuxDesktopBusy: Boolean = false,
+    val linuxDesktopStarting: Boolean = false,
+    val linuxDesktopMessage: String = "",
+    val linuxDesktopProgress: Float = 0f,
     // MT 管理器文件提供器
     val mtFileProviderEnabled: Boolean,
     // 当前项目上下文（用于项目设置页）
@@ -164,6 +174,8 @@ class SettingsViewModel(
     private val configManager: IConfigManager,
     private val pluginManager: PluginManager,
     private val projectContext: IProjectContext,
+    private val linuxDesktopCoordinator: UbuntuLinuxDesktopCoordinator,
+    private val appNavigator: IAppNavigator,
 ) : ViewModel() {
 
     // 保存每个设置路由的垂直滚动偏移（像素）
@@ -304,6 +316,12 @@ class SettingsViewModel(
             rootfsInstallMessage = previousState.rootfsInstallMessage,
             rootfsInstallProgress = previousState.rootfsInstallProgress,
             rootfsHealth = previousState.rootfsHealth,
+            linuxDesktopReady = previousState.linuxDesktopReady,
+            linuxDesktopStatusText = previousState.linuxDesktopStatusText,
+            linuxDesktopBusy = previousState.linuxDesktopBusy,
+            linuxDesktopStarting = previousState.linuxDesktopStarting,
+            linuxDesktopMessage = previousState.linuxDesktopMessage,
+            linuxDesktopProgress = previousState.linuxDesktopProgress,
         )
     }
 
@@ -529,6 +547,7 @@ class SettingsViewModel(
             val store = RootfsProfileStore(appContext, configManager)
             applyRootfsProfilesSnapshot(store)
             updateRootfsHealthSnapshot(appContext)
+            updateLinuxDesktopStatusSnapshot(appContext)
         }
     }
 
@@ -555,6 +574,7 @@ class SettingsViewModel(
                     message = Strings.settings_linux_switch_success.strOr(appContext, activeProfile.displayName),
                 )
                 updateRootfsHealthSnapshot(appContext)
+                updateLinuxDesktopStatusSnapshot(appContext)
             }.onFailure { error ->
                 _uiState.update {
                     it.copy(
@@ -576,6 +596,106 @@ class SettingsViewModel(
         val appContext = context.applicationContext
         viewModelScope.launch(Dispatchers.IO) {
             updateRootfsHealthSnapshot(appContext)
+        }
+    }
+
+    fun refreshLinuxDesktopStatus(context: Context) {
+        val appContext = context.applicationContext
+        viewModelScope.launch(Dispatchers.IO) {
+            updateLinuxDesktopStatusSnapshot(appContext)
+        }
+    }
+
+    fun installUbuntuDesktop(context: Context) {
+        if (_uiState.value.linuxDesktopBusy) return
+        val appContext = context.applicationContext
+        viewModelScope.launch(Dispatchers.IO) {
+            _uiState.update {
+                it.copy(
+                    linuxDesktopBusy = true,
+                    linuxDesktopStarting = false,
+                    linuxDesktopMessage = Strings.settings_linux_desktop_checking.strOr(appContext),
+                    linuxDesktopProgress = 0f,
+                )
+            }
+
+            runCatching {
+                linuxDesktopCoordinator.install { progress ->
+                    _uiState.update {
+                        it.copy(
+                            linuxDesktopMessage = progress.phase.toDesktopMessage(appContext),
+                            linuxDesktopProgress = progress.progress.coerceIn(0f, 1f),
+                        )
+                    }
+                }.getOrThrow()
+            }.onSuccess { result ->
+                _uiState.update {
+                    it.copy(
+                        linuxDesktopBusy = false,
+                        linuxDesktopStarting = false,
+                        linuxDesktopReady = result.status.ready,
+                        linuxDesktopStatusText = result.status.toStatusText(appContext),
+                        linuxDesktopMessage = Strings.settings_linux_desktop_install_success.strOr(appContext),
+                        linuxDesktopProgress = 1f,
+                    )
+                }
+            }.onFailure { error ->
+                _uiState.update {
+                    it.copy(
+                        linuxDesktopBusy = false,
+                        linuxDesktopStarting = false,
+                        linuxDesktopReady = false,
+                        linuxDesktopMessage = Strings.settings_linux_desktop_install_failed.strOr(
+                            appContext,
+                            error.message ?: Strings.error_unknown.strOr(appContext),
+                        ),
+                        linuxDesktopProgress = 0f,
+                    )
+                }
+            }
+        }
+    }
+
+    fun openLinuxDesktop(context: Context) {
+        if (_uiState.value.linuxDesktopBusy) return
+        val appContext = context.applicationContext
+        viewModelScope.launch(Dispatchers.IO) {
+            _uiState.update {
+                it.copy(
+                    linuxDesktopBusy = true,
+                    linuxDesktopStarting = true,
+                    linuxDesktopMessage = Strings.settings_linux_desktop_starting.strOr(appContext),
+                    linuxDesktopProgress = 0.3f,
+                )
+            }
+
+            runCatching {
+                linuxDesktopCoordinator.startSession().getOrThrow()
+                withContext(Dispatchers.Main) {
+                    appNavigator.openLinuxDesktop(appContext)
+                }
+            }.onSuccess {
+                _uiState.update {
+                    it.copy(
+                        linuxDesktopBusy = false,
+                        linuxDesktopStarting = false,
+                        linuxDesktopMessage = "",
+                        linuxDesktopProgress = 1f,
+                    )
+                }
+            }.onFailure { error ->
+                _uiState.update {
+                    it.copy(
+                        linuxDesktopBusy = false,
+                        linuxDesktopStarting = false,
+                        linuxDesktopMessage = Strings.settings_linux_desktop_open_failed.strOr(
+                            appContext,
+                            error.message ?: Strings.error_unknown.strOr(appContext),
+                        ),
+                        linuxDesktopProgress = 0f,
+                    )
+                }
+            }
         }
     }
 
@@ -605,6 +725,7 @@ class SettingsViewModel(
                     progress = 1f,
                 )
                 updateRootfsHealthSnapshot(appContext)
+                updateLinuxDesktopStatusSnapshot(appContext)
             }.onFailure { error ->
                 _uiState.update {
                     it.copy(
@@ -677,6 +798,7 @@ class SettingsViewModel(
                     message = Strings.settings_linux_delete_success.strOr(appContext, deletedProfile.displayName),
                 )
                 updateRootfsHealthSnapshot(appContext)
+                updateLinuxDesktopStatusSnapshot(appContext)
             }.onFailure { error ->
                 _uiState.update {
                     it.copy(
@@ -883,6 +1005,65 @@ class SettingsViewModel(
                 }
             }
     }
+
+    private suspend fun updateLinuxDesktopStatusSnapshot(appContext: Context) {
+        if (_uiState.value.linuxDesktopBusy) return
+        if (!_uiState.value.linuxEnvironmentEnabled) {
+            _uiState.update {
+                it.copy(
+                    linuxDesktopReady = false,
+                    linuxDesktopStatusText = "",
+                )
+            }
+            return
+        }
+
+        _uiState.update {
+            it.copy(
+                linuxDesktopStatusText = Strings.settings_linux_desktop_checking.strOr(appContext),
+            )
+        }
+
+        runCatching { linuxDesktopCoordinator.inspect() }
+            .onSuccess { status ->
+                _uiState.update {
+                    it.copy(
+                        linuxDesktopReady = status.ready,
+                        linuxDesktopStatusText = status.toStatusText(appContext),
+                    )
+                }
+            }
+            .onFailure { error ->
+                _uiState.update {
+                    it.copy(
+                        linuxDesktopReady = false,
+                        linuxDesktopStatusText = error.message
+                            ?: Strings.settings_linux_desktop_not_ready.strOr(appContext),
+                    )
+                }
+            }
+    }
+
+    private fun UbuntuDesktopProvisioner.Status.toStatusText(appContext: Context): String =
+        if (ready) {
+            Strings.settings_linux_desktop_ready.strOr(appContext)
+        } else {
+            Strings.settings_linux_desktop_not_ready.strOr(appContext)
+        }
+
+    private fun UbuntuDesktopProvisioner.Phase.toDesktopMessage(appContext: Context): String =
+        when (this) {
+            UbuntuDesktopProvisioner.Phase.CHECKING ->
+                Strings.settings_linux_desktop_checking.strOr(appContext)
+            UbuntuDesktopProvisioner.Phase.UPDATING_INDEX ->
+                Strings.settings_linux_desktop_updating.strOr(appContext)
+            UbuntuDesktopProvisioner.Phase.INSTALLING_PACKAGES ->
+                Strings.settings_linux_desktop_installing.strOr(appContext)
+            UbuntuDesktopProvisioner.Phase.VERIFYING ->
+                Strings.settings_linux_desktop_verifying.strOr(appContext)
+            UbuntuDesktopProvisioner.Phase.COMPLETED ->
+                Strings.settings_linux_desktop_install_success.strOr(appContext)
+        }
 
     private fun LinuxDistroRootfsHealthReport.toRootfsHealthUiState(appContext: Context): RootfsHealthUiState {
         val summary = toHealthSummary { probe -> probe.toDisplayName(appContext) }

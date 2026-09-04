@@ -3,37 +3,89 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <!--
-        :termux-x11-lorie 的库 manifest 按"独立 app"声明了一整套组件：一个带
-        MAIN/LAUNCHER 的 MainActivity、一个偏好设置 Activity、一个无障碍服务、
-        两个 receiver，以及 WRITE_SECURE_SETTINGS。
+        :termux-x11-lorie 的库 manifest 按"独立 app"声明了一整套组件。TinaIDE 复用其中
+        MainActivity + LorieView 这条渲染/输入链路（约 3000 行触摸手势、额外按键栏、
+        鼠标辅助按钮、PiP、剪贴板同步、IME 处理），但要挡掉一切让它看起来像独立 app 的部分。
 
-        TinaIDE 只消费 libXlorie.so 与 LorieView / CmdEntryPoint 这几个类。这里
-        在直接消费者一侧把其余组件挡掉，宿主 app 就不必了解 lorie 的内部结构：
-        否则合并结果里会多出第二个启动图标和一个无障碍服务。
+        MainActivity 必须保留而不能移除：native 侧 activity.cpp 会
+        FindClassOrDie("com/termux/x11/MainActivity") 并用
+        GetFieldID(..., "activity", "Lcom/termux/x11/MainActivity;") 按名字读 LorieView.activity
+        字段，类名和字段类型都写死在 .so 里。这里只摘掉它的 LAUNCHER / SECONDARY_HOME 入口，
+        并把它连同 X server 一起关进 :x11 进程。
+    -->
 
-        WRITE_SECURE_SETTINGS 只服务于 lorie 的"自动开启无障碍服务"路径
-        （KeyInterceptor.launch），TinaIDE 不走该路径，一并移除以免应用市场审核
-        质询这个受保护权限。
+    <!--
+        lorie 只在"自动开启无障碍服务"路径（KeyInterceptor.launch）需要该权限，
+        TinaIDE 不走这条路，移除以免应用市场质询这个受保护权限。
     -->
     <uses-permission
         android:name="android.permission.WRITE_SECURE_SETTINGS"
         tools:node="remove" />
 
     <application>
+        <!--
+            X server 与渲染 UI 同处 :x11 进程，与主进程隔离。
+            cmdentrypoint.cpp 把 libc 的 exit()/abort() 覆盖成 _exit()，而 X server 线程执行
+            exit(dix_main(...))——任何一次 FatalError 都会直接终止所在进程且不可捕获。
+            放在主进程会让 X server 崩溃连带杀死 IDE。
+        -->
         <activity
             android:name="com.termux.x11.MainActivity"
-            tools:node="remove" />
+            android:process=":x11"
+            android:exported="false"
+            tools:replace="android:exported">
+            <!-- 上游把它声明为启动器入口；TinaIDE 只从桌面功能内部拉起它。 -->
+            <intent-filter tools:node="removeAll" />
+            <meta-data
+                android:name="android.app.shortcuts"
+                tools:node="remove" />
+        </activity>
+
+        <!-- X server 宿主：常驻前台服务，关掉桌面窗口不影响 guest 会话 -->
+        <service
+            android:name="com.wuxianggujun.tinaide.core.linuxdesktop.X11ServerService"
+            android:process=":x11"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Linux 图形桌面 X server" />
+        </service>
+
+        <!--
+            MainActivity 唯一实现的 Binder 递送路径：
+            LorieView.requestConnection() 敲 127.0.0.1:7892 → native lorieListenForKnocks
+            回调 CmdEntryPoint.sendBroadcast() → ACTION_START 广播携带 Binder →
+            本 receiver → MainActivity.onBroadcastReceive() → onReceiveConnection()。
+            MainActivity 没有 onNewIntent，去掉这个 receiver 等于切断整条链路。
+            上游把它声明成 exported=true 的跨 app 接收器；这里改成进程内、不导出。
+        -->
+        <receiver
+            android:name="com.termux.x11.LorieBroadcastReceiver"
+            android:process=":x11"
+            android:exported="false"
+            tools:replace="android:exported" />
+
+        <!--
+            MainActivity 右上角的 preferences 按钮显式 startActivity(LoriePreferences)，
+            移除它会 ActivityNotFoundException。这里同样关进 :x11 并去掉入口 filter。
+        -->
         <activity
             android:name="com.termux.x11.LoriePreferences"
-            tools:node="remove" />
+            android:process=":x11"
+            android:exported="false"
+            tools:replace="android:exported">
+            <intent-filter tools:node="removeAll" />
+        </activity>
+
+        <!-- 以下是上游独立 app 才需要的组件，TinaIDE 不使用 -->
+        <!-- 自动开启无障碍服务（拦截 Win 键）；需要 WRITE_SECURE_SETTINGS，不走这条路。 -->
         <service
             android:name="com.termux.x11.utils.KeyInterceptor"
             tools:node="remove" />
+        <!-- 导出的命令行改配置接收器，任何 app 都能改 X11 偏好，安全上不能保留。 -->
         <receiver
             android:name="com.termux.x11.LoriePreferences$Receiver"
-            tools:node="remove" />
-        <receiver
-            android:name="com.termux.x11.LorieBroadcastReceiver"
             tools:node="remove" />
     </application>
 

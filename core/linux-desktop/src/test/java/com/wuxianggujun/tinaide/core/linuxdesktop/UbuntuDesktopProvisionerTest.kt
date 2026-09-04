@@ -52,6 +52,7 @@ class UbuntuDesktopProvisionerTest {
             "-y",
             "xfce4",
             "dbus-x11",
+            "xkb-data",
             "pulseaudio-utils",
             "fcitx5",
             "fcitx5-frontend-gtk3",

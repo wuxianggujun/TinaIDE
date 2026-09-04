@@ -29,7 +29,7 @@
 - `LinuxDistroCatalogRepository`：把内置、缓存和远程三种加载意图拆成显式入口。
 - `RemoteLinuxDistroManifestSource`：远程多端点读取、6 小时缓存和失败回落。
 - `SelfHostedLinuxDistroRuntime`：连接 catalog、manager 与 `RootfsProfileStore`。
-- `UbuntuDesktopProvisioner` / `UbuntuDesktopSessionLauncher`：在 Ubuntu guest 中安装并校验 XFCE、DBus、PulseAudio、FCITX 和 Mesa 依赖，生成受约束的 X11 桌面会话启动参数。
+- `X11SocketLayoutProvider` 实现：把当前活动 Ubuntu profile 的 `<rootfs>/tmp` 提供给 `:core:linux-desktop` 作为 X server 的 `$TMPDIR`；profile 缺失或未安装时返回 `null`，让桌面启动明确失败。
 - `RootfsDistroRuntime`：设置页发行版列表和安装门面；普通列表使用缓存或内置数据，不主动联网。
 - `PRootBootstrap`：工作区安装页和自动引导入口。
 - `PRootEnvironment`：`LinuxEnvironment` 实现、rootfs 健康检查与清理入口。
@@ -57,7 +57,7 @@
 4. `LinuxDistroManager` 下载 rootfs、校验 SHA-256，并解包到 `linux-distro/installed-rootfs`。
 5. `LinuxDistroRootfsBootstrapper` 进入新 rootfs，补齐 bash、curl、tar、xz、file、ca-certificates 等基础命令。
 6. `LinuxDistroRootfsProfileMapper` 写入 `RootfsProfileStore`，并设置为活动 Ubuntu profile。
-7. 用户需要图形桌面时，`UbuntuDesktopProvisioner` 在 guest 内安装 XFCE、DBus、PulseAudio、FCITX、Mesa、字体和 X11 辅助包。
+7. 用户需要图形桌面时，`UbuntuDesktopProvisioner` 在 guest 内安装 XFCE、`xkb-data`、DBus、PulseAudio、FCITX、Mesa、字体和 X11 辅助包；随后 `UbuntuLinuxDesktopCoordinator`（`:core:linux-desktop`）先启动 X server，拿到 `Running` 的 `DISPLAY` 后才启动 XFCE 会话。X server 的 `$TMPDIR` 固定为当前活动 profile 的 `<rootfs>/tmp`，由 `prootModule` 提供的 `X11SocketLayoutProvider` 注入。
 8. 工作区安装页继续使用默认的 native tina-toolchain + Android sysroot；PRoot 仅作为 Ubuntu guest 的执行层。
 
 ## 运行时自检

@@ -71,11 +71,10 @@ GPL-3.0 不允许在下游附加非商业限制或后续版本闭源，因此原
 
 ### Added
 
-#### X11 桌面 GUI 支持 — 初步集成 termux-x11（WIP，2026-09-03）
+#### X11 桌面 GUI 支持 — 集成 termux-x11（2026-09-04）
 
-**状态**：native 库已能构建，Kotlin 侧仍是骨架，等待 JNI 绑定。
-`LinuxDesktopServiceImpl.startX11Server()` 目前只推进状态机、**没有任何 JNI 调用**，
-返回 `Running` 不代表 X server 真的启动，暂不可作为用户可用功能暴露。
+**状态**：native 库、`:x11` 进程宿主、Koin 装配和设置页入口都已落地；
+**尚未在真机上跑通 XFCE 桌面**。代码路径完整不等于设备上可用，见本节末"仍未验证"。
 
 - **新增模块 `:core:linux-desktop`**：
   - `LinuxDesktopService` 接口：管理 X11 服务器生命周期、显示配置、环境变量导出
@@ -103,7 +102,7 @@ GPL-3.0 不允许在下游附加非商业限制或后续版本闭源，因此原
 stripped 3.4 MB），并已打进 `termux-x11-lorie-debug.aar` 的 `jni/arm64-v8a/`。
 重复执行为增量（`42 actionable tasks: 2 executed, 40 up-to-date`），补丁不会重复应用。
 
-为此对 vendored 上游做了三处本地改动（升级 termux-x11 时需人工复核）：
+为此对 vendored 上游做了五处本地改动（升级 termux-x11 时需人工复核）：
 
 - `src/main/cpp/CMakeLists.txt`：`target_apply_patch` 不再走 `bash -c`。Windows 机器级 PATH 中
   `C:\WINDOWS\system32` 在 Git `usr\bin` 之前，`bash` 会解析到 WSL 的 `bash.exe`，它无法处理
@@ -118,6 +117,17 @@ stripped 3.4 MB），并已打进 `termux-x11-lorie-debug.aar` 的 `jni/arm64-v8
   命中 libX11 的 `Xlocale.h`；后者只 include `<locale.h>` 且从不声明 `locale_t`，
   其 include guard 又已置位使 `locale.h` 的二次 include 被跳过。
   解决方式是在更靠前位置放一个同名 shim 头，转发到 sysroot 中真正的 `xlocale.h`。
+- `src/main/cpp/lorie/cmdentrypoint.cpp`：敲门端口 7892 的监听地址从 `INADDR_ANY`
+  改为 `htonl(INADDR_LOOPBACK)`。上游监听全部网卡，同一 Wi-Fi 下任意设备都能触发
+  X server 的连接投递。敲门方（`activity.cpp`）本来就硬编码 `inet_addr("127.0.0.1")`，
+  只绑回环不损失任何功能。
+- `src/main/java/com/termux/x11/CmdEntryPoint.java`：新增 `startEmbedded(Context, String[])`
+  与私有无参构造。原构造是 package-private，无法从 TinaIDE 包内调用；`main()` 又是为
+  `app_process` 场景写的（反射 `ActivityThread` 伪造 Context、按绝对路径 dlopen、
+  最后 `Looper.loop()` 永不返回）。`startEmbedded` 还必须自己
+  `System.loadLibrary("Xlorie")`——`JNI_OnLoad` 是本类 native 方法的唯一注册者，
+  而它只在加载 `libXlorie.so` 时运行；Service 先于任何 `LorieView` 启动，
+  静态初始化没跑过，直接调 `start()` 会 `UnsatisfiedLinkError`。
 
 **host 工具链要求**：
 
@@ -156,42 +166,81 @@ stripped 3.4 MB），并已打进 `termux-x11-lorie-debug.aar` 的 `jni/arm64-v8
   socket 位于应用私有 rootfs，隔离由 Android 沙箱负责）。
   新增 `LinuxDesktopServiceImplTest`（7 个测试）覆盖上述失败路径。
 
-**lorie 库 manifest 污染已修复（2026-09-04）**：
+**lorie 库 manifest 收敛到 `:x11` 进程（2026-09-04）**：
 
-`:termux-x11-lorie` 的库 manifest 按"独立 app"声明组件，合并进 TinaIDE 会多出
-第二个启动图标、一个无障碍服务和 `WRITE_SECURE_SETTINGS` 受保护权限。
-在直接消费者 `:core:linux-desktop` 一侧用 `tools:node="remove"` 挡掉
-`MainActivity` / `LoriePreferences` / `KeyInterceptor` / 两个 receiver 与该权限，
-宿主 app 无需了解 lorie 内部结构。lorie 的 `allowBackup="false"` 与 TinaIDE 冲突，
-由 app 侧 `tools:replace` 保留 TinaIDE 的取值。
-已验证合并产物：lorie 组件为零、`LAUNCHER` 仅 1 个（`MainPortalActivity`）、
-`WRITE_SECURE_SETTINGS` 与无障碍服务均不存在。
+`:termux-x11-lorie` 的库 manifest 按"独立 app"声明组件，直接合并会给 TinaIDE 多出
+第二个启动图标、一个无障碍服务和 `WRITE_SECURE_SETTINGS` 受保护权限。处理在直接消费者
+`:core:linux-desktop` 一侧完成，宿主 app 无需了解 lorie 内部结构：
 
-**仍未解决**：
+- **保留并关进 `:x11`**：`MainActivity`、`LoriePreferences`、`LorieBroadcastReceiver`，
+  全部 `android:exported="false"` 并去掉入口 `intent-filter`。
+  `MainActivity` 不能移除——`activity.cpp` 会 `FindClassOrDie("com/termux/x11/MainActivity")`
+  并按 `GetFieldID(..., "activity", "Lcom/termux/x11/MainActivity;")` 读 `LorieView.activity`，
+  类名和字段类型写死在 `.so` 里。沿用它同时白拿了约 3000 行触摸手势、额外按键栏、
+  鼠标辅助键、PiP、剪贴板同步与 IME 处理。
+  `LorieBroadcastReceiver` 也不能移除：`MainActivity` 没有 `onNewIntent`，
+  Binder 的唯一递送路径是 `LorieView.requestConnection()` 敲 127.0.0.1:7892 →
+  native `lorieListenForKnocks` 回调 `CmdEntryPoint.sendBroadcast()` → `ACTION_START`
+  广播携带 Binder → 本 receiver → `onReceiveConnection()`。上游是导出的跨 app 接收器，
+  这里改成进程内不导出。
+- **移除**：`KeyInterceptor`（无障碍服务，需要 `WRITE_SECURE_SETTINGS`）、
+  `LoriePreferences$Receiver`（导出的命令行改配置接收器，任何 app 都能改 X11 偏好）
+  以及 `WRITE_SECURE_SETTINGS` 权限本身。
+- lorie 的 `allowBackup="false"` 与 TinaIDE 冲突，由 app 侧 `tools:replace` 保留 TinaIDE 取值。
 
-1. **X server 进程宿主尚未实现**：`X11ServerLauncher` 目前只有接口与契约，没有实现类，
-   因此 `startX11Server()` 必然返回失败——图形桌面还不可用（终端里的 Ubuntu 不受影响）。
-   实现时需处理 `LorieView` 对 `com.termux.x11.MainActivity` 的硬依赖：
-   Java 侧有 `findActivity()` / `getPrefs()` / `MainActivity.handler`，
-   native 侧 `activity.cpp:144-146,162-165` 还会 `FindClassOrDie("com/termux/x11/MainActivity")`
-   并按名字读 `LorieView.activity` 字段，因此不能简单把 `LorieView` 丢进 TinaIDE Compose。
-2. **桌面安装与会话入口仍无 UI**：`UbuntuDesktopProvisioner` / `LinuxDesktopSessionLauncher`
-   仅有 API，未注册进 Koin，也没有设置项入口。
-3. **Gradle daemon loopback 失败**：`java.io.IOException: Unable to establish loopback connection`。
-   已定位为 JDK 17 / Windows AF_UNIX 临时目录问题（独立 Java 程序调用 `Selector.open()` 同样失败），
-   非 Gradle 或本项目依赖问题。当前绕过方式是构建前 `export TEMP=/c/gradle-tmp TMP=/c/gradle-tmp`；
-   仅在 `gradle.properties` 的 `org.gradle.jvmargs` 加 `-Djdk.net.unixdomain.tmpdir` 不足以修复 launcher JVM。
+**X server 进程宿主已实现（2026-09-04）**：
+
+- `X11ServerService`（`:x11` 进程、前台 `specialUse` 服务）通过 AIDL
+  `IX11ServerController` 暴露 `startServer`，内部调 `CmdEntryPoint.startEmbedded()`，
+  并在启动前 `Os.setenv` 设好 `TMPDIR` / `XKB_CONFIG_ROOT`。
+  X server 起来后无法在进程内停止（`dix_main` 的退出路径是 `_exit()`），
+  所以服务只记录是否已启动，不提供 stop；"停止"等于结束 `:x11` 进程。
+- `X11ServerProcessLauncher`（主进程）负责 `startForegroundService` + `bindService`，
+  并轮询 `<rootfs>/tmp/.X11-unix/X<n>` 出现才算就绪——`startServer()` 返回只代表
+  native `start()` 已被调用，socket 是 `dix_main` 之后才 bind 的。
+- `UbuntuLinuxDesktopCoordinator` 把三步串起来：环境可用 → 桌面软件包齐备 →
+  启动 X server → 拿到 `Running` 的 `DISPLAY` 后才 `startxfce4`。
+  任一步失败都不启动 guest 会话；X server 已起但会话失败时保留 X server 便于重试。
+- 桌面窗口由 `IAppNavigator.openLinuxDesktop()` 在主进程拉起 `MainActivity`，
+  feature 模块不直接依赖 `com.termux.x11.*`。关掉窗口不影响 guest 会话。
+- Koin 装配：`linuxDesktopModule` 提供 launcher / service / coordinator；
+  socket 布局由 `prootModule` 以 `() -> X11SocketLayout?` 注入，取当前已安装的
+  Ubuntu profile 路径，未安装时返回 `null` 并让启动明确失败。
+- `xkb-data` 加入 `UbuntuDesktopProvisioner.DESKTOP_PACKAGES`：
+  `X11SocketLayout.hostXkbConfigRoot` 指向 `<rootfs>/usr/share/X11/xkb`，
+  缺它 `LinuxDesktopServiceImpl` 会在启动前失败。
+
+**设置页入口（2026-09-04）**：
+
+存储设置的"Linux 系统"卡片在已安装 Ubuntu profile 时新增三项：图形桌面状态（点击重新检查）、
+安装图形桌面组件、打开图形桌面。安装与启动共用一个进度对话框，失败文案直出错误原因。
+
+**仍未验证**：
+
+1. **真机 XFCE 未跑通**：以上都是代码路径，没有在设备上实际看到桌面。
+2. `CmdEntryPoint` 静态初始化里的 `Looper.prepareMainLooper()` 在 Service 进程中的行为未验证。
+3. Android 15+ 前台服务启动限制对本路径的影响未验证。
+4. 关闭桌面窗口后再打开时，敲门 → 广播 → Activity 的重连路径未验证。
+
+**已知环境问题**：
+
+- **Gradle daemon loopback 失败**：`java.io.IOException: Unable to establish loopback connection`。
+  已定位为 JDK 17 / Windows AF_UNIX 临时目录问题（独立 Java 程序调用 `Selector.open()` 同样失败），
+  非 Gradle 或本项目依赖问题。当前绕过方式是构建前 `export TEMP=/c/gradle-tmp TMP=/c/gradle-tmp`；
+  仅在 `gradle.properties` 的 `org.gradle.jvmargs` 加 `-Djdk.net.unixdomain.tmpdir` 不足以修复 launcher JVM。
 
 **未来工作**：
 
-- [ ] `X11ServerLauncher` 实现：`:x11` 独立进程宿主 + `CmdEntryPoint` / `LorieView` 接线
-- [ ] PRoot 环境联动：`PRootManager` 把 `<rootfs>/tmp` 绑到 guest `/tmp`（当前绑到 `/dev/shm`），
-      并在 X server Running 后注入 `DISPLAY`
-- [ ] 桌面环境预配置：集成 Xfce / i3wm / Fluxbox 到 Ubuntu rootfs
-- [ ] 触摸输入优化：多点触控 → X11 pointer events 映射
+- [ ] 真机验证 XFCE 会话、输入映射与窗口关闭/重开
+- [ ] 桌面环境可选项：i3wm / Fluxbox
 - [ ] 硬件加速渲染：OpenGL ES passthrough（termux-x11 上游已有实验性实现）
-- [ ] 剪贴板同步：X11 ↔ Android
+- [ ] 音频：PulseAudio 端点接入
 - [ ] Wayland 协议支持（termux-x11 上游已有）
+
+> PRoot 侧**不需要**额外绑定 `/tmp`：PRoot 以 `--rootfs=<rootfsPath>` 启动，
+> guest 的 `/tmp` 本身就解析到 host 的 `<rootfsPath>/tmp`，两侧是同一个 inode。
+> `buildPRootCommandLine()` 的 bind 列表里只有 `--bind=<rootfs>/tmp:/dev/shm`，
+> 那是把同一目录额外再映射一份到 `/dev/shm`，不是对 `/tmp` 的覆盖。
 
 ### Fixed
 

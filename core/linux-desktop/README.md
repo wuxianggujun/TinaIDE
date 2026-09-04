@@ -12,16 +12,24 @@
 ## 架构
 
 ```
-主进程                                  :x11 独立进程
-─────────────────────────────           ─────────────────────────────
-LinuxDesktopService                     CmdEntryPoint (JNI start)
-  ├─ 状态机 X11ServerState                    ↓
-  ├─ X11SocketLayout (TMPDIR 契约)       libXlorie.so
-  └─ X11ServerLauncher ──启动──→          ↓
-       (接口，实现待补)                   libX11 / libxcb / libpixman
-                                              ↓
-                                        LorieView (SurfaceView 渲染 + 输入)
+主进程                                    :x11 进程
+────────────────────────────────         ──────────────────────────────────
+UbuntuLinuxDesktopCoordinator            X11ServerService (前台服务)
+  ├─ UbuntuDesktopProvisioner              └─ CmdEntryPoint.startEmbedded()
+  │    (guest apt 安装/校验)                      ↓
+  ├─ LinuxDesktopService                   libXlorie.so (完整 X.Org 栈)
+  │    ├─ 状态机 X11ServerState                   ↓
+  │    └─ X11SocketLayout (TMPDIR 契约)     监听 <rootfs>/tmp/.X11-unix/X<n>
+  ├─ X11ServerProcessLauncher ──AIDL──→
+  │    (bind + 等 socket 出现)
+  └─ UbuntuDesktopSessionLauncher          MainActivity + LorieView
+       (guest startxfce4，注入 DISPLAY)      (SurfaceView 渲染 + 输入)
+                                                  ↑
+IAppNavigator.openLinuxDesktop() ─────────────────┘
 ```
+
+X server 与桌面窗口都在 `:x11`，但生命周期分离：窗口关掉后 X server 与 guest 里的
+XFCE 会话继续跑，下次打开窗口重新连上即可。
 
 ### 为什么 X server 必须独立进程
 
@@ -35,7 +43,28 @@ void exit(int code) { _exit(code); }
 
 X server 任何一次 `FatalError()` 或正常退出都会**直接终止整个进程**，不走 JVM 关闭流程、
 不抛异常、不可捕获。若 in-process 启动，X server 崩溃会连带杀死 TinaIDE 主进程。
-上游用 `app_process` 起独立进程正是这个原因。`X11ServerLauncher` 接口固化了这条边界。
+上游用 `app_process` 起独立进程正是这个原因。`X11ServerLauncher` 接口固化了这条边界，
+`X11ServerProcessLauncher` + `X11ServerService`（`android:process=":x11"`）是其实现。
+
+同样因为退出路径是 `_exit()`，X server **无法在进程内停止**，也无法在同一进程里换 display
+重启（`dix_main` 只能跑一次）。`X11ServerService` 因此只记录是否已启动、不提供 stop；
+`terminate()` 的实际手段是解绑 + `stopService` 让 `:x11` 进程被回收。
+
+### 为什么保留 lorie 的 `MainActivity` 和 `LorieBroadcastReceiver`
+
+`MainActivity` 的类名写死在 `.so` 里（`activity.cpp` 的
+`FindClassOrDie("com/termux/x11/MainActivity")` 与
+`GetFieldID(..., "activity", "Lcom/termux/x11/MainActivity;")`），不能替换成 Compose 界面。
+沿用它同时白拿了约 3000 行触摸手势、额外按键栏、鼠标辅助键、PiP、剪贴板同步和 IME 处理。
+
+`LorieBroadcastReceiver` 是 Binder 的唯一递送路径：`MainActivity` 没有 `onNewIntent`，
+`LorieView.requestConnection()` 敲 127.0.0.1:7892 → native `lorieListenForKnocks` 回调
+`CmdEntryPoint.sendBroadcast()` → `ACTION_START` 广播携带 Binder → receiver →
+`MainActivity.onReceiveConnection()`。去掉 receiver 等于切断整条链路。
+
+两者在本模块 manifest 里都改成 `exported="false"` + `process=":x11"` 并去掉入口
+`intent-filter`；`KeyInterceptor`、`LoriePreferences$Receiver` 和 `WRITE_SECURE_SETTINGS`
+则直接移除。
 
 ### `$TMPDIR` 是唯一的交汇点
 
@@ -97,8 +126,15 @@ Cygwin/MSYS 目录提到整个 shell PATH 最前面（那会让 `gradlew` 把 JD
 `tina.termuxX11.hostToolPath` 可单独指定 host 工具运行期需要的 DLL 目录，默认取
 host 编译器所在目录（MinGW 的 `cc1.exe` 需要它才能加载 `libmpfr-6.dll`）。
 
-为在 Windows 上完成构建，对 vendored 上游有三处本地改动，见 `CHANGELOG.md` 的
-`Unreleased` 小节；升级 termux-x11 时需人工复核。
+对 vendored 上游共有五处本地改动（三处为 Windows 构建，两处为安全与 APK 内启动），
+逐条说明见 `CHANGELOG.md` 的 `Unreleased` 小节；升级 termux-x11 时需人工复核：
+
+1. `cpp/CMakeLists.txt`：`target_apply_patch` 直接调 `patch.exe`，不走 `bash -c`
+2. `cpp/generate-ks-tables.cmake`（新增）：`ks_tables.h` 生成拆成独立 CMake 脚本
+3. `cpp/recipes/xkbcomp.cmake`：`xlocale.h` shim，绕开大小写不敏感文件系统的头文件撞名
+4. `cpp/lorie/cmdentrypoint.cpp`：敲门端口 7892 从 `INADDR_ANY` 改绑 `INADDR_LOOPBACK`
+5. `java/com/termux/x11/CmdEntryPoint.java`：新增 `startEmbedded()`，内含
+   `System.loadLibrary("Xlorie")`（`JNI_OnLoad` 是本类 native 方法的唯一注册者）
 
 ### Linux / macOS
 
@@ -107,42 +143,69 @@ macOS 与 Windows 一样是大小写不敏感文件系统，同样需要 `xkbcom
 
 ## 使用
 
-> **当前不可用**：`X11ServerLauncher` 只有接口与契约，还没有实现类。不传 launcher 时
-> `startX11Server()` 会**明确失败**并落到 `X11ServerState.Error`，不会伪装成 `Running`
-> ——否则 guest 会拿到一个指向不存在的 X server 的 `DISPLAY`，只表现为一堆难以诊断的
-> "cannot open display"。
+> **真机上尚未验证**：整条链路的代码已完整（Service 宿主、AIDL、Koin 装配、设置页入口），
+> 但还没有在设备上实际跑出 XFCE 桌面。别把"代码路径完整"当成"功能可用"。
 >
-> 注意 `startX11Server()` 不接受 `SurfaceView`：渲染 Surface 属于 X server 进程里的
-> `LorieView`，主进程无从提供。
+> `startX11Server()` 不接受 `SurfaceView`：渲染 Surface 属于 `:x11` 进程里的 `LorieView`，
+> 主进程无从提供。不传 launcher、rootfs 未安装、xkb 缺失、display 格式非法都会**明确失败**
+> 并落到 `X11ServerState.Error`，不会伪装成 `Running`——否则 guest 只会拿到一个指向不存在的
+> X server 的 `DISPLAY`，表现为一堆难以诊断的 "cannot open display"。
+
+日常调用走 coordinator，它保证 DISPLAY 只在 X server 真的 `Running` 之后才注入 guest：
+
+```kotlin
+val coordinator: UbuntuLinuxDesktopCoordinator = koinInject()
+
+// 环境可用 → 桌面软件包齐备 → 启动 X server → 拿到 Running 的 DISPLAY → startxfce4
+coordinator.startSession()
+    .onSuccess { navigator.openLinuxDesktop(context) }
+    .onFailure { error -> /* 环境未启用 / 组件未装 / X server 启动失败 */ }
+```
+
+底层两层可以单独使用：
 
 ```kotlin
 val desktopService = LinuxDesktopService.create(
-    serverLauncher = x11ServerLauncher,
+    serverLauncher = X11ServerProcessLauncher(context),
     socketLayoutProvider = { X11SocketLayout.forRootfs(rootfsPath) },
 )
 
 desktopService.startX11Server(display = ":0")
-    .onFailure { error -> /* rootfs 未装 / xkb 缺失 / launcher 缺失 */ }
 
 // 仅在 serverState 为 Running 时才返回非空，可直接并入 PRoot 环境变量
 val env = desktopService.getX11EnvironmentVariables()  // {"DISPLAY": ":0"}
 ```
 
+## Koin 装配
+
+```
+linuxDesktopModule   X11ServerLauncher / LinuxDesktopService / UbuntuLinuxDesktopCoordinator
+prootModule          () -> X11SocketLayout?   （当前已安装的 Ubuntu profile 路径）
+appModule            IAppNavigator.openLinuxDesktop  （启动 MainActivity）
+```
+
+socket 布局由 `prootModule` 注入而非本模块自取：本模块不能依赖 `:core:proot`
+（`:core:proot` 已经 `implementation` 本模块，反向依赖会成环）。provider 缺失时
+`linuxDesktopModule` 退化成 `{ null }`，启动会明确失败而不是静默降级。
+
 不导出 `XAUTHORITY`：X server 以 `-ac` 启动，socket 位于应用私有 rootfs 内，隔离由
 Android 沙箱而非 X 认证负责。反过来说 `$TMPDIR` **绝不能**指向 `/sdcard` 或
 `/data/local/tmp` 等世界可读位置。
 
+## 仍未验证
+
+1. 真机 XFCE 会话没跑通过——以上都是代码路径。
+2. `CmdEntryPoint` 静态初始化里的 `Looper.prepareMainLooper()` 在 Service 进程中的行为。
+3. Android 15+ 前台服务启动限制对本路径的影响。
+4. 关闭桌面窗口后再打开时，敲门 → 广播 → Activity 的重连路径。
+
 ## 未来工作
 
-- [ ] `X11ServerLauncher` 实现：`:x11` 进程宿主 + `CmdEntryPoint` / `LorieView` 接线。
-      需处理 `LorieView` 对 `com.termux.x11.MainActivity` 的硬依赖——Java 侧有
-      `findActivity()` / `getPrefs()` / `MainActivity.handler`，native 侧
-      `activity.cpp` 还会 `FindClassOrDie("com/termux/x11/MainActivity")` 并按名字读
-      `LorieView.activity` 字段，所以不能简单把 `LorieView` 丢进 Compose。
-- [ ] `PRootManager` 把 `<rootfs>/tmp` 绑到 guest `/tmp`（当前绑到 `/dev/shm`）
-- [ ] 桌面安装与会话入口 UI（`UbuntuDesktopProvisioner` 目前仅有 API）
-- [ ] Wayland 协议支持（termux-x11 上游已有实验性实现）
-- [ ] 硬件加速渲染（OpenGL ES passthrough）
-- [ ] 剪贴板同步（X11 ↔ Android）
-- [ ] 虚拟键盘集成（X11 IME）
+- [ ] 真机验证 XFCE 会话、输入映射与窗口关闭/重开
+- [ ] 桌面环境可选项：i3wm / Fluxbox
+- [ ] 硬件加速渲染（OpenGL ES passthrough，termux-x11 上游已有实验性实现）
+- [ ] 音频：PulseAudio 端点接入
+- [ ] Wayland 协议支持（termux-x11 上游已有）
 - [ ] 多显示器 / 分屏支持
+
+剪贴板同步与 IME 处理已由沿用的 `MainActivity` 提供，不在本清单内。
