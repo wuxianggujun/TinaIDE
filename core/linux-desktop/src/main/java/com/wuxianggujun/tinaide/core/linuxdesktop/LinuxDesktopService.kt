@@ -2,7 +2,6 @@ package com.wuxianggujun.tinaide.core.linuxdesktop
 
 import android.content.Context
 import android.view.SurfaceView
-import com.wuxianggujun.tinaide.core.logging.Logger
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -44,9 +43,7 @@ interface LinuxDesktopService {
     fun getX11EnvironmentVariables(): Map<String, String>
 
     companion object {
-        fun create(context: Context, logger: Logger): LinuxDesktopService {
-            return LinuxDesktopServiceImpl(context, logger)
-        }
+        fun create(context: Context): LinuxDesktopService = LinuxDesktopServiceImpl(context)
     }
 }
 

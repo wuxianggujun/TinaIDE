@@ -12,3 +12,8 @@
 [submodule "external/rikkahub"]
 	path = external/rikkahub
 	url = https://github.com/wuxianggujun/rikkahub.git
+[submodule "external/termux-x11"]
+	path = external/termux-x11
+	url = https://github.com/wuxianggujun/termux-x11.git
+	branch = tinaide-lorie-windows-build
+	ignore = dirty

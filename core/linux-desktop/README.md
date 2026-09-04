@@ -17,15 +17,19 @@
     ├─ X11DisplayConfig: 显示配置与环境变量导出
     └─ X11InputBridge: 触摸/键鼠输入 → X11 事件转换
          ↓ JNI
-    libXlorie.so (from :termux-x11:lorie)
+    libXlorie.so (from :termux-x11-lorie)
          ↓
     libX11.so, libxcb.so, libpixman.so, etc.
 ```
 
 ## 依赖与许可证
 
-- **termux-x11/lorie**：GPL-3.0-or-later（完整 X.Org 栈编译为单个 .so）
-- **:termux-x11:shell-loader-stub**：compileOnly 依赖，提供 Android 隐藏 API 桩
+- **:termux-x11-lorie**：GPL-3.0-or-later（完整 X.Org 栈编译为单个 .so）
+- **:termux-x11-shell-loader-stub**：compileOnly 依赖，提供 Android 隐藏 API 桩
+
+Gradle 路径是扁平的 `:termux-x11-lorie`，不是 `:termux-x11:lorie`：后者会隐式创建
+`:termux-x11` 父项目并执行上游根 `build.gradle`，其自带 repository 声明与本仓库的
+`FAIL_ON_PROJECT_REPOS` 冲突。
 
 本模块受 GPL-3.0 传染，整个 TinaIDE 已改为 GPL-3.0-or-later。
 
@@ -37,22 +41,49 @@ Native X11 栈构建依赖：
 
 - **NDK 29.0.14206865**（termux-x11 pinned 版本，见 `external/termux-x11/lorie/version.gradle`）
 - **CMake 3.22.1+**（Android SDK 自带）
-- **Python 3**（Cygwin 或 WSL，用于 X.Org 构建脚本）
-- **Bison**（Cygwin 或 WSL，用于 XKB 语法解析器生成）
-- **GNU patch**（Cygwin 或 WSL，用于 X.Org 上游补丁应用）
+- **Python 3**（X.Org / libepoxy 代码生成）
+- **GNU Bison**（XKB 语法解析器生成）
+- **GNU patch**（X.Org 上游补丁应用；Git for Windows 自带 `usr/bin/patch.exe`）
+- **host C 编译器**（生成 `ks_tables.h` 的 `makekeys`；MSYS2 MinGW `gcc.exe` 已验证可用）
 
-**已知问题**：Windows 环境下 CMake 的 `execute_process(COMMAND "bash" ...)` 对 Cygwin 路径处理有问题，
-可能导致 patch 步骤失败。建议：
+Windows 上已验证可直接构建，无需 WSL。构建命令：
 
-1. 使用 WSL 2 Ubuntu 进行首次构建，产物复制回 Windows 项目
-2. 或在 Linux / macOS 环境构建后提交 `.cxx/` 产物（不推荐，体积大）
-3. 或使用 Android Studio 的内置 NDK 构建（AGP 可能有更好的路径处理）
+```bash
+export TEMP=/c/gradle-tmp TMP=/c/gradle-tmp
+./gradlew :termux-x11-lorie:assembleDebug --no-daemon --console=plain
+```
+
+`TEMP` / `TMP` 是必需的：JDK 17 在 Windows 上的 AF_UNIX 临时目录问题会让 Gradle 报
+`Unable to establish loopback connection`。只在 `gradle.properties` 里加
+`-Djdk.net.unixdomain.tmpdir` 不够，launcher JVM 仍会失败。
+
+CMake 会自动探测上述 host 工具；路径不同时用 Gradle property 覆盖，**不要**把
+Cygwin/MSYS 目录提到整个 shell PATH 最前面（那会让 `gradlew` 把 JDK 解析成
+`/cygdrive/...` 从而找不到 `java`）：
+
+```bash
+./gradlew :termux-x11-lorie:assembleDebug \
+  -Ptina.termuxX11.python=D:/Programs/Python/Python313/python.exe \
+  -Ptina.termuxX11.bison=D:/Programs/msys64/usr/bin/bison.exe \
+  -Ptina.termuxX11.hostCompiler=D:/Programs/msys64/mingw64/bin/gcc.exe
+```
+
+`tina.termuxX11.hostToolPath` 可单独指定 host 工具运行期需要的 DLL 目录，默认取
+host 编译器所在目录（MinGW 的 `cc1.exe` 需要它才能加载 `libmpfr-6.dll`）。
+
+为在 Windows 上完成构建，对 vendored 上游有三处本地改动，见 `CHANGELOG.md` 的
+`Unreleased` 小节；升级 termux-x11 时需人工复核。
 
 ### Linux / macOS
 
-直接使用系统包管理器安装 `python3 bison patch`，NDK 29 由 Android SDK Manager 安装即可。
+直接使用系统包管理器安装 `python3 bison patch gcc`，NDK 29 由 Android SDK Manager 安装即可。
+macOS 与 Windows 一样是大小写不敏感文件系统，同样需要 `xkbcomp.cmake` 里的 `xlocale.h` shim。
 
 ## 使用
+
+> **当前不可用**：`LinuxDesktopServiceImpl` 仍是骨架，`startX11Server()` 只推进状态机，
+> 没有任何 JNI 调用。返回 `Running` 不代表 X server 真的启动。下面是目标 API 形态，
+> 待 JNI 绑定完成后生效。
 
 ```kotlin
 // 在 PRoot 环境启动后

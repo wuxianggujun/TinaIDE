@@ -2,10 +2,10 @@ package com.wuxianggujun.tinaide.core.linuxdesktop
 
 import android.content.Context
 import android.view.SurfaceView
-import com.wuxianggujun.tinaide.core.logging.Logger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import timber.log.Timber
 
 /**
  * [LinuxDesktopService] 默认实现。
@@ -13,8 +13,7 @@ import kotlinx.coroutines.flow.asStateFlow
  * 当前为骨架实现，等待 libXlorie.so JNI 绑定完成后填充实际逻辑。
  */
 internal class LinuxDesktopServiceImpl(
-    private val context: Context,
-    private val logger: Logger
+    private val context: Context
 ) : LinuxDesktopService {
 
     private val _serverState = MutableStateFlow<X11ServerState>(X11ServerState.Stopped)
@@ -25,10 +24,10 @@ internal class LinuxDesktopServiceImpl(
         surfaceView: SurfaceView,
         config: X11DisplayConfig
     ): Result<Unit> {
-        logger.info(TAG, "startX11Server: display=$display, config=$config")
+        Timber.tag(TAG).i("startX11Server: display=%s, config=%s", display, config)
 
         if (_serverState.value is X11ServerState.Running) {
-            logger.warn(TAG, "X11 server already running")
+            Timber.tag(TAG).w("X11 server already running")
             return Result.success(Unit)
         }
 
@@ -44,14 +43,14 @@ internal class LinuxDesktopServiceImpl(
             _serverState.value = X11ServerState.Running(display)
             Result.success(Unit)
         } catch (e: Exception) {
-            logger.error(TAG, "Failed to start X11 server", e)
+            Timber.tag(TAG).e(e, "Failed to start X11 server")
             _serverState.value = X11ServerState.Error("Failed to start: ${e.message}", e)
             Result.failure(e)
         }
     }
 
     override suspend fun stopX11Server() {
-        logger.info(TAG, "stopX11Server")
+        Timber.tag(TAG).i("stopX11Server")
 
         if (_serverState.value is X11ServerState.Stopped) {
             return
@@ -65,7 +64,7 @@ internal class LinuxDesktopServiceImpl(
 
             _serverState.value = X11ServerState.Stopped
         } catch (e: Exception) {
-            logger.error(TAG, "Failed to stop X11 server", e)
+            Timber.tag(TAG).e(e, "Failed to stop X11 server")
             _serverState.value = X11ServerState.Error("Failed to stop: ${e.message}", e)
         }
     }

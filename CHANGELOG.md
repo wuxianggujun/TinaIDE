@@ -73,31 +73,71 @@ GPL-3.0 不允许在下游附加非商业限制或后续版本闭源，因此原
 
 #### X11 桌面 GUI 支持 — 初步集成 termux-x11（WIP，2026-09-03）
 
-**状态**：骨架实现，等待 libXlorie.so native 构建完成与 JNI 绑定。
+**状态**：native 库已能构建，Kotlin 侧仍是骨架，等待 JNI 绑定。
+`LinuxDesktopServiceImpl.startX11Server()` 目前只推进状态机、**没有任何 JNI 调用**，
+返回 `Running` 不代表 X server 真的启动，暂不可作为用户可用功能暴露。
 
 - **新增模块 `:core:linux-desktop`**：
   - `LinuxDesktopService` 接口：管理 X11 服务器生命周期、显示配置、环境变量导出
   - `X11ServerState` / `X11DisplayConfig` 数据类
   - `LinuxDesktopServiceImpl` 骨架实现（TODO: JNI 桥接）
 - **新增 submodule `external/termux-x11`**：
-  - 克隆自 [termux/termux-x11](https://github.com/termux/termux-x11)（GPL-3.0-or-later）
+  - 指向 fork [wuxianggujun/termux-x11](https://github.com/wuxianggujun/termux-x11) 的 `tinaide-lorie-windows-build` 分支（GPL-3.0-or-later）
+  - 上游是 [termux/termux-x11](https://github.com/termux/termux-x11)
   - 包含 `:lorie` Android library（libXlorie.so，完整 X.Org 栈编译为单个 .so）
   - 包含 `:shell-loader:stub` 提供 Android 隐藏 API 桩（compileOnly 依赖）
 - **`settings.gradle.kts` 新增模块引用**：
   - `:core:linux-desktop`
-  - `:termux-x11:lorie`
-  - `:termux-x11:shell-loader-stub`
+  - `:termux-x11-lorie`（扁平路径，projectDir 指向 `external/termux-x11/lorie`）
+  - `:termux-x11-shell-loader-stub`
+
+  不使用 `:termux-x11:lorie` 形式：那会隐式创建 `:termux-x11` 父项目并执行上游根
+  `build.gradle`，其自带 repository 声明与本仓库的 `FAIL_ON_PROJECT_REPOS` 冲突。
+- **新增 `external/termux-x11/lorie/build.gradle.kts`**：替换上游 Groovy 脚本。
+  上游通过遍历 `rootProject.subprojects` 反查宿主 `APPLICATION_ID`，在多模块仓库中必然失败。
 - **文档**：`core/linux-desktop/README.md` 说明架构、依赖、构建要求与已知问题
 
-**已知问题**：
+**native 构建已打通（Windows 宿主，2026-09-03）**：
 
-1. **Gradle daemon 连接失败**：用户环境 `java.io.IOException: Unable to establish loopback connection`，
-   无法验证 `:termux-x11:lorie` 构建。需修复 Gradle daemon / JDK 配置。
-2. **Windows CMake patch 路径问题**：termux-x11 的 `CMakeLists.txt` 调用 `bash -c "patch ..."` 时，
-   Cygwin 路径与 Windows 路径混用导致 patch 失败。建议首次构建在 WSL / Linux / macOS 环境完成，或使用 AGP 内置 NDK 构建。
-3. **Native 构建依赖**（见 `core/linux-desktop/README.md`）：
-   - NDK 29.0.14206865（termux-x11 pinned 版本）
-   - Python 3、Bison、GNU patch（用于 X.Org 构建脚本与补丁应用）
+`:termux-x11-lorie:assembleDebug` 产出 arm64-v8a `libXlorie.so`（AArch64 ELF64 DYN，
+stripped 3.4 MB），并已打进 `termux-x11-lorie-debug.aar` 的 `jni/arm64-v8a/`。
+重复执行为增量（`42 actionable tasks: 2 executed, 40 up-to-date`），补丁不会重复应用。
+
+为此对 vendored 上游做了三处本地改动（升级 termux-x11 时需人工复核）：
+
+- `src/main/cpp/CMakeLists.txt`：`target_apply_patch` 不再走 `bash -c`。Windows 机器级 PATH 中
+  `C:\WINDOWS\system32` 在 Git `usr\bin` 之前，`bash` 会解析到 WSL 的 `bash.exe`，它无法处理
+  CMake 传入的 `C:/...` 路径。改为直接调用 `patch.exe`，保留上游"反向 dry-run 成功即跳过"的幂等逻辑。
+  同时为 Python3 / Bison / host C 编译器补充 `find_program` HINTS。
+- `src/main/cpp/generate-ks-tables.cmake`（新增）：上游把 `ks_tables.h` 的生成写成
+  `add_custom_command(COMMAND ... "&&" ... ">" ...)`，但 CMake 不经 shell 执行，`&&` 和 `>`
+  会被当作普通参数传给编译器。改为独立 CMake 脚本，显式两步执行并重定向输出。
+- `src/main/cpp/recipes/xkbcomp.cmake`：修复 `locale_t` 编译失败。该 target 按上游要求把
+  `libx11/include/X11` 直接加入头文件搜索路径（`KeyBind.c` 等使用裸 include），
+  而 Windows / macOS 文件系统大小写不敏感，导致 bionic 头文件里的 `#include <xlocale.h>`
+  命中 libX11 的 `Xlocale.h`；后者只 include `<locale.h>` 且从不声明 `locale_t`，
+  其 include guard 又已置位使 `locale.h` 的二次 include 被跳过。
+  解决方式是在更靠前位置放一个同名 shim 头，转发到 sysroot 中真正的 `xlocale.h`。
+
+**host 工具链要求**：
+
+- NDK 29.0.14206865（termux-x11 `version.gradle` pinned）
+- Python 3、GNU Bison、GNU patch、host C 编译器（用于 X.Org 代码生成与补丁应用）
+- MSYS2/MinGW 的 `gcc.exe` 需要其所在 `bin` 目录在 PATH 中，否则 `cc1.exe` 无法加载
+  `libmpfr-6.dll`。CMake 只为 generator 子进程补这个 PATH，**不改 Gradle launcher 的 PATH**：
+  在 Windows 上把 Cygwin/MSYS 提前会让 `gradlew` 把 JDK 解析成 `/cygdrive/...` 从而找不到 `java`。
+- 路径可通过 Gradle property 覆盖，不必依赖内置 HINTS：
+  `tina.termuxX11.python`、`tina.termuxX11.bison`、`tina.termuxX11.hostCompiler`、
+  `tina.termuxX11.hostToolPath`。
+
+**仍未解决**：
+
+1. **JNI 尚未接线**：`LinuxDesktopServiceImpl` 仍是骨架，没有调用 `CmdEntryPoint` / `LorieView`。
+   `LorieView` 还硬依赖 lorie 模块内的 `com.termux.x11.MainActivity`，不能直接丢进 TinaIDE Compose。
+2. **Gradle daemon loopback 失败**：`java.io.IOException: Unable to establish loopback connection`。
+   已定位为 JDK 17 / Windows AF_UNIX 临时目录问题（独立 Java 程序调用 `Selector.open()` 同样失败），
+   非 Gradle 或本项目依赖问题。当前绕过方式是构建前 `export TEMP=/c/gradle-tmp TMP=/c/gradle-tmp`；
+   仅在 `gradle.properties` 的 `org.gradle.jvmargs` 加 `-Djdk.net.unixdomain.tmpdir` 不足以修复 launcher JVM。
 
 **未来工作**：
 
