@@ -13,8 +13,34 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(manifest = Config.NONE)
+@Config(manifest = Config.NONE, sdk = [34])
 class TextRendererCacheTest {
+
+    @Test
+    fun resolveDrawHighlightSegmentsForVisibleWindow_shouldBoundSynchronousLookups() {
+        val state = EditorState(RopeTextBuffer((0 until 10_000).joinToString("\n") { "line$it" }))
+        val highlighter = CountingSyntaxHighlighter()
+        state.highlighter = highlighter
+
+        TextRenderer().resolveDrawHighlightSegmentsForVisibleWindow(state, 5_000..5_020)
+
+        assertThat(highlighter.requestedLines).containsExactlyElementsIn(4_968..5_052).inOrder()
+    }
+
+    @Test
+    fun resolveDrawHighlightSegmentsForVisibleWindow_shouldRefreshWhenHighlighterChanges() {
+        val state = EditorState(RopeTextBuffer("text"))
+        val first = CountingSyntaxHighlighter()
+        val second = CountingSyntaxHighlighter()
+        val renderer = TextRenderer()
+        state.highlighter = first
+        renderer.resolveDrawHighlightSegmentsForVisibleWindow(state, 0..0)
+
+        state.highlighter = second
+        renderer.resolveDrawHighlightSegmentsForVisibleWindow(state, 0..0)
+
+        assertThat(second.requestedLines).containsExactly(0)
+    }
 
     @Test
     fun resolveDrawHighlightSegmentsForVisibleWindow_shouldReuseCachedWindowUntilHighlightVersionChanges() {

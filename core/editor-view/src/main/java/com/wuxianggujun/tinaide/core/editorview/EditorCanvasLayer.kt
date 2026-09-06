@@ -277,19 +277,14 @@ internal fun EditorCanvasLayer(
                 textPaint = textPaint,
                 lineNumberPaint = lineNumberPaint,
                 typeface = state.typeface,
+                textSizePx = with(density) { state.fontSizeSp.sp.toPx() },
                 lineNumberForegroundArgb = state.colorScheme.lineNumberForeground.toArgb()
             )
 
             val visualScale = ui.scaleGestureVisualScale
             val isVisualScaling = visualScale != 1f
 
-            textPaint.textSize = with(density) { state.fontSizeSp.sp.toPx() }
-            lineNumberPaint.textSize = textPaint.textSize
-
             if (!isVisualScaling) {
-                val fontMetrics = textPaint.fontMetrics
-                val lineHeight = (fontMetrics.descent - fontMetrics.ascent + fontMetrics.leading).coerceAtLeast(1f)
-                val charWidth = textPaint.measureText("0").coerceAtLeast(1f)
                 val contentStartX = renderer.contentStartX(state, lineNumberPaint)
                 ui.contentStartXPx = contentStartX
                 val windowHeightPx = view.rootView.height.toFloat().coerceAtLeast(1f)
@@ -298,8 +293,8 @@ internal fun EditorCanvasLayer(
                 val imeOverlapPx = (canvasBottomInWindowPx - visibleBottomPx).coerceAtLeast(0f)
                 val effectiveViewportHeightPx = (size.height - imeOverlapPx).coerceAtLeast(1f)
                 state.updateMetrics(
-                    lineHeightPx = lineHeight,
-                    charWidthPx = charWidth,
+                    lineHeightPx = paintApplyState.lineHeightPx,
+                    charWidthPx = paintApplyState.charWidthPx,
                     viewportHeightPx = effectiveViewportHeightPx,
                     viewportWidthPx = (size.width - contentStartX).coerceAtLeast(1f),
                     contentStartXPx = contentStartX
@@ -376,21 +371,38 @@ internal fun EditorCanvasLayer(
  * 避免每帧无脑 set Paint.color / Paint.typeface —— 这些赋值底层会走 native 调用，
  * 即使值没变也有开销。identity/值级对比后只在真正变化时写入。
  */
-private class PaintApplyMemo {
+internal class PaintApplyMemo {
     private var lastTypeface: android.graphics.Typeface? = null
+    private var lastTextSizePx = 0f
     private var lastLineNumberForegroundArgb: Int = 0
     private var initialized: Boolean = false
+    private val fontMetrics = android.graphics.Paint.FontMetrics()
+    var lineHeightPx: Float = 1f
+        private set
+    var charWidthPx: Float = 1f
+        private set
 
     fun apply(
         textPaint: android.graphics.Paint,
         lineNumberPaint: android.graphics.Paint,
         typeface: android.graphics.Typeface?,
+        textSizePx: Float,
         lineNumberForegroundArgb: Int
     ) {
-        if (!initialized || lastTypeface !== typeface) {
+        val typefaceChanged = !initialized || lastTypeface !== typeface
+        val textSizeChanged = !initialized || lastTextSizePx != textSizePx
+        if (typefaceChanged) {
             textPaint.typeface = typeface
             lineNumberPaint.typeface = typeface
             lastTypeface = typeface
+        }
+        if (textPaint.textSize != textSizePx) textPaint.textSize = textSizePx
+        if (lineNumberPaint.textSize != textSizePx) lineNumberPaint.textSize = textSizePx
+        if (typefaceChanged || textSizeChanged) {
+            textPaint.getFontMetrics(fontMetrics)
+            lineHeightPx = (fontMetrics.descent - fontMetrics.ascent + fontMetrics.leading).coerceAtLeast(1f)
+            charWidthPx = textPaint.measureText("0").coerceAtLeast(1f)
+            lastTextSizePx = textSizePx
         }
         if (!initialized || lastLineNumberForegroundArgb != lineNumberForegroundArgb) {
             lineNumberPaint.color = lineNumberForegroundArgb
