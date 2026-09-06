@@ -230,6 +230,7 @@ class TerminalSessionManager(
                 // 更新会话状态
                 updateSessionState(sessionId) {
                     it.copy(
+                        backend = resolution.backend,
                         session = termuxSession,
                         status = SessionStatus.RUNNING
                     )

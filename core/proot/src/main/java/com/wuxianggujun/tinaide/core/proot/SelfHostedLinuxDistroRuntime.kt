@@ -10,6 +10,7 @@ import com.wuxianggujun.tinaide.core.linuxdistro.InstalledLinuxDistro
 import com.wuxianggujun.tinaide.core.linuxdistro.LinuxDistroCatalog
 import com.wuxianggujun.tinaide.core.linuxdistro.LinuxDistroIds
 import com.wuxianggujun.tinaide.core.linuxdistro.LinuxDistroInstallLayout
+import com.wuxianggujun.tinaide.core.linuxdistro.LinuxDistroInstaller
 import com.wuxianggujun.tinaide.core.linuxdistro.LinuxDistroInstallPhase
 import com.wuxianggujun.tinaide.core.linuxdistro.LinuxDistroInstallProgress
 import com.wuxianggujun.tinaide.core.linuxdistro.LinuxDistroManager
@@ -75,11 +76,33 @@ class SelfHostedLinuxDistroRuntime(
     fun installedRootfsDir(distroId: String): File = File(layout().installedRootfsDir, distroId)
 
     fun listAvailableDistros() = manager.listAvailable()
+        .filter { distro -> distro.id == DEFAULT_DISTRO_ID }
 
-    fun isDistroInstalled(distroId: String): Boolean = manager.isInstalled(distroId)
+    fun isDistroInstalled(distroId: String): Boolean {
+        requireSupportedDistro(distroId)
+        return manager.isInstalled(distroId)
+    }
 
-    fun syncInstalledProfiles(): List<RootfsProfile> = manager.listInstalled(syncFromDisk = true)
-        .map { installation -> registerInstallation(installation, makeActive = false) }
+    /**
+     * Registers Ubuntu rootfs directories found on disk.
+     *
+     * The globally active profile id may still point at a profile from an
+     * earlier distribution. Promote a Ubuntu profile only in that case, so a
+     * user who selected a specific Ubuntu profile keeps it across restarts.
+     */
+    fun syncInstalledProfiles(): List<RootfsProfile> {
+        val installations = manager.listInstalled(syncFromDisk = true)
+            .filter { installation -> installation.distroId == DEFAULT_DISTRO_ID }
+        if (installations.isEmpty()) return emptyList()
+
+        val needsPromotion = profileStore.getActiveProfileForDistro(DEFAULT_DISTRO_ID) == null
+        return installations.mapIndexed { index, installation ->
+            registerInstallation(
+                installation = installation,
+                makeActive = needsPromotion && index == 0,
+            )
+        }
+    }
 
     suspend fun installDistro(
         distroId: String = DEFAULT_DISTRO_ID,
@@ -89,6 +112,7 @@ class SelfHostedLinuxDistroRuntime(
         rootfsConfig: LinuxDistroRootfsConfig = LinuxDistroRootfsConfig(),
         progress: (InstallProgress) -> Unit = {},
     ): Result<RootfsProfile> = withContext(Dispatchers.IO) {
+        requireSupportedDistro(distroId)
         operationMutex.withLock {
             runCatchingPreservingCancellation {
                 val displayName = resolveDisplayName(distroId)
@@ -134,6 +158,7 @@ class SelfHostedLinuxDistroRuntime(
     }
 
     suspend fun uninstallDistro(distroId: String): Result<Boolean> = withContext(Dispatchers.IO) {
+        requireSupportedDistro(distroId)
         operationMutex.withLock {
             runCatchingPreservingCancellation {
                 val removedRootfs = manager.uninstall(distroId)
@@ -247,11 +272,17 @@ class SelfHostedLinuxDistroRuntime(
 
     private fun resolveDisplayName(distroId: String): String = manager.resolveDistro(distroId)?.displayName ?: distroId
 
+    private fun requireSupportedDistro(distroId: String) {
+        require(distroId == DEFAULT_DISTRO_ID) {
+            "Only the Ubuntu Linux distribution is supported by the built-in runtime"
+        }
+    }
+
     companion object {
         private const val BOOTSTRAP_PROGRESS_START = 0.90f
         private const val BOOTSTRAP_PROGRESS_RANGE = 0.06f
 
-        const val DEFAULT_DISTRO_ID = "alpine"
+        const val DEFAULT_DISTRO_ID = "ubuntu"
 
         fun createForExplicitInstall(
             context: Context,
@@ -293,12 +324,16 @@ class SelfHostedLinuxDistroRuntime(
         ): SelfHostedLinuxDistroRuntime {
             val appContext = context.applicationContext
             val installLayout = LinuxDistroInstallLayout(runtimeDir = defaultRuntimeDir(appContext))
+            val installer = LinuxDistroInstaller(
+                catalog = catalog,
+            )
             return SelfHostedLinuxDistroRuntime(
                 context = appContext,
                 configManager = configManager,
                 manager = LinuxDistroManager(
                     catalog = catalog,
                     layout = installLayout,
+                    installer = installer,
                 ),
                 runtimeDir = installLayout.runtimeDir,
             )

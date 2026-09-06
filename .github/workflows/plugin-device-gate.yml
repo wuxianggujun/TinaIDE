@@ -60,11 +60,13 @@ jobs:
           $arguments += @('-ArtifactsDirectory', 'artifacts/plugin-device-gate')
           ./tools/testing/plugin-device-gate.ps1 @arguments
 
-      - name: Cleanup test processes
+      - name: Report remaining Gradle processes
         if: ${{ always() }}
         shell: pwsh
         run: |
-          ./gradlew.bat --stop
+          Get-CimInstance Win32_Process |
+            Where-Object { $_.CommandLine -match 'GradleDaemon|org.gradle.launcher.daemon' } |
+            Select-Object ProcessId, Name, CommandLine
 
       - name: Upload plugin device diagnostics
         if: ${{ always() }}

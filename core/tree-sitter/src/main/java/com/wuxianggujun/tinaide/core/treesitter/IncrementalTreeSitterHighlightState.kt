@@ -30,9 +30,6 @@ internal class IncrementalTreeSitterHighlightState(
         private const val MAX_LINE_CACHE_HARD_LIMIT = 100_000
         private const val DEFAULT_OPEN_BLOCKING_TIMEOUT_MS = 5000L
 
-        // 分块大小：每块覆盖 ~2k 行，作为 prewarm 调度单位。
-        private const val PREWARM_CHUNK_LINES = 2048
-
         private fun maxCacheSizeFor(lineCount: Int): Int {
             if (lineCount <= 0) return MIN_LINE_CACHE_SIZE
             return maxOf(MIN_LINE_CACHE_SIZE, lineCount).coerceAtMost(MAX_LINE_CACHE_HARD_LIMIT)
@@ -101,6 +98,7 @@ internal class IncrementalTreeSitterHighlightState(
     private var pending: PendingParseRequest? = null
     private var workerScheduled = false
     private var onStateUpdated: (() -> Unit)? = null
+    private var updateNotificationPosted = false
     private var pendingDirtyLineRanges: List<DirtyLineRange> = emptyList()
     private var currentText: StringBuilder? = null
     private var currentLineCount = 0
@@ -456,12 +454,14 @@ internal class IncrementalTreeSitterHighlightState(
         val oldSnapshot: SafeTsTree?
         val callback: (() -> Unit)?
         val prewarmSessionId: Long
+        val fullDocumentPrewarm: Boolean
         synchronized(lock) {
             if (disposed || request.revision != revision) {
                 runCatching { result.renderTree.close() }
                 return
             }
             oldSnapshot = renderSnapshot?.safeTree
+            fullDocumentPrewarm = request.change == null || oldSnapshot == null
 
             // 抢救旧 snapshot 的 lineCache：未落在文本或语法树变化范围内的行，
             // 其 segments 用的是列相对坐标，在新 snapshot 里仍然有效。
@@ -469,7 +469,9 @@ internal class IncrementalTreeSitterHighlightState(
             // 初始容量直接跟随 previousCache.size —— 绝大多数 tree update 只有几行变脏，
             // 新 cache 规模几乎等于旧 cache，省掉默认 128 槽下的 rehash/扩容开销。
             val previousCache = renderSnapshot?.lineCache
-            val carriedInitialCapacity = previousCache?.let { (it.size * 2).coerceAtLeast(64) } ?: 128
+            val carriedInitialCapacity = previousCache?.let { cache ->
+                synchronized(cache) { (cache.size * 2).coerceAtLeast(64) }
+            } ?: 128
             val carriedCache = LinkedHashMap<Int, List<HighlightLineSegment>>(
                 carriedInitialCapacity,
                 0.75f,
@@ -504,18 +506,24 @@ internal class IncrementalTreeSitterHighlightState(
         oldSnapshot?.close()
         callback?.invoke()
 
-        // 新快照就位后，让 worker 用**一次**全文档 query 填满 lineCache，消除"滚动追指"。
-        // bulk 方式比逐行 captureLine 快 10-50×；openDocumentBlocking 的第三 barrier 会等它完成。
+        // 首次打开用全文 bulk query 建立快照；编辑后只预热视口附近，避免输入时扫描整份文档。
+        // bulk 方式比逐行 captureLine 快 10-50×；openDocumentBlocking 的第三 barrier 仍会等待首开预热。
         runCatching {
-            worker.execute { prewarmLineCacheBulk(prewarmSessionId) }
+            worker.execute {
+                prewarmLineCacheBulk(
+                    expectedSessionId = prewarmSessionId,
+                    expectedRevision = request.revision,
+                    fullDocument = fullDocumentPrewarm
+                )
+            }
         }.onFailure { error ->
             Timber.tag("TreeSitter").d(error, "Prewarm submit failed")
         }
     }
 
-    private fun prewarmLineCacheBulk(expectedSessionId: Long) {
+    private fun prewarmLineCacheBulk(expectedSessionId: Long, expectedRevision: Long, fullDocument: Boolean) {
         val snapshot = synchronized(lock) {
-            if (disposed || sessionId != expectedSessionId) return
+            if (disposed || sessionId != expectedSessionId || revision != expectedRevision || renderSnapshotStale) return
             renderSnapshot ?: return
         }
         val lineCount = snapshot.lineCount
@@ -537,10 +545,7 @@ internal class IncrementalTreeSitterHighlightState(
         try {
             val lineStarts = snapshot.lineStarts
             val maxCacheSize = maxCacheSizeFor(lineCount)
-            val numChunks = (lineCount + PREWARM_CHUNK_LINES - 1) / PREWARM_CHUNK_LINES
-            val hintChunk = (viewportHintLine.coerceIn(0, lineCount - 1) / PREWARM_CHUNK_LINES)
-                .coerceIn(0, numChunks - 1)
-            val chunkOrder = chunksInSpiralOrder(numChunks, hintChunk)
+            val prewarmRanges = TreeSitterPrewarmPlan.ranges(lineCount, viewportHintLine, fullDocument)
 
             // 跨 chunk 复用同一个 HashMap：每 chunk 开始前 clear() 清掉 key，
             // 被 publish 出去的 ArrayList 引用还在 cache 里，不会被误释放；
@@ -548,9 +553,9 @@ internal class IncrementalTreeSitterHighlightState(
             // 这部分分配本来就无法避免（被长期持有）。
             val reusableBucket = HashMap<Int, ArrayList<HighlightLineSegment>>(64)
 
-            for (chunkIndex in chunkOrder) {
-                val chunkStart = chunkIndex * PREWARM_CHUNK_LINES
-                val chunkEnd = (chunkStart + PREWARM_CHUNK_LINES).coerceAtMost(lineCount)
+            for (range in prewarmRanges) {
+                val chunkStart = range.first
+                val chunkEnd = range.last + 1
                 val byteStart = lineStarts.lineStartOffset(chunkStart)
                 val byteEndExclusive = if (chunkEnd < lineCount) {
                     lineStarts.lineStartOffset(chunkEnd)
@@ -560,7 +565,8 @@ internal class IncrementalTreeSitterHighlightState(
                 if (byteEndExclusive <= byteStart) continue
 
                 val chunkActive = synchronized(lock) {
-                    !disposed && sessionId == expectedSessionId && pending == null
+                    !disposed && sessionId == expectedSessionId && revision == expectedRevision &&
+                        renderSnapshot === snapshot && !renderSnapshotStale
                 }
                 if (!chunkActive) return
 
@@ -625,17 +631,20 @@ internal class IncrementalTreeSitterHighlightState(
                 }
 
                 val publishActive = synchronized(lock) {
-                    !disposed && sessionId == expectedSessionId && pending == null
+                    !disposed && sessionId == expectedSessionId && revision == expectedRevision &&
+                        renderSnapshot === snapshot && !renderSnapshotStale
                 }
                 if (!publishActive) return
 
-                synchronized(snapshot.lineCache) {
+                val cacheChanged = synchronized(snapshot.lineCache) {
                     val cache = snapshot.lineCache
+                    var changed = false
                     // 有 span 的行：写入分桶结果（若主线程 lazy 已填过则保留原值）。
                     // 同时「A 的 stale fallback」也可能已经占了位，一并保留——避免覆盖用户已经看到的色。
                     bucket.forEach { (line, segments) ->
                         if (!cache.containsKey(line)) {
                             cache[line] = segments
+                            changed = true
                         }
                     }
                     // 无 span 的行：补空列表避免后续 miss 再跑 captureLine。
@@ -643,6 +652,7 @@ internal class IncrementalTreeSitterHighlightState(
                     while (line < chunkEnd && cache.size < maxCacheSize) {
                         if (!cache.containsKey(line)) {
                             cache[line] = emptyList()
+                            changed = true
                         }
                         line++
                     }
@@ -650,46 +660,32 @@ internal class IncrementalTreeSitterHighlightState(
                         val eldest = cache.entries.firstOrNull()?.key ?: break
                         cache.remove(eldest)
                     }
+                    changed
                 }
 
-                // Compose 状态只能从主线程推进；每块完成后异步请求一次渐进 repaint。
-                val shouldNotify = synchronized(lock) {
-                    !disposed && sessionId == expectedSessionId && onStateUpdated != null
-                }
-                if (shouldNotify) {
-                    mainHandler.post {
-                        val callback = synchronized(lock) {
-                            if (!disposed && sessionId == expectedSessionId) onStateUpdated else null
-                        }
-                        callback?.invoke()
-                    }
-                }
+                if (cacheChanged) postPrewarmUpdate(expectedSessionId, expectedRevision)
             }
         } finally {
             runCatching { privateTree.close() }
         }
     }
 
-    private fun chunksInSpiralOrder(numChunks: Int, hintChunk: Int): IntArray {
-        if (numChunks <= 0) return IntArray(0)
-        val order = IntArray(numChunks)
-        val center = hintChunk.coerceIn(0, numChunks - 1)
-        order[0] = center
-        var idx = 1
-        var offset = 1
-        while (idx < numChunks) {
-            val below = center - offset
-            val above = center + offset
-            if (below >= 0) {
-                order[idx++] = below
-                if (idx >= numChunks) break
-            }
-            if (above < numChunks) {
-                order[idx++] = above
-            }
-            offset++
+    private fun postPrewarmUpdate(expectedSessionId: Long, expectedRevision: Long) {
+        synchronized(lock) {
+            if (disposed || sessionId != expectedSessionId || revision != expectedRevision ||
+                onStateUpdated == null || updateNotificationPosted
+            ) return
+            updateNotificationPosted = true
         }
-        return order
+        // One pending notification describes the latest live snapshot, including a newer session.
+        val posted = mainHandler.post {
+            val callback = synchronized(lock) {
+                updateNotificationPosted = false
+                if (!disposed && !renderSnapshotStale) onStateUpdated else null
+            }
+            callback?.invoke()
+        }
+        if (!posted) synchronized(lock) { updateNotificationPosted = false }
     }
 
     private fun captureLine(snapshot: RenderSnapshot, line: Int): List<HighlightLineSegment>? {
@@ -767,7 +763,9 @@ internal class IncrementalTreeSitterHighlightState(
 
 private fun LinkedHashMap<Int, List<HighlightLineSegment>>.applyTextChange(
     change: TextChange
-): LinkedHashMap<Int, List<HighlightLineSegment>> = HighlightLineCacheUpdater.applyTextChange(this, HighlightLineCacheChange.from(change))
+): LinkedHashMap<Int, List<HighlightLineSegment>> = synchronized(this) {
+    HighlightLineCacheUpdater.applyTextChange(this, HighlightLineCacheChange.from(change))
+}
 
 private fun applyChangeToText(builder: StringBuilder, change: TextChange) {
     val safeStart = change.startOffset.coerceIn(0, builder.length)

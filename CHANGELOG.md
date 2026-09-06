@@ -31,7 +31,221 @@
 
 ## [Unreleased]
 
-暂无已记录变更。
+### Changed
+
+#### 许可证变更：TinaIDE 改用 GPL-3.0-or-later（2026-09-03）
+
+为集成 [termux-x11](https://github.com/termux/termux-x11) 提供的 Android 原生 X server（GPL-3.0），
+整个 TinaIDE 项目从自定义许可证 "TinaIDE Open Source License Version 1.0" 改为 **GPL-3.0-or-later**。
+
+- **根目录 `LICENSE`**：替换为 FSF 官方 GPL-3.0 全文（674 行，18 节）
+- **新增 `COPYRIGHT.md`**：声明 SPDX 标识符、解释许可证变更原因、列出分发要求
+- **新增 `NOTICE.md`**：第三方组件与许可证清单，列出所有随 APK 分发或链接的依赖及其许可证
+- **备份旧许可证**：`docs/third-party-notices/TinaIDE-Custom-License-v1.0-superseded.txt`
+
+旧自定义许可证限定开源范围仅覆盖 1.0.0 版本，并对后续版本的二进制分发施加 "仅个人非商业使用" 限制。
+GPL-3.0 不允许在下游附加非商业限制或后续版本闭源，因此原许可证第 4(a)、4(b) 条已不再适用。
+
+**许可证兼容性审计结果**：
+
+- **PRoot (termux-proot)**：GPL-2.0-or-later（73 个源文件头确认 "any later version"），可升级至 GPL-3.0
+- **termux-terminal**：GPL-3.0-only（部分文件为 AOSP Apache-2.0），已补充根目录 LICENSE
+- **RikkaHub**：**阻塞项** — 采用 "Segmented Dual Licensing"（AGPL-3.0 + 非商业/≤10 用户限制），
+  违反 GPL-3.0 第 7 条禁止 "further restrictions"，**当前无法与 GPL-3.0 的 TinaIDE 合并分发**。
+  需联系作者取得 GPL 兼容授权例外，或将其拆为可选组件。
+- **QQ SDK (`libs/open_sdk_3.5.18.0_r2b95cc45_lite.jar`)**：已删除（proprietary，零引用，dead code）
+
+#### 移除 Alpine Linux 支持，Ubuntu 24.04 成为唯一运行时（2026-09-03）
+
+- **删除 Alpine 镜像管理**：
+  - `core/proot/src/main/java/.../AlpineMirrorManager.kt` 及其单元测试
+  - `feature/settings/.../AlpineMirrorSettingsItem.kt` 设置 UI
+  - `ConfigKeys.AlpineMirrorUrl` 配置项
+  - `tools/linux-distro/generate-linux-distro-manifest.ps1` 的 `Update-AlpineMetadata` 函数
+- **修复 Ubuntu profile 劫持 bug**：`SelfHostedLinuxDistroRuntime.syncInstalledProfiles()` 不再无条件将第一个 Ubuntu profile 提升为 active，
+  仅在无 active Ubuntu profile 时提升（`RootfsProfileStoreTest` 新增 2 个测试覆盖）
+- **文档更新**：
+  - `docs/linux-distro-self-hosted-runtime.md` 移除所有 Alpine 相关内容
+  - `docs/模块功能说明.md` 更新 `:core:linux-distro` 范围
+  - `core/i18n` 中英文资源移除 Alpine 镜像相关字符串
+
+### Added
+
+#### X11 桌面 GUI 支持 — 集成 termux-x11（2026-09-04）
+
+**状态**：native 库、`:x11` 进程宿主、Koin 装配和设置页入口都已落地；
+**尚未在真机上跑通 XFCE 桌面**。代码路径完整不等于设备上可用，见本节末"仍未验证"。
+
+- **新增模块 `:core:linux-desktop`**：
+  - `LinuxDesktopService` 接口：管理 X11 服务器生命周期、显示配置、环境变量导出
+  - `X11ServerState` / `X11DisplayConfig` 数据类
+  - `LinuxDesktopServiceImpl`：状态机、socket 目录准备与环境变量导出（X server 启动委派给 `X11ServerLauncher`）
+- **新增 submodule `external/termux-x11`**：
+  - 指向 fork [wuxianggujun/termux-x11](https://github.com/wuxianggujun/termux-x11) 的 `tinaide-lorie-windows-build` 分支（GPL-3.0-or-later）
+  - 上游是 [termux/termux-x11](https://github.com/termux/termux-x11)
+  - 包含 `:lorie` Android library（libXlorie.so，完整 X.Org 栈编译为单个 .so）
+  - 包含 `:shell-loader:stub` 提供 Android 隐藏 API 桩（compileOnly 依赖）
+- **`settings.gradle.kts` 新增模块引用**：
+  - `:core:linux-desktop`
+  - `:termux-x11-lorie`（扁平路径，projectDir 指向 `external/termux-x11/lorie`）
+  - `:termux-x11-shell-loader-stub`
+
+  不使用 `:termux-x11:lorie` 形式：那会隐式创建 `:termux-x11` 父项目并执行上游根
+  `build.gradle`，其自带 repository 声明与本仓库的 `FAIL_ON_PROJECT_REPOS` 冲突。
+- **新增 `external/termux-x11/lorie/build.gradle.kts`**：替换上游 Groovy 脚本。
+  上游通过遍历 `rootProject.subprojects` 反查宿主 `APPLICATION_ID`，在多模块仓库中必然失败。
+- **文档**：`core/linux-desktop/README.md` 说明架构、依赖、构建要求与已知问题
+
+**native 构建已打通（Windows 宿主，2026-09-03）**：
+
+`:termux-x11-lorie:assembleDebug` 产出 arm64-v8a `libXlorie.so`（AArch64 ELF64 DYN，
+stripped 3.4 MB），并已打进 `termux-x11-lorie-debug.aar` 的 `jni/arm64-v8a/`。
+重复执行为增量（`42 actionable tasks: 2 executed, 40 up-to-date`），补丁不会重复应用。
+
+为此对 vendored 上游做了五处本地改动（升级 termux-x11 时需人工复核）：
+
+- `src/main/cpp/CMakeLists.txt`：`target_apply_patch` 不再走 `bash -c`。Windows 机器级 PATH 中
+  `C:\WINDOWS\system32` 在 Git `usr\bin` 之前，`bash` 会解析到 WSL 的 `bash.exe`，它无法处理
+  CMake 传入的 `C:/...` 路径。改为直接调用 `patch.exe`，保留上游"反向 dry-run 成功即跳过"的幂等逻辑。
+  同时为 Python3 / Bison / host C 编译器补充 `find_program` HINTS。
+- `src/main/cpp/generate-ks-tables.cmake`（新增）：上游把 `ks_tables.h` 的生成写成
+  `add_custom_command(COMMAND ... "&&" ... ">" ...)`，但 CMake 不经 shell 执行，`&&` 和 `>`
+  会被当作普通参数传给编译器。改为独立 CMake 脚本，显式两步执行并重定向输出。
+- `src/main/cpp/recipes/xkbcomp.cmake`：修复 `locale_t` 编译失败。该 target 按上游要求把
+  `libx11/include/X11` 直接加入头文件搜索路径（`KeyBind.c` 等使用裸 include），
+  而 Windows / macOS 文件系统大小写不敏感，导致 bionic 头文件里的 `#include <xlocale.h>`
+  命中 libX11 的 `Xlocale.h`；后者只 include `<locale.h>` 且从不声明 `locale_t`，
+  其 include guard 又已置位使 `locale.h` 的二次 include 被跳过。
+  解决方式是在更靠前位置放一个同名 shim 头，转发到 sysroot 中真正的 `xlocale.h`。
+- `src/main/cpp/lorie/cmdentrypoint.cpp`：敲门端口 7892 的监听地址从 `INADDR_ANY`
+  改为 `htonl(INADDR_LOOPBACK)`。上游监听全部网卡，同一 Wi-Fi 下任意设备都能触发
+  X server 的连接投递。敲门方（`activity.cpp`）本来就硬编码 `inet_addr("127.0.0.1")`，
+  只绑回环不损失任何功能。
+- `src/main/java/com/termux/x11/CmdEntryPoint.java`：新增 `startEmbedded(Context, String[])`
+  与私有无参构造。原构造是 package-private，无法从 TinaIDE 包内调用；`main()` 又是为
+  `app_process` 场景写的（反射 `ActivityThread` 伪造 Context、按绝对路径 dlopen、
+  最后 `Looper.loop()` 永不返回）。`startEmbedded` 还必须自己
+  `System.loadLibrary("Xlorie")`——`JNI_OnLoad` 是本类 native 方法的唯一注册者，
+  而它只在加载 `libXlorie.so` 时运行；Service 先于任何 `LorieView` 启动，
+  静态初始化没跑过，直接调 `start()` 会 `UnsatisfiedLinkError`。
+
+**host 工具链要求**：
+
+- NDK 29.0.14206865（termux-x11 `version.gradle` pinned）
+- Python 3、GNU Bison、GNU patch、host C 编译器（用于 X.Org 代码生成与补丁应用）
+- MSYS2/MinGW 的 `gcc.exe` 需要其所在 `bin` 目录在 PATH 中，否则 `cc1.exe` 无法加载
+  `libmpfr-6.dll`。CMake 只为 generator 子进程补这个 PATH，**不改 Gradle launcher 的 PATH**：
+  在 Windows 上把 Cygwin/MSYS 提前会让 `gradlew` 把 JDK 解析成 `/cygdrive/...` 从而找不到 `java`。
+- 路径可通过 Gradle property 覆盖，不必依赖内置 HINTS：
+  `tina.termuxX11.python`、`tina.termuxX11.bison`、`tina.termuxX11.hostCompiler`、
+  `tina.termuxX11.hostToolPath`。
+
+**X server 集成契约已固定（2026-09-04）**：
+
+阅读 lorie native 代码后确定了三条硬约束，`:core:linux-desktop` 按此重写。
+
+- **X server 必须独立进程，不能 in-process**：`lorie/src/main/cpp/lorie/cmdentrypoint.cpp`
+  把 libc 的 `exit()` / `abort()` 覆盖成 `_exit()`，而 X server 主线程执行
+  `exit(dix_main(argc, argv, envp))`。X server 任何一次 `FatalError()` 或正常退出都会
+  **直接终止整个进程**，不走 JVM 关闭流程、不抛异常、不可捕获。若 in-process 启动，
+  X server 崩溃会连带杀死 TinaIDE 主进程（IDE 无提示消失、未保存内容丢失）。
+  上游用 `app_process` 起独立进程正是这个原因。新增 `X11ServerLauncher` 接口固化该边界，
+  与既有 `:sdl` / `:crash` 进程隔离一致。
+- **`$TMPDIR` 是 host X server 与 guest client 唯一的交汇点**：`CmdEntryPoint.start()`
+  不接受 socket 路径参数，它只读 `$TMPDIR` 并把监听地址硬编码为
+  `$TMPDIR/.X11-unix/X<display>`；又用 `dirname($TMPDIR)` 推导 chroot 根去找 xkb 数据与字体。
+  新增 `X11SocketLayout` 把该布局建模为 `<rootfs>/tmp`：host 用绝对路径、guest 用 `/tmp`，
+  同一 inode 两侧都能命中，且 `dirname` 恰好落在 rootfs 根上，从而复用 guest 内
+  `xkb-data` 装出来的真实数据，无需往 APK 塞 xkb 副本。
+- **`LinuxDesktopServiceImpl` 不再伪装成功**：旧骨架在只有 TODO 注释的情况下把状态直接置为
+  `Running`，`getX11EnvironmentVariables()` 会导出一个指向不存在的 X server 的 `DISPLAY`，
+  在 guest 里只表现为难以诊断的 "cannot open display"。现在缺 launcher、rootfs 未安装、
+  xkb 数据缺失、display 格式非法都会明确失败并落到 `X11ServerState.Error`。
+  同时移除 `startX11Server()` 的 `SurfaceView` 参数：渲染 Surface 属于 X server 进程里的
+  `LorieView`，主进程无从提供。不再导出 `XAUTHORITY`（服务器以 `-ac` 启动，
+  socket 位于应用私有 rootfs，隔离由 Android 沙箱负责）。
+  新增 `LinuxDesktopServiceImplTest`（7 个测试）覆盖上述失败路径。
+
+**lorie 库 manifest 收敛到 `:x11` 进程（2026-09-04）**：
+
+`:termux-x11-lorie` 的库 manifest 按"独立 app"声明组件，直接合并会给 TinaIDE 多出
+第二个启动图标、一个无障碍服务和 `WRITE_SECURE_SETTINGS` 受保护权限。处理在直接消费者
+`:core:linux-desktop` 一侧完成，宿主 app 无需了解 lorie 内部结构：
+
+- **保留并关进 `:x11`**：`MainActivity`、`LoriePreferences`、`LorieBroadcastReceiver`，
+  全部 `android:exported="false"` 并去掉入口 `intent-filter`。
+  `MainActivity` 不能移除——`activity.cpp` 会 `FindClassOrDie("com/termux/x11/MainActivity")`
+  并按 `GetFieldID(..., "activity", "Lcom/termux/x11/MainActivity;")` 读 `LorieView.activity`，
+  类名和字段类型写死在 `.so` 里。沿用它同时白拿了约 3000 行触摸手势、额外按键栏、
+  鼠标辅助键、PiP、剪贴板同步与 IME 处理。
+  `LorieBroadcastReceiver` 也不能移除：`MainActivity` 没有 `onNewIntent`，
+  Binder 的唯一递送路径是 `LorieView.requestConnection()` 敲 127.0.0.1:7892 →
+  native `lorieListenForKnocks` 回调 `CmdEntryPoint.sendBroadcast()` → `ACTION_START`
+  广播携带 Binder → 本 receiver → `onReceiveConnection()`。上游是导出的跨 app 接收器，
+  这里改成进程内不导出。
+- **移除**：`KeyInterceptor`（无障碍服务，需要 `WRITE_SECURE_SETTINGS`）、
+  `LoriePreferences$Receiver`（导出的命令行改配置接收器，任何 app 都能改 X11 偏好）
+  以及 `WRITE_SECURE_SETTINGS` 权限本身。
+- lorie 的 `allowBackup="false"` 与 TinaIDE 冲突，由 app 侧 `tools:replace` 保留 TinaIDE 取值。
+
+**X server 进程宿主已实现（2026-09-04）**：
+
+- `X11ServerService`（`:x11` 进程、前台 `specialUse` 服务）通过 AIDL
+  `IX11ServerController` 暴露 `startServer`，内部调 `CmdEntryPoint.startEmbedded()`，
+  并在启动前 `Os.setenv` 设好 `TMPDIR` / `XKB_CONFIG_ROOT`。
+  X server 起来后无法在进程内停止（`dix_main` 的退出路径是 `_exit()`），
+  所以服务只记录是否已启动，不提供 stop；"停止"等于结束 `:x11` 进程。
+- `X11ServerProcessLauncher`（主进程）负责 `startForegroundService` + `bindService`，
+  并轮询 `<rootfs>/tmp/.X11-unix/X<n>` 出现才算就绪——`startServer()` 返回只代表
+  native `start()` 已被调用，socket 是 `dix_main` 之后才 bind 的。
+- `UbuntuLinuxDesktopCoordinator` 把三步串起来：环境可用 → 桌面软件包齐备 →
+  启动 X server → 拿到 `Running` 的 `DISPLAY` 后才 `startxfce4`。
+  任一步失败都不启动 guest 会话；X server 已起但会话失败时保留 X server 便于重试。
+- 桌面窗口由 `IAppNavigator.openLinuxDesktop()` 在主进程拉起 `MainActivity`，
+  feature 模块不直接依赖 `com.termux.x11.*`。关掉窗口不影响 guest 会话。
+- Koin 装配：`linuxDesktopModule` 提供 launcher / service / coordinator；
+  socket 布局由 `prootModule` 以 `() -> X11SocketLayout?` 注入，取当前已安装的
+  Ubuntu profile 路径，未安装时返回 `null` 并让启动明确失败。
+- `xkb-data` 加入 `UbuntuDesktopProvisioner.DESKTOP_PACKAGES`：
+  `X11SocketLayout.hostXkbConfigRoot` 指向 `<rootfs>/usr/share/X11/xkb`，
+  缺它 `LinuxDesktopServiceImpl` 会在启动前失败。
+
+**设置页入口（2026-09-04）**：
+
+存储设置的"Linux 系统"卡片在已安装 Ubuntu profile 时新增三项：图形桌面状态（点击重新检查）、
+安装图形桌面组件、打开图形桌面。安装与启动共用一个进度对话框，失败文案直出错误原因。
+
+**仍未验证**：
+
+1. **真机 XFCE 未跑通**：以上都是代码路径，没有在设备上实际看到桌面。
+2. `CmdEntryPoint` 静态初始化里的 `Looper.prepareMainLooper()` 在 Service 进程中的行为未验证。
+3. Android 15+ 前台服务启动限制对本路径的影响未验证。
+4. 关闭桌面窗口后再打开时，敲门 → 广播 → Activity 的重连路径未验证。
+
+**已知环境问题**：
+
+- **Gradle daemon loopback 失败**：`java.io.IOException: Unable to establish loopback connection`。
+  已定位为 JDK 17 / Windows AF_UNIX 临时目录问题（独立 Java 程序调用 `Selector.open()` 同样失败），
+  非 Gradle 或本项目依赖问题。当前绕过方式是构建前 `export TEMP=/c/gradle-tmp TMP=/c/gradle-tmp`；
+  仅在 `gradle.properties` 的 `org.gradle.jvmargs` 加 `-Djdk.net.unixdomain.tmpdir` 不足以修复 launcher JVM。
+
+**未来工作**：
+
+- [ ] 真机验证 XFCE 会话、输入映射与窗口关闭/重开
+- [ ] 桌面环境可选项：i3wm / Fluxbox
+- [ ] 硬件加速渲染：OpenGL ES passthrough（termux-x11 上游已有实验性实现）
+- [ ] 音频：PulseAudio 端点接入
+- [ ] Wayland 协议支持（termux-x11 上游已有）
+
+> PRoot 侧**不需要**额外绑定 `/tmp`：PRoot 以 `--rootfs=<rootfsPath>` 启动，
+> guest 的 `/tmp` 本身就解析到 host 的 `<rootfsPath>/tmp`，两侧是同一个 inode。
+> `buildPRootCommandLine()` 的 bind 列表里只有 `--bind=<rootfs>/tmp:/dev/shm`，
+> 那是把同一目录额外再映射一份到 `/dev/shm`，不是对 `/tmp` 的覆盖。
+
+### Fixed
+
+- `SelfHostedLinuxDistroRuntime.syncInstalledProfiles()` 不再在每次启动时无条件劫持用户手动选择的 active profile，
+  仅在首次安装（无 active Ubuntu profile）时提升第一个 profile。
 
 ## [0.18.27] - 2026-08-26
 

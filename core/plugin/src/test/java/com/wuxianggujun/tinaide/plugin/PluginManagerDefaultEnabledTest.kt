@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.pm.PackageInfo
 import com.google.common.truth.Truth.assertThat
 import com.wuxianggujun.tinaide.core.serialization.JsonSerializer
+import com.wuxianggujun.tinaide.plugin.lsp.LspServerConfig
+import com.wuxianggujun.tinaide.plugin.lsp.LspServerConnectionConfig
 import com.wuxianggujun.tinaide.plugin.runtime.PluginDatabase
 import com.wuxianggujun.tinaide.plugin.script.PluginPermission
 import com.wuxianggujun.tinaide.plugin.script.PluginPermissionManager
@@ -487,6 +489,24 @@ class PluginManagerDefaultEnabledTest {
                     name = pluginId,
                     version = version,
                     type = type,
+                    contributions = if (type.equals(PluginTypes.LSP, ignoreCase = true)) {
+                        PluginContributions(
+                            languageServers = listOf(
+                                LspServerConfig(
+                                    id = "test-server",
+                                    name = "Test Language Server",
+                                    languages = listOf("test-language"),
+                                    fileExtensions = listOf("test"),
+                                    server = LspServerConnectionConfig(
+                                        type = "stdio",
+                                        command = "test-server",
+                                    ),
+                                ),
+                            ),
+                        )
+                    } else {
+                        null
+                    },
                     optionalPermissions = optionalPermissions,
                     minAppVersion = minAppVersion,
                 ),
