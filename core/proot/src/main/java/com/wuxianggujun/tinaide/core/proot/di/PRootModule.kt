@@ -1,8 +1,10 @@
 package com.wuxianggujun.tinaide.core.proot.di
 
+import com.wuxianggujun.tinaide.core.linuxdesktop.LinuxDesktopHostProcessPlanner
 import com.wuxianggujun.tinaide.core.linuxdesktop.X11SocketLayout
 import com.wuxianggujun.tinaide.core.linuxdesktop.X11SocketLayoutProvider
 import com.wuxianggujun.tinaide.core.proot.InstallLogManager
+import com.wuxianggujun.tinaide.core.proot.PRootDesktopHostProcessPlanner
 import com.wuxianggujun.tinaide.core.proot.RootfsProfileStore
 import com.wuxianggujun.tinaide.core.proot.SelfHostedLinuxDistroRuntime
 import org.koin.dsl.module
@@ -24,5 +26,10 @@ val prootModule = module {
                 X11SocketLayout.forRootfs(profile.rootfsPath)
             }
         }
+    }
+    // 桌面会话的 host 命令行只有 PRoot 侧算得出来，但会话要在 `:x11` 进程里 spawn。
+    // 同样从这边注册进去，避免 :core:linux-desktop 反向依赖 :core:proot（Gradle 循环）。
+    single<LinuxDesktopHostProcessPlanner> {
+        PRootDesktopHostProcessPlanner(linuxEnvironmentProvider = get())
     }
 }

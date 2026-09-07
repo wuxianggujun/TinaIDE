@@ -42,6 +42,29 @@ interface LinuxDesktopService {
      */
     fun getX11EnvironmentVariables(): Map<String, String>
 
+    /**
+     * 在 X server 所在进程里启动 guest 桌面会话。
+     *
+     * 会话不能由主进程 spawn：init-proot.sh 带 `--kill-on-exit`，proot 树的存亡跟着
+     * spawn 它的进程。挂在常驻的 X server 进程上，桌面才能在 IDE 窗口关闭之后活着。
+     * 命令行与环境由主进程组装（见 [LinuxDesktopHostProcessPlan]）。
+     *
+     * 幂等：已有存活会话时直接成功返回。
+     */
+    suspend fun startGuestSession(
+        plan: LinuxDesktopHostProcessPlan,
+        restartPolicy: LinuxDesktopRestartPolicy = LinuxDesktopRestartPolicy(),
+    ): Result<Unit>
+
+    /** 终止 guest 桌面会话，保留 X server（重开桌面不必再等 socket）。 */
+    suspend fun stopGuestSession()
+
+    /** guest 桌面会话是否存活。 */
+    fun isGuestSessionRunning(): Boolean
+
+    /** guest 会话看护阶段；无法获知（server 未起、binder 已断）时为 `null`。 */
+    fun guestSessionPhase(): LinuxDesktopSupervisorPhase?
+
     companion object {
         /**
          * @param serverLauncher 独立进程中的 X server 启动器。传 `null` 时
@@ -81,6 +104,13 @@ data class X11DisplayConfig(
     val colorDepth: Int = 24
 ) {
     companion object {
+        /**
+         * 兜底几何，**不是**生产路径该用的值。
+         *
+         * 真机上走 `resolveX11DisplayConfig(context)`：它按整块屏幕算，
+         * 由 `linuxDesktopModule` 注入给 [UbuntuLinuxDesktopCoordinator]。
+         * 这里保留一组固定值，只为拿不到屏幕信息时仍有可用的开机尺寸。
+         */
         fun default() = X11DisplayConfig(
             width = 1920,
             height = 1080,

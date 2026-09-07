@@ -5,8 +5,6 @@ import com.wuxianggujun.tinaide.core.linux.LinuxEnvironment
 import com.wuxianggujun.tinaide.core.linux.LinuxEnvironmentProvider
 import com.wuxianggujun.tinaide.core.linux.LinuxExecutionResult
 import com.wuxianggujun.tinaide.core.linux.LinuxInteractiveProcess
-import java.io.InputStream
-import java.io.OutputStream
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.runTest
@@ -17,9 +15,9 @@ class UbuntuLinuxDesktopCoordinatorTest {
     @Test
     fun startSession_shouldFailClosedWhenLinuxEnvironmentIsUnavailable() = runTest {
         val desktop = FakeLinuxDesktopService()
-        val coordinator = UbuntuLinuxDesktopCoordinator(
-            linuxEnvironmentProvider = provider(RecordingLinuxEnvironment(available = false)),
-            desktopService = desktop,
+        val coordinator = coordinator(
+            environment = RecordingLinuxEnvironment(available = false),
+            desktop = desktop,
         )
 
         val result = coordinator.startSession()
@@ -32,10 +30,9 @@ class UbuntuLinuxDesktopCoordinatorTest {
     @Test
     fun startSession_shouldNotLaunchGuestWhenDesktopPackagesAreMissing() = runTest {
         val desktop = FakeLinuxDesktopService()
-        val environment = RecordingLinuxEnvironment(availableCommands = emptySet())
-        val coordinator = UbuntuLinuxDesktopCoordinator(
-            linuxEnvironmentProvider = provider(environment),
-            desktopService = desktop,
+        val coordinator = coordinator(
+            environment = RecordingLinuxEnvironment(availableCommands = emptySet()),
+            desktop = desktop,
         )
 
         val result = coordinator.startSession()
@@ -43,7 +40,7 @@ class UbuntuLinuxDesktopCoordinatorTest {
         assertThat(result.isFailure).isTrue()
         assertThat(result.exceptionOrNull()?.message).contains("not installed")
         assertThat(desktop.startCount).isEqualTo(0)
-        assertThat(environment.startedCommand).isEmpty()
+        assertThat(desktop.guestPlans).isEmpty()
     }
 
     @Test
@@ -51,67 +48,124 @@ class UbuntuLinuxDesktopCoordinatorTest {
         val desktop = FakeLinuxDesktopService(
             startResult = Result.failure(IllegalStateException("socket missing")),
         )
-        val environment = RecordingLinuxEnvironment()
-        val coordinator = UbuntuLinuxDesktopCoordinator(
-            linuxEnvironmentProvider = provider(environment),
-            desktopService = desktop,
-        )
+        val coordinator = coordinator(desktop = desktop)
 
         val result = coordinator.startSession()
 
         assertThat(result.isFailure).isTrue()
         assertThat(desktop.startCount).isEqualTo(1)
-        assertThat(environment.startedCommand).isEmpty()
-        assertThat(environment.startedEnvironment).doesNotContainKey("DISPLAY")
+        assertThat(desktop.guestPlans).isEmpty()
     }
 
     @Test
-    fun startSession_shouldInjectRunningDisplayIntoGuestSession() = runTest {
+    fun startSession_shouldFailWhenPRootHostPlannerIsUnavailable() = runTest {
+        // rootfs 未安装时算不出 host 命令行。必须明确失败，而不是让 :x11 去 exec
+        // 一条拼不出来的命令，那只会表现为桌面"启动了但立刻消失"。
+        val desktop = FakeLinuxDesktopService()
+        val coordinator = coordinator(desktop = desktop, hostPlanner = null)
+
+        val result = coordinator.startSession()
+
+        assertThat(result.isFailure).isTrue()
+        assertThat(result.exceptionOrNull()?.message).contains("planner is unavailable")
+        assertThat(desktop.guestPlans).isEmpty()
+    }
+
+    @Test
+    fun startSession_shouldSpawnGuestSessionInTheXServerProcessWithRunningDisplay() = runTest {
         val desktop = FakeLinuxDesktopService(display = ":2")
-        val environment = RecordingLinuxEnvironment()
-        val coordinator = UbuntuLinuxDesktopCoordinator(
-            linuxEnvironmentProvider = provider(environment),
-            desktopService = desktop,
-        )
+        val coordinator = coordinator(desktop = desktop)
 
-        val session = coordinator.startSession(display = ":2").getOrThrow()
+        coordinator.startSession(display = ":2").getOrThrow()
 
-        assertThat(session.isRunning()).isTrue()
-        assertThat(environment.startedCommand).contains("startxfce4")
-        assertThat(environment.startedEnvironment["DISPLAY"]).isEqualTo(":2")
+        // 关键回归点：会话必须交给 X server 所在进程去 spawn。init-proot.sh 带
+        // --kill-on-exit，在主进程 spawn 就等于"关掉 IDE 就杀掉桌面"。
+        val plan = desktop.guestPlans.single()
+        assertThat(plan.argv).contains("startxfce4")
+        assertThat(plan.environment["DISPLAY"]).isEqualTo(":2")
+        assertThat(coordinator.isSessionActive()).isTrue()
     }
 
     @Test
     fun startSession_shouldReuseARunningSession() = runTest {
         val desktop = FakeLinuxDesktopService()
-        val environment = RecordingLinuxEnvironment()
-        val coordinator = UbuntuLinuxDesktopCoordinator(
-            linuxEnvironmentProvider = provider(environment),
-            desktopService = desktop,
-        )
+        val coordinator = coordinator(desktop = desktop)
 
-        val first = coordinator.startSession().getOrThrow()
-        val second = coordinator.startSession().getOrThrow()
+        coordinator.startSession().getOrThrow()
+        coordinator.startSession().getOrThrow()
 
-        assertThat(second).isSameInstanceAs(first)
         assertThat(desktop.startCount).isEqualTo(1)
-        assertThat(environment.startInteractiveCount).isEqualTo(1)
+        assertThat(desktop.guestPlans).hasSize(1)
     }
 
-    private fun provider(environment: LinuxEnvironment): LinuxEnvironmentProvider =
-        object : LinuxEnvironmentProvider {
+    @Test
+    fun stopSession_shouldStopTheGuestSessionBeforeTheXServer() = runTest {
+        val desktop = FakeLinuxDesktopService()
+        val coordinator = coordinator(desktop = desktop)
+        coordinator.startSession().getOrThrow()
+
+        coordinator.stopSession()
+
+        // 反序会让 XFCE 对着已消失的 display 疯狂重连，把重启预算白烧掉。
+        assertThat(desktop.stopOrder).containsExactly("guest", "server").inOrder()
+        assertThat(coordinator.isSessionActive()).isFalse()
+    }
+
+    @Test
+    fun sessionPhase_shouldComeFromTheXServerProcess() = runTest {
+        val desktop = FakeLinuxDesktopService(phase = LinuxDesktopSupervisorPhase.FAILED)
+        val coordinator = coordinator(desktop = desktop)
+
+        assertThat(coordinator.sessionPhase()).isEqualTo(LinuxDesktopSupervisorPhase.FAILED)
+    }
+
+    @Test
+    fun sessionPhase_shouldFallBackToIdleWhenTheXServerProcessIsGone() = runTest {
+        val desktop = FakeLinuxDesktopService(phase = null)
+        val coordinator = coordinator(desktop = desktop)
+
+        assertThat(coordinator.sessionPhase()).isEqualTo(LinuxDesktopSupervisorPhase.IDLE)
+    }
+
+    private fun coordinator(
+        environment: LinuxEnvironment = RecordingLinuxEnvironment(),
+        desktop: LinuxDesktopService,
+        hostPlanner: LinuxDesktopHostProcessPlanner? = RecordingHostProcessPlanner(),
+    ) = UbuntuLinuxDesktopCoordinator(
+        linuxEnvironmentProvider = object : LinuxEnvironmentProvider {
             override fun get(): LinuxEnvironment = environment
-        }
+        },
+        desktopService = desktop,
+        hostProcessPlannerProvider = { hostPlanner },
+    )
+
+    /**
+     * 模拟 `:core:proot` 侧的 proot 包装：把 guest 命令原样接到 init-proot.sh 后面。
+     * 只保留真实实现的结构，不复制它的 proot 细节。
+     */
+    private class RecordingHostProcessPlanner : LinuxDesktopHostProcessPlanner {
+        override fun plan(guestPlan: LinuxDesktopGuestPlan) = LinuxDesktopHostProcessPlan(
+            argv = listOf("/system/bin/sh", "/data/init-proot.sh") + guestPlan.command,
+            environment = guestPlan.environment + mapOf("ROOTFS_PATH" to "/data/rootfs"),
+            workingDirectory = "/data/files",
+        )
+    }
 
     private class FakeLinuxDesktopService(
         private val startResult: Result<Unit> = Result.success(Unit),
         private val display: String = ":0",
+        private val phase: LinuxDesktopSupervisorPhase? = LinuxDesktopSupervisorPhase.RUNNING,
     ) : LinuxDesktopService {
         private val _serverState = MutableStateFlow<X11ServerState>(X11ServerState.Stopped)
         override val serverState: StateFlow<X11ServerState> = _serverState
 
         var startCount: Int = 0
             private set
+
+        val guestPlans: MutableList<LinuxDesktopHostProcessPlan> = mutableListOf()
+        val stopOrder: MutableList<String> = mutableListOf()
+
+        private var guestRunning = false
 
         override suspend fun startX11Server(
             display: String,
@@ -128,6 +182,7 @@ class UbuntuLinuxDesktopCoordinatorTest {
         }
 
         override suspend fun stopX11Server() {
+            stopOrder += "server"
             _serverState.value = X11ServerState.Stopped
         }
 
@@ -139,6 +194,24 @@ class UbuntuLinuxDesktopCoordinatorTest {
                 emptyMap()
             }
         }
+
+        override suspend fun startGuestSession(
+            plan: LinuxDesktopHostProcessPlan,
+            restartPolicy: LinuxDesktopRestartPolicy,
+        ): Result<Unit> {
+            guestPlans += plan
+            guestRunning = true
+            return Result.success(Unit)
+        }
+
+        override suspend fun stopGuestSession() {
+            stopOrder += "guest"
+            guestRunning = false
+        }
+
+        override fun isGuestSessionRunning(): Boolean = guestRunning
+
+        override fun guestSessionPhase(): LinuxDesktopSupervisorPhase? = phase
     }
 
     private class RecordingLinuxEnvironment(
@@ -150,15 +223,7 @@ class UbuntuLinuxDesktopCoordinatorTest {
             "fcitx5",
             "glxinfo",
         ),
-        private val process: LinuxInteractiveProcess = RecordingInteractiveProcess(),
     ) : LinuxEnvironment {
-        var startedCommand: List<String> = emptyList()
-            private set
-        var startedEnvironment: Map<String, String> = emptyMap()
-            private set
-        var startInteractiveCount: Int = 0
-            private set
-
         override fun isAvailable(): Boolean = available
 
         override suspend fun execute(
@@ -170,7 +235,12 @@ class UbuntuLinuxDesktopCoordinatorTest {
         ): LinuxExecutionResult {
             val script = command.lastOrNull().orEmpty()
             val probed = COMMAND_PROBE.find(script)?.groupValues?.getOrNull(1)
-            val exitCode = if (probed != null && probed in availableCommands) 0 else 1
+            // 非探测脚本（UbuntuDesktopSessionPreparer 的 mkdir / machine-id）视为成功：
+            // 那些命令的正确性由 preparer 自己的测试覆盖，这里只关心协同顺序。
+            val exitCode = when {
+                probed != null -> if (probed in availableCommands) 0 else 1
+                else -> 0
+            }
             return LinuxExecutionResult(
                 exitCode = exitCode,
                 stdout = "",
@@ -183,23 +253,10 @@ class UbuntuLinuxDesktopCoordinatorTest {
             command: List<String>,
             workDir: String,
             env: Map<String, String>,
-        ): LinuxInteractiveProcess {
-            startInteractiveCount += 1
-            startedCommand = command
-            startedEnvironment = env
-            return process
-        }
+        ): LinuxInteractiveProcess =
+            error("桌面会话必须在 :x11 进程 spawn，主进程不应调用 startInteractive")
 
         override fun toGuestPath(hostPath: String): String = hostPath
-    }
-
-    private class RecordingInteractiveProcess : LinuxInteractiveProcess {
-        override val stdin: OutputStream = OutputStream.nullOutputStream()
-        override val stdout: InputStream = InputStream.nullInputStream()
-        override val stderr: InputStream = InputStream.nullInputStream()
-        override fun isRunning(): Boolean = true
-        override fun waitFor(timeout: Long): Int = 0
-        override fun destroy() = Unit
     }
 
     private companion object {

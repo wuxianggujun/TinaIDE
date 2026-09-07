@@ -108,8 +108,19 @@ internal fun StorageSettingsSection(
                     title = stringResource(Strings.settings_linux_desktop_open),
                     subtitle = stringResource(Strings.settings_linux_desktop_open_desc),
                     onClick = { viewModel.openLinuxDesktop(context) },
-                    showDivider = false,
+                    showDivider = state.linuxDesktopSessionActive,
                 )
+
+                // 只在真的有会话时才给停止入口：没有会话时点它只会白跑一遍
+                // stopX11Server，还会让用户以为桌面本来在运行。
+                if (state.linuxDesktopSessionActive) {
+                    SettingsClickableItem(
+                        title = stringResource(Strings.settings_linux_desktop_stop),
+                        subtitle = stringResource(Strings.settings_linux_desktop_stop_desc),
+                        onClick = { viewModel.stopLinuxDesktop(context) },
+                        showDivider = false,
+                    )
+                }
             }
         }
 
@@ -218,10 +229,10 @@ internal fun StorageSettingsSection(
     if (state.linuxDesktopBusy) {
         TinaLoadingDialog(
             title = stringResource(
-                if (state.linuxDesktopStarting) {
-                    Strings.settings_linux_desktop_starting
-                } else {
-                    Strings.settings_linux_desktop_installing
+                when {
+                    state.linuxDesktopStopping -> Strings.settings_linux_desktop_stopping
+                    state.linuxDesktopStarting -> Strings.settings_linux_desktop_starting
+                    else -> Strings.settings_linux_desktop_installing
                 },
             ),
             message = state.linuxDesktopMessage,

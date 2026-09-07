@@ -1,12 +1,19 @@
 package com.wuxianggujun.tinaide.core.linuxdesktop
 
-import com.wuxianggujun.tinaide.core.linux.LinuxEnvironment
 import com.wuxianggujun.tinaide.core.linux.LinuxInteractiveProcess
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** Runtime endpoints supplied by the Android display/audio backend. */
 data class LinuxDesktopEndpoint(
     val display: String,
+    /**
+     * guest 的 `PULSE_SERVER`，形如 `tcp:127.0.0.1:4713`。
+     *
+     * **当前没有任何调用方会填这个值。** 我们内置的 lorie X server 只搬像素和输入，
+     * 不带任何音频通道，宿主这边也没有在跑 PulseAudio daemon；填了只会让 guest 里的
+     * 客户端连一个不存在的端口。留着这个参数是因为它就是一条直通的环境变量映射：
+     * 哪天真接了宿主音频端点，从这里传进来即可，不用改 planner。
+     */
     val audioServer: String? = null,
     val environment: Map<String, String> = emptyMap(),
 ) {
@@ -38,37 +45,44 @@ data class LinuxDesktopLaunchSpec(
     }
 }
 
-class LinuxDesktopSessionLauncher(
-    private val linuxEnvironment: LinuxEnvironment,
-) {
-    fun launch(
+/**
+ * 把 endpoint + spec 归并成一份 guest 命令与环境。
+ *
+ * 只做计算，不 spawn 进程：真正的 `exec` 由 `:x11` 进程完成（见
+ * [LinuxDesktopHostProcessPlan] 说明的进程归属），主进程这边只负责算清楚
+ * "要在 guest 里跑什么、带哪些环境变量"。
+ */
+class LinuxDesktopSessionPlanner {
+    fun plan(
         endpoint: LinuxDesktopEndpoint,
         spec: LinuxDesktopLaunchSpec,
-    ): Result<LinuxDesktopSession> = runCatching {
-        check(linuxEnvironment.isAvailable()) { "Linux environment is unavailable" }
-
-        val process = linuxEnvironment.startInteractive(
-            command = spec.command,
-            workDir = spec.workingDirectory,
-            env = buildDesktopEnvironment(endpoint, spec.environment),
-        )
-        LinuxDesktopSession(process)
-    }
+    ): LinuxDesktopGuestPlan = LinuxDesktopGuestPlan(
+        command = spec.command,
+        workingDirectory = spec.workingDirectory,
+        environment = buildDesktopEnvironment(endpoint, spec.environment),
+    )
 }
 
-/** Ubuntu-specific session launcher using the stable generic desktop contract. */
-class UbuntuDesktopSessionLauncher(
-    private val linuxEnvironment: LinuxEnvironment,
-) {
-    private val delegate = LinuxDesktopSessionLauncher(linuxEnvironment)
+/** guest 侧要跑的命令与环境；host 侧的 proot 包装由 [LinuxDesktopHostProcessPlan] 负责。 */
+data class LinuxDesktopGuestPlan(
+    val command: List<String>,
+    val workingDirectory: String,
+    val environment: Map<String, String>,
+)
 
-    fun launch(options: UbuntuDesktopSessionOptions): Result<LinuxDesktopSession> {
+/** Ubuntu-specific session planner using the stable generic desktop contract. */
+class UbuntuDesktopSessionPlanner {
+    private val delegate = LinuxDesktopSessionPlanner()
+
+    fun plan(options: UbuntuDesktopSessionOptions): LinuxDesktopGuestPlan {
         val managedEnvironment = buildMap {
             putAll(options.environment)
             // These values are part of the Ubuntu desktop contract and must
             // win over caller-provided overrides; otherwise a malformed
             // launch can silently escape the X11/FCITX session boundary.
-            put("XDG_RUNTIME_DIR", "/tmp/runtime-${options.username}")
+            // 目录本身由 UbuntuDesktopSessionPreparer 创建（0700）；共用同一函数
+            // 计算路径，避免两边各写一份字符串后走偏。
+            put("XDG_RUNTIME_DIR", UbuntuDesktopSessionPreparer.runtimeDirFor(options.username))
             put("XDG_SESSION_TYPE", "x11")
             put("GDK_BACKEND", "x11")
             put("QT_QPA_PLATFORM", "xcb")
@@ -82,7 +96,7 @@ class UbuntuDesktopSessionLauncher(
         val endpoint = options.endpoint.copy(
             environment = options.endpoint.environment + managedEnvironment,
         )
-        return delegate.launch(
+        return delegate.plan(
             endpoint = endpoint,
             spec = LinuxDesktopLaunchSpec(
                 command = options.command,
@@ -92,6 +106,13 @@ class UbuntuDesktopSessionLauncher(
     }
 }
 
+/**
+ * 一个 guest 桌面会话。
+ *
+ * 注意进程归属：真正跑 XFCE 的 proot 树由 `:x11` 进程 spawn（见
+ * [LinuxDesktopHostProcessPlan]），所以本类的实例只在 `:x11` 内部存在。
+ * 主进程通过 [IX11ServerController] 观察会话状态，不持有它。
+ */
 class LinuxDesktopSession internal constructor(
     private val process: LinuxInteractiveProcess,
 ) : AutoCloseable {

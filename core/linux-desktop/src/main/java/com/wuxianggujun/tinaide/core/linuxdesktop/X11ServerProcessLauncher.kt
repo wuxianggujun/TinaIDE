@@ -77,10 +77,50 @@ class X11ServerProcessLauncher(
         controller?.asBinder()?.isBinderAlive == true
     }
 
-    private suspend fun bindController(): Result<IX11ServerController> {
-        synchronized(lock) {
-            controller?.takeIf { it.asBinder().isBinderAlive }?.let { return Result.success(it) }
+    override suspend fun startGuestSession(
+        plan: LinuxDesktopHostProcessPlan,
+        restartPolicy: LinuxDesktopRestartPolicy,
+    ): Result<Unit> = runCatching {
+        // 不在这里 bind：会话只能挂在已经跑着 X server 的那个进程上。若 binder 已断，
+        // 重新 bind 会拉起一个没有 X server 的新 :x11，桌面会对着不存在的 display 启动。
+        val service = liveController()
+            ?: error("X11 server process is not running; start the X server first")
+
+        val failure = service.startGuestSession(
+            plan.argv.toTypedArray(),
+            plan.toEnvironmentArray(),
+            plan.workingDirectory,
+            restartPolicy.maxRestarts,
+            restartPolicy.restartDelayMs,
+        )
+        if (failure != null) {
+            error(failure)
         }
+    }
+
+    override suspend fun stopGuestSession() {
+        val service = liveController() ?: return
+        runCatching { service.stopGuestSession() }
+            .onFailure { error -> Timber.tag(TAG).w(error, "stopGuestSession failed") }
+    }
+
+    override fun isGuestSessionRunning(): Boolean {
+        val service = liveController() ?: return false
+        return runCatching { service.isGuestSessionRunning }.getOrDefault(false)
+    }
+
+    override fun guestSessionPhase(): LinuxDesktopSupervisorPhase? {
+        val service = liveController() ?: return null
+        val phase = runCatching { service.guestSessionPhase() }.getOrNull() ?: return null
+        return LinuxDesktopSupervisorPhase.entries.firstOrNull { entry -> entry.name == phase }
+    }
+
+    private fun liveController(): IX11ServerController? = synchronized(lock) {
+        controller?.takeIf { stub -> stub.asBinder().isBinderAlive }
+    }
+
+    private suspend fun bindController(): Result<IX11ServerController> {
+        liveController()?.let { stub -> return Result.success(stub) }
 
         val binderReady = CompletableDeferred<IX11ServerController?>()
         val established = object : ServiceConnection {

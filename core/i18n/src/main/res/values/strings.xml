@@ -921,6 +921,13 @@
   <string name="settings_linux_desktop_install_success">图形桌面组件已安装</string>
   <string name="settings_linux_desktop_install_failed">安装图形桌面组件失败：%1$s</string>
   <string name="settings_linux_desktop_open_failed">打开图形桌面失败：%1$s</string>
+  <string name="settings_linux_desktop_stop">停止图形桌面</string>
+  <string name="settings_linux_desktop_stop_desc">结束 XFCE 会话并关闭 X server</string>
+  <string name="settings_linux_desktop_stopping">正在停止图形桌面…</string>
+  <string name="settings_linux_desktop_stopped">图形桌面已停止</string>
+  <string name="settings_linux_desktop_stop_failed">停止图形桌面失败：%1$s</string>
+  <string name="settings_linux_desktop_running">运行中</string>
+  <string name="settings_linux_desktop_crashed">桌面会话已退出，请重新打开</string>
   <string name="linux_desktop_notification_channel">Linux 图形桌面</string>
   <string name="linux_desktop_notification_title">Linux 图形桌面运行中</string>
   <string name="linux_desktop_notification_text">X server 正在后台运行</string>

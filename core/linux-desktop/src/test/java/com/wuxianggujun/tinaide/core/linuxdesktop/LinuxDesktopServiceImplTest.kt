@@ -102,6 +102,38 @@ class LinuxDesktopServiceImplTest {
         assertThat(LinuxDesktopServiceImpl().getX11EnvironmentVariables()).isEmpty()
     }
 
+    @Test
+    fun startGuestSession_shouldFail_whenXServerIsNotRunning() = runTest {
+        // 会话要挂在 X server 所在进程上。server 没起时 spawn 只会让 XFCE 对着
+        // 不存在的 display 反复失败，还会白烧掉重启预算。
+        val launcher = RecordingX11ServerLauncher()
+        val service = LinuxDesktopServiceImpl(
+            serverLauncher = launcher,
+            socketLayoutProvider = { layoutWithXkb() },
+        )
+
+        val result = service.startGuestSession(HOST_PLAN)
+
+        assertThat(result.isFailure).isTrue()
+        assertThat(launcher.guestPlans).isEmpty()
+    }
+
+    @Test
+    fun startGuestSession_shouldDelegateToTheXServerProcess_whenRunning() = runTest {
+        val launcher = RecordingX11ServerLauncher()
+        val service = LinuxDesktopServiceImpl(
+            serverLauncher = launcher,
+            socketLayoutProvider = { layoutWithXkb() },
+        )
+        service.startX11Server(":0", CONFIG).getOrThrow()
+
+        assertThat(service.startGuestSession(HOST_PLAN).isSuccess).isTrue()
+
+        assertThat(launcher.guestPlans).containsExactly(HOST_PLAN)
+        assertThat(service.isGuestSessionRunning()).isTrue()
+        assertThat(service.guestSessionPhase()).isEqualTo(LinuxDesktopSupervisorPhase.RUNNING)
+    }
+
     private fun layoutWithXkb(): X11SocketLayout {
         val rootfs = temporaryFolder.newFolder("rootfs-${counter++}")
         File(rootfs, "usr/share/X11/xkb").mkdirs()
@@ -118,6 +150,10 @@ class LinuxDesktopServiceImplTest {
         var lastArgs: X11ServerArgs? = null
             private set
 
+        val guestPlans: MutableList<LinuxDesktopHostProcessPlan> = mutableListOf()
+        var stopGuestSessionCount: Int = 0
+            private set
+
         override suspend fun launch(
             args: X11ServerArgs,
             layout: X11SocketLayout,
@@ -132,9 +168,32 @@ class LinuxDesktopServiceImplTest {
         }
 
         override fun isAlive(): Boolean = launchCount > terminateCount
+
+        override suspend fun startGuestSession(
+            plan: LinuxDesktopHostProcessPlan,
+            restartPolicy: LinuxDesktopRestartPolicy,
+        ): Result<Unit> {
+            guestPlans += plan
+            return Result.success(Unit)
+        }
+
+        override suspend fun stopGuestSession() {
+            stopGuestSessionCount += 1
+        }
+
+        override fun isGuestSessionRunning(): Boolean = guestPlans.isNotEmpty()
+
+        override fun guestSessionPhase(): LinuxDesktopSupervisorPhase? =
+            LinuxDesktopSupervisorPhase.RUNNING.takeIf { guestPlans.isNotEmpty() }
     }
 
     private companion object {
         private val CONFIG = X11DisplayConfig(width = 1280, height = 720, dpi = 160)
+
+        private val HOST_PLAN = LinuxDesktopHostProcessPlan(
+            argv = listOf("/system/bin/sh", "/data/init-proot.sh", "startxfce4"),
+            environment = mapOf("DISPLAY" to ":0"),
+            workingDirectory = "/data/files",
+        )
     }
 }

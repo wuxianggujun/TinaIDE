@@ -21,10 +21,10 @@ import java.io.File
  *    按 `/tmp/.X11-unix/X<n>` 拼接，PRoot 不会替它改写路径）。
  *
  * 满足这两点的做法就是 `<rootfs>/tmp`：host 用绝对路径，guest 用 `/tmp`。PRoot 以
- * `--rootfs=<rootfsPath>` 启动，guest 的 `/tmp` 本身就解析到 host 的 `<rootfsPath>/tmp`，
- * 且 `PRootManager.buildPRootCommandLine()` 的 bind 列表里没有任何针对 `/tmp` 的覆盖
- * （只有 `--bind=<rootfs>/tmp:/dev/shm`，那是把同一目录额外再映射一份到 `/dev/shm`）。
- * 所以两侧天然是同一个 inode，PRoot 侧无需改动。
+ * `-r $ROOTFS_PATH` 启动（参数在 `app/src/main/assets/proot/init-proot.sh` 里拼装），
+ * guest 的 `/tmp` 本身就解析到 host 的 `<rootfsPath>/tmp`，而该脚本的 bind 列表里没有
+ * 任何针对 `/tmp` 的覆盖——只有 `-b <rootfs>/tmp:/dev/shm`，那是把同一目录额外再映射
+ * 一份到 `/dev/shm`。所以两侧天然是同一个 inode，PRoot 侧无需为 X11 额外改动。
  *
  * 这样 `dirname` 恰好落在 rootfs 根上，lorie 探测 `<rootfs>/usr/share/X11/xkb` 也能命中
  * guest 里 `xkb-data` 装出来的真实数据 —— 无需再往 APK 里塞一份 xkb 副本。

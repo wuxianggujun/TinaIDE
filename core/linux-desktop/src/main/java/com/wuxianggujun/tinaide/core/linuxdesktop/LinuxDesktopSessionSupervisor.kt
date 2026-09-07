@@ -50,12 +50,21 @@ class LinuxDesktopSessionSupervisor(
 
     private var started = false
     private var stopRequested = false
-    private var currentSession: LinuxDesktopSession? = null
+    private var activeSession: LinuxDesktopSession? = null
     private var worker: Thread? = null
     private var statusListener: (LinuxDesktopSupervisorStatus) -> Unit = {}
 
     val status: LinuxDesktopSupervisorStatus
         get() = statusRef.get()
+
+    /**
+     * 当前被看护的会话；重启期间和终止后为 `null`。
+     *
+     * 调用方拿到的实例会在下一次重启后失效，所以只应即用即抛，
+     * 不要长期持有——存活判断请走 [LinuxDesktopSession.isRunning]。
+     */
+    val currentSession: LinuxDesktopSession?
+        get() = synchronized(lock) { activeSession }
 
     fun start(
         onStatusChanged: (LinuxDesktopSupervisorStatus) -> Unit = {},
@@ -83,7 +92,7 @@ class LinuxDesktopSessionSupervisor(
                 publish(LinuxDesktopSupervisorStatus(LinuxDesktopSupervisorPhase.STOPPED))
                 return Result.success(Unit)
             }
-            currentSession = initialSession
+            activeSession = initialSession
         }
         publish(LinuxDesktopSupervisorStatus(LinuxDesktopSupervisorPhase.RUNNING))
 
@@ -101,8 +110,8 @@ class LinuxDesktopSessionSupervisor(
         synchronized(lock) {
             if (stopRequested) return
             stopRequested = true
-            sessionToStop = currentSession
-            currentSession = null
+            sessionToStop = activeSession
+            activeSession = null
             workerToInterrupt = worker
             worker = null
         }
@@ -125,7 +134,7 @@ class LinuxDesktopSessionSupervisor(
             if (isStopRequested()) return
 
             synchronized(lock) {
-                if (currentSession === session) currentSession = null
+                if (activeSession === session) activeSession = null
             }
             lastExitCode = outcome.exitCode
             lastFailure = outcome.failure
@@ -174,7 +183,7 @@ class LinuxDesktopSessionSupervisor(
                         nextSession.stop()
                         return
                     }
-                    currentSession = nextSession
+                    activeSession = nextSession
                 }
                 session = nextSession
                 publish(
@@ -219,7 +228,7 @@ class LinuxDesktopSessionSupervisor(
     private fun clearWorker() {
         synchronized(lock) {
             worker = null
-            currentSession = null
+            activeSession = null
         }
     }
 

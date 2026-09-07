@@ -106,6 +106,31 @@ internal class LinuxDesktopServiceImpl(
         }
     }
 
+    override suspend fun startGuestSession(
+        plan: LinuxDesktopHostProcessPlan,
+        restartPolicy: LinuxDesktopRestartPolicy,
+    ): Result<Unit> {
+        // 不加 stateLock：这里只是把请求转给 launcher，而 X server 的状态检查在下一行。
+        // 复用 stateLock 会让"启动会话"和"启动 server"互相阻塞，没有必要。
+        if (_serverState.value !is X11ServerState.Running) {
+            return Result.failure(
+                IllegalStateException("X server is not running; cannot start a desktop session"),
+            )
+        }
+        val launcher = serverLauncher
+            ?: return Result.failure(IllegalStateException("X11 server launcher is not wired up"))
+        return launcher.startGuestSession(plan, restartPolicy)
+    }
+
+    override suspend fun stopGuestSession() {
+        serverLauncher?.stopGuestSession()
+    }
+
+    override fun isGuestSessionRunning(): Boolean = serverLauncher?.isGuestSessionRunning() == true
+
+    override fun guestSessionPhase(): LinuxDesktopSupervisorPhase? =
+        serverLauncher?.guestSessionPhase()
+
     override fun getX11EnvironmentVariables(): Map<String, String> {
         val state = _serverState.value
         if (state !is X11ServerState.Running) {

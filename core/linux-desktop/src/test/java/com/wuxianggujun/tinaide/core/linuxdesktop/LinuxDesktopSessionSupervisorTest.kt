@@ -1,8 +1,6 @@
 package com.wuxianggujun.tinaide.core.linuxdesktop
 
 import com.google.common.truth.Truth.assertThat
-import com.wuxianggujun.tinaide.core.linux.LinuxEnvironment
-import com.wuxianggujun.tinaide.core.linux.LinuxExecutionResult
 import com.wuxianggujun.tinaide.core.linux.LinuxInteractiveProcess
 import java.io.InputStream
 import java.io.OutputStream
@@ -17,12 +15,11 @@ class LinuxDesktopSessionSupervisorTest {
     fun supervisor_shouldRestartUnexpectedExitAndStopCurrentSession() {
         val firstProcess = FakeInteractiveProcess().apply { finish(7) }
         val secondProcess = FakeInteractiveProcess()
-        val environment = QueueLinuxEnvironment(listOf(firstProcess, secondProcess))
-        val launcher = LinuxDesktopSessionLauncher(environment)
+        val spawner = QueueSessionSpawner(listOf(firstProcess, secondProcess))
         val runningAfterRestart = CountDownLatch(1)
 
         val supervisor = LinuxDesktopSessionSupervisor(
-            launchSession = { launch(launcher) },
+            launchSession = { spawner.spawn() },
             restartPolicy = LinuxDesktopRestartPolicy(maxRestarts = 1, restartDelayMs = 0),
         )
 
@@ -33,7 +30,7 @@ class LinuxDesktopSessionSupervisorTest {
         }.getOrThrow()
 
         assertThat(runningAfterRestart.await(2, TimeUnit.SECONDS)).isTrue()
-        assertThat(environment.launchCount.get()).isEqualTo(2)
+        assertThat(spawner.launchCount.get()).isEqualTo(2)
         assertThat(supervisor.status.phase).isEqualTo(LinuxDesktopSupervisorPhase.RUNNING)
 
         supervisor.stop()
@@ -44,17 +41,16 @@ class LinuxDesktopSessionSupervisorTest {
 
     @Test
     fun supervisor_shouldFailAfterRestartBudgetIsExhausted() {
-        val environment = QueueLinuxEnvironment(
+        val spawner = QueueSessionSpawner(
             listOf(
                 FakeInteractiveProcess().apply { finish(1) },
                 FakeInteractiveProcess().apply { finish(2) },
             )
         )
-        val launcher = LinuxDesktopSessionLauncher(environment)
         val failed = CountDownLatch(1)
 
         val supervisor = LinuxDesktopSessionSupervisor(
-            launchSession = { launch(launcher) },
+            launchSession = { spawner.spawn() },
             restartPolicy = LinuxDesktopRestartPolicy(maxRestarts = 1, restartDelayMs = 0),
         )
 
@@ -63,7 +59,7 @@ class LinuxDesktopSessionSupervisorTest {
         }.getOrThrow()
 
         assertThat(failed.await(2, TimeUnit.SECONDS)).isTrue()
-        assertThat(environment.launchCount.get()).isEqualTo(2)
+        assertThat(spawner.launchCount.get()).isEqualTo(2)
         assertThat(supervisor.status.exitCode).isEqualTo(2)
         assertThat(supervisor.status.restartAttempt).isEqualTo(1)
     }
@@ -82,37 +78,17 @@ class LinuxDesktopSessionSupervisorTest {
         assertThat(supervisor.status.failure).isSameInstanceAs(launchError)
     }
 
-    private fun launch(launcher: LinuxDesktopSessionLauncher): Result<LinuxDesktopSession> = launcher.launch(
-        endpoint = LinuxDesktopEndpoint(display = ":0"),
-        spec = LinuxDesktopLaunchSpec(command = listOf("startxfce4")),
-    )
-
-    private class QueueLinuxEnvironment(
-        processes: List<FakeInteractiveProcess>,
-    ) : LinuxEnvironment {
+    /**
+     * 按顺序交出预置进程，模拟 `:x11` 侧每次重启 spawn 出一个新的 proot 进程。
+     */
+    private class QueueSessionSpawner(processes: List<FakeInteractiveProcess>) {
         private val processQueue = ArrayDeque(processes)
         val launchCount = AtomicInteger(0)
 
-        override fun isAvailable(): Boolean = true
-
-        override suspend fun execute(
-            command: List<String>,
-            workDir: String,
-            env: Map<String, String>,
-            timeout: Long?,
-            stdin: String?,
-        ): LinuxExecutionResult = error("execute is not used")
-
-        override fun startInteractive(
-            command: List<String>,
-            workDir: String,
-            env: Map<String, String>,
-        ): LinuxInteractiveProcess {
+        fun spawn(): Result<LinuxDesktopSession> = runCatching {
             launchCount.incrementAndGet()
-            return synchronized(processQueue) { processQueue.removeFirst() }
+            LinuxDesktopSession(synchronized(processQueue) { processQueue.removeFirst() })
         }
-
-        override fun toGuestPath(hostPath: String): String = hostPath
     }
 
     private class FakeInteractiveProcess : LinuxInteractiveProcess {

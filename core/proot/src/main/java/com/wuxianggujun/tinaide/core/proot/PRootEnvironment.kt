@@ -6,10 +6,7 @@ import com.wuxianggujun.tinaide.core.config.IConfigManager
 import com.wuxianggujun.tinaide.core.linux.LinuxEnvironment
 import com.wuxianggujun.tinaide.core.linux.LinuxExecutionResult
 import com.wuxianggujun.tinaide.core.linux.LinuxInteractiveProcess
-import com.wuxianggujun.tinaide.core.linuxdesktop.LinuxDesktopSession
 import com.wuxianggujun.tinaide.core.linuxdesktop.UbuntuDesktopProvisioner
-import com.wuxianggujun.tinaide.core.linuxdesktop.UbuntuDesktopSessionLauncher
-import com.wuxianggujun.tinaide.core.linuxdesktop.UbuntuDesktopSessionOptions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -50,10 +47,6 @@ class PRootEnvironment(
         UbuntuDesktopProvisioner(this)
     }
 
-    private val desktopSessionLauncher: UbuntuDesktopSessionLauncher by lazy {
-        UbuntuDesktopSessionLauncher(this)
-    }
-
     fun getPRootManager(): PRootManager {
         val currentRootfsPath = requireUbuntuProfile().rootfsPath
         val cached = cachedPRootManager
@@ -83,9 +76,9 @@ class PRootEnvironment(
         progress: (UbuntuDesktopProvisioner.Progress) -> Unit = {},
     ): Result<UbuntuDesktopProvisioner.InstallResult> = desktopProvisioner.install(progress)
 
-    fun startUbuntuDesktop(
-        options: UbuntuDesktopSessionOptions,
-    ): Result<LinuxDesktopSession> = desktopSessionLauncher.launch(options)
+    // 不在这里提供 startUbuntuDesktop：桌面会话必须由 `:x11` 进程 spawn
+    // （init-proot.sh 带 --kill-on-exit，谁 spawn 谁决定 XFCE 的生死）。
+    // 入口是 UbuntuLinuxDesktopCoordinator.startSession。
 
     fun isInstalled(): Boolean {
         val activeProfile = rootfsProfileStore.getActiveProfileForDistro(DEFAULT_DISTRO_ID) ?: return false

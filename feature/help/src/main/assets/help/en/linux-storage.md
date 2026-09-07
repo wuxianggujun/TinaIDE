@@ -24,9 +24,14 @@ Once a Linux system is installed, three more items appear:
 - **Install desktop packages** — runs `apt-get` in the guest to install XFCE, `xkb-data`, DBus, PulseAudio, FCITX, and Mesa.
 - **Open graphical desktop** — starts the X server, launches XFCE in the guest, then opens the desktop window.
 
+A fourth item appears while the desktop is running:
+
+- **Stop graphical desktop** — ends the guest desktop session first, then shuts the X server down.
+
 Notes:
 
-- The X server runs in a separate background process with an ongoing notification. Closing the desktop window does not end the guest session; opening it again reconnects to the same desktop.
+- The X server and the guest desktop session both run in a separate background process with an ongoing notification. Closing the desktop window does not end the guest session; opening it again reconnects to the same desktop.
+- The desktop session keeps running even if the main UI is reclaimed by the system. To really end it, use **Stop graphical desktop** or dismiss the service behind that ongoing notification.
 - Startup fails closed when packages are missing, and the message names what is absent. This is deliberate: launching a desktop without a running X server only produces hard-to-diagnose "cannot open display" errors.
 - Installing desktop packages downloads a large number of packages. Use Wi-Fi.
 

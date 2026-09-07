@@ -17,6 +17,7 @@ import com.wuxianggujun.tinaide.core.IAppNavigator
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.core.linux.LinuxRunModePolicy
+import com.wuxianggujun.tinaide.core.linuxdesktop.LinuxDesktopSupervisorPhase
 import com.wuxianggujun.tinaide.core.linuxdesktop.UbuntuDesktopProvisioner
 import com.wuxianggujun.tinaide.core.linuxdesktop.UbuntuLinuxDesktopCoordinator
 import com.wuxianggujun.tinaide.core.proot.LinuxDistroRootfsHealthLevel
@@ -97,6 +98,8 @@ data class SettingsUiState(
     val linuxDesktopStatusText: String = "",
     val linuxDesktopBusy: Boolean = false,
     val linuxDesktopStarting: Boolean = false,
+    val linuxDesktopStopping: Boolean = false,
+    val linuxDesktopSessionActive: Boolean = false,
     val linuxDesktopMessage: String = "",
     val linuxDesktopProgress: Float = 0f,
     // MT 管理器文件提供器
@@ -320,6 +323,8 @@ class SettingsViewModel(
             linuxDesktopStatusText = previousState.linuxDesktopStatusText,
             linuxDesktopBusy = previousState.linuxDesktopBusy,
             linuxDesktopStarting = previousState.linuxDesktopStarting,
+            linuxDesktopStopping = previousState.linuxDesktopStopping,
+            linuxDesktopSessionActive = previousState.linuxDesktopSessionActive,
             linuxDesktopMessage = previousState.linuxDesktopMessage,
             linuxDesktopProgress = previousState.linuxDesktopProgress,
         )
@@ -629,12 +634,15 @@ class SettingsViewModel(
                     }
                 }.getOrThrow()
             }.onSuccess { result ->
+                // 装完组件不代表桌面在跑，但也可能是在会话运行期间补装的，据实上报。
+                val sessionActive = linuxDesktopCoordinator.isSessionActive()
                 _uiState.update {
                     it.copy(
                         linuxDesktopBusy = false,
                         linuxDesktopStarting = false,
                         linuxDesktopReady = result.status.ready,
-                        linuxDesktopStatusText = result.status.toStatusText(appContext),
+                        linuxDesktopSessionActive = sessionActive,
+                        linuxDesktopStatusText = result.status.toStatusText(appContext, sessionActive),
                         linuxDesktopMessage = Strings.settings_linux_desktop_install_success.strOr(appContext),
                         linuxDesktopProgress = 1f,
                     )
@@ -681,6 +689,7 @@ class SettingsViewModel(
                         linuxDesktopStarting = false,
                         linuxDesktopMessage = "",
                         linuxDesktopProgress = 1f,
+                        linuxDesktopSessionActive = true,
                     )
                 }
             }.onFailure { error ->
@@ -693,9 +702,50 @@ class SettingsViewModel(
                             error.message ?: Strings.error_unknown.strOr(appContext),
                         ),
                         linuxDesktopProgress = 0f,
+                        linuxDesktopSessionActive = linuxDesktopCoordinator.isSessionActive(),
                     )
                 }
             }
+        }
+    }
+
+    fun stopLinuxDesktop(context: Context) {
+        if (_uiState.value.linuxDesktopBusy) return
+        val appContext = context.applicationContext
+        viewModelScope.launch(Dispatchers.IO) {
+            _uiState.update {
+                it.copy(
+                    linuxDesktopBusy = true,
+                    linuxDesktopStopping = true,
+                    linuxDesktopMessage = Strings.settings_linux_desktop_stopping.strOr(appContext),
+                )
+            }
+
+            runCatching { linuxDesktopCoordinator.stopSession() }
+                .onSuccess {
+                    _uiState.update {
+                        it.copy(
+                            linuxDesktopBusy = false,
+                            linuxDesktopStopping = false,
+                            linuxDesktopMessage = Strings.settings_linux_desktop_stopped.strOr(appContext),
+                            linuxDesktopProgress = 0f,
+                            linuxDesktopSessionActive = false,
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update {
+                        it.copy(
+                            linuxDesktopBusy = false,
+                            linuxDesktopStopping = false,
+                            linuxDesktopMessage = Strings.settings_linux_desktop_stop_failed.strOr(
+                                appContext,
+                                error.message ?: Strings.error_unknown.strOr(appContext),
+                            ),
+                            linuxDesktopSessionActive = linuxDesktopCoordinator.isSessionActive(),
+                        )
+                    }
+                }
         }
     }
 
@@ -1026,10 +1076,12 @@ class SettingsViewModel(
 
         runCatching { linuxDesktopCoordinator.inspect() }
             .onSuccess { status ->
+                val sessionActive = linuxDesktopCoordinator.isSessionActive()
                 _uiState.update {
                     it.copy(
                         linuxDesktopReady = status.ready,
-                        linuxDesktopStatusText = status.toStatusText(appContext),
+                        linuxDesktopSessionActive = sessionActive,
+                        linuxDesktopStatusText = status.toStatusText(appContext, sessionActive),
                     )
                 }
             }
@@ -1037,6 +1089,7 @@ class SettingsViewModel(
                 _uiState.update {
                     it.copy(
                         linuxDesktopReady = false,
+                        linuxDesktopSessionActive = false,
                         linuxDesktopStatusText = error.message
                             ?: Strings.settings_linux_desktop_not_ready.strOr(appContext),
                     )
@@ -1044,12 +1097,18 @@ class SettingsViewModel(
             }
     }
 
-    private fun UbuntuDesktopProvisioner.Status.toStatusText(appContext: Context): String =
-        if (ready) {
-            Strings.settings_linux_desktop_ready.strOr(appContext)
-        } else {
-            Strings.settings_linux_desktop_not_ready.strOr(appContext)
-        }
+    private fun UbuntuDesktopProvisioner.Status.toStatusText(
+        appContext: Context,
+        sessionActive: Boolean,
+    ): String = when {
+        sessionActive -> Strings.settings_linux_desktop_running.strOr(appContext)
+        !ready -> Strings.settings_linux_desktop_not_ready.strOr(appContext)
+        // 组件齐全但看护器停在 FAILED：会话崩过且重启预算已耗尽，
+        // 报"已就绪"会让用户以为桌面还在。
+        linuxDesktopCoordinator.sessionPhase() == LinuxDesktopSupervisorPhase.FAILED ->
+            Strings.settings_linux_desktop_crashed.strOr(appContext)
+        else -> Strings.settings_linux_desktop_ready.strOr(appContext)
+    }
 
     private fun UbuntuDesktopProvisioner.Phase.toDesktopMessage(appContext: Context): String =
         when (this) {

@@ -70,4 +70,27 @@ interface X11ServerLauncher {
 
     /** X server 进程当前是否存活。 */
     fun isAlive(): Boolean
+
+    /**
+     * 在 X server 所在进程里拉起 guest 桌面会话，并交给那一侧看护重启。
+     *
+     * 之所以不由主进程 spawn：init-proot.sh 带 `--kill-on-exit`，proot 树的存亡跟着
+     * spawn 它的进程。会话必须挂在常驻的 X server 进程上，桌面才能在 IDE 窗口关闭、
+     * 甚至主进程被系统回收之后继续活着。
+     *
+     * 幂等：已有存活会话时直接成功返回。
+     */
+    suspend fun startGuestSession(
+        plan: LinuxDesktopHostProcessPlan,
+        restartPolicy: LinuxDesktopRestartPolicy,
+    ): Result<Unit>
+
+    /** 终止 guest 桌面会话，但保留 X server。 */
+    suspend fun stopGuestSession()
+
+    /** guest 桌面会话是否存活。 */
+    fun isGuestSessionRunning(): Boolean
+
+    /** guest 会话看护阶段；无法获知时返回 `null`。 */
+    fun guestSessionPhase(): LinuxDesktopSupervisorPhase?
 }

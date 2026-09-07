@@ -3,6 +3,7 @@ package com.wuxianggujun.tinaide.core.linuxdesktop
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
@@ -44,6 +45,31 @@ class X11ServerService : Service() {
         override fun isServerRunning(): Boolean = serverStarted
 
         override fun getDisplayNumber(): Int = activeDisplayNumber
+
+        override fun startGuestSession(
+            argv: Array<String>,
+            environment: Array<String>,
+            workingDirectory: String,
+            maxRestarts: Int,
+            restartDelayMs: Long,
+        ): String? = synchronized(this@X11ServerService) {
+            startGuestSessionLocked(
+                argv = argv,
+                environment = environment,
+                workingDirectory = workingDirectory,
+                maxRestarts = maxRestarts,
+                restartDelayMs = restartDelayMs,
+            )
+        }
+
+        override fun isGuestSessionRunning(): Boolean =
+            guestSupervisor?.currentSession?.isRunning() == true
+
+        override fun guestSessionPhase(): String = guestSessionStatus.phase.name
+
+        override fun stopGuestSession() = synchronized(this@X11ServerService) {
+            stopGuestSessionLocked()
+        }
     }
 
     /**
@@ -53,6 +79,19 @@ class X11ServerService : Service() {
      */
     private var serverStarted: Boolean = false
     private var activeDisplayNumber: Int = NO_DISPLAY
+
+    /**
+     * guest XFCE 会话的看护器，连同被看护的 proot 进程一起活在本进程里。
+     *
+     * 会话必须由本进程 spawn：init-proot.sh 带 `--kill-on-exit`，proot 树的存亡跟着
+     * spawn 它的进程。放在主进程等于"关掉 IDE 就杀掉桌面"，而这里的拓扑要求
+     * 桌面窗口可以随意开关、只有停止本 Service 才结束会话。
+     */
+    private var guestSupervisor: LinuxDesktopSessionSupervisor? = null
+
+    @Volatile
+    private var guestSessionStatus: LinuxDesktopSupervisorStatus =
+        LinuxDesktopSupervisorStatus(LinuxDesktopSupervisorPhase.IDLE)
 
     override fun onCreate() {
         super.onCreate()
@@ -70,7 +109,90 @@ class X11ServerService : Service() {
 
     override fun onDestroy() {
         Timber.tag(TAG).i("X11ServerService destroyed")
+        // 显式收会话，不指望"进程反正要死"：stopService 之后进程可能还被系统留一会儿，
+        // 那期间一个无人看护的 XFCE 会继续跑并且没人能停它。
+        synchronized(this) { stopGuestSessionLocked() }
         super.onDestroy()
+    }
+
+    private fun startGuestSessionLocked(
+        argv: Array<String>,
+        environment: Array<String>,
+        workingDirectory: String,
+        maxRestarts: Int,
+        restartDelayMs: Long,
+    ): String? {
+        guestSupervisor?.let { existing ->
+            if (existing.currentSession?.isRunning() == true) {
+                Timber.tag(TAG).i("Guest desktop session already running; reusing it")
+                return null
+            }
+            // 残留的看护器可能停在 FAILED；start() 只允许调用一次，必须先收干净。
+            existing.stop()
+            guestSupervisor = null
+        }
+
+        val plan = try {
+            LinuxDesktopHostProcessPlan(
+                argv = argv.toList(),
+                environment = LinuxDesktopHostProcessPlan.decodeEnvironment(environment),
+                workingDirectory = workingDirectory,
+            )
+        } catch (invalid: IllegalArgumentException) {
+            Timber.tag(TAG).e(invalid, "Rejected guest session plan")
+            return "Invalid guest session plan: ${invalid.message}"
+        }
+
+        val supervisor = LinuxDesktopSessionSupervisor(
+            launchSession = { runCatching { LinuxDesktopHostProcessSpawner.spawn(plan) } },
+            restartPolicy = LinuxDesktopRestartPolicy(
+                maxRestarts = maxRestarts.coerceAtLeast(0),
+                restartDelayMs = restartDelayMs.coerceAtLeast(0L),
+            ),
+        )
+
+        Timber.tag(TAG).i("Spawning guest desktop session: %s", plan.argv.joinToString(" "))
+        return supervisor.start { status -> onGuestSessionStatusChanged(status) }.fold(
+            onSuccess = {
+                guestSupervisor = supervisor
+                null
+            },
+            onFailure = { error ->
+                supervisor.stop()
+                Timber.tag(TAG).e(error, "Failed to spawn guest desktop session")
+                "Failed to start guest desktop session: " +
+                    (error.message ?: error::class.java.simpleName)
+            },
+        )
+    }
+
+    private fun stopGuestSessionLocked() {
+        val supervisor = guestSupervisor ?: return
+        guestSupervisor = null
+        supervisor.stop()
+        Timber.tag(TAG).i("Guest desktop session stopped")
+    }
+
+    private fun onGuestSessionStatusChanged(status: LinuxDesktopSupervisorStatus) {
+        guestSessionStatus = status
+        when (status.phase) {
+            LinuxDesktopSupervisorPhase.RESTARTING ->
+                Timber.tag(TAG).w(
+                    "Guest desktop session exited (code=%s), restart %d",
+                    status.exitCode?.toString() ?: "n/a",
+                    status.restartAttempt,
+                )
+
+            LinuxDesktopSupervisorPhase.FAILED ->
+                Timber.tag(TAG).e(
+                    status.failure,
+                    "Guest desktop session gave up after %d restarts (exit=%s)",
+                    status.restartAttempt,
+                    status.exitCode?.toString() ?: "n/a",
+                )
+
+            else -> Timber.tag(TAG).i("Guest desktop session phase: %s", status.phase)
+        }
     }
 
     private fun startServerLocked(
@@ -144,6 +266,7 @@ class X11ServerService : Service() {
             .setContentTitle(Strings.linux_desktop_notification_title.strOr(this))
             .setContentText(Strings.linux_desktop_notification_text.strOr(this))
             .setSmallIcon(android.R.drawable.ic_menu_view)
+            .setContentIntent(desktopWindowIntent())
             .setOngoing(true)
             .build()
 
@@ -158,10 +281,30 @@ class X11ServerService : Service() {
         }
     }
 
+    /**
+     * 点通知回到桌面窗口。X server 常驻而窗口可关，通知是窗口关掉之后唯一的回程入口。
+     *
+     * 直接指向 `MainActivity` 而不绕 `IAppNavigator`：本 Service 跑在 `:x11`，那里没有
+     * Koin 容器（`AppProcessRole.OTHER` 跳过 DI 装配），拿不到导航实现。而
+     * `MainActivity` 声明为 `singleInstance` + 独立 `taskAffinity`，已存在的实例会被提到
+     * 前台而不是重建。
+     */
+    private fun desktopWindowIntent(): PendingIntent {
+        val intent = Intent(this, com.termux.x11.MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        return PendingIntent.getActivity(
+            this,
+            REQUEST_OPEN_DESKTOP,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+    }
+
     companion object {
         private const val TAG = "X11ServerService"
         private const val CHANNEL_ID = "tinaide.linux.desktop"
         private const val NOTIFICATION_ID = 7893
+        private const val REQUEST_OPEN_DESKTOP = 1
         private const val ENV_TMPDIR = "TMPDIR"
         private const val ENV_XKB_CONFIG_ROOT = "XKB_CONFIG_ROOT"
 
