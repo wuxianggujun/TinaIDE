@@ -31,6 +31,13 @@
 
 ## [Unreleased]
 
+（暂无未归档变化）
+
+## [0.18.29] - 2026-09-07
+
+> 本版本包含许可证变更（GPL-3.0-or-later）、X11 图形桌面支持和编辑器性能优化。
+> **X11 桌面尚未在真机验证**，详见下文"仍未验证"。
+
 ### Changed
 
 #### 许可证变更：TinaIDE 改用 GPL-3.0-or-later（2026-09-03）
@@ -215,6 +222,52 @@ stripped 3.4 MB），并已打进 `termux-x11-lorie-debug.aar` 的 `jni/arm64-v8
 存储设置的"Linux 系统"卡片在已安装 Ubuntu profile 时新增三项：图形桌面状态（点击重新检查）、
 安装图形桌面组件、打开图形桌面。安装与启动共用一个进度对话框，失败文案直出错误原因。
 
+**guest 会话迁入 `:x11` 进程，桌面不再随主进程消亡（2026-09-05）**：
+
+`init-proot.sh` 带 `--kill-on-exit`，proot 进程树的存亡跟着 **spawn 它的那个进程**。
+此前 XFCE 由主进程 `LinuxEnvironment.startInteractive()` 拉起，于是主进程被系统回收
+（或用户划掉 IDE）就会连带杀死桌面——与"X server 常驻、窗口可开可关"的既定拓扑矛盾。
+
+- **`IX11ServerController` 扩展**：新增 `startGuestSession` / `stopGuestSession` /
+  `isGuestSessionRunning` / `guestSessionPhase`。主进程传入已组装好的 host argv 与
+  `KEY=VALUE` 环境数组，`:x11` 只负责 `exec`。
+- **`X11ServerService` 接管会话**：在本进程 spawn proot 并持有
+  `LinuxDesktopSessionSupervisor`（重启看护也搬到这一侧，否则主进程死亡会留下无人看护
+  或被误杀的会话）。`onDestroy` 显式收会话，不指望"进程反正要死"。
+- **`LinuxDesktopHostProcessPlan` / `LinuxDesktopHostProcessPlanner`（新增）**：
+  命令行必须由主进程算——只有 `:core:proot` 知道 proot 二进制、init 脚本和整套
+  `ROOTFS_PATH` / `LINKER` / `PROOT_*` 变量。`:core:linux-desktop` 不能反向依赖它
+  （会成 Gradle 环），在 `:x11` 起 Koin 又会把 database/plugin/editor 拖进 X server 进程。
+  于是与 `X11SocketLayoutProvider` 一样，由 `prootModule` 注入
+  `PRootDesktopHostProcessPlanner`（内部走新增的 `PRootManager.buildHostLaunchPlan()`，
+  与 `startInteractive()` 共用 `buildPRootCommandLine` / `buildExecEnvironment`，不会漂移）。
+- **`LinuxDesktopSessionLauncher` → `LinuxDesktopSessionPlanner`**：不再 spawn 进程，
+  只计算 guest 命令与环境（`DISPLAY` / `PULSE_SERVER` 仍由 endpoint 独占）。
+  `PRootEnvironment.startUbuntuDesktop()` 这条绕过 coordinator 的旧入口一并删除。
+- **`UbuntuLinuxDesktopCoordinator`**：探测、准备、启 X server、组装命令行留在主进程；
+  会话状态改为每次跨进程询问而不缓存（缓存会在 `:x11` 被回收后继续报"运行中"）。
+  `startSession()` 返回 `Result<Unit>`，`sessionStatus` 属性换成 `sessionPhase()`。
+- **跨 binder 编码加固**：环境值中的 NUL / CR / LF 一律拒绝——换行能在解码侧伪造出
+  额外的环境条目。
+
+**开机分辨率按真机屏幕算（2026-09-05）**：
+
+新增 `resolveX11DisplayConfig(context)`：走 `maximumWindowMetrics`（API 30+）或
+`displayMetrics`（API 28/29）取整块屏幕尺寸，长边当宽做横屏归一化，尺寸 clamp 到
+640..7680、DPI clamp 到 72..640，由 `linuxDesktopModule` 注入 coordinator。
+
+这不是"顺手改好看点"：guest XFCE 现在先于桌面窗口启动，面板和桌面图标会按开机时拿到的
+root window 尺寸布一次版。之后 `LorieView.sendWindowChange()` 会推真实几何过去，但那已经是
+先错后纠——此前固定的 1920x1080 在竖屏手机上会让第一次打开的窗口面板宽度明显不对。
+`X11DisplayConfig.default()` 降级为拿不到屏幕信息时的兜底。
+
+**音频：明确标注为未实现**：
+
+`LinuxDesktopEndpoint.audioServer` 此前看着像个可用特性，实际上没有任何调用方会填它。
+核实过内置 lorie：`lorie/src/main/cpp` 下没有任何 AAudio / OpenSLES / PulseAudio 通道，
+X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`pulseaudio-utils` 只是装了
+`pactl` 这类客户端工具，不等于有声音。已在 KDoc 与 README 写清现状，避免继续暗示这条链路可用。
+
 **仍未验证**：
 
 1. **真机 XFCE 未跑通**：以上都是代码路径，没有在设备上实际看到桌面。
@@ -234,7 +287,8 @@ stripped 3.4 MB），并已打进 `termux-x11-lorie-debug.aar` 的 `jni/arm64-v8
 - [ ] 真机验证 XFCE 会话、输入映射与窗口关闭/重开
 - [ ] 桌面环境可选项：i3wm / Fluxbox
 - [ ] 硬件加速渲染：OpenGL ES passthrough（termux-x11 上游已有实验性实现）
-- [ ] 音频：PulseAudio 端点接入
+- [ ] 音频：需要先在宿主起一个音频端点（PulseAudio over TCP 或自写 AAudio sink），
+      当前完全没有实现，见上文
 - [ ] Wayland 协议支持（termux-x11 上游已有）
 
 > PRoot 侧**不需要**额外绑定 `/tmp`：PRoot 以 `--rootfs=<rootfsPath>` 启动，
@@ -242,10 +296,47 @@ stripped 3.4 MB），并已打进 `termux-x11-lorie-debug.aar` 的 `jni/arm64-v8
 > `buildPRootCommandLine()` 的 bind 列表里只有 `--bind=<rootfs>/tmp:/dev/shm`，
 > 那是把同一目录额外再映射一份到 `/dev/shm`，不是对 `/tmp` 的覆盖。
 
+#### 编辑器滚动与增量高亮性能优化（2026-09-06）
+
+自动换行文档的滚动与输入路径此前存在两处线性开销，长文件下每帧都会重算。
+
+- **`EditorVisualLineIndex`（新增）**：视觉行数改用 Fenwick 树维护。
+  单点编辑此前要重写该行之后所有行的视觉行号（O(n)），现在为 O(log n)；
+  `EditorVisualLineMapper` 相应改为查询索引而不是线性扫描。
+- **`EditorLineRenderPlanCache`（新增）**：把每行的语法着色结果缓存成
+  不可变的 `TextLineRenderPlan`——列区间与颜色打包进单个 `IntArray`，
+  按列做二分定位。视口坐标不进入缓存，所以滚动不会让缓存失效。
+- **`IncrementalTreeSitterHighlightState`**：行级高亮请求改为批处理
+  （`LINE_CAPTURE_BATCH_SIZE = 16`），并对待处理队列设上限
+  （`MAX_PENDING_LINE_REQUESTS = 512`），避免快速滚动堆积无界请求。
+- `TextRenderer`、`WhitespaceRenderer`、`WordOccurrenceHighlightRenderer`
+  改为消费上述缓存，各自的重复计算被移除。
+
+新增测试：`EditorVisualLineIndexTest`、`EditorLineRenderPlanCacheTest`、
+`TextRendererCacheTest`、`WhitespaceRendererTest`、`DiagnosticRendererTest`、
+`EditorWordWrapLayoutCacheTest`，以及 `EditorRendererPerformanceSnapshotTest` 的补充用例。
+
+**未验证**：以上为算法层面改动并有单元测试覆盖，但**没有在真机上做过滚动帧率对比**，
+无法给出实测的性能提升数字。
+
 ### Fixed
 
 - `SelfHostedLinuxDistroRuntime.syncInstalledProfiles()` 不再在每次启动时无条件劫持用户手动选择的 active profile，
   仅在首次安装（无 active Ubuntu profile）时提升第一个 profile。
+- **`:core:linux-desktop` 缺少 `consumer-rules.pro` 导致 Release 构建失败**：
+  `TinaAndroidLibraryPlugin` 为每个 library 模块无条件注册 `consumerProguardFiles("consumer-rules.pro")`，
+  新增模块漏建该文件会让 `mergeReleaseConsumerProguardFiles` 直接失败（Debug 构建不受影响，因此此前未暴露）。
+  已补空规则文件并说明：lorie 的 JNI keep 由 `external/termux-x11/lorie/proguard-rules.pro`
+  作为 consumer rules 提供，manifest 组件由 AGP 自动生成 keep，AIDL Stub/Proxy 静态可达。
+
+### Build
+
+- `tools/checks/direct_file_operations_allowlist.txt` 登记 `X11SocketLayout.clearStaleSocket()`
+  的 `delete` 调用：X server 走 `_exit()` 退出时不做清理，残留 socket 会让下次 bind 同一 display 失败。
+- 本版本 APK 经 `:app:assembleArm64Release` 构建并签名验证（`CN=TinaIDE, O=WuXiangGujun`）；
+  R8 mapping 归档至 `app/mappings/0.18.29-20260907-125117/`。
+
+> 版本号说明：0.18.28 是 Release 构建自动递增产生的跳号，未产出任何 APK，故不单独记录。
 
 ## [0.18.27] - 2026-08-26
 
