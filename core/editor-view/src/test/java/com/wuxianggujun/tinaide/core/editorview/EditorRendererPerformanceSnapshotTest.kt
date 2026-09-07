@@ -1,7 +1,14 @@
 package com.wuxianggujun.tinaide.core.editorview
 
+import android.graphics.Bitmap
 import android.graphics.Paint
 import android.graphics.Typeface
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Canvas
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
 import com.google.common.truth.Truth.assertThat
 import com.wuxianggujun.tinaide.core.textengine.RopeTextBuffer
 import org.junit.Test
@@ -82,6 +89,34 @@ class EditorRendererPerformanceSnapshotTest {
         val expected = createRenderer().hitZones(state, serifPaint)
 
         assertThat(actual).isEqualTo(expected)
+    }
+
+    @Test
+    fun performanceSnapshot_exposesRenderPlanReuseAndMemoryAfterDrawing() {
+        val state = EditorState(RopeTextBuffer("call(1)"), config = EditorConfig(wordWrap = false))
+        state.updateMetrics(20f, 10f, 240f, 240f, 0f)
+        val renderer = createRenderer()
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 14f }
+        val bitmap = Bitmap.createBitmap(240, 240, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap.asImageBitmap())
+        val scope = CanvasDrawScope()
+        try {
+            repeat(3) {
+                scope.draw(Density(1f), LayoutDirection.Ltr, canvas, Size(240f, 240f)) {
+                    renderer.render(this, state, paint, paint)
+                }
+            }
+            val snapshot = renderer.performanceSnapshot()
+            assertThat(snapshot.totalRenderPlanBuilds).isEqualTo(1)
+            assertThat(snapshot.totalRenderPlanCacheHits).isEqualTo(2)
+            assertThat(snapshot.renderPlanCacheEntryCount).isEqualTo(1)
+            assertThat(snapshot.renderPlanCacheCharCount).isEqualTo(7)
+            assertThat(snapshot.renderPlanCacheElementCount).isGreaterThan(0)
+            renderer.invalidateCache()
+            assertThat(renderer.performanceSnapshot().renderPlanCacheEntryCount).isEqualTo(0)
+        } finally {
+            bitmap.recycle()
+        }
     }
 
     private fun createRenderer(

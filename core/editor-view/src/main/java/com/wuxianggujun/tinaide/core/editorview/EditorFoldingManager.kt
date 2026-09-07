@@ -74,6 +74,16 @@ internal class EditorFoldingManager(
     ) {
         val visualLineCount: Int
             get() = visualToDocLine.size
+
+        inline fun forEachVisibleLine(firstLine: Int, lastLine: Int, action: (Int) -> Unit) {
+            val match = visualToDocLine.binarySearch(firstLine)
+            var index = if (match >= 0) match else -match - 1
+            while (index < visualToDocLine.size) {
+                val line = visualToDocLine[index++]
+                if (line > lastLine) break
+                action(line)
+            }
+        }
     }
 
     private var lineMapCache: LineMap? = null
@@ -115,6 +125,9 @@ internal class EditorFoldingManager(
         brokenFoldRecords.removeAll { broken ->
             normalized.none { it.startLine == broken.startLine }
         }
+
+        // Parsing often republishes the same regions after a row-preserving edit.
+        if (foldRegionsDocumentVersion == documentVersion && foldRegions == normalized) return
 
         foldRegions = normalized
         foldRegionsDocumentVersion = documentVersion

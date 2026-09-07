@@ -61,6 +61,8 @@ py tools/checks/check_documentation.py
 
 ## Popup 回归固定入口
 
+编辑器软换行、行级着色缓存的工作量门禁和设备采样步骤见 [编辑器渲染性能回归](editor-render-performance.md)。
+
 编辑器 popup 的共享回归建议固定跑下面两组命令：
 
 ```bash

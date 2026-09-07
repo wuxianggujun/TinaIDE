@@ -44,6 +44,7 @@ interface SyntaxHighlighter {
     fun applyTextChange(change: TextChange, newText: String) {
         applyTextChange(change)
     }
+    /** Cache-only read. A miss schedules background work and notifies [setOnStateUpdated] when ready. */
     fun getLineSegments(line: Int): List<HighlightLineSegment> = emptyList()
     fun setOnStateUpdated(callback: (() -> Unit)?) {}
 

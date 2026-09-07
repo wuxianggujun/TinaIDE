@@ -8,7 +8,6 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import com.wuxianggujun.tinaide.core.textengine.TextChange
 import com.wuxianggujun.tinaide.core.treesitter.HighlightLineSegment
-import com.wuxianggujun.tinaide.core.treesitter.HighlightType
 import com.wuxianggujun.tinaide.core.treesitter.SyntaxHighlighter
 import java.util.LinkedHashMap
 import timber.log.Timber
@@ -37,15 +36,9 @@ internal class TextRenderer {
     // 直接复用 TreeSitter 的 HighlightLineSegment（字段完全重合 + 多一个 priority），
     // 避免每帧 cache miss 对每个片段再 new 一个等价的副本。见文件底部 typealias。
 
-    private data class LineSemanticSegment(
-        val startColumn: Int,
-        val endColumn: Int,
-        val tokenType: SemanticTokenType,
-        val tokenModifiers: Set<SemanticTokenModifier>
-    )
-
     private data class VisibleHighlightCacheKey(
         val highlighter: SyntaxHighlighter,
+        val lineMap: EditorFoldingManager.LineMap,
         val version: Long,
         val windowFirstLine: Int,
         val windowLastLine: Int,
@@ -53,6 +46,7 @@ internal class TextRenderer {
     )
 
     private data class VisibleSemanticCacheKey(
+        val lineMap: EditorFoldingManager.LineMap,
         val version: Long,
         val windowFirstLine: Int,
         val windowLastLine: Int,
@@ -61,7 +55,6 @@ internal class TextRenderer {
 
     private companion object {
         private const val DEFAULT_MAX_CACHE_SIZE = 512
-        private const val MAX_RETAINED_OVERLAYS = 4096
         private val EMPTY_INLAY_HINT_COLUMNS = IntArray(0)
         private val EMPTY_RAINBOW_COLORS = IntArray(0)
 
@@ -83,11 +76,7 @@ internal class TextRenderer {
 
     // 对称复用：与 visibleHighlightCache 同样的策略，失效路径只清 key 不动 map 内容。
     private val visibleSemanticCache: HashMap<Int, List<LineSemanticSegment>> = HashMap(128)
-    private val reusableSyntaxOverlays = ArrayList<TextRenderOverlay>(32)
-    private val reusableSemanticOverlays = ArrayList<TextRenderOverlay>(16)
-    private val syntaxOverlayPool = ArrayList<TextRenderOverlay>(32)
-    private val semanticOverlayPool = ArrayList<TextRenderOverlay>(16)
-    private val reusableTextRenderPlanner = TextRenderPlanner.Workspace()
+    private val lineRenderPlanCache = EditorLineRenderPlanCache()
     private val rainbowBracketComputer = RainbowBracketComputer()
     private var cachedRainbowColors: List<Color>? = null
     private var cachedRainbowColorsArgb: IntArray = EMPTY_RAINBOW_COLORS
@@ -252,73 +241,28 @@ internal class TextRenderer {
                         )
                     }
                 } else {
-                    val syntaxOverlays = reusableSyntaxOverlays
-                    syntaxOverlays.clear()
-                    var syntaxPoolIndex = 0
-                    segments.forEach { segment ->
-                        syntaxOverlays.add(
-                            obtainOverlay(
-                                pool = syntaxOverlayPool,
-                                index = syntaxPoolIndex++,
-                                startColumn = segment.startColumn,
-                                endColumn = segment.endColumn,
-                                color = scheme.syntax.colorOf(segment.type).toArgb(),
-                                blocksSemantic = segment.type == HighlightType.COMMENT,
-                            )
-                        )
-                    }
-                    val semOverlays = reusableSemanticOverlays
-                    semOverlays.clear()
-                    var semanticPoolIndex = 0
-                    semanticSegments.forEach { segment ->
-                        semOverlays.add(
-                            obtainOverlay(
-                                pool = semanticOverlayPool,
-                                index = semanticPoolIndex++,
-                                startColumn = segment.startColumn,
-                                endColumn = segment.endColumn,
-                                color = scheme.syntax.colorOfSemantic(
-                                    tokenType = segment.tokenType,
-                                    tokenModifiers = segment.tokenModifiers
-                                ).toArgb()
-                            )
-                        )
-                    }
-
-                    if (hasBrackets) {
-                        bracketInfos.forEach { bracket ->
-                            val depth = bracket.depth
-                            val colorIndex = depth % rainbowColors.size
-                            semOverlays.add(
-                                obtainOverlay(
-                                    pool = semanticOverlayPool,
-                                    index = semanticPoolIndex++,
-                                    startColumn = bracket.column,
-                                    endColumn = bracket.column + 1,
-                                    color = rainbowColorsArgb[colorIndex]
-                                )
-                            )
-                        }
-                        semOverlays.sortWith(compareBy<TextRenderOverlay> { it.startColumn }.thenByDescending { it.endColumn - it.startColumn })
-                    }
-
-                    val renderRuns = reusableTextRenderPlanner.buildRuns(
-                        visibleStartColumn = visualStartColumn,
-                        visibleEndColumn = visualEndColumn,
-                        defaultColor = defaultColor,
-                        syntaxOverlays = syntaxOverlays,
-                        semanticOverlays = semOverlays
+                    val plan = lineRenderPlanCache.getOrBuild(
+                        line = line,
+                        text = lookup.text,
+                        syntax = segments,
+                        semantic = semanticSegments,
+                        brackets = bracketInfos,
+                        colors = scheme.syntax,
+                        rainbowColors = rainbowColorsArgb,
                     )
-
-                    renderRuns.forEach { run ->
-                        if (run.endColumn <= run.startColumn) return@forEach
-                        textPaint.color = run.color
+                    var runIndex = plan.firstRunEndingAfter(visualStartColumn)
+                    while (runIndex < plan.runCount) {
+                        val startColumn = maxOf(plan.startColumnAt(runIndex), visualStartColumn)
+                        val endColumn = minOf(plan.endColumnAt(runIndex), visualEndColumn)
+                        if (startColumn >= visualEndColumn) break
+                        textPaint.color = plan.colorAt(runIndex++)
+                        if (endColumn <= startColumn) continue
                         if (containsTab) {
                             drawTextRangeWithTabStops(
                                 canvas = canvas.nativeCanvas,
                                 lineText = lookup.text,
-                                startColumn = run.startColumn,
-                                endColumn = run.endColumn,
+                                startColumn = startColumn,
+                                endColumn = endColumn,
                                 textStartX = baseX,
                                 baselineY = baselineY,
                                 paint = textPaint,
@@ -330,8 +274,8 @@ internal class TextRenderer {
                             drawClampedTextRange(
                                 canvas = canvas.nativeCanvas,
                                 lineText = lookup.text,
-                                startColumn = run.startColumn,
-                                endColumn = run.endColumn,
+                                startColumn = startColumn,
+                                endColumn = endColumn,
                                 fallbackX = xPos,
                                 baselineY = baselineY,
                                 paint = textPaint,
@@ -629,26 +573,6 @@ internal class TextRenderer {
         return prefixLayout.prefix[column.coerceIn(0, prefixLayout.length)]
     }
 
-    private fun obtainOverlay(
-        pool: MutableList<TextRenderOverlay>,
-        index: Int,
-        startColumn: Int,
-        endColumn: Int,
-        color: Int,
-        blocksSemantic: Boolean = false,
-    ): TextRenderOverlay {
-        if (index >= MAX_RETAINED_OVERLAYS) {
-            return TextRenderOverlay(startColumn, endColumn, color, blocksSemantic)
-        }
-        val overlay = pool.getOrNull(index)
-            ?: TextRenderOverlay(0, 0, 0).also(pool::add)
-        overlay.startColumn = startColumn
-        overlay.endColumn = endColumn
-        overlay.color = color
-        overlay.blocksSemantic = blocksSemantic
-        return overlay
-    }
-
     fun lineText(state: EditorState, line: Int): String {
         ensureCacheVersion(state.textBuffer.version)
         return getOrCacheLineText(state, line).text
@@ -660,6 +584,7 @@ internal class TextRenderer {
             cacheVersion = -1L
             visibleHighlightCacheKey = null
             visibleSemanticCacheKey = null
+            lineRenderPlanCache.clear()
         }
     }
 
@@ -685,6 +610,8 @@ internal class TextRenderer {
         lineCache.size
     }
 
+    internal fun renderPlanCacheStats(): EditorLineRenderPlanCache.Stats = lineRenderPlanCache.stats()
+
     internal fun resolveDrawHighlightSegmentsForVisibleWindow(
         state: EditorState,
         visibleLines: IntRange
@@ -701,12 +628,14 @@ internal class TextRenderer {
         val maxLine = lineCount - 1
         val windowFirstLine = (visibleLines.first - HIGHLIGHT_CACHE_MARGIN_LINES).coerceIn(0, maxLine)
         val windowLastLine = (visibleLines.last + HIGHLIGHT_CACHE_MARGIN_LINES).coerceIn(windowFirstLine, maxLine)
+        val lineMap = state.visibleDocumentLineMap()
 
         synchronized(cacheLock) {
             val cachedKey = visibleHighlightCacheKey
             if (
                 cachedKey != null &&
                 cachedKey.highlighter === highlighter &&
+                cachedKey.lineMap === lineMap &&
                 cachedKey.version == state.textBuffer.version &&
                 cachedKey.highlightVersion == state.highlightVersion &&
                 visibleLines.first >= cachedKey.windowFirstLine &&
@@ -719,15 +648,16 @@ internal class TextRenderer {
         val result = visibleHighlightCache
         synchronized(cacheLock) {
             result.clear()
-            for (line in windowFirstLine..windowLastLine) {
+            lineMap.forEachVisibleLine(windowFirstLine, windowLastLine) { line ->
                 val segments = highlighter.getLineSegments(line)
-                if (segments.isEmpty()) continue
+                if (segments.isEmpty()) return@forEachVisibleLine
                 // HighlightLineSegment 是 immutable data class，直接复用 highlighter 返回的 List 引用即可，
                 // 不需要再 `.map { LineHighlightSegment(...) }` 分配一轮等价副本。
                 result[line] = segments
             }
             visibleHighlightCacheKey = VisibleHighlightCacheKey(
                 highlighter = highlighter,
+                lineMap = lineMap,
                 version = state.textBuffer.version,
                 windowFirstLine = windowFirstLine,
                 windowLastLine = windowLastLine,
@@ -748,11 +678,13 @@ internal class TextRenderer {
         val maxLine = (state.textBuffer.lineCount - 1).coerceAtLeast(0)
         val windowFirstLine = (visibleLines.first - HIGHLIGHT_CACHE_MARGIN_LINES).coerceIn(0, maxLine)
         val windowLastLine = (visibleLines.last + HIGHLIGHT_CACHE_MARGIN_LINES).coerceIn(windowFirstLine, maxLine)
+        val lineMap = state.visibleDocumentLineMap()
 
         synchronized(cacheLock) {
             val cachedKey = visibleSemanticCacheKey
             if (
                 cachedKey != null &&
+                cachedKey.lineMap === lineMap &&
                 cachedKey.version == state.textBuffer.version &&
                 cachedKey.semanticTokensVersion == state.semanticTokensVersion &&
                 visibleLines.first >= cachedKey.windowFirstLine &&
@@ -765,9 +697,9 @@ internal class TextRenderer {
         val result = visibleSemanticCache
         synchronized(cacheLock) {
             result.clear()
-            for (line in windowFirstLine..windowLastLine) {
+            lineMap.forEachVisibleLine(windowFirstLine, windowLastLine) { line ->
                 val tokens = semanticTokensByLine[line].orEmpty()
-                if (tokens.isEmpty() || line >= state.textBuffer.lineCount) continue
+                if (tokens.isEmpty() || line >= state.textBuffer.lineCount) return@forEachVisibleLine
                 val lineText = lineText(state, line)
                 val lineSegments = ArrayList<LineSemanticSegment>(tokens.size)
                 tokens.forEach { token ->
@@ -783,7 +715,7 @@ internal class TextRenderer {
                         )
                     )
                 }
-                if (lineSegments.isEmpty()) continue
+                if (lineSegments.isEmpty()) return@forEachVisibleLine
                 if (lineSegments.size > 1) {
                     lineSegments.sortWith(
                         compareBy<LineSemanticSegment> { it.startColumn }
@@ -793,6 +725,7 @@ internal class TextRenderer {
                 result[line] = lineSegments
             }
             visibleSemanticCacheKey = VisibleSemanticCacheKey(
+                lineMap = lineMap,
                 version = state.textBuffer.version,
                 windowFirstLine = windowFirstLine,
                 windowLastLine = windowLastLine,
