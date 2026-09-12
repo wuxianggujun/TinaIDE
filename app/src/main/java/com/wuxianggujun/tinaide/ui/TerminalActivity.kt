@@ -1,6 +1,7 @@
 package com.wuxianggujun.tinaide.ui
 
 import android.os.Bundle
+import android.os.SystemClock
 import android.view.KeyEvent as AndroidKeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -64,11 +65,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
@@ -337,6 +334,13 @@ private fun TerminalScreen(
     val runExitCode = runSession?.runExitCode
     val runCompleted = isRunMode && runExitCode != null
 
+    // 程序结束时刻（uptimeMillis，与 KeyEvent.downTime 同一时钟）。所有关闭入口都以它为闸门：
+    // 结束前按下的那次 Enter，其残余事件（KeyUp、IME Done、已入队的点击）必须被拒绝，
+    // 否则"读一个数就退出"的程序会在用户刚敲完输入时立刻关掉界面。
+    val runEndedAtMs = remember(runSessionId, runExitCode) {
+        if (runExitCode != null) SystemClock.uptimeMillis() else null
+    }
+
     var ctrlEnabled by remember { mutableStateOf(false) }
     var altEnabled by remember { mutableStateOf(false) }
     val currentTheme by viewModel.currentTheme.collectAsStateWithLifecycle()
@@ -455,21 +459,33 @@ private fun TerminalScreen(
                             onKeyDown = { keyCode, event, _ ->
                                 if (!runCompleted) {
                                     false
-                                } else if (
-                                    event.action == AndroidKeyEvent.ACTION_DOWN &&
-                                    (keyCode == AndroidKeyEvent.KEYCODE_ENTER || keyCode == AndroidKeyEvent.KEYCODE_NUMPAD_ENTER)
-                                ) {
-                                    onBack()
+                                } else if (isRunTerminalCloseEnterKey(keyCode)) {
+                                    if (
+                                        shouldCloseRunTerminalOnKey(
+                                            runEndedAtMs = runEndedAtMs,
+                                            action = event.action,
+                                            repeatCount = event.repeatCount,
+                                            downTimeMs = event.downTime,
+                                        )
+                                    ) {
+                                        onBack()
+                                    }
+                                    // 无论是否关闭都吞掉：拒绝掉的 Enter 不能再落到别处。
                                     true
                                 } else {
                                     !event.isSystem()
                                 }
                             },
-                            onCodePoint = { codePoint, _, _ ->
+                            onCodePoint = { codePoint, ctrlDown, _ ->
                                 if (!runCompleted) {
                                     false
                                 } else {
-                                    if (codePoint == '\n'.code || codePoint == '\r'.code) {
+                                    // commitText 型软键盘（Hacker's Keyboard、OpenBoard 等）的回车走这里。
+                                    // Termux 会把 '\n' 折成 ctrl+'m'，所以不能只比对 '\n'/'\r'。
+                                    if (
+                                        isRunTerminalCloseEnterCodePoint(codePoint, ctrlDown) &&
+                                        hasRunTerminalCloseGracePassed(runEndedAtMs, SystemClock.uptimeMillis())
+                                    ) {
                                         onBack()
                                     }
                                     true
@@ -494,7 +510,10 @@ private fun TerminalScreen(
                     onKey = { key ->
                         if (!runCompleted) {
                             viewModel.sendText(key)
-                        } else if (key.contains('\n') || key.contains('\r')) {
+                        } else if (
+                            (key.contains('\n') || key.contains('\r')) &&
+                            hasRunTerminalCloseGracePassed(runEndedAtMs, SystemClock.uptimeMillis())
+                        ) {
                             onBack()
                         }
                     },
@@ -536,14 +555,32 @@ private fun TerminalScreen(
                     onValueChange = { /* 吞掉任意输入 */ },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(onDone = { onBack() }),
+                    // IME Done 是 IPC 调用、不带时间戳，只能靠宽限窗判断是否为在途按键的残余。
+                    keyboardActions = KeyboardActions(
+                        onDone = {
+                            if (hasRunTerminalCloseGracePassed(runEndedAtMs, SystemClock.uptimeMillis())) {
+                                onBack()
+                            }
+                        }
+                    ),
                     modifier = Modifier
                         .size(1.dp)
                         .alpha(0f)
                         .focusRequester(focusRequester)
                         .onPreviewKeyEvent { event ->
-                            if (event.type == KeyEventType.KeyUp && event.key == Key.Enter) {
-                                onBack()
+                            val nativeEvent = event.nativeKeyEvent
+                            if (isRunTerminalCloseEnterKey(nativeEvent.keyCode)) {
+                                if (
+                                    shouldCloseRunTerminalOnKey(
+                                        runEndedAtMs = runEndedAtMs,
+                                        action = nativeEvent.action,
+                                        repeatCount = nativeEvent.repeatCount,
+                                        downTimeMs = nativeEvent.downTime,
+                                    )
+                                ) {
+                                    onBack()
+                                }
+                                // 拒绝掉的 Enter 也要消费，避免触发输入框自身的 ImeAction。
                                 true
                             } else {
                                 false
@@ -581,6 +618,42 @@ private fun TerminalScreen(
         )
     }
 }
+
+/**
+ * 程序结束后，关闭运行终端的宽限期。
+ *
+ * 用于没有携带时间戳的入口（IME Done、快捷键栏点击）：程序结束瞬间已经在途的事件都落在窗内。
+ */
+internal const val RUN_TERMINAL_CLOSE_GRACE_MS = 300L
+
+internal fun isRunTerminalCloseEnterKey(keyCode: Int): Boolean =
+    keyCode == AndroidKeyEvent.KEYCODE_ENTER || keyCode == AndroidKeyEvent.KEYCODE_NUMPAD_ENTER
+
+/** Termux 把 commitText 的 '\n' 折成 ctrl+'m'（见 TerminalView.sendTextToTerminal）。 */
+internal fun isRunTerminalCloseEnterCodePoint(codePoint: Int, ctrlDown: Boolean): Boolean =
+    codePoint == '\n'.code ||
+        codePoint == '\r'.code ||
+        (ctrlDown && (codePoint == 'm'.code || codePoint == 'j'.code))
+
+internal fun hasRunTerminalCloseGracePassed(runEndedAtMs: Long?, nowMs: Long): Boolean =
+    runEndedAtMs != null && nowMs - runEndedAtMs >= RUN_TERMINAL_CLOSE_GRACE_MS
+
+/**
+ * 只有程序结束之后新按下的 Enter 才关闭终端。
+ *
+ * `downTimeMs` 早于程序结束时刻即说明这次按键在程序结束前就按下了——它写入的是程序的标准输入，
+ * 其抬起/重复事件不能顺带关掉界面。
+ */
+internal fun shouldCloseRunTerminalOnKey(
+    runEndedAtMs: Long?,
+    action: Int,
+    repeatCount: Int,
+    downTimeMs: Long,
+): Boolean =
+    runEndedAtMs != null &&
+        action == AndroidKeyEvent.ACTION_DOWN &&
+        repeatCount == 0 &&
+        downTimeMs > runEndedAtMs
 
 /**
  * 标签列表弹窗
