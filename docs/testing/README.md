@@ -1,6 +1,6 @@
 # TinaIDE 测试文档
 
-> 最后人工核验：2026-08-21
+> 最后人工核验：2026-09-09
 
 本目录只保留当前仍值得固定维护的测试入口说明。
 
@@ -13,7 +13,7 @@
 
 ## 文本编辑与工作区定向回归
 
-以下测试类已于 2026-07-31 在对应 `src/test` 目录核对存在。按模块分别运行：
+以下测试类已于 2026-09-09 在对应 `src/test` 目录核对存在。按模块分别运行：
 
 ```bash
 ./gradlew :core:text-engine:testDebugUnitTest --tests "com.wuxianggujun.tinaide.core.textengine.EditHistoryTest" --tests "com.wuxianggujun.tinaide.core.textengine.LineIndexTest" --tests "com.wuxianggujun.tinaide.core.textengine.RopeTextBufferTest" --tests "com.wuxianggujun.tinaide.core.textengine.TextScanKernelTest" --no-daemon --console=plain
@@ -87,12 +87,12 @@ py tools/checks/check_documentation.py
 ```
 
 2026-07-15 的基线为 39 个测试套件、176 项测试，要求 0 failures、0 errors、0 skipped。
+该数字是当时的历史基线，不是当前值：`core/plugin/src/test` 现有 42 个 `*Test.kt`，套件数已经增长。
+沿用这一门禁时按“0 failures / 0 errors / 0 skipped”判断，并从本次运行的 XML 重新取套件与用例数，不要拿 176 当作预期值。
 其中包含 workspace 确定性排序、runtime unavailable 单次加载、权限授予后激活，以及并发故障写入线程回收。
 教程目录/文章状态和帮助全文搜索属于 app/feature 帮助测试，不计入这 176 项。测试数变化时应核对 XML，而不是只看 Gradle 的 `BUILD SUCCESSFUL`。
 
 `Dev Static Checks` 会运行该任务，并额外固定执行教程/帮助 JVM 回归和 App 教程文章状态测试。插件、教程或帮助 JVM 步骤失败时会上传：
-
-GitHub Actions 的 `CI=true` 配置只使用官方 Google/Maven Central/Gradle Plugin Portal，避免动态版本解析被国内镜像的临时 metadata 错误阻断；本地非 CI 环境仍保留 Aliyun 镜像优先策略。
 
 - `core/plugin/build/test-results/testDebugUnitTest/`
 - `core/plugin/build/reports/tests/testDebugUnitTest/`
@@ -105,6 +105,8 @@ GitHub Actions 的 `CI=true` 配置只使用官方 Google/Maven Central/Gradle P
 
 制品名为 `plugin-jvm-test-reports-<run_id>-<run_attempt>`，保留 14 天；成功运行不会上传失败报告。
 最近一次确认的成功记录为 run `29691804039`（提交 `76173ebe4`）；插件、帮助、教程和 App 文章状态两个 Gradle 步骤及最终 Gradle 进程清理均成功。
+
+GitHub Actions 的 `CI=true` 配置只使用官方 Google/Maven Central/Gradle Plugin Portal，避免动态版本解析被国内镜像的临时 metadata 错误阻断；本地非 CI 环境仍保留 Aliyun 镜像优先策略。
 
 ## 教程与帮助 JVM 稳定性门禁
 

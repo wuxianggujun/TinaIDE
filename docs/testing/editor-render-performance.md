@@ -1,5 +1,14 @@
 # 编辑器渲染性能回归
 
+> 最后人工核验：2026-09-09
+
+被测实现入口：
+
+- 视觉行 Fenwick 索引：`core/editor-view/src/main/java/.../editorview/EditorVisualLineIndex.kt`
+- 增量映射与线性重建阈值：`core/editor-view/src/main/java/.../editorview/EditorVisualLineMapper.kt`（`MAX_INCREMENTAL_LINE_UPDATES`）
+- 着色计划缓存与上限：`core/editor-view/src/main/java/.../editorview/EditorLineRenderPlanCache.kt`
+- 计数入口：`EditorRenderEngine.performanceSnapshot()`，实现位于 `EditorRenderer.kt`
+
 ## 本地定向验证
 
 只运行 `core:editor-view` 的测试及其编译依赖，不构建 App。一次性 Gradle 命令使用 `--no-daemon`；其他会话正在构建时不要并发启动 Gradle。后台测试执行时间上限为 60 秒，依赖准备和编译另计。
@@ -14,7 +23,7 @@ Windows JVM 使用 UTF-8。若本机 Java 的 loopback 初始化依赖临时目�
 
 - 10 万行文档首尾两次行内编辑：复用原视觉行索引，只读取 2 个受影响行。
 - 普通行内编辑：计数原地失效，Fenwick 累计索引按点更新；不复制全文数组。
-- 批量编辑或 Hint 更新超过 1024 个不同脏行：丢弃脏行集合并线性重建索引，未失效的段数仍复用。
+- 批量编辑或 Hint 更新超过 1024 个不同脏行（`MAX_INCREMENTAL_LINE_UPDATES`）：丢弃脏行集合并线性重建索引，未失效的段数仍复用。
 - 折叠隐藏行：编辑时不测量，展开后再计算。
 - 同版本、相同折叠区间的解析回传不重建映射，避免抵消行内编辑的增量更新。
 - Inlay Hint：仅重算新增、改变和删除提示的行；增删文档行时不能搬运旧提示宽度。

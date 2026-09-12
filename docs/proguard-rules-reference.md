@@ -1,6 +1,6 @@
 # TinaIDE ProGuard/R8 混淆规则参考文档
 
-> 最后更新：2026-07-03 | 维护者：TinaIDE Team
+> 最后更新：2026-09-09 | 维护者：TinaIDE Team
 
 ## 1. 概述
 
@@ -37,7 +37,8 @@ R8 对代码执行三项操作：
 ┌─────────────────────┐
 │  各模块 consumer-    │ ← 由 convention plugin 自动注册：
 │  rules.pro           │   consumerProguardFiles("consumer-rules.pro")
-└─────────┬───────────┘   位于 build-logic/TinaAndroidLibraryPlugin.kt:23
+└─────────┬───────────┘   位于 build-logic/convention/src/main/kotlin/
+          │               TinaAndroidLibraryPlugin.kt:24
           │
           ▼
 ┌─────────────────────┐
@@ -51,6 +52,8 @@ R8 对代码执行三项操作：
 **原则**：哪个模块引入依赖，就在那个模块的 `consumer-rules.pro` 写对应规则。
 
 > **Composite Build 注意事项**：通过 `includeBuild()` 引入的外部项目（如 `external/tina-android-tree-sitter`）不受主项目 Convention Plugin 管理。其 `consumer-rules.pro` **必须在自身的 `build.gradle.kts` 中显式声明** `consumerProguardFiles("consumer-rules.pro")`，否则规则文件虽存在但不会被 AGP 合并到最终 R8 配置中。建议在 `app/proguard-rules.pro` 为这类模块添加安全网规则。
+
+> **Vendored 上游模块注意事项**：`external/termux-x11/lorie`（`:termux-x11-lorie`）保留上游文件名 `proguard-rules.pro`，并在自身 `build.gradle.kts` 中通过 `consumerProguardFiles("proguard-rules.pro")` 声明。检查这类模块时不要只按 `consumer-rules.pro` 文件名搜索，应确认 `consumerProguardFiles(...)` 实际引用的文件名。
 
 ---
 
@@ -72,7 +75,8 @@ R8 对代码执行三项操作：
 | `core:tree-sitter` | grammar TSLanguage 子类 | `Class.forName()` 加载语法绑定 |
 | `core:plugin` | LuaJava JNI + 回调接口 | JNI native 方法 + Lua↔Java 互调 |
 | `core:apk-builder` | BouncyCastle JCA provider + apksig ASN.1 注解反射 + ARSCLib 告警抑制 | JcaContentSignerBuilder 内部 SPI/反射算法查找；apksig 签名时通过运行时注解和反射解析 X.509/PKCS#7 模型 |
-| 其他 core 模块 | 空（无需额外规则） | — |
+| `core:storage` | `TinaFileProvider` 类与构造路径 | Manifest 反射实例化 Provider，构造函数显式绑定 `R.xml.file_paths` |
+| 其他 core 模块 | 空（无需额外规则）。包括 `core:linux-desktop`：X11 native 方法由 termux-x11 模块自带规则覆盖 | — |
 
 ### 2.3 Feature 模块 consumer-rules.pro
 
@@ -90,6 +94,7 @@ R8 对代码执行三项操作：
 | `external/termux-terminal` | 空（上游模板） | — |
 | `external/rikkahub/embedded` | Kotlin Serialization、RikkaHub 内部 JLatexMath、Jackson/Auth0 JWT、JVM-only API 告警抑制 | embedded RikkaHub 聊天/设置页运行时、JWT/Jackson 反射链、Ktor/JVM 可选 API |
 | `external/rikkahub/document` | MuPDF 与文档解析器 keep | RikkaHub 文档解析能力 |
+| `external/termux-x11/lorie`（`:termux-x11-lorie`） | `LorieView` native 方法 + `resetIme()`、`CmdEntryPoint.main`、`performReceive` 回调、Android 隐藏 API `-dontwarn` | libXlorie.so 通过 JNI `FindClass`/`RegisterNatives` 反查 Java 侧；`:x11` 进程入口 |
 
 ---
 

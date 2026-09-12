@@ -1,6 +1,6 @@
 # TinaIDE 功能路线图
 
-> 更新日期：2026-08-21
+> 更新日期：2026-09-09
 
 TinaIDE 是一个面向 Android 设备的轻量级 C/C++ IDE。本文档作为当前仓库“已实现功能总览 + 待实现规划”的主文档。
 
@@ -15,6 +15,8 @@ TinaIDE 是一个面向 Android 设备的轻量级 C/C++ IDE。本文档作为�
 - 近期最值得优先补齐：用户项目模板编辑对话框，以及插件脚本 API / 权限 / 生命周期的继续收敛。
 - 编辑器后续增强按移动端收益排序：先补安全执行与高频输入体验，再考虑 Diff View、Git Gutter / Blame、多光标、列选择和 Minimap。
 - 当前产品范围继续聚焦 C/C++；更多语言与云同步暂不规划，不进入近期实现队列。
+- 许可证口径（0.18.29）：项目整体已改用 **GPL-3.0-or-later**，起因是内嵌 GPL-3.0 的 termux-x11。详见 `LICENSE`、`COPYRIGHT.md`、`NOTICE.md`。
+- X11 图形桌面（0.18.29）：`:core:linux-desktop` 模块、`:x11` 进程宿主、Koin 装配与设置页入口已落地，但**尚未在真机跑通 XFCE 桌面**。代码路径完整不等于设备可用，不能按"已完成功能"对外描述。
 
 ## ✅ 代码扫描 TODO 核对结果
 
@@ -38,7 +40,7 @@ TinaIDE 是一个面向 Android 设备的轻量级 C/C++ IDE。本文档作为�
 |------|------|----------|
 | 多标签编辑器 | Tina Editor + Tree-sitter 高亮 | `EditorContainer.kt`, `DocumentSession.kt` |
 | 语法高亮 | C/C++/CMake/Bash/JSON/Make/YAML | `TreeSitterQueryLoader` + `syncTreeSitterQueries` |
-| 代码折叠 | 行号区域折叠图标、快捷键支持 | `FoldingManager.java` |
+| 代码折叠 | 行号区域折叠图标、快捷键支持 | `EditorFoldingManager.kt`（`core:editor-view`） |
 | 代码格式化 | clang-format 集成 | `CodeFormatter.kt` |
 | 头文件跳转 | include 路径解析和跳转 | `HeaderNavigationTextAction.kt` |
 | 全局搜索 | 跨文件搜索、正则表达式 | `ProjectSearchEngine.kt`, `GlobalSearchScreen.kt` |
@@ -141,7 +143,7 @@ TinaIDE 是一个面向 Android 设备的轻量级 C/C++ IDE。本文档作为�
 - [x] 书签备注
 
 **技术要点**：
-- 扩展 `BreakpointAwareCodeEditor`
+- 书签与断点共用 `core:editor-view` 的行号区域标记渲染（旧 Sora 时代的 `BreakpointAwareCodeEditor` 已随编辑器重写移除）
 - JSON 持久化存储
 - 类似断点的视觉标记
 
@@ -286,6 +288,7 @@ TinaIDE 是一个面向 Android 设备的轻量级 C/C++ IDE。本文档作为�
 
 | 日期 | 更新内容 |
 |------|----------|
+| 2026-09-09 | 同步 0.18.29 口径：补充 GPL-3.0-or-later 许可证变更与 X11 桌面（真机未验证）状态；修正编辑器重写后遗留的 `FoldingManager.java`、`BreakpointAwareCodeEditor` 旧引用 |
 | 2026-07-31 | 对齐当前编辑器与工作台：修正参数提示和构建日志源码引用，明确底部面板默认/按需标签与运行输出去向 |
 | 2026-07-03 | 对齐插件系统现状：快捷键、编辑器工具栏与插件设置页已落地，后续重点收敛脚本 API / 权限 / 生命周期 |
 | 2026-05-21 | 同步开源版账号/激活移除口径；后端、管理端、账号/激活/会员源码迁出公开仓库 |

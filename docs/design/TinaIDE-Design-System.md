@@ -1,7 +1,8 @@
 # TinaIDE 设计系统规范
 
-> 版本：1.3
-> 更新日期：2026-02-25
+> 版本：1.4
+> 更新日期：2026-09-09
+> 最后人工核验：2026-09-09
 > 状态：Active
 
 ## 目录
@@ -46,6 +47,15 @@ TinaIDE 采用 **Material Design 3** 作为基础设计语言，在此基础上�
 | `TinaTextFields.kt` | 输入框组件 |
 | `TinaBadges.kt` | 徽章组件 |
 | `TinaDividers.kt` | 分隔线组件 |
+| `TinaMenus.kt` | 菜单组件 |
+| `TinaSkeletons.kt` | 骨架屏占位组件 |
+| `TinaPullToRefresh.kt` | 下拉刷新容器 |
+| `TinaBackHandlers.kt` | 返回手势/返回键处理 |
+| `MarkdownViewer.kt` | Markdown 渲染（帮助、说明类页面复用） |
+| `ProjectIcon.kt` | 项目图标 |
+| `DetailScreenComponents.kt` | 详情页通用区块 |
+
+主题与图标在同模块的相邻目录：`ui/theme/TinaIDETheme.kt`、`ui/theme/RikkaHubInspiredColorSchemes.kt`、`ui/compose/icons/`。
 
 ---
 
@@ -153,6 +163,9 @@ TinaSemanticColors.Diagnostic.warning   // 警告 - 橙色 #FF9800
 TinaSemanticColors.Diagnostic.info()    // 信息 - 使用 MaterialTheme.colorScheme.primary
 TinaSemanticColors.Diagnostic.hint()    // 提示 - 使用 MaterialTheme.colorScheme.onSurfaceVariant
 ```
+
+`TinaSemanticColors` 还包含上表未列出的 `successBright` / `errorBright` / `warningYellow` / `neutralDark`
+以及 `Project`、`Language` 两个子对象；新增语义色前先读 `TinaSemanticColors.kt`，避免重复定义。
 
 ### 使用规范
 
@@ -500,9 +513,16 @@ TinaCard(
 |------|------|
 | `TinaAlertDialog` | 基础对话框 |
 | `TinaConfirmDialog` | 确认对话框（确认/取消） |
+| `TinaThreeActionDialog` | 三按钮对话框 |
 | `TinaInfoDialog` | 信息对话框（仅关闭按钮） |
+| `TinaErrorDialog` | 错误对话框 |
 | `TinaInputDialog` | 输入对话框 |
+| `TinaValidatedInputDialog` | 带校验的输入对话框 |
 | `TinaLoadingDialog` | 加载对话框 |
+| `TinaSingleChoiceDialog` | 单选对话框 |
+| `TinaActionChoiceDialog` | 操作选择对话框 |
+| `TinaSliderDialog` | 滑块对话框 |
+| `TinaCustomDialog` / `TinaCustomDialogScaffold` | 自定义内容对话框骨架 |
 #### 使用示例
 
 ```kotlin

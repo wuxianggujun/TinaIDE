@@ -1,8 +1,8 @@
 # compile_commands 与依赖包同步机制
 
 > 创建日期：2026-06-12
-> 最后复核：2026-08-13
-> 适用范围：`CompileDatabaseProvider`、`LspEditorManager` 的 C/C++ compile_commands 生成与复用链路
+> 最后人工核验：2026-09-09
+> 适用范围：`CompileDatabaseProvider`、`LspCompileSetupCache` 的 C/C++ compile_commands 生成与复用链路
 
 ## 概述
 
@@ -46,9 +46,13 @@ SDL3 项目带 `CMakeLists.txt`，所以 `isCmakeProject = true`。问题在于�
 
 `EditorContainerState.refreshOpenCxxEditorsForDependencyChange()` 的旧逻辑在「当前没有打开的 C/C++ 编辑器」时直接 `return`，不清任何缓存。于是「项目开着 + 装包 + 当时没有活跃 C/C++ 文件」时，内存缓存原封不动。
 
-**第三层：`compileSetupCache` 内存缓存绕过指纹判断。**
+**第三层：compile setup 内存缓存绕过指纹判断。**
 
-`LspEditorManager.resolveCompileSetup()` 第一步就查内存级 `compileSetupCache`，命中即返回旧的 compile_commands 目录——**这发生在 `prepare()` 指纹判断之前**。只要这个缓存残留，第一层的修复也没机会生效。
+`LspEditorManager.resolveCompileSetup()` 第一步就查内存级缓存，命中即返回旧的 compile_commands 目录——**这发生在 `prepare()` 指纹判断之前**。只要这个缓存残留，第一层的修复也没机会生效。
+
+> 当前代码里这层缓存已从 `LspEditorManager` 抽到 `LspCompileSetupCache`（`core:editor-lsp`），
+> `resolveCompileSetup()` 只是转调 `compileSetupCache.resolve(...)`。下文的机制不变，
+> 类名与方法名按当前实现阅读。
 
 ## 解决方案
 
@@ -99,17 +103,25 @@ fun refreshOpenCxxEditorsForDependencyChange(revision: Long) {
 
 ### 3. 缓存命中时的指纹自愈（兜底防线）
 
-`resolveCompileSetup()` 命中 `compileSetupCache` 时，再校验一次包指纹——指纹变了就丢弃旧缓存重算。即使将来某条新路径漏掉了显式失效调用，只要已安装包发生变化，attach 时也能自动纠正：
+`LspCompileSetupCache.resolve()` 命中缓存时，再校验一次编译输入——变了就丢弃旧缓存重算。即使将来某条新路径漏掉了显式失效调用，只要已安装包发生变化，attach 时也能自动纠正：
 
 ```kotlin
-compileSetupCache[key]?.let { cached ->
-    if (isCompileSetupStillFresh(context, cached)) return cached
-    // 指纹已变，移除旧缓存走正常重算
-    compileSetupCache.remove(key)
+cachedSetup?.let { cached ->
+    if (isStillFresh(context, cached, cppStandardOverride)) { /* 命中返回 */ }
+    // 输入已变，移除旧缓存走正常重算
 }
 ```
 
-指纹计算（`CompileDatabaseProvider.computePackageFingerprint()`）会扫描 `installed-packages` 目录并做 SHA-256，因此放在 `Dispatchers.IO` 执行；计算失败时保守视为「仍有效」，避免偶发 IO 错误反复重建拖慢 attach。
+`isStillFresh()` 不只比包指纹，还比运行时身份与 C++ 标准：
+
+- `computePackageFingerprint(workspaceRoot)` 包指纹
+- `resolveRuntimeIdentity(workspaceRoot)` 的 `toolchainId` / `sysrootProfileId` / `sysrootApiLevel`
+- `ProjectCppStandardResolver.resolveFlag(...)` 解析出的 C++ 标准 flag
+
+指纹计算会扫描 `installed-packages` 目录并做 SHA-256，因此放在 `Dispatchers.IO` 执行；计算失败时保守视为「仍有效」，避免偶发 IO 错误反复重建拖慢 attach。
+
+缓存自身还带 `revision` 版本号：`clear()` / `invalidateForProject()` 都会自增 revision，正在进行的
+`resolve()` 发现 revision 变化会抛 `CancellationException`，避免把过期结果写回缓存。
 
 ## 包指纹的构成
 
@@ -136,5 +148,6 @@ compileSetupCache[key]?.let { cached ->
 | [`CompileCommandsGenerator.kt`](../../core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/CompileCommandsGenerator.kt) | 兜底 DB 的实际生成（拼接 clang 编译参数） |
 | [`InstalledPackagePathResolver.kt`](../../core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/InstalledPackagePathResolver.kt) | 解析已安装包的 include/lib/prefix 路径 |
 | [`PackageDependencyEvents.kt`](../../core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/PackageDependencyEvents.kt) | 包安装/卸载事件广播 |
-| [`LspEditorManager.kt`](../../core/editor-lsp/src/main/java/com/wuxianggujun/tinaide/core/editorlsp/LspEditorManager.kt) | `compileSetupCache` 管理、缓存失效与指纹自愈 |
+| [`LspCompileSetupCache.kt`](../../core/editor-lsp/src/main/java/com/wuxianggujun/tinaide/core/editorlsp/LspCompileSetupCache.kt) | compile setup 缓存、并发合并、失效 revision 与指纹自愈 |
+| [`LspEditorManager.kt`](../../core/editor-lsp/src/main/java/com/wuxianggujun/tinaide/core/editorlsp/LspEditorManager.kt) | attach 编排；`invalidateCompileSetupCache()` 转调缓存 `clear()` |
 | [`EditorContainerState.kt`](../../app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerState.kt) | 订阅包变更事件并触发刷新 |

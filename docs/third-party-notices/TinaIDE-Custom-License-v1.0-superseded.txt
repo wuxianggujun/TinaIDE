@@ -1,3 +1,20 @@
+============================================================
+ARCHIVED / SUPERSEDED — NOT THE CURRENT LICENSE OF TinaIDE
+============================================================
+
+This file is kept for historical reference only.
+
+As of 2026-09-03, TinaIDE is distributed under GPL-3.0-or-later.
+See the repository root LICENSE, COPYRIGHT.md and NOTICE.md.
+
+The terms below (in particular the "version 1.0.0 only" scope and
+the personal / non-commercial restrictions in sections 4(a) and 4(b))
+NO LONGER APPLY and must not be quoted as current terms.
+
+The license text below is preserved verbatim and unmodified.
+
+============================================================
+
 # TinaIDE Open Source License
 
 Version 1.0, January 2025

@@ -1,6 +1,8 @@
 # 自研 Linux 发行版运行时
 
-> 最后人工核验：2026-07-10
+> 最后人工核验：2026-09-09
+>
+> 0.18.29 起 Alpine 支持已移除，Ubuntu 24.04 LTS 是唯一运行时。X11 桌面链路（`:core:linux-desktop`）代码已接通，但**尚未在真机跑通 XFCE 桌面**。
 
 本文记录 TinaIDE 当前 Linux rootfs 管理入口。当前实现已经收敛到
 `:core:linux-distro` + `:core:proot`，不再保留旧脚本模块、灰度开关或兼容分支。
