@@ -1,13 +1,14 @@
 package com.wuxianggujun.tinaide.core.editorview
 
 import android.graphics.Paint
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import com.wuxianggujun.tinaide.core.textengine.TextChange
 import com.wuxianggujun.tinaide.core.treesitter.HighlightLineSegment
-import com.wuxianggujun.tinaide.core.treesitter.HighlightType
+import com.wuxianggujun.tinaide.core.treesitter.SyntaxHighlighter
 import java.util.LinkedHashMap
 import timber.log.Timber
 
@@ -35,14 +36,9 @@ internal class TextRenderer {
     // 直接复用 TreeSitter 的 HighlightLineSegment（字段完全重合 + 多一个 priority），
     // 避免每帧 cache miss 对每个片段再 new 一个等价的副本。见文件底部 typealias。
 
-    private data class LineSemanticSegment(
-        val startColumn: Int,
-        val endColumn: Int,
-        val tokenType: SemanticTokenType,
-        val tokenModifiers: Set<SemanticTokenModifier>
-    )
-
     private data class VisibleHighlightCacheKey(
+        val highlighter: SyntaxHighlighter,
+        val lineMap: EditorFoldingManager.LineMap,
         val version: Long,
         val windowFirstLine: Int,
         val windowLastLine: Int,
@@ -50,6 +46,7 @@ internal class TextRenderer {
     )
 
     private data class VisibleSemanticCacheKey(
+        val lineMap: EditorFoldingManager.LineMap,
         val version: Long,
         val windowFirstLine: Int,
         val windowLastLine: Int,
@@ -59,10 +56,11 @@ internal class TextRenderer {
     private companion object {
         private const val DEFAULT_MAX_CACHE_SIZE = 512
         private val EMPTY_INLAY_HINT_COLUMNS = IntArray(0)
+        private val EMPTY_RAINBOW_COLORS = IntArray(0)
 
-        // 预取窗口调到 200 行：与 IncrementalTreeSitterHighlightState 的 lineCache 预热配合，
-        // 快速滚动时远距离行也能在到达可见区之前就命中缓存，消除"滚动追指"。
-        private const val HIGHLIGHT_CACHE_MARGIN_LINES = 200
+        // 这里只负责渲染侧的短窗口缓存。Tree-sitter 自身在 worker 线程预热，
+        // 主线程不应在一次滚动越过缓存时同步解析数百行。
+        private const val HIGHLIGHT_CACHE_MARGIN_LINES = 32
     }
 
     private val cacheLock = Any()
@@ -78,9 +76,10 @@ internal class TextRenderer {
 
     // 对称复用：与 visibleHighlightCache 同样的策略，失效路径只清 key 不动 map 内容。
     private val visibleSemanticCache: HashMap<Int, List<LineSemanticSegment>> = HashMap(128)
-    private val reusableSyntaxOverlays = ArrayList<TextRenderOverlay>(32)
-    private val reusableSemanticOverlays = ArrayList<TextRenderOverlay>(16)
+    private val lineRenderPlanCache = EditorLineRenderPlanCache()
     private val rainbowBracketComputer = RainbowBracketComputer()
+    private var cachedRainbowColors: List<Color>? = null
+    private var cachedRainbowColorsArgb: IntArray = EMPTY_RAINBOW_COLORS
     private val foldBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
     }
@@ -122,9 +121,9 @@ internal class TextRenderer {
         val rainbowEnabled = rainbowColors.isNotEmpty() &&
             rainbowBracketComputer.isEnabled(state.config, state.textBuffer.lineCount)
         val rainbowColorsArgb = if (rainbowEnabled) {
-            IntArray(rainbowColors.size) { rainbowColors[it].toArgb() }
+            rainbowColorsArgb(rainbowColors)
         } else {
-            IntArray(0)
+            EMPTY_RAINBOW_COLORS
         }
         val visibleBracketInfos = if (rainbowEnabled) {
             rainbowBracketComputer.computeVisibleLineBrackets(
@@ -145,6 +144,7 @@ internal class TextRenderer {
             visibleLines = visibleDocLines
         )
         val highlightPrepMs = (System.nanoTime() - highlightPrepStartNs) / 1_000_000L
+        val defaultColor = scheme.syntax.defaultText.toArgb()
 
         drawScope.drawIntoCanvas { canvas ->
             ensureBadgeMetrics(textPaint)
@@ -201,19 +201,12 @@ internal class TextRenderer {
                     null
                 }
                 val prefix = prefixLayout?.prefix
-                fun prefixAdvance(column: Int): Float {
-                    if (prefixLayout == null || prefix == null) return 0f
-                    val safeColumn = column.coerceIn(0, prefixLayout.length)
-                    return prefix[safeColumn]
-                }
                 val segmentStartAdvance = if (prefixLayout == null) {
                     0f
                 } else {
                     prefixLayout.segmentStartAdvance(visualStartColumn)
                 }
                 val baseX = xPos - segmentStartAdvance
-
-                val defaultColor = scheme.syntax.defaultText.toArgb()
 
                 val bracketInfos = visibleBracketInfos[line].orEmpty()
 
@@ -229,7 +222,7 @@ internal class TextRenderer {
                             textStartX = baseX,
                             baselineY = baselineY,
                             paint = textPaint,
-                            prefixAdvance = ::prefixAdvance,
+                            prefixLayout = prefixLayout,
                             tabColumns = tabColumns,
                             inlayHintColumns = prefixLayout?.inlayHintColumns ?: EMPTY_INLAY_HINT_COLUMNS,
                         )
@@ -242,76 +235,38 @@ internal class TextRenderer {
                             fallbackX = xPos,
                             baselineY = baselineY,
                             paint = textPaint,
-                            prefixAdvance = ::prefixAdvance,
+                            prefixLayout = prefixLayout,
                             segmentStartAdvance = segmentStartAdvance,
                             inlayHintColumns = prefixLayout?.inlayHintColumns ?: EMPTY_INLAY_HINT_COLUMNS,
                         )
                     }
                 } else {
-                    val syntaxOverlays = reusableSyntaxOverlays
-                    syntaxOverlays.clear()
-                    segments.forEach { segment ->
-                        syntaxOverlays.add(
-                            TextRenderOverlay(
-                                startColumn = segment.startColumn,
-                                endColumn = segment.endColumn,
-                                color = scheme.syntax.colorOf(segment.type).toArgb(),
-                                blocksSemantic = segment.type == HighlightType.COMMENT,
-                            )
-                        )
-                    }
-                    val semOverlays = reusableSemanticOverlays
-                    semOverlays.clear()
-                    semanticSegments.forEach { segment ->
-                        semOverlays.add(
-                            TextRenderOverlay(
-                                startColumn = segment.startColumn,
-                                endColumn = segment.endColumn,
-                                color = scheme.syntax.colorOfSemantic(
-                                    tokenType = segment.tokenType,
-                                    tokenModifiers = segment.tokenModifiers
-                                ).toArgb()
-                            )
-                        )
-                    }
-
-                    if (hasBrackets) {
-                        bracketInfos.forEach { bracket ->
-                            val depth = bracket.depth
-                            val colorIndex = depth % rainbowColors.size
-                            semOverlays.add(
-                                TextRenderOverlay(
-                                    startColumn = bracket.column,
-                                    endColumn = bracket.column + 1,
-                                    color = rainbowColorsArgb[colorIndex]
-                                )
-                            )
-                        }
-                        semOverlays.sortWith(compareBy<TextRenderOverlay> { it.startColumn }.thenByDescending { it.endColumn - it.startColumn })
-                    }
-
-                    val renderRuns =
-                        TextRenderPlanner.buildRuns(
-                            visibleStartColumn = visualStartColumn,
-                            visibleEndColumn = visualEndColumn,
-                            defaultColor = defaultColor,
-                            syntaxOverlays = syntaxOverlays,
-                            semanticOverlays = semOverlays
-                        )
-
-                    renderRuns.forEach { run ->
-                        if (run.endColumn <= run.startColumn) return@forEach
-                        textPaint.color = run.color
+                    val plan = lineRenderPlanCache.getOrBuild(
+                        line = line,
+                        text = lookup.text,
+                        syntax = segments,
+                        semantic = semanticSegments,
+                        brackets = bracketInfos,
+                        colors = scheme.syntax,
+                        rainbowColors = rainbowColorsArgb,
+                    )
+                    var runIndex = plan.firstRunEndingAfter(visualStartColumn)
+                    while (runIndex < plan.runCount) {
+                        val startColumn = maxOf(plan.startColumnAt(runIndex), visualStartColumn)
+                        val endColumn = minOf(plan.endColumnAt(runIndex), visualEndColumn)
+                        if (startColumn >= visualEndColumn) break
+                        textPaint.color = plan.colorAt(runIndex++)
+                        if (endColumn <= startColumn) continue
                         if (containsTab) {
                             drawTextRangeWithTabStops(
                                 canvas = canvas.nativeCanvas,
                                 lineText = lookup.text,
-                                startColumn = run.startColumn,
-                                endColumn = run.endColumn,
+                                startColumn = startColumn,
+                                endColumn = endColumn,
                                 textStartX = baseX,
                                 baselineY = baselineY,
                                 paint = textPaint,
-                                prefixAdvance = ::prefixAdvance,
+                                prefixLayout = prefixLayout,
                                 tabColumns = tabColumns,
                                 inlayHintColumns = prefixLayout?.inlayHintColumns ?: EMPTY_INLAY_HINT_COLUMNS,
                             )
@@ -319,12 +274,12 @@ internal class TextRenderer {
                             drawClampedTextRange(
                                 canvas = canvas.nativeCanvas,
                                 lineText = lookup.text,
-                                startColumn = run.startColumn,
-                                endColumn = run.endColumn,
+                                startColumn = startColumn,
+                                endColumn = endColumn,
                                 fallbackX = xPos,
                                 baselineY = baselineY,
                                 paint = textPaint,
-                                prefixAdvance = ::prefixAdvance,
+                                prefixLayout = prefixLayout,
                                 segmentStartAdvance = segmentStartAdvance,
                                 inlayHintColumns = prefixLayout?.inlayHintColumns ?: EMPTY_INLAY_HINT_COLUMNS,
                             )
@@ -467,7 +422,7 @@ internal class TextRenderer {
         textStartX: Float,
         baselineY: Float,
         paint: Paint,
-        prefixAdvance: (Int) -> Float,
+        prefixLayout: EditorLineLayoutCache.PrefixLayout?,
         tabColumns: IntArray,
         inlayHintColumns: IntArray,
     ) {
@@ -486,7 +441,7 @@ internal class TextRenderer {
                 textStartX = textStartX,
                 baselineY = baselineY,
                 paint = paint,
-                prefixAdvance = prefixAdvance,
+                prefixLayout = prefixLayout,
                 tabColumns = tabColumns,
             )
             segmentStart = inlayColumn
@@ -499,7 +454,7 @@ internal class TextRenderer {
             textStartX = textStartX,
             baselineY = baselineY,
             paint = paint,
-            prefixAdvance = prefixAdvance,
+            prefixLayout = prefixLayout,
             tabColumns = tabColumns,
         )
     }
@@ -512,7 +467,7 @@ internal class TextRenderer {
         textStartX: Float,
         baselineY: Float,
         paint: Paint,
-        prefixAdvance: (Int) -> Float,
+        prefixLayout: EditorLineLayoutCache.PrefixLayout?,
         tabColumns: IntArray,
     ) {
         if (startColumn >= endColumn) return
@@ -527,14 +482,14 @@ internal class TextRenderer {
             val tabAt = tabColumns[tabIndex]
             if (tabAt >= safeEnd) break
             if (tabAt > index) {
-                val x = textStartX + prefixAdvance(index)
+                val x = textStartX + prefixAdvance(prefixLayout, index)
                 canvas.drawText(lineText, index, tabAt, x, baselineY, paint)
             }
             index = tabAt + 1
             tabIndex++
         }
         if (index < safeEnd) {
-            val x = textStartX + prefixAdvance(index)
+            val x = textStartX + prefixAdvance(prefixLayout, index)
             canvas.drawText(lineText, index, safeEnd, x, baselineY, paint)
         }
     }
@@ -547,7 +502,7 @@ internal class TextRenderer {
         fallbackX: Float,
         baselineY: Float,
         paint: Paint,
-        prefixAdvance: (Int) -> Float,
+        prefixLayout: EditorLineLayoutCache.PrefixLayout?,
         segmentStartAdvance: Float,
         inlayHintColumns: IntArray,
     ) {
@@ -576,7 +531,7 @@ internal class TextRenderer {
                 fallbackX = fallbackX,
                 baselineY = baselineY,
                 paint = paint,
-                prefixAdvance = prefixAdvance,
+                prefixLayout = prefixLayout,
                 segmentStartAdvance = segmentStartAdvance,
             )
             segmentStart = inlayColumn
@@ -589,7 +544,7 @@ internal class TextRenderer {
             fallbackX = fallbackX,
             baselineY = baselineY,
             paint = paint,
-            prefixAdvance = prefixAdvance,
+            prefixLayout = prefixLayout,
             segmentStartAdvance = segmentStartAdvance,
         )
     }
@@ -602,12 +557,20 @@ internal class TextRenderer {
         fallbackX: Float,
         baselineY: Float,
         paint: Paint,
-        prefixAdvance: (Int) -> Float,
+        prefixLayout: EditorLineLayoutCache.PrefixLayout?,
         segmentStartAdvance: Float,
     ) {
         if (endColumn <= startColumn) return
-        val runX = fallbackX + (prefixAdvance(startColumn) - segmentStartAdvance)
+        val runX = fallbackX + (prefixAdvance(prefixLayout, startColumn) - segmentStartAdvance)
         canvas.drawText(lineText, startColumn, endColumn, runX, baselineY, paint)
+    }
+
+    private fun prefixAdvance(
+        prefixLayout: EditorLineLayoutCache.PrefixLayout?,
+        column: Int
+    ): Float {
+        if (prefixLayout == null) return 0f
+        return prefixLayout.prefix[column.coerceIn(0, prefixLayout.length)]
     }
 
     fun lineText(state: EditorState, line: Int): String {
@@ -621,6 +584,7 @@ internal class TextRenderer {
             cacheVersion = -1L
             visibleHighlightCacheKey = null
             visibleSemanticCacheKey = null
+            lineRenderPlanCache.clear()
         }
     }
 
@@ -646,6 +610,8 @@ internal class TextRenderer {
         lineCache.size
     }
 
+    internal fun renderPlanCacheStats(): EditorLineRenderPlanCache.Stats = lineRenderPlanCache.stats()
+
     internal fun resolveDrawHighlightSegmentsForVisibleWindow(
         state: EditorState,
         visibleLines: IntRange
@@ -662,11 +628,14 @@ internal class TextRenderer {
         val maxLine = lineCount - 1
         val windowFirstLine = (visibleLines.first - HIGHLIGHT_CACHE_MARGIN_LINES).coerceIn(0, maxLine)
         val windowLastLine = (visibleLines.last + HIGHLIGHT_CACHE_MARGIN_LINES).coerceIn(windowFirstLine, maxLine)
+        val lineMap = state.visibleDocumentLineMap()
 
         synchronized(cacheLock) {
             val cachedKey = visibleHighlightCacheKey
             if (
                 cachedKey != null &&
+                cachedKey.highlighter === highlighter &&
+                cachedKey.lineMap === lineMap &&
                 cachedKey.version == state.textBuffer.version &&
                 cachedKey.highlightVersion == state.highlightVersion &&
                 visibleLines.first >= cachedKey.windowFirstLine &&
@@ -679,14 +648,16 @@ internal class TextRenderer {
         val result = visibleHighlightCache
         synchronized(cacheLock) {
             result.clear()
-            for (line in windowFirstLine..windowLastLine) {
+            lineMap.forEachVisibleLine(windowFirstLine, windowLastLine) { line ->
                 val segments = highlighter.getLineSegments(line)
-                if (segments.isEmpty()) continue
+                if (segments.isEmpty()) return@forEachVisibleLine
                 // HighlightLineSegment 是 immutable data class，直接复用 highlighter 返回的 List 引用即可，
                 // 不需要再 `.map { LineHighlightSegment(...) }` 分配一轮等价副本。
                 result[line] = segments
             }
             visibleHighlightCacheKey = VisibleHighlightCacheKey(
+                highlighter = highlighter,
+                lineMap = lineMap,
                 version = state.textBuffer.version,
                 windowFirstLine = windowFirstLine,
                 windowLastLine = windowLastLine,
@@ -707,11 +678,13 @@ internal class TextRenderer {
         val maxLine = (state.textBuffer.lineCount - 1).coerceAtLeast(0)
         val windowFirstLine = (visibleLines.first - HIGHLIGHT_CACHE_MARGIN_LINES).coerceIn(0, maxLine)
         val windowLastLine = (visibleLines.last + HIGHLIGHT_CACHE_MARGIN_LINES).coerceIn(windowFirstLine, maxLine)
+        val lineMap = state.visibleDocumentLineMap()
 
         synchronized(cacheLock) {
             val cachedKey = visibleSemanticCacheKey
             if (
                 cachedKey != null &&
+                cachedKey.lineMap === lineMap &&
                 cachedKey.version == state.textBuffer.version &&
                 cachedKey.semanticTokensVersion == state.semanticTokensVersion &&
                 visibleLines.first >= cachedKey.windowFirstLine &&
@@ -724,9 +697,9 @@ internal class TextRenderer {
         val result = visibleSemanticCache
         synchronized(cacheLock) {
             result.clear()
-            for (line in windowFirstLine..windowLastLine) {
+            lineMap.forEachVisibleLine(windowFirstLine, windowLastLine) { line ->
                 val tokens = semanticTokensByLine[line].orEmpty()
-                if (tokens.isEmpty() || line >= state.textBuffer.lineCount) continue
+                if (tokens.isEmpty() || line >= state.textBuffer.lineCount) return@forEachVisibleLine
                 val lineText = lineText(state, line)
                 val lineSegments = ArrayList<LineSemanticSegment>(tokens.size)
                 tokens.forEach { token ->
@@ -742,7 +715,7 @@ internal class TextRenderer {
                         )
                     )
                 }
-                if (lineSegments.isEmpty()) continue
+                if (lineSegments.isEmpty()) return@forEachVisibleLine
                 if (lineSegments.size > 1) {
                     lineSegments.sortWith(
                         compareBy<LineSemanticSegment> { it.startColumn }
@@ -752,6 +725,7 @@ internal class TextRenderer {
                 result[line] = lineSegments
             }
             visibleSemanticCacheKey = VisibleSemanticCacheKey(
+                lineMap = lineMap,
                 version = state.textBuffer.version,
                 windowFirstLine = windowFirstLine,
                 windowLastLine = windowLastLine,
@@ -843,18 +817,26 @@ internal class TextRenderer {
     }
 
     private fun resolveMaxCacheSize(state: EditorState): Int = state.config.lineRenderCacheSize.coerceIn(128, 8192)
+
+    private fun rainbowColorsArgb(colors: List<Color>): IntArray {
+        if (cachedRainbowColors == colors) return cachedRainbowColorsArgb
+        val converted = IntArray(colors.size) { index -> colors[index].toArgb() }
+        cachedRainbowColors = colors
+        cachedRainbowColorsArgb = converted
+        return converted
+    }
 }
 
 internal data class TextRenderOverlay(
-    val startColumn: Int,
-    val endColumn: Int,
-    val color: Int,
-    val blocksSemantic: Boolean = false,
+    var startColumn: Int,
+    var endColumn: Int,
+    var color: Int,
+    var blocksSemantic: Boolean = false,
 )
 
 internal data class TextRenderRun(
     val startColumn: Int,
-    val endColumn: Int,
+    var endColumn: Int,
     val color: Int
 )
 
@@ -879,88 +861,112 @@ internal fun clampTextDrawRange(
 }
 
 internal object TextRenderPlanner {
+    /**
+     * Renderer-owned scratch workspace. A frame consumes the returned list immediately,
+     * The result list is valid only until the next call; buffers are reused across lines.
+     */
+    class Workspace {
+        private var boundaries = IntArray(64)
+        private val runs = ArrayList<TextRenderRun>(32)
+        private val syntaxResolution = OverlayResolution()
+        private val semanticResolution = OverlayResolution()
+
+        fun buildRuns(
+            visibleStartColumn: Int,
+            visibleEndColumn: Int,
+            defaultColor: Int,
+            syntaxOverlays: List<TextRenderOverlay>,
+            semanticOverlays: List<TextRenderOverlay>
+        ): List<TextRenderRun> {
+            if (visibleEndColumn <= visibleStartColumn) {
+                runs.clear()
+                return runs
+            }
+
+            val requiredCapacity = 2 + syntaxOverlays.size * 2 + semanticOverlays.size * 2
+            if (boundaries.size < requiredCapacity) {
+                boundaries = IntArray(requiredCapacity.coerceAtLeast(boundaries.size * 2))
+            }
+            var boundaryCount = 0
+            boundaries[boundaryCount++] = visibleStartColumn
+            boundaries[boundaryCount++] = visibleEndColumn
+            boundaryCount = TextRenderPlanner.collectBoundaries(
+                overlays = syntaxOverlays,
+                visibleStartColumn = visibleStartColumn,
+                visibleEndColumn = visibleEndColumn,
+                boundaries = boundaries,
+                currentCount = boundaryCount
+            )
+            boundaryCount = TextRenderPlanner.collectBoundaries(
+                overlays = semanticOverlays,
+                visibleStartColumn = visibleStartColumn,
+                visibleEndColumn = visibleEndColumn,
+                boundaries = boundaries,
+                currentCount = boundaryCount
+            )
+
+            boundaries.sort(0, boundaryCount)
+            var uniqueCount = 0
+            for (index in 0 until boundaryCount) {
+                val value = boundaries[index]
+                if (uniqueCount == 0 || boundaries[uniqueCount - 1] != value) {
+                    boundaries[uniqueCount++] = value
+                }
+            }
+
+            runs.clear()
+            if (uniqueCount < 2) return runs
+            var syntaxPointer = 0
+            var semanticPointer = 0
+            for (index in 0 until uniqueCount - 1) {
+                val startColumn = boundaries[index]
+                val endColumn = boundaries[index + 1]
+                if (endColumn <= startColumn) continue
+
+                val syntaxColor = TextRenderPlanner.resolveOverlayColor(
+                    overlays = syntaxOverlays,
+                    intervalStart = startColumn,
+                    intervalEnd = endColumn,
+                    startPointer = syntaxPointer,
+                    result = syntaxResolution
+                )
+                syntaxPointer = syntaxColor.nextPointer
+                val semanticColor = TextRenderPlanner.resolveOverlayColor(
+                    overlays = semanticOverlays,
+                    intervalStart = startColumn,
+                    intervalEnd = endColumn,
+                    startPointer = semanticPointer,
+                    result = semanticResolution
+                )
+                semanticPointer = semanticColor.nextPointer
+                val resolvedColor = syntaxColor.semanticBlockingColor
+                    ?: semanticColor.color
+                    ?: syntaxColor.color
+                    ?: defaultColor
+                val lastRun = runs.lastOrNull()
+                if (lastRun != null && lastRun.color == resolvedColor && lastRun.endColumn == startColumn) {
+                    lastRun.endColumn = endColumn
+                } else {
+                    runs.add(TextRenderRun(startColumn, endColumn, resolvedColor))
+                }
+            }
+            return runs
+        }
+    }
+
     fun buildRuns(
         visibleStartColumn: Int,
         visibleEndColumn: Int,
         defaultColor: Int,
         syntaxOverlays: List<TextRenderOverlay>,
         semanticOverlays: List<TextRenderOverlay>
-    ): List<TextRenderRun> {
-        if (visibleEndColumn <= visibleStartColumn) return emptyList()
-
-        val boundaries = IntArray(2 + syntaxOverlays.size * 2 + semanticOverlays.size * 2)
-        var boundaryCount = 0
-        boundaries[boundaryCount++] = visibleStartColumn
-        boundaries[boundaryCount++] = visibleEndColumn
-
-        boundaryCount = collectBoundaries(
-            overlays = syntaxOverlays,
-            visibleStartColumn = visibleStartColumn,
-            visibleEndColumn = visibleEndColumn,
-            boundaries = boundaries,
-            currentCount = boundaryCount
-        )
-        boundaryCount = collectBoundaries(
-            overlays = semanticOverlays,
-            visibleStartColumn = visibleStartColumn,
-            visibleEndColumn = visibleEndColumn,
-            boundaries = boundaries,
-            currentCount = boundaryCount
-        )
-
-        boundaries.sort(0, boundaryCount)
-        var uniqueCount = 0
-        for (index in 0 until boundaryCount) {
-            val value = boundaries[index]
-            if (uniqueCount == 0 || boundaries[uniqueCount - 1] != value) {
-                boundaries[uniqueCount++] = value
-            }
-        }
-        if (uniqueCount < 2) return emptyList()
-
-        val runs = ArrayList<TextRenderRun>(uniqueCount - 1)
-        var syntaxPointer = 0
-        var semanticPointer = 0
-        for (index in 0 until uniqueCount - 1) {
-            val startColumn = boundaries[index]
-            val endColumn = boundaries[index + 1]
-            if (endColumn <= startColumn) continue
-
-            val syntaxColor = resolveOverlayColor(
-                overlays = syntaxOverlays,
-                intervalStart = startColumn,
-                intervalEnd = endColumn,
-                startPointer = syntaxPointer
-            )
-            syntaxPointer = syntaxColor.nextPointer
-
-            val semanticColor = resolveOverlayColor(
-                overlays = semanticOverlays,
-                intervalStart = startColumn,
-                intervalEnd = endColumn,
-                startPointer = semanticPointer
-            )
-            semanticPointer = semanticColor.nextPointer
-
-            val resolvedColor = syntaxColor.semanticBlockingColor
-                ?: semanticColor.color
-                ?: syntaxColor.color
-                ?: defaultColor
-            val lastRun = runs.lastOrNull()
-            if (lastRun != null && lastRun.color == resolvedColor && lastRun.endColumn == startColumn) {
-                runs[runs.lastIndex] = lastRun.copy(endColumn = endColumn)
-            } else {
-                runs.add(
-                    TextRenderRun(
-                        startColumn = startColumn,
-                        endColumn = endColumn,
-                        color = resolvedColor
-                    )
-                )
-            }
-        }
-        return runs
-    }
+    ): List<TextRenderRun> = Workspace().buildRuns(
+        visibleStartColumn = visibleStartColumn,
+        visibleEndColumn = visibleEndColumn,
+        defaultColor = defaultColor,
+        syntaxOverlays = syntaxOverlays,
+        semanticOverlays = semanticOverlays
+    )
 
     private fun collectBoundaries(
         overlays: List<TextRenderOverlay>,
@@ -980,17 +986,18 @@ internal object TextRenderPlanner {
         return count
     }
 
-    private data class OverlayResolution(
-        val color: Int?,
-        val semanticBlockingColor: Int?,
-        val nextPointer: Int,
-    )
+    private class OverlayResolution {
+        var color: Int? = null
+        var semanticBlockingColor: Int? = null
+        var nextPointer: Int = 0
+    }
 
     private fun resolveOverlayColor(
         overlays: List<TextRenderOverlay>,
         intervalStart: Int,
         intervalEnd: Int,
-        startPointer: Int
+        startPointer: Int,
+        result: OverlayResolution
     ): OverlayResolution {
         var pointer = startPointer
         while (pointer < overlays.size && overlays[pointer].endColumn <= intervalStart) {
@@ -1011,10 +1018,9 @@ internal object TextRenderPlanner {
             }
             index++
         }
-        return OverlayResolution(
-            color = resolvedColor,
-            semanticBlockingColor = semanticBlockingColor,
-            nextPointer = pointer,
-        )
+        result.color = resolvedColor
+        result.semanticBlockingColor = semanticBlockingColor
+        result.nextPointer = pointer
+        return result
     }
 }

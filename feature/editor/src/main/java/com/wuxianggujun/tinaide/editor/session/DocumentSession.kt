@@ -104,6 +104,12 @@ class DocumentSession(
         val documentVersion: Long
     )
 
+    data class FingerprintSnapshot(
+        val length: Int,
+        val hash: Long,
+        val documentVersion: Long
+    )
+
     interface EditorBinding {
         fun readText(): String
         fun readSnapshot(): EditorContentSnapshot {
@@ -118,6 +124,14 @@ class DocumentSession(
             }
             return EditorContentSnapshot(latestText, UNSTABLE_DOCUMENT_VERSION)
         }
+
+        /**
+         * 直接读出内容指纹，不物化整份文本。返回 null 表示该实现不支持，
+         * 调用方回退到 [readSnapshot] + 逐字符计算。
+         *
+         * 对 30MB 文档，走这条路可以省下一次 60MB 的 String 分配和一遍全量字符扫描。
+         */
+        fun readFingerprintSnapshot(): FingerprintSnapshot? = null
         fun setText(text: CharSequence)
         fun textLength(): Int
         fun canUndo(): Boolean
@@ -214,16 +228,14 @@ class DocumentSession(
     }
     fun attachEditor(binding: EditorBinding) {
         editorBinding.set(binding)
-        val snapshot = if (cleanVersion < 0L || cleanFingerprint == null) {
-            binding.readSnapshot()
-        } else {
-            null
-        }
-        if (cleanVersion < 0L) {
-            cleanVersion = snapshot!!.documentVersion
-        }
-        if (cleanFingerprint == null) {
-            cleanFingerprint = buildTextFingerprint(snapshot!!.text)
+        if (cleanVersion < 0L || cleanFingerprint == null) {
+            val (fingerprint, version) = readFingerprintWithVersion(binding)
+            if (cleanVersion < 0L) {
+                cleanVersion = version
+            }
+            if (cleanFingerprint == null) {
+                cleanFingerprint = fingerprint
+            }
         }
         syncStateFromBinding(binding, changeCausedByUndoManager = false, forceCompare = true)
     }
@@ -290,9 +302,9 @@ class DocumentSession(
         val binding = editorBinding.get() ?: return
         val effectiveCharset = charset ?: fileCharset
         fileCharset = effectiveCharset
-        val snapshot = binding.readSnapshot()
-        cleanVersion = snapshot.documentVersion
-        cleanFingerprint = buildTextFingerprint(snapshot.text)
+        val (fingerprint, version) = readFingerprintWithVersion(binding)
+        cleanVersion = version
+        cleanFingerprint = fingerprint
         baselineState = BaselineState.READY
         val marker = readCurrentWriteMarker()
         if (marker != null) {
@@ -541,10 +553,10 @@ class DocumentSession(
 
                     val currentBinding = editorBinding.get()
                     val activeBindingDirty = currentBinding?.let { activeBinding ->
-                        val activeSnapshot = activeBinding.readSnapshot()
-                        activeSnapshot.documentVersion == UNSTABLE_DOCUMENT_VERSION ||
-                            activeBinding.currentDocumentVersion() != activeSnapshot.documentVersion ||
-                            buildTextFingerprint(activeSnapshot.text) != snapshot.fingerprint
+                        val (activeFingerprint, activeVersion) = readFingerprintWithVersion(activeBinding)
+                        activeVersion == UNSTABLE_DOCUMENT_VERSION ||
+                            activeBinding.currentDocumentVersion() != activeVersion ||
+                            activeFingerprint != snapshot.fingerprint
                     }
                     val detachedDirty = if (currentBinding != null) {
                         detachedEditorSnapshot = null
@@ -735,8 +747,7 @@ class DocumentSession(
 
         val baseline = cleanFingerprint
         if (baseline == null) {
-            val text = binding.readText()
-            cleanFingerprint = buildTextFingerprint(text)
+            cleanFingerprint = readFingerprintWithVersion(binding).first
             return false
         }
 
@@ -747,8 +758,7 @@ class DocumentSession(
             return true
         }
 
-        val currentFingerprint = buildTextFingerprint(binding.readSnapshot().text)
-        return currentFingerprint != baseline
+        return readFingerprintWithVersion(binding).first != baseline
     }
 
     private fun buildTextFingerprint(text: String): TextFingerprint {
@@ -759,6 +769,21 @@ class DocumentSession(
             hash *= prime
         }
         return TextFingerprint(length = text.length, hash = hash)
+    }
+
+    /**
+     * 优先走 binding 的分片指纹；不支持时回退到物化文本再逐字符计算。
+     * 两条路径使用同一套 FNV-1a 参数，结果可互相比较。
+     */
+    private fun readFingerprintWithVersion(binding: EditorBinding): Pair<TextFingerprint, Long> {
+        binding.readFingerprintSnapshot()?.let { snapshot ->
+            return TextFingerprint(
+                length = snapshot.length,
+                hash = snapshot.hash
+            ) to snapshot.documentVersion
+        }
+        val snapshot = binding.readSnapshot()
+        return buildTextFingerprint(snapshot.text) to snapshot.documentVersion
     }
 
     private fun readCurrentWriteMarker(): FileWriteMarker? =

@@ -11,6 +11,7 @@ import com.wuxianggujun.tinaide.core.textengine.TextChange
 import java.util.LinkedHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
 import timber.log.Timber
 
@@ -20,6 +21,9 @@ internal class IncrementalTreeSitterHighlightState(
     private val captureTypeByIndex: Array<HighlightType>,
     private val onClosed: (() -> Unit)? = null,
     private val predicateEvaluator: TreeSitterQueryPredicateEvaluator = TreeSitterQueryPredicateEvaluator(query),
+    private val captureSpans: (TSNode, String, IntRange) -> List<HighlightSpan> = { root, text, range ->
+        captureHighlightSpans(query, captureTypeByIndex, root, text, predicateEvaluator, range)
+    },
 ) : AutoCloseable {
 
     private companion object {
@@ -29,9 +33,8 @@ internal class IncrementalTreeSitterHighlightState(
         // LRU 硬上限：按内存估算 (lineCount * ~200B)，100k 行≈20MB，覆盖 Chromium / Linux kernel 级单文件。
         private const val MAX_LINE_CACHE_HARD_LIMIT = 100_000
         private const val DEFAULT_OPEN_BLOCKING_TIMEOUT_MS = 5000L
-
-        // 分块大小：每块覆盖 ~2k 行，作为 prewarm 调度单位。
-        private const val PREWARM_CHUNK_LINES = 2048
+        private const val MAX_PENDING_LINE_REQUESTS = 512
+        private const val LINE_CAPTURE_BATCH_SIZE = 16
 
         private fun maxCacheSizeFor(lineCount: Int): Int {
             if (lineCount <= 0) return MIN_LINE_CACHE_SIZE
@@ -52,18 +55,14 @@ internal class IncrementalTreeSitterHighlightState(
 
         fun lineEndExclusive(line: Int): Int = lineStarts.lineEndOffsetExclusive(line, text.length)
 
-        fun applyTextChange(change: TextChange, newText: String): RenderSnapshot {
-            val updated = HighlightLineCacheUpdater.applyTextChange(lineCache, HighlightLineCacheChange.from(change))
-            return RenderSnapshot(
-                text = newText,
-                lineStarts = buildLineStartOffsets(newText),
-                safeTree = safeTree,
-                lineCache = LinkedHashMap<Int, List<HighlightLineSegment>>(updated.size, 0.75f, true).apply {
-                    putAll(updated)
-                }
-            )
-        }
     }
+
+    private data class LineCaptureBatch(
+        val snapshot: RenderSnapshot,
+        val revision: Long,
+        val sessionId: Long,
+        val lines: List<Int>,
+    )
 
     private data class PendingParseRequest(
         val revision: Long,
@@ -101,6 +100,9 @@ internal class IncrementalTreeSitterHighlightState(
     private var pending: PendingParseRequest? = null
     private var workerScheduled = false
     private var onStateUpdated: (() -> Unit)? = null
+    private var updateNotificationPosted = false
+    private val pendingLineRequests = LinkedHashMap<Int, Long>()
+    private var lineCaptureScheduled = false
     private var pendingDirtyLineRanges: List<DirtyLineRange> = emptyList()
     private var currentText: StringBuilder? = null
     private var currentLineCount = 0
@@ -137,6 +139,7 @@ internal class IncrementalTreeSitterHighlightState(
             currentLineCount = buildLineStartOffsets(text).size
             renderSnapshotStale = true
             pendingDirtyLineRanges = emptyList()
+            pendingLineRequests.clear()
             pending = PendingParseRequest(
                 revision = revision,
                 sessionId = sessionId,
@@ -209,41 +212,105 @@ internal class IncrementalTreeSitterHighlightState(
     }
 
     fun getLineSegments(line: Int): List<HighlightLineSegment> {
-        val (snapshot, staleAndDirty) = synchronized(lock) {
-            if (line !in 0 until currentLineCount) return emptyList()
-            val stale = renderSnapshotStale
-            val dirty = stale && pendingDirtyLineRanges.any { line in it.startLine..it.endLine }
-            renderSnapshot to dirty
+        synchronized(lock) {
+            if (disposed || line !in 0 until currentLineCount) return emptyList()
+            val snapshot = renderSnapshot ?: return emptyList()
+            synchronized(snapshot.lineCache) {
+                snapshot.lineCache[line]?.let { return it }
+            }
+            // Edited snapshots only serve carried/shifted cache entries, never query an old tree.
+            if (renderSnapshotStale || line >= snapshot.lineCount) return emptyList()
+            if (pendingLineRequests[line] == revision) return emptyList()
+            pendingLineRequests[line] = revision
+            if (pendingLineRequests.size > MAX_PENDING_LINE_REQUESTS) {
+                val iterator = pendingLineRequests.entries.iterator()
+                iterator.next()
+                iterator.remove()
+            }
+            scheduleLineCapturesLocked()
+            return emptyList()
         }
-        snapshot ?: return emptyList()
+    }
 
-        synchronized(snapshot.lineCache) {
-            snapshot.lineCache[line]?.let { return it }
+    private fun scheduleLineCapturesLocked() {
+        if (disposed || lineCaptureScheduled || pendingLineRequests.isEmpty()) return
+        lineCaptureScheduled = true
+        try {
+            worker.execute(::drainLineCaptures)
+        } catch (error: RejectedExecutionException) {
+            lineCaptureScheduled = false
+            pendingLineRequests.clear()
+            Timber.tag("TreeSitter").d(error, "Line highlight request submit failed")
         }
+    }
 
-        // If the snapshot is stale AND this line is in the pending dirty range,
-        // captureLine would index into snapshot.text (pre-edit) / snapshot.safeTree
-        // but the current line content has changed — the resulting spans would be
-        // misaligned. Return empty (TextRenderer will paint default color) rather
-        // than risk wrong colors. HighlightLineCacheUpdater's shifted entries have
-        // already covered single-line edits via the cache lookup above.
-        //
-        // For stale-but-unchanged lines and for fresh snapshots, captureLine is
-        // internally consistent and safe to use.
-        if (staleAndDirty) return emptyList()
-        if (line >= snapshot.lineCount) return emptyList()
+    private fun pendingLineBatch(): LineCaptureBatch? = synchronized(lock) {
+        val snapshot = renderSnapshot
+        if (disposed || renderSnapshotStale || snapshot == null || pendingLineRequests.isEmpty()) return null
+        LineCaptureBatch(snapshot, revision, sessionId, pendingLineRequests.keys.take(LINE_CAPTURE_BATCH_SIZE))
+    }
 
-        val spans = captureLine(snapshot, line) ?: return emptyList()
-        synchronized(snapshot.lineCache) {
-            snapshot.lineCache.remove(line)
-            snapshot.lineCache[line] = spans
-            val maxSize = maxCacheSizeFor(snapshot.lineCount)
-            while (snapshot.lineCache.size > maxSize) {
-                val eldest = snapshot.lineCache.entries.firstOrNull()?.key ?: break
-                snapshot.lineCache.remove(eldest)
+    private fun drainLineCaptures() {
+        val batch = pendingLineBatch()
+        try {
+            if (batch == null) return
+            // Query a worker-owned tree so document switches never wait for a native query.
+            val privateTree = batch.snapshot.safeTree.accessTree { it.copy() }
+            try {
+                capturePendingLines(batch, privateTree.rootNode)
+            } finally {
+                closeTreeQuietly(privateTree)
+            }
+        } catch (error: Exception) {
+            Timber.tag("TreeSitter").d(error, "Async highlight batch failed")
+        } finally {
+            synchronized(lock) {
+                batch?.lines?.forEach { line ->
+                    if (pendingLineRequests[line] == batch.revision) pendingLineRequests.remove(line)
+                }
+                lineCaptureScheduled = false
+                // Queue at the tail, allowing pending parses to run between small batches.
+                scheduleLineCapturesLocked()
             }
         }
-        return spans
+    }
+
+    private fun capturePendingLines(batch: LineCaptureBatch, rootNode: TSNode) {
+        val snapshot = batch.snapshot
+        var cacheChanged = false
+        for (line in batch.lines) {
+            if (!isPrewarmActive(snapshot, batch.revision)) break
+            try {
+                val alreadyCached = synchronized(snapshot.lineCache) { snapshot.lineCache.containsKey(line) }
+                if (alreadyCached) continue
+                val segments = captureLine(snapshot, line, rootNode)
+                synchronized(lock) {
+                    if (isPrewarmActive(snapshot, batch.revision)) {
+                        synchronized(snapshot.lineCache) {
+                            snapshot.lineCache[line] = segments
+                            val limit = maxCacheSizeFor(snapshot.lineCount)
+                            while (snapshot.lineCache.size > limit) {
+                                val iterator = snapshot.lineCache.entries.iterator()
+                                iterator.next()
+                                iterator.remove()
+                            }
+                        }
+                        cacheChanged = true
+                    }
+                }
+            } catch (error: Exception) {
+                Timber.tag("TreeSitter").d(error, "Async line highlight failed: line=%d", line)
+            } finally {
+                synchronized(lock) {
+                    if (pendingLineRequests[line] == batch.revision) pendingLineRequests.remove(line)
+                }
+            }
+        }
+        if (cacheChanged) postPrewarmUpdate(batch.sessionId, batch.revision)
+    }
+
+    private fun isPrewarmActive(snapshot: RenderSnapshot, expectedRevision: Long): Boolean = synchronized(lock) {
+        !disposed && revision == expectedRevision && renderSnapshot === snapshot && !renderSnapshotStale
     }
 
     fun readSnapshot(text: String): SafeTsTree? = synchronized(lock) { renderSnapshot?.takeIf { it.text == text }?.safeTree }
@@ -254,6 +321,7 @@ internal class IncrementalTreeSitterHighlightState(
         synchronized(lock) {
             if (disposed) return
             disposed = true
+            pendingLineRequests.clear()
             revision++
             sessionId++
             snapshot = renderSnapshot?.safeTree
@@ -283,6 +351,7 @@ internal class IncrementalTreeSitterHighlightState(
             renderSnapshot = null
             workerTree = null
             pending = null
+            pendingLineRequests.clear()
             pendingDirtyLineRanges = emptyList()
             currentText = StringBuilder()
             currentLineCount = 1
@@ -322,6 +391,7 @@ internal class IncrementalTreeSitterHighlightState(
                 currentLineCount = (currentLineCount + lineDelta).coerceAtLeast(1)
             }
 
+            pendingLineRequests.clear()
             revision++
             renderSnapshot = renderSnapshot?.copy(
                 lineCache = renderSnapshot!!.lineCache.applyTextChange(change)
@@ -456,12 +526,14 @@ internal class IncrementalTreeSitterHighlightState(
         val oldSnapshot: SafeTsTree?
         val callback: (() -> Unit)?
         val prewarmSessionId: Long
+        val fullDocumentPrewarm: Boolean
         synchronized(lock) {
             if (disposed || request.revision != revision) {
                 runCatching { result.renderTree.close() }
                 return
             }
             oldSnapshot = renderSnapshot?.safeTree
+            fullDocumentPrewarm = request.change == null || oldSnapshot == null
 
             // 抢救旧 snapshot 的 lineCache：未落在文本或语法树变化范围内的行，
             // 其 segments 用的是列相对坐标，在新 snapshot 里仍然有效。
@@ -469,7 +541,9 @@ internal class IncrementalTreeSitterHighlightState(
             // 初始容量直接跟随 previousCache.size —— 绝大多数 tree update 只有几行变脏，
             // 新 cache 规模几乎等于旧 cache，省掉默认 128 槽下的 rehash/扩容开销。
             val previousCache = renderSnapshot?.lineCache
-            val carriedInitialCapacity = previousCache?.let { (it.size * 2).coerceAtLeast(64) } ?: 128
+            val carriedInitialCapacity = previousCache?.let { cache ->
+                synchronized(cache) { (cache.size * 2).coerceAtLeast(64) }
+            } ?: 128
             val carriedCache = LinkedHashMap<Int, List<HighlightLineSegment>>(
                 carriedInitialCapacity,
                 0.75f,
@@ -504,18 +578,23 @@ internal class IncrementalTreeSitterHighlightState(
         oldSnapshot?.close()
         callback?.invoke()
 
-        // 新快照就位后，让 worker 用**一次**全文档 query 填满 lineCache，消除"滚动追指"。
-        // bulk 方式比逐行 captureLine 快 10-50×；openDocumentBlocking 的第三 barrier 会等它完成。
+        // 首次打开全量预热，编辑后只预热视口附近；滚动请求在预热块之间优先处理。
         runCatching {
-            worker.execute { prewarmLineCacheBulk(prewarmSessionId) }
+            worker.execute {
+                prewarmLineCacheBulk(
+                    expectedSessionId = prewarmSessionId,
+                    expectedRevision = request.revision,
+                    fullDocument = fullDocumentPrewarm
+                )
+            }
         }.onFailure { error ->
             Timber.tag("TreeSitter").d(error, "Prewarm submit failed")
         }
     }
 
-    private fun prewarmLineCacheBulk(expectedSessionId: Long) {
+    private fun prewarmLineCacheBulk(expectedSessionId: Long, expectedRevision: Long, fullDocument: Boolean) {
         val snapshot = synchronized(lock) {
-            if (disposed || sessionId != expectedSessionId) return
+            if (disposed || sessionId != expectedSessionId || revision != expectedRevision || renderSnapshotStale) return
             renderSnapshot ?: return
         }
         val lineCount = snapshot.lineCount
@@ -523,9 +602,7 @@ internal class IncrementalTreeSitterHighlightState(
         val textLength = snapshot.text.length
         if (textLength <= 0) return
 
-        // C1：worker 取 render tree 的独立 copy，后续所有 chunk 的 query exec 在这份 copy 上跑。
-        // 走 copy 不再抢 SafeTsTree 的锁，主线程 tryAccessTree / captureLine 在 prewarm 期间永远
-        // 秒拿；即便 copy 期间 SafeTsTree 被 close（新文档打开），也会通过 sessionId 检查被丢弃。
+        // Query an independent tree; only the short copy operation needs the render tree lock.
         val privateTree = snapshot.safeTree.tryAccessTree { tree ->
             runCatching { tree.copy() }.getOrNull()
         }
@@ -537,10 +614,7 @@ internal class IncrementalTreeSitterHighlightState(
         try {
             val lineStarts = snapshot.lineStarts
             val maxCacheSize = maxCacheSizeFor(lineCount)
-            val numChunks = (lineCount + PREWARM_CHUNK_LINES - 1) / PREWARM_CHUNK_LINES
-            val hintChunk = (viewportHintLine.coerceIn(0, lineCount - 1) / PREWARM_CHUNK_LINES)
-                .coerceIn(0, numChunks - 1)
-            val chunkOrder = chunksInSpiralOrder(numChunks, hintChunk)
+            val prewarmRanges = TreeSitterPrewarmPlan.ranges(lineCount, viewportHintLine, fullDocument)
 
             // 跨 chunk 复用同一个 HashMap：每 chunk 开始前 clear() 清掉 key，
             // 被 publish 出去的 ArrayList 引用还在 cache 里，不会被误释放；
@@ -548,9 +622,9 @@ internal class IncrementalTreeSitterHighlightState(
             // 这部分分配本来就无法避免（被长期持有）。
             val reusableBucket = HashMap<Int, ArrayList<HighlightLineSegment>>(64)
 
-            for (chunkIndex in chunkOrder) {
-                val chunkStart = chunkIndex * PREWARM_CHUNK_LINES
-                val chunkEnd = (chunkStart + PREWARM_CHUNK_LINES).coerceAtMost(lineCount)
+            for (range in prewarmRanges) {
+                val chunkStart = range.first
+                val chunkEnd = range.last + 1
                 val byteStart = lineStarts.lineStartOffset(chunkStart)
                 val byteEndExclusive = if (chunkEnd < lineCount) {
                     lineStarts.lineStartOffset(chunkEnd)
@@ -560,19 +634,18 @@ internal class IncrementalTreeSitterHighlightState(
                 if (byteEndExclusive <= byteStart) continue
 
                 val chunkActive = synchronized(lock) {
-                    !disposed && sessionId == expectedSessionId && pending == null
+                    !disposed && sessionId == expectedSessionId && revision == expectedRevision &&
+                        renderSnapshot === snapshot && !renderSnapshotStale
                 }
                 if (!chunkActive) return
 
+                pendingLineBatch()?.takeIf { it.snapshot === snapshot }?.let { batch ->
+                    capturePendingLines(batch, privateTree.rootNode)
+                }
+                if (!isPrewarmActive(snapshot, expectedRevision)) return
+
                 val chunkSpans = runCatching {
-                    captureHighlightSpans(
-                        query = query,
-                        captureTypeByIndex = captureTypeByIndex,
-                        rootNode = privateTree.rootNode,
-                        sourceText = snapshot.text,
-                        predicateEvaluator = predicateEvaluator,
-                        visibleRange = byteStart..(byteEndExclusive - 1)
-                    )
+                    captureSpans(privateTree.rootNode, snapshot.text, byteStart..(byteEndExclusive - 1))
                 }.onFailure { error ->
                     Timber.tag("TreeSitter").d(error, "Bulk prewarm chunk exec failed")
                 }.getOrNull() ?: continue
@@ -625,17 +698,20 @@ internal class IncrementalTreeSitterHighlightState(
                 }
 
                 val publishActive = synchronized(lock) {
-                    !disposed && sessionId == expectedSessionId && pending == null
+                    !disposed && sessionId == expectedSessionId && revision == expectedRevision &&
+                        renderSnapshot === snapshot && !renderSnapshotStale
                 }
                 if (!publishActive) return
 
-                synchronized(snapshot.lineCache) {
+                val cacheChanged = synchronized(snapshot.lineCache) {
                     val cache = snapshot.lineCache
+                    var changed = false
                     // 有 span 的行：写入分桶结果（若主线程 lazy 已填过则保留原值）。
                     // 同时「A 的 stale fallback」也可能已经占了位，一并保留——避免覆盖用户已经看到的色。
                     bucket.forEach { (line, segments) ->
                         if (!cache.containsKey(line)) {
                             cache[line] = segments
+                            changed = true
                         }
                     }
                     // 无 span 的行：补空列表避免后续 miss 再跑 captureLine。
@@ -643,6 +719,7 @@ internal class IncrementalTreeSitterHighlightState(
                     while (line < chunkEnd && cache.size < maxCacheSize) {
                         if (!cache.containsKey(line)) {
                             cache[line] = emptyList()
+                            changed = true
                         }
                         line++
                     }
@@ -650,63 +727,40 @@ internal class IncrementalTreeSitterHighlightState(
                         val eldest = cache.entries.firstOrNull()?.key ?: break
                         cache.remove(eldest)
                     }
+                    changed
                 }
 
-                // Compose 状态只能从主线程推进；每块完成后异步请求一次渐进 repaint。
-                val shouldNotify = synchronized(lock) {
-                    !disposed && sessionId == expectedSessionId && onStateUpdated != null
-                }
-                if (shouldNotify) {
-                    mainHandler.post {
-                        val callback = synchronized(lock) {
-                            if (!disposed && sessionId == expectedSessionId) onStateUpdated else null
-                        }
-                        callback?.invoke()
-                    }
-                }
+                if (cacheChanged) postPrewarmUpdate(expectedSessionId, expectedRevision)
             }
         } finally {
             runCatching { privateTree.close() }
         }
     }
 
-    private fun chunksInSpiralOrder(numChunks: Int, hintChunk: Int): IntArray {
-        if (numChunks <= 0) return IntArray(0)
-        val order = IntArray(numChunks)
-        val center = hintChunk.coerceIn(0, numChunks - 1)
-        order[0] = center
-        var idx = 1
-        var offset = 1
-        while (idx < numChunks) {
-            val below = center - offset
-            val above = center + offset
-            if (below >= 0) {
-                order[idx++] = below
-                if (idx >= numChunks) break
-            }
-            if (above < numChunks) {
-                order[idx++] = above
-            }
-            offset++
+    private fun postPrewarmUpdate(expectedSessionId: Long, expectedRevision: Long) {
+        synchronized(lock) {
+            if (disposed || sessionId != expectedSessionId || revision != expectedRevision ||
+                onStateUpdated == null || updateNotificationPosted
+            ) return
+            updateNotificationPosted = true
         }
-        return order
+        // One pending notification describes the latest live snapshot, including a newer session.
+        val posted = mainHandler.post {
+            val callback = synchronized(lock) {
+                updateNotificationPosted = false
+                if (!disposed && !renderSnapshotStale) onStateUpdated else null
+            }
+            callback?.invoke()
+        }
+        if (!posted) synchronized(lock) { updateNotificationPosted = false }
     }
 
-    private fun captureLine(snapshot: RenderSnapshot, line: Int): List<HighlightLineSegment>? {
+    private fun captureLine(snapshot: RenderSnapshot, line: Int, rootNode: TSNode): List<HighlightLineSegment> {
         val start = snapshot.lineStart(line)
         val end = snapshot.lineEndExclusive(line)
         if (end <= start) return emptyList()
 
-        val spans = snapshot.safeTree.tryAccessTree { tree ->
-            captureHighlightSpans(
-                query = query,
-                captureTypeByIndex = captureTypeByIndex,
-                rootNode = tree.rootNode,
-                sourceText = snapshot.text,
-                predicateEvaluator = predicateEvaluator,
-                visibleRange = start..(end - 1)
-            )
-        } ?: return null
+        val spans = captureSpans(rootNode, snapshot.text, start..(end - 1))
 
         if (spans.isEmpty()) return emptyList()
         val segments = ArrayList<HighlightLineSegment>(spans.size)
@@ -767,7 +821,9 @@ internal class IncrementalTreeSitterHighlightState(
 
 private fun LinkedHashMap<Int, List<HighlightLineSegment>>.applyTextChange(
     change: TextChange
-): LinkedHashMap<Int, List<HighlightLineSegment>> = HighlightLineCacheUpdater.applyTextChange(this, HighlightLineCacheChange.from(change))
+): LinkedHashMap<Int, List<HighlightLineSegment>> = synchronized(this) {
+    HighlightLineCacheUpdater.applyTextChange(this, HighlightLineCacheChange.from(change))
+}
 
 private fun applyChangeToText(builder: StringBuilder, change: TextChange) {
     val safeStart = change.startOffset.coerceIn(0, builder.length)

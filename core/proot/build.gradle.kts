@@ -12,6 +12,7 @@ dependencies {
     api(project.dependencies.project(":core:common"))
     implementation(project.dependencies.project(":core:config"))
     implementation(project.dependencies.project(":core:i18n"))
+    implementation(project.dependencies.project(":core:linux-desktop"))
     implementation(project.dependencies.project(":core:linux-distro"))
     implementation(project.dependencies.project(":core:model"))
     implementation(project.dependencies.project(":core:ndk"))

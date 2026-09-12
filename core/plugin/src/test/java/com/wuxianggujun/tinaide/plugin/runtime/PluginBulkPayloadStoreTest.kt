@@ -19,7 +19,7 @@ class PluginBulkPayloadStoreTest {
 
     @Test
     fun `pending payload count should be bounded and released by plugin cleanup`() {
-        val context = RuntimeEnvironment.getApplication<Application>()
+        val context = RuntimeEnvironment.getApplication()
         val store = PluginBulkPayloadStore(context)
         store.clear()
 
@@ -38,7 +38,7 @@ class PluginBulkPayloadStoreTest {
 
     @Test
     fun `pending payload count should also be bounded across plugins`() {
-        val context = RuntimeEnvironment.getApplication<Application>()
+        val context = RuntimeEnvironment.getApplication()
         val store = PluginBulkPayloadStore(context)
         store.clear()
 

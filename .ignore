@@ -45,3 +45,7 @@ llvm_projects/
 *.tmp
 *.hprof
 *.tsbuildinfo
+
+# 软著申请材料、生成文档与本地证照不参与代码检索
+docs/software-copyright/
+tools/software-copyright/

@@ -81,13 +81,18 @@
 
 TinaIDE 是 Android 上的 C/C++ IDE。当前默认运行链路是 **native tina-toolchain + Android sysroot**；PRoot/Linux distro 是可选环境，不是默认编译宿主。
 
+**许可证**：自 `0.18.29` 起整体以 **GPL-3.0-or-later** 分发（起因是集成 termux-x11 的 X server）。事实源是根目录 `LICENSE`、`COPYRIGHT.md`、`NOTICE.md`。
+
 **技术栈**：Kotlin、Android、Jetpack Compose、Material 3、Koin、Room、DataStore/SharedPreferences、OkHttp、Tree-sitter、clangd/LSP、Gradle/CMake、native tina-toolchain。
+
+**可选运行时**：Linux 环境只支持 Ubuntu 24.04（Alpine 已在 `0.18.29` 移除）；X11 图形桌面由 `core:linux-desktop` + vendored `external/termux-x11` 承载，跑在 `:x11` 独立进程，**尚未在真机验证**。
 
 **关键入口**：
 
 - `MainPortalActivity`：首页/门户入口。
 - `MainActivity`：项目编辑器工作区入口。
-- `TinaApplication`：多进程初始化分流；主进程、`:toolchain`、`:crash`、用户 native runtime 不能混用初始化逻辑。
+- `TinaApplication`：多进程初始化分流；主进程、`:x11`、`:sdl`、`:sdl2`、`:gui`、`:crash`、用户 native runtime 不能混用初始化逻辑。
+- `core/linux-desktop/src/main/AndroidManifest.xml`：`:x11` 进程边界与 lorie 库 manifest 裁剪，改动前先读其中注释。
 - `MainScreen`：首页 Tab 组织；项目内没有全局统一 `NavHost`。
 - `MainActivityScreenHost` / `EditorContainerState` / `LspEditorManager`：主编辑器界面、编辑器状态和 LSP 路由。
 
@@ -143,6 +148,11 @@ TinaIDE 是 Android 上的 C/C++ IDE。当前默认运行链路是 **native tina
 **高风险红线**：
 
 - 不要把 PRoot 当默认 C/C++ 编译链路。
+- 新增第三方依赖必须先确认许可证与 GPL-3.0 兼容，并同步更新 `NOTICE.md`。带非商业条款、用户数上限或其他附加限制的许可证不可引入（GPL-3.0 第 7 条禁止 further restrictions）。
+- `external/rikkahub` 当前是**未解决的分发阻塞项**：其附加限制违反 GPL-3.0 第 7 条，冲突解决前包含它的构建产物不得对外分发。不要在文档或发布说明里把“可对外分发的完整 APK”当成当前事实。
+- 不要把 X11 桌面写成已验证功能：代码路径完整，但尚未在真机跑通 XFCE。
+- 不要把 X server 或 lorie 组件搬进主进程：lorie 把 libc 的 `exit()`/`abort()` 覆盖成 `_exit()`，一次 `FatalError` 会直接杀死所在进程。
+- 不要在文档或代码里恢复 Alpine 支持口径：`0.18.29` 已删除 `AlpineMirrorManager`、Alpine 镜像设置项和 `ConfigKeys.AlpineMirrorUrl`。
 - 不要把 Release 构建当普通只读验证；Release 可能递增 `version.properties` 并备份 R8 mapping。mapping 文件仅由公开构建逻辑做本地归档。
 - 不要恢复或复制 `docs/workflows/receive-release.yml` 到 `.github/workflows/`；旧 `repository_dispatch` 私有仓库发布链路已废弃。
 - `README_EN.md` 存在历史口径；涉及构建、DI、工具链时以中文 README、`docs/开发指南.md`、`docs/架构概览.md`、当前代码和配置为准。

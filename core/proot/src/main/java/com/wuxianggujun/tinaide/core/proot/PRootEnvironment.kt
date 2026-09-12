@@ -6,6 +6,7 @@ import com.wuxianggujun.tinaide.core.config.IConfigManager
 import com.wuxianggujun.tinaide.core.linux.LinuxEnvironment
 import com.wuxianggujun.tinaide.core.linux.LinuxExecutionResult
 import com.wuxianggujun.tinaide.core.linux.LinuxInteractiveProcess
+import com.wuxianggujun.tinaide.core.linuxdesktop.UbuntuDesktopProvisioner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -42,15 +43,19 @@ class PRootEnvironment(
     @Volatile
     private var cachedPRootRootfsPath: String? = null
 
+    private val desktopProvisioner: UbuntuDesktopProvisioner by lazy {
+        UbuntuDesktopProvisioner(this)
+    }
+
     fun getPRootManager(): PRootManager {
-        val currentRootfsPath = rootfsProfileStore.getActiveRootfsPath()
+        val currentRootfsPath = requireUbuntuProfile().rootfsPath
         val cached = cachedPRootManager
         if (cached != null && cachedPRootRootfsPath == currentRootfsPath) {
             return cached
         }
 
         return synchronized(this) {
-            val synchronizedPath = rootfsProfileStore.getActiveRootfsPath()
+            val synchronizedPath = requireUbuntuProfile().rootfsPath
             val synchronizedCached = cachedPRootManager
             if (synchronizedCached != null && cachedPRootRootfsPath == synchronizedPath) {
                 synchronizedCached
@@ -63,10 +68,20 @@ class PRootEnvironment(
         }
     }
 
-    fun getActiveGuestPackageManager(): RootfsPackageManager = rootfsProfileStore.getActiveProfile().packageManager
+    fun getActiveGuestPackageManager(): RootfsPackageManager = requireUbuntuProfile().packageManager
+
+    suspend fun inspectUbuntuDesktop(): UbuntuDesktopProvisioner.Status = desktopProvisioner.inspect()
+
+    suspend fun installUbuntuDesktop(
+        progress: (UbuntuDesktopProvisioner.Progress) -> Unit = {},
+    ): Result<UbuntuDesktopProvisioner.InstallResult> = desktopProvisioner.install(progress)
+
+    // 不在这里提供 startUbuntuDesktop：桌面会话必须由 `:x11` 进程 spawn
+    // （init-proot.sh 带 --kill-on-exit，谁 spawn 谁决定 XFCE 的生死）。
+    // 入口是 UbuntuLinuxDesktopCoordinator.startSession。
 
     fun isInstalled(): Boolean {
-        val activeProfile = rootfsProfileStore.getActiveProfileOrNull() ?: return false
+        val activeProfile = rootfsProfileStore.getActiveProfileForDistro(DEFAULT_DISTRO_ID) ?: return false
         return rootfsProfileStore.isInstalled(activeProfile)
     }
 
@@ -90,9 +105,16 @@ class PRootEnvironment(
         }
     }
 
-    override fun isAvailable(): Boolean = runCatching {
-        !PRootBootstrap.isInstalling() && isInstalled() && !needsUpdate()
-    }.getOrDefault(false)
+    override fun isAvailable(): Boolean {
+        return runCatching {
+            val manager = getPRootManager()
+            !PRootBootstrap.isInstalling() &&
+                isInstalled() &&
+                manager.isRuntimeSupported() &&
+                manager.isInstalled() &&
+                !needsUpdate()
+        }.getOrDefault(false)
+    }
 
     override suspend fun execute(
         command: List<String>,
@@ -228,7 +250,7 @@ class PRootEnvironment(
     )
 
     suspend fun checkLinuxDistroHealth(): LinuxDistroRootfsHealthReport {
-        val packageManager = rootfsProfileStore.getActiveProfileOrNull()?.packageManager
+        val packageManager = rootfsProfileStore.getActiveProfileForDistro(DEFAULT_DISTRO_ID)?.packageManager
             ?: RootfsPackageManager.UNKNOWN
         return rootfsHealthChecker.check(
             linuxEnvironment = this,
@@ -246,6 +268,14 @@ class PRootEnvironment(
     }
 
     private fun shellEscape(value: String): String = "'" + value.replace("'", "'\\''") + "'"
+
+    private fun requireUbuntuProfile(): RootfsProfile =
+        rootfsProfileStore.getActiveProfileForDistro(DEFAULT_DISTRO_ID)
+            ?: error("Ubuntu Linux environment is not installed")
+
+    private companion object {
+        const val DEFAULT_DISTRO_ID = SelfHostedLinuxDistroRuntime.DEFAULT_DISTRO_ID
+    }
 }
 
 internal fun buildCommandAvailabilityProbe(command: String): List<String>? {

@@ -1,6 +1,27 @@
 # 统一布局：字符偏移统一模型（charOffset Unified Layout）
 
 > 版本：v2.1 | 日期：2026-03-06
+> 状态：历史参考（设计提案，仅部分落地）
+> 最后人工核验：2026-09-09
+
+**落地情况（2026-09-09 回源码核对）**
+
+已落地的部分：
+
+- charOffset 统一坐标：`EditorState.cursorOffset` / `selectionRange: OffsetRange?` 已是内部唯一坐标（第 3 节）。
+- `OffsetRange` 已存在（`core/editor-view/.../OffsetRange.kt`），旧 `Selection` 数据类已删除。
+- `wrapSegmentCount()` 已删除，分段统一走 `EditorWordWrapLayoutCache`（第 6 节）。
+- `Position` 仅保留在 LSP 边界与状态栏派生显示：`EditorState.cursorPosition` 是由 offset 派生的只读属性。
+
+**未落地**的部分（第 4、5、8.2 节）：
+
+- `EditorFrameLayout`、`VisualLineLayout`、`HitZone`、`OffsetViewport` 这几个类**不存在**。
+- `EditorRenderer.render()` 仍是原文的 "Before" 签名 `render(drawScope, state, textPaint, lineNumberPaint)`。
+- 每帧共享状态由可复用的 `EditorRenderFrameContext` 承载（不是不可变快照）；命中区域由
+  `EditorRenderer.hitZones()` 返回 `EditorHitZones`；视觉行映射走 `EditorVisualLineMapper` +
+  `EditorVisualLineIndex`（Fenwick 索引）；逐行 render plan 走 `EditorLineRenderPlanCache`。
+
+阅读第 4、5、8.2 节时请当作未采纳的方案，不要据此判断当前渲染架构。
 
 ## 0. 设计宣言
 

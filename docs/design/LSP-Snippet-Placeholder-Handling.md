@@ -1,8 +1,9 @@
 # LSP Snippet 占位符处理机制
 
-> 文档版本：2.2
+> 文档版本：2.3
 > 创建日期：2026-03-03
-> 最后更新：2026-08-13
+> 最后更新：2026-09-09
+> 最后人工核验：2026-09-09
 
 ## 概述
 
@@ -30,14 +31,15 @@ void ${1:functionName}(${2:int} ${3:param}) {
 }
 ```
 
-## 当前实现（Phase 1 + Phase 2）
+## 当前实现（Phase 1 + Phase 2 + Phase 3 + Phase 6）
 
 ### 核心模块
 
 | 文件 | 职责 |
 |------|------|
-| [`SnippetParser.kt`](../../core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SnippetParser.kt) | Snippet 语法解析，生成 AST 和展开文本 |
-| [`SnippetSession.kt`](../../core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SnippetSession.kt) | 会话状态管理，Tab/Shift+Tab 跳转，偏移与长度同步 |
+| [`SnippetParser.kt`](../../core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SnippetParser.kt) | Snippet 语法解析，生成 `ParsedSnippet` 与展开文本 |
+| [`SnippetSession.kt`](../../core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SnippetSession.kt) | 会话状态管理，Tab/Shift+Tab 跳转，偏移与长度同步，同 index 分组同步编辑 |
+| [`EditorCompletionController.kt`](../../core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCompletionController.kt) | 占位符聚焦；choice 占位符复用补全弹窗展示选项列表 |
 | [`EditorState.kt`](../../core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt) | 编辑器集成，占位符焦点/选区管理 |
 | [`EditorKeyboardShortcuts.kt`](../../core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorKeyboardShortcuts.kt) | Tab/Shift+Tab/Escape 快捷键处理 |
 | [`EditorStateEditOperations.kt`](../../core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorStateEditOperations.kt) | 编辑操作时同步 snippet 偏移 |
@@ -54,8 +56,12 @@ void ${1:functionName}(${2:int} ${3:param}) {
 | `${3}` | `Placeholder(3, "")` | `` |
 | `$1` | `Placeholder(1, "")` | `` |
 | `$0` | `Placeholder(0, "")` 排最后 | `` |
-| `${1\|one,two,three\|}` | `ChoicePlaceholder(1, ["one","two","three"])` | `one` |
+| `${1\|one,two,three\|}` | `SnippetPlaceholderInfo(1, choices = ["one","two","three"])` | `one` |
 | `\$`、`\}`、`\\` | 转义字符 | `$`、`}`、`\` |
+
+> 表中 `Placeholder(index, 默认值)` 是示意写法。实际数据结构是
+> `SnippetPlaceholderInfo(tabstopIndex, offsetInText, length, choices)`：默认值不单独保存，
+> 已经写进 `ParsedSnippet.expandedText`，占位符只记录它在展开文本中的偏移与长度。
 
 ### SnippetSession 功能
 
@@ -65,6 +71,8 @@ void ${1:functionName}(${2:int} ${3:param}) {
 - **Escape 取消**：随时取消 snippet 会话，光标停留在当前位置
 - **偏移与长度同步**：`adjustOffsets(editOffset, delta)` 在 snippet 内编辑时动态更新占位符偏移和当前占位符长度
 - **多处同 index**：同一 tabstopIndex 出现多次时，`currentGroup()` 返回整个分组
+- **同步编辑**：`applySynchronizedEdit(...)` 在当前分组内把编辑同时应用到同 index 的所有位置，并重算后续占位符偏移（由 `EditorStateEditOperations` 调用）
+- **choice 选项弹窗**：占位符带 `choices` 时，`EditorCompletionController` 用补全弹窗列出选项，选中项通过 `textEdit` 替换占位符文本
 - **破坏性操作保护**：undo/redo/replaceAll/toggleLineComment 会自动取消 snippet 会话
 
 ### LSP 补全流转
@@ -124,10 +132,10 @@ private fun normalizeCompletionPayloadText(
 |------|------|--------|------|
 | 1 | 基础解析器 + 单占位符跳转 + Escape 取消 | P0 | ✅ 已完成（2026-03-07） |
 | 2 | Choice snippet 解析 + Shift+Tab 后退 + 偏移与长度同步 | P0 | ✅ 已完成（2026-03-08） |
-| 3 | 多占位符同步编辑（同 index 多处同步输入） | P0 | ❌ 待实现 |
+| 3 | 多占位符同步编辑（同 index 多处同步输入） | P0 | ✅ 已完成（`SnippetSession.applySynchronizedEdit`） |
 | 4 | 嵌套 snippet 支持 | P2 | ❌ 待实现 |
 | 5 | 变量替换（如 `$TM_FILENAME`） | P2 | ❌ 待实现 |
-| 6 | Choice snippet 下拉选择 UI | P1 | ❌ 待实现 |
+| 6 | Choice snippet 下拉选择 UI | P1 | ✅ 已完成（复用补全弹窗，`EditorCompletionController`） |
 
 ## 已知限制
 
@@ -162,3 +170,4 @@ private fun normalizeCompletionPayloadText(
 | 2026-03-08 | 2.0 | Phase 2 完成：Choice snippet、Shift+Tab 后退、偏移同步 |
 | 2026-03-08 | 2.1 | Bug 修复：补全偏移同步覆盖所有编辑路径、占位符长度追踪、破坏性操作取消会话、转义处理修正；文档与实际代码对齐（移除过时的模式 0/1/2 描述） |
 | 2026-08-13 | 2.2 | 更新 `LspEditorManager` 下沉到 `core:editor-lsp` 后的源码位置，并补充已拆出的 `LspCompletionMapping` 职责 |
+| 2026-09-09 | 2.3 | 回源码核验：Phase 3（同步编辑）与 Phase 6（choice 选项弹窗）已落地；修正 `ChoicePlaceholder` 等不存在的类型名为 `SnippetPlaceholderInfo` |

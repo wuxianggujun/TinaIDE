@@ -1,6 +1,7 @@
 package com.wuxianggujun.tinaide.core.linuxdistro
 
 import com.google.common.truth.Truth.assertThat
+import java.io.File
 import org.junit.Assert.assertThrows
 import org.junit.Test
 
@@ -144,6 +145,25 @@ class LinuxDistroManifestTest {
 
         assertThat(manifest.mirrors).isEmpty()
         assertThat(ManifestLinuxDistroCatalog(manifest).mirrorRules()).isEmpty()
+    }
+
+    @Test
+    fun bundledManifest_shouldContainUbuntuOnlyAndUbuntuMirrorRules() {
+        val workingDirectory = File(requireNotNull(System.getProperty("user.dir")))
+        val manifestFile = listOf(
+            File(workingDirectory, "src/main/assets/linux-distro/manifest.json"),
+            File(workingDirectory, "core/linux-distro/src/main/assets/linux-distro/manifest.json"),
+        ).firstOrNull { it.isFile }
+        requireNotNull(manifestFile) { "Bundled linux distro manifest not found from ${workingDirectory.absolutePath}" }
+
+        val manifest = LinuxDistroManifestParser.decode(manifestFile.readText(Charsets.UTF_8))
+        assertThat(manifest.distros.map { it.id }).containsExactly("ubuntu")
+        assertThat(manifest.distros.single().packageManager).isEqualTo(DistroPackageManager.APT)
+
+        assertThat(manifest.mirrors.map { it.replaceWith }).containsAtLeast(
+            "https://mirrors.tuna.tsinghua.edu.cn/ubuntu-cdimage/",
+            "https://mirrors.ustc.edu.cn/ubuntu-cdimage/",
+        )
     }
 
     private fun distro(id: String): DistroDefinition = DistroDefinition(

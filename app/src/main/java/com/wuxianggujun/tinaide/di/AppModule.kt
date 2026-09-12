@@ -1,5 +1,6 @@
 package com.wuxianggujun.tinaide.di
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import com.wuxianggujun.tinaide.core.IAppNavigator
@@ -28,6 +29,14 @@ val appModule = module {
                 val intent = Intent(context, com.wuxianggujun.tinaide.ui.TerminalActivity::class.java).apply {
                     putExtra(com.wuxianggujun.tinaide.ui.TerminalActivity.EXTRA_WORK_DIR, workDir)
                     putExtra(com.wuxianggujun.tinaide.ui.TerminalActivity.EXTRA_PROJECT_PATH, workDir)
+                }
+                context.startActivity(intent)
+            }
+
+            override fun openLinuxDesktop(context: Context) {
+                val intent = Intent(context, com.termux.x11.MainActivity::class.java)
+                if (context !is Activity) {
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
             }

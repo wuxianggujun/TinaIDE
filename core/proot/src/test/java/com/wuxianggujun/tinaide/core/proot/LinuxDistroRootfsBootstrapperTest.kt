@@ -14,14 +14,13 @@ class LinuxDistroRootfsBootstrapperTest {
         runBlocking {
             val environment = FakeLinuxEnvironment(
                 availableCommands = mutableSetOf("apt-get", "apt-cache", "tar"),
-                existingPackages = setOf("bash", "curl", "xz-utils", "file", "ca-certificates", "proot"),
+                existingPackages = setOf("bash", "curl", "xz-utils", "file", "ca-certificates"),
                 packageCommands = mapOf(
                     "bash" to listOf("bash"),
                     "curl" to listOf("curl"),
                     "xz-utils" to listOf("xz"),
                     "file" to listOf("file"),
                     "ca-certificates" to listOf("update-ca-certificates"),
-                    "proot" to listOf("proot"),
                 ),
             )
 
@@ -43,7 +42,6 @@ class LinuxDistroRootfsBootstrapperTest {
                 "xz-utils",
                 "file",
                 "ca-certificates",
-                "proot",
             ).inOrder()
             val installCommand = environment.commands.single { command ->
                 command.argv.take(3) == listOf("apt-get", "install", "-y")
@@ -53,7 +51,7 @@ class LinuxDistroRootfsBootstrapperTest {
     }
 
     @Test
-    fun bootstrap_shouldSkipUnavailableOptionalPackages() {
+    fun bootstrap_shouldCompleteWhenAllApkBootstrapCommandsExist() {
         runBlocking {
             val environment = FakeLinuxEnvironment(
                 availableCommands = mutableSetOf("/sbin/apk", "bash", "curl", "tar", "xz", "file", "update-ca-certificates"),
@@ -67,7 +65,7 @@ class LinuxDistroRootfsBootstrapperTest {
             )
 
             assertThat(result.installedPackages).isEmpty()
-            assertThat(result.skippedOptionalGroups).containsExactly("proot")
+            assertThat(result.skippedOptionalGroups).isEmpty()
         }
     }
 

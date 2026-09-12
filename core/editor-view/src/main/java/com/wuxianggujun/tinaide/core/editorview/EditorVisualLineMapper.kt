@@ -41,13 +41,15 @@ internal class EditorVisualLineMapper(
         val inlayHintsVersion: Long
             get() = 0L
 
-        fun inlayHintsForLine(line: Int): List<EditorInlayHint> = emptyList()
+        val inlayHintsByLine: Map<Int, List<EditorInlayHint>>
+            get() = emptyMap()
 
         /** 折叠层（[EditorFoldingManager]）产出的可见文档行映射。 */
         fun lineMap(): EditorFoldingManager.LineMap
     }
 
-    internal data class VisualLineMap(
+    // Live layout index, not an immutable snapshot. Only the mapper updates its row counts.
+    internal class VisualLineMap(
         val docLineCount: Int,
         /**
          * folding 后的“可见文档行列表”（索引=折叠后的可见行序号，值=docLine）。
@@ -55,17 +57,28 @@ internal class EditorVisualLineMapper(
          * 注意：这不是最终的 visualLine（因为每个 docLine 可能会被 wordWrap 拆成多段）。
          */
         val visibleDocLines: IntArray,
-        /** 每个 visibleDocLine 对应的“首个视觉行”索引（按 wordWrap 展开后）。 */
-        val firstVisualLineByVisibleIndex: IntArray,
-        /** 每个 visibleDocLine 对应的“视觉行段数”（>=1）。 */
-        val visualLineCountByVisibleIndex: IntArray,
-        /** 全部视觉行总数（folding + wordWrap 后）。 */
-        val visualLineCount: Int,
+        private val wrappedLineIndex: EditorVisualLineIndex?,
         val wordWrapEnabled: Boolean,
         val wrapColumns: Int
     ) {
         val visibleDocLineCount: Int
             get() = visibleDocLines.size
+
+        val visualLineCount: Int
+            get() = wrappedLineIndex?.total ?: visibleDocLineCount
+
+        fun firstVisualLineAt(visibleIndex: Int): Int =
+            wrappedLineIndex?.firstVisualLineAt(visibleIndex) ?: visibleIndex
+
+        fun segmentCountAt(visibleIndex: Int): Int = wrappedLineIndex?.countAt(visibleIndex) ?: 1
+
+        fun visibleIndexForVisualLine(visualLine: Int): Int =
+            wrappedLineIndex?.visibleIndexForVisualLine(visualLine)
+                ?: visualLine.coerceIn(0, (visibleDocLineCount - 1).coerceAtLeast(0))
+
+        fun updateSegmentCount(visibleIndex: Int, count: Int) {
+            checkNotNull(wrappedLineIndex).update(visibleIndex, count)
+        }
     }
 
     private val textBuffer: TextBuffer get() = host.textBuffer
@@ -82,6 +95,9 @@ internal class EditorVisualLineMapper(
     private var docSegmentCountsTabSize: Int = Int.MIN_VALUE
     private var docSegmentCountsVersion: Long = Long.MIN_VALUE
     private var docSegmentCountsInlayHintsVersion: Long = Long.MIN_VALUE
+    private var cachedInlayHintsByLine: Map<Int, List<EditorInlayHint>> = emptyMap()
+    private val pendingSegmentCountLines = HashSet<Int>()
+    private var visualLineMapCountGeneration: Int = Int.MIN_VALUE
 
     private var visualLineMapEpochCounter: Long = 0L
     private var vlmEpochTextVersion: Long = Long.MIN_VALUE
@@ -130,6 +146,7 @@ internal class EditorVisualLineMapper(
     /**
      * 使视觉行映射缓存失效。等价于原 [EditorState.onConfigChanged] 内的 `visualLineMapCache = null`。
      */
+    @Synchronized
     fun invalidateVisualLineMapCache() {
         visualLineMapCache = null
     }
@@ -148,27 +165,11 @@ internal class EditorVisualLineMapper(
         return -1
     }
 
-    fun resolveVisibleIndexForVisualLine(map: VisualLineMap, visualLine: Int): Int {
-        val starts = map.firstVisualLineByVisibleIndex
-        if (starts.isEmpty()) return 0
-        val target = visualLine.coerceAtLeast(0)
-        // 查找最后一个 start <= target 的索引
-        var low = 0
-        var high = starts.size - 1
-        var result = 0
-        while (low <= high) {
-            val mid = (low + high) ushr 1
-            val value = starts[mid]
-            if (value <= target) {
-                result = mid
-                low = mid + 1
-            } else {
-                high = mid - 1
-            }
-        }
-        return result.coerceIn(0, starts.lastIndex)
-    }
+    fun resolveVisibleIndexForVisualLine(map: VisualLineMap, visualLine: Int): Int =
+        map.visibleIndexForVisualLine(visualLine)
 
+    // Buffer notifications may arrive off the UI thread; guard the dirty set and count storage together.
+    @Synchronized
     fun visualLineMap(): VisualLineMap {
         val currentVersion = textBuffer.version
         val foldingEnabled = host.codeFoldingEnabled && host.foldRegionsDocumentVersion == currentVersion
@@ -207,9 +208,7 @@ internal class EditorVisualLineMapper(
             val built = VisualLineMap(
                 docLineCount = docLineCount,
                 visibleDocLines = visibleDocLines,
-                firstVisualLineByVisibleIndex = IntArray(0),
-                visualLineCountByVisibleIndex = IntArray(0),
-                visualLineCount = 0,
+                wrappedLineIndex = null,
                 wordWrapEnabled = false,
                 wrapColumns = wrapColumns
             )
@@ -218,17 +217,7 @@ internal class EditorVisualLineMapper(
             return built
         }
 
-        val firstVisual = IntArray(visibleCount)
-        val visualCounts = IntArray(visibleCount)
-        var totalVisualLines = 0
-
-        if (!wordWrapEnabled || wrapColumns <= 0) {
-            for (i in 0 until visibleCount) {
-                firstVisual[i] = i
-                visualCounts[i] = 1
-            }
-            totalVisualLines = visibleCount
-        } else {
+        val wrappedLineIndex = if (wordWrapEnabled && wrapColumns > 0) {
             val safeWrapColumns = wrapColumns.coerceAtLeast(1)
             ensureDocSegmentCountStorage(
                 wrapColumns = safeWrapColumns,
@@ -237,26 +226,39 @@ internal class EditorVisualLineMapper(
                 textVersion = currentVersion,
                 inlayHintsVersion = host.inlayHintsVersion,
             )
-            for (i in 0 until visibleCount) {
-                firstVisual[i] = totalVisualLines
-                val docLine = visibleDocLines[i].coerceIn(0, docLineCount - 1)
-                val segments = segmentCountForLine(docLine, safeWrapColumns, tabSize)
-                visualCounts[i] = segments
-                totalVisualLines += segments
+            if (cached != null && cached.wordWrapEnabled &&
+                cached.docLineCount == docLineCount &&
+                cached.visibleDocLines === visibleDocLines &&
+                cached === visualLineMapCache &&
+                visualLineMapCountGeneration == docSegmentCountGeneration
+            ) {
+                for (docLine in pendingSegmentCountLines) {
+                    val visibleIndex = base.docToVisualLine[docLine]
+                    if (visibleIndex < 0) continue
+                    cached.updateSegmentCount(visibleIndex, segmentCountForLine(docLine, safeWrapColumns, tabSize))
+                }
+                pendingSegmentCountLines.clear()
+                visualLineMapCacheEpoch = epoch
+                return cached
             }
+            EditorVisualLineIndex(IntArray(visibleCount) { index ->
+                segmentCountForLine(visibleDocLines[index], safeWrapColumns, tabSize)
+            })
+        } else {
+            null
         }
 
         val built = VisualLineMap(
             docLineCount = docLineCount,
             visibleDocLines = visibleDocLines,
-            firstVisualLineByVisibleIndex = firstVisual,
-            visualLineCountByVisibleIndex = visualCounts,
-            visualLineCount = totalVisualLines.coerceAtLeast(0),
+            wrappedLineIndex = wrappedLineIndex,
             wordWrapEnabled = wordWrapEnabled && wrapColumns > 0,
             wrapColumns = wrapColumns
         )
         visualLineMapCache = built
         visualLineMapCacheEpoch = epoch
+        visualLineMapCountGeneration = docSegmentCountGeneration
+        pendingSegmentCountLines.clear()
         return built
     }
 
@@ -281,15 +283,39 @@ internal class EditorVisualLineMapper(
 
         if (docSegmentCountsWrapColumns != wrapColumns ||
             docSegmentCountsTabSize != tabSize ||
-            docSegmentCountsVersion != textVersion ||
-            docSegmentCountsInlayHintsVersion != inlayHintsVersion
+            docSegmentCountsVersion != textVersion
         ) {
             advanceDocSegmentCountGeneration()
         }
         docSegmentCountsWrapColumns = wrapColumns
         docSegmentCountsTabSize = tabSize
         docSegmentCountsVersion = textVersion
+        refreshInlayHintCounts(inlayHintsVersion)
+    }
+
+    private fun refreshInlayHintCounts(inlayHintsVersion: Long) {
+        if (docSegmentCountsInlayHintsVersion == inlayHintsVersion) return
+        val current = host.inlayHintsByLine
+        for ((line, hints) in cachedInlayHintsByLine) {
+            if (current[line] != hints) invalidateSegmentCount(line)
+        }
+        for ((line, hints) in current) {
+            if (cachedInlayHintsByLine[line] != hints) invalidateSegmentCount(line)
+        }
+        cachedInlayHintsByLine = current
         docSegmentCountsInlayHintsVersion = inlayHintsVersion
+    }
+
+    private fun invalidateSegmentCount(line: Int) {
+        val generations = docSegmentCountGenerations ?: return
+        if (line !in generations.indices) return
+        generations[line] = 0
+        if (visualLineMapCache == null) return
+        pendingSegmentCountLines.add(line)
+        if (pendingSegmentCountLines.size > MAX_INCREMENTAL_LINE_UPDATES) {
+            visualLineMapCache = null
+            pendingSegmentCountLines.clear()
+        }
     }
 
     private fun advanceDocSegmentCountGeneration() {
@@ -317,7 +343,7 @@ internal class EditorVisualLineMapper(
         tabSize: Int
     ): Int {
         val lineText = textBuffer.getLine(docLine)
-        val inlayHints = host.inlayHintsForLine(docLine)
+        val inlayHints = host.inlayHintsByLine[docLine].orEmpty()
         if (inlayHints.isEmpty()) {
             return TextScanKernel.countWrapSegments(
                 lineText = lineText,
@@ -335,13 +361,15 @@ internal class EditorVisualLineMapper(
 
     /**
      * 将 [TextChange] 增量应用到 [docSegmentCounts]：
-     * - head [0, startLine) 原样拷贝；
+     * - 行数不变时只标记编辑窗，不复制全文数组；
+     * - 行数变化时 head [0, startLine) 原样拷贝；
      * - 编辑窗 [startLine, newChangedEndLine] 标记为失效，等实际可见时再重算；
      * - tail (oldEnd, oldDocCount) 按 lineDelta 平移到 (newEnd, newDocCount)。
      *
      * 若事件元数据与当前 buffer 行数不一致，则丢弃整份计数存储并在下一次映射中惰性重建，
      * 避免用不可信的 lineDelta 做越界数组搬运。
      */
+    @Synchronized
     fun applyTextChangeToDocSegmentCounts(change: TextChange, newVersion: Long) {
         val cached = docSegmentCounts ?: return
         val cachedGenerations = docSegmentCountGenerations ?: run {
@@ -382,6 +410,20 @@ internal class EditorVisualLineMapper(
             return
         }
         val newEnd = newEndLong.toInt()
+        if (delta != 0) {
+            // Old hint widths belong to document coordinates, not to the rows being shifted.
+            for (line in cachedInlayHintsByLine.keys) invalidateSegmentCount(line)
+        }
+        refreshInlayHintCounts(host.inlayHintsVersion)
+        if (delta == 0) {
+            for (line in startLine..newEnd) invalidateSegmentCount(line)
+            docSegmentCountsVersion = newVersion
+            return
+        }
+
+        // Row insertion/removal also changes the folding map; rebuild the cumulative index.
+        visualLineMapCache = null
+        pendingSegmentCountLines.clear()
         val arr = IntArray(actualNewDocCount)
         val arrGenerations = IntArray(actualNewDocCount)
         // head: [0, startLine)
@@ -401,12 +443,20 @@ internal class EditorVisualLineMapper(
         docSegmentCounts = arr
         docSegmentCountGenerations = arrGenerations
         docSegmentCountsVersion = newVersion
+        for (line in cachedInlayHintsByLine.keys) invalidateSegmentCount(line)
     }
 
     private fun discardDocSegmentCountStorage(newVersion: Long) {
         docSegmentCounts = null
         docSegmentCountGenerations = null
+        visualLineMapCache = null
+        pendingSegmentCountLines.clear()
         docSegmentCountsVersion = newVersion
         docSegmentCountsInlayHintsVersion = host.inlayHintsVersion
+        cachedInlayHintsByLine = host.inlayHintsByLine
+    }
+
+    private companion object {
+        const val MAX_INCREMENTAL_LINE_UPDATES = 1024
     }
 }

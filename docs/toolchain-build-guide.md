@@ -29,7 +29,7 @@
 - `tools/run-toolchain-builder.ps1`
 - `scripts/build-and-package-android-toolchain.sh`
 - `tools/sync-tina-toolchain-assets.ps1`
-- `app/build.gradle.kts` 中的 `verifyTinaToolchainAssets`
+- `verifyTinaToolchainAssets` 任务：由 convention plugin `tina.android.app.toolchain.assets` 注册，实现位于 `build-logic/convention/src/main/kotlin/com/wuxianggujun/tinaide/buildlogic/TinaAndroidAppToolchainAssetsPlugin.kt`（已不在 `app/build.gradle.kts` 内联定义）
 
 ## 当前产物模型
 
@@ -147,6 +147,8 @@ build/tina-toolchain/
 - 基础包：`tinaide-toolchain-base-<arch>-v<ver>.tar.xz`
 - tools 包：`tinaide-toolchain-tools-<arch>-v<ver>.tar.xz`
 - 对应 `sha256` 文件
+
+应用了 LLVM patch 的重打包产物会带 `-patched` 后缀。当前仓库内 arm64 与 x86_64 资产都指向 `tinaide-toolchain-<arch>-v0.2.4-patched.tar.xz`，`current.properties` 中的 `full` / `sha256` 必须与实际文件名逐字一致。
 
 ## 同步到 App 资产目录
 

@@ -31,7 +31,438 @@
 
 ## [Unreleased]
 
-暂无已记录变更。
+### Fixed
+
+#### 运行终端只响应程序结束后的新回车
+
+修复程序读取输入后立即结束时，同一次 Enter 的残余事件被误判为关闭操作的问题：用户为程序输入
+数字后按下 Enter，程序读到输入随即退出，此时隐藏输入框抢焦并接住了同一次按键的抬起事件，界面
+立刻关闭。现在输入过程中的回车只会送入程序标准输入；程序结束后，需再次按下 Enter 才会关闭。
+
+关闭判据不再只看按键属性，而是以程序结束时刻（`uptimeMillis`，与 `KeyEvent.downTime` 同一
+时钟）为闸门，四个入口共用：
+
+- **物理/软键盘按键**（`onKeyDown`、隐藏输入框的 `onPreviewKeyEvent`）：精确判据——要求
+  `ACTION_DOWN`、`repeatCount == 0`，且 `downTime` 晚于程序结束时刻。按键在程序结束前按下即
+  被拒绝，不依赖时间窗猜测。被拒绝的 Enter 一律消费掉，避免落到输入框自身的 `ImeAction`。
+- **IME Done 与快捷键栏点击**：这两条路径不携带时间戳（`performEditorAction` 是 IPC 调用），
+  改用 300ms 宽限窗——程序结束瞬间已在途的事件都落在窗内。此前 `KeyboardActions(onDone)`
+  完全没有守卫，与已修的抬起事件竞态属同一形状。
+
+顺带修正 `onCodePoint` 的死分支：它原先比对 `'\n'` / `'\r'`，但 Termux 会把 commitText 型
+软键盘（Hacker's Keyboard、OpenBoard 等）的换行折成 ctrl+`'m'`，该分支永远不成立。
+
+**未在真机验证**：以上为静态分析加 JVM 单测（11 个用例覆盖跨状态抬起、自动重复、小键盘 Enter、
+宽限窗边界与软键盘换行编码）结论，实际 IME 行为需真机回归。
+
+#### 大文件打开卡死：堵住两条绕过 10MB 阈值的旁路
+
+`EditorTabManager.determineContentType()` 原本已有 10MB 阈值——超过就走只读分页查看器
+`LargeTextViewerScreen`，不进代码编辑器。但有两条路径绕过了它：
+
+- **会话恢复**（主要原因）：会话快照只存文件路径，不存"上次是用编辑器还是查看器打开的"。
+  用户一旦强制用编辑器打开过大文件，之后每次冷启动都会把它整份重新载入，反复卡死。
+  现在 `EditorManager.restoreEditorState()` 在恢复入口按大小跳过。
+  拦在恢复入口而不是 `syncFromManager()`：后者会在用户刚点完"用编辑器打开"时立刻把
+  contentType 改回 `LARGE_TEXT`，导致按钮失效。
+- **"用编辑器打开"按钮**：现在弹二次确认，说明会整份载入内存、可能卡顿或内存不足，
+  以及重启后不会自动恢复为编辑器。
+
+阈值常量提取到 `core:common` 的 `EditorFileSizeLimits`，`app` 与 `feature:editor` 共用同一个值。
+
+**行为变化**：≥10MB 的标签冷启动后不再自动进代码编辑器。不会丢未保存内容（这条路径本来就是
+整份读盘覆盖 buffer，会话里也不存正文），丢的是"曾强制用编辑器打开"这个意图和光标/滚动位置。
+
+### Performance
+
+#### 编辑器加载：rope 建树移出主线程，脏标记指纹改走分片
+
+- `RopeTextBuffer.replaceAllOffThread()`：把 rope 建树与行索引重建放到 `Dispatchers.Default`，
+  **listener 派发仍严格留在调用线程**。不能整个挪走——change listener 会写 Compose 状态和一批
+  非线程安全的渲染缓存（折叠区间、换行布局、可视行段数），而 `TinaEditor` 在加载期间就已组合、
+  这些缓存是活的，派发跑到后台会与主线程渲染竞争。
+- `RopeTextBuffer.contentFingerprint()` / `fingerprintSnapshot()`：按 rope 内部分片折叠
+  FNV-1a，不再把整份文档物化成 String 再逐字符扫描。`DocumentSession` 的四个调用点
+  （`attachEditor`、`markEditorSnapshotClean`、`computeDirty`、`save`）改走这条路，
+  不支持分片指纹的 binding 自动回退到原物化路径。
+  两条路径的哈希必须一致，否则脏标记误判，已用独立参考实现锁住该不变量
+  （跨分片、代理对、编辑后一致性）。
+
+30MB 文档桌面 JVM 实测：`replaceAll` 163ms → 12ms（主线程），指纹 76ms → 47ms 且省掉一次
+约 60MB 的 String 分配。
+
+#### 大文件加载改为流式，不再物化整份文档
+
+打开 30MB 文件时，加载期堆峰值来自四份等长副本叠加。现逐项消除：
+
+- **rope 流式建树**：`Rope.beginStreamingBuild()` 按 IO 分片直接产出叶子。
+  旧路径需先持有完整 String，`chunked()` 还会再造一份等长分片列表。
+- **行索引流式重建**：native `LineIndexKernel::AppendChunk` + `LineIndex.appendChunk()`，
+  不再要求单个连续的 30MB `jstring`。Kotlin 回退实现同步保持语义一致。
+- **IO 移出写锁**：先在锁外建好 rope 与行索引，再在写锁内 `stealFrom` 原子换入。
+  加载期间编辑器已在渲染，若写锁被整段磁盘读取占住，主线程的 `getLine` /
+  `offsetToPosition` 会全部阻塞。
+- **tree-sitter 超阈值不创建**：新增 `SYNTAX_HIGHLIGHT_THRESHOLD_BYTES`（4MB）。
+  tree-sitter 长期持有一份完整 `StringBuilder`，每次 parse 再物化一份快照，
+  对 30MB 文档这两笔各约 63MB；而它对这个量级本就几乎不可用（每次键入都要 replace
+  整个 StringBuilder）。超阈值放弃高亮与折叠，换取可编辑性。
+
+`TextChange` 随之新增 `hasCompleteNewText` / `newTextLength`，与既有 `hasCompleteOldText`
+对称。流式加载发出的事件不携带正文（文档从未以单个字符串存在过），元数据仍然准确。
+消费者已逐个审计：渲染四个缓存与折叠只用行偏移元数据；`EditorState` 与 tree-sitter 的
+单行快速路径改用元数据判断；LSP 侧加防御性跳过。
+
+**顺带修掉一个既有缺陷**：`EditorState.applyTextChangeToSemanticTokens` 与
+`HighlightLineCacheChange.from` 原先用 `newText.contains('\n')` 判断单行编辑。
+对**不含任何换行的大文件**（压缩 JS、单行 JSON），全量替换会满足 `lineDelta == 0` 而误入
+单行快速路径，把 `columnDelta` 算成负数。改用 `newLineBreakCount` 后不再有这个歧义。
+
+30MB 文档桌面 JVM 实测（隔离测量，取后台采样峰值）：加载期堆增量 **97.4MB → 45.4MB**。
+正文、行数、行边界、指纹与旧路径逐项一致（12 个等价性用例覆盖跨分片、代理对、
+CRLF、换行正好落在 4096 边界等情形）。
+
+**已知限制**：常驻堆未改善——rope 叶子对 30MB ASCII 文件固有约 63MB（UTF-16），
+这是硬下限。`VersionedBufferTextSnapshot` 的缓存副本仍常驻，未加阈值保护。
+Android 真机耗时与堆占用**均未实测**，上述数字为桌面 JVM 结果；JNI 改动无法由 JVM 单测覆盖
+（单测走 Kotlin 回退后端），必须真机验证。
+
+## [0.18.29] - 2026-09-07
+
+> 本版本包含许可证变更（GPL-3.0-or-later）、X11 图形桌面支持和编辑器性能优化。
+> **X11 桌面尚未在真机验证**，详见下文"仍未验证"。
+
+### Changed
+
+#### 精简 APK 体积：strip ctest/cpack + 移除扫码入口（2026-09-12）
+
+**1. x86_64 工具链包少 49.6 MB（121.36 MB → 71.77 MB）**
+
+`scripts/build-android-tools.sh` 的 strip 步骤只处理 `bin/cmake`，但 `cmake --install` 会同时
+产出 `bin/ctest` 与 `bin/cpack`。这两个二进制带着完整 `.debug_info` 进了发布包：x86_64 上
+ctest 约 200 MB、cpack 约 185 MB，其中 93.8% 是调试段。arm64 包不受影响（本来就是 strip 过的）。
+
+- **根因修复**：strip 循环改为遍历 `cmake ctest cpack`，缺失的条目跳过而不报错。
+- **现有包重打**：未重新编译工具链，直接用 Python `tarfile` 流式替换这两个成员（Windows 无法
+  在解包时创建符号链接，无法走"解包—修改—重打"路径）。3805/3805 成员校验通过，元数据零漂移，
+  12 个符号链接完整。strip 后 ctest 11.88 MB、cpack 10.89 MB。
+- **同步更新** `tinaide-toolchain-x86_64-v0.2.4-patched.sha256`。
+- **新增防线**：`tools/verify-tina-toolchain-package.ps1` 增加体积闸门，`bin/cmake|ctest|cpack`
+  超过 40 MB 直接判失败（`clang-22` 合理体积约 122 MB，所以不能用全局上限）。同时兼容
+  bsdtar 与 GNU tar 两种 `-tvf` 列表格式，解析不到体积也算失败。
+
+> **注意**：tag `toolchain-v0.2.4` 的 GitHub Release 仍挂着旧包，`tools/ci/restore-tina-toolchain-assets.sh`
+> 在干净检出时会下载它并撞上新的 sha256。发布资产替换策略待定。
+
+**2. 移除 rikkahub 扫码入口，debug APK 少 6.95 MB**
+
+Provider 导入原先提供"相机扫码"和"从相册选图"两条路径，相机扫码依赖 ML Kit barcode
+（`quickie` + CameraX）。删除相机入口后仅保留相册路径，后者走纯 zxing 解码，功能不受影响。
+
+- 删除 `SettingProviderPage.kt` 中 163 行：quickie 导入、`scanQrCodeLauncher`、`handleQRResult`
+  与选择弹窗；按钮直接触发 `PickVisualMedia`。
+- `embedded/build.gradle.kts` 移除 quickie/barcode/camera 依赖。
+- **补声明 `androidx.exifinterface`**：`ImageUtils.kt` 一直在用它，但此前只是通过
+  `androidx.camera:camera-core` 传递进编译类路径，删掉 CameraX 后立即编译失败。
+- 产物中消失：`libbarhopper_v3.so`、2 个 CameraX `.so`、3 个 `.tflite` 模型。
+- CAMERA 权限保留 —— `ChatPage` 的拍照发图仍在用。
+
+#### 许可证变更：TinaIDE 改用 GPL-3.0-or-later（2026-09-03）
+
+为集成 [termux-x11](https://github.com/termux/termux-x11) 提供的 Android 原生 X server（GPL-3.0），
+整个 TinaIDE 项目从自定义许可证 "TinaIDE Open Source License Version 1.0" 改为 **GPL-3.0-or-later**。
+
+- **根目录 `LICENSE`**：替换为 FSF 官方 GPL-3.0 全文（674 行，18 节）
+- **新增 `COPYRIGHT.md`**：声明 SPDX 标识符、解释许可证变更原因、列出分发要求
+- **新增 `NOTICE.md`**：第三方组件与许可证清单，列出所有随 APK 分发或链接的依赖及其许可证
+- **备份旧许可证**：`docs/third-party-notices/TinaIDE-Custom-License-v1.0-superseded.txt`
+
+旧自定义许可证限定开源范围仅覆盖 1.0.0 版本，并对后续版本的二进制分发施加 "仅个人非商业使用" 限制。
+GPL-3.0 不允许在下游附加非商业限制或后续版本闭源，因此原许可证第 4(a)、4(b) 条已不再适用。
+
+**许可证兼容性审计结果**：
+
+- **PRoot (termux-proot)**：GPL-2.0-or-later（73 个源文件头确认 "any later version"），可升级至 GPL-3.0
+- **termux-terminal**：GPL-3.0-only（部分文件为 AOSP Apache-2.0），已补充根目录 LICENSE
+- **RikkaHub**：**阻塞项** — 采用 "Segmented Dual Licensing"（AGPL-3.0 + 非商业/≤10 用户限制），
+  违反 GPL-3.0 第 7 条禁止 "further restrictions"，**当前无法与 GPL-3.0 的 TinaIDE 合并分发**。
+  需联系作者取得 GPL 兼容授权例外，或将其拆为可选组件。
+- **QQ SDK (`libs/open_sdk_3.5.18.0_r2b95cc45_lite.jar`)**：已删除（proprietary，零引用，dead code）
+
+#### 移除 Alpine Linux 支持，Ubuntu 24.04 成为唯一运行时（2026-09-03）
+
+- **删除 Alpine 镜像管理**：
+  - `core/proot/src/main/java/.../AlpineMirrorManager.kt` 及其单元测试
+  - `feature/settings/.../AlpineMirrorSettingsItem.kt` 设置 UI
+  - `ConfigKeys.AlpineMirrorUrl` 配置项
+  - `tools/linux-distro/generate-linux-distro-manifest.ps1` 的 `Update-AlpineMetadata` 函数
+- **修复 Ubuntu profile 劫持 bug**：`SelfHostedLinuxDistroRuntime.syncInstalledProfiles()` 不再无条件将第一个 Ubuntu profile 提升为 active，
+  仅在无 active Ubuntu profile 时提升（`RootfsProfileStoreTest` 新增 2 个测试覆盖）
+- **文档更新**：
+  - `docs/linux-distro-self-hosted-runtime.md` 移除所有 Alpine 相关内容
+  - `docs/模块功能说明.md` 更新 `:core:linux-distro` 范围
+  - `core/i18n` 中英文资源移除 Alpine 镜像相关字符串
+
+### Added
+
+#### X11 桌面 GUI 支持 — 集成 termux-x11（2026-09-04）
+
+**状态**：native 库、`:x11` 进程宿主、Koin 装配和设置页入口都已落地；
+**尚未在真机上跑通 XFCE 桌面**。代码路径完整不等于设备上可用，见本节末"仍未验证"。
+
+- **新增模块 `:core:linux-desktop`**：
+  - `LinuxDesktopService` 接口：管理 X11 服务器生命周期、显示配置、环境变量导出
+  - `X11ServerState` / `X11DisplayConfig` 数据类
+  - `LinuxDesktopServiceImpl`：状态机、socket 目录准备与环境变量导出（X server 启动委派给 `X11ServerLauncher`）
+- **新增 submodule `external/termux-x11`**：
+  - 指向 fork [wuxianggujun/termux-x11](https://github.com/wuxianggujun/termux-x11) 的 `tinaide-lorie-windows-build` 分支（GPL-3.0-or-later）
+  - 上游是 [termux/termux-x11](https://github.com/termux/termux-x11)
+  - 包含 `:lorie` Android library（libXlorie.so，完整 X.Org 栈编译为单个 .so）
+  - 包含 `:shell-loader:stub` 提供 Android 隐藏 API 桩（compileOnly 依赖）
+- **`settings.gradle.kts` 新增模块引用**：
+  - `:core:linux-desktop`
+  - `:termux-x11-lorie`（扁平路径，projectDir 指向 `external/termux-x11/lorie`）
+  - `:termux-x11-shell-loader-stub`
+
+  不使用 `:termux-x11:lorie` 形式：那会隐式创建 `:termux-x11` 父项目并执行上游根
+  `build.gradle`，其自带 repository 声明与本仓库的 `FAIL_ON_PROJECT_REPOS` 冲突。
+- **新增 `external/termux-x11/lorie/build.gradle.kts`**：替换上游 Groovy 脚本。
+  上游通过遍历 `rootProject.subprojects` 反查宿主 `APPLICATION_ID`，在多模块仓库中必然失败。
+- **文档**：`core/linux-desktop/README.md` 说明架构、依赖、构建要求与已知问题
+
+**native 构建已打通（Windows 宿主，2026-09-03）**：
+
+`:termux-x11-lorie:assembleDebug` 产出 arm64-v8a `libXlorie.so`（AArch64 ELF64 DYN，
+stripped 3.4 MB），并已打进 `termux-x11-lorie-debug.aar` 的 `jni/arm64-v8a/`。
+重复执行为增量（`42 actionable tasks: 2 executed, 40 up-to-date`），补丁不会重复应用。
+
+为此对 vendored 上游做了五处本地改动（升级 termux-x11 时需人工复核）：
+
+- `src/main/cpp/CMakeLists.txt`：`target_apply_patch` 不再走 `bash -c`。Windows 机器级 PATH 中
+  `C:\WINDOWS\system32` 在 Git `usr\bin` 之前，`bash` 会解析到 WSL 的 `bash.exe`，它无法处理
+  CMake 传入的 `C:/...` 路径。改为直接调用 `patch.exe`，保留上游"反向 dry-run 成功即跳过"的幂等逻辑。
+  同时为 Python3 / Bison / host C 编译器补充 `find_program` HINTS。
+- `src/main/cpp/generate-ks-tables.cmake`（新增）：上游把 `ks_tables.h` 的生成写成
+  `add_custom_command(COMMAND ... "&&" ... ">" ...)`，但 CMake 不经 shell 执行，`&&` 和 `>`
+  会被当作普通参数传给编译器。改为独立 CMake 脚本，显式两步执行并重定向输出。
+- `src/main/cpp/recipes/xkbcomp.cmake`：修复 `locale_t` 编译失败。该 target 按上游要求把
+  `libx11/include/X11` 直接加入头文件搜索路径（`KeyBind.c` 等使用裸 include），
+  而 Windows / macOS 文件系统大小写不敏感，导致 bionic 头文件里的 `#include <xlocale.h>`
+  命中 libX11 的 `Xlocale.h`；后者只 include `<locale.h>` 且从不声明 `locale_t`，
+  其 include guard 又已置位使 `locale.h` 的二次 include 被跳过。
+  解决方式是在更靠前位置放一个同名 shim 头，转发到 sysroot 中真正的 `xlocale.h`。
+- `src/main/cpp/lorie/cmdentrypoint.cpp`：敲门端口 7892 的监听地址从 `INADDR_ANY`
+  改为 `htonl(INADDR_LOOPBACK)`。上游监听全部网卡，同一 Wi-Fi 下任意设备都能触发
+  X server 的连接投递。敲门方（`activity.cpp`）本来就硬编码 `inet_addr("127.0.0.1")`，
+  只绑回环不损失任何功能。
+- `src/main/java/com/termux/x11/CmdEntryPoint.java`：新增 `startEmbedded(Context, String[])`
+  与私有无参构造。原构造是 package-private，无法从 TinaIDE 包内调用；`main()` 又是为
+  `app_process` 场景写的（反射 `ActivityThread` 伪造 Context、按绝对路径 dlopen、
+  最后 `Looper.loop()` 永不返回）。`startEmbedded` 还必须自己
+  `System.loadLibrary("Xlorie")`——`JNI_OnLoad` 是本类 native 方法的唯一注册者，
+  而它只在加载 `libXlorie.so` 时运行；Service 先于任何 `LorieView` 启动，
+  静态初始化没跑过，直接调 `start()` 会 `UnsatisfiedLinkError`。
+
+**host 工具链要求**：
+
+- NDK 29.0.14206865（termux-x11 `version.gradle` pinned）
+- Python 3、GNU Bison、GNU patch、host C 编译器（用于 X.Org 代码生成与补丁应用）
+- MSYS2/MinGW 的 `gcc.exe` 需要其所在 `bin` 目录在 PATH 中，否则 `cc1.exe` 无法加载
+  `libmpfr-6.dll`。CMake 只为 generator 子进程补这个 PATH，**不改 Gradle launcher 的 PATH**：
+  在 Windows 上把 Cygwin/MSYS 提前会让 `gradlew` 把 JDK 解析成 `/cygdrive/...` 从而找不到 `java`。
+- 路径可通过 Gradle property 覆盖，不必依赖内置 HINTS：
+  `tina.termuxX11.python`、`tina.termuxX11.bison`、`tina.termuxX11.hostCompiler`、
+  `tina.termuxX11.hostToolPath`。
+
+**X server 集成契约已固定（2026-09-04）**：
+
+阅读 lorie native 代码后确定了三条硬约束，`:core:linux-desktop` 按此重写。
+
+- **X server 必须独立进程，不能 in-process**：`lorie/src/main/cpp/lorie/cmdentrypoint.cpp`
+  把 libc 的 `exit()` / `abort()` 覆盖成 `_exit()`，而 X server 主线程执行
+  `exit(dix_main(argc, argv, envp))`。X server 任何一次 `FatalError()` 或正常退出都会
+  **直接终止整个进程**，不走 JVM 关闭流程、不抛异常、不可捕获。若 in-process 启动，
+  X server 崩溃会连带杀死 TinaIDE 主进程（IDE 无提示消失、未保存内容丢失）。
+  上游用 `app_process` 起独立进程正是这个原因。新增 `X11ServerLauncher` 接口固化该边界，
+  与既有 `:sdl` / `:crash` 进程隔离一致。
+- **`$TMPDIR` 是 host X server 与 guest client 唯一的交汇点**：`CmdEntryPoint.start()`
+  不接受 socket 路径参数，它只读 `$TMPDIR` 并把监听地址硬编码为
+  `$TMPDIR/.X11-unix/X<display>`；又用 `dirname($TMPDIR)` 推导 chroot 根去找 xkb 数据与字体。
+  新增 `X11SocketLayout` 把该布局建模为 `<rootfs>/tmp`：host 用绝对路径、guest 用 `/tmp`，
+  同一 inode 两侧都能命中，且 `dirname` 恰好落在 rootfs 根上，从而复用 guest 内
+  `xkb-data` 装出来的真实数据，无需往 APK 塞 xkb 副本。
+- **`LinuxDesktopServiceImpl` 不再伪装成功**：旧骨架在只有 TODO 注释的情况下把状态直接置为
+  `Running`，`getX11EnvironmentVariables()` 会导出一个指向不存在的 X server 的 `DISPLAY`，
+  在 guest 里只表现为难以诊断的 "cannot open display"。现在缺 launcher、rootfs 未安装、
+  xkb 数据缺失、display 格式非法都会明确失败并落到 `X11ServerState.Error`。
+  同时移除 `startX11Server()` 的 `SurfaceView` 参数：渲染 Surface 属于 X server 进程里的
+  `LorieView`，主进程无从提供。不再导出 `XAUTHORITY`（服务器以 `-ac` 启动，
+  socket 位于应用私有 rootfs，隔离由 Android 沙箱负责）。
+  新增 `LinuxDesktopServiceImplTest`（7 个测试）覆盖上述失败路径。
+
+**lorie 库 manifest 收敛到 `:x11` 进程（2026-09-04）**：
+
+`:termux-x11-lorie` 的库 manifest 按"独立 app"声明组件，直接合并会给 TinaIDE 多出
+第二个启动图标、一个无障碍服务和 `WRITE_SECURE_SETTINGS` 受保护权限。处理在直接消费者
+`:core:linux-desktop` 一侧完成，宿主 app 无需了解 lorie 内部结构：
+
+- **保留并关进 `:x11`**：`MainActivity`、`LoriePreferences`、`LorieBroadcastReceiver`，
+  全部 `android:exported="false"` 并去掉入口 `intent-filter`。
+  `MainActivity` 不能移除——`activity.cpp` 会 `FindClassOrDie("com/termux/x11/MainActivity")`
+  并按 `GetFieldID(..., "activity", "Lcom/termux/x11/MainActivity;")` 读 `LorieView.activity`，
+  类名和字段类型写死在 `.so` 里。沿用它同时白拿了约 3000 行触摸手势、额外按键栏、
+  鼠标辅助键、PiP、剪贴板同步与 IME 处理。
+  `LorieBroadcastReceiver` 也不能移除：`MainActivity` 没有 `onNewIntent`，
+  Binder 的唯一递送路径是 `LorieView.requestConnection()` 敲 127.0.0.1:7892 →
+  native `lorieListenForKnocks` 回调 `CmdEntryPoint.sendBroadcast()` → `ACTION_START`
+  广播携带 Binder → 本 receiver → `onReceiveConnection()`。上游是导出的跨 app 接收器，
+  这里改成进程内不导出。
+- **移除**：`KeyInterceptor`（无障碍服务，需要 `WRITE_SECURE_SETTINGS`）、
+  `LoriePreferences$Receiver`（导出的命令行改配置接收器，任何 app 都能改 X11 偏好）
+  以及 `WRITE_SECURE_SETTINGS` 权限本身。
+- lorie 的 `allowBackup="false"` 与 TinaIDE 冲突，由 app 侧 `tools:replace` 保留 TinaIDE 取值。
+
+**X server 进程宿主已实现（2026-09-04）**：
+
+- `X11ServerService`（`:x11` 进程、前台 `specialUse` 服务）通过 AIDL
+  `IX11ServerController` 暴露 `startServer`，内部调 `CmdEntryPoint.startEmbedded()`，
+  并在启动前 `Os.setenv` 设好 `TMPDIR` / `XKB_CONFIG_ROOT`。
+  X server 起来后无法在进程内停止（`dix_main` 的退出路径是 `_exit()`），
+  所以服务只记录是否已启动，不提供 stop；"停止"等于结束 `:x11` 进程。
+- `X11ServerProcessLauncher`（主进程）负责 `startForegroundService` + `bindService`，
+  并轮询 `<rootfs>/tmp/.X11-unix/X<n>` 出现才算就绪——`startServer()` 返回只代表
+  native `start()` 已被调用，socket 是 `dix_main` 之后才 bind 的。
+- `UbuntuLinuxDesktopCoordinator` 把三步串起来：环境可用 → 桌面软件包齐备 →
+  启动 X server → 拿到 `Running` 的 `DISPLAY` 后才 `startxfce4`。
+  任一步失败都不启动 guest 会话；X server 已起但会话失败时保留 X server 便于重试。
+- 桌面窗口由 `IAppNavigator.openLinuxDesktop()` 在主进程拉起 `MainActivity`，
+  feature 模块不直接依赖 `com.termux.x11.*`。关掉窗口不影响 guest 会话。
+- Koin 装配：`linuxDesktopModule` 提供 launcher / service / coordinator；
+  socket 布局由 `prootModule` 以 `() -> X11SocketLayout?` 注入，取当前已安装的
+  Ubuntu profile 路径，未安装时返回 `null` 并让启动明确失败。
+- `xkb-data` 加入 `UbuntuDesktopProvisioner.DESKTOP_PACKAGES`：
+  `X11SocketLayout.hostXkbConfigRoot` 指向 `<rootfs>/usr/share/X11/xkb`，
+  缺它 `LinuxDesktopServiceImpl` 会在启动前失败。
+
+**设置页入口（2026-09-04）**：
+
+存储设置的"Linux 系统"卡片在已安装 Ubuntu profile 时新增三项：图形桌面状态（点击重新检查）、
+安装图形桌面组件、打开图形桌面。安装与启动共用一个进度对话框，失败文案直出错误原因。
+
+**guest 会话迁入 `:x11` 进程，桌面不再随主进程消亡（2026-09-05）**：
+
+`init-proot.sh` 带 `--kill-on-exit`，proot 进程树的存亡跟着 **spawn 它的那个进程**。
+此前 XFCE 由主进程 `LinuxEnvironment.startInteractive()` 拉起，于是主进程被系统回收
+（或用户划掉 IDE）就会连带杀死桌面——与"X server 常驻、窗口可开可关"的既定拓扑矛盾。
+
+- **`IX11ServerController` 扩展**：新增 `startGuestSession` / `stopGuestSession` /
+  `isGuestSessionRunning` / `guestSessionPhase`。主进程传入已组装好的 host argv 与
+  `KEY=VALUE` 环境数组，`:x11` 只负责 `exec`。
+- **`X11ServerService` 接管会话**：在本进程 spawn proot 并持有
+  `LinuxDesktopSessionSupervisor`（重启看护也搬到这一侧，否则主进程死亡会留下无人看护
+  或被误杀的会话）。`onDestroy` 显式收会话，不指望"进程反正要死"。
+- **`LinuxDesktopHostProcessPlan` / `LinuxDesktopHostProcessPlanner`（新增）**：
+  命令行必须由主进程算——只有 `:core:proot` 知道 proot 二进制、init 脚本和整套
+  `ROOTFS_PATH` / `LINKER` / `PROOT_*` 变量。`:core:linux-desktop` 不能反向依赖它
+  （会成 Gradle 环），在 `:x11` 起 Koin 又会把 database/plugin/editor 拖进 X server 进程。
+  于是与 `X11SocketLayoutProvider` 一样，由 `prootModule` 注入
+  `PRootDesktopHostProcessPlanner`（内部走新增的 `PRootManager.buildHostLaunchPlan()`，
+  与 `startInteractive()` 共用 `buildPRootCommandLine` / `buildExecEnvironment`，不会漂移）。
+- **`LinuxDesktopSessionLauncher` → `LinuxDesktopSessionPlanner`**：不再 spawn 进程，
+  只计算 guest 命令与环境（`DISPLAY` / `PULSE_SERVER` 仍由 endpoint 独占）。
+  `PRootEnvironment.startUbuntuDesktop()` 这条绕过 coordinator 的旧入口一并删除。
+- **`UbuntuLinuxDesktopCoordinator`**：探测、准备、启 X server、组装命令行留在主进程；
+  会话状态改为每次跨进程询问而不缓存（缓存会在 `:x11` 被回收后继续报"运行中"）。
+  `startSession()` 返回 `Result<Unit>`，`sessionStatus` 属性换成 `sessionPhase()`。
+- **跨 binder 编码加固**：环境值中的 NUL / CR / LF 一律拒绝——换行能在解码侧伪造出
+  额外的环境条目。
+
+**开机分辨率按真机屏幕算（2026-09-05）**：
+
+新增 `resolveX11DisplayConfig(context)`：走 `maximumWindowMetrics`（API 30+）或
+`displayMetrics`（API 28/29）取整块屏幕尺寸，长边当宽做横屏归一化，尺寸 clamp 到
+640..7680、DPI clamp 到 72..640，由 `linuxDesktopModule` 注入 coordinator。
+
+这不是"顺手改好看点"：guest XFCE 现在先于桌面窗口启动，面板和桌面图标会按开机时拿到的
+root window 尺寸布一次版。之后 `LorieView.sendWindowChange()` 会推真实几何过去，但那已经是
+先错后纠——此前固定的 1920x1080 在竖屏手机上会让第一次打开的窗口面板宽度明显不对。
+`X11DisplayConfig.default()` 降级为拿不到屏幕信息时的兜底。
+
+**音频：明确标注为未实现**：
+
+`LinuxDesktopEndpoint.audioServer` 此前看着像个可用特性，实际上没有任何调用方会填它。
+核实过内置 lorie：`lorie/src/main/cpp` 下没有任何 AAudio / OpenSLES / PulseAudio 通道，
+X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`pulseaudio-utils` 只是装了
+`pactl` 这类客户端工具，不等于有声音。已在 KDoc 与 README 写清现状，避免继续暗示这条链路可用。
+
+**仍未验证**：
+
+1. **真机 XFCE 未跑通**：以上都是代码路径，没有在设备上实际看到桌面。
+2. `CmdEntryPoint` 静态初始化里的 `Looper.prepareMainLooper()` 在 Service 进程中的行为未验证。
+3. Android 15+ 前台服务启动限制对本路径的影响未验证。
+4. 关闭桌面窗口后再打开时，敲门 → 广播 → Activity 的重连路径未验证。
+
+**已知环境问题**：
+
+- **Gradle daemon loopback 失败**：`java.io.IOException: Unable to establish loopback connection`。
+  已定位为 JDK 17 / Windows AF_UNIX 临时目录问题（独立 Java 程序调用 `Selector.open()` 同样失败），
+  非 Gradle 或本项目依赖问题。当前绕过方式是构建前 `export TEMP=/c/gradle-tmp TMP=/c/gradle-tmp`；
+  仅在 `gradle.properties` 的 `org.gradle.jvmargs` 加 `-Djdk.net.unixdomain.tmpdir` 不足以修复 launcher JVM。
+
+**未来工作**：
+
+- [ ] 真机验证 XFCE 会话、输入映射与窗口关闭/重开
+- [ ] 桌面环境可选项：i3wm / Fluxbox
+- [ ] 硬件加速渲染：OpenGL ES passthrough（termux-x11 上游已有实验性实现）
+- [ ] 音频：需要先在宿主起一个音频端点（PulseAudio over TCP 或自写 AAudio sink），
+      当前完全没有实现，见上文
+- [ ] Wayland 协议支持（termux-x11 上游已有）
+
+> PRoot 侧**不需要**额外绑定 `/tmp`：PRoot 以 `--rootfs=<rootfsPath>` 启动，
+> guest 的 `/tmp` 本身就解析到 host 的 `<rootfsPath>/tmp`，两侧是同一个 inode。
+> `buildPRootCommandLine()` 的 bind 列表里只有 `--bind=<rootfs>/tmp:/dev/shm`，
+> 那是把同一目录额外再映射一份到 `/dev/shm`，不是对 `/tmp` 的覆盖。
+
+#### 编辑器滚动与增量高亮性能优化（2026-09-06）
+
+自动换行文档的滚动与输入路径此前存在两处线性开销，长文件下每帧都会重算。
+
+- **`EditorVisualLineIndex`（新增）**：视觉行数改用 Fenwick 树维护。
+  单点编辑此前要重写该行之后所有行的视觉行号（O(n)），现在为 O(log n)；
+  `EditorVisualLineMapper` 相应改为查询索引而不是线性扫描。
+- **`EditorLineRenderPlanCache`（新增）**：把每行的语法着色结果缓存成
+  不可变的 `TextLineRenderPlan`——列区间与颜色打包进单个 `IntArray`，
+  按列做二分定位。视口坐标不进入缓存，所以滚动不会让缓存失效。
+- **`IncrementalTreeSitterHighlightState`**：行级高亮请求改为批处理
+  （`LINE_CAPTURE_BATCH_SIZE = 16`），并对待处理队列设上限
+  （`MAX_PENDING_LINE_REQUESTS = 512`），避免快速滚动堆积无界请求。
+- `TextRenderer`、`WhitespaceRenderer`、`WordOccurrenceHighlightRenderer`
+  改为消费上述缓存，各自的重复计算被移除。
+
+新增测试：`EditorVisualLineIndexTest`、`EditorLineRenderPlanCacheTest`、
+`TextRendererCacheTest`、`WhitespaceRendererTest`、`DiagnosticRendererTest`、
+`EditorWordWrapLayoutCacheTest`，以及 `EditorRendererPerformanceSnapshotTest` 的补充用例。
+
+**未验证**：以上为算法层面改动并有单元测试覆盖，但**没有在真机上做过滚动帧率对比**，
+无法给出实测的性能提升数字。
+
+### Fixed
+
+- `SelfHostedLinuxDistroRuntime.syncInstalledProfiles()` 不再在每次启动时无条件劫持用户手动选择的 active profile，
+  仅在首次安装（无 active Ubuntu profile）时提升第一个 profile。
+- **`:core:linux-desktop` 缺少 `consumer-rules.pro` 导致 Release 构建失败**：
+  `TinaAndroidLibraryPlugin` 为每个 library 模块无条件注册 `consumerProguardFiles("consumer-rules.pro")`，
+  新增模块漏建该文件会让 `mergeReleaseConsumerProguardFiles` 直接失败（Debug 构建不受影响，因此此前未暴露）。
+  已补空规则文件并说明：lorie 的 JNI keep 由 `external/termux-x11/lorie/proguard-rules.pro`
+  作为 consumer rules 提供，manifest 组件由 AGP 自动生成 keep，AIDL Stub/Proxy 静态可达。
+
+### Build
+
+- `tools/checks/direct_file_operations_allowlist.txt` 登记 `X11SocketLayout.clearStaleSocket()`
+  的 `delete` 调用：X server 走 `_exit()` 退出时不做清理，残留 socket 会让下次 bind 同一 display 失败。
+- 本版本 APK 经 `:app:assembleArm64Release` 构建并签名验证（`CN=TinaIDE, O=WuXiangGujun`）；
+  R8 mapping 归档至 `app/mappings/0.18.29-20260907-125117/`。
+
+> 版本号说明：0.18.28 是 Release 构建自动递增产生的跳号，未产出任何 APK，故不单独记录。
 
 ## [0.18.27] - 2026-08-26
 

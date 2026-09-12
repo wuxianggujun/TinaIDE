@@ -20,6 +20,7 @@ internal class WordOccurrenceHighlightRenderer {
 
     private val highlightColor = Color(0x30FFFFFF)
     private val borderColor = Color(0x40FFFFFF)
+    private val borderStroke = Stroke(width = 1f)
 
     internal data class HighlightRect(
         val left: Float,
@@ -34,23 +35,22 @@ internal class WordOccurrenceHighlightRenderer {
         textPaint: Paint,
         lineLayoutCache: EditorLineLayoutCache
     ) {
-        val rects = resolveHighlightRects(
+        forEachHighlightRect(
             frameContext = frameContext,
             textStartX = textStartX,
             textPaint = textPaint,
             lineLayoutCache = lineLayoutCache
-        )
-        for (rect in rects) {
+        ) { left, top, width ->
             drawScope.drawRect(
                 color = highlightColor,
-                topLeft = Offset(rect.left, rect.top),
-                size = Size(rect.width, frameContext.state.lineHeightPx)
+                topLeft = Offset(left, top),
+                size = Size(width, frameContext.state.lineHeightPx)
             )
             drawScope.drawRect(
                 color = borderColor,
-                topLeft = Offset(rect.left, rect.top),
-                size = Size(rect.width, frameContext.state.lineHeightPx),
-                style = Stroke(width = 1f)
+                topLeft = Offset(left, top),
+                size = Size(width, frameContext.state.lineHeightPx),
+                style = borderStroke
             )
         }
     }
@@ -60,62 +60,70 @@ internal class WordOccurrenceHighlightRenderer {
         textStartX: Float,
         textPaint: Paint,
         lineLayoutCache: EditorLineLayoutCache
-    ): List<HighlightRect> {
+    ): List<HighlightRect> = buildList {
+        forEachHighlightRect(frameContext, textStartX, textPaint, lineLayoutCache) { left, top, width ->
+            add(HighlightRect(left, top, width))
+        }
+    }
+
+    private inline fun forEachHighlightRect(
+        frameContext: EditorRenderFrameContext,
+        textStartX: Float,
+        textPaint: Paint,
+        lineLayoutCache: EditorLineLayoutCache,
+        emit: (left: Float, top: Float, width: Float) -> Unit,
+    ) {
         val state = frameContext.state
         val textBuffer = state.textBuffer
-        if (textBuffer.lineCount <= 0) return emptyList()
-        if (state.selectionRange != null) return emptyList()
+        if (textBuffer.lineCount <= 0) return
+        if (state.selectionRange != null) return
 
-        val cursorWordInfo = extractWordAtCursor(frameContext) ?: return emptyList()
+        val cursorWordInfo = extractWordAtCursor(frameContext) ?: return
         val word = cursorWordInfo.word
-        if (word.length < 2) return emptyList()
+        if (word.length < 2) return
 
         val textVersion = frameContext.textVersion
-        val visibleRange = state.visibleDocumentLines
-        if (visibleRange.isEmpty()) return emptyList()
-
-        val rects = ArrayList<HighlightRect>()
-        for (line in visibleRange) {
-            if (line < 0 || line >= textBuffer.lineCount) continue
-            if (state.isDocLineHidden(line)) continue
-            val lineText = if (line == cursorWordInfo.line) {
-                cursorWordInfo.lineText
-            } else {
-                frameContext.lineText(line)
+        var cachedLine = -1
+        var cachedText = ""
+        var cachedMatches: IntArray? = null
+        var cachedLayout: EditorLineLayoutCache.PrefixLayout? = null
+        for (visualLine in state.visibleLines) {
+            val line = state.docLineForVisualLine(visualLine)
+            if (line >= textBuffer.lineCount) continue
+            if (line != cachedLine) {
+                cachedLine = line
+                cachedText = if (line == cursorWordInfo.line) cursorWordInfo.lineText else frameContext.lineText(line)
+                cachedMatches = frameContext.textScanCache.getWholeWordMatches(line, cachedText, textVersion, word)
+                cachedLayout = null
             }
-            if (lineText.length < word.length) continue
-
-            val matches = frameContext.textScanCache.getWholeWordMatches(
-                line = line,
-                lineText = lineText,
-                textVersion = textVersion,
-                word = word
-            )
+            val matches = cachedMatches ?: continue
             if (matches.isEmpty()) continue
-
-            val prefixLayout = lineLayoutCache.getPrefixLayout(
+            val visualStart = state.visualLineStartColumn(visualLine).coerceIn(0, cachedText.length)
+            val visualEnd = state.visualLineEndColumn(visualLine).coerceIn(visualStart, cachedText.length)
+            val firstPossibleStart = (visualStart - word.length + 1).coerceAtLeast(0)
+            val match = matches.binarySearch(firstPossibleStart)
+            var matchIndex = if (match >= 0) match else -match - 1
+            if (matchIndex == matches.size || matches[matchIndex] >= visualEnd) continue
+            val prefixLayout = cachedLayout ?: lineLayoutCache.getPrefixLayout(
                 state = state,
                 line = line,
-                lineText = lineText,
+                lineText = cachedText,
                 textVersion = textVersion,
                 paint = textPaint,
-            )
-            val visualLine = state.visualLineForDocLine(line)
+            ).also { cachedLayout = it }
             val top = state.visualLineTopInViewport(visualLine)
-            for (idx in matches) {
-                val safeStartColumn = idx.coerceIn(0, prefixLayout.length)
-                val safeEndColumn = (idx + word.length).coerceIn(safeStartColumn, prefixLayout.length)
+            val segmentStart = prefixLayout.segmentStartAdvance(visualStart)
+            while (matchIndex < matches.size) {
+                val idx = matches[matchIndex++]
+                if (idx >= visualEnd) break
+                val safeStartColumn = maxOf(idx, visualStart)
+                val safeEndColumn = minOf(idx + word.length, visualEnd)
                 val startAdvance = prefixLayout.textStartAdvance(safeStartColumn)
-                val left = textStartX + startAdvance
+                val left = textStartX + startAdvance - segmentStart
                 val width = (prefixLayout.textEndAdvance(safeEndColumn) - startAdvance).coerceAtLeast(0f)
-                rects += HighlightRect(
-                    left = left,
-                    top = top,
-                    width = width
-                )
+                emit(left, top, width)
             }
         }
-        return rects
     }
 
     private fun extractWordAtCursor(frameContext: EditorRenderFrameContext): CursorWordInfo? {

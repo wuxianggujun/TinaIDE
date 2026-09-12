@@ -13,15 +13,26 @@ public:
     void Clear() {
         line_starts_.clear();
         line_starts_.push_back(0);
+        append_base_ = 0;
     }
 
     void Rebuild(const std::u16string& text) {
         Clear();
-        for (size_t i = 0; i < text.size(); ++i) {
-            if (text[i] == u'\n') {
-                line_starts_.push_back(static_cast<int>(i) + 1);
+        AppendChunk(text);
+    }
+
+    /**
+     * 分片重建：调用方先 Clear()，再按文档顺序逐片 AppendChunk()。
+     * 用于大文件流式加载——避免为了建索引而把整份文档拼成一个连续字符串。
+     * 依赖 append_base_ 累计已消费长度，所以分片必须严格按顺序、不重不漏。
+     */
+    void AppendChunk(const std::u16string& chunk) {
+        for (size_t i = 0; i < chunk.size(); ++i) {
+            if (chunk[i] == u'\n') {
+                line_starts_.push_back(static_cast<int>(append_base_ + i) + 1);
             }
         }
+        append_base_ += chunk.size();
     }
 
     int GetLineCount() const {
@@ -108,6 +119,8 @@ private:
     }
 
     std::vector<int> line_starts_;
+    // AppendChunk 的累计基准偏移；Clear() 归零。
+    size_t append_base_ = 0;
 };
 
 LineIndexKernel* FromHandle(jlong handle) {
@@ -205,6 +218,18 @@ Java_com_wuxianggujun_tinaide_core_textengine_NativeLineIndexKernel_nativeRebuil
 ) {
     WithKernelVoid(env, handle, [&](LineIndexKernel& kernel) {
         kernel.Rebuild(JStringToUtf16(env, text));
+    });
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_wuxianggujun_tinaide_core_textengine_NativeLineIndexKernel_nativeAppendChunk(
+    JNIEnv* env,
+    jobject,
+    jlong handle,
+    jstring chunk
+) {
+    WithKernelVoid(env, handle, [&](LineIndexKernel& kernel) {
+        kernel.AppendChunk(JStringToUtf16(env, chunk));
     });
 }
 

@@ -6,7 +6,7 @@ package com.wuxianggujun.tinaide.core.textengine
  * Android 上优先走 native kernel；本地 JVM 单测或 native 不可用时自动回退到 Kotlin 实现。
  */
 class LineIndex : AutoCloseable {
-    private val backend: LineIndexBackend = NativeLineIndexBackend.createOrNull() ?: KotlinLineIndexBackend()
+    private var backend: LineIndexBackend = NativeLineIndexBackend.createOrNull() ?: KotlinLineIndexBackend()
 
     val lineCount: Int
         get() = backend.lineCount
@@ -17,6 +17,29 @@ class LineIndex : AutoCloseable {
 
     fun rebuild(text: String) {
         backend.rebuild(text)
+    }
+
+    /**
+     * 分片重建：先 [clear]，再按文档顺序逐片调用本方法。
+     *
+     * 用于大文件流式加载，避免为了建索引而把整份文档拼成一个连续 String。
+     * 分片必须严格按顺序且不重不漏，否则偏移会错位。
+     */
+    fun appendChunk(chunk: String) {
+        backend.appendChunk(chunk)
+    }
+
+    /**
+     * 接管 [other] 的后端并释放自己原有的。用于流式加载：
+     * 在锁外把索引建好，再在写锁内原子交换，避免整段磁盘读取都占着写锁。
+     *
+     * [other] 交换后不可再用。
+     */
+    fun stealFrom(other: LineIndex) {
+        val previous = backend
+        backend = other.backend
+        other.backend = KotlinLineIndexBackend()
+        previous.close()
     }
 
     fun getLineStart(line: Int): Int = backend.getLineStart(line)
@@ -48,6 +71,7 @@ private interface LineIndexBackend : AutoCloseable {
     val lineCount: Int
     fun clear()
     fun rebuild(text: String)
+    fun appendChunk(chunk: String)
     fun getLineStart(line: Int): Int
     fun getLineEnd(line: Int, textLength: Int): Int
     fun offsetToLine(offset: Int): Int
@@ -76,6 +100,10 @@ private class NativeLineIndexBackend private constructor(
 
     override fun rebuild(text: String) {
         NativeLineIndexKernel.nativeRebuild(requireHandle(), text)
+    }
+
+    override fun appendChunk(chunk: String) {
+        NativeLineIndexKernel.nativeAppendChunk(requireHandle(), chunk)
     }
 
     override fun getLineStart(line: Int): Int = NativeLineIndexKernel.nativeGetLineStart(requireHandle(), line)
@@ -113,6 +141,9 @@ private class KotlinLineIndexBackend : LineIndexBackend {
     private val cachedPositions = mutableListOf<CachedPosition>()
     private val maxCacheCount = 64
 
+    // appendChunk 的累计基准偏移；clear() 归零。与 native 侧 append_base_ 语义一致。
+    private var appendBase = 0
+
     private data class CachedPosition(
         var line: Int,
         var offset: Int
@@ -125,15 +156,21 @@ private class KotlinLineIndexBackend : LineIndexBackend {
         lineStarts.clear()
         lineStarts.add(0)
         cachedPositions.clear()
+        appendBase = 0
     }
 
     override fun rebuild(text: String) {
         clear()
-        text.forEachIndexed { index, char ->
-            if (char == '\n') {
-                lineStarts.add(index + 1)
+        appendChunk(text)
+    }
+
+    override fun appendChunk(chunk: String) {
+        for (index in chunk.indices) {
+            if (chunk[index] == '\n') {
+                lineStarts.add(appendBase + index + 1)
             }
         }
+        appendBase += chunk.length
     }
 
     override fun getLineStart(line: Int): Int {

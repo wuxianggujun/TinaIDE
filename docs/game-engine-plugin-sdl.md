@@ -126,13 +126,13 @@ Android 安装状态和 `files/installed-packages/<id>/package.json` 的真实�
 
 首次使用 `requiredPackages` 的插件版本应同时设置支持该字段的 `minAppVersion`。当前最低版本为 `0.18.20`；旧宿主会继续获得插件的历史兼容版本，不会安装一个无法执行创建前依赖检查的新版本。
 
-`src/main.c` 保持普通 `int main(void)`，不要包含 SDL 的 main 重定向头，也不要定义 `SDL_main`。旧版 run config 中误设为 `SDL` 的 raylib 项目会在 schema 7 加载时迁移到 `NATIVE_ACTIVITY`。
+`src/main.c` 保持普通 `int main(void)`，不要包含 SDL 的 main 重定向头，也不要定义 `SDL_main`。旧版 run config 中误设为 `SDL` 的 raylib 项目会在 schema 7 迁移时改写为 `NATIVE_ACTIVITY`。当前 run config schema 为 8（schema 8 起 CMake 构建类型由每个运行配置独立持有），新写入的配置都会带 `"schemaVersion": 8`。
 
 对应运行配置只需要选择 NativeActivity，不应再填写 SDL 主版本：
 
 ```json
 {
-  "schemaVersion": 7,
+  "schemaVersion": 8,
   "configurations": [
     {
       "id": "raylib-debug",
@@ -194,7 +194,7 @@ target_link_libraries(friend_engine_game PRIVATE SDL3::SDL3)
 
 ```json
 {
-  "schemaVersion": 7,
+  "schemaVersion": 8,
   "configurations": [
     {
       "id": "sdl3-debug",

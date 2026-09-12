@@ -112,9 +112,6 @@ jobs:
           echo "- **Commit**: ${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Branch/Ref**: ${{ github.ref_name }}" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Cleanup Gradle processes
+      - name: Report remaining Gradle processes
         if: ${{ always() }}
-        run: |
-          set +e
-          ./gradlew --stop || true
-          pgrep -af 'GradleDaemon|org.gradle.launcher.daemon' || true
+        run: pgrep -af 'GradleDaemon|org.gradle.launcher.daemon' || true

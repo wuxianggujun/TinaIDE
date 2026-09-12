@@ -56,6 +56,7 @@ internal class DiagnosticRenderer(
             segmentCacheTextVersion = textVersion
             segmentCacheByLine.clear()
         }
+        if (diagByLine.isEmpty()) return
 
         val stroke = cachedStroke
         val waveLength = waveLengthPx
@@ -65,10 +66,10 @@ internal class DiagnosticRenderer(
         state.visibleLines.forEach { visualLine ->
             val line = state.docLineForVisualLine(visualLine)
             if (line >= state.textBuffer.lineCount) return@forEach
-            val lineText = frameContext.lineText(line)
-            if (lineText.isEmpty()) return@forEach
             val diagnostics = diagByLine[line].orEmpty()
             if (diagnostics.isEmpty()) return@forEach
+            val lineText = frameContext.lineText(line)
+            if (lineText.isEmpty()) return@forEach
 
             val segments = segmentCacheByLine.getOrPut(line) {
                 buildLineSegments(diagnostics, lineText.length)

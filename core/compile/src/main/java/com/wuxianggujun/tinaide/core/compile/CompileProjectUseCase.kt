@@ -15,9 +15,11 @@ import com.wuxianggujun.tinaide.core.config.Prefs
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.core.linux.LinuxEnvironmentProvider
+import com.wuxianggujun.tinaide.core.linux.LinuxRunModePolicy
 import com.wuxianggujun.tinaide.core.linux.UnavailableLinuxEnvironmentProvider
 import com.wuxianggujun.tinaide.core.packages.BundledPackagesReadiness
 import com.wuxianggujun.tinaide.core.packages.InstalledPackagePathResolver
+import com.wuxianggujun.tinaide.core.terminal.TerminalBackend
 import com.wuxianggujun.tinaide.editor.IEditorTabProvider
 import com.wuxianggujun.tinaide.file.IProjectContext
 import com.wuxianggujun.tinaide.output.IOutputManager
@@ -152,6 +154,7 @@ class CompileProjectUseCase(
             val command: String,
             val runnablePath: String?,
             val workingDirectory: String,
+            val backend: TerminalBackend = TerminalBackend.HOST,
         ) : LaunchSpec()
         data class Debug(
             val programPath: String?,
@@ -710,6 +713,7 @@ class CompileProjectUseCase(
                     buildContext = buildContext,
                     config = config,
                     launchEnvironment = launchEnvironment,
+                    runMode = ctx.options.resolvedRunMode,
                 )
                 val artifactKind = mapKind(report.artifact.kind)
                 Timber.tag(TAG).i(
@@ -811,6 +815,7 @@ class CompileProjectUseCase(
         buildContext: BuildVariables.BuildContext,
         config: RunConfiguration,
         launchEnvironment: Map<String, String>,
+        runMode: LinuxRunModePolicy.RunMode,
     ): LaunchSpec {
         val nativeRuntimeIdentity = NativeRuntimeIdentity(
             sysrootProfileId = descriptor.artifact.fingerprint.sysrootProfileId,
@@ -844,19 +849,35 @@ class CompileProjectUseCase(
                 val workingDir = config.getAbsoluteWorkDir(projectRoot.absolutePath, buildContext)
                     .ifBlank { descriptor.workingDir.absolutePath }
                 val args = config.getArgsList(buildContext).ifEmpty { descriptor.args }
-                val command = terminalCommandBuilder.build(
-                    workingDir = workingDir,
-                    outputPath = descriptor.runnablePath,
-                    args = args,
-                    projectRoot = projectRoot,
-                    extraEnvironment = launchEnvironment,
-                    nativeRuntimeIdentity = nativeRuntimeIdentity,
-                    showLinkerWarnings = config.showLinkerWarnings,
-                )
+                val backend = when (runMode) {
+                    LinuxRunModePolicy.RunMode.NATIVE -> TerminalBackend.HOST
+                    LinuxRunModePolicy.RunMode.PROOT -> TerminalBackend.PROOT
+                }
+                val command = when (backend) {
+                    TerminalBackend.HOST -> terminalCommandBuilder.build(
+                        workingDir = workingDir,
+                        outputPath = descriptor.runnablePath,
+                        args = args,
+                        projectRoot = projectRoot,
+                        extraEnvironment = launchEnvironment,
+                        nativeRuntimeIdentity = nativeRuntimeIdentity,
+                        showLinkerWarnings = config.showLinkerWarnings,
+                    )
+                    TerminalBackend.PROOT -> {
+                        val linuxEnvironment = linuxEnvironmentProvider.get()
+                        terminalCommandBuilder.buildPRoot(
+                            workingDir = linuxEnvironment.toGuestPath(workingDir),
+                            outputPath = linuxEnvironment.toGuestPath(descriptor.runnablePath),
+                            args = args,
+                            extraEnvironment = launchEnvironment,
+                        )
+                    }
+                }
                 LaunchSpec.Terminal(
                     command = command,
                     runnablePath = descriptor.runnablePath,
                     workingDirectory = workingDir,
+                    backend = backend,
                 )
             }
         }

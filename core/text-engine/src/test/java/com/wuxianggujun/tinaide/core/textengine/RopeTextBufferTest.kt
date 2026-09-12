@@ -435,7 +435,12 @@ class RopeTextBufferTest {
             assertThat(change.oldTextLength).isEqualTo(3)
             assertThat(change.oldLineBreakCount).isEqualTo(0)
             assertThat(change.oldTextEndsWithLineBreak).isFalse()
-            assertThat(change.newText).isEqualTo("new\ntext")
+            // 流式加载不物化整份文档，因此 newText 不携带正文，只保证元数据准确。
+            assertThat(change.hasCompleteNewText).isFalse()
+            assertThat(change.newText).isEmpty()
+            assertThat(change.newTextLength).isEqualTo("new\ntext".length)
+            assertThat(change.newLineBreakCount).isEqualTo(1)
+            assertThat(buffer.toString()).isEqualTo("new\ntext")
             assertThat(buffer.version).isEqualTo(1L)
             assertThat(buffer.versionFlow.value).isEqualTo(buffer.version)
         } finally {

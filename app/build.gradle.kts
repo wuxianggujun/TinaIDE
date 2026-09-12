@@ -297,6 +297,7 @@ dependencies {
     implementation(project.dependencies.project(":core:debug"))
     implementation(project.dependencies.project(":core:git"))
     implementation(project.dependencies.project(":core:i18n"))
+    implementation(project.dependencies.project(":core:linux-desktop"))
     implementation(project.dependencies.project(":core:logging"))
     implementation(project.dependencies.project(":core:lsp"))
     implementation(project.dependencies.project(":core:ndk"))

@@ -97,6 +97,36 @@ class TerminalCommandBuilder(context: Context) {
     }
 
     /**
+     * 组装在 PRoot guest 内直接执行 Linux 产物的命令。
+     *
+     * guest 产物已经由 Linux 工具链生成，不应再复制到 Android host 的 run-bin，
+     * 也不能注入 Android sysroot 的运行库或通过 `/system/bin/linker64` 启动。
+     */
+    fun buildPRoot(
+        workingDir: String,
+        outputPath: String,
+        args: List<String>,
+        extraEnvironment: Map<String, String> = emptyMap(),
+    ): String {
+        val environmentPrefix = LaunchEnvironment.buildShellPrefix(
+            LaunchEnvironment.sanitized(extraEnvironment)
+        )
+        val arguments = args.joinToString(separator = " ", prefix = " ") { argument ->
+            shellQuotePosix(argument)
+        }.takeIf { args.isNotEmpty() }.orEmpty()
+
+        return buildString {
+            append("cd ").append(shellQuotePosix(workingDir))
+            append(" && (chmod 700 ").append(shellQuotePosix(outputPath))
+            append(" 2>/dev/null || true) && printf '\\033[H\\033[2J' && ")
+            append(environmentPrefix)
+            append(shellQuotePosix(outputPath))
+            append(arguments)
+            append(buildWaitForEnterSuffix())
+        }
+    }
+
+    /**
      * 运行结束后"按 Enter 键关闭"交互后缀。
      *
      * 细节见旧 `CompileProjectUseCase.buildWaitForEnterSuffix` 的文档注释(OSC 协议、

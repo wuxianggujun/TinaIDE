@@ -193,6 +193,15 @@ internal class TextBufferSessionBinding(
         )
     }
 
+    override fun readFingerprintSnapshot(): DocumentSession.FingerprintSnapshot {
+        val snapshot = buffer.fingerprintSnapshot()
+        return DocumentSession.FingerprintSnapshot(
+            length = snapshot.fingerprint.length,
+            hash = snapshot.fingerprint.hash,
+            documentVersion = snapshot.documentVersion
+        )
+    }
+
     override fun setText(text: CharSequence) {
         suppressNotifyDepth.incrementAndGet()
         try {

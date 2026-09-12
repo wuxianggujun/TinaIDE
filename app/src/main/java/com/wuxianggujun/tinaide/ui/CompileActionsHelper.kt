@@ -418,7 +418,8 @@ class CompileActionsHelper(
                 uiEventsChannel.trySend(
                     UiEvent.OpenTerminal(
                         launch.command,
-                        launch.workingDirectory
+                        launch.workingDirectory,
+                        launch.backend,
                     )
                 )
             }

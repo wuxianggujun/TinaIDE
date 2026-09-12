@@ -10,7 +10,7 @@ import org.junit.Test
 class LinuxDistroRootfsHealthCheckerTest {
 
     @Test
-    fun check_shouldPassRequiredAptSelfChecksAndKeepOptionalProotNonBlocking() {
+    fun check_shouldPassAptSelfChecksWithoutRequiringNestedProot() {
         runBlocking {
             val environment = FakeLinuxEnvironment(
                 available = true,
@@ -32,13 +32,13 @@ class LinuxDistroRootfsHealthCheckerTest {
             )
 
             assertThat(report.isUsable).isTrue()
-            assertThat(report.allChecksPassed).isFalse()
+            assertThat(report.allChecksPassed).isTrue()
             assertThat(report.architecture).isEqualTo("aarch64")
             assertThat(report.osRelease["PRETTY_NAME"]).isEqualTo("Ubuntu 24.04.4 LTS")
             assertThat(report.check(LinuxDistroRootfsHealthProbe.PACKAGE_MANAGER_VERSION).output)
                 .contains("apt")
             assertThat(report.check(LinuxDistroRootfsHealthProbe.OPTIONAL_BOOTSTRAP_COMMANDS).missingItems)
-                .containsExactly("proot")
+                .isEmpty()
         }
     }
 
