@@ -31,7 +31,100 @@
 
 ## [Unreleased]
 
-（暂无未归档变化）
+### Fixed
+
+#### 运行终端只响应程序结束后的新回车
+
+修复程序读取输入后立即结束时，同一次 Enter 的残余事件被误判为关闭操作的问题：用户为程序输入
+数字后按下 Enter，程序读到输入随即退出，此时隐藏输入框抢焦并接住了同一次按键的抬起事件，界面
+立刻关闭。现在输入过程中的回车只会送入程序标准输入；程序结束后，需再次按下 Enter 才会关闭。
+
+关闭判据不再只看按键属性，而是以程序结束时刻（`uptimeMillis`，与 `KeyEvent.downTime` 同一
+时钟）为闸门，四个入口共用：
+
+- **物理/软键盘按键**（`onKeyDown`、隐藏输入框的 `onPreviewKeyEvent`）：精确判据——要求
+  `ACTION_DOWN`、`repeatCount == 0`，且 `downTime` 晚于程序结束时刻。按键在程序结束前按下即
+  被拒绝，不依赖时间窗猜测。被拒绝的 Enter 一律消费掉，避免落到输入框自身的 `ImeAction`。
+- **IME Done 与快捷键栏点击**：这两条路径不携带时间戳（`performEditorAction` 是 IPC 调用），
+  改用 300ms 宽限窗——程序结束瞬间已在途的事件都落在窗内。此前 `KeyboardActions(onDone)`
+  完全没有守卫，与已修的抬起事件竞态属同一形状。
+
+顺带修正 `onCodePoint` 的死分支：它原先比对 `'\n'` / `'\r'`，但 Termux 会把 commitText 型
+软键盘（Hacker's Keyboard、OpenBoard 等）的换行折成 ctrl+`'m'`，该分支永远不成立。
+
+**未在真机验证**：以上为静态分析加 JVM 单测（11 个用例覆盖跨状态抬起、自动重复、小键盘 Enter、
+宽限窗边界与软键盘换行编码）结论，实际 IME 行为需真机回归。
+
+#### 大文件打开卡死：堵住两条绕过 10MB 阈值的旁路
+
+`EditorTabManager.determineContentType()` 原本已有 10MB 阈值——超过就走只读分页查看器
+`LargeTextViewerScreen`，不进代码编辑器。但有两条路径绕过了它：
+
+- **会话恢复**（主要原因）：会话快照只存文件路径，不存"上次是用编辑器还是查看器打开的"。
+  用户一旦强制用编辑器打开过大文件，之后每次冷启动都会把它整份重新载入，反复卡死。
+  现在 `EditorManager.restoreEditorState()` 在恢复入口按大小跳过。
+  拦在恢复入口而不是 `syncFromManager()`：后者会在用户刚点完"用编辑器打开"时立刻把
+  contentType 改回 `LARGE_TEXT`，导致按钮失效。
+- **"用编辑器打开"按钮**：现在弹二次确认，说明会整份载入内存、可能卡顿或内存不足，
+  以及重启后不会自动恢复为编辑器。
+
+阈值常量提取到 `core:common` 的 `EditorFileSizeLimits`，`app` 与 `feature:editor` 共用同一个值。
+
+**行为变化**：≥10MB 的标签冷启动后不再自动进代码编辑器。不会丢未保存内容（这条路径本来就是
+整份读盘覆盖 buffer，会话里也不存正文），丢的是"曾强制用编辑器打开"这个意图和光标/滚动位置。
+
+### Performance
+
+#### 编辑器加载：rope 建树移出主线程，脏标记指纹改走分片
+
+- `RopeTextBuffer.replaceAllOffThread()`：把 rope 建树与行索引重建放到 `Dispatchers.Default`，
+  **listener 派发仍严格留在调用线程**。不能整个挪走——change listener 会写 Compose 状态和一批
+  非线程安全的渲染缓存（折叠区间、换行布局、可视行段数），而 `TinaEditor` 在加载期间就已组合、
+  这些缓存是活的，派发跑到后台会与主线程渲染竞争。
+- `RopeTextBuffer.contentFingerprint()` / `fingerprintSnapshot()`：按 rope 内部分片折叠
+  FNV-1a，不再把整份文档物化成 String 再逐字符扫描。`DocumentSession` 的四个调用点
+  （`attachEditor`、`markEditorSnapshotClean`、`computeDirty`、`save`）改走这条路，
+  不支持分片指纹的 binding 自动回退到原物化路径。
+  两条路径的哈希必须一致，否则脏标记误判，已用独立参考实现锁住该不变量
+  （跨分片、代理对、编辑后一致性）。
+
+30MB 文档桌面 JVM 实测：`replaceAll` 163ms → 12ms（主线程），指纹 76ms → 47ms 且省掉一次
+约 60MB 的 String 分配。
+
+#### 大文件加载改为流式，不再物化整份文档
+
+打开 30MB 文件时，加载期堆峰值来自四份等长副本叠加。现逐项消除：
+
+- **rope 流式建树**：`Rope.beginStreamingBuild()` 按 IO 分片直接产出叶子。
+  旧路径需先持有完整 String，`chunked()` 还会再造一份等长分片列表。
+- **行索引流式重建**：native `LineIndexKernel::AppendChunk` + `LineIndex.appendChunk()`，
+  不再要求单个连续的 30MB `jstring`。Kotlin 回退实现同步保持语义一致。
+- **IO 移出写锁**：先在锁外建好 rope 与行索引，再在写锁内 `stealFrom` 原子换入。
+  加载期间编辑器已在渲染，若写锁被整段磁盘读取占住，主线程的 `getLine` /
+  `offsetToPosition` 会全部阻塞。
+- **tree-sitter 超阈值不创建**：新增 `SYNTAX_HIGHLIGHT_THRESHOLD_BYTES`（4MB）。
+  tree-sitter 长期持有一份完整 `StringBuilder`，每次 parse 再物化一份快照，
+  对 30MB 文档这两笔各约 63MB；而它对这个量级本就几乎不可用（每次键入都要 replace
+  整个 StringBuilder）。超阈值放弃高亮与折叠，换取可编辑性。
+
+`TextChange` 随之新增 `hasCompleteNewText` / `newTextLength`，与既有 `hasCompleteOldText`
+对称。流式加载发出的事件不携带正文（文档从未以单个字符串存在过），元数据仍然准确。
+消费者已逐个审计：渲染四个缓存与折叠只用行偏移元数据；`EditorState` 与 tree-sitter 的
+单行快速路径改用元数据判断；LSP 侧加防御性跳过。
+
+**顺带修掉一个既有缺陷**：`EditorState.applyTextChangeToSemanticTokens` 与
+`HighlightLineCacheChange.from` 原先用 `newText.contains('\n')` 判断单行编辑。
+对**不含任何换行的大文件**（压缩 JS、单行 JSON），全量替换会满足 `lineDelta == 0` 而误入
+单行快速路径，把 `columnDelta` 算成负数。改用 `newLineBreakCount` 后不再有这个歧义。
+
+30MB 文档桌面 JVM 实测（隔离测量，取后台采样峰值）：加载期堆增量 **97.4MB → 45.4MB**。
+正文、行数、行边界、指纹与旧路径逐项一致（12 个等价性用例覆盖跨分片、代理对、
+CRLF、换行正好落在 4096 边界等情形）。
+
+**已知限制**：常驻堆未改善——rope 叶子对 30MB ASCII 文件固有约 63MB（UTF-16），
+这是硬下限。`VersionedBufferTextSnapshot` 的缓存副本仍常驻，未加阈值保护。
+Android 真机耗时与堆占用**均未实测**，上述数字为桌面 JVM 结果；JNI 改动无法由 JVM 单测覆盖
+（单测走 Kotlin 回退后端），必须真机验证。
 
 ## [0.18.29] - 2026-09-07
 
@@ -39,6 +132,39 @@
 > **X11 桌面尚未在真机验证**，详见下文"仍未验证"。
 
 ### Changed
+
+#### 精简 APK 体积：strip ctest/cpack + 移除扫码入口（2026-09-12）
+
+**1. x86_64 工具链包少 49.6 MB（121.36 MB → 71.77 MB）**
+
+`scripts/build-android-tools.sh` 的 strip 步骤只处理 `bin/cmake`，但 `cmake --install` 会同时
+产出 `bin/ctest` 与 `bin/cpack`。这两个二进制带着完整 `.debug_info` 进了发布包：x86_64 上
+ctest 约 200 MB、cpack 约 185 MB，其中 93.8% 是调试段。arm64 包不受影响（本来就是 strip 过的）。
+
+- **根因修复**：strip 循环改为遍历 `cmake ctest cpack`，缺失的条目跳过而不报错。
+- **现有包重打**：未重新编译工具链，直接用 Python `tarfile` 流式替换这两个成员（Windows 无法
+  在解包时创建符号链接，无法走"解包—修改—重打"路径）。3805/3805 成员校验通过，元数据零漂移，
+  12 个符号链接完整。strip 后 ctest 11.88 MB、cpack 10.89 MB。
+- **同步更新** `tinaide-toolchain-x86_64-v0.2.4-patched.sha256`。
+- **新增防线**：`tools/verify-tina-toolchain-package.ps1` 增加体积闸门，`bin/cmake|ctest|cpack`
+  超过 40 MB 直接判失败（`clang-22` 合理体积约 122 MB，所以不能用全局上限）。同时兼容
+  bsdtar 与 GNU tar 两种 `-tvf` 列表格式，解析不到体积也算失败。
+
+> **注意**：tag `toolchain-v0.2.4` 的 GitHub Release 仍挂着旧包，`tools/ci/restore-tina-toolchain-assets.sh`
+> 在干净检出时会下载它并撞上新的 sha256。发布资产替换策略待定。
+
+**2. 移除 rikkahub 扫码入口，debug APK 少 6.95 MB**
+
+Provider 导入原先提供"相机扫码"和"从相册选图"两条路径，相机扫码依赖 ML Kit barcode
+（`quickie` + CameraX）。删除相机入口后仅保留相册路径，后者走纯 zxing 解码，功能不受影响。
+
+- 删除 `SettingProviderPage.kt` 中 163 行：quickie 导入、`scanQrCodeLauncher`、`handleQRResult`
+  与选择弹窗；按钮直接触发 `PickVisualMedia`。
+- `embedded/build.gradle.kts` 移除 quickie/barcode/camera 依赖。
+- **补声明 `androidx.exifinterface`**：`ImageUtils.kt` 一直在用它，但此前只是通过
+  `androidx.camera:camera-core` 传递进编译类路径，删掉 CameraX 后立即编译失败。
+- 产物中消失：`libbarhopper_v3.so`、2 个 CameraX `.so`、3 个 `.tflite` 模型。
+- CAMERA 权限保留 —— `ChatPage` 的拍照发图仍在用。
 
 #### 许可证变更：TinaIDE 改用 GPL-3.0-or-later（2026-09-03）
 
