@@ -33,7 +33,7 @@ class RemoteLspUriMapper {
         serverRootUri = uriOrPath
             ?.takeIf { it.isNotBlank() }
             ?.let {
-                if (it.startsWith("file:")) it else File(it).toURI().toString()
+                if (it.startsWith("file:")) it else File(it).toLspDocumentUri()
             }
             ?.let(::normalizeRootUri)
     }

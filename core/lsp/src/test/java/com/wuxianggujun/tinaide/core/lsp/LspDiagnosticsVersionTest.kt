@@ -1,6 +1,7 @@
 package com.wuxianggujun.tinaide.core.lsp
 
 import com.google.common.truth.Truth.assertThat
+import java.net.URI
 import org.junit.Test
 
 class LspDiagnosticsVersionTest {
@@ -74,5 +75,20 @@ class LspDiagnosticsVersionTest {
             .isEqualTo("file://server/share/project/main.cpp")
         assertThat(canonicalizeLspDocumentUri("file:////SERVER/share/project/main.cpp"))
             .isEqualTo("file://server/share/project/main.cpp")
+    }
+
+    @Test
+    fun `non ascii client and clangd uri forms identify the same document`() {
+        val clientUri = URI("file", null, "/storage/emulated/0/proj/中文.cpp", null).toString()
+        val serverUri = "file:///storage/emulated/0/proj/%E4%B8%AD%E6%96%87.cpp"
+
+        assertThat(
+            acceptsDiagnosticsVersion(
+                currentDocumentUri = clientUri,
+                currentDocumentVersion = 1,
+                publishedUri = serverUri,
+                publishedVersion = 1,
+            ),
+        ).isTrue()
     }
 }

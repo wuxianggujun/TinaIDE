@@ -29,6 +29,7 @@ import com.wuxianggujun.tinaide.core.lsp.RemoteLspConnectionState
 import com.wuxianggujun.tinaide.core.lsp.RemoteLspSyncMode
 import com.wuxianggujun.tinaide.core.lsp.WorkspaceSymbolItem
 import com.wuxianggujun.tinaide.core.lsp.canonicalizeLspDocumentUri
+import com.wuxianggujun.tinaide.core.lsp.toLspDocumentUri
 import com.wuxianggujun.tinaide.core.ndk.AndroidNativeToolchainManager
 import com.wuxianggujun.tinaide.core.ndk.AndroidSysrootManager
 import com.wuxianggujun.tinaide.core.textengine.Position
@@ -351,6 +352,12 @@ class LspEditorManager(
     fun onTinaDocumentChanged(tabId: String, change: TextChange, documentVersion: Long) {
         val tabSession = synchronized(stateLock) { tabSessions[tabId] } ?: return
         if (!tabSession.isConnected) return
+        // 流式加载的事件不携带完整 newText，按增量发出去会让 server 的文档镜像与本地不一致。
+        // 正常路径上这类事件被 withSuppressed 屏蔽，走不到这里；此处是防御性兜底。
+        if (!change.hasCompleteNewText) {
+            Timber.tag(TAG).d("Skip didChange for incomplete newText change (tab=%s)", tabId)
+            return
+        }
         // Advance the protocol snapshot before a queued diagnostic can be committed on the main thread.
         tabSession.lspSession?.let { session ->
             runCatching {
@@ -1428,7 +1435,7 @@ class LspEditorManager(
                 port = cfg.port,
                 ext = file.extension.lowercase(),
             )
-            provider.setClientWorkspaceRootUri(File(projectRoot).toURI().toString())
+            provider.setClientWorkspaceRootUri(File(projectRoot).toLspDocumentUri())
             provider.setRemoteWorkspaceRootUri(cfg.remoteWorkspaceRootUri.takeIf { it.isNotBlank() })
 
             val projectRootFile = File(projectRoot)
@@ -1499,7 +1506,7 @@ class LspEditorManager(
         registerBinding(TabBinding(tabId, kind, file, projectRootPath, textProvider))
         releaseSession(tabId, clearBinding = false)
         updateLspStatus(tabId, EditorStatus.Connecting)
-        val documentUri = file.toURI().toString()
+        val documentUri = file.toLspDocumentUri()
         val session = sessionFactory(documentUri)
         synchronized(stateLock) {
             tabSessions[tabId] = TabSession(
@@ -1677,8 +1684,8 @@ class LspEditorManager(
         lateinit var session: LspClientSession
         session = LspClientSession(
             connectionProvider = provider,
-            documentUri = file.toURI().toString(),
-            workspaceRootUri = File(workspaceRoot).toURI().toString(),
+            documentUri = file.toLspDocumentUri(),
+            workspaceRootUri = File(workspaceRoot).toLspDocumentUri(),
             diagnosticsConsumer = { uri, _, currentDocumentUri, documentVersion, documentGeneration, diagnostics, sessionCommitIfCurrent ->
                 val canonicalUri = canonicalizeLspDocumentUri(uri)
                 val currentDocumentUriKey = canonicalizeLspDocumentUri(currentDocumentUri)
@@ -1810,7 +1817,7 @@ class LspEditorManager(
             val attachStartedAt = System.nanoTime()
             runCatchingPreservingCancellation {
                 val snapshot = runCatching { textProvider() }.getOrDefault("")
-                val documentUri = file.toURI().toString()
+                val documentUri = file.toLspDocumentUri()
                 sharedCxxSessions.obtainOrCreate(
                     file = file,
                     workspaceRoot = workspaceRoot,
@@ -1839,7 +1846,7 @@ class LspEditorManager(
                             tabId = tabId,
                             file = file,
                             kind = SessionKind.CXX,
-                            documentUri = file.toURI().toString(),
+                            documentUri = file.toLspDocumentUri(),
                             lspSession = session,
                         )
                         updateLspStatus(tabId, EditorStatus.Ready)
@@ -1980,7 +1987,7 @@ class LspEditorManager(
                             tabId = tabId,
                             file = file,
                             kind = kind,
-                            documentUri = file.toURI().toString(),
+                            documentUri = file.toLspDocumentUri(),
                             lspSession = session,
                         )
                         updateLspStatus(tabId, EditorStatus.Ready)
@@ -2131,7 +2138,7 @@ class LspEditorManager(
                 tabId = tabId,
                 file = file,
                 kind = kind,
-                documentUri = file.toURI().toString(),
+                documentUri = file.toLspDocumentUri(),
                 lspSession = session,
             )
             commit()
