@@ -20,6 +20,8 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -57,6 +59,7 @@ import com.wuxianggujun.tinaide.ui.compose.state.editor.SplitEditorLayout
 import com.wuxianggujun.tinaide.ui.compose.viewer.HexViewerScreen
 import com.wuxianggujun.tinaide.ui.compose.viewer.ImagePreviewScreen
 import com.wuxianggujun.tinaide.ui.compose.viewer.LargeTextViewerScreen
+import com.wuxianggujun.tinaide.utils.FileUtils
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import timber.log.Timber
@@ -830,12 +833,43 @@ private fun EditorPage(
             LaunchedEffect(tab.id) {
                 onFileEncodingChanged(FileCharsetDetector.detect(tab.file).name())
             }
+            // 用编辑器打开会绕过大文件阈值，整份载入内存。先让用户知道代价。
+            var pendingEditorOpen by remember(tab.id) { mutableStateOf(false) }
             LargeTextViewerScreen(
                 filePath = tab.file.absolutePath,
-                onOpenAsEditor = { state.openFileWithType(tab.file, ContentType.CODE) },
+                onOpenAsEditor = { pendingEditorOpen = true },
                 onOpenAsHex = { state.openFileWithType(tab.file, ContentType.HEX) },
                 modifier = activatingModifier
             )
+            if (pendingEditorOpen) {
+                TinaAlertDialog(
+                    onDismissRequest = { pendingEditorOpen = false },
+                    title = { TinaDialogTitleText(Strings.large_file_editor_confirm_title.str()) },
+                    text = {
+                        Text(
+                            text = Strings.large_file_editor_confirm_message.str(
+                                FileUtils.getFormattedSize(tab.file)
+                            ),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                pendingEditorOpen = false
+                                state.openFileWithType(tab.file, ContentType.CODE)
+                            }
+                        ) {
+                            Text(Strings.large_file_editor_confirm_action.str())
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { pendingEditorOpen = false }) {
+                            Text(Strings.btn_cancel.str())
+                        }
+                    }
+                )
+            }
         }
         ContentType.IMAGE -> {
             // 图片文件显示为二进制

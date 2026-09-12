@@ -2199,6 +2199,9 @@
   <string name="large_file_reached_limit">Reached display limit (%1$d lines), consider using hex view or opening in editor.</string>
   <string name="large_file_end_of_file">End of file</string>
   <string name="large_file_loading">Loading</string>
+  <string name="large_file_editor_confirm_title">Open large file in editor?</string>
+  <string name="large_file_editor_confirm_message">This file is %1$s. Opening it in the editor loads the whole content into memory, which may cause noticeable stutter, or run out of memory on devices with less RAM.\n\nAlso, this tab will not be restored as an editor after restarting the app — you will need to confirm again.</string>
+  <string name="large_file_editor_confirm_action">Open anyway</string>
 
   <!-- FloatingSearchBar -->
   <string name="content_desc_drag">Drag</string>

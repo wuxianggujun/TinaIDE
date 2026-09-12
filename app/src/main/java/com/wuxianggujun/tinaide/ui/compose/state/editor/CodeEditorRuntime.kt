@@ -90,7 +90,12 @@ class CodeEditorRuntime(
 
     private val stateSyncListener = TextChangeListener { change ->
         editorState.applyTextBufferChange(change)
-        syntaxHighlighter?.applyTextChange(change)
+        // 流式加载发出的 TextChange 不携带完整 newText。tree-sitter 会在
+        // ensureTreeSitterPrepared 里通过 openDocument 单独喂入，这里不能把
+        // 它的 StringBuilder 用空字符串覆盖掉。
+        if (change.hasCompleteNewText) {
+            syntaxHighlighter?.applyTextChange(change)
+        }
     }
     private var documentBinding: CodeEditorDocumentBinding? = null
     private var documentBindingReferences: Int = 0

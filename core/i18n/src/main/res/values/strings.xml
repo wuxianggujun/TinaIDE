@@ -2839,6 +2839,9 @@
   <string name="large_file_reached_limit">已达到显示上限（%1$d 行），建议使用十六进制或用编辑器打开。</string>
   <string name="large_file_end_of_file">已到文件末尾</string>
   <string name="large_file_loading">加载中…</string>
+  <string name="large_file_editor_confirm_title">用编辑器打开大文件？</string>
+  <string name="large_file_editor_confirm_message">该文件有 %1$s，用编辑器打开会把整份内容载入内存，可能造成明显卡顿，在内存较小的设备上还可能内存不足。\n\n另外，重启应用后这个标签不会自动恢复为编辑器，需要重新确认一次。</string>
+  <string name="large_file_editor_confirm_action">仍要打开</string>
 
   <!-- FloatingSearchBar -->
   <string name="content_desc_drag">拖动</string>

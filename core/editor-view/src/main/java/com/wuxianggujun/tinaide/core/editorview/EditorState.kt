@@ -423,18 +423,21 @@ class EditorState(
         if (currentByLine.isEmpty()) return
 
         val startLine = change.startLine.coerceAtLeast(0)
+        // 用元数据而非 newText 判断：流式加载的事件不携带正文，
+        // 对无换行的大文件（压缩 JS / 单行 JSON）会误入单行快速路径并把 columnDelta 算成负数。
         if (
             change.lineDelta == 0 &&
             change.endLine == change.startLine &&
             change.oldLineBreakCount == 0 &&
-            !change.newText.contains('\n')
+            change.newLineBreakCount == 0 &&
+            change.hasCompleteNewText
         ) {
             applySingleLineTextChangeToSemanticTokens(
                 currentByLine = currentByLine,
                 line = startLine,
                 editStartColumn = change.startColumn.coerceAtLeast(0),
                 editEndColumn = change.endColumn.coerceAtLeast(change.startColumn),
-                columnDelta = change.newText.length - change.oldTextLength
+                columnDelta = change.newTextLength - change.oldTextLength
             )
             return
         }
