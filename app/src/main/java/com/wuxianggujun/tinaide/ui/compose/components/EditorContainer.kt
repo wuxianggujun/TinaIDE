@@ -324,8 +324,8 @@ fun EditorContainer(
     val latestTabs by rememberUpdatedState(tabs)
     val latestActiveTabIndex by rememberUpdatedState(activeTabIndex)
 
-    // 同步 pager 和 state
-    // 使用 snapshotFlow 监听 settledPage（动画完成后的页面），避免动画过程中的中间状态触发循环
+    // 标签栏已经切到 activeTabIndex。正文必须立刻跟上，不能再 animate：
+    // 动画期间 currentPage 还停在旧页，看起来就像「标签过去了、文件没换」。
     LaunchedEffect(tabs.size, activeTabIndex) {
         val lastIndex = tabs.lastIndex
         if (lastIndex < 0) return@LaunchedEffect
@@ -337,7 +337,7 @@ fun EditorContainer(
         }
 
         if (pagerState.currentPage != safeActiveIndex) {
-            pagerState.animateScrollToPage(safeActiveIndex)
+            pagerState.scrollToPage(safeActiveIndex)
         }
     }
 
@@ -425,6 +425,7 @@ fun EditorContainer(
                 HorizontalPager(
                     state = pagerState,
                     modifier = Modifier.fillMaxSize(),
+                    beyondViewportPageCount = EditorPagerSwitchSupport.beyondViewportPageCount(tabs.size),
                     userScrollEnabled = false // 禁用手势滑动，避免与编辑器滑动冲突
                 ) { page ->
                     val tab = tabs.getOrNull(page)
@@ -563,7 +564,7 @@ private fun EditorPane(
 
         LaunchedEffect(paneTabs.map { it.id }, safeSelectedLocalIndex) {
             if (pagerState.currentPage != safeSelectedLocalIndex) {
-                pagerState.animateScrollToPage(safeSelectedLocalIndex)
+                pagerState.scrollToPage(safeSelectedLocalIndex)
             }
         }
 
@@ -587,6 +588,7 @@ private fun EditorPane(
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize(),
+                beyondViewportPageCount = EditorPagerSwitchSupport.beyondViewportPageCount(paneTabs.size),
                 userScrollEnabled = false
             ) { page ->
                 val tab = paneTabs.getOrNull(page)

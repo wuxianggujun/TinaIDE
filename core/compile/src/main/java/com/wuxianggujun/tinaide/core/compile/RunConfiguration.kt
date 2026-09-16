@@ -16,9 +16,10 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import timber.log.Timber
 
-private const val RUN_CONFIG_SCHEMA_CURRENT = 8
+private const val RUN_CONFIG_SCHEMA_CURRENT = 9
 private const val RUN_CONFIG_SCHEMA_NATIVE_ACTIVITY = 7
 private const val RUN_CONFIG_SCHEMA_CMAKE_BUILD_TYPE = 8
+private const val RUN_CONFIG_SCHEMA_NATIVE_ACTIVITY_RUNTIME = 9
 
 /**
  * 源文件模式 - 决定编译哪个源文件
@@ -349,8 +350,13 @@ data class RunConfigurationManager(
                             sourceSchemaVersion = rawManager.schemaVersion,
                             legacyCMakeBuildType = legacyCMakeBuildType,
                         )
-                        val normalizedConfigManager = migrateLegacyNativeActivityMode(
+                        val nativeActivityMigratedManager = migrateLegacyNativeActivityMode(
                             manager = buildTypeMigratedManager,
+                            sourceSchemaVersion = rawManager.schemaVersion,
+                            metadata = projectMetadata,
+                        )
+                        val normalizedConfigManager = migrateMisdetectedTerminalMode(
+                            manager = nativeActivityMigratedManager,
                             sourceSchemaVersion = rawManager.schemaVersion,
                             metadata = projectMetadata,
                         )
@@ -518,6 +524,33 @@ data class RunConfigurationManager(
             } else {
                 manager.copy(configurations = migratedConfigurations)
             }
+        }
+
+        /**
+         * 修复历史误判：raylib / NativeActivity 项目曾因 CMake 目标未命名为 main 而被存成 TERMINAL，
+         * 运行时挑中测试可执行文件跑进终端，既无画面也无报错。
+         *
+         * 只在项目全部配置都是 TERMINAL 时迁移——已经有图形配置说明用户自己修好了，不要覆盖。
+         */
+        private fun migrateMisdetectedTerminalMode(
+            manager: RunConfigurationManager,
+            sourceSchemaVersion: Int,
+            metadata: ProjectMetadata?,
+        ): RunConfigurationManager {
+            if (
+                sourceSchemaVersion >= RUN_CONFIG_SCHEMA_NATIVE_ACTIVITY_RUNTIME ||
+                metadata?.isNativeActivityRuntime() != true ||
+                metadata.getSdlVersionOrNull() != null ||
+                manager.configurations.any { it.outputMode != OutputMode.TERMINAL }
+            ) {
+                return manager
+            }
+
+            return manager.copy(
+                configurations = manager.configurations.map { config ->
+                    config.copy(outputMode = OutputMode.NATIVE_ACTIVITY)
+                }
+            )
         }
     }
 

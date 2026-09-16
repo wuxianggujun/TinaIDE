@@ -31,7 +31,50 @@
 
 ## [Unreleased]
 
+## [0.18.30] - 2026-09-16
+
+> 本版本覆盖 0.18.29 之后的 C/C++ 编辑器、LSP、raylib 运行链路和大文件加载修复。
+> 包含 RikkaHub 的构建产物仍不得对外分发。
+
 ### Fixed
+
+#### LSP 语义高亮首屏过慢
+
+打开 C/C++ 文件后，Tree-sitter 会先上色，但 LSP 语义着色原先在缓存未命中时先向 clangd 要整份 `semanticTokens/full`。对带 `#include` 的源文件或系统头，这次请求经常要数秒，最长等到 6 秒超时，看起来就像「高亮很久才出来」。
+
+现在改为先请求可见区域（外加预取边距，最多约 480 行）的 `semanticTokens/range`；只有 range 失败才回退 full。滚动到尚未缓存的区域会再补一段 range，而不是一上来分析整份文档。
+
+#### 打开 C++ 系统头时没有 LSP
+
+从工程源文件跳进 libc++ / libstdc++ 系统头（`vector`、`string`、`iostream` 等没有 `.h` 的文件）时，语言服务被路由成 `NoLsp`，补全和跳转都不可用。
+
+原因是 clangd 挂载只认 `c/cc/cpp/h/hpp` 这类扩展名；标准库公共头没有扩展名，路径通常在 `c++/v1/` 或 `include/c++/` 下。现在这类文件按 C++ 头走 clangd，语言 ID 为 `cpp`。`README`、`Makefile` 等无扩展名文件不受影响。
+
+#### 无扩展名 C++ 系统头没有 Tree-sitter 语法高亮
+
+同一类文件（`vector`、`string`、`iostream`）虽然已经能挂 clangd，但 Tree-sitter 仍按「空扩展名 = 未知语言」直接放弃映射，编辑器正文只剩默认前景色。语法高亮现在复用 `CxxFileSupport.isExtensionlessCxxSystemHeader`，映射为 `cpp`；`README` 等无扩展名文件仍不高亮。
+
+#### raylib 项目被误判为终端程序，运行后没有画面
+
+修复 raylib / NativeActivity 项目在运行时被当成终端程序、既不出画面也不报错的问题。
+
+根因是项目元数据里 `apkExportType` 一个字段同时回答了两个问题：**能用哪个 APK 导出模板**
+和**默认走哪条运行链路**。前者对库名敏感（导出模板把 `android.app.lib_name` 写死为 `main`），
+后者与库名无关（运行时按绝对路径 `dlopen` 共享库）。用前者的答案回答后者，导致三种项目被误判：
+
+- CMake 目标没命名为 `main`（例如 `add_library(mygame SHARED ...)`）
+- 单文件 raylib 项目（没有 CMakeLists，库名标记永远匹配不到）
+- 先创建普通项目、之后才加入 raylib（旧值已固化，无法回升）
+
+误判成终端模式后，如果项目里恰好还有可执行产物，运行会挑中它进终端，因此没有任何报错。
+
+现在运行能力由独立的 `nativeActivityRuntime` 字段描述，探测只看 raylib / NativeActivity
+标记，不看库名；每次探测都会刷新该字段，不再被旧值固化；与 SDL 保持互斥。存量项目的
+`run_configs.json` 在升到 schema 9 时做一次性修复：仅当项目所有配置都是终端模式时，
+才把它们改为 NativeActivity——已经自己配好图形配置的项目不受影响。
+
+`libraylib.so` 与 `libtina_native_activity_host.so` 的符号导出、链接与加载链路经 ELF 核验
+均正确，本次未做改动。
 
 #### 运行终端只响应程序结束后的新回车
 
@@ -73,7 +116,23 @@
 **行为变化**：≥10MB 的标签冷启动后不再自动进代码编辑器。不会丢未保存内容（这条路径本来就是
 整份读盘覆盖 buffer，会话里也不存正文），丢的是"曾强制用编辑器打开"这个意图和光标/滚动位置。
 
+### Added
+
+#### raylib + CMake 项目模板
+
+新增 `test-plugins/tinaide.template.raylib` 模板插件，提供可直接运行的 raylib 项目骨架
+（共享库 + `OUTPUT_NAME "main"` + 普通 `main` 入口），避免用户手写 CMakeLists 时踩到
+库名与入口约定。
+
 ### Performance
+
+#### 已打开的编辑器标签切换不再等 Pager 动画、也不再重挂 LSP
+
+切 tab 时标签栏立刻改 `activeTabIndex`，正文却走 `HorizontalPager.animateScrollToPage`，默认还把离屏页拆掉。于是会出现「标签已经过去、正文还停在上一份文件 0.5–2 秒」，即使 LSP 总开关关掉也一样。切回来还会再走一遍 `attachTinaLsp`，状态栏闪 `Connecting`。
+
+现在标签切换改为 `scrollToPage` 立即跟上；已打开的页在上限内留在组合树里（两三个标签会全部保留）。
+
+clangd 同一时刻只认一份当前文档，离开某个 C/C++ 标签后 `isCurrentDocument` 会变 false。原先把这一点当成「会话断了」，于是切到另一份已打开的 `.cpp` / 系统头仍会 `releaseSession` + 状态栏 `Connecting` + 再走一遍共享会话。现在只要共享 clangd 还活着、还是同一个工程，就只做 didClose/didOpen；同一标签切回来也按「会话还活着」复用，不再把状态打成 Connecting。
 
 #### 编辑器加载：rope 建树移出主线程，脏标记指纹改走分片
 

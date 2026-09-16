@@ -7,6 +7,7 @@ object ProjectApkExportSupportResolver {
     internal data class Detection(
         val apkExportType: ProjectApkExportType?,
         val sdlVersion: ProjectSdlVersion?,
+        val nativeActivityRuntime: Boolean,
     )
 
     private const val MAX_SCANNED_TEXT_FILES = 160
@@ -92,7 +93,11 @@ object ProjectApkExportSupportResolver {
     fun ensureDetected(projectRoot: File, buildDir: File? = null): ProjectApkExportType? {
         val metadata = ProjectMetadataStore.read(projectRoot)
         val knownSdlVersion = metadata?.getSdlVersionOrNull()
-        if (metadata?.apkExportType != null && metadata.sdlVersion != null) {
+        if (
+            metadata?.apkExportType != null &&
+            metadata.sdlVersion != null &&
+            metadata.nativeActivityRuntime != null
+        ) {
             return metadata.apkExportType
         }
 
@@ -105,15 +110,24 @@ object ProjectApkExportSupportResolver {
                 (it == ProjectApkExportType.SDL3 || it == ProjectApkExportType.NATIVE_ACTIVITY)
         }
         val resolvedApkExportType = metadata.apkExportType ?: compatibleDetectedApkExportType
+        // 运行能力一律以本次探测为准，不沿用旧值：否则「先建普通项目、后加 raylib」会永久卡在 TERMINAL。
+        // 仅两种情况覆盖探测：SDL 项目互斥置 false；导出类型已确认为 NativeActivity 则置 true。
+        val resolvedNativeActivityRuntime = when {
+            resolvedSdlVersion != null -> false
+            resolvedApkExportType == ProjectApkExportType.NATIVE_ACTIVITY -> true
+            else -> detected.nativeActivityRuntime
+        }
         if (
             metadata.apkExportType != resolvedApkExportType ||
-            metadata.sdlVersion != resolvedSdlVersion
+            metadata.sdlVersion != resolvedSdlVersion ||
+            metadata.nativeActivityRuntime != resolvedNativeActivityRuntime
         ) {
             ProjectMetadataStore.write(
                 projectRoot,
                 metadata.copy(
                     apkExportType = resolvedApkExportType,
                     sdlVersion = resolvedSdlVersion,
+                    nativeActivityRuntime = resolvedNativeActivityRuntime,
                 )
             )
         }
@@ -140,6 +154,12 @@ object ProjectApkExportSupportResolver {
             else -> ProjectSdlVersion.SDL3
         }
 
+        // 运行能力与库名无关：宿主按绝对路径 dlopen，目标叫什么都能跑。
+        // APK 导出能力才依赖 libmain.so（导出模板把 android.app.lib_name 写死为 main）。
+        val hasNativeActivityRuntime = (
+            hasRaylibMarker || containsAnyMarker(textMatches, nativeActivityMarkers)
+            ) && !hasSdl2Marker && !hasSdl3Marker
+
         val apkExportType = if (hasLibMainMarker && sdlVersion == ProjectSdlVersion.SDL3) {
             ProjectApkExportType.SDL3
         } else if (
@@ -162,6 +182,7 @@ object ProjectApkExportSupportResolver {
         return Detection(
             apkExportType = apkExportType,
             sdlVersion = sdlVersion,
+            nativeActivityRuntime = hasNativeActivityRuntime,
         )
     }
 

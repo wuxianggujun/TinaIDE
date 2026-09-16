@@ -45,7 +45,7 @@ class RunConfigurationManagerNormalizationTest {
 
             val manager = RunConfigurationManager.load(projectRoot.absolutePath)
 
-            assertThat(manager.schemaVersion).isEqualTo(8)
+            assertThat(manager.schemaVersion).isEqualTo(9)
             assertThat(manager.selectedId).isEqualTo("cfg-current")
             assertThat(manager.selectedConfig.buildType).isEqualTo(BuildType.DEBUG)
             assertThat(manager.selectedConfig.singleFileCppStandard).isEqualTo("CPP_20")
@@ -53,7 +53,7 @@ class RunConfigurationManagerNormalizationTest {
             assertThat(manager.selectedConfig.customCppCompiler).isNull()
 
             val persisted = readRunConfig(projectRoot)
-            assertThat(persisted).contains("\"schemaVersion\": 8")
+            assertThat(persisted).contains("\"schemaVersion\": 9")
             assertThat(persisted).contains("\"selectedId\": \"cfg-current\"")
             assertThat(persisted).contains("\"singleFileCppStandard\": \"CPP_20\"")
             assertThat(persisted).contains("\"customCCompiler\": null")
@@ -186,7 +186,7 @@ class RunConfigurationManagerNormalizationTest {
                 )
                 .inOrder()
             val persisted = readRunConfig(projectRoot)
-            assertThat(persisted).contains("\"schemaVersion\": 8")
+            assertThat(persisted).contains("\"schemaVersion\": 9")
             assertThat(persisted).contains("\"cmakeBuildType\": \"REL_WITH_DEB_INFO\"")
         } finally {
             projectRoot.deleteRecursively()
@@ -250,10 +250,10 @@ class RunConfigurationManagerNormalizationTest {
 
             val manager = RunConfigurationManager.load(projectRoot.absolutePath)
 
-            assertThat(manager.schemaVersion).isEqualTo(8)
+            assertThat(manager.schemaVersion).isEqualTo(9)
             assertThat(manager.selectedConfig.sdlVersion).isEqualTo(ProjectSdlVersion.SDL2)
             val persisted = readRunConfig(projectRoot)
-            assertThat(persisted).contains("\"schemaVersion\": 8")
+            assertThat(persisted).contains("\"schemaVersion\": 9")
             assertThat(persisted).contains("\"sdlVersion\": \"SDL2\"")
         } finally {
             projectRoot.deleteRecursively()
@@ -328,7 +328,7 @@ class RunConfigurationManagerNormalizationTest {
 
             val manager = RunConfigurationManager.load(projectRoot.absolutePath)
 
-            assertThat(manager.schemaVersion).isEqualTo(8)
+            assertThat(manager.schemaVersion).isEqualTo(9)
             assertThat(manager.selectedConfig.outputMode).isEqualTo(OutputMode.NATIVE_ACTIVITY)
             assertThat(readRunConfig(projectRoot)).contains("\"outputMode\": \"NATIVE_ACTIVITY\"")
         } finally {

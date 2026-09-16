@@ -441,7 +441,7 @@ class EditorContainerState(
     }
 
     internal fun activeTabSupportsCxxCompileContext(): Boolean =
-        getActiveTab()?.file?.extension?.lowercase() in CxxFileSupport.clangdSupportedExtensions
+        getActiveTab()?.file?.let(CxxFileSupport::isClangdSupportedFile) == true
 
     internal fun getActiveCxxCompileContext(): CxxCompileContextSnapshot? {
         val tab = getActiveTab() ?: return null
@@ -1754,7 +1754,7 @@ class EditorContainerState(
 
         val refreshCandidates = tabs.count { tab ->
             if (!hasAttachedCodeEditor(tab.id, tab.contentType)) return@count false
-            tab.file.extension.lowercase() in CxxFileSupport.clangdSupportedExtensions
+            CxxFileSupport.isClangdSupportedFile(tab.file)
         }
 
         if (refreshCandidates <= 0) {

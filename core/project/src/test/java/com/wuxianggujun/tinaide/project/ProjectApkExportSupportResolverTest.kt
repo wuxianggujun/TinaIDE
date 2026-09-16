@@ -463,5 +463,157 @@ class ProjectApkExportSupportResolverTest {
         }
     }
 
+    @Test
+    fun `detect reports native activity runtime when raylib target is not named main`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            projectRoot.resolve("CMakeLists.txt").writeText(
+                """
+                cmake_minimum_required(VERSION 3.22)
+                project(MyGame)
+                find_package(raylib CONFIG REQUIRED)
+                add_library(mygame SHARED src/main.c)
+                target_link_libraries(mygame PRIVATE raylib::raylib)
+                """.trimIndent()
+            )
+            projectRoot.resolve("src").mkdirs()
+            projectRoot.resolve("src/main.c").writeText(
+                """
+                #include <raylib.h>
+                int main(void) { InitWindow(640, 480, "demo"); return 0; }
+                """.trimIndent()
+            )
+
+            val detected = ProjectApkExportSupportResolver.detectSupport(projectRoot)
+
+            // 库名不叫 main 时导出能力确实不可用（导出模板写死 lib_name=main），
+            // 但运行能力必须为真：宿主按绝对路径 dlopen，与库名无关。
+            assertThat(detected.nativeActivityRuntime).isTrue()
+            assertThat(detected.apkExportType).isEqualTo(ProjectApkExportType.TERMINAL)
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `detect reports native activity runtime for single file raylib project`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            projectRoot.resolve("main.c").writeText(
+                """
+                #include <raylib.h>
+                int main(void) { InitWindow(640, 480, "demo"); return 0; }
+                """.trimIndent()
+            )
+
+            val detected = ProjectApkExportSupportResolver.detectSupport(projectRoot)
+
+            assertThat(detected.nativeActivityRuntime).isTrue()
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `detect does not report native activity runtime for plain terminal project`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            projectRoot.resolve("main.cpp").writeText(
+                """
+                #include <stdio.h>
+                int main() { puts("hello"); return 0; }
+                """.trimIndent()
+            )
+
+            val detected = ProjectApkExportSupportResolver.detectSupport(projectRoot)
+
+            assertThat(detected.nativeActivityRuntime).isFalse()
+            assertThat(detected.apkExportType).isEqualTo(ProjectApkExportType.TERMINAL)
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `detect does not report native activity runtime when raylib links SDL`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            projectRoot.resolve("CMakeLists.txt").writeText(
+                """
+                add_library(main SHARED src/main.cpp)
+                target_link_libraries(main PRIVATE raylib SDL2::SDL2)
+                """.trimIndent()
+            )
+
+            val detected = ProjectApkExportSupportResolver.detectSupport(projectRoot)
+
+            assertThat(detected.nativeActivityRuntime).isFalse()
+            assertThat(detected.sdlVersion).isEqualTo(ProjectSdlVersion.SDL2)
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `ensureDetected upgrades runtime when raylib is added to an existing terminal project`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            projectRoot.resolve("main.c").writeText(
+                """
+                #include <stdio.h>
+                int main(void) { puts("hello"); return 0; }
+                """.trimIndent()
+            )
+            ProjectMetadataStore.ensure(
+                projectRoot = projectRoot,
+                displayNameFallback = "Demo",
+                buildSystem = ProjectBuildSystem.CMAKE,
+            )
+            ProjectApkExportSupportResolver.ensureDetected(projectRoot)
+            assertThat(ProjectMetadataStore.read(projectRoot)?.nativeActivityRuntime).isFalse()
+
+            // 用户后续把项目改成 raylib：运行能力必须能升回来，不能被旧值固化。
+            projectRoot.resolve("main.c").writeText(
+                """
+                #include <raylib.h>
+                int main(void) { InitWindow(640, 480, "demo"); return 0; }
+                """.trimIndent()
+            )
+            ProjectApkExportSupportResolver.ensureDetected(projectRoot)
+
+            val metadata = ProjectMetadataStore.read(projectRoot)
+            assertThat(metadata?.nativeActivityRuntime).isTrue()
+            assertThat(metadata?.isNativeActivityRuntime()).isTrue()
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `ensureDetected keeps runtime disabled for SDL projects`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            projectRoot.resolve("CMakeLists.txt").writeText(
+                """
+                add_library(main SHARED src/main.cpp)
+                target_link_libraries(main PRIVATE SDL3::SDL3)
+                """.trimIndent()
+            )
+            ProjectMetadataStore.ensure(
+                projectRoot = projectRoot,
+                displayNameFallback = "Demo",
+                buildSystem = ProjectBuildSystem.CMAKE,
+            )
+
+            ProjectApkExportSupportResolver.ensureDetected(projectRoot)
+
+            val metadata = ProjectMetadataStore.read(projectRoot)
+            assertThat(metadata?.sdlVersion).isEqualTo(ProjectSdlVersion.SDL3)
+            assertThat(metadata?.nativeActivityRuntime).isFalse()
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
     private fun createTempProjectRoot(): File = Files.createTempDirectory("project-apk-export-support-test").toFile()
 }

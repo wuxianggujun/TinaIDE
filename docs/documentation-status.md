@@ -63,7 +63,7 @@
 - Linux distro manifest：启动和普通列表只读缓存或内置 asset；显式刷新可读取 Registry，按“新鲜缓存 → 远程多端点 → 过期缓存 → 内置 asset”回落，并支持下载镜像规则。
 - Android SDK 口径：`minSdk=28`、`targetSdk=36`、`compileSdk=37`，以 `app/build.gradle.kts` 为准。注意这三个值只描述 `:app`；`core:*` / `feature:*` 等 library 模块由 `TinaVersions` 决定，其中 `COMPILE_SDK` 常量当前是 **36**，与 `:app` 的 37 不一致。引用编译期 SDK 时必须说明是哪一侧，只写一个数字会写错另一半。
 - 模块清单只以 `settings.gradle.kts` 为准，本文与其他文档不维护副本。当前为 29 个 `core:*` 与 11 个 `feature:*`。注意 `feature/` 磁盘上还有 `license`、`login`、`membership` 三个目录，它们未注册进构建、git 也未跟踪，只是本地 `build/` 残留，不代表这些功能存在。
-- 版本口径：当前 `versionName=0.18.29`、`versionCode=1830`，以 `version.properties` 为准。
+- 版本口径：当前 `versionName=0.18.30`、`versionCode=1831`，以 `version.properties` 为准。
 - 进程边界：除主进程外还有 `:x11`（X server 与桌面渲染）、`:sdl`、`:sdl2`、`:gui`、`:crash`；初始化逻辑不能混用，见 `TinaApplication` 的多进程分流。
 - RikkaHub：TinaIDE 主仓库不再维护自研 `feature:ai`；AI 聊天、模型、渠道、MCP 和 API Key 配置由内嵌 RikkaHub 维护。
 - App 内帮助：中文正文位于 `feature/help/src/main/assets/help/*.md`，英文正文位于 `feature/help/src/main/assets/help/en/*.md`；英文缺失或加载失败时回落到中文。

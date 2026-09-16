@@ -1,6 +1,7 @@
 package com.wuxianggujun.tinaide.core.treesitter
 
 import com.itsaky.androidide.treesitter.TSLanguage
+import com.wuxianggujun.tinaide.core.lang.CxxFileSupport
 import com.wuxianggujun.tinaide.core.lang.MakeFileSupport
 import java.io.File
 import java.util.Locale
@@ -95,6 +96,9 @@ object TreeSitterLanguageRegistry {
         }
         if (file.name.equals(CMAKE_LISTS_FILE_NAME, ignoreCase = true)) {
             return "cmake"
+        }
+        if (CxxFileSupport.isExtensionlessCxxSystemHeader(file)) {
+            return "cpp"
         }
         val extension = file.extension
             .lowercase(Locale.ROOT)

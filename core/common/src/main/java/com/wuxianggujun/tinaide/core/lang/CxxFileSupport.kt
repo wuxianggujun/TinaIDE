@@ -53,4 +53,43 @@ object CxxFileSupport {
     fun isClangdTranslationUnitExtension(ext: String): Boolean = ext.lowercase() in clangdTranslationUnitExtensions
 
     fun isClangdSupportedExtension(ext: String): Boolean = ext.lowercase() in clangdSupportedExtensions
+
+    /**
+     * 无扩展名的 C++ 标准库头。libc++ / libstdc++ 的 `vector`、`string`、`iostream`
+     * 等公共头没有 `.h`，跳转到系统类时路径通常落在 `c++/v1/` 或 `include/c++/` 下。
+     */
+    val extensionlessStdHeaderNames: Set<String> = setOf(
+        "algorithm", "any", "array", "atomic", "barrier", "bit", "bitset",
+        "cassert", "cctype", "cerrno", "cfenv", "cfloat", "charconv", "chrono",
+        "cinttypes", "climits", "clocale", "cmath", "codecvt", "compare", "complex",
+        "concepts", "condition_variable", "coroutine", "csetjmp", "csignal",
+        "cstdarg", "cstddef", "cstdint", "cstdio", "cstdlib", "cstring", "ctime",
+        "cuchar", "cwchar", "cwctype", "deque", "exception", "execution", "expected",
+        "filesystem", "flat_map", "flat_set", "format", "forward_list", "fstream",
+        "functional", "future", "generator", "initializer_list", "iomanip", "ios",
+        "iosfwd", "iostream", "istream", "iterator", "latch", "limits", "list",
+        "locale", "map", "mdspan", "memory", "memory_resource", "mutex", "new",
+        "numbers", "numeric", "optional", "ostream", "print", "queue", "random",
+        "ranges", "ratio", "regex", "scoped_allocator", "semaphore", "set",
+        "shared_mutex", "source_location", "span", "spanstream", "sstream", "stack",
+        "stacktrace", "stdexcept", "stdfloat", "stop_token", "streambuf", "string",
+        "string_view", "strstream", "syncstream", "system_error", "text_encoding",
+        "thread", "tuple", "type_traits", "typeindex", "typeinfo", "unordered_map",
+        "unordered_set", "utility", "valarray", "variant", "vector", "version",
+    )
+
+    fun isClangdSupportedFile(file: File): Boolean {
+        val ext = extensionOf(file)
+        if (ext in clangdSupportedExtensions) return true
+        return isExtensionlessCxxSystemHeader(file)
+    }
+
+    fun isExtensionlessCxxSystemHeader(file: File): Boolean {
+        if (file.extension.isNotEmpty()) return false
+        val name = file.name
+        if (name.isEmpty() || name.startsWith(".")) return false
+        if (name in extensionlessStdHeaderNames) return true
+        val normalized = file.path.replace('\\', '/').lowercase()
+        return "/c++/v1/" in normalized || "/include/c++/" in normalized
+    }
 }

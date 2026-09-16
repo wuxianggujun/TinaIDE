@@ -1,6 +1,5 @@
 package com.wuxianggujun.tinaide.core.compile
 
-import com.wuxianggujun.tinaide.project.ProjectApkExportType
 import com.wuxianggujun.tinaide.project.ProjectMetadata
 
 object CMakeRunTargetResolver {
@@ -19,7 +18,7 @@ object CMakeRunTargetResolver {
     fun defaultOutputMode(metadata: ProjectMetadata?): OutputMode {
         return when {
             metadata?.getSdlVersionOrNull() != null -> OutputMode.SDL
-            metadata?.apkExportType == ProjectApkExportType.NATIVE_ACTIVITY -> OutputMode.NATIVE_ACTIVITY
+            metadata?.isNativeActivityRuntime() == true -> OutputMode.NATIVE_ACTIVITY
             else -> OutputMode.TERMINAL
         }
     }

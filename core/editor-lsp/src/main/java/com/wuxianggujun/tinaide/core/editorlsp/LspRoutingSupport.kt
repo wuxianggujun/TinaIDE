@@ -1,5 +1,6 @@
 ﻿package com.wuxianggujun.tinaide.core.editorlsp
 
+import com.wuxianggujun.tinaide.core.lang.CxxFileSupport
 import java.io.File
 
 enum class LspAttachmentRoute {
@@ -27,7 +28,9 @@ object LspRoutingSupport {
         if (!editorLspEnabled) {
             return LspAttachmentRoute.NONE
         }
-        if (file.extension.lowercase() in cxxExtensions) {
+        if (file.extension.lowercase() in cxxExtensions ||
+            CxxFileSupport.isExtensionlessCxxSystemHeader(file)
+        ) {
             return LspAttachmentRoute.CXX
         }
         if (hasPluginServer) {

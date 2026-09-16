@@ -380,6 +380,102 @@ class ProjectMetadataStoreNormalizationTest {
         }
     }
 
+    @Test
+    fun `read repairs legacy raylib metadata whose target is not named main`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            File(projectRoot, "CMakeLists.txt").writeText(
+                """
+                find_package(raylib CONFIG REQUIRED)
+                add_library(mygame SHARED src/main.c)
+                target_link_libraries(mygame PRIVATE raylib::raylib)
+                """.trimIndent()
+            )
+            File(projectRoot, "src").mkdirs()
+            File(projectRoot, "src/main.c").writeText(
+                """
+                #include <raylib.h>
+                int main(void) { InitWindow(640, 480, "demo"); return 0; }
+                """.trimIndent()
+            )
+            writeProjectMetadata(
+                projectRoot,
+                """
+                {
+                  "schemaVersion": 4,
+                  "id": "legacy-raylib-custom-target",
+                  "displayName": "Legacy Raylib Demo",
+                  "createdAt": 1700000000000,
+                  "apkExportType": "SDL3"
+                }
+                """.trimIndent()
+            )
+
+            val metadata = ProjectMetadataStore.read(projectRoot)
+
+            // 库名不是 main，导出能力确实不可用；但绝不能被留成 SDL3 项目。
+            assertThat(metadata?.sdlVersion).isNull()
+            assertThat(metadata?.nativeActivityRuntime).isTrue()
+            assertThat(metadata?.apkExportType).isNull()
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `read clears native activity runtime for SDL metadata`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            writeProjectMetadata(
+                projectRoot,
+                """
+                {
+                  "schemaVersion": 5,
+                  "id": "meta-sdl2-runtime-conflict",
+                  "displayName": "SDL2 Runtime Conflict",
+                  "createdAt": 1700000000000,
+                  "sdlVersion": "SDL2",
+                  "nativeActivityRuntime": true
+                }
+                """.trimIndent()
+            )
+
+            val metadata = ProjectMetadataStore.read(projectRoot)
+
+            assertThat(metadata?.sdlVersion).isEqualTo(ProjectSdlVersion.SDL2)
+            assertThat(metadata?.nativeActivityRuntime).isFalse()
+            assertThat(metadata?.isNativeActivityRuntime()).isFalse()
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `read falls back to apk export type when native activity runtime is absent`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            writeProjectMetadata(
+                projectRoot,
+                """
+                {
+                  "schemaVersion": 5,
+                  "id": "meta-legacy-native-activity",
+                  "displayName": "Legacy NativeActivity",
+                  "createdAt": 1700000000000,
+                  "apkExportType": "NATIVE_ACTIVITY"
+                }
+                """.trimIndent()
+            )
+
+            val metadata = ProjectMetadataStore.read(projectRoot)
+
+            assertThat(metadata?.nativeActivityRuntime).isNull()
+            assertThat(metadata?.isNativeActivityRuntime()).isTrue()
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
     private fun createTempProjectRoot(): File = Files.createTempDirectory("project-meta-normalization-test").toFile()
 
     private fun writeProjectMetadata(projectRoot: File, content: String) {

@@ -90,6 +90,7 @@ object ProjectTemplateInstaller {
                 primaryLanguage = templateSpec.primaryLanguage,
                 apkExportType = detectedSupport.apkExportType,
                 sdlVersion = detectedSupport.sdlVersion,
+                nativeActivityRuntime = detectedSupport.nativeActivityRuntime,
                 nativeApiLevel = templateNativeApiLevel,
                 defaultRunTargetName = resolvedDefaultRunTargetName,
                 defaultSdlTargetName = resolvedDefaultSdlTargetName,

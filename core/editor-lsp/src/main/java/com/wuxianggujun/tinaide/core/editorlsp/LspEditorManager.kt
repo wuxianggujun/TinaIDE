@@ -145,6 +145,9 @@ class LspEditorManager(
         val lspSession: LspClientSession? = null,
         val builtinSession: BuiltinLanguageServiceSession? = null,
     ) {
+        val hasLiveSession: Boolean
+            get() = builtinSession?.isConnected == true || lspSession?.isConnected == true
+
         val isConnected: Boolean
             get() = when {
                 builtinSession?.isConnected == true -> true
@@ -318,6 +321,9 @@ class LspEditorManager(
         projectRootPath: String?,
         textProvider: () -> String,
     ): Boolean {
+        if (reuseExistingAttachmentIfPossible(tabId, file, projectRootPath, textProvider)) {
+            return true
+        }
         val attached = when (resolveAttachmentRoute(file)) {
             LspAttachmentRoute.CXX -> {
                 attachCxxLsp(context, file, tabId, projectRootPath, textProvider)
@@ -351,13 +357,20 @@ class LspEditorManager(
 
     fun onTinaDocumentChanged(tabId: String, change: TextChange, documentVersion: Long) {
         val tabSession = synchronized(stateLock) { tabSessions[tabId] } ?: return
-        if (!tabSession.isConnected) return
         // 流式加载的事件不携带完整 newText，按增量发出去会让 server 的文档镜像与本地不一致。
         // 正常路径上这类事件被 withSuppressed 屏蔽，走不到这里；此处是防御性兜底。
         if (!change.hasCompleteNewText) {
             Timber.tag(TAG).d("Skip didChange for incomplete newText change (tab=%s)", tabId)
             return
         }
+        synchronized(stateLock) {
+            semanticTokensCache.remove(tabId)
+            inlayHintsCache.remove(tabId)
+            foldingRangesCache.remove(tabId)
+            lspDiagnosticsByUri.remove(canonicalizeLspDocumentUri(tabSession.documentUri))
+            documentVersions[tabId] = maxOf(documentVersions[tabId] ?: Long.MIN_VALUE, documentVersion)
+        }
+        if (!tabSession.isConnected) return
         // Advance the protocol snapshot before a queued diagnostic can be committed on the main thread.
         tabSession.lspSession?.let { session ->
             runCatching {
@@ -370,13 +383,6 @@ class LspEditorManager(
                     newText = change.newText
                 )
             }.onFailure { Timber.tag(TAG).d("didChange failed: ${it.message}") }
-        }
-        synchronized(stateLock) {
-            semanticTokensCache.remove(tabId)
-            inlayHintsCache.remove(tabId)
-            foldingRangesCache.remove(tabId)
-            lspDiagnosticsByUri.remove(canonicalizeLspDocumentUri(tabSession.documentUri))
-            documentVersions[tabId] = maxOf(documentVersions[tabId] ?: Long.MIN_VALUE, documentVersion)
         }
         tabSession.builtinSession?.didChange(change)
         if (tabSession.builtinSession != null) {
@@ -547,12 +553,16 @@ class LspEditorManager(
             textDocument = TextDocumentIdentifier(tabSession.documentUri)
         }
 
-        // 策略（最多两次请求，避免最坏 18 秒阻塞）：
-        //   缓存未命中（首次打开）→ 优先请求全量（full），可覆盖整个文档，一次填满缓存；
-        //   缓存命中但区间不覆盖（滚动到新区域）→ 请求可见区间（range），延迟更低；
-        //   range 失败 → fallback 全量。
-        val preferFullFetch = cached == null
-        val fullRawFirst = if (preferFullFetch) {
+        // 始终先要可见区间（外加预取边距，最多 480 行）。clangd 对 C++ 做
+        // semanticTokens/full 经常要数秒，首屏会明显晚于 Tree-sitter。
+        // range 失败才回退 full，避免一直没有语义色。
+        val rangeRaw = awaitTrackedTabFuture(
+            ticket = requestTicket,
+            future = session.semanticTokensRange(rangeRequest),
+            timeoutSeconds = SEMANTIC_TOKENS_TIMEOUT_SECONDS,
+            operation = "semanticTokens/range(${fileNameForLog(tabSession.file)})"
+        )
+        val fullRaw = if (rangeRaw == null) {
             awaitTrackedTabFuture(
                 ticket = requestTicket,
                 future = session.semanticTokensFull(fullRequest),
@@ -562,19 +572,8 @@ class LspEditorManager(
         } else {
             null
         }
-        // 若 full 未命中（缓存已存在走 range 路径）或 full 失败，则请求 range
-        val rangeRaw = if (fullRawFirst == null) {
-            awaitTrackedTabFuture(
-                ticket = requestTicket,
-                future = session.semanticTokensRange(rangeRequest),
-                timeoutSeconds = SEMANTIC_TOKENS_TIMEOUT_SECONDS,
-                operation = "semanticTokens/range(${fileNameForLog(tabSession.file)})"
-            )
-        } else {
-            null
-        }
-        val raw = fullRawFirst ?: rangeRaw ?: return@withContext SemanticTokensRequestResult.Unavailable
-        val fetchedFullDocument = fullRawFirst != null
+        val raw = rangeRaw ?: fullRaw ?: return@withContext SemanticTokensRequestResult.Unavailable
+        val fetchedFullDocument = fullRaw != null
         if (!isTabRequestStillValid(requestTicket)) return@withContext SemanticTokensRequestResult.Unavailable
 
         val decoded = LspSemanticTokenDecoder.decode(
@@ -1274,6 +1273,9 @@ class LspEditorManager(
         projectRootPath: String?,
         textProvider: () -> String,
     ): Boolean {
+        if (activateExistingSharedCxxIfPossible(tabId, file, projectRootPath, textProvider, remote = false)) {
+            return true
+        }
         val cppStandardOverride = resolveCppStandardOverride(file)
         val compileAttachToken = Any()
         synchronized(stateLock) {
@@ -1421,6 +1423,10 @@ class LspEditorManager(
             tabId,
             CxxCompileContextSnapshot.remote(file, File(projectRoot)),
         )
+
+        if (activateExistingSharedCxxIfPossible(tabId, file, projectRoot, textProvider, remote = true)) {
+            return true
+        }
 
         return startSharedCxxAttach(
             tabId = tabId,
@@ -1788,6 +1794,45 @@ class LspEditorManager(
             attachTokenCache[tabId] === token && tabBindings[tabId]?.file?.absolutePath == file.absolutePath
         }
 
+    private fun canActivateExistingSharedCxx(
+        file: File,
+        projectRootPath: String?,
+        remote: Boolean,
+    ): Boolean {
+        val session = sharedCxxSessions.currentSession()
+        return LspAttachmentReuseSupport.canActivateExistingSharedCxx(
+            sharedSessionConnected = session?.isConnected == true,
+            usingRemoteLsp = isUsingRemoteLsp,
+            wantRemote = remote,
+            sharedWorkspaceRoot = lspProjectRoot,
+            requestedWorkspaceRoot = resolveContextWorkspace(file, projectRootPath).absolutePath,
+        )
+    }
+
+    private fun activateExistingSharedCxxIfPossible(
+        tabId: String,
+        file: File,
+        projectRootPath: String?,
+        textProvider: () -> String,
+        remote: Boolean,
+    ): Boolean {
+        if (!canActivateExistingSharedCxx(file, projectRootPath, remote)) return false
+        val workspaceRoot = lspProjectRoot ?: return false
+        Timber.tag(TAG).i("activateExistingSharedCxx: file=%s, remote=%b", file.name, remote)
+        startSharedCxxAttach(
+            tabId = tabId,
+            file = file,
+            workspaceRoot = workspaceRoot,
+            languageId = languageIdForFile(file),
+            textProvider = textProvider,
+            remote = remote,
+            warmupCompletionOnReady = false,
+        ) {
+            error("shared clangd session should already exist")
+        }
+        return true
+    }
+
     private fun startSharedCxxAttach(
         tabId: String,
         file: File,
@@ -1799,19 +1844,29 @@ class LspEditorManager(
         warmupCompletionOnReady: Boolean = false,
         providerFactory: suspend () -> LspConnectionProvider,
     ): Boolean {
+        val sharedConnected = sharedCxxSessions.currentSession()?.isConnected == true
         Timber.tag(TAG).i(
-            "startSharedCxxAttach: file=%s, languageId=%s, remote=%b",
+            "startSharedCxxAttach: file=%s, languageId=%s, remote=%b, reuseShared=%b",
             file.name,
             languageId,
-            remote
+            remote,
+            sharedConnected
         )
         cancelPendingSharedCxxShutdown()
-        releaseSession(tabId, clearBinding = false)
+        if (LspAttachmentReuseSupport.shouldReleaseTabSessionBeforeSharedAttach(sharedConnected)) {
+            releaseSession(tabId, clearBinding = false)
+        }
         cancelPendingSharedCxxShutdown()
         val token = Any()
         synchronized(stateLock) { attachTokenCache[tabId] = token }
-        updateLspStatus(tabId, EditorStatus.Connecting)
-        if (remote) RemoteLspConfigManager.updateConnectionState(RemoteLspConnectionState.CONNECTING)
+        if (LspAttachmentReuseSupport.shouldAnnounceConnecting(sharedConnected)) {
+            updateLspStatus(tabId, EditorStatus.Connecting)
+            if (remote) RemoteLspConfigManager.updateConnectionState(RemoteLspConnectionState.CONNECTING)
+        } else {
+            // 共享 clangd 已就绪：切 tab 只是切换当前文档，状态栏保持 Ready，不要闪 No LSP / Connecting。
+            updateLspStatus(tabId, EditorStatus.Ready)
+            if (remote) RemoteLspConfigManager.updateConnectionState(RemoteLspConnectionState.CONNECTED)
+        }
 
         lspScope.launch {
             val attachStartedAt = System.nanoTime()
@@ -2104,6 +2159,63 @@ class LspEditorManager(
             }
         }
         scheduleSharedCxxShutdownIfIdle()
+        return true
+    }
+
+    private fun reuseExistingAttachmentIfPossible(
+        tabId: String,
+        file: File,
+        projectRootPath: String?,
+        textProvider: () -> String,
+    ): Boolean {
+        data class ReusePlan(
+            val kind: SessionKind,
+            val needsDocumentActivation: Boolean,
+            val remote: Boolean,
+        )
+        val plan = synchronized(stateLock) {
+            val tabSession = tabSessions[tabId] ?: return false
+            if (
+                !LspAttachmentReuseSupport.shouldReuseExistingAttachment(
+                    sessionConnected = tabSession.hasLiveSession,
+                    sessionFilePath = tabSession.file.absolutePath,
+                    requestedFilePath = file.absolutePath,
+                )
+            ) {
+                return false
+            }
+            ReusePlan(
+                kind = tabSession.kind,
+                needsDocumentActivation = LspAttachmentReuseSupport.needsDocumentActivation(
+                    sessionKindIsCxx = tabSession.kind == SessionKind.CXX,
+                    sessionConnected = tabSession.lspSession?.isConnected == true,
+                    isCurrentDocument = tabSession.lspSession?.isCurrentDocument(tabSession.documentUri) == true,
+                ),
+                remote = isUsingRemoteLsp,
+            )
+        }
+        registerBinding(
+            TabBinding(
+                tabId = tabId,
+                kind = plan.kind,
+                file = file,
+                projectRootPath = projectRootPath,
+                textProvider = textProvider,
+            )
+        )
+        if (plan.needsDocumentActivation) {
+            if (!activateExistingSharedCxxIfPossible(tabId, file, projectRootPath, textProvider, plan.remote)) {
+                Timber.tag(TAG).d(
+                    "reuse existing LSP attachment for %s (%s) but shared clangd was not activatable",
+                    file.name,
+                    tabId
+                )
+                return false
+            }
+            Timber.tag(TAG).d("reuse existing LSP attachment for %s (%s); activating document", file.name, tabId)
+            return true
+        }
+        Timber.tag(TAG).d("reuse existing LSP attachment for %s (%s)", file.name, tabId)
         return true
     }
 
