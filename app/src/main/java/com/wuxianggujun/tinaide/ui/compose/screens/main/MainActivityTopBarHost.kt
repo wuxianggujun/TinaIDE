@@ -126,6 +126,7 @@ internal fun MainActivityTopBarHost(
         isDebugActive = isDebugActive,
         debugStatus = debugStatus,
         runConfigManager = buildUiState.runConfigManager,
+        isRunConfigLoading = buildUiState.isRunConfigLoading,
         onRunConfigManagerChange = { updated ->
             if (
                 !buildUiState.commitRunConfigManager(

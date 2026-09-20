@@ -65,6 +65,7 @@ val terminalModule = module {
             application = get(),
             scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
             linuxEnvironmentProvider = get(),
+            terminalPreferences = get(),
         )
     }
 

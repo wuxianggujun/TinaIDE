@@ -9,14 +9,13 @@ package com.wuxianggujun.tinaide.ui.compose.components
  */
 internal object EditorPagerSwitchSupport {
     /**
-     * 同时留在组合树里的编辑器页上限（含当前页）。
-     * 与 [com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState.CODE_EDITOR_RUNTIME_CACHE_LIMIT]
-     * 对齐到一个更保守的窗口，避免一次组合几十份 TinaEditor。
+     * Pager 的 beyondViewportPageCount 是“当前页每一侧”的页数。
+     * 设为 3 时，中间位置最多同时组合 7 页（当前页 + 左右各 3 页）。
      */
-    const val MAX_COMPOSED_PAGES = 8
+    const val MAX_BEYOND_VIEWPORT_PAGES_PER_SIDE = 3
 
     fun beyondViewportPageCount(pageCount: Int): Int {
         if (pageCount <= 1) return 0
-        return (pageCount - 1).coerceAtMost(MAX_COMPOSED_PAGES - 1)
+        return (pageCount - 1).coerceAtMost(MAX_BEYOND_VIEWPORT_PAGES_PER_SIDE)
     }
 }

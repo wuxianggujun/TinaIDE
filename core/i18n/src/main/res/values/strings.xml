@@ -780,6 +780,8 @@
   <string name="settings_cursor_blink">光标闪烁</string>
   <string name="settings_cursor_blink_desc">启用终端光标闪烁效果</string>
   <string name="settings_cursor_blink_rate">闪烁速率</string>
+  <string name="settings_show_raw_linker_output">显示原始链接器输出</string>
+  <string name="settings_show_raw_linker_output_desc">关闭对已知无害 linker 兼容告警的过滤，交互终端和运行都原样显示</string>
   <string name="dialog_title_cursor_blink_rate">光标闪烁速率</string>
   <string name="dialog_title_shell_type">选择 Shell 类型</string>
   <string name="font_builtin_not_installed">内置字体（未安装）</string>
@@ -2334,9 +2336,6 @@
   <string name="run_config_graphical_options">图形运行界面</string>
   <string name="run_config_graphical_floating_log">悬浮日志窗口</string>
   <string name="run_config_graphical_floating_log_desc">在图形全屏运行时显示可拖拽的实时日志窗口，用于查看 stdout/stderr 输出</string>
-  <string name="run_config_terminal_options">终端运行选项</string>
-  <string name="run_config_show_linker_warnings">显示动态链接器兼容性告警</string>
-  <string name="run_config_show_linker_warnings_desc">默认隐藏旧 Android linker 对 AArch64 Auth RELR 标签产生的三类无害告警；开启后原样显示</string>
 
   <!-- 悬浮覆盖层 -->
   <string name="floating_overlay_exit">返回编辑器</string>
@@ -2836,7 +2835,7 @@
   <string name="large_file_hex">十六进制</string>
   <string name="large_file_load_failed">加载失败</string>
   <string name="large_file_retry">重试</string>
-  <string name="large_file_reached_limit">已达到显示上限（%1$d 行），建议使用十六进制或用编辑器打开。</string>
+  <string name="large_file_reached_safe_limit">已达到安全显示上限，建议使用十六进制或用编辑器打开。</string>
   <string name="large_file_end_of_file">已到文件末尾</string>
   <string name="large_file_loading">加载中…</string>
   <string name="large_file_editor_confirm_title">用编辑器打开大文件？</string>

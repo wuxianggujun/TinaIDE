@@ -137,15 +137,7 @@ data class RunConfiguration(
     val sdlOrientation: SdlOrientation = SdlOrientation.AUTO,
 
     /** 是否在图形运行宿主中显示悬浮日志窗口。悬浮返回按钮始终显示。 */
-    val enableFloatingLog: Boolean = false,
-
-    /**
-     * 是否显示 Android linker 对 AArch64 Auth RELR 标签的兼容性告警。
-     *
-     * 默认关闭，仅隐藏已知的 0x70000011/12/13 告警。过滤期间 stderr 经 FIFO 转发；
-     * 依赖 `isatty(stderr)` 的程序可开启本选项以保持原始 TTY 语义。
-     */
-    val showLinkerWarnings: Boolean = false
+    val enableFloatingLog: Boolean = false
 ) {
     fun normalized(): RunConfiguration = copy(
         toolchainId = toolchainId?.trim()?.takeIf { it.isNotEmpty() },

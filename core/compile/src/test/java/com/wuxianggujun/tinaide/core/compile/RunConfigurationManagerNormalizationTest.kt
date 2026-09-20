@@ -92,7 +92,9 @@ class RunConfigurationManagerNormalizationTest {
     }
 
     @Test
-    fun `load defaults missing linker warning option to hidden`() {
+    fun `load ignores removed legacy showLinkerWarnings key`() {
+        // 兼容性回归：showLinkerWarnings 字段已移除（linker 告警改在终端显示层过滤）。
+        // 旧 run_configs.json 里残留的该键必须被安全忽略，不能导致解析失败。
         val projectRoot = createTempProjectRoot()
         try {
             writeRunConfig(
@@ -102,48 +104,20 @@ class RunConfigurationManagerNormalizationTest {
                   "schemaVersion": 4,
                   "configurations": [
                     {
-                      "id": "cfg-linker-warning-default",
-                      "name": "Debug"
-                    }
-                  ],
-                  "selectedId": "cfg-linker-warning-default"
-                }
-                """.trimIndent()
-            )
-
-            val manager = RunConfigurationManager.load(projectRoot.absolutePath)
-
-            assertThat(manager.selectedConfig.showLinkerWarnings).isFalse()
-        } finally {
-            projectRoot.deleteRecursively()
-        }
-    }
-
-    @Test
-    fun `load preserves explicitly enabled linker warnings`() {
-        val projectRoot = createTempProjectRoot()
-        try {
-            writeRunConfig(
-                projectRoot,
-                """
-                {
-                  "schemaVersion": 4,
-                  "configurations": [
-                    {
-                      "id": "cfg-linker-warning-enabled",
+                      "id": "cfg-legacy-linker-warning",
                       "name": "Debug",
                       "showLinkerWarnings": true
                     }
                   ],
-                  "selectedId": "cfg-linker-warning-enabled"
+                  "selectedId": "cfg-legacy-linker-warning"
                 }
                 """.trimIndent()
             )
 
             val manager = RunConfigurationManager.load(projectRoot.absolutePath)
 
-            assertThat(manager.selectedConfig.showLinkerWarnings).isTrue()
-            assertThat(readRunConfig(projectRoot)).contains("\"showLinkerWarnings\": true")
+            assertThat(manager.selectedConfig.id).isEqualTo("cfg-legacy-linker-warning")
+            assertThat(manager.selectedConfig.name).isEqualTo("Debug")
         } finally {
             projectRoot.deleteRecursively()
         }

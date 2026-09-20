@@ -4,7 +4,6 @@ internal object NativeTextScanKernel {
     fun isAvailable(): Boolean = TextEngineNativeBridge.isAvailable()
 
     external fun nativeHasActiveSignatureHelpContext(textBeforeCursor: String): Boolean
-    external fun nativeComputeBracketInfo(startDepth: Int, lineText: String): IntArray
     external fun nativeAdvanceBracketDepth(startDepth: Int, lineText: String): Int
     external fun nativeAdvanceBracketDepthPrefix(startDepth: Int, lineText: String, endColumn: Int): Int
     external fun nativeComputeLineBoundaryBracketDepths(startDepth: Int, text: String): IntArray

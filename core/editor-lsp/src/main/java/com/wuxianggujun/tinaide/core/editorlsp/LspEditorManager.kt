@@ -1871,7 +1871,9 @@ class LspEditorManager(
         lspScope.launch {
             val attachStartedAt = System.nanoTime()
             runCatchingPreservingCancellation {
-                val snapshot = runCatching { textProvider() }.getOrDefault("")
+                val snapshot = withContext(Dispatchers.Default) {
+                    runCatchingPreservingCancellation { textProvider() }.getOrDefault("")
+                }
                 val documentUri = file.toLspDocumentUri()
                 sharedCxxSessions.obtainOrCreate(
                     file = file,
@@ -2020,7 +2022,9 @@ class LspEditorManager(
                     if (!registered) {
                         throw CancellationException("LSP attachment is no longer current")
                     }
-                    val snapshot = runCatching { textProvider() }.getOrDefault("")
+                    val snapshot = withContext(Dispatchers.Default) {
+                        runCatchingPreservingCancellation { textProvider() }.getOrDefault("")
+                    }
                     Timber.tag(TAG).d("startAttach: calling session.connect(languageId=%s, textLen=%d)...", languageId, snapshot.length)
                     withContext(Dispatchers.IO) {
                         session.connect(languageId, snapshot, initializationOptions).getOrThrow()

@@ -2,6 +2,7 @@ package com.wuxianggujun.tinaide.project
 
 import com.google.common.truth.Truth.assertThat
 import java.io.File
+import java.io.RandomAccessFile
 import java.nio.file.Files
 import org.junit.Test
 
@@ -555,6 +556,81 @@ class ProjectApkExportSupportResolverTest {
     }
 
     @Test
+    fun `detect ignores unopened 30 MiB text log in a terminal project`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            projectRoot.resolve("main.c").writeText("int main(void) { return 0; }", Charsets.UTF_8)
+            writeSizedFile(
+                projectRoot.resolve("runtime.txt"),
+                "日志记录：find_package(SDL3 CONFIG REQUIRED)\nlibmain.so\n",
+                30L * 1024 * 1024,
+            )
+
+            val detected = ProjectApkExportSupportResolver.detectSupport(projectRoot)
+
+            assertThat(detected.sdlVersion).isNull()
+            assertThat(detected.apkExportType).isEqualTo(ProjectApkExportType.TERMINAL)
+            assertThat(detected.nativeActivityRuntime).isFalse()
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `detect ignores small text logs while still reading CMakeLists txt`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            projectRoot.resolve("runtime.txt").writeText("find_package(SDL2 CONFIG REQUIRED)", Charsets.UTF_8)
+            projectRoot.resolve("CMakeLists.txt").writeText(
+                "add_library(main SHARED main.cpp)\ntarget_link_libraries(main PRIVATE SDL3::SDL3)",
+                Charsets.UTF_8,
+            )
+
+            val detected = ProjectApkExportSupportResolver.detectSupport(projectRoot)
+
+            assertThat(detected.sdlVersion).isEqualTo(ProjectSdlVersion.SDL3)
+            assertThat(detected.apkExportType).isEqualTo(ProjectApkExportType.SDL3)
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `detect skips source files exceeding the byte limit`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            projectRoot.resolve("main.c").writeText("int main(void) { return 0; }", Charsets.UTF_8)
+            writeSizedFile(projectRoot.resolve("generated.cpp"), "#include <SDL2/SDL.h>\n", 1024L * 1024 + 1)
+
+            val detected = ProjectApkExportSupportResolver.detectSupport(projectRoot)
+
+            assertThat(detected.sdlVersion).isNull()
+            assertThat(detected.apkExportType).isEqualTo(ProjectApkExportType.TERMINAL)
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `detect includes source files exactly at the byte limit`() {
+        val projectRoot = createTempProjectRoot()
+        try {
+            writeSizedFile(
+                projectRoot.resolve("main.c"),
+                "#include <raylib.h>\nint main(void) { return 0; }\n",
+                1024L * 1024,
+            )
+
+            val detected = ProjectApkExportSupportResolver.detectSupport(projectRoot)
+
+            assertThat(detected.nativeActivityRuntime).isTrue()
+            assertThat(detected.apkExportType).isEqualTo(ProjectApkExportType.TERMINAL)
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `ensureDetected upgrades runtime when raylib is added to an existing terminal project`() {
         val projectRoot = createTempProjectRoot()
         try {
@@ -612,6 +688,13 @@ class ProjectApkExportSupportResolverTest {
             assertThat(metadata?.nativeActivityRuntime).isFalse()
         } finally {
             projectRoot.deleteRecursively()
+        }
+    }
+
+    private fun writeSizedFile(file: File, prefix: String, sizeBytes: Long) {
+        RandomAccessFile(file, "rw").use { output ->
+            output.write(prefix.toByteArray(Charsets.UTF_8))
+            output.setLength(sizeBytes)
         }
     }
 

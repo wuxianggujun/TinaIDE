@@ -29,7 +29,6 @@ class TerminalCommandBuilder(context: Context) {
      * @param args 命令行参数(已经过变量替换)
      * @param projectRoot 项目根目录,用于解析已安装包的 runtime lib 目录
      * @param extraEnvironment 额外注入到运行 shell 的环境变量
-     * @param showLinkerWarnings 是否原样显示已知的 AArch64 Auth RELR linker 兼容告警
      */
     fun build(
         workingDir: String,
@@ -38,7 +37,6 @@ class TerminalCommandBuilder(context: Context) {
         projectRoot: File,
         extraEnvironment: Map<String, String> = emptyMap(),
         nativeRuntimeIdentity: NativeRuntimeIdentity? = null,
-        showLinkerWarnings: Boolean = false,
     ): String {
         val outputFile = File(outputPath)
         val stageDir = File(appContext.filesDir, "run-bin")
@@ -90,7 +88,6 @@ class TerminalCommandBuilder(context: Context) {
                 envPrefix = envPrefix,
                 ldLibraryPrefix = ldLibraryPrefix,
                 waitForEnterSuffix = waitForEnterSuffix,
-                showLinkerWarnings = showLinkerWarnings,
                 kind = sourceKind,
             )
         )

@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
@@ -29,6 +30,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -55,15 +57,18 @@ import com.wuxianggujun.tinaide.ui.compose.components.editor.EmptyEditorView
 import com.wuxianggujun.tinaide.ui.compose.components.editor.TinaCodeEditorPage
 import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState
 import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorPaneId
+import com.wuxianggujun.tinaide.ui.compose.state.editor.PluginLspDependencyAlert
 import com.wuxianggujun.tinaide.ui.compose.state.editor.SplitEditorLayout
 import com.wuxianggujun.tinaide.ui.compose.viewer.HexViewerScreen
 import com.wuxianggujun.tinaide.ui.compose.viewer.ImagePreviewScreen
 import com.wuxianggujun.tinaide.ui.compose.viewer.LargeTextViewerScreen
 import com.wuxianggujun.tinaide.utils.FileUtils
+import java.nio.charset.Charset
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import timber.log.Timber
-import com.wuxianggujun.tinaide.ui.compose.state.editor.PluginLspDependencyAlert
 
 /**
  * 编辑器容器组件
@@ -832,17 +837,32 @@ private fun EditorPage(
             )
         }
         ContentType.LARGE_TEXT -> {
-            LaunchedEffect(tab.id) {
-                onFileEncodingChanged(FileCharsetDetector.detect(tab.file).name())
+            val detectedCharset by produceState<Charset?>(
+                initialValue = null,
+                key1 = tab.id,
+                key2 = tab.file.absolutePath,
+            ) {
+                value = withContext(Dispatchers.IO) { FileCharsetDetector.detect(tab.file) }
+            }
+            LaunchedEffect(tab.id, detectedCharset) {
+                detectedCharset?.let { onFileEncodingChanged(it.name()) }
             }
             // 用编辑器打开会绕过大文件阈值，整份载入内存。先让用户知道代价。
             var pendingEditorOpen by remember(tab.id) { mutableStateOf(false) }
-            LargeTextViewerScreen(
-                filePath = tab.file.absolutePath,
-                onOpenAsEditor = { pendingEditorOpen = true },
-                onOpenAsHex = { state.openFileWithType(tab.file, ContentType.HEX) },
-                modifier = activatingModifier
-            )
+            val largeTextCharset = detectedCharset
+            if (largeTextCharset == null) {
+                Box(modifier = activatingModifier, contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            } else {
+                LargeTextViewerScreen(
+                    filePath = tab.file.absolutePath,
+                    charset = largeTextCharset,
+                    onOpenAsEditor = { pendingEditorOpen = true },
+                    onOpenAsHex = { state.openFileWithType(tab.file, ContentType.HEX) },
+                    modifier = activatingModifier
+                )
+            }
             if (pendingEditorOpen) {
                 TinaAlertDialog(
                     onDismissRequest = { pendingEditorOpen = false },

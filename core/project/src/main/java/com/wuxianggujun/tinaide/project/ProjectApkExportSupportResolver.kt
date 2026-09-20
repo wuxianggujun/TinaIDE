@@ -1,8 +1,13 @@
 package com.wuxianggujun.tinaide.project
 
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.IOException
+import timber.log.Timber
 
 object ProjectApkExportSupportResolver {
+
+    private const val TAG = "ProjectApkExportSupport"
 
     internal data class Detection(
         val apkExportType: ProjectApkExportType?,
@@ -11,6 +16,12 @@ object ProjectApkExportSupportResolver {
     )
 
     private const val MAX_SCANNED_TEXT_FILES = 160
+    /** 自动能力探测不得把日志/转储等大文本整份读入内存。 */
+    private const val MAX_CANDIDATE_TEXT_BYTES = 1L * 1024L * 1024L
+    /** 即使候选文件很多，单次探测也只允许读取有限总量。 */
+    private const val MAX_TOTAL_CANDIDATE_TEXT_BYTES = 8L * 1024L * 1024L
+    private const val MAX_SCANNED_PROJECT_ENTRIES = 100_000
+    private const val MAX_SCANNED_ARTIFACT_ENTRIES = 100_000
     private val terminalSourceExtensions = setOf("c", "cc", "cpp", "cxx")
     private val terminalMainEntryRegex = Regex("""(?m)^\s*(?:int|auto|void)\s+main\s*\(""")
     private val excludedDirNames = setOf(
@@ -38,7 +49,7 @@ object ProjectApkExportSupportResolver {
     private val candidateExtensions = setOf(
         "c", "cc", "cpp", "cxx",
         "h", "hh", "hpp", "hxx",
-        "cmake", "mk", "txt",
+        "cmake", "mk",
     )
     private val sdl2MarkerPatterns = sdlMarkerPatterns(major = 2)
     private val sdl3MarkerPatterns = sdlMarkerPatterns(major = 3) + listOf(
@@ -82,7 +93,8 @@ object ProjectApkExportSupportResolver {
 
     private data class CandidateText(
         val file: File,
-        val text: String
+        val text: String,
+        val byteSize: Long,
     )
 
     fun resolve(projectRoot: File, buildDir: File? = null): ProjectApkExportType? {
@@ -141,8 +153,7 @@ object ProjectApkExportSupportResolver {
         detectSupport(projectRoot, buildDir).sdlVersion
 
     internal fun detectSupport(projectRoot: File, buildDir: File? = null): Detection {
-        val textMatches = collectCandidateFiles(projectRoot)
-            .mapNotNull(::readTextSafely)
+        val textMatches = readCandidateTexts(projectRoot)
 
         val hasLibMainMarker = containsAnyMarker(textMatches, libmainMarkers) || hasCompiledLibMain(projectRoot, buildDir)
         val hasSdl2Marker = containsAnyPattern(textMatches, sdl2MarkerPatterns)
@@ -191,8 +202,10 @@ object ProjectApkExportSupportResolver {
 
         return projectRoot.walkTopDown()
             .onEnter { dir -> dir == projectRoot || dir.name !in excludedDirNames }
+            .take(MAX_SCANNED_PROJECT_ENTRIES)
             .filter { file ->
                 file.isFile &&
+                    file.length() <= MAX_CANDIDATE_TEXT_BYTES &&
                     (
                         file.name in candidateFileNames ||
                             file.extension.lowercase() in candidateExtensions
@@ -202,12 +215,54 @@ object ProjectApkExportSupportResolver {
             .toList()
     }
 
-    private fun readTextSafely(file: File): CandidateText? = runCatching {
-        CandidateText(
-            file = file,
-            text = file.readText(Charsets.UTF_8)
-        )
-    }.getOrNull()
+    private fun readCandidateTexts(projectRoot: File): List<CandidateText> {
+        var remainingBytes = MAX_TOTAL_CANDIDATE_TEXT_BYTES
+        val candidates = ArrayList<CandidateText>()
+        for (file in collectCandidateFiles(projectRoot)) {
+            if (remainingBytes <= 0L) break
+            val fileSize = runCatching { file.length() }.getOrDefault(Long.MAX_VALUE)
+            if (fileSize > remainingBytes) continue
+            val candidate = readTextSafely(
+                file = file,
+                maxBytes = minOf(MAX_CANDIDATE_TEXT_BYTES, remainingBytes),
+            ) ?: continue
+            candidates.add(candidate)
+            remainingBytes -= candidate.byteSize
+        }
+        return candidates
+    }
+
+    private fun readTextSafely(file: File, maxBytes: Long = MAX_CANDIDATE_TEXT_BYTES): CandidateText? {
+        if (file.length() > maxBytes) return null
+        return try {
+            val bytes = file.inputStream().use { input ->
+                ByteArrayOutputStream(minOf(file.length(), maxBytes).toInt()).use candidate@{ output ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    var total = 0L
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        total += read
+                        // MT 等外部程序仍在写入时，文件可能在 length() 检查后继续增长。
+                        if (total > maxBytes) return@candidate null
+                        output.write(buffer, 0, read)
+                    }
+                    output.toByteArray()
+                }
+            } ?: return null
+            CandidateText(
+                file = file,
+                text = bytes.toString(Charsets.UTF_8),
+                byteSize = bytes.size.toLong(),
+            )
+        } catch (error: IOException) {
+            Timber.tag(TAG).d(error, "Skipping unreadable candidate file: %s", file.absolutePath)
+            null
+        } catch (error: SecurityException) {
+            Timber.tag(TAG).d(error, "Skipping inaccessible candidate file: %s", file.absolutePath)
+            null
+        }
+    }
 
     private fun containsAnyMarker(textMatches: List<CandidateText>, markers: List<String>): Boolean = textMatches.any { candidate -> markers.any(candidate.text::contains) }
 
@@ -247,6 +302,7 @@ object ProjectApkExportSupportResolver {
             candidate.isDirectory &&
                 candidate.walkTopDown()
                     .onEnter { dir -> dir == candidate || dir.name !in excludedDirNames }
+                    .take(MAX_SCANNED_ARTIFACT_ENTRIES)
                     .any { file -> file.isFile && file.name == "libmain.so" }
         }
     }
@@ -261,6 +317,7 @@ object ProjectApkExportSupportResolver {
             candidate.isDirectory &&
                 candidate.walkTopDown()
                     .onEnter { dir -> dir == candidate || dir.name !in excludedDirNames }
+                    .take(MAX_SCANNED_ARTIFACT_ENTRIES)
                     .any(::isRunnableTerminalArtifact)
         }
     }

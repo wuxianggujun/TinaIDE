@@ -89,6 +89,16 @@ public final class TerminalSession extends TerminalOutput {
 
     private final KnownLinkerWarningFilter mKnownLinkerWarningFilter = new KnownLinkerWarningFilter();
 
+    /**
+     * 全局总闸：控制所有会话是否过滤已知无害的 linker 兼容告警（"unused DT entry ... (ignoring)"）。
+     * 默认开启过滤。App 设置层可关闭它以原样显示 linker 输出。
+     *
+     * @param enabled {@code true} 过滤噪音（默认），{@code false} 原样透传
+     */
+    public static void setKnownLinkerWarningFilterEnabled(boolean enabled) {
+        KnownLinkerWarningFilter.setFilteringEnabled(enabled);
+    }
+
     public TerminalSession(String shellPath, String cwd, String[] args, String[] env, Integer transcriptRows, TerminalSessionClient client) {
         this.mShellPath = shellPath;
         this.mCwd = cwd;

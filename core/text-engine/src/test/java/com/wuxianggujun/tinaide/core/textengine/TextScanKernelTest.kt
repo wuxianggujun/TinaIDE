@@ -40,20 +40,6 @@ class TextScanKernelTest {
     }
 
     @Test
-    fun computeBracketInfo_shouldReturnColumnsAndDepths() {
-        assertThat(TextScanKernel.computeBracketInfo(1, "a(b[c]{d})"))
-            .containsExactly(
-                BracketScanResult(column = 1, depth = 1, isOpen = true),
-                BracketScanResult(column = 3, depth = 2, isOpen = true),
-                BracketScanResult(column = 5, depth = 2, isOpen = false),
-                BracketScanResult(column = 6, depth = 2, isOpen = true),
-                BracketScanResult(column = 8, depth = 2, isOpen = false),
-                BracketScanResult(column = 9, depth = 1, isOpen = false)
-            )
-            .inOrder()
-    }
-
-    @Test
     fun findMatchingBracket_shouldMatchForwardFromOpenBracket() {
         assertThat(TextScanKernel.findMatchingBracket("call(foo[bar])", 4))
             .isEqualTo(BracketPairMatchResult(openOffset = 4, closeOffset = 13))

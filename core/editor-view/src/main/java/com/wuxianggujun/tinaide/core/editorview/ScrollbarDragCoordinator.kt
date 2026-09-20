@@ -1,15 +1,12 @@
 package com.wuxianggujun.tinaide.core.editorview
 
 import android.os.SystemClock
-import android.view.ViewConfiguration
 import androidx.compose.ui.input.pointer.AwaitPointerEventScope
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.unit.Density
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.abs
-import kotlin.math.sqrt
-import kotlinx.coroutines.withTimeoutOrNull
 
 internal data class ActiveScrollbarDrag(
     val pointerId: PointerId,
@@ -34,7 +31,6 @@ internal class ScrollbarDragCoordinator(
     suspend fun AwaitPointerEventScope.runDragLoop(
         canvasWidthPxProvider: () -> Float,
         canvasHeightPxProvider: () -> Float,
-        touchSlopPx: Float,
         density: Density
     ) {
         try {
@@ -50,56 +46,17 @@ internal class ScrollbarDragCoordinator(
                 )
                 val dragTarget = layout.hitTest(down.position) ?: continue
 
-                // 这里采用“长按后再拖动”的策略：
-                // - 避免误触（右侧靠近文本时容易碰到滚动条）
-                // - 避免与文本长按选词/菜单冲突（通过 suppressBasicGestures 抑制一小段时间）
-                val longPressTimeoutMs = ViewConfiguration.getLongPressTimeout().toLong().coerceAtLeast(120L)
-                gestureHandler.suppressBasicGestures(durationMs = longPressTimeoutMs + 180L)
+                // 命中滚动条热区后立即接管拖动：
+                // 不再要求长按，否则右侧细条几乎无法选中。
+                gestureHandler.suppressBasicGestures(durationMs = 240L)
                 logTouch(
                     "scrollbar pressCandidate axis=${dragTarget.axis} pointer=(${down.position.x.toInt()},${down.position.y.toInt()})",
                     verbose = false
                 )
 
                 var lastPosition = down.position
-                var cancelReason: String? = null
-                // 手指静止判定对“滚动条长按”要更宽松：
-                // 1) 屏幕边缘区域容易被系统手势策略影响
-                // 2) 用户手指自然抖动在 1x touchSlop 内很常见
-                val longPressMoveSlopPx = touchSlopPx * 1.7f
-                val longPressMoveSlopSquared = longPressMoveSlopPx * longPressMoveSlopPx
-                val longPressed = withTimeoutOrNull(longPressTimeoutMs) {
-                    while (true) {
-                        val event = awaitPointerEvent(PointerEventPass.Initial)
-                        val change = event.changes.firstOrNull { it.id == down.id } ?: run {
-                            cancelReason = "pointerMissing"
-                            return@withTimeoutOrNull false
-                        }
-                        lastPosition = change.position
-                        if (!change.pressed) {
-                            cancelReason = "pointerUpBeforeLongPress"
-                            return@withTimeoutOrNull false
-                        }
-
-                        val dx = change.position.x - down.position.x
-                        val dy = change.position.y - down.position.y
-                        if (dx * dx + dy * dy > longPressMoveSlopSquared) {
-                            // 手指已经明显移动，交还给常规滚动手势（scrollable/fling）。
-                            cancelReason = "movedBeforeLongPress dist=${"%.1f".format(sqrt(dx * dx + dy * dy))} slop=${"%.1f".format(longPressMoveSlopPx)}"
-                            return@withTimeoutOrNull false
-                        }
-                    }
-                } == null
-
-                if (!longPressed) {
-                    logTouch(
-                        "scrollbar longPressRejected axis=${dragTarget.axis} reason=${cancelReason ?: "unknown"} " +
-                            "pointer=(${lastPosition.x.toInt()},${lastPosition.y.toInt()})",
-                        verbose = false
-                    )
-                    continue
-                }
                 logTouch(
-                    "scrollbar longPressAccepted axis=${dragTarget.axis} pointer=(${lastPosition.x.toInt()},${lastPosition.y.toInt()})",
+                    "scrollbar dragAccepted axis=${dragTarget.axis} pointer=(${lastPosition.x.toInt()},${lastPosition.y.toInt()})",
                     verbose = false
                 )
 

@@ -123,6 +123,9 @@ android {
         viewBinding = true
         compose = true
         aidl = true
+        // ByteHook 以 Android prefab 形式提供 native 头文件与导入库,供
+        // src/main/cpp 里的 sdl_asset_redirect GOT hook 通过 find_package 消费。
+        prefab = true
     }
 
     testOptions {
@@ -356,6 +359,12 @@ dependencies {
     // Kotlin Coroutines for async operations
     implementation(libs.kotlinx.coroutines)
     coreLibraryDesugaring(libs.desugar)
+
+    // ByteHook - PLT/GOT hook（MIT 许可,与 GPL-3.0 兼容）。
+    // 用于在 :sdl2 / :sdl 图形运行进程内 hook libSDL2/libSDL3 的 fopen 家族,
+    // 把落在 getFilesDir() 下、实际不存在的相对资源重定向回项目目录。
+    // 通过 Android prefab 暴露 native 库,由 src/main/cpp/sdl_asset_redirect 消费。
+    implementation(libs.bytehook)
 
     // AndroidX Lifecycle (ViewModel + StateFlow)
     implementation(libs.lifecycle.runtime)

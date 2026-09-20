@@ -9,11 +9,13 @@ import android.os.Process
 import android.os.SystemClock
 import android.view.ViewGroup
 import android.widget.Toast
+import com.wuxianggujun.tinaide.core.compile.CompileProjectUseCase
 import com.wuxianggujun.tinaide.core.compile.SdlOrientation
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.ui.runtime.GraphicalRuntimeActivityHost
 import com.wuxianggujun.tinaide.ui.runtime.GraphicalRuntimeIntentOptions
+import com.wuxianggujun.tinaide.ui.runtime.NativeLaunchEnvironment
 import org.libsdl2.app.SDLActivity
 import timber.log.Timber
 
@@ -208,6 +210,21 @@ class ExternalSdl2Activity : SDLActivity() {
             preloadLibraryPaths = preloadLibraryPaths,
             mainLibraryPath = mainLibraryPath
         ).forEach(::loadAbsolutePath)
+
+        installSdlAssetRedirect()
+    }
+
+    /**
+     * 在 libSDL2 已加载、SDL_main 之前安装资源重定向 hook。
+     * projectRoot 来自编译链注入的 [CompileProjectUseCase.RUNTIME_ASSET_ROOT_ENV]；
+     * 缺省（如 APK 导出场景）时静默跳过，SDL 走原生 filesDir/APK asset 逻辑。
+     */
+    private fun installSdlAssetRedirect() {
+        val projectRoot = NativeLaunchEnvironment.readFromIntent(intent)[
+            CompileProjectUseCase.RUNTIME_ASSET_ROOT_ENV
+        ].orEmpty()
+        if (projectRoot.isBlank()) return
+        SdlAssetRedirect.install(this, projectRoot)
     }
 
     override fun getBrokenLibrariesErrorTitle(): String = Strings.sdl_host_title.strOr(this)

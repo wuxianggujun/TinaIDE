@@ -8,6 +8,7 @@ import com.wuxianggujun.tinaide.core.font.AppFontManager
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.str
 import com.wuxianggujun.tinaide.core.i18n.strOr
+import com.termux.terminal.TerminalSession
 import com.wuxianggujun.tinaide.core.terminal.ITerminalPreferences
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -46,6 +47,7 @@ class TerminalPreferences(private val context: Context) : ITerminalPreferences {
         private const val KEY_CURSOR_BLINK_RATE = "cursor_blink_rate"
         private const val KEY_SHELL_TYPE = "shell_type"
         private const val KEY_TERMINAL_BACKEND = "terminal_backend"
+        private const val KEY_SHOW_RAW_LINKER_OUTPUT = "show_raw_linker_output"
 
         // 使用统一的字体常量
         val DEFAULT_FONT_SIZE = AppFontManager.DEFAULT_TERMINAL_FONT_SIZE
@@ -67,6 +69,9 @@ class TerminalPreferences(private val context: Context) : ITerminalPreferences {
         const val CURSOR_BLINK_RATE_MAX = 2000 // 最大闪烁率 2000ms
         const val DEFAULT_CURSOR_BLINK_RATE = 500 // 默认闪烁率 500ms
         const val DEFAULT_CURSOR_BLINK_ENABLED = false // 默认不启用光标闪烁
+
+        // 默认过滤 linker 兼容告警（false = 不显示原始输出 = 过滤开启）
+        const val DEFAULT_SHOW_RAW_LINKER_OUTPUT = false
 
         // Shell 类型常量
         const val SHELL_TYPE_AUTO = "auto" // 自动检测
@@ -188,6 +193,17 @@ class TerminalPreferences(private val context: Context) : ITerminalPreferences {
         prefs.getString(KEY_TERMINAL_BACKEND, DEFAULT_BACKEND) ?: DEFAULT_BACKEND
     )
     override val backendModeFlow: StateFlow<String> = _backendMode.asStateFlow()
+
+    // 是否原样显示 linker 告警（总闸）StateFlow
+    private val _showRawLinkerOutput = MutableStateFlow(
+        prefs.getBoolean(KEY_SHOW_RAW_LINKER_OUTPUT, DEFAULT_SHOW_RAW_LINKER_OUTPUT)
+    )
+    override val showRawLinkerOutputFlow: StateFlow<Boolean> = _showRawLinkerOutput.asStateFlow()
+
+    init {
+        // 构造即把已持久化的总闸状态推给过滤器，保证 App 冷启动时与设置一致。
+        applyLinkerWarningFilterState(_showRawLinkerOutput.value)
+    }
 
     /**
      * 字体大小（sp）
@@ -311,6 +327,28 @@ class TerminalPreferences(private val context: Context) : ITerminalPreferences {
         }
 
     /**
+     * 是否原样显示 linker 兼容告警（关闭内置过滤）。
+     *
+     * 设置立即对所有会话生效（过滤发生在终端显示层，无需重启）。
+     */
+    override var showRawLinkerOutput: Boolean
+        get() = _showRawLinkerOutput.value
+        set(value) {
+            prefs.edit().putBoolean(KEY_SHOW_RAW_LINKER_OUTPUT, value).apply()
+            _showRawLinkerOutput.value = value
+            applyLinkerWarningFilterState(value)
+            Timber.tag(TAG).d("Show raw linker output changed to: $value")
+        }
+
+    /**
+     * 把总闸状态推给终端显示层过滤器。
+     * showRawLinkerOutput = true → 关闭过滤（原样显示）；false → 开启过滤。
+     */
+    private fun applyLinkerWarningFilterState(showRaw: Boolean) {
+        TerminalSession.setKnownLinkerWarningFilterEnabled(!showRaw)
+    }
+
+    /**
      * 获取当前配置的字体 Typeface
      */
     fun getTypeface(): Typeface = when (_fontName.value) {
@@ -405,6 +443,7 @@ class TerminalPreferences(private val context: Context) : ITerminalPreferences {
         cursorBlinkRate = DEFAULT_CURSOR_BLINK_RATE
         shellType = DEFAULT_SHELL_TYPE
         backendMode = DEFAULT_BACKEND
+        showRawLinkerOutput = DEFAULT_SHOW_RAW_LINKER_OUTPUT
         Timber.tag(TAG).i("Terminal preferences reset to defaults")
     }
 }

@@ -2196,7 +2196,7 @@
   <string name="large_file_hex">Hex View</string>
   <string name="large_file_load_failed">Load failed</string>
   <string name="large_file_retry">Retry</string>
-  <string name="large_file_reached_limit">Reached display limit (%1$d lines), consider using hex view or opening in editor.</string>
+  <string name="large_file_reached_safe_limit">Reached the safe display limit. Consider using hex view or opening in the editor.</string>
   <string name="large_file_end_of_file">End of file</string>
   <string name="large_file_loading">Loading</string>
   <string name="large_file_editor_confirm_title">Open large file in editor?</string>
@@ -3773,9 +3773,6 @@ kept=%3$d bytes
   <string name="run_config_graphical_options">Graphical Runtime</string>
   <string name="run_config_graphical_floating_log">Floating Log Window</string>
   <string name="run_config_graphical_floating_log_desc">Show a draggable real-time log window for stdout/stderr output during fullscreen graphical runtime</string>
-  <string name="run_config_terminal_options">Terminal Run Options</string>
-  <string name="run_config_show_linker_warnings">Show Dynamic Linker Compatibility Warnings</string>
-  <string name="run_config_show_linker_warnings_desc">Hide the three harmless warnings produced when an older Android linker sees AArch64 Auth RELR tags by default; enable to show them unchanged</string>
 
   <!-- Floating overlay -->
   <string name="floating_overlay_exit">Back to Editor</string>
@@ -3850,6 +3847,8 @@ kept=%3$d bytes
   <string name="settings_cursor_blink">Cursor blink</string>
   <string name="settings_cursor_blink_desc">Enable terminal cursor blinking</string>
   <string name="settings_cursor_blink_rate">Blink rate</string>
+  <string name="settings_show_raw_linker_output">Show raw linker output</string>
+  <string name="settings_show_raw_linker_output_desc">Disable filtering of known-harmless linker compatibility warnings; show them verbatim in both the interactive terminal and Run</string>
   <string name="settings_desc_developer">Testing tools and debugging features</string>
   <string name="settings_desc_git">HTTPS auth and SSH key management</string>
   <string name="settings_desc_help">Read guides, documentation, and FAQs</string>

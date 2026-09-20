@@ -17,14 +17,15 @@ class EditorPagerSwitchSupportTest {
     }
 
     @Test
-    fun beyondViewportPageCount_shouldKeepAllPagesBelowTheComposeCap() {
-        assertThat(EditorPagerSwitchSupport.beyondViewportPageCount(5)).isEqualTo(4)
-        assertThat(EditorPagerSwitchSupport.beyondViewportPageCount(8)).isEqualTo(7)
+    fun beyondViewportPageCount_shouldTreatTheLimitAsPagesPerSide() {
+        assertThat(EditorPagerSwitchSupport.beyondViewportPageCount(4)).isEqualTo(3)
+        assertThat(EditorPagerSwitchSupport.beyondViewportPageCount(5)).isEqualTo(3)
+        assertThat(EditorPagerSwitchSupport.beyondViewportPageCount(8)).isEqualTo(3)
     }
 
     @Test
     fun beyondViewportPageCount_shouldCapLargeTabSets() {
         assertThat(EditorPagerSwitchSupport.beyondViewportPageCount(20))
-            .isEqualTo(EditorPagerSwitchSupport.MAX_COMPOSED_PAGES - 1)
+            .isEqualTo(EditorPagerSwitchSupport.MAX_BEYOND_VIEWPORT_PAGES_PER_SIDE)
     }
 }

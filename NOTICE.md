@@ -50,6 +50,7 @@ TinaIDE 整体以 **GPL-3.0-or-later** 分发（见 `LICENSE` 与 `COPYRIGHT.md`
 | Eclipse LSP4J | EPL-2.0 **或** EDL-1.0 双许可；本项目按 **EDL-1.0**（BSD-3-Clause 风格）分支使用，以避免 EPL-2.0 与 GPL-3.0 的兼容性争议 |
 | LuaJava (party.iroiro.luajava) | Apache-2.0；内含 Lua 5.4（MIT） |
 | Material Components | Apache-2.0 |
+| ByteHook (com.bytedance:bytehook) | MIT；SDL 图形运行进程内 PLT/GOT hook，与 GPL-3.0 兼容 |
 
 ## 三、运行时下载的组件（不随 APK 分发）
 

@@ -15,6 +15,7 @@ import com.wuxianggujun.tinaide.file.IProjectContext
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
@@ -24,6 +25,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 
 /**
@@ -129,9 +131,9 @@ class CompilerViewModel(
     /**
      * 获取当前项目的运行配置管理器
      */
-    fun getRunConfigurationManager(): RunConfigurationManager {
-        val project = projectContext.getCurrentProject() ?: return RunConfigurationManager()
-        return RunConfigurationManager.load(
+    suspend fun loadRunConfigurationManager(): RunConfigurationManager = withContext(Dispatchers.IO) {
+        val project = projectContext.getCurrentProject() ?: return@withContext RunConfigurationManager()
+        RunConfigurationManager.load(
             projectPath = project.rootPath,
             legacyCMakeBuildType = CMakeBuildTypeOption.fromValue(Prefs.legacyCmakeBuildType),
         )
@@ -148,14 +150,14 @@ class CompilerViewModel(
     /**
      * 获取当前选中的运行配置
      */
-    fun getRunConfiguration() = getRunConfigurationManager().selectedConfig
+    suspend fun getRunConfiguration() = loadRunConfigurationManager().selectedConfig
 
     /**
      * 获取当前项目的构建系统类型
      */
-    fun detectBuildSystem(): BuildSystem {
-        val project = projectContext.getCurrentProject() ?: return BuildSystem.UNKNOWN
-        return BuildSystemDetector.detect(File(project.rootPath))
+    suspend fun detectBuildSystem(): BuildSystem = withContext(Dispatchers.IO) {
+        val project = projectContext.getCurrentProject() ?: return@withContext BuildSystem.UNKNOWN
+        BuildSystemDetector.detect(File(project.rootPath))
     }
 
     /**

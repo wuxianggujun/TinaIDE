@@ -132,6 +132,11 @@ class DocumentSession(
          * 对 30MB 文档，走这条路可以省下一次 60MB 的 String 分配和一遍全量字符扫描。
          */
         fun readFingerprintSnapshot(): FingerprintSnapshot? = null
+        /**
+         * 允许编辑器缓冲区直接从文件流式重载，避免先把整份文件物化成 [String]。
+         * 返回 null 表示当前 binding 不支持，调用方会回退到兼容路径。
+         */
+        suspend fun reloadFromFile(file: File, charset: Charset): Result<Unit>? = null
         fun setText(text: CharSequence)
         fun textLength(): Int
         fun canUndo(): Boolean
@@ -245,14 +250,36 @@ class DocumentSession(
         if (baselineState == BaselineState.INITIAL_LOADING && !_state.value.isDirty) return
 
         val viewState = binding.currentViewState() ?: currentViewState()
+        val (currentFingerprint, currentVersion) = readFingerprintWithVersion(binding)
+        val dirty = currentVersion == UNSTABLE_DOCUMENT_VERSION ||
+            cleanFingerprint?.let { currentFingerprint != it } ?: _state.value.isDirty
+        if (!dirty) {
+            detachedEditorSnapshot = null
+            _state.update {
+                it.copy(
+                    isDirty = false,
+                    canUndo = binding.canUndo(),
+                    canRedo = binding.canRedo(),
+                    cursorLine = viewState.cursorLine,
+                    cursorColumn = viewState.cursorColumn,
+                    scrollX = viewState.scrollX,
+                    scrollY = viewState.scrollY,
+                    charsetName = fileCharset.name(),
+                    lastError = null
+                )
+            }
+            return
+        }
+
         val contentSnapshot = binding.readSnapshot()
-        val dirty = cleanFingerprint?.let { baseline ->
-            buildTextFingerprint(contentSnapshot.text) != baseline
-        } ?: _state.value.isDirty
+        val snapshotDirty = cleanFingerprint?.let { baseline ->
+            contentSnapshot.documentVersion == UNSTABLE_DOCUMENT_VERSION ||
+                buildTextFingerprint(contentSnapshot.text) != baseline
+        } ?: true
         val snapshot = DetachedEditorSnapshot(
             text = contentSnapshot.text,
             viewState = viewState,
-            isDirty = dirty,
+            isDirty = snapshotDirty,
             canUndo = binding.canUndo(),
             canRedo = binding.canRedo(),
             documentVersion = contentSnapshot.documentVersion,
@@ -700,16 +727,20 @@ class DocumentSession(
     suspend fun reloadFromDisk(): Boolean {
         return try {
             val binding = editorBinding.get() ?: return false
-            val (charset, newContent) = withContext(Dispatchers.IO) {
-                val detectedCharset = FileCharsetDetector.detect(file)
-                detectedCharset to file.readText(detectedCharset)
+            val charset = withContext(Dispatchers.IO) {
+                FileCharsetDetector.detect(file)
             }
-
-            binding.setText(newContent)
+            val streamingReload = binding.reloadFromFile(file, charset)
+            if (streamingReload == null) {
+                val newContent = withContext(Dispatchers.IO) { file.readText(charset) }
+                binding.setText(newContent)
+            } else {
+                streamingReload.getOrThrow()
+            }
             fileCharset = charset
-            val snapshot = binding.readSnapshot()
-            cleanFingerprint = buildTextFingerprint(snapshot.text)
-            cleanVersion = snapshot.documentVersion
+            val (fingerprint, documentVersion) = readFingerprintWithVersion(binding)
+            cleanFingerprint = fingerprint
+            cleanVersion = documentVersion
             baselineState = BaselineState.READY
             val marker = readCurrentWriteMarker()
             if (marker != null) {

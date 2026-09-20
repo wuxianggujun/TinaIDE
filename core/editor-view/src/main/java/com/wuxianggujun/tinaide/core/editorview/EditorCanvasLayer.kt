@@ -87,7 +87,6 @@ internal fun EditorCanvasLayer(
                 runDragLoop(
                     canvasWidthPxProvider = { ui.canvasWidthPx },
                     canvasHeightPxProvider = { ui.canvasHeightPx },
-                    touchSlopPx = session.touchSlop,
                     density = density
                 )
             }
