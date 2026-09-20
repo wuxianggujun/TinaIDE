@@ -99,6 +99,12 @@ class CompileDatabaseProvider(
         val toolchainId: String?,
         val sysrootProfileId: String?,
         val sysrootApiLevel: Int,
+        /**
+         * 外部（CMake 导出）编译数据库是否已过期：`CMakeLists.txt` 的修改时间晚于
+         * `compile_commands.json`，说明构建脚本改过但未重新 configure，数据库不再权威。
+         * 仅对 CMake 项目 + 外部权威数据库计算；Tina 兜底库走 [shouldGenerate] 自愈，不置此位。
+         */
+        val compileDatabaseStale: Boolean = false,
     )
 
     data class RuntimeIdentity(
@@ -175,6 +181,10 @@ class CompileDatabaseProvider(
         } else {
             CxxCompileDatabaseSource.TINA_FALLBACK
         }
+        // 外部权威数据库不会被 fallback 重生成，需单独检测过期（CMakeLists 改过但未重新 configure）。
+        val compileDatabaseStale = compileDatabaseSource == CxxCompileDatabaseSource.EXTERNAL &&
+            isCmakeProject &&
+            isExternalCompileDatabaseStale(workspaceRoot, sourceCompileCommandsFile)
 
         if (CompileCommandsDebugLogger.isCompileCommandsSelectionEnabled()) {
             Timber.tag(TAG).i(
@@ -214,8 +224,33 @@ class CompileDatabaseProvider(
             toolchainId = runtimeIdentity.toolchainId,
             sysrootProfileId = runtimeIdentity.sysrootProfileId,
             sysrootApiLevel = runtimeIdentity.sysrootApiLevel,
+            compileDatabaseStale = compileDatabaseStale,
         )
     }
+
+    /**
+     * 外部编译数据库是否过期：`CMakeLists.txt` 修改时间晚于 `compile_commands.json`。
+     *
+     * 与 [com.wuxianggujun.tinaide.core.compile] 构建链路里 `CMakeStrategy.needsReconfigure`
+     * 的主信号一致（比较 CMakeLists.txt mtime vs 生成产物）。这里只做 MVP 主信号：
+     * 顶层 `CMakeLists.txt` 改过而数据库没跟上。装包漂移等 Phase 2 信号不在此判定。
+     */
+    private fun isExternalCompileDatabaseStale(workspaceRoot: File, compileCommandsFile: File): Boolean {
+        if (!compileCommandsFile.isFile) return false
+        val cmakeLists = File(workspaceRoot, "CMakeLists.txt")
+        if (!cmakeLists.isFile) return false
+        return cmakeLists.lastModified() > compileCommandsFile.lastModified()
+    }
+
+    /**
+     * 供缓存层（[com.wuxianggujun.tinaide.core.editorlsp.LspCompileSetupCache]）复用的过期判定：
+     * `CMakeLists.txt` 是否晚于给定目录下的 `compile_commands.json`。
+     *
+     * 缓存命中会冻结 [Prepared.compileDatabaseStale]，若不在自愈校验里重新比一次 mtime，
+     * 用户改完 CMakeLists 后过期信号会被旧快照盖掉。此方法就是那次重算入口。
+     */
+    fun isCompileDatabaseStale(workspaceRoot: File, compileCommandsDir: File): Boolean =
+        isExternalCompileDatabaseStale(workspaceRoot, File(compileCommandsDir, "compile_commands.json"))
 
     private fun ensure(prepared: Prepared): File? {
         val compileCommandsFile = File(prepared.compileCommandsDir, "compile_commands.json")

@@ -224,6 +224,21 @@ class CMakeStrategy(
         }
     }
 
+    /**
+     * 仅重新 configure 重生成 `compile_commands.json`,不编译。
+     *
+     * 用于编辑器检测到编译数据库过期后的一键刷新:强制走一次 configure(即使
+     * [needsReconfigure] 判定为否也要跑,因为触发方已经知道输入变了),
+     * configure 内部带 `generateCompileCommands = true`,产物即最新的 compile_commands.json。
+     */
+    override suspend fun configureOnly(ctx: BuildContext): ConfigureResult {
+        lastResolvedRunMode = ctx.options.resolvedRunMode
+        // 强制重配:删掉 cache,让 configure 从头跑并刷新 compile_commands.json
+        File(ctx.buildDir, "CMakeCache.txt").delete()
+        File(ctx.buildDir, "CMakeFiles").deleteRecursively()
+        return configure(ctx.projectRoot, ctx.buildDir, ctx.options)
+    }
+
     override suspend fun getTargets(ctx: BuildContext): List<TargetInfo> = loadTargets(ctx.projectRoot, ctx.buildDir)
 
     // ---------- configure / build 分派 ----------

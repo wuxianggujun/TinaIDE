@@ -105,6 +105,35 @@ class CxxCompileContextInspectorTest {
     }
 
     @Test
+    fun inspect_flagsStaleWhenExternalDatabaseOutdatedButKeepsCommandDetails() {
+        val sourceFile = File(projectRoot, "src/main.cpp").apply {
+            parentFile?.mkdirs()
+            writeText("int main() { return 0; }\n", Charsets.UTF_8)
+        }
+        File(projectRoot, "include").mkdirs()
+        writeDatabase(
+            """
+            [{
+              "directory":"${jsonPath(projectRoot)}",
+              "arguments":["clang++","-std=c++20","-Iinclude","${jsonPath(sourceFile)}"],
+              "file":"${jsonPath(sourceFile)}"
+            }]
+            """.trimIndent(),
+        )
+
+        val context = CxxCompileContextInspector.inspect(
+            prepared = prepared(sourceFile, CxxCompileDatabaseSource.EXTERNAL, stale = true),
+            compileCommandsDir = buildDir,
+        )
+
+        // 过期不覆盖已解析出的命令细节：仍是精确命中，仅额外挂出可点重配信号。
+        assertThat(context.issue).isEqualTo(CxxCompileContextIssue.COMPILE_DATABASE_STALE)
+        assertThat(context.commandMatch).isEqualTo(CxxCompileCommandMatch.EXACT)
+        assertThat(context.languageStandard).isEqualTo("c++20")
+        assertThat(context.includePaths).containsExactly(File(projectRoot, "include").canonicalPath)
+    }
+
+    @Test
     fun inspect_reportsInvalidDatabaseWithoutThrowing() {
         val sourceFile = File(projectRoot, "main.cpp").apply {
             writeText("int main() {}\n", Charsets.UTF_8)
@@ -123,6 +152,7 @@ class CxxCompileContextInspectorTest {
     private fun prepared(
         file: File,
         source: CxxCompileDatabaseSource,
+        stale: Boolean = false,
     ): CompileDatabaseProvider.Prepared = CompileDatabaseProvider.Prepared(
         file = file,
         workspaceRoot = projectRoot,
@@ -138,6 +168,7 @@ class CxxCompileContextInspectorTest {
         toolchainId = "toolchain",
         sysrootProfileId = "sysroot-profile",
         sysrootApiLevel = 28,
+        compileDatabaseStale = stale,
     )
 
     private fun writeDatabase(content: String) {

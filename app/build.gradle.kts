@@ -366,6 +366,16 @@ dependencies {
     // 通过 Android prefab 暴露 native 库,由 src/main/cpp/sdl_asset_redirect 消费。
     implementation(libs.bytehook)
 
+    // bytehook 的 POM 传递依赖 shadowhook（inline hook）。shadowhook 只有 arm 后端,
+    // 上游未发布 x86/x86_64 库,导致 x86_64 变体在 configureCMake 阶段报 CXX1210
+    // "No compatible library found [//shadowhook/shadowhook]"。经 readelf 核实:
+    //   - arm64 libbytehook.so NEEDED libshadowhook.so（生产包真依赖,不能动）
+    //   - x86_64 libbytehook.so 自包含,不 NEEDED shadowhook
+    // 因此仅对 x86_64 变体排除该传递依赖,让模拟器构建可用;arm64 完全不受影响。
+    configurations.matching { it.name.startsWith("x86_64") }.configureEach {
+        exclude(group = "com.bytedance.android", module = "shadowhook")
+    }
+
     // AndroidX Lifecycle (ViewModel + StateFlow)
     implementation(libs.lifecycle.runtime)
     implementation(libs.lifecycle.viewmodel)

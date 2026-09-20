@@ -34,4 +34,13 @@ sealed interface BuildIntent {
      * @property reconfigure 清理后是否立即 reconfigure(CMake 专用)
      */
     data class Clean(val reconfigure: Boolean = false) : BuildIntent
+
+    /**
+     * 仅重新 configure，重生成 `compile_commands.json`，**不触发编译**。
+     *
+     * 用于编辑器检测到编译数据库过期（如 `CMakeLists.txt` 变更但未构建）后，
+     * 让用户一键刷新 clangd 的编译上下文，而不必付出全量编译代价。
+     * 仅 CMake 策略支持；其它策略应返回不支持。
+     */
+    data object ConfigureOnly : BuildIntent
 }

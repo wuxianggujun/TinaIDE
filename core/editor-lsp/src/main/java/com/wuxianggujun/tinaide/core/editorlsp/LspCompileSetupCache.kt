@@ -215,6 +215,13 @@ internal class LspCompileSetupCache(
     ): Boolean = withContext(Dispatchers.IO) {
         runCatching {
             val currentProvider = getProvider(context)
+            // 外部权威数据库过期后（CMakeLists 改过而未重新 configure），缓存冻结的 stale 标记会失真，
+            // 需重新比一次 mtime；变过期就判定不新鲜，让 resolve() 重新 prepare() 刷新信号。
+            val staleChanged = currentProvider.isCompileDatabaseStale(
+                cached.prepared.workspaceRoot,
+                cached.compileCommandsDir,
+            ) != cached.prepared.compileDatabaseStale
+            if (staleChanged) return@runCatching false
             val currentFingerprint = currentProvider.computePackageFingerprint(cached.prepared.workspaceRoot)
             val currentRuntimeIdentity = currentProvider.resolveRuntimeIdentity(cached.prepared.workspaceRoot)
             currentFingerprint == cached.prepared.packageFingerprint &&

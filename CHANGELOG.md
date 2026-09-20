@@ -31,6 +31,18 @@
 
 ## [Unreleased]
 
+### Added
+
+#### C/C++ 编译数据库过期检测与「重新配置」操作
+
+外部（CMake 导出）的 `compile_commands.json` 之前完全不做过期检测：改了 `CMakeLists.txt` 但没重新构建时，clangd 会继续用旧数据库画红线、误报头文件缺失，而且没有任何提示。这次在 LSP 层加了主信号检测——`CMakeLists.txt` 的修改时间晚于 `compile_commands.json` 即判定过期（与构建链路 `CMakeStrategy.needsReconfigure` 一致），仅对 CMake 项目 + 外部权威数据库生效，Tina 兜底库仍走原有自愈。
+
+检测到过期后，`CxxCompileContextDialog` 会显示过期说明并给出「重新配置」按钮。点击走一条新的 **configure-only** 构建路径（`BuildIntent.ConfigureOnly` → `BuildPlan.ConfigureOnly` → `BuildStrategy.configureOnly`），只重新生成 `compile_commands.json`、不做全量编译，完成后自动刷新 clangd 绑定让新数据库生效。
+
+#### SDL2 + CMake 项目模板（侧载 plugin）
+
+新增 `tinaide.template.sdl2` 侧载模板 plugin，交付方式与现有 SDL3 模板一致（Settings → Plugins → Install from file）。模板使用 SDL2 经典 `main()` 入口和事件循环（`find_package(SDL2 CONFIG REQUIRED)` / `SDL2::SDL2` / `#include <SDL2/SDL.h>`），会被识别为 SDL2 项目并走 `:sdl2` 图形运行进程。SDL2 目前仅支持图形运行、暂不支持 APK 导出。
+
 ## [0.18.30] - 2026-09-16
 
 > 本版本覆盖 0.18.29 之后的 C/C++ 编辑器、LSP、raylib 运行链路和大文件加载修复。

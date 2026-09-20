@@ -140,11 +140,12 @@ class CompileProjectUseCase(
         DEBUG,
         TERMINAL,
         CMAKE_RECONFIGURE,
+        CMAKE_CONFIGURE_ONLY,
         CMAKE_CLEAR_BUILD_DIRECTORY,
         CMAKE_CLEAR_AND_RECONFIGURE;
 
         fun isCMakeMaintenance(): Boolean = when (this) {
-            CMAKE_RECONFIGURE, CMAKE_CLEAR_BUILD_DIRECTORY, CMAKE_CLEAR_AND_RECONFIGURE -> true
+            CMAKE_RECONFIGURE, CMAKE_CONFIGURE_ONLY, CMAKE_CLEAR_BUILD_DIRECTORY, CMAKE_CLEAR_AND_RECONFIGURE -> true
             else -> false
         }
     }
@@ -473,6 +474,31 @@ class CompileProjectUseCase(
             target = null,
         )
 
+        // 仅重新 configure:重生成 compile_commands.json,不清目录、不全量编译。
+        // 用于 LSP 检测到编译数据库过期时的轻量重配。
+        if (action == Action.CMAKE_CONFIGURE_ONLY) {
+            val configureRequest = CompileRequest(BuildIntent.ConfigureOnly, LaunchIntent.None)
+            val report = runWithProgressLogging { orchestratorProvider().run(configureRequest, ctx) }
+            return@withContext when (report) {
+                is BuildReport.Reconfigured -> {
+                    val summary = Strings.compile_cmake_configure_only_finished.strOr(appContext)
+                    Result.Success(Report(action = action, summary = summary))
+                }
+                is BuildReport.BuildFailed -> {
+                    log(report.reason)
+                    Result.Error(action, report.reason, null)
+                }
+                is BuildReport.Invalid -> {
+                    log(report.reason)
+                    Result.Error(action, report.reason, null)
+                }
+                else -> {
+                    val msg = Strings.compile_cmake_configure_only_finished.strOr(appContext)
+                    Result.Success(Report(action = action, summary = msg))
+                }
+            }
+        }
+
         val reconfigureAfterClean = action == Action.CMAKE_RECONFIGURE || action == Action.CMAKE_CLEAR_AND_RECONFIGURE
         val cleanRequest = CompileRequest(
             build = BuildIntent.Clean(reconfigure = action == Action.CMAKE_RECONFIGURE),
@@ -748,6 +774,14 @@ class CompileProjectUseCase(
                 Report(
                     action = action,
                     summary = Strings.compile_result_build_complete.strOr(appContext),
+                )
+            )
+            // ConfigureOnly 只经 executeCMakeMaintenance 短路处理，这条通用路径不会真正收到；
+            // 仅为 when 穷尽性兜底，映射成一次配置完成。
+            is BuildReport.Reconfigured -> Result.Success(
+                Report(
+                    action = action,
+                    summary = Strings.compile_cmake_configure_only_finished.strOr(appContext),
                 )
             )
             is BuildReport.BuildFailed -> {

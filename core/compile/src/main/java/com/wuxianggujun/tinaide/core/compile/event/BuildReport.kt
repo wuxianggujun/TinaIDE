@@ -32,6 +32,9 @@ sealed interface BuildReport {
     /** 清理操作成功 */
     data class Cleaned(val clearedCount: Int) : BuildReport
 
+    /** 仅重新 configure 成功(重生成 compile_commands.json,未编译) */
+    data class Reconfigured(val compileCommandsPath: String?) : BuildReport
+
     /** 构建阶段失败(源码错、配置错、工具链错等) */
     data class BuildFailed(
         val reason: String,

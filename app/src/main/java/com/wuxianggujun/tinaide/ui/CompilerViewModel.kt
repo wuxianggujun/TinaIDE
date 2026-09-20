@@ -74,6 +74,10 @@ class CompilerViewModel(
         runCMakeMaintenance(CompileProjectUseCase.Action.CMAKE_CLEAR_AND_RECONFIGURE)
     }
 
+    fun configureOnlyCMake() {
+        runCMakeMaintenance(CompileProjectUseCase.Action.CMAKE_CONFIGURE_ONLY)
+    }
+
     private fun runCMakeMaintenance(action: CompileProjectUseCase.Action) {
         launchOperation(action) {
             compileUseCase.executeCMakeMaintenance(action)

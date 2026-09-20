@@ -107,6 +107,14 @@ class BuildOrchestrator(
                 val cleared = executor.clean(plan, ctx, events)
                 return finishWith(BuildReport.Cleaned(cleared))
             }
+            is BuildPlan.ConfigureOnly -> {
+                return when (val result = executor.configureOnly(plan, ctx, events)) {
+                    is com.wuxianggujun.tinaide.core.compile.ConfigureResult.Success ->
+                        finishWith(BuildReport.Reconfigured(result.compileCommandsPath?.absolutePath))
+                    is com.wuxianggujun.tinaide.core.compile.ConfigureResult.Error ->
+                        finishWith(BuildReport.BuildFailed(result.message))
+                }
+            }
             is BuildPlan.Invalid -> return finishWith(BuildReport.Invalid(plan.reason))
         }
 
@@ -151,6 +159,10 @@ class BuildOrchestrator(
                 "Build finished: report=Cleaned clearedCount=%s",
                 report.clearedCount,
             )
+            is BuildReport.Reconfigured -> Timber.tag(TAG).i(
+                "Build finished: report=Reconfigured compileCommands=%s",
+                report.compileCommandsPath ?: "<none>",
+            )
             is BuildReport.Invalid -> Timber.tag(TAG).w(
                 "Build finished: report=Invalid reason=%s",
                 report.reason,
@@ -164,6 +176,7 @@ class BuildOrchestrator(
         is BuildPlan.Skip -> "skip: ${plan.reason}"
         is BuildPlan.Build -> "build: ${plan.reason}"
         is BuildPlan.CleanOnly -> if (plan.reconfigure) "clean + reconfigure" else "clean"
+        is BuildPlan.ConfigureOnly -> "configure only"
         is BuildPlan.Invalid -> "invalid: ${plan.reason}"
     }
 }
