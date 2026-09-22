@@ -1,5 +1,7 @@
 # 插件 API 契约（apiVersion 1）
 
+> 最后人工核验：2026-09-09
+
 ## Manifest
 
 | 字段 | 必填 | 稳定性 | 说明 |
@@ -9,9 +11,12 @@
 | `version` | 是 | 稳定 | 插件版本。 |
 | `apiVersion` | 否 | 稳定 | 当前固定为 `1`，省略时默认 `1`。宿主会拒绝其他版本。 |
 | `minAppVersion` | 否 | 稳定 | 插件要求的最低 TinaIDE 版本。省略时保持历史兼容；明确高于当前宿主时，Registry 不展示更新，宿主也拒绝安装、启用和运行。 |
-| `type` | 否 | 稳定 | 当前重点支持 `script`、`hybrid`、`lsp`。 |
+| `type` | 否 | 稳定 | 省略时默认 `config`；当前重点支持 `script`、`hybrid`、`lsp`，`system` 用于宿主能力门控插件。 |
+| `capabilities` | 否 | 稳定 | 宿主能力门控声明。**只有 `type: "system"` 且已启用的插件才会计入**已启用 capability 集合；当前唯一已识别值为 `linuxEnvironment`。 |
+| `lifecycle.requiresSetup` | 否 | 稳定 | 声明该插件启用后仍需用户完成一次环境准备（例如安装 Linux rootfs）。 |
 | `main` | `script`/`hybrid` 必填逻辑项 | 稳定 | 省略时默认 `main.lua`，宿主要求对应文件存在。 |
 | `permissions` | 否 | 稳定 | 必需权限声明。未声明的宿主 API 调用会被拒绝。 |
+| `networkHosts` | 否 | 稳定 | `network.fetch` 的主机白名单；只写主机名，不要写完整 URL。 |
 | `optionalPermissions` | 否 | 稳定 | 按需授权声明。用户可在插件详情页单项授予或撤销；未显式授予时调用会被拒绝。 |
 | `activationEvents` | 否 | 稳定 | 仅适用于 LSP 插件；apiVersion 1 支持 `onLanguage:<languageId>`，且语言必须由 `languageServers` 声明。 |
 | `contributions.commands` / `menus` | 否 | 稳定 | 已用于命令与菜单贡献。 |
@@ -103,7 +108,7 @@ locale 文件只覆盖用户可见字段，不覆盖 `id`、`version`、`type`�
 | --- | --- | --- | --- |
 | 工作区读 | `workspace.read`、`file.read` | L2 | 两者等价，宿主归一化为同一权限。 |
 | 工作区写 | `workspace.write`、`file.write` | L2 | 两者等价。 |
-| 命令执行 | `commands.execute`、`command.execute` | L1 | 两者等价。 |
+| 命令执行 | `command.execute`、`commands.execute` | L2 | 两者等价；宿主归一化到 `command.execute`。 |
 | 编辑器只读 | `editor.read` | L0 | 仍需 manifest 声明。 |
 | 选区读取 | `editor.selection` | L0 | 仍需 manifest 声明。 |
 | 诊断读取 | `diagnostics.read` | L0 | 仍需 manifest 声明。 |

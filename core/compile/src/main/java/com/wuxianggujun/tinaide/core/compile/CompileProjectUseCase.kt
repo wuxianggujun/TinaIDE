@@ -15,9 +15,11 @@ import com.wuxianggujun.tinaide.core.config.Prefs
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.core.linux.LinuxEnvironmentProvider
+import com.wuxianggujun.tinaide.core.linux.LinuxRunModePolicy
 import com.wuxianggujun.tinaide.core.linux.UnavailableLinuxEnvironmentProvider
 import com.wuxianggujun.tinaide.core.packages.BundledPackagesReadiness
 import com.wuxianggujun.tinaide.core.packages.InstalledPackagePathResolver
+import com.wuxianggujun.tinaide.core.terminal.TerminalBackend
 import com.wuxianggujun.tinaide.editor.IEditorTabProvider
 import com.wuxianggujun.tinaide.file.IProjectContext
 import com.wuxianggujun.tinaide.output.IOutputManager
@@ -60,6 +62,13 @@ class CompileProjectUseCase(
 ) {
     companion object {
         private const val TAG = "CompileProjectUseCase"
+
+        /**
+         * 项目资源根环境变量。注入到图形运行进程 (:sdl2 / :sdl / :gui),供进程内 native
+         * GOT hook 把落在 getFilesDir() 下、实际不存在的相对资源打开重定向回项目目录。
+         * 该字面量必须与 native 侧 sdl_asset_redirect hook 读取的名字保持一致。
+         */
+        const val RUNTIME_ASSET_ROOT_ENV = "TINAIDE_SDL_ASSET_ROOT"
     }
 
     // ---------- 嵌套类型(保持外部 API 稳定) ----------
@@ -131,11 +140,12 @@ class CompileProjectUseCase(
         DEBUG,
         TERMINAL,
         CMAKE_RECONFIGURE,
+        CMAKE_CONFIGURE_ONLY,
         CMAKE_CLEAR_BUILD_DIRECTORY,
         CMAKE_CLEAR_AND_RECONFIGURE;
 
         fun isCMakeMaintenance(): Boolean = when (this) {
-            CMAKE_RECONFIGURE, CMAKE_CLEAR_BUILD_DIRECTORY, CMAKE_CLEAR_AND_RECONFIGURE -> true
+            CMAKE_RECONFIGURE, CMAKE_CONFIGURE_ONLY, CMAKE_CLEAR_BUILD_DIRECTORY, CMAKE_CLEAR_AND_RECONFIGURE -> true
             else -> false
         }
     }
@@ -152,6 +162,7 @@ class CompileProjectUseCase(
             val command: String,
             val runnablePath: String?,
             val workingDirectory: String,
+            val backend: TerminalBackend = TerminalBackend.HOST,
         ) : LaunchSpec()
         data class Debug(
             val programPath: String?,
@@ -463,6 +474,31 @@ class CompileProjectUseCase(
             target = null,
         )
 
+        // 仅重新 configure:重生成 compile_commands.json,不清目录、不全量编译。
+        // 用于 LSP 检测到编译数据库过期时的轻量重配。
+        if (action == Action.CMAKE_CONFIGURE_ONLY) {
+            val configureRequest = CompileRequest(BuildIntent.ConfigureOnly, LaunchIntent.None)
+            val report = runWithProgressLogging { orchestratorProvider().run(configureRequest, ctx) }
+            return@withContext when (report) {
+                is BuildReport.Reconfigured -> {
+                    val summary = Strings.compile_cmake_configure_only_finished.strOr(appContext)
+                    Result.Success(Report(action = action, summary = summary))
+                }
+                is BuildReport.BuildFailed -> {
+                    log(report.reason)
+                    Result.Error(action, report.reason, null)
+                }
+                is BuildReport.Invalid -> {
+                    log(report.reason)
+                    Result.Error(action, report.reason, null)
+                }
+                else -> {
+                    val msg = Strings.compile_cmake_configure_only_finished.strOr(appContext)
+                    Result.Success(Report(action = action, summary = msg))
+                }
+            }
+        }
+
         val reconfigureAfterClean = action == Action.CMAKE_RECONFIGURE || action == Action.CMAKE_CLEAR_AND_RECONFIGURE
         val cleanRequest = CompileRequest(
             build = BuildIntent.Clean(reconfigure = action == Action.CMAKE_RECONFIGURE),
@@ -710,6 +746,7 @@ class CompileProjectUseCase(
                     buildContext = buildContext,
                     config = config,
                     launchEnvironment = launchEnvironment,
+                    runMode = ctx.options.resolvedRunMode,
                 )
                 val artifactKind = mapKind(report.artifact.kind)
                 Timber.tag(TAG).i(
@@ -737,6 +774,14 @@ class CompileProjectUseCase(
                 Report(
                     action = action,
                     summary = Strings.compile_result_build_complete.strOr(appContext),
+                )
+            )
+            // ConfigureOnly 只经 executeCMakeMaintenance 短路处理，这条通用路径不会真正收到；
+            // 仅为 when 穷尽性兜底，映射成一次配置完成。
+            is BuildReport.Reconfigured -> Result.Success(
+                Report(
+                    action = action,
+                    summary = Strings.compile_cmake_configure_only_finished.strOr(appContext),
                 )
             )
             is BuildReport.BuildFailed -> {
@@ -811,6 +856,7 @@ class CompileProjectUseCase(
         buildContext: BuildVariables.BuildContext,
         config: RunConfiguration,
         launchEnvironment: Map<String, String>,
+        runMode: LinuxRunModePolicy.RunMode,
     ): LaunchSpec {
         val nativeRuntimeIdentity = NativeRuntimeIdentity(
             sysrootProfileId = descriptor.artifact.fingerprint.sysrootProfileId,
@@ -844,19 +890,34 @@ class CompileProjectUseCase(
                 val workingDir = config.getAbsoluteWorkDir(projectRoot.absolutePath, buildContext)
                     .ifBlank { descriptor.workingDir.absolutePath }
                 val args = config.getArgsList(buildContext).ifEmpty { descriptor.args }
-                val command = terminalCommandBuilder.build(
-                    workingDir = workingDir,
-                    outputPath = descriptor.runnablePath,
-                    args = args,
-                    projectRoot = projectRoot,
-                    extraEnvironment = launchEnvironment,
-                    nativeRuntimeIdentity = nativeRuntimeIdentity,
-                    showLinkerWarnings = config.showLinkerWarnings,
-                )
+                val backend = when (runMode) {
+                    LinuxRunModePolicy.RunMode.NATIVE -> TerminalBackend.HOST
+                    LinuxRunModePolicy.RunMode.PROOT -> TerminalBackend.PROOT
+                }
+                val command = when (backend) {
+                    TerminalBackend.HOST -> terminalCommandBuilder.build(
+                        workingDir = workingDir,
+                        outputPath = descriptor.runnablePath,
+                        args = args,
+                        projectRoot = projectRoot,
+                        extraEnvironment = launchEnvironment,
+                        nativeRuntimeIdentity = nativeRuntimeIdentity,
+                    )
+                    TerminalBackend.PROOT -> {
+                        val linuxEnvironment = linuxEnvironmentProvider.get()
+                        terminalCommandBuilder.buildPRoot(
+                            workingDir = linuxEnvironment.toGuestPath(workingDir),
+                            outputPath = linuxEnvironment.toGuestPath(descriptor.runnablePath),
+                            args = args,
+                            extraEnvironment = launchEnvironment,
+                        )
+                    }
+                }
                 LaunchSpec.Terminal(
                     command = command,
                     runnablePath = descriptor.runnablePath,
                     workingDirectory = workingDir,
+                    backend = backend,
                 )
             }
         }
@@ -974,8 +1035,13 @@ class CompileProjectUseCase(
             context = appContext,
             sysrootProfileId = nativeRuntimeIdentity.sysrootProfileId,
         )
+        // SDL/NativeActivity 运行时跑在独立进程里,cwd 固定为 "/",且 SDL_RWFromFile 对相对
+        // 路径只查 getFilesDir() 与 APK asset,都不是项目目录。把项目根作为资源根注入,由
+        // :sdl2 进程内的 native GOT hook 据此把落在 getFilesDir() 下的相对资源重定向回项目。
+        // key 名必须与 native hook (sdl_asset_redirect) 读取的环境变量保持一致。
+        val withAssetRoot = normalized + (RUNTIME_ASSET_ROOT_ENV to projectRoot.absolutePath)
         return LaunchEnvironment.withPrependedPath(
-            environment = normalized,
+            environment = withAssetRoot,
             variableName = "LD_LIBRARY_PATH",
             paths = (sysrootRuntimeDirs + packagePaths.runtimeLibDirs).map { it.absolutePath },
         )

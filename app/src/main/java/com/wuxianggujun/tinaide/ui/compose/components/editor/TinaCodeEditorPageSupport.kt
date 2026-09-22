@@ -88,6 +88,7 @@ import com.wuxianggujun.tinaide.ui.compose.state.editor.SelectionSnapshot
 import com.wuxianggujun.tinaide.ui.compose.state.editor.TextEditOperation
 import com.wuxianggujun.tinaide.ui.compose.state.editor.TinaTextContentProvider
 import java.io.File
+import java.nio.charset.Charset
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.max
 import kotlin.math.min
@@ -193,6 +194,18 @@ internal class TextBufferSessionBinding(
         )
     }
 
+    override fun readFingerprintSnapshot(): DocumentSession.FingerprintSnapshot {
+        val snapshot = buffer.fingerprintSnapshot()
+        return DocumentSession.FingerprintSnapshot(
+            length = snapshot.fingerprint.length,
+            hash = snapshot.fingerprint.hash,
+            documentVersion = snapshot.documentVersion
+        )
+    }
+
+    override suspend fun reloadFromFile(file: File, charset: Charset): Result<Unit> =
+        withSuppressed { buffer.loadFromFile(file, charset) }
+
     override fun setText(text: CharSequence) {
         suppressNotifyDepth.incrementAndGet()
         try {
@@ -231,6 +244,7 @@ internal class VersionedBufferTextSnapshot(
 ) {
     private companion object {
         private const val MAX_SNAPSHOT_READ_ATTEMPTS = 8
+        private const val MAX_CACHED_TEXT_CHARS = 1_000_000
     }
 
     data class Snapshot(
@@ -264,8 +278,14 @@ internal class VersionedBufferTextSnapshot(
                 if (cachedVersion == versionAfter) {
                     return Snapshot(cachedText, cachedVersion)
                 }
-                cachedVersion = versionAfter
-                cachedText = latestSnapshot
+                if (latestSnapshot.length <= MAX_CACHED_TEXT_CHARS) {
+                    cachedVersion = versionAfter
+                    cachedText = latestSnapshot
+                } else {
+                    // 大文档不长期保留 Rope 之外的第二份完整 String。
+                    cachedVersion = Long.MIN_VALUE
+                    cachedText = ""
+                }
                 return Snapshot(latestSnapshot, versionAfter)
             }
         }
@@ -577,7 +597,7 @@ private suspend fun refreshTreeSitterAfterBufferLoad(
     syntaxHighlighter: TreeSitterHighlighter,
     textSnapshot: VersionedBufferTextSnapshot
 ) {
-    val text = textSnapshot.readText()
+    val text = withContext(Dispatchers.Default) { textSnapshot.readText() }
     // 阻塞直到首个渲染快照就位：首帧不再闪默认色。
     withContext(Dispatchers.IO) { syntaxHighlighter.openDocumentBlocking(text) }
     editorState.notifyHighlightChanged()

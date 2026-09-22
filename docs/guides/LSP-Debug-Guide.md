@@ -1,7 +1,10 @@
 # LSP 调试指南
 
-> 更新日期：2026-04-06
+> 最后人工核验：2026-09-09
 > 适用范围：`LspEditorManager` 管理下的 C/C++、CMake、Make、插件 LSP 路径
+>
+> 编排入口位于 `core/editor-lsp/`（`LspEditorManager`、`CMakeLanguageServiceSession`、`MakeLanguageServiceSession`）；
+> clangd 会话与连接提供者位于 `core/lsp/`；插件 LSP 位于 `core/plugin/`。
 
 ## 目标
 
@@ -57,7 +60,7 @@
 ## 推荐日志标签
 
 ```bash
-adb logcat -s LspEditorManager NativeClangd PRootClangd RemoteLsp PluginLspConnection LspPluginManager
+adb logcat -s LspEditorManager LspCompileSetupCache NativeClangd PRootClangd RemoteLsp PluginLspConnection LspPluginManager
 ```
 
 如果你只想先粗看：
@@ -186,9 +189,10 @@ Make 路径没有 clangd 进程日志，主要看 `LspEditorManager` 的 attach 
    `tina-fallback` 表示兜底库（消费已安装包的 include），`external` 表示 CMake / 用户提供。
 2. 兜底库才会随装包刷新；CMake 导出库（`build/compile_commands.json`）的权威来源是
    CMake 配置，装包后需要重新 configure，clangd 报红属正常预期。
-3. 若确为兜底库仍未刷新，确认装包事件是否触发了缓存失效：日志关键字
-   `Dependency revision=... invalidated compile setup cache` 或
-   `compile setup cache stale ... package fingerprint changed`。
+3. 若确为兜底库仍未刷新，确认装包事件是否触发了缓存失效。当前日志关键字为：
+   - `EditorContainerState`：`Dependency revision=<n>, refreshed <k> C/C++ tab(s)`，
+     或没有活跃 C/C++ 标签时的 `Dependency revision=<n>, no active C/C++ tab; invalidated compile setup cache only`。
+   - `LspCompileSetupCache`：`compile setup cache stale for <file> (<projectHint>): compile inputs changed, recomputing`。
 4. 仍未恢复时，对照 [compile_commands 与依赖包同步设计](../design/CompileCommands-Package-Sync-Design.md)
    核对包指纹（`packageFingerprint`）是否随安装状态变化。
 

@@ -29,6 +29,7 @@ core/compile/src/main/java/com/wuxianggujun/tinaide/core/format/ClangFormatConfi
 core/crash/src/main/java/com/wuxianggujun/tinaide/core/crash/NativeCrashHandler.kt | delete=1 | Native crash marker cleanup.
 core/git/src/main/java/com/wuxianggujun/tinaide/core/git/GitService.kt | delete=1 | Git service temporary file cleanup.
 core/git/src/main/java/com/wuxianggujun/tinaide/core/git/ssh/GitSshManager.kt | delete=3 | SSH key replacement and explicit private/public key cleanup.
+core/linux-desktop/src/main/java/com/wuxianggujun/tinaide/core/linuxdesktop/X11SocketLayout.kt | delete=1 | Stale X11 socket cleanup under app-private rootfs tmp before the X server binds the display.
 core/linux-distro/src/main/java/com/wuxianggujun/tinaide/core/linuxdistro/LinuxDistroDownloader.kt | delete=7 | App-private rootfs archive rejection after size, range, or completeness validation failures.
 core/linux-distro/src/main/java/com/wuxianggujun/tinaide/core/linuxdistro/LinuxDistroInstaller.kt | deleteRecursively=6,renameTo=4,delete=4 | Linux distro archive retry, install staging, atomic replacement, recovery, and rollback.
 core/linux-distro/src/main/java/com/wuxianggujun/tinaide/core/linuxdistro/LinuxDistroManager.kt | deleteRecursively=1 | Linux distro rootfs removal.

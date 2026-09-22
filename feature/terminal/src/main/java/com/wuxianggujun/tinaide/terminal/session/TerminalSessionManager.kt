@@ -3,6 +3,7 @@ package com.wuxianggujun.tinaide.terminal.session
 import android.app.Application
 import com.termux.terminal.TerminalSession
 import com.wuxianggujun.tinaide.core.i18n.Strings
+import com.wuxianggujun.tinaide.core.terminal.ITerminalPreferences
 import com.wuxianggujun.tinaide.terminal.persistence.ProjectTerminalState
 import com.wuxianggujun.tinaide.terminal.persistence.TerminalSessionSnapshot
 import com.wuxianggujun.tinaide.terminal.persistence.TerminalStateStorage
@@ -43,6 +44,7 @@ class TerminalSessionManager(
     private val application: Application,
     private val scope: CoroutineScope,
     private val linuxEnvironmentProvider: LinuxEnvironmentProvider = UnavailableLinuxEnvironmentProvider,
+    private val terminalPreferences: ITerminalPreferences? = null,
 ) {
     private val shellResolver by lazy { TerminalShellResolver(application, linuxEnvironmentProvider) }
     private val stateStorage = TerminalStateStorage(application)
@@ -211,6 +213,13 @@ class TerminalSessionManager(
 
                 if (!isCurrentStart(sessionId, runningJob)) return@launch
 
+                // 每次启动会话前把 linker 告警过滤总闸同步给终端显示层。
+                // 冷启动时 Koin 的 ITerminalPreferences 可能尚未构造，这里显式重推，
+                // 保证过滤状态与用户设置一致，且不依赖 DI 初始化时序。
+                terminalPreferences?.let {
+                    TerminalSession.setKnownLinkerWarningFilterEnabled(!it.showRawLinkerOutput)
+                }
+
                 // 创建 Termux TerminalSession（必须在主线程）
                 val termuxSession = TerminalSession(
                     resolution.shellPath,
@@ -230,6 +239,7 @@ class TerminalSessionManager(
                 // 更新会话状态
                 updateSessionState(sessionId) {
                     it.copy(
+                        backend = resolution.backend,
                         session = termuxSession,
                         status = SessionStatus.RUNNING
                     )

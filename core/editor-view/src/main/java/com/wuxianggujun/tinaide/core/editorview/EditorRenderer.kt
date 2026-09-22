@@ -479,6 +479,7 @@ internal class EditorRenderer(
     }
 
     override fun performanceSnapshot(): EditorRenderPerformanceSnapshot {
+        val renderPlanStats = textRenderer.renderPlanCacheStats()
         val metrics = synchronized(metricsLock) {
             PerformanceMetrics(
                 totalRenderedFrames = totalRenderedFrames,
@@ -507,7 +508,12 @@ internal class EditorRenderer(
             textLineCacheSize = textRenderer.cacheSize(),
             textScanCacheSize = textScanCache.cacheSize(),
             lineLayoutCacheEntryCount = lineLayoutCache.entryCount(),
-            lineLayoutCacheFloatCount = lineLayoutCache.cachedFloatCount()
+            lineLayoutCacheFloatCount = lineLayoutCache.cachedFloatCount(),
+            renderPlanCacheEntryCount = renderPlanStats.entries,
+            renderPlanCacheCharCount = renderPlanStats.chars,
+            renderPlanCacheElementCount = renderPlanStats.elements,
+            totalRenderPlanBuilds = renderPlanStats.builds,
+            totalRenderPlanCacheHits = renderPlanStats.hits,
         )
     }
 

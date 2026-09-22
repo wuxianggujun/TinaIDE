@@ -780,6 +780,8 @@
   <string name="settings_cursor_blink">光标闪烁</string>
   <string name="settings_cursor_blink_desc">启用终端光标闪烁效果</string>
   <string name="settings_cursor_blink_rate">闪烁速率</string>
+  <string name="settings_show_raw_linker_output">显示原始链接器输出</string>
+  <string name="settings_show_raw_linker_output_desc">关闭对已知无害 linker 兼容告警的过滤，交互终端和运行都原样显示</string>
   <string name="dialog_title_cursor_blink_rate">光标闪烁速率</string>
   <string name="dialog_title_shell_type">选择 Shell 类型</string>
   <string name="font_builtin_not_installed">内置字体（未安装）</string>
@@ -906,6 +908,31 @@
   <string name="settings_linux_profile_name">系统名称</string>
   <string name="settings_linux_profile_name_hint">例如 Debian 12</string>
   <string name="settings_linux_profile_name_invalid">系统名称不能为空</string>
+  <string name="settings_linux_desktop_open">打开图形桌面</string>
+  <string name="settings_linux_desktop_open_desc">启动 X server 并打开 Ubuntu XFCE 窗口</string>
+  <string name="settings_linux_desktop_install">安装图形桌面组件</string>
+  <string name="settings_linux_desktop_install_desc">在当前 Ubuntu 系统中安装 XFCE、xkb-data 及相关组件</string>
+  <string name="settings_linux_desktop_status">图形桌面</string>
+  <string name="settings_linux_desktop_ready">已就绪</string>
+  <string name="settings_linux_desktop_not_ready">未安装桌面组件</string>
+  <string name="settings_linux_desktop_checking">正在检查图形桌面组件…</string>
+  <string name="settings_linux_desktop_updating">正在更新软件包索引…</string>
+  <string name="settings_linux_desktop_installing">正在安装图形桌面组件…</string>
+  <string name="settings_linux_desktop_verifying">正在验证图形桌面组件…</string>
+  <string name="settings_linux_desktop_starting">正在启动图形桌面…</string>
+  <string name="settings_linux_desktop_install_success">图形桌面组件已安装</string>
+  <string name="settings_linux_desktop_install_failed">安装图形桌面组件失败：%1$s</string>
+  <string name="settings_linux_desktop_open_failed">打开图形桌面失败：%1$s</string>
+  <string name="settings_linux_desktop_stop">停止图形桌面</string>
+  <string name="settings_linux_desktop_stop_desc">结束 XFCE 会话并关闭 X server</string>
+  <string name="settings_linux_desktop_stopping">正在停止图形桌面…</string>
+  <string name="settings_linux_desktop_stopped">图形桌面已停止</string>
+  <string name="settings_linux_desktop_stop_failed">停止图形桌面失败：%1$s</string>
+  <string name="settings_linux_desktop_running">运行中</string>
+  <string name="settings_linux_desktop_crashed">桌面会话已退出，请重新打开</string>
+  <string name="linux_desktop_notification_channel">Linux 图形桌面</string>
+  <string name="linux_desktop_notification_title">Linux 图形桌面运行中</string>
+  <string name="linux_desktop_notification_text">X server 正在后台运行</string>
   <string name="dialog_title_select_linux_distro">选择 Linux 发行版</string>
   <string name="linux_distro_install_phase_preparing">正在准备 Linux 发行版安装…</string>
   <string name="linux_distro_install_phase_resolving">正在解析 Linux 发行版版本…</string>
@@ -932,6 +959,7 @@
   <string name="linux_distro_health_recommend_reinstall">Linux 发行版环境自检失败，请在设置中重新安装或清理后重试</string>
   <string name="linux_distro_self_hosted_option_desc">官方 rootfs · 版本 %1$s · %2$s</string>
   <string name="linux_distro_package_runtime">Linux 发行版运行时</string>
+  <string name="error_switch_failed">切换失败</string>
   <string name="linux_package_rootfs">Linux 基础系统</string>
   <string name="value_not_installed">未安装</string>
   <string name="value_current">当前</string>
@@ -2308,9 +2336,6 @@
   <string name="run_config_graphical_options">图形运行界面</string>
   <string name="run_config_graphical_floating_log">悬浮日志窗口</string>
   <string name="run_config_graphical_floating_log_desc">在图形全屏运行时显示可拖拽的实时日志窗口，用于查看 stdout/stderr 输出</string>
-  <string name="run_config_terminal_options">终端运行选项</string>
-  <string name="run_config_show_linker_warnings">显示动态链接器兼容性告警</string>
-  <string name="run_config_show_linker_warnings_desc">默认隐藏旧 Android linker 对 AArch64 Auth RELR 标签产生的三类无害告警；开启后原样显示</string>
 
   <!-- 悬浮覆盖层 -->
   <string name="floating_overlay_exit">返回编辑器</string>
@@ -2810,9 +2835,12 @@
   <string name="large_file_hex">十六进制</string>
   <string name="large_file_load_failed">加载失败</string>
   <string name="large_file_retry">重试</string>
-  <string name="large_file_reached_limit">已达到显示上限（%1$d 行），建议使用十六进制或用编辑器打开。</string>
+  <string name="large_file_reached_safe_limit">已达到安全显示上限，建议使用十六进制或用编辑器打开。</string>
   <string name="large_file_end_of_file">已到文件末尾</string>
   <string name="large_file_loading">加载中…</string>
+  <string name="large_file_editor_confirm_title">用编辑器打开大文件？</string>
+  <string name="large_file_editor_confirm_message">该文件有 %1$s，用编辑器打开会把整份内容载入内存，可能造成明显卡顿，在内存较小的设备上还可能内存不足。\n\n另外，重启应用后这个标签不会自动恢复为编辑器，需要重新确认一次。</string>
+  <string name="large_file_editor_confirm_action">仍要打开</string>
 
   <!-- FloatingSearchBar -->
   <string name="content_desc_drag">拖动</string>
@@ -4844,6 +4872,7 @@ kept=%3$d bytes
   <string name="compile_cmake_clean_and_reconfigure_failed">清理并重新配置 CMake 缓存失败</string>
 <string name="compile_cmake_clear_build_dir_finished">构建目录已清理</string>
   <string name="compile_cmake_clear_build_dir_failed">清理构建目录失败</string>
+  <string name="compile_cmake_configure_only_finished">已重新配置，compile_commands.json 已更新</string>
   <string name="editor_status_remote_lsp">远程 LSP</string>
   <string name="editor_status_lsp_ready">LSP 就绪</string>
   <string name="editor_status_remote_connecting">远程连接中...</string>
@@ -4865,6 +4894,7 @@ kept=%3$d bytes
   <string name="cxx_context_section_database">编译数据库</string>
   <string name="cxx_context_remote_managed">编译命令由远程语言服务管理，本机无法读取远端的 compile_commands.json。</string>
   <string name="cxx_context_reload">刷新并重载</string>
+  <string name="cxx_context_reconfigure">重新配置</string>
   <string name="cxx_context_value_unavailable">不可用</string>
   <string name="cxx_context_database_path">文件路径</string>
   <string name="cxx_context_database_source">来源</string>
@@ -4894,6 +4924,7 @@ kept=%3$d bytes
   <string name="cxx_context_arguments">完整编译参数</string>
   <string name="cxx_context_issue_database_missing">compile_commands.json 不存在或为空，请刷新编译上下文。</string>
   <string name="cxx_context_issue_database_invalid">compile_commands.json 格式无效，clangd 可能无法正确索引项目。</string>
+  <string name="cxx_context_issue_database_stale">CMakeLists.txt 改动晚于编译数据库，clangd 仍在用旧的 compile_commands.json，可能误报头文件缺失。点“重新配置”重生成后即可修复。</string>
   <string name="cxx_context_issue_command_missing">编译数据库中没有当前文件的命令，clangd 将使用兜底参数。</string>
   <string name="cxx_context_issue_setup_unavailable">无法准备编译数据库，请检查工具链、Sysroot 和项目配置。</string>
   <string name="cxx_context_issue_toolchain_failed">工具链或 Sysroot 准备失败，请在工具链设置中检查安装状态。</string>

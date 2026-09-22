@@ -1,6 +1,7 @@
 package com.wuxianggujun.tinaide.core.compile.strategy
 
 import com.wuxianggujun.tinaide.core.compile.BuildSystem
+import com.wuxianggujun.tinaide.core.compile.ConfigureResult
 import com.wuxianggujun.tinaide.core.compile.TargetInfo
 import com.wuxianggujun.tinaide.core.compile.artifact.ArtifactSpec
 import com.wuxianggujun.tinaide.core.compile.artifact.BuildFingerprint
@@ -55,6 +56,14 @@ interface BuildStrategy {
      *                    否则仅删除产物文件。其它策略应忽略该参数。
      */
     suspend fun clean(ctx: BuildContext, reconfigure: Boolean = false)
+
+    /**
+     * 仅重新 configure,重生成编译数据库(如 `compile_commands.json`),**不触发编译**。
+     *
+     * 默认返回 [ConfigureResult.Error] 表示当前策略不支持;只有 CMake 策略需要覆写。
+     */
+    suspend fun configureOnly(ctx: BuildContext): ConfigureResult =
+        ConfigureResult.Error("configureOnly is not supported by $buildSystem")
 
     /** 列出可构建的目标(单文件策略列所有源文件,CMake 策略列所有 target)。 */
     suspend fun getTargets(ctx: BuildContext): List<TargetInfo> = emptyList()

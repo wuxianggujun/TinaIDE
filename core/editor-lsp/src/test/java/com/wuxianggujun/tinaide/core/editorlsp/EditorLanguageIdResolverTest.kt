@@ -30,5 +30,13 @@ class EditorLanguageIdResolverTest {
     fun resolveCodeAnalysisLanguageLabel_shouldExposeHeaderAndUnknownLabels() {
         assertThat(File("demo.hh").resolveCodeAnalysisLanguageLabel()).isEqualTo("c/c++ header")
         assertThat(File("README.customext").resolveCodeAnalysisLanguageLabel()).isEqualTo("unknown")
+        assertThat(File("vector").resolveCodeAnalysisLanguageLabel()).isEqualTo("c/c++ header")
+    }
+
+    @Test
+    fun resolveLspLanguageId_shouldMapExtensionlessStdHeadersToCpp() {
+        assertThat(File("usr/include/c++/v1/vector").resolveLspLanguageId()).isEqualTo("cpp")
+        assertThat(File("iostream").resolveLspLanguageId()).isEqualTo("cpp")
+        assertThat(File("README").resolveLspLanguageId()).isEqualTo("plaintext")
     }
 }

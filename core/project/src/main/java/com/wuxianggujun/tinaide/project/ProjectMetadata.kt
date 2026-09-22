@@ -71,6 +71,7 @@ object ProjectMetadataStore {
         primaryLanguage: ProjectLanguage? = null,
         apkExportType: ProjectApkExportType? = null,
         sdlVersion: ProjectSdlVersion? = null,
+        nativeActivityRuntime: Boolean? = null,
         nativeApiLevel: Int? = null,
         defaultRunTargetName: String? = null,
         defaultSdlTargetName: String? = null
@@ -111,6 +112,11 @@ object ProjectMetadataStore {
                 needsUpdate = true
             }
 
+            if (nativeActivityRuntime != null && existing.nativeActivityRuntime != nativeActivityRuntime) {
+                updated = updated.copy(nativeActivityRuntime = nativeActivityRuntime)
+                needsUpdate = true
+            }
+
             if (
                 normalizedDefaultRunTargetName != null &&
                 existing.defaultRunTargetName != normalizedDefaultRunTargetName
@@ -144,6 +150,7 @@ object ProjectMetadataStore {
             primaryLanguage = primaryLanguage?.name,
             apkExportType = apkExportType,
             sdlVersion = sdlVersion,
+            nativeActivityRuntime = nativeActivityRuntime,
             lastOpenedIdeVersion = currentIdeVersion,
             lastOpenedAt = System.currentTimeMillis(),
             nativeApiLevel = normalizedNativeApiLevel,
@@ -192,8 +199,30 @@ object ProjectMetadataStore {
 
     fun updateApkExportType(projectRoot: File, apkExportType: ProjectApkExportType?): Boolean {
         val existing = read(projectRoot) ?: return false
-        if (existing.apkExportType == apkExportType) return true
-        return write(projectRoot, existing.copy(apkExportType = apkExportType))
+        // 导出类型与运行能力是两条轴，但显式动作要能带动运行链路：
+        // - 选中 NATIVE_ACTIVITY：用户已确认这是 NativeActivity 项目，运行能力置 true
+        // - 选中 SDL3：与 NativeActivity 运行链路互斥，置 false
+        // - 重置为 null（重新探测）：运行能力也回到未探测，交给 ensureDetected 重扫
+        // - TERMINAL / DISABLED：只描述导出，不覆盖运行能力
+        val nativeActivityRuntime = when (apkExportType) {
+            ProjectApkExportType.NATIVE_ACTIVITY -> true
+            ProjectApkExportType.SDL3 -> false
+            null -> null
+            else -> existing.nativeActivityRuntime
+        }
+        if (
+            existing.apkExportType == apkExportType &&
+            existing.nativeActivityRuntime == nativeActivityRuntime
+        ) {
+            return true
+        }
+        return write(
+            projectRoot,
+            existing.copy(
+                apkExportType = apkExportType,
+                nativeActivityRuntime = nativeActivityRuntime,
+            )
+        )
     }
 
     fun updateSdlVersion(projectRoot: File, sdlVersion: ProjectSdlVersion?): Boolean {
@@ -288,6 +317,12 @@ object ProjectMetadataStore {
             normalizedSdlVersion == ProjectSdlVersion.SDL2 &&
                 (it == ProjectApkExportType.SDL3 || it == ProjectApkExportType.NATIVE_ACTIVITY)
         }
+        // SDL 与 NativeActivity 运行链路互斥：依赖闭包含 SDL 时 NativeActivityRuntimeResolver 会拒绝运行。
+        val normalizedNativeActivityRuntime = if (normalizedSdlVersion != null) {
+            false
+        } else {
+            metadata.nativeActivityRuntime
+        }
         return metadata.copy(
             schemaVersion = PROJECT_METADATA_SCHEMA_CURRENT,
             id = normalizedId,
@@ -309,6 +344,7 @@ object ProjectMetadataStore {
             defaultSdlTargetName = normalizeTargetName(metadata.defaultSdlTargetName),
             apkExportType = normalizedApkExportType,
             sdlVersion = normalizedSdlVersion,
+            nativeActivityRuntime = normalizedNativeActivityRuntime,
         )
     }
 
@@ -331,10 +367,14 @@ object ProjectMetadataStore {
                 apkExportType = null,
                 sdlVersion = ProjectSdlVersion.SDL2,
             )
-            detected.apkExportType == ProjectApkExportType.NATIVE_ACTIVITY &&
-                detected.sdlVersion == null -> metadata.copy(
-                apkExportType = ProjectApkExportType.NATIVE_ACTIVITY,
+            // 用运行能力判据而非 apkExportType：后者要求库名为 main，会把「目标未命名为 main
+            // 的 raylib 项目」漏掉并错误地留成 SDL3。导出能力仍按 detected.apkExportType 取值。
+            detected.nativeActivityRuntime && detected.sdlVersion == null -> metadata.copy(
+                apkExportType = detected.apkExportType.takeIf {
+                    it == ProjectApkExportType.NATIVE_ACTIVITY
+                },
                 sdlVersion = null,
+                nativeActivityRuntime = true,
             )
             metadata.sdlVersion == null -> metadata.copy(sdlVersion = ProjectSdlVersion.SDL3)
             else -> metadata

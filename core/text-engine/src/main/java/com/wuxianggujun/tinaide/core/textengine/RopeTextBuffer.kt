@@ -19,8 +19,9 @@ class RopeTextBuffer(
     private val history: EditHistory = DefaultEditHistory()
 ) : TextBuffer {
     private companion object {
+        private const val FNV1A_64_OFFSET_BASIS = -0x340d631b8c4675d9L
+        private const val FNV1A_64_PRIME = 0x100000001b3L
         private const val IO_CHAR_BUFFER_SIZE = 16 * 1024
-        private const val MAX_INITIAL_STRING_CAPACITY = 4 * 1024 * 1024
         private const val SLOW_LOAD_THRESHOLD_MS = 120L
         private const val SLOW_SAVE_THRESHOLD_MS = 120L
         private const val POSITION_CACHE_SIZE = 8
@@ -187,42 +188,84 @@ class RopeTextBuffer(
     }
 
     fun replaceAll(text: String) {
-        val shouldDrain = lock.write {
-            val previousLength = rope.length
-            val contentUnchanged = rope.contentEquals(text)
-            history.clear()
-            if (contentUnchanged) {
-                false
-            } else {
-                val previousEndPos = offsetToPositionInternal(previousLength)
-                val previousLineBreakCount = (lineIndex.lineCount - 1).coerceAtLeast(0)
-                val previousEndsWithLineBreak =
-                    previousLength > 0 && rope.charAt(previousLength - 1) == '\n'
-                rope.setText(text)
-                lineIndex.rebuild(text)
-                versionCounter.incrementAndGet()
-                TextChange(
-                    startOffset = 0,
-                    endOffset = previousLength,
-                    oldText = "",
-                    newText = text,
-                    startLine = 0,
-                    startColumn = 0,
-                    endLine = previousEndPos.line,
-                    endColumn = previousEndPos.column,
-                    fromUndoRedo = false,
-                    oldTextLength = previousLength,
-                    oldLineBreakCount = previousLineBreakCount,
-                    oldTextEndsWithLineBreak = previousEndsWithLineBreak,
-                    hasCompleteOldText = false
-                ).queueForDispatch()
-            }
+        val shouldDrain = lock.write { applyReplaceAllLocked(text) }
+        if (shouldDrain) drainDispatchQueue()
+    }
+
+    /**
+     * 与 [replaceAll] 等价，但把 rope 建树与行索引重建挪到 [Dispatchers.Default]，
+     * listener 通知仍在调用线程完成。
+     *
+     * 为什么不整个挪走：change listener 会写 Compose 状态和一批非线程安全的渲染缓存
+     * （折叠区间、换行布局、可视行段数）。这些缓存在主线程渲染时被读取，
+     * 若通知也跑到后台线程就会与渲染竞争。所以只有加锁的缓冲区写入下后台，
+     * 派发严格留在调用线程。
+     */
+    suspend fun replaceAllOffThread(text: String) {
+        val shouldDrain = withContext(Dispatchers.Default) {
+            lock.write { applyReplaceAllLocked(text) }
         }
         if (shouldDrain) drainDispatchQueue()
     }
 
+    /** 调用方必须持有写锁。返回 true 表示有待派发的变更。 */
+    private fun applyReplaceAllLocked(text: String): Boolean {
+        val previousLength = rope.length
+        val contentUnchanged = rope.contentEquals(text)
+        history.clear()
+        if (contentUnchanged) return false
+
+        val previousEndPos = offsetToPositionInternal(previousLength)
+        val previousLineBreakCount = (lineIndex.lineCount - 1).coerceAtLeast(0)
+        val previousEndsWithLineBreak =
+            previousLength > 0 && rope.charAt(previousLength - 1) == '\n'
+        rope.setText(text)
+        lineIndex.rebuild(text)
+        versionCounter.incrementAndGet()
+        return TextChange(
+            startOffset = 0,
+            endOffset = previousLength,
+            oldText = "",
+            newText = text,
+            startLine = 0,
+            startColumn = 0,
+            endLine = previousEndPos.line,
+            endColumn = previousEndPos.column,
+            fromUndoRedo = false,
+            oldTextLength = previousLength,
+            oldLineBreakCount = previousLineBreakCount,
+            oldTextEndsWithLineBreak = previousEndsWithLineBreak,
+            hasCompleteOldText = false
+        ).queueForDispatch()
+    }
+
     override fun substring(start: Int, end: Int): String = lock.read {
         rope.substring(start, end)
+    }
+
+    /**
+     * 按 rope 内部分片计算内容指纹，不把整份文档物化成 String。
+     *
+     * 用于脏标记比较：对 30MB 文档可省下一次约 60MB 的 String 分配。
+     * 哈希为 FNV-1a 64 位，逐 UTF-16 char 折叠，结果与对完整字符串做同样折叠一致。
+     */
+    fun contentFingerprint(): TextContentFingerprint = lock.read {
+        var hash = FNV1A_64_OFFSET_BASIS
+        rope.forEachChunk { chunk ->
+            for (index in chunk.indices) {
+                hash = hash xor chunk[index].code.toLong()
+                hash *= FNV1A_64_PRIME
+            }
+        }
+        TextContentFingerprint(length = rope.length, hash = hash)
+    }
+
+    /** 与 [contentFingerprint] 同锁读出，保证指纹与版本号互相对应。 */
+    fun fingerprintSnapshot(): TextFingerprintSnapshot = lock.read {
+        TextFingerprintSnapshot(
+            fingerprint = contentFingerprint(),
+            documentVersion = versionCounter.get()
+        )
     }
 
     override fun charAt(offset: Int): Char? = lock.read {
@@ -415,19 +458,18 @@ class RopeTextBuffer(
 
     private fun List<TextChange>.defaultCursorOffset(): Int {
         val lastChange = lastOrNull() ?: return 0
-        return lastChange.startOffset + lastChange.newText.length
+        return lastChange.startOffset + lastChange.newTextLength
     }
 
     override suspend fun loadFromFile(file: File, charset: Charset): Result<Unit> {
         return try {
             val startNs = System.nanoTime()
-            val text = withContext(Dispatchers.IO) {
-                readFileTextOptimized(file, charset)
-            }
-            replaceAll(text)
+            val staged = withContext(Dispatchers.IO) { streamFileIntoStagingArea(file, charset) }
+            val result = lock.write { commitStagedLoadLocked(staged) }
+            if (result.shouldDrain) drainDispatchQueue()
             logSlowLoadIfNeeded(
                 file = file,
-                loadedChars = text.length,
+                loadedChars = result.charCount,
                 durationMs = (System.nanoTime() - startNs) / 1_000_000L
             )
             Result.success(Unit)
@@ -674,20 +716,97 @@ class RopeTextBuffer(
         }
     }
 
-    private fun readFileTextOptimized(file: File, charset: Charset): String {
-        val estimatedCapacity = file.length()
-            .coerceIn(0L, MAX_INITIAL_STRING_CAPACITY.toLong())
-            .toInt()
-        val builder = StringBuilder(estimatedCapacity)
+    private class StagedLoad(
+        val rope: Rope,
+        val lineIndex: LineIndex,
+        val charCount: Int,
+        val lineBreakCount: Int
+    )
+
+    private class StreamLoadResult(
+        val charCount: Int,
+        val shouldDrain: Boolean
+    )
+
+    /**
+     * 流式读文件建出一份独立的 rope 与行索引，全程不物化整份文档，也不持有本缓冲区的锁。
+     *
+     * 相比 read-all + [replaceAll]，省掉三份等长副本：StringBuilder 内部数组（含倍增期新旧两份）、
+     * `toString()` 结果、以及 `chunked()` 的分片列表。对 30MB 文档约省 190MB 瞬时峰值。
+     *
+     * 不在锁内做 IO：加载期间编辑器已经在渲染，若写锁被整段磁盘读取占住，
+     * 主线程的 `getLine` / `offsetToPosition` 会全部阻塞。
+     */
+    private fun streamFileIntoStagingArea(file: File, charset: Charset): StagedLoad {
+        val stagingRope = Rope()
+        val stagingLineIndex = LineIndex()
+        val builder = stagingRope.beginStreamingBuild()
+
+        var charCount = 0
+        var lineBreakCount = 0
         InputStreamReader(file.inputStream(), charset).use { reader ->
             val buffer = CharArray(IO_CHAR_BUFFER_SIZE)
             while (true) {
                 val count = reader.read(buffer)
                 if (count <= 0) break
-                builder.append(buffer, 0, count)
+                val chunk = String(buffer, 0, count)
+                builder.append(chunk)
+                stagingLineIndex.appendChunk(chunk)
+                for (index in 0 until count) {
+                    if (buffer[index] == '\n') lineBreakCount++
+                }
+                charCount += count
             }
         }
-        return builder.toString()
+        builder.finish()
+        return StagedLoad(
+            rope = stagingRope,
+            lineIndex = stagingLineIndex,
+            charCount = charCount,
+            lineBreakCount = lineBreakCount
+        )
+    }
+
+    /**
+     * 把 [streamFileIntoStagingArea] 的结果原子换入。调用方必须持有写锁。
+     *
+     * 发出的 [TextChange] 不携带完整 newText——文档从未以单个字符串存在过，
+     * 所以 `hasCompleteNewText = false`，消费者需要正文时必须改从 buffer 读。
+     */
+    private fun commitStagedLoadLocked(staged: StagedLoad): StreamLoadResult {
+        val previousLength = rope.length
+        val previousEndPos = offsetToPositionInternal(previousLength)
+        val previousLineBreakCount = (lineIndex.lineCount - 1).coerceAtLeast(0)
+        val previousEndsWithLineBreak =
+            previousLength > 0 && rope.charAt(previousLength - 1) == '\n'
+
+        history.clear()
+        rope.stealFrom(staged.rope)
+        lineIndex.stealFrom(staged.lineIndex)
+        versionCounter.incrementAndGet()
+
+        val change = TextChange(
+            startOffset = 0,
+            endOffset = previousLength,
+            oldText = "",
+            newText = "",
+            startLine = 0,
+            startColumn = 0,
+            endLine = previousEndPos.line,
+            endColumn = previousEndPos.column,
+            fromUndoRedo = false,
+            oldTextLength = previousLength,
+            oldLineBreakCount = previousLineBreakCount,
+            newLineBreakCount = staged.lineBreakCount,
+            oldTextEndsWithLineBreak = previousEndsWithLineBreak,
+            hasCompleteOldText = false,
+            newTextLength = staged.charCount,
+            hasCompleteNewText = false
+        )
+        return StreamLoadResult(
+            charCount = staged.charCount,
+            shouldDrain = change.queueForDispatch()
+        )
     }
 
     private fun logSlowLoadIfNeeded(file: File, loadedChars: Int, durationMs: Long) {

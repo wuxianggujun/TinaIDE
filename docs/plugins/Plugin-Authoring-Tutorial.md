@@ -1,6 +1,7 @@
 # TinaIDE 插件编写教程（基于模板）
 
-> 文档更新：2026-07-15
+> 文档状态：当前实现说明
+> 最后人工核验：2026-09-09
 > 适用对象：第一次为 TinaIDE 编写插件的开发者
 > 说明：开始前请先从插件市场 / Registry 安装并启用 `TinaIDE Plugin Starters`；如果你是第一次写插件，先做 `config` 插件，先把主题和代码片段跑通。
 
@@ -428,7 +429,13 @@ register_command(command_ids.wrap_selection, "on_wrap_selection", "Wrap Selectio
 - `tina.events`：监听宿主事件
 - `tina.network`：网络请求
 - `tina.storage` / `tina.db`：插件数据存储
+- `tina.config`：读写 manifest `configuration.properties` 声明过的配置项
+- `tina.clipboard`：读写系统剪贴板文本
+- `tina.panels`：向编辑器底部“插件”面板发布纯文本内容
 - `tina.log`：插件日志
+
+完整命名空间与方法清单见 [Plugin-API-Guide.md](Plugin-API-Guide.md) 和
+[`docs/plugin-api-contract.md`](../plugin-api-contract.md)。
 
 第一次写脚本插件时，建议先用：
 
@@ -564,7 +571,16 @@ LSP 插件本质上只有两块：
 }
 ```
 
-### 6.3 LSP 插件最容易写错的地方
+### 6.3 LSP 插件依赖 Linux 环境插件
+
+`toolchains` 的安装和 guest 内的 server 进程都跑在 Linux 环境（PRoot rootfs）里。该环境当前
+**不默认可用**：需要用户先安装并启用声明了 `capabilities: ["linuxEnvironment"]` 的 `system` 插件
+（Registry 中的 `tinaide.linux-environment`），并完成它的一次性环境准备。
+
+capability 未启用时，依赖安装会按 readiness 失败处理，不会把你的 LSP 插件判为故障。请在插件
+README 里写清这个前置条件。
+
+### 6.4 LSP 插件最容易写错的地方
 
 优先检查这 5 项：
 

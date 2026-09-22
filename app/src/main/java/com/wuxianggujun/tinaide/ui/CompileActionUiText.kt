@@ -46,6 +46,15 @@ internal fun CompileProjectUseCase.Action.resolveUiText(
             )
         }
 
+        CompileProjectUseCase.Action.CMAKE_CONFIGURE_ONLY -> {
+            CompileActionUiText(
+                menuLabel = Strings.cxx_context_reconfigure.strOr(context),
+                progressMessage = Strings.toast_cmake_reconfiguring.strOr(context),
+                successMessage = Strings.compile_cmake_configure_only_finished.strOr(context),
+                failureMessage = Strings.compile_cmake_reconfigure_failed.strOr(context)
+            )
+        }
+
         else -> error("Unsupported maintenance ui action: $this")
     }
 }

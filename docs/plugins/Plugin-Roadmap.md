@@ -1,7 +1,19 @@
 # 插件系统路线图（Roadmap）
 
-> 文档更新：2026-07-16
+> 文档状态：**历史参考**
+> 记录时间：2026-07-16（阶段口径，未随后续版本刷新）
 > 目标：以 **配置插件优先** 的方式逐步扩展 TinaIDE 插件能力（Play 合规、低风险、可维护）。
+
+本文保留阶段 1.5 / 阶段 2 的规划、实施状态表和当时的设备验收结论。文中的 ✅、测试计数和
+验收日期都是**当时的快照**，不代表当前实现状态。判断某能力是否已落地时，请以当前源码、
+`CHANGELOG.md` 和以下当前实现说明为准：
+
+- [Plugin-API-Guide.md](Plugin-API-Guide.md)
+- [Plugin-State-Model.md](Plugin-State-Model.md)
+- [`docs/plugin-api-contract.md`](../plugin-api-contract.md)
+
+另外，本文写作时 Linux 环境仍是宿主默认能力；当前 PRoot / Linux 环境已改为由 `system` 插件的
+`linuxEnvironment` capability 门控，详见 [README.md](README.md) 的“宿主能力门控”。
 
 ---
 
@@ -48,7 +60,7 @@
 
 | 功能 | 价值 | 难度 | 优先级 | 备注 |
 |------|------|------|--------|------|
-| 宿主命令注册表（Command Registry） | ⭐⭐⭐⭐⭐ | ⭐⭐ | P0 | ✅ 已完成（宿主内置命令集合：`HostCommands.kt`；插件命令运行时注册） |
+| 宿主命令注册表（Command Registry） | ⭐⭐⭐⭐⭐ | ⭐⭐ | P0 | ✅ 已完成（宿主命令元数据单一来源：`HostCommandCatalog.kt`；插件命令运行时注册） |
 | 文件树目录菜单扩展 | ⭐⭐⭐⭐ | ⭐⭐⭐ | P0 | ✅ 已完成（`menus["filetree/context"]` → 宿主内置命令 / 当前插件已注册命令） |
 | 编辑器菜单/工具栏扩展 | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ | P1 | ✅ editor/context（Tab 长按菜单）与 editor/toolbar（标签栏右侧动作菜单）已完成 |
 | SnippetManager（代码片段） | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ | P1 | ✅ 已完成（`contributions.snippets`） |
@@ -67,7 +79,8 @@
 
 当前实现（已落地最小集）：
 
-- 宿主内置命令集合定义在：`core/common/src/main/java/.../core/commands/HostCommands.kt`
+- 宿主内置命令元数据的单一来源是：`core/common/src/main/java/.../core/commands/HostCommandCatalog.kt`；
+  `core/commands/HostCommands.kt` 只保留稳定命令 ID 常量与查询代理。
 - 插件运行时命令通过 `PluginCommandRegistry` 注册和分发。
 - 菜单解析只显示宿主内置命令或当前插件已注册命令；未知 `commandId` 会被忽略并记录日志。
 

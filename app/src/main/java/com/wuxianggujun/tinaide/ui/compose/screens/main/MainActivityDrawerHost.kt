@@ -101,6 +101,7 @@ internal fun MainActivityDrawerHost(
                 debugViewModel = dependencies.debugViewModel,
                 actionsDelegate = dependencies.actionsDelegate,
                 navigationDelegate = dependencies.navigationDelegate,
+                onReconfigureCMake = dependencies.onReconfigureCMake,
                 callbacks = callbacks,
             )
         }

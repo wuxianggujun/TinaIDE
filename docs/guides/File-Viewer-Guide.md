@@ -1,6 +1,6 @@
 # 文件预览指南
 
-> 更新日期：2026-05-30
+> 最后人工核验：2026-09-09
 
 TinaIDE 的文件打开逻辑由编辑器容器统一分发：普通文本、源码、Markdown 与 JSON 默认进入代码编辑器；大文本、图片与二进制文件会进入只读查看器，避免把不适合编辑的内容直接加载到代码编辑器。
 
@@ -18,13 +18,14 @@ TinaIDE 的文件打开逻辑由编辑器容器统一分发：普通文本、源
 ### 大文本
 
 - 用途：分段查看超大文本文件，减少一次性加载造成的卡顿。
-- 常见扩展名：任意文本文件，按文件大小自动判定。
+- 常见扩展名：任意文本文件，按文件大小自动判定；当前阈值为 10 MB，由 `EditorTabManager` 中的 `LARGE_TEXT_THRESHOLD_BYTES` 决定。
+- 该查看器只读，但提供“以编辑器打开”和“以 Hex 打开”两个回退入口。
 - 相关实现：`feature/viewer/src/main/java/.../ui/compose/viewer/LargeTextViewerScreen.kt`
 
 ### 图片
 
 - 用途：预览项目内图片资源。
-- 常见扩展名：`.png` / `.jpg` / `.jpeg` / `.webp` / `.gif`
+- 常见扩展名：`.png` / `.jpg` / `.jpeg` / `.gif` / `.webp` / `.bmp` / `.svg` / `.ico`，以 `FileTypeUtils.IMAGE_EXTENSIONS` 为准。
 - 相关实现：`feature/viewer/src/main/java/.../ui/compose/viewer/ImagePreviewScreen.kt`
 
 ### Hex（二进制）
@@ -36,6 +37,6 @@ TinaIDE 的文件打开逻辑由编辑器容器统一分发：普通文本、源
 
 ## 注意事项
 
-- Markdown 与 JSON 不再维护独立文件查看器页面；它们按可编辑文本进入代码编辑器。
-- `MarkdownViewer.kt` 是复用型 Markdown 渲染组件，用于帮助页、公告、Hover 等只读内容，不是文件树入口。
+- Markdown 与 JSON 不再维护独立文件查看器页面；它们按可编辑文本进入代码编辑器。`ContentType.JSON` 仍保留为独立标签类型，但渲染走同一个代码编辑器页面。
+- `core/designsystem/src/main/java/.../ui/compose/components/MarkdownViewer.kt` 是复用型 Markdown 渲染组件，用于帮助页、教程正文、版本更新弹窗和编辑器 Hover 等只读内容，不是文件树入口。
 - 二进制文件默认只适合“查看”，不建议直接编辑。

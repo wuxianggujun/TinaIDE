@@ -25,79 +25,94 @@ internal class WhitespaceRenderer {
         lineLayoutCache: EditorLineLayoutCache
     ) {
         val state = frameContext.state
-        val mode = state.config.renderWhitespace
-        if (mode == WhitespaceRenderMode.NONE) return
-
-        val textBuffer = state.textBuffer
-        if (textBuffer.lineCount <= 0) return
-
         val color = state.colorScheme.whitespace
-        val textVersion = frameContext.textVersion
         val lineHeightPx = state.lineHeightPx
-        val visibleRange = state.visibleDocumentLines
-        if (visibleRange.isEmpty()) return
+        forEachVisibleMarker(frameContext, textStartX, textPaint, lineLayoutCache) { isTab, x1, x2, centerY ->
+            if (!isTab) {
+                val dotX = (x1 + x2) / 2f
+                drawScope.drawCircle(
+                    color = color,
+                    radius = 1.5f,
+                    center = Offset(dotX, centerY)
+                )
+            } else {
+                val arrowCenterX = (x1 + x2) / 2f
+                val arrowHalfWidth = ((x2 - x1) * 0.3f).coerceAtMost(6f)
+                val arrowHalfHeight = (lineHeightPx * 0.15f).coerceAtMost(4f)
+                drawScope.drawLine(
+                    color = color,
+                    start = Offset(x1 + 2f, centerY),
+                    end = Offset(x2 - 2f, centerY),
+                    strokeWidth = 1f
+                )
+                drawScope.drawLine(
+                    color = color,
+                    start = Offset(arrowCenterX + arrowHalfWidth, centerY),
+                    end = Offset(arrowCenterX, centerY - arrowHalfHeight),
+                    strokeWidth = 1f
+                )
+                drawScope.drawLine(
+                    color = color,
+                    start = Offset(arrowCenterX + arrowHalfWidth, centerY),
+                    end = Offset(arrowCenterX, centerY + arrowHalfHeight),
+                    strokeWidth = 1f
+                )
+            }
+        }
+    }
 
-        for (docLine in visibleRange) {
-            if (docLine < 0 || docLine >= textBuffer.lineCount) continue
-            if (state.isDocLineHidden(docLine)) continue
-            val lineText = frameContext.lineText(docLine)
-            if (lineText.isEmpty()) continue
-            val markers = frameContext.textScanCache.getWhitespaceMarkers(
-                line = docLine,
-                lineText = lineText,
-                textVersion = textVersion,
-                boundaryOnly = mode == WhitespaceRenderMode.BOUNDARY
-            )
+    internal inline fun forEachVisibleMarker(
+        frameContext: EditorRenderFrameContext,
+        textStartX: Float,
+        textPaint: Paint,
+        lineLayoutCache: EditorLineLayoutCache,
+        emit: (isTab: Boolean, startX: Float, endX: Float, centerY: Float) -> Unit,
+    ) {
+        val state = frameContext.state
+        val mode = state.config.renderWhitespace
+        if (mode == WhitespaceRenderMode.NONE || state.textBuffer.lineCount <= 0) return
+        var cachedLine = -1
+        var cachedText = ""
+        var cachedMarkers: IntArray? = null
+        var cachedLayout: EditorLineLayoutCache.PrefixLayout? = null
+        for (visualLine in state.visibleLines) {
+            val line = state.docLineForVisualLine(visualLine)
+            if (line >= state.textBuffer.lineCount) continue
+            if (line != cachedLine) {
+                cachedLine = line
+                cachedText = frameContext.lineText(line)
+                cachedMarkers = frameContext.textScanCache.getWhitespaceMarkers(
+                    line, cachedText, frameContext.textVersion, mode == WhitespaceRenderMode.BOUNDARY,
+                )
+                cachedLayout = null
+            }
+            val markers = cachedMarkers ?: continue
             if (markers.isEmpty()) continue
-
-            val prefixLayout = lineLayoutCache.getPrefixLayout(
-                state = state,
-                line = docLine,
-                lineText = lineText,
-                textVersion = textVersion,
-                paint = textPaint,
-            )
-            val visualLine = state.visualLineForDocLine(docLine)
-            val y = state.visualLineTopInViewport(visualLine)
-            val centerY = y + lineHeightPx / 2f
-            for (marker in markers) {
-                val col = TextScanKernel.whitespaceMarkerColumn(marker)
-                val isTab = TextScanKernel.whitespaceMarkerIsTab(marker)
-                val safeStartColumn = col.coerceIn(0, prefixLayout.length)
-                val safeEndColumn = (col + 1).coerceIn(safeStartColumn, prefixLayout.length)
-                val x1 = textStartX + prefixLayout.textStartAdvance(safeStartColumn)
-                val x2 = textStartX + prefixLayout.textEndAdvance(safeEndColumn)
-
-                if (!isTab) {
-                    val dotX = (x1 + x2) / 2f
-                    drawScope.drawCircle(
-                        color = color,
-                        radius = 1.5f,
-                        center = Offset(dotX, centerY)
-                    )
-                } else {
-                    val arrowCenterX = (x1 + x2) / 2f
-                    val arrowHalfWidth = ((x2 - x1) * 0.3f).coerceAtMost(6f)
-                    val arrowHalfHeight = (lineHeightPx * 0.15f).coerceAtMost(4f)
-                    drawScope.drawLine(
-                        color = color,
-                        start = Offset(x1 + 2f, centerY),
-                        end = Offset(x2 - 2f, centerY),
-                        strokeWidth = 1f
-                    )
-                    drawScope.drawLine(
-                        color = color,
-                        start = Offset(arrowCenterX + arrowHalfWidth, centerY),
-                        end = Offset(arrowCenterX, centerY - arrowHalfHeight),
-                        strokeWidth = 1f
-                    )
-                    drawScope.drawLine(
-                        color = color,
-                        start = Offset(arrowCenterX + arrowHalfWidth, centerY),
-                        end = Offset(arrowCenterX, centerY + arrowHalfHeight),
-                        strokeWidth = 1f
-                    )
-                }
+            val startColumn = state.visualLineStartColumn(visualLine).coerceIn(0, cachedText.length)
+            val endColumn = state.visualLineEndColumn(visualLine).coerceIn(startColumn, cachedText.length)
+            var low = 0
+            var high = markers.size
+            while (low < high) {
+                val mid = (low + high) ushr 1
+                if (TextScanKernel.whitespaceMarkerColumn(markers[mid]) < startColumn) low = mid + 1 else high = mid
+            }
+            if (low == markers.size || TextScanKernel.whitespaceMarkerColumn(markers[low]) >= endColumn) continue
+            val layout = cachedLayout ?: lineLayoutCache.getPrefixLayout(
+                state, line, cachedText, frameContext.textVersion, textPaint,
+            ).also { cachedLayout = it }
+            val segmentStartAdvance = layout.segmentStartAdvance(startColumn)
+            val centerY = state.visualLineTopInViewport(visualLine) + state.lineHeightPx / 2f
+            var markerIndex = low
+            while (markerIndex < markers.size) {
+                val marker = markers[markerIndex++]
+                val column = TextScanKernel.whitespaceMarkerColumn(marker)
+                if (column >= endColumn) break
+                emit(
+                    TextScanKernel.whitespaceMarkerIsTab(marker),
+                    textStartX + layout.textStartAdvance(column) - segmentStartAdvance,
+                    textStartX + layout.textEndAdvance(column + 1) - segmentStartAdvance,
+                    centerY,
+                )
             }
         }
     }

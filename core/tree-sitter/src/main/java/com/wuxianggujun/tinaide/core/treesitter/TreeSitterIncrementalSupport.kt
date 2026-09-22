@@ -34,12 +34,15 @@ internal data class HighlightLineCacheChange(
                 else -> change.endLine.coerceAtLeast(startLine)
             }
             val lineDelta = change.lineDelta
+            // 用元数据而非 newText 判断：流式加载的事件不携带正文，
+            // 对无换行的大文件会误判为单行编辑。
             val isSingleLineEdit = lineDelta == 0 &&
                 change.startLine == change.endLine &&
-                !change.newText.contains('\n') &&
-                change.oldLineBreakCount == 0
+                change.newLineBreakCount == 0 &&
+                change.oldLineBreakCount == 0 &&
+                change.hasCompleteNewText
             val columnDelta = if (isSingleLineEdit) {
-                change.newText.length - change.oldTextLength
+                change.newTextLength - change.oldTextLength
             } else {
                 0
             }

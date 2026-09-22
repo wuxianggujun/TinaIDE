@@ -79,6 +79,7 @@ internal fun TerminalSettingsSection(linuxEnvironmentEnabled: Boolean) {
     val customFontPath = remember { prefs.getCustomFontPath() }
     val cursorBlinkEnabled by prefs.cursorBlinkEnabledFlow.collectAsStateWithLifecycle()
     val cursorBlinkRate by prefs.cursorBlinkRateFlow.collectAsStateWithLifecycle()
+    val showRawLinkerOutput by prefs.showRawLinkerOutputFlow.collectAsStateWithLifecycle()
     val shellType by prefs.shellTypeFlow.collectAsStateWithLifecycle()
     val backendMode by prefs.backendModeFlow.collectAsStateWithLifecycle()
 
@@ -526,7 +527,7 @@ internal fun TerminalSettingsSection(linuxEnvironmentEnabled: Boolean) {
             subtitle = stringResource(Strings.settings_cursor_blink_desc),
             checked = cursorBlinkEnabled,
             onCheckedChange = { prefs.cursorBlinkEnabled = it },
-            showDivider = cursorBlinkEnabled
+            showDivider = true
         )
 
         if (cursorBlinkEnabled) {
@@ -534,9 +535,17 @@ internal fun TerminalSettingsSection(linuxEnvironmentEnabled: Boolean) {
                 title = stringResource(Strings.settings_cursor_blink_rate),
                 value = "$cursorBlinkRate ms",
                 onClick = { showCursorBlinkRateDialog = true },
-                showDivider = false
+                showDivider = true
             )
         }
+
+        SettingsSwitchItem(
+            title = stringResource(Strings.settings_show_raw_linker_output),
+            subtitle = stringResource(Strings.settings_show_raw_linker_output_desc),
+            checked = showRawLinkerOutput,
+            onCheckedChange = { prefs.showRawLinkerOutput = it },
+            showDivider = false
+        )
     }
 
     Spacer(modifier = Modifier.height(16.dp))

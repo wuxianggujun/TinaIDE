@@ -40,6 +40,7 @@ import com.wuxianggujun.tinaide.ui.compose.state.git.rememberGitDialogState
 import com.wuxianggujun.tinaide.ui.compose.state.git.rememberGitUiState
 import com.wuxianggujun.tinaide.ui.compose.state.rememberDialogState
 import java.io.File
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -83,6 +84,7 @@ internal data class MainActivityMainScreenState(
 @Stable
 internal class MainActivityBuildUiState(
     initialRunConfigManager: RunConfigurationManager,
+    initialRunConfigLoading: Boolean = false,
 ) {
     var showRunConfigDialog by mutableStateOf(false)
         private set
@@ -99,6 +101,9 @@ internal class MainActivityBuildUiState(
     var runConfigManager by mutableStateOf(initialRunConfigManager)
         private set
 
+    var isRunConfigLoading by mutableStateOf(initialRunConfigLoading)
+        private set
+
     var editingConfig by mutableStateOf<RunConfiguration?>(null)
         private set
 
@@ -109,6 +114,7 @@ internal class MainActivityBuildUiState(
         internal set
 
     fun openRunConfigDialog(config: RunConfiguration? = editingConfig ?: runConfigManager.selectedConfig) {
+        if (isRunConfigLoading) return
         editingConfig = config
         showRunConfigDialog = true
     }
@@ -127,6 +133,7 @@ internal class MainActivityBuildUiState(
         persist: (RunConfigurationManager) -> Boolean,
         onSelectedSingleFileCppStandardChanged: () -> Unit = {},
     ): Boolean {
+        if (isRunConfigLoading) return false
         val previousCppStandard = selectedSingleFileCppStandard(runConfigManager)
         if (!persist(updated)) return false
         runConfigManager = updated
@@ -137,6 +144,16 @@ internal class MainActivityBuildUiState(
             onSelectedSingleFileCppStandardChanged()
         }
         return true
+    }
+
+    internal fun beginRunConfigLoading() {
+        isRunConfigLoading = true
+        closeRunConfigDialog()
+    }
+
+    internal fun applyLoadedRunConfigManager(manager: RunConfigurationManager) {
+        runConfigManager = manager
+        isRunConfigLoading = false
     }
 
     private fun selectedSingleFileCppStandard(manager: RunConfigurationManager): String? =
@@ -215,20 +232,44 @@ internal fun rememberMainActivityScreenUiState(
 
 @Composable
 internal fun rememberMainActivityBuildUiState(
-    initialRunConfigManager: RunConfigurationManager,
     currentProjectRootPath: String?,
     currentProjectBuildDirPath: String?,
-    detectBuildSystem: () -> BuildSystem,
+    loadRunConfigManager: suspend () -> RunConfigurationManager,
+    detectBuildSystem: suspend () -> BuildSystem,
     loadAvailableTargets: suspend () -> List<TargetInfo>,
 ): MainActivityBuildUiState {
     val logTag = "MainActivityBuildUiState"
-    val state = remember { MainActivityBuildUiState(initialRunConfigManager) }
+    val state = remember {
+        MainActivityBuildUiState(
+            initialRunConfigManager = RunConfigurationManager(),
+            initialRunConfigLoading = currentProjectRootPath != null,
+        )
+    }
     val context = LocalContext.current
     val pluginLogManager = remember(context) { PluginLogManager.getInstance(context.applicationContext) }
     val pluginManager = remember(context) { PluginManager.getInstance(context.applicationContext) }
     val enabledPlugins by pluginManager.enabledPluginsFlow.collectAsStateWithLifecycle()
+    val latestLoadRunConfigManager by rememberUpdatedState(loadRunConfigManager)
     val latestDetectBuildSystem by rememberUpdatedState(detectBuildSystem)
     val latestLoadAvailableTargets by rememberUpdatedState(loadAvailableTargets)
+
+    LaunchedEffect(currentProjectRootPath) {
+        if (currentProjectRootPath == null) {
+            state.applyLoadedRunConfigManager(RunConfigurationManager())
+            return@LaunchedEffect
+        }
+
+        state.beginRunConfigLoading()
+        val manager = try {
+            latestLoadRunConfigManager()
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (error: Throwable) {
+            Timber.tag(logTag).e(error, "Failed to load run configurations")
+            RunConfigurationManager()
+        }
+        state.applyLoadedRunConfigManager(manager)
+    }
 
     LaunchedEffect(currentProjectRootPath, state.showRunConfigDialog) {
         if (currentProjectRootPath != null) {
@@ -290,8 +331,8 @@ internal fun rememberMainActivityBuildUiState(
 internal fun rememberMainActivityMainScreenState(
     drawerWidth: Dp,
     projectContext: IProjectContext,
-    initialRunConfigManager: RunConfigurationManager,
-    detectBuildSystem: () -> BuildSystem,
+    loadRunConfigManager: suspend () -> RunConfigurationManager,
+    detectBuildSystem: suspend () -> BuildSystem,
     loadAvailableTargets: suspend () -> List<TargetInfo>,
     mainViewModel: MainViewModel,
     editorStateViewModel: EditorStateViewModel,
@@ -305,9 +346,9 @@ internal fun rememberMainActivityMainScreenState(
     val editorActionsState = rememberEditorActionsState()
     val locationDialogState = rememberMainActivityLocationDialogState()
     val buildUiState = rememberMainActivityBuildUiState(
-        initialRunConfigManager = initialRunConfigManager,
         currentProjectRootPath = projectSnapshot.rootPath,
         currentProjectBuildDirPath = projectSnapshot.buildDirPath,
+        loadRunConfigManager = loadRunConfigManager,
         detectBuildSystem = detectBuildSystem,
         loadAvailableTargets = loadAvailableTargets,
     )

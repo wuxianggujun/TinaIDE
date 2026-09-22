@@ -39,9 +39,7 @@ class EditorMaxLineWidthTrackerTest {
             return EditorVisualLineMapper.VisualLineMap(
                 docLineCount = count,
                 visibleDocLines = v,
-                firstVisualLineByVisibleIndex = v.copyOf(),
-                visualLineCountByVisibleIndex = IntArray(count) { 1 },
-                visualLineCount = count,
+                wrappedLineIndex = null,
                 wordWrapEnabled = false,
                 wrapColumns = 0
             )

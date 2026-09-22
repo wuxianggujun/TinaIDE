@@ -144,6 +144,117 @@ class CompileDatabaseProviderRuntimeIdentityTest {
     }
 
     @Test
+    fun prepare_shouldFlagExternalCmakeDatabaseStaleWhenCMakeListsNewer() {
+        configureToolchain("toolchain-a")
+        configureSysroot("sysroot-a")
+        writeCMakeLists(CppStandard.CPP_20)
+        writeCompileCommandsWithMetadata(
+            toolchainId = "toolchain-a",
+            sysrootProfileId = "sysroot-a",
+            sysrootApiLevel = 28,
+            cppStandardFlag = "c++20",
+            generatedBy = "external",
+        )
+        // 构建脚本改过但未重新 configure：CMakeLists.txt 明确晚于 compile_commands.json。
+        val compileCommands = File(projectRoot, "build/compile_commands.json")
+        val base = compileCommands.lastModified()
+        compileCommands.setLastModified(base)
+        File(projectRoot, "CMakeLists.txt").setLastModified(base + 10_000L)
+
+        val prepared = requireNotNull(provider.prepare(File(projectRoot, "main.cpp"), projectRoot.absolutePath))
+
+        assertThat(prepared.compileDatabaseSource).isEqualTo(CxxCompileDatabaseSource.EXTERNAL)
+        assertThat(prepared.compileDatabaseStale).isTrue()
+    }
+
+    @Test
+    fun prepare_shouldNotFlagExternalCmakeDatabaseStaleWhenCMakeListsOlder() {
+        configureToolchain("toolchain-a")
+        configureSysroot("sysroot-a")
+        writeCMakeLists(CppStandard.CPP_20)
+        writeCompileCommandsWithMetadata(
+            toolchainId = "toolchain-a",
+            sysrootProfileId = "sysroot-a",
+            sysrootApiLevel = 28,
+            cppStandardFlag = "c++20",
+            generatedBy = "external",
+        )
+        // 数据库比 CMakeLists.txt 新：已重新 configure，不算过期。
+        val compileCommands = File(projectRoot, "build/compile_commands.json")
+        val base = compileCommands.lastModified()
+        File(projectRoot, "CMakeLists.txt").setLastModified(base - 10_000L)
+        compileCommands.setLastModified(base)
+
+        val prepared = requireNotNull(provider.prepare(File(projectRoot, "main.cpp"), projectRoot.absolutePath))
+
+        assertThat(prepared.compileDatabaseSource).isEqualTo(CxxCompileDatabaseSource.EXTERNAL)
+        assertThat(prepared.compileDatabaseStale).isFalse()
+    }
+
+    @Test
+    fun prepare_shouldNotFlagTinaFallbackDatabaseStaleEvenWhenCMakeListsNewer() {
+        // 过期信号只针对外部权威库；Tina 兜底库靠 shouldGenerate 自愈，绝不置过期位，
+        // 否则会和自愈路径打架、给出无意义的"重新配置"提示。
+        configureToolchain("toolchain-a")
+        configureSysroot("sysroot-a")
+        writeCMakeLists(CppStandard.CPP_20)
+        writeCompileCommandsWithMetadata(
+            toolchainId = "toolchain-a",
+            sysrootProfileId = "sysroot-a",
+            sysrootApiLevel = 28,
+            cppStandardFlag = "c++20",
+        )
+        val compileCommands = File(projectRoot, "build/compile_commands.json")
+        val base = compileCommands.lastModified()
+        compileCommands.setLastModified(base)
+        File(projectRoot, "CMakeLists.txt").setLastModified(base + 10_000L)
+
+        val prepared = requireNotNull(provider.prepare(File(projectRoot, "main.cpp"), projectRoot.absolutePath))
+
+        assertThat(prepared.compileDatabaseSource).isNotEqualTo(CxxCompileDatabaseSource.EXTERNAL)
+        assertThat(prepared.compileDatabaseStale).isFalse()
+    }
+
+    @Test
+    fun isCompileDatabaseStale_returnsTrueWhenCMakeListsNewerThanDatabase() {
+        // 这是缓存层 LspCompileSetupCache.isStillFresh 复用的 mtime 重算入口：
+        // 缓存命中会冻结旧的 stale 快照，靠这个方法重新比一次 mtime 才能刷新过期信号。
+        writeCMakeLists(CppStandard.CPP_20)
+        val buildDir = File(projectRoot, "build").apply { mkdirs() }
+        val compileCommands = File(buildDir, "compile_commands.json").apply {
+            writeText("[]", Charsets.UTF_8)
+        }
+        val base = compileCommands.lastModified()
+        compileCommands.setLastModified(base)
+        File(projectRoot, "CMakeLists.txt").setLastModified(base + 10_000L)
+
+        assertThat(provider.isCompileDatabaseStale(projectRoot, buildDir)).isTrue()
+    }
+
+    @Test
+    fun isCompileDatabaseStale_returnsFalseWhenDatabaseNewerThanCMakeLists() {
+        writeCMakeLists(CppStandard.CPP_20)
+        val buildDir = File(projectRoot, "build").apply { mkdirs() }
+        val compileCommands = File(buildDir, "compile_commands.json").apply {
+            writeText("[]", Charsets.UTF_8)
+        }
+        val base = compileCommands.lastModified()
+        File(projectRoot, "CMakeLists.txt").setLastModified(base - 10_000L)
+        compileCommands.setLastModified(base)
+
+        assertThat(provider.isCompileDatabaseStale(projectRoot, buildDir)).isFalse()
+    }
+
+    @Test
+    fun isCompileDatabaseStale_returnsFalseWhenDatabaseMissing() {
+        // 数据库还没生成时不能误报过期，否则首次打开项目就弹无意义的"重新配置"。
+        writeCMakeLists(CppStandard.CPP_20)
+        val buildDir = File(projectRoot, "build").apply { mkdirs() }
+
+        assertThat(provider.isCompileDatabaseStale(projectRoot, buildDir)).isFalse()
+    }
+
+    @Test
     fun prepare_shouldForceOnlyTinaFallbackRegenerationAfterBuildFileSave() {
         configureToolchain("toolchain-a")
         configureSysroot("sysroot-a")

@@ -233,8 +233,8 @@ class EditorState(
             override val foldRegionsDocumentVersion: Long get() = foldingManager.foldRegionsDocumentVersion
             override val foldDataVersion: Int get() = foldingManager.foldDataVersion
             override val inlayHintsVersion: Long get() = this@EditorState.inlayHintsVersion
-            override fun inlayHintsForLine(line: Int): List<EditorInlayHint> =
-                activeInlayHintsForLine(line)
+            override val inlayHintsByLine: Map<Int, List<EditorInlayHint>>
+                get() = if (inlayHintsDocumentVersion == textBuffer.version) this@EditorState.inlayHintsByLine else emptyMap()
             override fun lineMap(): EditorFoldingManager.LineMap = foldingManager.lineMap()
         }
     )
@@ -423,18 +423,21 @@ class EditorState(
         if (currentByLine.isEmpty()) return
 
         val startLine = change.startLine.coerceAtLeast(0)
+        // 用元数据而非 newText 判断：流式加载的事件不携带正文，
+        // 对无换行的大文件（压缩 JS / 单行 JSON）会误入单行快速路径并把 columnDelta 算成负数。
         if (
             change.lineDelta == 0 &&
             change.endLine == change.startLine &&
             change.oldLineBreakCount == 0 &&
-            !change.newText.contains('\n')
+            change.newLineBreakCount == 0 &&
+            change.hasCompleteNewText
         ) {
             applySingleLineTextChangeToSemanticTokens(
                 currentByLine = currentByLine,
                 line = startLine,
                 editStartColumn = change.startColumn.coerceAtLeast(0),
                 editEndColumn = change.endColumn.coerceAtLeast(change.startColumn),
-                columnDelta = change.newText.length - change.oldTextLength
+                columnDelta = change.newTextLength - change.oldTextLength
             )
             return
         }
@@ -652,7 +655,7 @@ class EditorState(
         if (map.visibleDocLineCount <= 0) return 0
         val visibleIndex = resolveVisibleIndexForDocLine(docLine)
         if (visibleIndex < 0) return 0
-        return map.firstVisualLineByVisibleIndex.getOrElse(visibleIndex) { 0 }
+        return map.firstVisualLineAt(visibleIndex)
     }
 
     internal fun visualLineForPosition(line: Int, column: Int): Int {
@@ -660,7 +663,7 @@ class EditorState(
         if (map.visibleDocLineCount <= 0 || map.visualLineCount <= 0) return 0
         val visibleIndex = resolveVisibleIndexForDocLine(line)
         if (visibleIndex < 0) return 0
-        val firstVisual = map.firstVisualLineByVisibleIndex.getOrElse(visibleIndex) { 0 }
+        val firstVisual = map.firstVisualLineAt(visibleIndex)
         if (!map.wordWrapEnabled) {
             return firstVisual.coerceIn(0, map.visualLineCount - 1)
         }
@@ -687,7 +690,7 @@ class EditorState(
         val visibleIndex = resolveVisibleIndexForVisualLine(map, safeVisual)
         val docLine = map.visibleDocLines.getOrElse(visibleIndex) { 0 }
         val lineText = textBuffer.getLine(docLine)
-        val firstVisual = map.firstVisualLineByVisibleIndex.getOrElse(visibleIndex) { 0 }
+        val firstVisual = map.firstVisualLineAt(visibleIndex)
         val segmentIndex = (safeVisual - firstVisual).coerceAtLeast(0)
         val layout = wordWrapLayoutCache.getWrapLayout(
             line = docLine,
@@ -710,7 +713,7 @@ class EditorState(
         val visibleIndex = resolveVisibleIndexForVisualLine(map, safeVisual)
         val docLine = map.visibleDocLines.getOrElse(visibleIndex) { 0 }
         val lineText = textBuffer.getLine(docLine)
-        val firstVisual = map.firstVisualLineByVisibleIndex.getOrElse(visibleIndex) { 0 }
+        val firstVisual = map.firstVisualLineAt(visibleIndex)
         val segmentIndex = (safeVisual - firstVisual).coerceAtLeast(0)
         val layout = wordWrapLayoutCache.getWrapLayout(
             line = docLine,
@@ -726,6 +729,8 @@ class EditorState(
     internal fun isVisualLineContinuation(visualLine: Int): Boolean = visualLineStartColumn(visualLine) > 0
 
     internal fun isDocLineHidden(docLine: Int): Boolean = foldingManager.isDocLineHidden(docLine)
+
+    internal fun visibleDocumentLineMap(): EditorFoldingManager.LineMap = foldingManager.lineMap()
 
     internal fun visualLineTopInViewport(visualLine: Int): Float {
         val firstLineOffset = scrollOffsetPx - firstVisibleLine * lineHeightPx

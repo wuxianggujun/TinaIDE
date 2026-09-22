@@ -102,6 +102,39 @@ class MainActivityBuildUiStateTest {
     }
 
     @Test
+    fun runConfigLoading_shouldBlockEditingAndPersistenceUntilLoaded() {
+        val initialManager = runConfigManagerWithSelectedName("Temporary")
+        val loadedManager = runConfigManagerWithSelectedName("Loaded")
+        val state = MainActivityBuildUiState(initialRunConfigManager = initialManager)
+        var persistenceAttempted = false
+
+        state.openRunConfigDialog()
+        assertThat(state.showRunConfigDialog).isTrue()
+
+        state.beginRunConfigLoading()
+        val committed = state.commitRunConfigManager(
+            updated = loadedManager,
+            persist = {
+                persistenceAttempted = true
+                true
+            },
+        )
+
+        assertThat(state.showRunConfigDialog).isFalse()
+        assertThat(state.editingConfig).isNull()
+        assertThat(state.isRunConfigLoading).isTrue()
+        assertThat(committed).isFalse()
+        assertThat(persistenceAttempted).isFalse()
+
+        state.applyLoadedRunConfigManager(loadedManager)
+        state.openRunConfigDialog()
+
+        assertThat(state.isRunConfigLoading).isFalse()
+        assertThat(state.runConfigManager).isEqualTo(loadedManager)
+        assertThat(state.showRunConfigDialog).isTrue()
+    }
+
+    @Test
     fun commitRunConfigManager_whenSelectedSingleFileStandardChanges_shouldNotifyAfterPersistence() {
         val initialConfig = RunConfiguration(name = "Debug", singleFileCppStandard = "CPP_17")
         val initialManager = managerWithSelectedConfig(initialConfig)

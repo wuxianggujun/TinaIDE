@@ -74,6 +74,12 @@ internal data class EditorScrollbarLayout(
                     hitOnThumb = true
                 )
             }
+            if (verticalGeometry.containsTrack(position)) {
+                return ScrollbarDragTarget(
+                    axis = ScrollbarAxis.Vertical,
+                    hitOnThumb = false
+                )
+            }
         }
 
         val horizontalGeometry = horizontal
@@ -84,9 +90,19 @@ internal data class EditorScrollbarLayout(
                     hitOnThumb = true
                 )
             }
+            if (horizontalGeometry.containsTrack(position)) {
+                return ScrollbarDragTarget(
+                    axis = ScrollbarAxis.Horizontal,
+                    hitOnThumb = false
+                )
+            }
         }
         return null
     }
+}
+
+internal object EditorScrollbarMetrics {
+    const val TOUCH_TARGET_THICKNESS_DP = 24f
 }
 
 internal class EditorScrollbarRenderer {
@@ -95,8 +111,8 @@ internal class EditorScrollbarRenderer {
         private const val TRACK_MARGIN_DP = 2f
         private const val BAR_THICKNESS_DP = 5f
         private const val ACTIVE_BAR_THICKNESS_DP = 8f
-        private const val TOUCH_TARGET_THICKNESS_DP = 14f
-        private const val THUMB_TOUCH_PADDING_DP = 10f
+        private const val TOUCH_TARGET_THICKNESS_DP = EditorScrollbarMetrics.TOUCH_TARGET_THICKNESS_DP
+        private const val THUMB_TOUCH_PADDING_DP = 16f
         private const val BAR_GAP_DP = 2f
         private const val MIN_THUMB_LENGTH_DP = 56f
     }

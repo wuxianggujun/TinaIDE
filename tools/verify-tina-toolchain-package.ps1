@@ -99,6 +99,33 @@ function Invoke-TarList {
     return @($output | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 }
 
+function Get-TarEntrySizeMap {
+    param([string]$ArchivePath)
+    $output = & tar -tvf $ArchivePath 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "tar -tvf failed for $ArchivePath`n$output"
+    }
+    # bsdtar (Windows): "-rwxr-xr-x  0 root root  11291512 Jun 06 16:03 path"
+    # GNU tar:          "-rwxr-xr-x root/root  11291512 2026-06-06 16:03 path"
+    $patterns = @(
+        '^-\S*\s+\d+\s+\S+\s+\S+\s+(?<size>\d+)\s+.*?(?<name>\S+)$',
+        '^-\S*\s+\S+\s+(?<size>\d+)\s+.*?(?<name>\S+)$'
+    )
+    $map = @{}
+    foreach ($line in $output) {
+        if ([string]::IsNullOrWhiteSpace($line)) { continue }
+        if ($line -notmatch '^-') { continue }
+        foreach ($pattern in $patterns) {
+            $match = [regex]::Match($line, $pattern)
+            if ($match.Success) {
+                $map[$match.Groups["name"].Value] = [long]$match.Groups["size"].Value
+                break
+            }
+        }
+    }
+    return $map
+}
+
 function Invoke-TarExtractText {
     param(
         [string]$ArchivePath,
@@ -296,6 +323,28 @@ if ($script:Failures.Count -eq 0) {
                         Write-Ok "clang resource dir exists: $resourceDir"
                     } else {
                         Add-Failure "clang resource dir missing: $resourceDir"
+                    }
+                }
+
+                # Guard against shipping unstripped CMake tools: `cmake --install` emits
+                # ctest/cpack next to cmake, and stripping only cmake once left ~360MB of
+                # .debug_info in the x86_64 package. Stripped they are ~12MB each.
+                Write-Step "checking cmake tool sizes (strip guard)"
+                $sizeMap = Get-TarEntrySizeMap $archivePath
+                $stripCeilingBytes = 40MB
+                foreach ($tool in @("cmake", "ctest", "cpack")) {
+                    $toolEntry = "$root/bin/$tool"
+                    if (-not (Test-EntryExact $entries $toolEntry)) { continue }
+                    if (-not $sizeMap.ContainsKey($toolEntry)) {
+                        Add-Failure "could not read size for $toolEntry from tar listing (strip guard cannot run)"
+                        continue
+                    }
+                    $toolSize = $sizeMap[$toolEntry]
+                    $toolMb = [math]::Round($toolSize / 1MB, 2)
+                    if ($toolSize -gt $stripCeilingBytes) {
+                        Add-Failure "$toolEntry is ${toolMb}MB (> 40MB); looks unstripped - check STRIP_TOOLS_BINARIES in scripts/build-android-tools.sh"
+                    } else {
+                        Write-Ok "$toolEntry size ok: ${toolMb}MB"
                     }
                 }
 

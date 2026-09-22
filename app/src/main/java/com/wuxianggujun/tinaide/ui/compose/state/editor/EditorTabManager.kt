@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
+import com.wuxianggujun.tinaide.core.editor.EditorFileSizeLimits
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.editor.EditorTab
@@ -32,10 +33,6 @@ class EditorTabManager(
     private val context: android.content.Context,
     private val editorManager: IEditorManager
 ) {
-    private companion object {
-        // 超过该阈值的文本文件默认用只读大文件查看器打开，避免 CodeEditor 占用过多内存
-        private const val LARGE_TEXT_THRESHOLD_BYTES: Long = 10L * 1024 * 1024 // 10MB
-    }
 
     // ========== 标签页状态 ==========
 
@@ -224,8 +221,7 @@ class EditorTabManager(
         if (fileType == FileTypeUtils.FileType.BINARY) return ContentType.HEX
 
         // 对超大文本文件默认使用只读查看器，避免直接加载到 CodeEditor 造成卡顿/内存压力
-        val fileSize = runCatching { file.length() }.getOrDefault(0L)
-        if (fileSize >= LARGE_TEXT_THRESHOLD_BYTES) return ContentType.LARGE_TEXT
+        if (EditorFileSizeLimits.isLargeTextFile(file)) return ContentType.LARGE_TEXT
 
         return when (fileType) {
             FileTypeUtils.FileType.JSON -> ContentType.JSON

@@ -580,7 +580,12 @@ PY
   cmake --install "${bdir}" --prefix "${INSTALL_DIR}"
 
   if [[ "${STRIP_TOOLS_BINARIES}" != "0" ]]; then
-    "${STRIP}" --strip-all "${INSTALL_DIR}/bin/cmake" 2>/dev/null || true
+    # cmake --install emits ctest/cpack alongside cmake; stripping only cmake
+    # left ~360MB of debug_info in the x86_64 package (ctest 200MB, cpack 185MB).
+    for tool in cmake ctest cpack; do
+      [[ -f "${INSTALL_DIR}/bin/${tool}" ]] || continue
+      "${STRIP}" --strip-all "${INSTALL_DIR}/bin/${tool}" 2>/dev/null || true
+    done
   fi
 
   compgen -G "${INSTALL_DIR}/share/cmake-*" >/dev/null || die "cmake share/cmake-* missing in install dir: ${INSTALL_DIR}/share"

@@ -1,7 +1,7 @@
 # LSP 插件开发指南
 
-> 文档更新：2026-02-25
-> 作者：Claude Code
+> 文档状态：当前实现说明
+> 最后人工核验：2026-09-09
 
 本文档介绍如何开发 LSP（Language Server Protocol）类型的插件，为 TinaIDE 添加新语言的代码补全、诊断、跳转定义等功能。
 
@@ -16,9 +16,22 @@ LSP 插件是一种特殊类型的插件（`type: "lsp"`），它通过声明：
 
 宿主应用会负责：
 
-- 在 PRoot 环境中安装工具链依赖
+- 在 Linux 环境（PRoot rootfs）中安装工具链依赖
 - 启动 LSP 服务器进程
 - 建立 LSP 连接并提供补全、诊断等功能
+
+### Linux 环境由插件 capability 门控
+
+`system`、`pip`、`npm`、`download` 四类工具链安装和 guest 内的 server 进程都依赖 Linux 环境。
+当前 Linux 环境不再默认可用：宿主通过 `PluginLinuxEnvironmentProvider` 检查是否存在
+**已启用且 `type: "system"`** 的插件声明了 `capabilities: ["linuxEnvironment"]`（例如 Registry 中的
+`tinaide.linux-environment`）。没有该 capability 时，`LinuxEnvironmentProvider.get()` 返回不可用环境，
+`LspToolchainInstaller` 会直接判定为 readiness 失败，而不是插件故障。
+
+因此 LSP 插件的依赖安装前置条件是：用户已安装并启用提供 `linuxEnvironment` 的插件，并完成其
+`lifecycle.requiresSetup` 环境准备。这类 readiness 失败不会隔离 LSP 插件。
+
+默认的 C/C++ 编译与 clangd 链路仍走 native tina-toolchain + Android sysroot，不需要 Linux 环境。
 
 ---
 
@@ -232,7 +245,8 @@ Language Server 配置数组，每个元素定义一个 LSP 服务器。
 | `id` | string | ✓ | 工具链唯一 ID |
 | `name` | string | ✓ | 工具链显示名称 |
 | `type` | string | ✓ | 安装类型（见下表） |
-| `packages` | string[] | * | 包名列表（system/pip/npm 需要；不同发行版优先使用 packagesByManager） |
+| `packages` | string[] | * | 包名列表（system/pip/npm 需要） |
+| `packagesByManager` | object | * | 按 guest 包管理器（`apk`/`apt`/`pacman`/`dnf`）覆盖系统包名；system 类型优先使用它 |
 | `url` | string | * | 下载 URL（download 需要） |
 | `sha256` | string | * | 归档的 64 位十六进制 SHA-256（download 需要） |
 | `extractTo` | string | * | rootfs 内的安全相对专用目录（download 需要） |
@@ -530,24 +544,32 @@ LSP 插件就绪
 ```
 用户打开 .py 文件
     ↓
-EditorFeatureManager.setupLanguageAndLsp()
+TinaCodeEditorPage
     ↓
-TreeSitterLanguageRegistry 提供语法高亮
+EditorContainerState.attachTinaLspForTab()
+    ↓
+LspEditorManager.attachTinaLsp()
+    ↓
+LspRoutingSupport.resolveAttachmentRoute() → LspAttachmentRoute.PLUGIN
     ↓
 LspPluginManager.getServerConfigForExtension("py")
     ↓
 找到 pylsp 配置
     ↓
-检查插件是否就绪（工具链已安装）
+检查插件是否就绪（Linux 环境可用 + 工具链已安装）
     ↓
 创建 PluginLspConnectionProvider
     ↓
-LspEditorManager.attachPluginLsp()
+LspEditorManager.attachPluginLspInternal()
     ↓
 启动 pylsp 进程，建立 LSP 连接
     ↓
 补全、诊断、跳转等功能可用
 ```
+
+语法高亮由 `TreeSitterLanguageRegistry` 独立提供，不在 LSP 挂载链路上。
+`resolveAttachmentRoute()` 会优先把 C/C++ 文件路由到 `CXX`，CMake / Make 路由到内建会话，
+只有这些都不命中时才回落到 `PLUGIN` 路由。
 
 每个 LSP session 都归属于一个 `ownerPluginId`。禁用、自动隔离、升级或卸载插件时，宿主会立即关闭该插件拥有的进程和编辑器连接。依赖未安装、Linux/toolchain 未就绪属于 readiness 错误，不会自动隔离；服务器成功启动后异常退出或协议崩溃会隔离对应插件。
 
@@ -622,8 +644,8 @@ data class LspServerConfig(
     val filePatterns: List<String>? = null,      // 文件名模式
     val runtime: LspRuntimeConfig? = null,       // 运行时配置
     val server: LspServerConnectionConfig,       // 连接配置
-    val initializationOptions: Map<String, Any>? = null,
-    val settings: Map<String, Any>? = null,
+    val initializationOptions: JsonElement? = null,  // 任意 JSON，原样透传
+    val settings: JsonElement? = null,               // 任意 JSON，原样透传
     val capabilities: LspCapabilitiesConfig? = null
 )
 ```
@@ -636,6 +658,7 @@ data class LspToolchainConfig(
     val name: String,                            // 显示名称
     val type: String,                            // 安装类型
     val packages: List<String>? = null,          // 包名列表
+    val packagesByManager: Map<String, List<String>>? = null, // 按 apk/apt/pacman/dnf 覆盖系统包名
     val url: String? = null,                     // 下载 URL
     val sha256: String? = null,                  // download 必填：SHA-256
     val extractTo: String? = null,               // download 必填：rootfs 相对专用目录
@@ -660,7 +683,7 @@ data class LspToolchainConfig(
 
 ---
 
-## 当前能力与限制（截至 2026-07）
+## 当前能力与限制（截至 2026-09）
 
 当前已经接入：
 
@@ -674,6 +697,7 @@ data class LspToolchainConfig(
 
 1. 自动检测“插件未就绪”并弹出安装提示尚未接入
 2. 连接类型当前以 `stdio` 为主，`socket/websocket` 暂未开放
+3. Linux 环境需要用户自行安装并启用提供 `linuxEnvironment` capability 的插件；宿主不再默认提供 PRoot 环境
 
 ---
 

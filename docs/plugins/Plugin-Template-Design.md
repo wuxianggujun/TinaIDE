@@ -1,7 +1,13 @@
 # 插件模板插件设计方案
 
-> 文档更新：2026-04-26
+> 文档状态：**设计参考**
+> 记录时间：2026-04-26（设计口径）
 > 目标：为 TinaIDE 设计一套可直接交付给用户的“插件开发脚手架插件”，降低插件开发门槛，并严格贴合当前宿主已落地能力。
+
+本文表达方案与取舍。文中的 `manifest.json` 示例是**设计草案**，真实发布口径以 Registry
+`sources/plugins/tinaide.plugin.starters/manifest.json` 为准（模板名称、版本号和描述可能已演进）。
+模板源目录位于 `tools/plugin-starters/`，发布 zip 位于
+`tools/plugin-starters/dist/tinaide.plugin.starters/templates/`。
 
 ---
 
@@ -279,13 +285,13 @@ CMake/Make 工程。所以 `projectTemplates.buildSystem` 应声明为：
 - 优先跑通 `commands.register + menus + editor.write`
 - 作为第一个脚本插件的推荐入口
 
-基于当前源码现状，更稳妥的发布策略是：
+发布策略：
 
 - 为 `script-command` 明确标注权限、隔离和资源限制
-- 等宿主把脚本插件的公开加载链路补齐后，再把它提升为正式模板
 
-原因是脚本运行时、权限和 API 模块已经存在，但仓库里暂时看不到一个像
-LSP 插件那样清晰的公开加载入口。
+> 更新说明：本节最初写作时，脚本插件的公开加载链路尚未收口。当前脚本运行时已落地并归属
+> `ScriptPluginManager`（宿主协调器）+ 非导出的 `:plugin_runtime` isolated process，加载、权限校验、
+> 故障隔离和自愈都有明确入口，因此 `script-command` 不再需要等待加载链路补齐。
 
 推荐目录：
 

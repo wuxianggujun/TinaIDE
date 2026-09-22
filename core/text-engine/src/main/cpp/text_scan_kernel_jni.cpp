@@ -516,37 +516,6 @@ bool HasActiveSignatureHelpContext(const std::u16string& text_before_cursor) {
     );
 }
 
-std::vector<jint> ComputeBracketInfo(int start_depth, const std::u16string& line_text) {
-    std::vector<jint> result;
-    result.reserve(12);
-
-    int depth = std::max(start_depth, 0);
-    for (size_t column = 0; column < line_text.size(); ++column) {
-        switch (line_text[column]) {
-            case u'(':
-            case u'[':
-            case u'{':
-                result.push_back(static_cast<jint>(column));
-                result.push_back(static_cast<jint>(depth));
-                result.push_back(1);
-                ++depth;
-                break;
-            case u')':
-            case u']':
-            case u'}':
-                --depth;
-                result.push_back(static_cast<jint>(column));
-                result.push_back(static_cast<jint>(std::max(depth, 0)));
-                result.push_back(0);
-                break;
-            default:
-                break;
-        }
-    }
-
-    return result;
-}
-
 int AdvanceBracketDepthRange(int start_depth, std::u16string_view text) {
     int depth = std::max(start_depth, 0);
     for (const char16_t ch : text) {
@@ -1319,16 +1288,6 @@ Java_com_wuxianggujun_tinaide_core_textengine_NativeTextScanKernel_nativeHasActi
     jstring textBeforeCursor
 ) {
     return HasActiveSignatureHelpContext(JStringToUtf16(env, textBeforeCursor));
-}
-
-extern "C" JNIEXPORT jintArray JNICALL
-Java_com_wuxianggujun_tinaide_core_textengine_NativeTextScanKernel_nativeComputeBracketInfo(
-    JNIEnv* env,
-    jobject,
-    jint startDepth,
-    jstring lineText
-) {
-    return ToJIntArray(env, ComputeBracketInfo(startDepth, JStringToUtf16(env, lineText)));
 }
 
 extern "C" JNIEXPORT jint JNICALL

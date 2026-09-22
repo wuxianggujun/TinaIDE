@@ -23,14 +23,27 @@ data class TextChange(
     val oldLineBreakCount: Int = oldText.count { it == '\n' },
     val newLineBreakCount: Int = newText.count { it == '\n' },
     val oldTextEndsWithLineBreak: Boolean = oldText.endsWith('\n'),
-    val hasCompleteOldText: Boolean = true
+    val hasCompleteOldText: Boolean = true,
+    val newTextLength: Int = newText.length,
+    /**
+     * [newText] 是否携带完整新文本。
+     *
+     * 大文件流式加载时为 false：文档从未以单个连续字符串存在过，
+     * 因此 [newText] 为空而 [newTextLength] / [newLineBreakCount] 仍然准确。
+     * 消费者若需要正文，必须改从 buffer 读，不能依赖 [newText]。
+     */
+    val hasCompleteNewText: Boolean = true
 ) {
     init {
         require(oldTextLength >= 0) { "oldTextLength must not be negative" }
         require(oldLineBreakCount >= 0) { "oldLineBreakCount must not be negative" }
         require(newLineBreakCount >= 0) { "newLineBreakCount must not be negative" }
-        require(newLineBreakCount == newText.count { it == '\n' }) {
-            "newText line-break count does not match metadata"
+        require(newTextLength >= 0) { "newTextLength must not be negative" }
+        if (hasCompleteNewText) {
+            require(newTextLength == newText.length) { "Complete newText length does not match metadata" }
+            require(newLineBreakCount == newText.count { it == '\n' }) {
+                "newText line-break count does not match metadata"
+            }
         }
         if (hasCompleteOldText) {
             require(oldTextLength == oldText.length) { "Complete oldText length does not match metadata" }

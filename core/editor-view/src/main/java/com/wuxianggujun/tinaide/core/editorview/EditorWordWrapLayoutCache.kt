@@ -67,7 +67,7 @@ internal class EditorWordWrapLayoutCache(
     private data class Entry(
         val lineText: String,
         val inlayHints: List<EditorInlayHint>,
-        var starts: IntArray
+        val layout: WrapLayout
     )
 
     private val lru = LinkedHashMap<Int, Entry>(64, 0.75f, true)
@@ -122,12 +122,12 @@ internal class EditorWordWrapLayoutCache(
             ensureSignature(textVersion, wrapColumns, tabSize)
             val entry = lru[line]
             if (entry != null && entry.lineText == lineText && entry.inlayHints == inlayHints) {
-                return WrapLayout(length = entry.lineText.length, starts = entry.starts)
+                return entry.layout
             }
 
-            val built = buildStarts(lineText, wrapColumns, tabSize, inlayHints)
-            putEntry(line, lineText = lineText, inlayHints = inlayHints, starts = built)
-            return WrapLayout(length = lineText.length, starts = built)
+            val built = WrapLayout(lineText.length, buildStarts(lineText, wrapColumns, tabSize, inlayHints))
+            putEntry(line, lineText = lineText, inlayHints = inlayHints, layout = built)
+            return built
         }
     }
 
@@ -193,11 +193,11 @@ internal class EditorWordWrapLayoutCache(
         line: Int,
         lineText: String,
         inlayHints: List<EditorInlayHint>,
-        starts: IntArray,
+        layout: WrapLayout,
     ) {
         totalChars -= lru.put(
             line,
-            Entry(lineText = lineText, inlayHints = inlayHints, starts = starts),
+            Entry(lineText = lineText, inlayHints = inlayHints, layout = layout),
         )?.lineText?.length ?: 0
         totalChars += lineText.length
         trimIfNeeded()

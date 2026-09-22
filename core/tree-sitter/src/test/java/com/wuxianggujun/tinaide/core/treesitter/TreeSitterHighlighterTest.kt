@@ -25,6 +25,21 @@ class TreeSitterHighlighterTest {
     }
 
     @Test
+    fun languageNameForFile_shouldMapExtensionlessCxxSystemHeaders() {
+        assertThat(TreeSitterLanguageRegistry.languageNameForFile(File("vector")))
+            .isEqualTo("cpp")
+        assertThat(TreeSitterLanguageRegistry.languageNameForFile(File("include/string")))
+            .isEqualTo("cpp")
+        assertThat(
+            TreeSitterLanguageRegistry.languageNameForFile(
+                File("/data/files/android-sysroots/builtin-ndk-r27c-arm64/usr/include/c++/v1/__config")
+            )
+        ).isEqualTo("cpp")
+        assertThat(TreeSitterLanguageRegistry.languageNameForFile(File("README")))
+            .isNull()
+    }
+
+    @Test
     fun shouldRenderOverlay_shouldIgnoreDefaultCaptures() {
         assertThat(HighlightType.DEFAULT.shouldRenderOverlay()).isFalse()
         assertThat(HighlightType.COMMENT.shouldRenderOverlay()).isTrue()

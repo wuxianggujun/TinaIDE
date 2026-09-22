@@ -28,6 +28,7 @@ private fun File.resolveKnownEditorLanguageId(cHeaderLanguageId: String): String
         ext == "go" -> "go"
         ext == "yaml" || ext == "yml" -> "yaml"
         ext == "toml" -> "toml"
+        CxxFileSupport.isExtensionlessCxxSystemHeader(this) -> "cpp"
         else -> null
     }
 }
@@ -43,7 +44,9 @@ fun File.resolveLspLanguageId(fallbackLanguageId: String = "plaintext"): String 
 
 fun File.resolveCodeAnalysisLanguageLabel(unknownLanguageId: String = "unknown"): String {
     val ext = extension.lowercase()
-    if (ext in CxxFileSupport.headerExtensions) {
+    if (ext in CxxFileSupport.headerExtensions ||
+        CxxFileSupport.isExtensionlessCxxSystemHeader(this)
+    ) {
         return "c/c++ header"
     }
     return resolveKnownEditorLanguageId(cHeaderLanguageId = "cpp") ?: unknownLanguageId

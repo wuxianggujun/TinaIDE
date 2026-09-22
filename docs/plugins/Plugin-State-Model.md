@@ -1,6 +1,7 @@
 # 插件状态模型
 
-> 文档更新：2026-07-16
+> 文档状态：当前实现说明
+> 最后人工核验：2026-09-09
 > 目标：统一 TinaIDE 插件系统中的安装态、启用态、运行态与页面态，避免状态漂移。
 
 ---
@@ -138,10 +139,16 @@
 
 它负责一次性产出：
 
-- 安装列表
-- 启用列表
-- 已安装版本映射
-- 已启用 capability 集合
+- 安装列表（`installedPlugins` / `installedPluginIds`）
+- 启用列表（`enabledPlugins` / `enabledPluginIds`）
+- 已安装版本映射（`installedVersions`）
+- 已启用 capability 集合（`enabledCapabilities`）
+- 已解析文本面板（`resolvedPanels`）
+
+`enabledCapabilities` 有一条额外约束：它**只收集已启用且 `type == "system"` 插件**声明的
+`manifest.capabilities`。其他类型插件即使写了 `capabilities` 也不会进入该集合，因此不能用它来
+表达普通 `config` / `script` 插件的贡献开关。当前唯一被宿主消费的 capability 是 `linuxEnvironment`
+（由 `PluginLinuxEnvironmentProvider` 读取，决定 Linux/PRoot 环境是否可用）。
 
 ### 3.1 消费规则
 

@@ -60,26 +60,32 @@ class RootfsDistroRuntime(
                     sizeBytes = resolved.artifact.sizeBytes,
                 )
             }
+            .onlyBuiltInDistro(SelfHostedLinuxDistroRuntime.DEFAULT_DISTRO_ID)
     }.getOrElse { emptyList() }
 
     suspend fun installDistro(
         distroId: String,
         progress: (InstallProgress) -> Unit = {},
-    ): Result<RootfsProfile> = SelfHostedLinuxDistroRuntime.createForExplicitInstall(appContext, configManager)
-        .installDistro(distroId = distroId) { installProgress ->
-            progress(
-                InstallProgress(
-                    progress = installProgress.progress.coerceIn(0f, 1f),
-                    message = installProgress.message,
-                    completed = installProgress.phase == SelfHostedLinuxDistroRuntime.Phase.COMPLETED,
-                )
-            )
+    ): Result<RootfsProfile> {
+        require(distroId == SelfHostedLinuxDistroRuntime.DEFAULT_DISTRO_ID) {
+            "Only the Ubuntu Linux distribution is supported by the built-in runtime"
         }
+        return SelfHostedLinuxDistroRuntime.createForExplicitInstall(appContext, configManager)
+            .installDistro(distroId = distroId) { installProgress ->
+                progress(
+                    InstallProgress(
+                        progress = installProgress.progress.coerceIn(0f, 1f),
+                        message = installProgress.message,
+                        completed = installProgress.phase == SelfHostedLinuxDistroRuntime.Phase.COMPLETED,
+                    )
+                )
+            }
+    }
 
     suspend fun checkActiveDistroHealth(): Result<LinuxDistroRootfsHealthReport> = withContext(Dispatchers.IO) {
         runCatching {
             val store = RootfsProfileStore(appContext, configManager)
-            val activeProfile = store.getActiveProfileOrNull()
+            val activeProfile = store.getActiveProfileForDistro(SelfHostedLinuxDistroRuntime.DEFAULT_DISTRO_ID)
             val linuxEnvironment = activeProfile
                 ?.takeIf { profile -> store.isInstalled(profile) }
                 ?.let { profile ->
@@ -105,3 +111,7 @@ class RootfsDistroRuntime(
         DistroPackageManager.UNKNOWN -> RootfsPackageManager.UNKNOWN
     }
 }
+
+internal fun List<RootfsDistroRuntime.DistroOption>.onlyBuiltInDistro(
+    distroId: String,
+): List<RootfsDistroRuntime.DistroOption> = filter { distro -> distro.id == distroId }

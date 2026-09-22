@@ -35,6 +35,7 @@ class CompileActionsHelper(
         fun reconfigureCMake()
         fun clearCMakeBuildDirectory()
         fun clearAndReconfigureCMake()
+        fun configureOnlyCMake()
     }
 
     interface UiBridge {
@@ -83,6 +84,10 @@ class CompileActionsHelper(
     // 生命周期暂时未到 STARTED 时缓存一次性事件，恢复后逐个消费。
     private val uiEventsChannel = Channel<UiEvent>(capacity = Channel.BUFFERED)
     val uiEvents = uiEventsChannel.receiveAsFlow()
+
+    // 仅 configure(重生成 compile_commands.json)成功后回调，用于让 clangd 使用新的编译数据库。
+    // 由持有 EditorContainerState 的 Compose 层注册；本类不直接依赖编辑器状态。
+    var onCompileConfigInvalidated: (() -> Unit)? = null
 
     /**
      * 运行项目
@@ -148,6 +153,10 @@ class CompileActionsHelper(
 
     suspend fun clearAndReconfigureCMake() {
         runCMakeMaintenance(CompileProjectUseCase.Action.CMAKE_CLEAR_AND_RECONFIGURE)
+    }
+
+    suspend fun configureOnlyCMake() {
+        runCMakeMaintenance(CompileProjectUseCase.Action.CMAKE_CONFIGURE_ONLY)
     }
 
     fun openCMakeArtifactsDirectory() {
@@ -272,6 +281,9 @@ class CompileActionsHelper(
             }
             CompileProjectUseCase.Action.CMAKE_CLEAR_AND_RECONFIGURE -> {
                 commandRunner.clearAndReconfigureCMake()
+            }
+            CompileProjectUseCase.Action.CMAKE_CONFIGURE_ONLY -> {
+                commandRunner.configureOnlyCMake()
             }
             else -> return
         }
@@ -418,7 +430,8 @@ class CompileActionsHelper(
                 uiEventsChannel.trySend(
                     UiEvent.OpenTerminal(
                         launch.command,
-                        launch.workingDirectory
+                        launch.workingDirectory,
+                        launch.backend,
                     )
                 )
             }
@@ -441,6 +454,10 @@ class CompileActionsHelper(
         val uiText = report.action.resolveUiText(context)
         emitToast(report.summary.ifBlank { uiText.successMessage }, ToastType.SUCCESS)
         showBuildLog()
+        // configure-only 重生成了 compile_commands.json，通知编辑器层刷新 clangd 绑定。
+        if (report.action == CompileProjectUseCase.Action.CMAKE_CONFIGURE_ONLY) {
+            onCompileConfigInvalidated?.invoke()
+        }
     }
 
     private fun emitLaunchUnavailableToast(
@@ -517,6 +534,10 @@ class CompilerViewModelCommandRunner(
 
     override fun clearAndReconfigureCMake() {
         compilerViewModel.clearAndReconfigureCMake()
+    }
+
+    override fun configureOnlyCMake() {
+        compilerViewModel.configureOnlyCMake()
     }
 }
 

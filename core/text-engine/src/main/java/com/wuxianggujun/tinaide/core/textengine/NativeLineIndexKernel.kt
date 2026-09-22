@@ -7,6 +7,7 @@ internal object NativeLineIndexKernel {
     external fun nativeDestroy(handle: Long)
     external fun nativeClear(handle: Long)
     external fun nativeRebuild(handle: Long, text: String)
+    external fun nativeAppendChunk(handle: Long, chunk: String)
     external fun nativeGetLineCount(handle: Long): Int
     external fun nativeGetLineStart(handle: Long, line: Int): Int
     external fun nativeGetLineEnd(handle: Long, line: Int, textLength: Int): Int

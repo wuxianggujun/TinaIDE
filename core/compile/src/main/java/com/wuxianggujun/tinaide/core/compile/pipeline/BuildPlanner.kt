@@ -44,6 +44,10 @@ class BuildPlanner(
             return BuildPlan.CleanOnly(strategy, request.build.reconfigure)
         }
 
+        if (request.build is BuildIntent.ConfigureOnly) {
+            return BuildPlan.ConfigureOnly(strategy)
+        }
+
         val spec = strategy.describeOutput(ctx)
             ?: return BuildPlan.Invalid("strategy cannot describe output (target=${ctx.target})")
 
@@ -65,6 +69,7 @@ class BuildPlanner(
             BuildIntent.None -> planLaunchOnly(spec, ctx)
             BuildIntent.IfNeeded -> planIncremental(strategy, spec, expectedFingerprint, ctx)
             is BuildIntent.Clean -> error("unreachable (handled above): $intent")
+            BuildIntent.ConfigureOnly -> error("unreachable (handled above): $intent")
         }
     }
 

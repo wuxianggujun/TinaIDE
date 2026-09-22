@@ -1,6 +1,6 @@
 # TinaIDE 分支管理指南
 
-> 更新日期：2026-02-25
+> 最后人工核验：2026-09-09
 
 本文档只保留长期有效的分支规范，不再维护“历史分支快照/统计清单”。
 
@@ -29,7 +29,7 @@
 
 - `feature/editor-split-view`
 - `fix/git-remote-timeout`
-- `hotfix/login-token-refresh`
+- `hotfix/proot-launch-recovery`
 - `chore/docs-cleanup`
 
 命名建议：
@@ -90,7 +90,7 @@ git push -u origin feature/editor-split-view
 
 - 优先 `rebase` 到最新 `dev` 后再发起合并，减少主干冲突。
 - 冲突解决后必须重新跑相关测试。
-- 对高风险冲突（构建链路、登录鉴权、文件写入）必须二次审查。
+- 对高风险冲突（构建链路、远程 LSP 鉴权与密钥存储、插件隔离、文件写入）必须二次审查。
 
 常用命令：
 
@@ -117,6 +117,8 @@ git rebase --continue
 2. 在 `release/*` 只做发布阻断问题修复。
 3. 验证通过后合并到 `main` 并打 Tag。
 4. 将 `main` 的发布修复回合并到 `dev`。
+
+本仓库包含 Git submodule（如 `external/rikkahub`、`external/termux-proot`）。涉及子模块指针变更时，必须先提交并推送子模块，再提交主仓库指针；打 Tag 前用 `git submodule status --recursive` 校验，避免 CI 在 `git submodule update --recursive` 阶段因 `not our ref` 失败。
 
 ---
 

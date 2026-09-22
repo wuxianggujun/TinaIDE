@@ -1,6 +1,7 @@
 package com.wuxianggujun.tinaide.ui.compose.state.editor
 
 import android.content.Context
+import com.wuxianggujun.tinaide.core.editor.EditorFileSizeLimits
 import com.wuxianggujun.tinaide.core.editorview.EditorConfig
 import com.wuxianggujun.tinaide.core.editorview.EditorState
 import com.wuxianggujun.tinaide.core.textengine.RopeTextBuffer
@@ -42,6 +43,7 @@ internal class EditorCodeRuntimeCache(
     }
 
     fun getOrCreateSyntaxHighlighter(tab: EditorTabState): TreeSitterHighlighter? {
+        if (EditorFileSizeLimits.exceedsSyntaxHighlightLimit(tab.file)) return null
         val runtime = getOrCreate(tab)
         if (runtime.syntaxHighlighter == null) {
             runtime.installSyntaxHighlighter(
@@ -52,6 +54,7 @@ internal class EditorCodeRuntimeCache(
     }
 
     fun getOrCreateFoldingProvider(tab: EditorTabState): TreeSitterFoldingProvider? {
+        if (EditorFileSizeLimits.exceedsSyntaxHighlightLimit(tab.file)) return null
         val runtime = getOrCreate(tab)
         if (runtime.foldingProvider == null) {
             runtime.foldingProvider = TreeSitterFoldingProvider.create(context.applicationContext, tab.file)

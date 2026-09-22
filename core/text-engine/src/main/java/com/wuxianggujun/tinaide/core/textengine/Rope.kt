@@ -42,8 +42,57 @@ internal class Rope {
         root = null
     }
 
+    /** 接管 [other] 的树；[other] 随后为空。用于流式加载完成后的原子交换。 */
+    fun stealFrom(other: Rope) {
+        root = other.root
+        other.root = null
+    }
+
     fun setText(text: String) {
         root = if (text.isEmpty()) null else buildTreeFromText(text)
+    }
+
+    /**
+     * 开始流式建树。调用方按文档顺序 [StreamingBuilder.append]，最后 [StreamingBuilder.finish]。
+     *
+     * 存在的理由：[setText] 需要先持有完整字符串，而 `text.chunked(CHUNK_SIZE)` 还会再造一份
+     * 等长的分片列表。对 30MB 文档这两笔各约 63MB，是加载期堆峰值的主要来源。
+     * 流式路径只保留最终叶子加一个不超过 CHUNK_SIZE 的暂存区。
+     *
+     * 叶子边界可能落在代理对中间——与 [setText] 的 `chunked` 行为一致，
+     * 拼接顺序不变，内容不受影响。
+     */
+    fun beginStreamingBuild(): StreamingBuilder = StreamingBuilder()
+
+    inner class StreamingBuilder internal constructor() {
+        private val leaves = mutableListOf<Leaf>()
+        private val carry = StringBuilder(CHUNK_SIZE)
+        private var finished = false
+
+        fun append(text: String) {
+            check(!finished) { "StreamingBuilder already finished" }
+            if (text.isEmpty()) return
+            var offset = 0
+            while (offset < text.length) {
+                val take = minOf(CHUNK_SIZE - carry.length, text.length - offset)
+                carry.append(text, offset, offset + take)
+                offset += take
+                if (carry.length >= CHUNK_SIZE) {
+                    leaves.add(Leaf(carry.toString()))
+                    carry.setLength(0)
+                }
+            }
+        }
+
+        fun finish() {
+            check(!finished) { "StreamingBuilder already finished" }
+            finished = true
+            if (carry.isNotEmpty()) {
+                leaves.add(Leaf(carry.toString()))
+                carry.setLength(0)
+            }
+            root = if (leaves.isEmpty()) null else buildBalanced(leaves, 0, leaves.size)
+        }
     }
 
     fun append(text: String) {

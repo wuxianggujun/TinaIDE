@@ -5,6 +5,7 @@ import com.wuxianggujun.tinaide.core.ServiceLifecycle
 import com.wuxianggujun.tinaide.core.config.ConfigChangeListener
 import com.wuxianggujun.tinaide.core.config.ConfigKeys
 import com.wuxianggujun.tinaide.core.config.IConfigManager
+import com.wuxianggujun.tinaide.core.editor.EditorFileSizeLimits
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.editor.session.AutoSaveScheduler
@@ -349,16 +350,27 @@ class EditorManager(
                 val snapshot = sessionStorage.load(projectPath) ?: return@launch
                 val entries = snapshot.files.mapNotNull { fileSnapshot ->
                     val file = File(fileSnapshot.path)
-                    if (file.exists()) {
-                        file to EditorViewState(
+                    when {
+                        !file.exists() -> {
+                            Timber.tag(TAG).w("Skip restoring editor tab, file missing: %s", fileSnapshot.path)
+                            null
+                        }
+                        // 会话里只存路径，不存"上次是用编辑器还是只读查看器打开的"。
+                        // 若不在这里拦，用户曾强制用编辑器打开的大文件会在每次冷启动被重新整份加载。
+                        EditorFileSizeLimits.isLargeTextFile(file) -> {
+                            Timber.tag(TAG).w(
+                                "Skip restoring editor tab, file exceeds editor size limit: %s (%d bytes)",
+                                fileSnapshot.path,
+                                EditorFileSizeLimits.fileLength(file)
+                            )
+                            null
+                        }
+                        else -> file to EditorViewState(
                             cursorLine = fileSnapshot.cursorLine,
                             cursorColumn = fileSnapshot.cursorColumn,
                             scrollX = fileSnapshot.scrollX,
                             scrollY = fileSnapshot.scrollY
                         )
-                    } else {
-                        Timber.tag(TAG).w("Skip restoring editor tab, file missing: %s", fileSnapshot.path)
-                        null
                     }
                 }
                 val activeFilePath = snapshot.activeFile?.takeIf { it.isNotBlank() }

@@ -1,5 +1,6 @@
 package com.wuxianggujun.tinaide.core.compile.pipeline
 
+import com.wuxianggujun.tinaide.core.compile.ConfigureResult
 import com.wuxianggujun.tinaide.core.compile.event.BuildEvent
 import com.wuxianggujun.tinaide.core.compile.event.BuildEventEmitter
 import com.wuxianggujun.tinaide.core.compile.strategy.BuildContext
@@ -33,5 +34,22 @@ class BuildExecutor {
         // 目前策略 clean 不返回清理条数;如未来需要可改成 Strategy 暴露 Cleaned 返回值
         emitter.emit(BuildEvent.Build.Cleaned(0))
         return 0
+    }
+
+    suspend fun configureOnly(
+        plan: BuildPlan.ConfigureOnly,
+        ctx: BuildContext,
+        emitter: BuildEventEmitter,
+    ): ConfigureResult {
+        emitter.emit(BuildEvent.Build.ConfigureStarted(ctx.target))
+        val start = System.currentTimeMillis()
+        val result = plan.strategy.configureOnly(ctx)
+        when (result) {
+            is ConfigureResult.Success ->
+                emitter.emit(BuildEvent.Build.ConfigureCompleted(System.currentTimeMillis() - start))
+            is ConfigureResult.Error ->
+                emitter.emit(BuildEvent.Build.ConfigureFailed(result.message))
+        }
+        return result
     }
 }

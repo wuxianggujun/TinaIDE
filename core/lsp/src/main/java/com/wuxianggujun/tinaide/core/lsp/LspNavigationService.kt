@@ -404,8 +404,8 @@ class LspNavigationService {
     private fun uriToFilePath(uri: String): String = try {
         File(URI(uri)).absolutePath
     } catch (e: Exception) {
-        // 如果 URI 解析失败，尝试直接去掉 file:// 前缀
-        uri.removePrefix("file://")
+        // File(URI) 拒绝 UNC 等形式；退回到解码后的路径，避免把 %XX 当成文件名。
+        lspDocumentUriToFilePath(uri) ?: uri.removePrefix("file://")
     }
 
     private fun extractUriString(result: Any?): String? {

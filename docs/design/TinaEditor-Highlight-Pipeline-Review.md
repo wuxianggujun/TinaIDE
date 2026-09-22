@@ -1,5 +1,12 @@
 # TinaEditor 高亮链路审查报告（2026-03-28）
 
+> 最后人工核验：2026-09-09
+>
+> 本文原稿是 2026-03-28 的一次性审查。2026-08 之后语法高亮改成了 `IncrementalTreeSitterHighlightState`
+> 增量解析 + 逐行 segment 缓存 + 视口优先 bulk prewarm，渲染侧新增 `EditorLineRenderPlanCache` 与
+> `EditorVisualLineIndex`（Fenwick）。本次核验已按当前源码更新第 3、4、6 节的类名与机制描述，
+> 结论章（第 2 节）保留原审查口径作为历史记录。
+
 ## 1. 背景与范围
 
 本报告用于回答“当前整套高亮逻辑是否有问题”。审查范围覆盖：
@@ -45,42 +52,48 @@
 
 ### 3.1 装配层（页面）
 
-在 `TinaCodeEditorPage` 中创建并注入 `TreeSitterHighlighter`：
+语法高亮器由 tab 级运行时缓存创建并注入，不再在 `TinaCodeEditorPage` 里直接 new：
 
-1. `TreeSitterHighlighter.create(context, tab.file)` 创建语法高亮器
-2. `editorState.highlighter = syntaxHighlighter` 注入状态
-3. 页面销毁时 `highlighter.dispose()` 释放 native 资源
+1. `EditorCodeRuntimeCache.getOrCreateSyntaxHighlighter(tab)` 调用 `TreeSitterHighlighter.create(context, tab.file)`
+2. `CodeEditorRuntime.installSyntaxHighlighter(...)` 写入 `editorState.highlighter`
+3. runtime 移除或释放时 `highlighter.dispose()` 释放 native 资源
 
 关键位置：
+- `app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorCodeRuntimeCache.kt`
+- `app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/CodeEditorRuntime.kt`
 - `app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/editor/TinaCodeEditorPage.kt`
 
 ### 3.2 渲染入口
 
-`EditorRenderer.render()` 统一编排绘制顺序：
+`EditorRenderer.render()`（实现 `EditorRenderEngine`）统一编排绘制顺序：
 
 1. 当前行背景
-2. 词高亮/括号辅助层
-3. 选区背景
-4. 文本（含语法/语义/彩虹括号颜色合成）
-5. 空白字符可视化
-6. 匹配括号高亮
-7. 诊断波浪线
-8. 选区手柄
+2. 词出现高亮（`WordOccurrenceHighlightRenderer`）
+3. 括号对参考线（`BracketPairGuideRenderer`）
+4. 选区背景
+5. 文本（含语法/语义/彩虹括号颜色合成）
+6. Inlay hint
+7. 空白字符可视化
+8. 匹配括号高亮
+9. 诊断波浪线
+10. 选区手柄
 
 关键位置：
 - `core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderer.kt`
+- `core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderEngine.kt`
 
 ### 3.3 文本高亮核心（TextRenderer）
 
 `TextRenderer.drawText()` 负责可见区颜色分段和实际文字绘制：
 
-- 先解析语法高亮 segment（Tree-sitter）
-- 再解析语义高亮 segment（LSP）
+- 先解析语法高亮 segment（Tree-sitter，`resolveDrawHighlightSegmentsForVisibleWindow`）
+- 再解析语义高亮 segment（LSP，`resolveVisibleSemanticSegments`）
 - 再与彩虹括号 overlay 合并
-- 用 `TextRenderPlanner.buildRuns()` 输出最终颜色 runs 并逐段绘制
+- 用 `TextRenderPlanner.Workspace.buildRuns()` 输出最终颜色 runs，并经 `EditorLineRenderPlanCache` 缓存逐行 render plan 后绘制
 
 关键位置：
 - `core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TextRenderer.kt`
+- `core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorLineRenderPlanCache.kt`
 
 ### 3.4 语义高亮数据来源
 
@@ -96,14 +109,21 @@ LSP 侧请求 full/range semantic tokens 并写入 `editorState.semanticTokensBy
 
 ## 4.1 语法高亮（Tree-sitter）
 
-- 维护 parser/query/queryCursor
-- 文本变化时重建 parse tree（`ensureParsedTree`）
-- 仅查询可见范围（`setByteRange`）
-- 输出 `HighlightSpan(start, end, type)`
+`TreeSitterHighlighter` 只做生命周期与 dispose 门禁，真正的解析与缓存在 `IncrementalTreeSitterHighlightState`：
+
+- 维护 parser/query/queryCursor，以及 worker 侧 `workerTree` 与渲染侧 `RenderSnapshot`
+- 文本变化走增量编辑：`applyTextChange` 计算脏行范围，在名为 `TreeSitterHighlightWorker` 的守护线程（单线程）上增量重解析，不整份重建
+- 逐行缓存 `HighlightLineSegment`（`RenderSnapshot.lineCache`），渲染侧 `getLineSegments(line)` 只读缓存；miss 时排队后台补算并通过 `setOnStateUpdated` 回调通知重绘
+- `setViewportHint(firstVisibleLine)` 让 bulk prewarm（`TreeSitterPrewarmPlan.ranges`）以视口为中心螺旋扩展，保证可见区最先着色
+- `openDocumentBlocking` 用于首帧：返回时高亮快照与 prewarm 已就绪，避免首帧闪默认色
+- 查询仍限定字节范围（`cursor.setByteRange(start shl 1, end shl 1)`）
+- 输出 `HighlightSpan(start, end, type, priority)`
 - 当前 binding 的 `TSParser.parseString()` 明确将输入转换为 `UTF-16 string`，因此 `startByte/endByte` 与 Kotlin UTF-16 code unit 可通过 `<<1 / >>1` 对齐，不构成代理对错位问题
 
 关键位置：
 - `core/tree-sitter/src/main/java/com/wuxianggujun/tinaide/core/treesitter/TreeSitterHighlighter.kt`
+- `core/tree-sitter/src/main/java/com/wuxianggujun/tinaide/core/treesitter/IncrementalTreeSitterHighlightState.kt`
+- `core/tree-sitter/src/main/java/com/wuxianggujun/tinaide/core/treesitter/TreeSitterPrewarmPlan.kt`
 - `external/tina-android-tree-sitter/android-tree-sitter/src/main/java/com/itsaky/androidide/treesitter/TSParser.java`
 
 ## 4.2 语义高亮（Semantic Tokens）
@@ -120,13 +140,10 @@ LSP 侧请求 full/range semantic tokens 并写入 `editorState.semanticTokensBy
 - range 失败：fallback 全量
 - 缓存命中条件：`documentVersion` 相同且 `cachedLines` 覆盖当前可见区
 
-**写入与合并（`TinaCodeEditorPage.applySemanticTokens`）**：
-- 全量结果直接替换 `semanticTokensByLine`
-- range 结果按行合并，不覆盖已有区域（防止 LSP 暂时返回空时清空可见区颜色）
-
-**写入与合并（当前实现）**：
-- 全量结果走 `EditorState.replaceSemanticTokens(...)`
-- range 结果走 `EditorState.mergeSemanticTokens(...)`
+**写入与合并（当前实现，`TinaCodeEditorPageSupport.applySemanticTokens`）**：
+- 未指定可见区间（全量结果）走 `EditorState.replaceSemanticTokens(...)`，整份替换
+- 指定 `requestedVisibleLines`（range 结果）走 `EditorState.replaceSemanticTokensInLines(...)`，只覆盖请求过的行，区间外已有颜色保留（防止 LSP 暂时返回空时清空可见区颜色）
+- `EditorState.mergeSemanticTokens(...)` 仍保留在 API 上，但当前生产路径不再使用，只有单元测试覆盖
 - `EditorState` 维护显式 `semanticTokensVersion`，供渲染缓存使用
 
 **渲染侧（`TextRenderer.resolveVisibleSemanticSegments`）**：
@@ -136,7 +153,7 @@ LSP 侧请求 full/range semantic tokens 并写入 `editorState.semanticTokensBy
 关键位置：
 - `core/editor-lsp/src/main/java/com/wuxianggujun/tinaide/core/editorlsp/LspSemanticTokenDecoder.kt`
 - `LspEditorManager.requestSemanticTokens(...)`
-- `TinaCodeEditorPage.applySemanticTokens(...)`
+- `app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/editor/TinaCodeEditorPageSupport.kt` 的 `applySemanticTokens(...)`
 - `TextRenderer.resolveVisibleSemanticSegments(...)`
 
 ## 4.3 选择/当前行高亮
@@ -183,29 +200,38 @@ LSP 侧请求 full/range semantic tokens 并写入 `editorState.semanticTokensBy
 
 ### 6.1 现有策略（优点）
 
+渲染侧（`TextRenderer`）：
+
 - 行文本缓存：`lineCache`
-- 文档快照缓存：`documentSnapshotText + version`
-- 可见窗口缓存：`visibleHighlightCacheKey / visibleSemanticCacheKey`
-- 异步高亮：单线程 `HighlightWorker`
-- 异步请求门禁：`runningHighlightRequest / queuedHighlightRequest`
-- 文本改动后局部缓存失效：`applyTextChange(...)`
-- 语义 token 版本：`semanticTokensVersion`
+- 可见窗口缓存：`visibleHighlightCacheKey / visibleSemanticCacheKey`，窗口两侧各留 `HIGHLIGHT_CACHE_MARGIN_LINES = 32` 行余量
+- 语法高亮缓存 key 含 `state.highlightVersion`，语义缓存 key 含 `state.semanticTokensVersion`
+- 复用同一个结果 HashMap，失效时只清 key 不动 map 内容，避免非主线程失效与主线程 paint 迭代冲突
+- 逐行 render plan 缓存：`EditorLineRenderPlanCache`
+
+高亮器侧（`IncrementalTreeSitterHighlightState`）：
+
+- 单线程 worker：线程名 `TreeSitterHighlightWorker`
+- 逐行 segment 缓存 `RenderSnapshot.lineCache`（按行数上限裁剪）
+- 增量解析门禁：`revision` + `sessionId` + `PendingParseRequest / ParseRequest`，过期请求直接丢弃
+- 视口优先 bulk prewarm：`viewportHintLine` + `TreeSitterPrewarmPlan`
+- 文本改动后局部缓存失效：`applyTextChange(...)` 计算 `DirtyLineRange` 并只失效受影响行
 
 ### 6.2 关键风险点
 
 #### 已修复：异步窗口回写与当前窗口不一致
 
-当前实现已不再只依赖 `textBuffer.version` 回写，而是通过：
+结果回写不再只依赖 `textBuffer.version`。当前由 `IncrementalTreeSitterHighlightState` 用
+`revision` 与 `sessionId` 双重校验：`parseRequest` / `applyResult` / prewarm 回调都会先比对期望的
+revision 与 session，过期结果直接丢弃，不写回 `lineCache`。渲染侧另有 `highlightVersion` 作为缓存 key，
+高亮状态更新后可见窗口缓存自然失效。
 
-- `runningHighlightRequest`
-- `queuedHighlightRequest`
-- `request.covers(...)`
-
-共同约束异步结果回写。旧窗口结果若已被更新窗口请求覆盖，将不会写回当前缓存。
+> 原稿描述的 `runningHighlightRequest` / `queuedHighlightRequest` / `request.covers(...)`
+> 已随本次重构删除，不再存在于代码里。
 
 #### 已修复：同步回退路径主线程压力
 
-当前 `TextRenderer.drawText()` 在语法高亮 cache miss 时不再走同步高亮计算，而是直接返回当前缓存并调度异步 worker 计算。
+当前 `TextRenderer` 的 `resolveDrawHighlightSegmentsForVisibleWindow()` 只调用 `highlighter.getLineSegments(line)`
+读缓存，cache miss 由高亮器自己排队到 worker 补算，主线程不做同步解析。
 
 #### 已修复：语义高亮缓存每次 miss（性能）
 
@@ -251,11 +277,12 @@ LSP 侧请求 full/range semantic tokens 并写入 `editorState.semanticTokensBy
 
 ## 9. 附：关键代码定位
 
-- 装配：`TinaCodeEditorPage.kt`
-- 渲染编排：`EditorRenderer.kt`
-- 文本与高亮合成：`TextRenderer.kt`
-- 语法高亮：`TreeSitterHighlighter.kt`
-- 语义 token 拉取：`LspEditorManager.kt`
+- 装配：`EditorCodeRuntimeCache.kt` / `CodeEditorRuntime.kt` / `TinaCodeEditorPage.kt`
+- 渲染编排：`EditorRenderer.kt`（接口 `EditorRenderEngine.kt`）
+- 文本与高亮合成：`TextRenderer.kt`、`EditorLineRenderPlanCache.kt`
+- 语法高亮：`TreeSitterHighlighter.kt`、`IncrementalTreeSitterHighlightState.kt`
+- 语义 token 拉取：`LspEditorManager.kt`；写入：`TinaCodeEditorPageSupport.kt`
+- 视觉行索引：`EditorVisualLineIndex.kt`（Fenwick）、`EditorVisualLineMapper.kt`
 - 选区与当前行：`SelectionRenderer.kt`
 - 诊断波浪线：`DiagnosticRenderer.kt`
 

@@ -1,6 +1,9 @@
 # TinaIDE 项目开发规范
 
+> 最后人工核验：2026-09-09
+>
 > 本文档供所有开发者和 AI 助手参考。精简版关键约束，详细设计文档见 `docs/` 目录。
+> 协作规则的唯一事实源是根目录 `AGENTS.md`；本文与 `AGENTS.md` 或当前构建配置冲突时以后者为准。
 
 ---
 
@@ -39,11 +42,14 @@ Strings.export_failed.strOr(context, errorMessage)
 "导出失败：$message"
 ```
 
-入口文件：`core/i18n/` 下的 `AppStrings.kt`、`ResExt.kt`、`TextResourceAliases.kt`；
-app 层 drawable 别名在 `AppResourceAliases.kt`。
+入口文件：`core/i18n/src/main/java/com/wuxianggujun/tinaide/core/i18n/` 下的 `AppStrings.kt`、`ResExt.kt`、`TextResourceAliases.kt`；
+app 层 drawable 别名在 `app/src/main/java/com/wuxianggujun/tinaide/core/i18n/AppResourceAliases.kt`。
+
+全局字符串资源位于 `core/i18n/src/main/res/values/strings.xml` 与 `values-en/strings.xml`。
+文案变更后运行 `py tools/i18n/check_all.py`；详细规范见 [国际化规范](i18n.md)。
 
 ### 2.3 DI 模式
-使用 **Koin**（编译时解析）：
+使用 **Koin**（DSL 声明，运行时解析；当前未引入 koin-annotations/KSP 代码生成）：
 - Activity/Plain 类：`KoinComponent` + `by inject()`
 - Composable：`koinInject()`
 - 无 KoinComponent 的普通类：`GlobalContext.getOrNull()?.getOrNull<T>()`
@@ -92,19 +98,30 @@ Release 构建启用 `isMinifyEnabled = true`。**新增第三方库必须评估
 
 ## 5. 构建验证
 
+验证从改动所属模块开始，只有 `app` 宿主、ABI/flavor、打包或跨模块集成变化时才跑 `:app:*`。
+一次性本地命令统一带 `--no-daemon`；其他会话正在构建时不要并发启动 Gradle。
+
 ```bash
-# 单模块快速编译
-./gradlew :core:xxx:assembleDebug --console=plain
+# 单模块快速验证（优先测试，其次编译）
+./gradlew :core:xxx:testDebugUnitTest --no-daemon --console=plain
+./gradlew :core:xxx:compileDebugKotlin --no-daemon --console=plain
 
-# App 全量编译（arm64）
-./gradlew :app:compileArm64DebugKotlin --console=plain
+# App 宿主编译（arm64）
+./gradlew :app:compileArm64DebugKotlin --no-daemon --console=plain
 
-# Release 构建
-./gradlew :app:assembleArm64Release --console=plain
-
-# 检查混淆 mapping
-grep "^com.example" app/build/outputs/mapping/arm64Release/mapping.txt
+# 检查混淆 mapping（本项目包名为 com.wuxianggujun）
+grep "^com.wuxianggujun" app/build/outputs/mapping/arm64Release/mapping.txt
 ```
+
+Release 构建不是普通只读验证：
+
+```bash
+./gradlew :app:assembleArm64Release --no-daemon --console=plain
+```
+
+该任务可能递增 `version.properties`，并把 `build/outputs/mapping/<flavor>Release/mapping.txt`
+归档到 `app/mappings/<versionName>-<timestamp>/`。只在确实需要产出 Release 包时运行，
+不要拿它当日常检查。
 
 ---
 

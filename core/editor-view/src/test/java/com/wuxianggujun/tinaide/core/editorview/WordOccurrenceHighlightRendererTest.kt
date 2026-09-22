@@ -6,13 +6,14 @@ import com.google.common.truth.Truth.assertThat
 import com.wuxianggujun.tinaide.core.textengine.Position
 import com.wuxianggujun.tinaide.core.textengine.RopeTextBuffer
 import com.wuxianggujun.tinaide.core.textengine.TextBuffer
+import com.wuxianggujun.tinaide.core.treesitter.TreeSitterFoldingProvider.FoldRegion
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(manifest = Config.NONE)
+@Config(manifest = Config.NONE, sdk = [34])
 class WordOccurrenceHighlightRendererTest {
 
     @Test
@@ -176,11 +177,69 @@ class WordOccurrenceHighlightRendererTest {
         assertThat(buffer.offsetToPositionCalls).isEqualTo(0)
     }
 
+    @Test
+    fun wrappedWords_splitAcrossRowsAndClipToScrolledViewport() {
+        val buffer = RopeTextBuffer("abcd abcd")
+        val state = EditorState(buffer, config = EditorConfig(wordWrap = true, codeFolding = false)).apply {
+            updateMetrics(20f, 1f, 40f, 2f, 0f)
+            cursorOffset = 1
+        }
+        var reads = 0
+        val frame = EditorRenderFrameContext(state, buffer.version, EditorTextScanCache(), EditorBracketSnapshotCache()) {
+            reads++
+            buffer.getLine(it)
+        }
+        val renderer = WordOccurrenceHighlightRenderer()
+        val cache = EditorLineLayoutCache()
+        val paint = Paint().apply { textSize = 14f }
+        val all = renderer.resolveHighlightRects(frame, 10f, paint, cache)
+        assertThat(all.map { it.top }).containsExactly(0f, 20f, 40f, 60f, 80f).inOrder()
+        assertThat(all.map { it.left }.minOrNull()).isAtLeast(10f)
+        assertThat(reads).isEqualTo(1)
+
+        state.scrollBy(40f)
+        val scrolled = renderer.resolveHighlightRects(frame, 10f, paint, cache)
+        assertThat(scrolled.map { it.top }).containsExactly(0f, 20f, 40f).inOrder()
+        assertThat(reads).isEqualTo(2)
+        val prefix = cache.getPrefixLayout(state, 0, buffer.getLine(0), buffer.version, paint)
+        assertThat(scrolled[0].left).isWithin(0.01f)
+            .of(10f + prefix.textStartAdvance(5) - prefix.segmentStartAdvance(4))
+    }
+
+    @Test
+    fun foldedGap_limitsTraversalToVisibleRows() {
+        val buffer = CountingTextBuffer(RopeTextBuffer((0 until 5_000).joinToString("\n") { "foo bar" }))
+        val state = EditorState(buffer, config = EditorConfig(wordWrap = false, codeFolding = true)).apply {
+            updateMetrics(20f, 1f, 120f, 100f, 0f)
+            setFoldRegions(listOf(FoldRegion(100, 4_900)), buffer.version)
+            toggleFoldAtLine(100)
+            cursorOffset = buffer.positionToOffset(95, 1)
+            scrollToLine(95)
+        }
+        val requested = mutableListOf<Int>()
+        val frame = EditorRenderFrameContext(state, buffer.version, EditorTextScanCache(), EditorBracketSnapshotCache()) {
+            requested.add(it)
+            buffer.getLine(it)
+        }
+        buffer.resetCounters()
+        val rects = WordOccurrenceHighlightRenderer().resolveHighlightRects(frame, 10f, Paint(), EditorLineLayoutCache())
+        assertThat(rects).hasSize(9)
+        assertThat(requested).containsExactlyElementsIn((95..100) + (4_901..4_903)).inOrder()
+        assertThat(buffer.lineCountReads).isLessThan(1_000)
+    }
+
     private class CountingTextBuffer(
         private val delegate: RopeTextBuffer
     ) : TextBuffer by delegate {
         var offsetToPositionCalls: Int = 0
             private set
+        var lineCountReads: Int = 0
+            private set
+
+        override val lineCount: Int get() {
+            lineCountReads++
+            return delegate.lineCount
+        }
 
         override fun offsetToPosition(offset: Int): Position {
             offsetToPositionCalls++
@@ -189,6 +248,7 @@ class WordOccurrenceHighlightRendererTest {
 
         fun resetCounters() {
             offsetToPositionCalls = 0
+            lineCountReads = 0
         }
     }
 }

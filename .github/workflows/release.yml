@@ -143,12 +143,9 @@ jobs:
             echo "| arm64-v8a | $filename | $size |" >> "$GITHUB_STEP_SUMMARY"
           done
 
-      - name: Cleanup Gradle processes
+      - name: Report remaining Gradle processes
         if: ${{ always() }}
-        run: |
-          set +e
-          ./gradlew --stop || true
-          pgrep -af 'GradleDaemon|org.gradle.launcher.daemon' || true
+        run: pgrep -af 'GradleDaemon|org.gradle.launcher.daemon' || true
 
   build-release:
     if: ${{ github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_type == 'release') }}
@@ -406,12 +403,9 @@ jobs:
           echo "|--------------|------|------|" >> "$GITHUB_STEP_SUMMARY"
           echo "| ${{ matrix.abi }} | $(basename "$APK") | $size |" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Cleanup Gradle processes
+      - name: Report remaining Gradle processes
         if: ${{ always() }}
-        run: |
-          set +e
-          ./gradlew --stop || true
-          pgrep -af 'GradleDaemon|org.gradle.launcher.daemon' || true
+        run: pgrep -af 'GradleDaemon|org.gradle.launcher.daemon' || true
 
   publish-release:
     if: ${{ github.ref_type == 'tag' }}

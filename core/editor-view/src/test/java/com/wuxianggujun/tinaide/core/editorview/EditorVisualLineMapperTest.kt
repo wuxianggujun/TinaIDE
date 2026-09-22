@@ -4,6 +4,8 @@ import com.google.common.truth.Truth.assertThat
 import com.wuxianggujun.tinaide.core.textengine.RopeTextBuffer
 import com.wuxianggujun.tinaide.core.textengine.TextBuffer
 import com.wuxianggujun.tinaide.core.textengine.TextChange
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import org.junit.Test
 
 /**
@@ -44,13 +46,10 @@ class EditorVisualLineMapperTest {
         override var foldRegionsDocumentVersion: Long = -1L,
         override var foldDataVersion: Int = 0,
         override var inlayHintsVersion: Long = 0L,
-        var inlayHintsByLine: Map<Int, List<EditorInlayHint>> = emptyMap(),
+        override var inlayHintsByLine: Map<Int, List<EditorInlayHint>> = emptyMap(),
         private var lineMapValue: EditorFoldingManager.LineMap
     ) : EditorVisualLineMapper.Host {
         override fun lineMap(): EditorFoldingManager.LineMap = lineMapValue
-
-        override fun inlayHintsForLine(line: Int): List<EditorInlayHint> =
-            inlayHintsByLine[line].orEmpty()
 
         fun setLineMap(map: EditorFoldingManager.LineMap) {
             lineMapValue = map
@@ -137,7 +136,7 @@ class EditorVisualLineMapperTest {
         val mapper = EditorVisualLineMapper(host)
         val map = mapper.visualLineMap()
 
-        assertThat(map.firstVisualLineByVisibleIndex.toList()).containsExactly(0, 2).inOrder()
+        assertThat((0 until map.visibleDocLineCount).map(map::firstVisualLineAt)).containsExactly(0, 2).inOrder()
         assertThat(mapper.resolveVisibleIndexForVisualLine(map, -3)).isEqualTo(0)
         assertThat(mapper.resolveVisibleIndexForVisualLine(map, 0)).isEqualTo(0)
         assertThat(mapper.resolveVisibleIndexForVisualLine(map, 1)).isEqualTo(0)
@@ -151,7 +150,7 @@ class EditorVisualLineMapperTest {
         val mapper = EditorVisualLineMapper(host)
         val map = mapper.visualLineMap()
 
-        assertThat(map.firstVisualLineByVisibleIndex).isEmpty()
+        assertThat(map.visibleDocLineCount).isEqualTo(0)
         assertThat(mapper.resolveVisibleIndexForVisualLine(map, 5)).isEqualTo(0)
     }
 
@@ -165,8 +164,7 @@ class EditorVisualLineMapperTest {
         val map = mapper.visualLineMap()
 
         assertThat(map.visualLineCount).isEqualTo(0)
-        assertThat(map.firstVisualLineByVisibleIndex).isEmpty()
-        assertThat(map.visualLineCountByVisibleIndex).isEmpty()
+        assertThat(map.visibleDocLineCount).isEqualTo(0)
     }
 
     @Test
@@ -178,8 +176,8 @@ class EditorVisualLineMapperTest {
         val map = mapper.visualLineMap()
 
         assertThat(map.visualLineCount).isEqualTo(3)
-        assertThat(map.firstVisualLineByVisibleIndex.toList()).containsExactly(0, 1, 2).inOrder()
-        assertThat(map.visualLineCountByVisibleIndex.toList()).containsExactly(1, 1, 1).inOrder()
+        assertThat((0 until map.visibleDocLineCount).map(map::firstVisualLineAt)).containsExactly(0, 1, 2).inOrder()
+        assertThat((0 until map.visibleDocLineCount).map(map::segmentCountAt)).containsExactly(1, 1, 1).inOrder()
         assertThat(map.wordWrapEnabled).isFalse()
     }
 
@@ -198,8 +196,8 @@ class EditorVisualLineMapperTest {
         val map = mapper.visualLineMap()
 
         assertThat(map.wordWrapEnabled).isTrue()
-        assertThat(map.visualLineCountByVisibleIndex.toList()).containsExactly(2, 1).inOrder()
-        assertThat(map.firstVisualLineByVisibleIndex.toList()).containsExactly(0, 2).inOrder()
+        assertThat((0 until map.visibleDocLineCount).map(map::segmentCountAt)).containsExactly(2, 1).inOrder()
+        assertThat((0 until map.visibleDocLineCount).map(map::firstVisualLineAt)).containsExactly(0, 2).inOrder()
         assertThat(map.visualLineCount).isEqualTo(3)
     }
 
@@ -214,13 +212,13 @@ class EditorVisualLineMapperTest {
         )
         val mapper = EditorVisualLineMapper(host)
         val withoutHints = mapper.visualLineMap()
+        assertThat(withoutHints.visualLineCount).isEqualTo(1)
 
         host.inlayHintsByLine = mapOf(0 to listOf(EditorInlayHint(0, 5, "v:")))
         host.inlayHintsVersion++
         val withHints = mapper.visualLineMap()
 
-        assertThat(withoutHints.visualLineCount).isEqualTo(1)
-        assertThat(withHints).isNotSameInstanceAs(withoutHints)
+        assertThat(withHints).isSameInstanceAs(withoutHints)
         assertThat(withHints.visualLineCount).isEqualTo(2)
     }
 
@@ -315,7 +313,7 @@ class EditorVisualLineMapperTest {
         val updated = mapper.visualLineMap()
 
         assertThat(buffer.getLineCallCount).isEqualTo(1)
-        assertThat(updated.visualLineCountByVisibleIndex.toList()).containsExactly(2, 1, 1).inOrder()
+        assertThat((0 until updated.visibleDocLineCount).map(updated::segmentCountAt)).containsExactly(2, 1, 1).inOrder()
     }
 
     @Test
@@ -346,7 +344,7 @@ class EditorVisualLineMapperTest {
         val rebuilt = mapper.visualLineMap()
 
         assertThat(rebuilt.docLineCount).isEqualTo(4)
-        assertThat(rebuilt.visualLineCountByVisibleIndex).hasLength(4)
+        assertThat(rebuilt.visibleDocLineCount).isEqualTo(4)
         assertThat(buffer.getLineCallCount).isEqualTo(4)
     }
 
@@ -376,7 +374,213 @@ class EditorVisualLineMapperTest {
         )
         val rebuilt = mapper.visualLineMap()
 
-        assertThat(rebuilt.visualLineCountByVisibleIndex.toList()).containsExactly(2, 1, 2).inOrder()
+        assertThat((0 until rebuilt.visibleDocLineCount).map(rebuilt::segmentCountAt)).containsExactly(2, 1, 2).inOrder()
         assertThat(buffer.getLineCallCount).isEqualTo(3)
+    }
+
+    @Test
+    fun distantLineEdits_reuseCumulativeIndexAndOnlyReadChangedLines() {
+        val rope = RopeTextBuffer((0 until 100_000).joinToString("\n") { "abcd" })
+        val buffer = CountingTextBuffer(rope)
+        val host = FakeMapperHost(
+            textBuffer = buffer,
+            wordWrapEnabled = true,
+            frozenWordWrapColumns = 4,
+            lineMapValue = identityLineMap(rope.lineCount),
+        )
+        val mapper = EditorVisualLineMapper(host)
+        val original = mapper.visualLineMap()
+        buffer.resetGetLineCallCount()
+        rope.addChangeListener { mapper.applyTextChangeToDocSegmentCounts(it, rope.version) }
+
+        rope.insert(0, "x")
+        rope.insert(rope.length, "x")
+        val updated = mapper.visualLineMap()
+
+        assertThat(updated).isSameInstanceAs(original)
+        assertThat(buffer.getLineCallCount).isEqualTo(2)
+        assertThat(updated.visualLineCount).isEqualTo(100_002)
+        assertThat(updated.firstVisualLineAt(99_999)).isEqualTo(100_000)
+        assertThat(mapper.resolveVisibleIndexForVisualLine(updated, 100_001)).isEqualTo(99_999)
+    }
+
+    @Test
+    fun inlayChanges_onlyRecountRowsWithChangedHints() {
+        val buffer = CountingTextBuffer(RopeTextBuffer((0 until 10_000).joinToString("\n") { "abcd" }))
+        val host = FakeMapperHost(
+            textBuffer = buffer,
+            wordWrapEnabled = true,
+            frozenWordWrapColumns = 4,
+            lineMapValue = identityLineMap(buffer.lineCount),
+        )
+        val mapper = EditorVisualLineMapper(host)
+        val original = mapper.visualLineMap()
+        buffer.resetGetLineCallCount()
+        host.inlayHintsByLine = mapOf(50 to listOf(EditorInlayHint(50, 1, "v:")))
+        host.inlayHintsVersion++
+
+        assertThat(mapper.visualLineMap()).isSameInstanceAs(original)
+        assertThat(buffer.getLineCallCount).isEqualTo(1)
+        assertThat(original.visualLineCount).isGreaterThan(10_000)
+
+        host.inlayHintsByLine = emptyMap()
+        host.inlayHintsVersion++
+        assertThat(mapper.visualLineMap().visualLineCount).isEqualTo(10_000)
+        assertThat(buffer.getLineCallCount).isEqualTo(2)
+    }
+
+    @Test
+    fun hiddenLineEdit_isMeasuredOnlyAfterUnfolding() {
+        val rope = RopeTextBuffer("aaaa\nbbbb\ncccc")
+        val buffer = CountingTextBuffer(rope)
+        val host = FakeMapperHost(
+            textBuffer = buffer,
+            wordWrapEnabled = true,
+            frozenWordWrapColumns = 4,
+            lineMapValue = EditorFoldingManager.LineMap(
+                3, intArrayOf(0, 2), intArrayOf(0, -1, 1),
+                booleanArrayOf(false, true, false), intArrayOf(-1, 0, -1),
+            ),
+        )
+        val mapper = EditorVisualLineMapper(host)
+        val original = mapper.visualLineMap()
+        rope.addChangeListener { mapper.applyTextChangeToDocSegmentCounts(it, rope.version) }
+        buffer.resetGetLineCallCount()
+        rope.insert(rope.positionToOffset(1, 0), "xxxx")
+
+        assertThat(mapper.visualLineMap()).isSameInstanceAs(original)
+        assertThat(buffer.getLineCallCount).isEqualTo(0)
+        host.setLineMap(identityLineMap(3))
+        host.foldDataVersion++
+        assertThat(mapper.visualLineMap().visualLineCount).isEqualTo(4)
+        assertThat(buffer.getLineCallCount).isEqualTo(1)
+    }
+
+    @Test
+    fun insertedAndDeletedRows_matchFreshLayoutIncludingClearedInlayHints() {
+        val rope = RopeTextBuffer("abcd\nefgh\nijkl")
+        val host = FakeMapperHost(
+            textBuffer = rope,
+            wordWrapEnabled = true,
+            frozenWordWrapColumns = 4,
+            lineMapValue = identityLineMap(rope.lineCount),
+            inlayHintsByLine = mapOf(2 to listOf(EditorInlayHint(2, 1, "v:"))),
+        )
+        val mapper = EditorVisualLineMapper(host)
+        mapper.visualLineMap()
+        rope.addChangeListener {
+            host.inlayHintsByLine = emptyMap()
+            host.inlayHintsVersion++
+            mapper.applyTextChangeToDocSegmentCounts(it, rope.version)
+            host.setLineMap(identityLineMap(rope.lineCount))
+        }
+
+        rope.insert(2, "\nxxxxxxxx\n")
+        assertSameLayout(mapper.visualLineMap(), EditorVisualLineMapper(host).visualLineMap())
+        rope.delete(1, rope.positionToOffset(3, 1))
+        assertSameLayout(mapper.visualLineMap(), EditorVisualLineMapper(host).visualLineMap())
+    }
+
+    private fun assertSameLayout(actual: EditorVisualLineMapper.VisualLineMap, expected: EditorVisualLineMapper.VisualLineMap) {
+        assertThat(actual.visualLineCount).isEqualTo(expected.visualLineCount)
+        assertThat(actual.visibleDocLineCount).isEqualTo(expected.visibleDocLineCount)
+        for (index in 0 until expected.visibleDocLineCount) {
+            assertThat(actual.firstVisualLineAt(index)).isEqualTo(expected.firstVisualLineAt(index))
+            assertThat(actual.segmentCountAt(index)).isEqualTo(expected.segmentCountAt(index))
+        }
+    }
+
+    @Test
+    fun insertedRow_doesNotCarryOldHintWidthIntoShiftedRow() {
+        val rope = RopeTextBuffer("abcd\nefgh\nijkl")
+        val host = FakeMapperHost(
+            textBuffer = rope,
+            wordWrapEnabled = true,
+            frozenWordWrapColumns = 4,
+            lineMapValue = identityLineMap(rope.lineCount),
+            inlayHintsByLine = mapOf(2 to listOf(EditorInlayHint(2, 1, "v:"))),
+        )
+        val mapper = EditorVisualLineMapper(host)
+        mapper.visualLineMap()
+        rope.addChangeListener {
+            mapper.applyTextChangeToDocSegmentCounts(it, rope.version)
+            host.setLineMap(identityLineMap(rope.lineCount))
+        }
+
+        rope.insert(0, "\n")
+        assertSameLayout(mapper.visualLineMap(), EditorVisualLineMapper(host).visualLineMap())
+    }
+
+    @Test
+    fun backgroundEditsAndLayoutQueries_keepDirtyCountsConsistent() {
+        val rope = RopeTextBuffer((0 until 256).joinToString("\n") { "abcd" })
+        val host = FakeMapperHost(
+            textBuffer = rope,
+            wordWrapEnabled = true,
+            frozenWordWrapColumns = 4,
+            lineMapValue = identityLineMap(rope.lineCount),
+        )
+        val mapper = EditorVisualLineMapper(host)
+        mapper.visualLineMap()
+        rope.addChangeListener { mapper.applyTextChangeToDocSegmentCounts(it, rope.version) }
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            val edits = executor.submit {
+                repeat(200) { rope.insert(rope.positionToOffset(it, 0), "x") }
+            }
+            repeat(200) {
+                val map = mapper.visualLineMap()
+                assertThat(map.visibleIndexForVisualLine(0)).isEqualTo(0)
+                assertThat(map.visualLineCount).isAtLeast(256)
+            }
+            edits.get(10, TimeUnit.SECONDS)
+            assertSameLayout(mapper.visualLineMap(), EditorVisualLineMapper(host).visualLineMap())
+        } finally {
+            executor.shutdownNow()
+            assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue()
+        }
+    }
+
+    @Test
+    fun bulkSameLineCountReplacement_rebuildsIndexWithoutRereadingUnchangedRows() {
+        val rope = RopeTextBuffer((0 until 5_000).joinToString("\n") { "abcd" })
+        val buffer = CountingTextBuffer(rope)
+        val host = FakeMapperHost(
+            textBuffer = buffer,
+            wordWrapEnabled = true,
+            frozenWordWrapColumns = 4,
+            lineMapValue = identityLineMap(rope.lineCount),
+        )
+        val mapper = EditorVisualLineMapper(host)
+        val original = mapper.visualLineMap()
+        rope.addChangeListener { mapper.applyTextChangeToDocSegmentCounts(it, rope.version) }
+        buffer.resetGetLineCallCount()
+        rope.replace(0, rope.positionToOffset(1_200, 0), "abcde\n".repeat(1_200))
+
+        val updated = mapper.visualLineMap()
+        assertThat(updated).isNotSameInstanceAs(original)
+        assertThat(updated.visualLineCount).isEqualTo(6_200)
+        assertThat(buffer.getLineCallCount).isEqualTo(1_201)
+    }
+
+    @Test
+    fun manyHintUpdates_duringMapResolutionDoNotReturnOldIndex() {
+        val buffer = CountingTextBuffer(RopeTextBuffer((0 until 5_000).joinToString("\n") { "abcd" }))
+        val host = FakeMapperHost(
+            textBuffer = buffer,
+            wordWrapEnabled = true,
+            frozenWordWrapColumns = 4,
+            lineMapValue = identityLineMap(buffer.lineCount),
+        )
+        val mapper = EditorVisualLineMapper(host)
+        val original = mapper.visualLineMap()
+        buffer.resetGetLineCallCount()
+        host.inlayHintsByLine = (0 until 1_200).associateWith { listOf(EditorInlayHint(it, 1, "v:")) }
+        host.inlayHintsVersion++
+
+        val updated = mapper.visualLineMap()
+        assertThat(updated).isNotSameInstanceAs(original)
+        assertThat(buffer.getLineCallCount).isEqualTo(1_200)
+        assertSameLayout(updated, EditorVisualLineMapper(host).visualLineMap())
     }
 }

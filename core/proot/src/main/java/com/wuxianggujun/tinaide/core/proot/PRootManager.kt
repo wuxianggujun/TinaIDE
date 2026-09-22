@@ -121,6 +121,11 @@ class PRootManager(
         }
     }
 
+    fun isRuntimeSupported(): Boolean = runCatching {
+        ensureSupportedRuntime()
+        prootBinary.isFile
+    }.getOrDefault(false)
+
     fun isInstalled(): Boolean {
         val rootDir = File(rootfsPath)
         return prootBinary.exists() &&
@@ -862,6 +867,32 @@ class PRootManager(
         return InteractiveProcessImpl(process)
     }
 
+    /**
+     * 组装一条完整的 host 命令行，但**不**启动它。
+     *
+     * 给需要在别的进程里 spawn proot 的调用方用（当前是 `:x11` 的桌面会话——
+     * init-proot.sh 带 `--kill-on-exit`，proot 树的存亡跟着 spawn 它的进程，
+     * 所以桌面会话不能由主进程 spawn）。除了不 exec，其余与 [startInteractive] 完全一致，
+     * 两者共用 [buildPRootCommandLine] 与 [buildExecEnvironment]，不会各自漂移。
+     */
+    fun buildHostLaunchPlan(
+        command: List<String>,
+        workDir: String = "/",
+        extraEnv: Map<String, String> = emptyMap(),
+    ): HostLaunchPlan {
+        ensureSupportedRuntime()
+        val mappedWorkDir = validateAndMapWorkDir(workDir)
+        val envMap = buildExecEnvironment(extraEnv).toMutableMap()
+        envMap["WORK_DIR"] = mappedWorkDir
+        return HostLaunchPlan(
+            argv = buildPRootCommandLine(command, mappedWorkDir),
+            environment = envMap,
+            // proot 自己会 chdir 到 -w 指定的 guest 目录；host 侧 cwd 只需要一个稳定
+            // 且必然存在的位置，与 startHostProcess 保持一致。
+            workingDirectory = context.filesDir.apply { mkdirs() }.absolutePath,
+        )
+    }
+
     private fun startHostProcess(
         command: Array<String>,
         environment: Array<String>,
@@ -874,54 +905,16 @@ class PRootManager(
         command: List<String>,
         workDir: String,
     ): List<String> {
-        val filesDir = context.filesDir.absolutePath
-
         File(rootfsPath, "projects").mkdirs()
         // workDir 既可是 host 路径也可是 guest 路径；统一映射后做边界校验。
         val mappedWorkDir = validateAndMapWorkDir(workDir)
-        val kernelRelease = getEffectiveKernelRelease()
 
-        // 构建 proot 参数
-        val prootArgs = buildList {
-            add("--rootfs=$rootfsPath")
-            add("--cwd=$mappedWorkDir")
-            add("-0")
-
-            add("--bind=/dev:/dev")
-            add("--bind=/dev/urandom:/dev/random")
-            add("--bind=/proc:/proc")
-            add("--bind=/sys:/sys")
-
-            if (File("/sdcard").exists()) add("--bind=/sdcard:/sdcard")
-            if (File("/storage").exists()) add("--bind=/storage:/storage")
-
-            add("--bind=/data:/data")
-            add("--bind=$filesDir:$filesDir")
-
-            // 将私有源码目录映射为 /projects，将私有工作区映射为 /workspace
-            add("--bind=${projectsHostDir.absolutePath}:/projects")
-
-            if (workspaceHostDir.exists() || workspaceHostDir.mkdirs()) {
-                add("--bind=${workspaceHostDir.absolutePath}:/workspace")
-            }
-
-            val shmDir = File(rootfsPath, "tmp").apply { mkdirs() }
-            add("--bind=${shmDir.absolutePath}:/dev/shm")
-
-            listOf("/apex", "/system", "/vendor", "/product").forEach { systemPath ->
-                if (File(systemPath).exists()) add("--bind=$systemPath:$systemPath")
-            }
-
-            // 兼容性说明：
-            // - 该值只影响 guest 的 uname() 返回，不会改变 host 内核。
-            // - normal 模式最多收敛到 5.4；compat 模式最多收敛到 4.14（更保守）。
-            add("--kernel-release=$kernelRelease")
-            add("--link2symlink")
-            add("--sysvipc")
-            add("--kill-on-exit")
-
-            addAll(command)
-        }
+        // 注意：proot 的 bind 列表、-r/-w/-0、--link2symlink、--sysvipc、--kernel-release
+        // 全部由 init-proot.sh 自己拼装（见该脚本 "构建 proot 参数" 一节）。
+        // 这里只负责决定"用哪个脚本、跑什么命令"，参数通过环境变量传递：
+        // ROOTFS_PATH / WORK_DIR / WORKSPACE_HOST_DIR / PROJECTS_HOST_DIR / KERNEL_RELEASE
+        // 由 applyEnvironment() 注入。曾经在这里重复拼过一份 prootArgs 但从未被使用，
+        // 与脚本长期不一致（缺 /dev/shm、缺 --sysvipc），已删除以消除歧义。
 
         // 诊断日志
         Timber.tag("PRootManager").d("proot path: %s", prootBinary.absolutePath)
@@ -1271,6 +1264,17 @@ private data class KernelVersion(
 ) {
     fun isLessThan(other: KernelVersion): Boolean = major < other.major || (major == other.major && minor < other.minor)
 }
+
+/**
+ * 一条组装完毕但尚未启动的 host 命令行。
+ *
+ * 由 [PRootManager.buildHostLaunchPlan] 产出，交给别的进程去 `exec`。
+ */
+data class HostLaunchPlan(
+    val argv: List<String>,
+    val environment: Map<String, String>,
+    val workingDirectory: String,
+)
 
 interface InteractiveProcess {
     val stdin: OutputStream

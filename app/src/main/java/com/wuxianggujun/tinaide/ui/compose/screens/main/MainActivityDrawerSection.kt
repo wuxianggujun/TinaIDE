@@ -45,6 +45,7 @@ internal fun MainActivityDrawerSection(
     showCommandPalette: Boolean,
     onOpenCommandPalette: () -> Unit,
     onDismissCommandPalette: () -> Unit,
+    onReconfigureCMake: () -> Unit,
     callbacks: MainActivityScreenCallbacks,
 ) {
     val dependencies = rememberMainActivityDrawerDependencies(
@@ -67,6 +68,7 @@ internal fun MainActivityDrawerSection(
         actionsDelegate = actionsDelegate,
         compileDelegate = compileDelegate,
         navigationDelegate = navigationDelegate,
+        onReconfigureCMake = onReconfigureCMake,
     )
 
     MainActivityDrawerHost(

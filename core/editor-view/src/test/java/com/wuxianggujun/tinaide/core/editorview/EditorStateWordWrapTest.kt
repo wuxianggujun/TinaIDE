@@ -130,6 +130,30 @@ class EditorStateWordWrapTest {
         assertThat(state.maxVerticalScrollOffsetPx()).isLessThan(expandedMaxScroll)
     }
 
+    @Test
+    fun unchangedFoldResults_afterEditingKeepIncrementalVisualMapping() {
+        val buffer = RopeTextBuffer("aaaa\nbbbb\ncccc\ndddd\neeee")
+        val state = EditorState(buffer, config = EditorConfig(wordWrap = true, codeFolding = true))
+        state.updateMetrics(20f, 1f, 240f, 4f, 0f)
+        val regions = listOf(FoldRegion(0, 3))
+        state.setFoldRegions(regions, buffer.version)
+        state.toggleFoldAtLine(0)
+        val originalFoldMap = state.visibleDocumentLineMap()
+        assertThat(state.visualLineCount()).isEqualTo(2)
+        buffer.addChangeListener(state::applyTextBufferChange)
+
+        buffer.insert(0, "x")
+        assertThat(state.visualLineCount()).isEqualTo(3)
+        repeat(3) { state.setFoldRegions(regions.map { it.copy() }, buffer.version) }
+        assertThat(state.visibleDocumentLineMap()).isSameInstanceAs(originalFoldMap)
+        assertThat(state.visualLineCount()).isEqualTo(3)
+        assertThat(state.visualLineForDocLine(4)).isEqualTo(2)
+
+        state.setFoldRegions(listOf(FoldRegion(0, 2)), buffer.version)
+        assertThat(state.visibleDocumentLineMap()).isNotSameInstanceAs(originalFoldMap)
+        assertThat(state.visualLineCount()).isEqualTo(4)
+    }
+
     private fun createWordWrapState(
         buffer: RopeTextBuffer,
         wrapColumns: Int,

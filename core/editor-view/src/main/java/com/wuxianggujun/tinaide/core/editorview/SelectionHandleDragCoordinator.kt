@@ -114,7 +114,7 @@ internal class SelectionHandleDragCoordinator(
         val verticalAutoScrollStepPx = (state.lineHeightPx * 0.85f).coerceAtLeast(1f)
         val horizontalAutoScrollStepPx = (state.charWidthPx * 2.2f).coerceAtLeast(1f)
         // 与 EditorScrollbarRenderer 的触摸命中厚度保持一致，避免句柄拖动/放大镜边界 clamp 出现偏差。
-        val scrollbarTouchThicknessPx = with(density) { 14.dp.toPx() }
+        val scrollbarTouchThicknessPx = with(density) { EditorScrollbarMetrics.TOUCH_TARGET_THICKNESS_DP.dp.toPx() }
         val hostViewOriginInWindowPx = selectionMagnifier.hostViewOriginInWindowPx()
 
         logTouch(

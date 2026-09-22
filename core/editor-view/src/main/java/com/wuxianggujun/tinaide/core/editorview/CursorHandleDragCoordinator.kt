@@ -66,7 +66,7 @@ internal class CursorHandleDragCoordinator(
                 val cursorAnchor = layout.viewportDragAnchor(state.scrollOffsetXPx)
                 val pointerToCursorDelta = down.position - cursorAnchor
                 val edgeAutoScrollZonePx = with(density) { 32.dp.toPx() }
-                val scrollbarTouchThicknessPx = with(density) { 14.dp.toPx() }
+                val scrollbarTouchThicknessPx = with(density) { EditorScrollbarMetrics.TOUCH_TARGET_THICKNESS_DP.dp.toPx() }
                 val hostViewOriginInWindowPx = selectionMagnifier.hostViewOriginInWindowPx()
                 var finished = false
                 var started = false

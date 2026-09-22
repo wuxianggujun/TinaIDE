@@ -1,6 +1,7 @@
 package com.wuxianggujun.tinaide.core.editorlsp
 
 import com.wuxianggujun.tinaide.core.lsp.LspClientSession
+import com.wuxianggujun.tinaide.core.lsp.toLspDocumentUri
 import com.wuxianggujun.tinaide.file.FileChangeListener
 import com.wuxianggujun.tinaide.file.FileWatchRegistration
 import com.wuxianggujun.tinaide.file.IFileWatchService
@@ -130,7 +131,7 @@ internal class LspWorkspaceFileWatcher(
         val matched = patterns.any { (_, globs) -> globs.any { it.matches(path, eventMask) } }
         if (!matched) return
 
-        val changes = listOf(FileEvent(file.toURI().toString(), eventType))
+        val changes = listOf(FileEvent(file.toLspDocumentUri(), eventType))
         collectSessions().forEach { session ->
             runCatching { session.didChangeWatchedFiles(changes) }
                 .onFailure { error -> Timber.tag(TAG).w(error, "didChangeWatchedFiles failed: %s", path) }

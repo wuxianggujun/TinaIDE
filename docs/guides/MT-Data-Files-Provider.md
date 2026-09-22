@@ -1,12 +1,20 @@
 # MT Data Files Provider
 
+> 最后人工核验：2026-09-09
+
 MT Data Files Provider 是 TinaIDE 为 MT 管理器提供的 DocumentsProvider 入口，用于在无 ROOT 场景下访问 TinaIDE 自己的应用目录。
+
+相关入口：
+
+- Provider：`app/src/main/java/com/wuxianggujun/tinaide/provider/MTDataFilesProvider.kt`
+- 组件开关：`core/config/src/main/java/com/wuxianggujun/tinaide/core/config/MTFileProviderManager.kt`
+- 设置项 UI：`feature/settings/src/main/java/.../settings/sections/StorageSettingsSection.kt`
 
 ## 默认状态
 
-- Manifest 中 Provider 和 WakeUp Activity 默认 `android:enabled="true"`。
-- `ConfigKeys.MTFileProviderEnabled` 默认值为 `true`。
-- 应用启动时由 `MTFileProviderManager.initialize()` 按用户配置启用或禁用组件。
+- Manifest 中 Provider（`.provider.MTDataFilesProvider`）和 WakeUp Activity（`.provider.MTDataFilesWakeUpActivity`）默认 `android:enabled="true"`。
+- `ConfigKeys.MTFileProviderEnabled`（key 为 `storage.mt_file_provider.enabled`）默认值为 `true`。
+- 应用启动时由 `CoreServiceRegistrar` 调用 `MTFileProviderManager.initialize()`，按用户配置同时启用或禁用 Provider 与 WakeUp Activity。
 
 因此，新安装或未显式修改过开关的用户默认可以通过 MT 管理器访问 TinaIDE 自己的目录；用户在设置中关闭后，启动时会按配置禁用组件。
 

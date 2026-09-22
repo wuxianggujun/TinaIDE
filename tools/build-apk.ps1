@@ -387,87 +387,12 @@ Write-Host "========================================" -ForegroundColor Green
 Write-Host ""
 
 # ========================================
-# APK 重命名（Release 构建时自动执行）
+# APK 文件名
 # ========================================
+# 输出文件名（TinaIDE-版本-ABI-类型.apk）由 app/build.gradle.kts 的
+# androidComponents.onVariants 统一设置，debug/release 都一致，脚本不再重命名。
 
 $finalApkPath = $apkPath
-if ($Variant -eq "release") {
-    $versionProps = Join-Path $repoRoot "version.properties"
-    $versionName = "unknown"
-    if (Test-Path $versionProps) {
-        $content = Get-Content $versionProps
-        foreach ($line in $content) {
-            if ($line -match "^versionName=(.+)$") {
-                $versionName = $Matches[1].Trim()
-                break
-            }
-        }
-    }
-
-    # 在各自的架构目录中就地重命名 APK 文件
-    Write-Host "Renaming APK files in their respective architecture directories..." -ForegroundColor Cyan
-    $renamedFiles = @()
-
-    foreach ($apkFile in $apkFiles) {
-        $originalName = [System.IO.Path]::GetFileNameWithoutExtension($apkFile.Name)
-        $apkDir = Split-Path $apkFile.FullName -Parent
-
-        # 检测 ABI 架构（从原始文件名或目录路径中提取）
-        $abiSuffix = ""
-        if ($originalName -match "-(arm64-v8a|x86_64|armeabi-v7a|x86|universal)") {
-            $abiSuffix = "-$($Matches[1])"
-        } elseif ($apkFile.FullName -match "[\\/](arm64-v8a|x86_64|armeabi-v7a|x86|universal)[\\/]") {
-            $abiSuffix = "-$($Matches[1])"
-        }
-
-        $newApkName = "TinaIDE-$versionName$abiSuffix.apk"
-        $newApkPath = Join-Path $apkDir $newApkName
-
-        # 如果新文件名已存在且不是当前文件，先删除
-        if ((Test-Path $newApkPath) -and ($newApkPath -ne $apkFile.FullName)) {
-            Remove-Item $newApkPath -Force
-        }
-
-        # 在原目录中重命名文件
-        Rename-Item -Path $apkFile.FullName -NewName $newApkName -Force
-        $renamedFiles += $newApkPath
-
-        $renamedSizeMB = [math]::Round((Get-Item $newApkPath).Length / 1MB, 2)
-        $relativeDir = $apkDir -replace [regex]::Escape($repoRoot), ""
-        Write-Host "  ✓ $newApkName ($renamedSizeMB MB)" -ForegroundColor Green
-        Write-Host "     Location: $relativeDir" -ForegroundColor DarkGray
-
-        # 如果这是选中的APK，更新finalApkPath
-        if ($apkFile.FullName -eq $apkPath) {
-            $finalApkPath = $newApkPath
-        }
-    }
-
-    # 清理原始未重命名的 APK 文件（app-*-release.apk）
-    foreach ($apkFile in $apkFiles) {
-        $apkDir = Split-Path $apkFile.FullName -Parent
-        $oldApks = Get-ChildItem -Path $apkDir -Filter "app-*-$Variant.apk" -File -ErrorAction SilentlyContinue
-        if ($oldApks) {
-            foreach ($oldApk in $oldApks) {
-                # 确保不删除已重命名的文件
-                if ($oldApk.Name -notlike "TinaIDE-*") {
-                    Remove-Item $oldApk.FullName -Force -ErrorAction SilentlyContinue
-                    Write-Host "  ✓ Removed original: $($oldApk.Name)" -ForegroundColor DarkGray
-                }
-            }
-        }
-    }
-    
-    Write-Host ""
-    Write-Host "Summary:" -ForegroundColor Cyan
-    Write-Host "  Total APKs renamed: $($renamedFiles.Count)" -ForegroundColor White
-    Write-Host "  APKs are organized by architecture in their respective directories" -ForegroundColor DarkGray
-    Write-Host ""
-
-    # 更新显示信息
-    $apkFile = Get-Item $finalApkPath
-    $apkSizeMB = [math]::Round($apkFile.Length / 1MB, 2)
-}
 
 Write-Host "APK: $(Split-Path $finalApkPath -Leaf)" -ForegroundColor White
 Write-Host "Path: $finalApkPath" -ForegroundColor White

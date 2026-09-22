@@ -33,6 +33,11 @@ class RootfsProfileStore(
             .thenBy { it.displayName.lowercase() }
     )
 
+    fun listProfilesForDistro(distroId: String): List<RootfsProfile> {
+        require(distroId.isNotBlank()) { "Distro id must not be blank" }
+        return listProfiles().filter { profile -> profile.distroId == distroId }
+    }
+
     fun getState(): RootfsProfilesState = synchronized(lock) { ensureStateLocked() }
 
     fun getProfile(profileId: String): RootfsProfile? = getState().profiles.firstOrNull { it.id == profileId }
@@ -43,6 +48,25 @@ class RootfsProfileStore(
             ?: state.profiles.firstOrNull()
     }
 
+    /**
+     * Returns the active profile for the requested distribution.
+     *
+     * The active profile id is global, so an older or unrelated profile can remain
+     * selected while a new distribution is being installed. Runtime callers must
+     * resolve the profile they actually support instead of accidentally launching
+     * another distribution.
+     */
+    fun getActiveProfileForDistro(distroId: String): RootfsProfile? {
+        require(distroId.isNotBlank()) { "Distro id must not be blank" }
+        val state = getState()
+        return state.profiles.firstOrNull {
+            it.id == state.activeProfileId && it.distroId == distroId
+        } ?: state.profiles.firstOrNull { it.distroId == distroId }
+    }
+
+    fun getActiveRootfsPathForDistro(distroId: String): String =
+        getActiveProfileForDistro(distroId)?.rootfsPath.orEmpty()
+
     fun getActiveProfile(): RootfsProfile = getActiveProfileOrNull()
         ?: throw IllegalStateException("No Linux rootfs profile is installed")
 
@@ -50,6 +74,17 @@ class RootfsProfileStore(
         val currentState = ensureStateLocked()
         val target = currentState.profiles.firstOrNull { it.id == profileId }
             ?: throw IllegalArgumentException("Unknown rootfs profile: $profileId")
+        val nextState = currentState.copy(activeProfileId = target.id)
+        persistStateLocked(nextState)
+        target
+    }
+
+    fun setActiveProfileForDistro(profileId: String, distroId: String): RootfsProfile = synchronized(lock) {
+        require(distroId.isNotBlank()) { "Distro id must not be blank" }
+        val currentState = ensureStateLocked()
+        val target = currentState.profiles.firstOrNull {
+            it.id == profileId && it.distroId == distroId
+        } ?: throw IllegalArgumentException("Unknown $distroId rootfs profile: $profileId")
         val nextState = currentState.copy(activeProfileId = target.id)
         persistStateLocked(nextState)
         target

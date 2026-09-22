@@ -624,7 +624,7 @@ fun TinaCodeEditorPage(
             val detachedSnapshot = state.getTabDetachedEditorSnapshot(tab.id)
             if (detachedSnapshot != null) {
                 try {
-                    binding.withSuppressed { buffer.replaceAll(detachedSnapshot.text) }
+                    binding.withSuppressed { buffer.replaceAllOffThread(detachedSnapshot.text) }
                     ensureTreeSitterPrepared(
                         runtime = runtime,
                         editorState = editorState,
@@ -937,7 +937,7 @@ fun TinaCodeEditorPage(
                                     loadError = null
                                     val detachedSnapshot = state.getTabDetachedEditorSnapshot(tab.id)
                                     if (detachedSnapshot != null) {
-                                        binding.withSuppressed { buffer.replaceAll(detachedSnapshot.text) }
+                                        binding.withSuppressed { buffer.replaceAllOffThread(detachedSnapshot.text) }
                                         runtime.isTreeSitterSnapshotReady = false
                                         ensureTreeSitterPrepared(
                                             runtime = runtime,

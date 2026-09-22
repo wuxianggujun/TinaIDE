@@ -56,7 +56,12 @@ data class EditorRenderPerformanceSnapshot(
     val textLineCacheSize: Int,
     val textScanCacheSize: Int,
     val lineLayoutCacheEntryCount: Int,
-    val lineLayoutCacheFloatCount: Int
+    val lineLayoutCacheFloatCount: Int,
+    val renderPlanCacheEntryCount: Int = 0,
+    val renderPlanCacheCharCount: Int = 0,
+    val renderPlanCacheElementCount: Int = 0,
+    val totalRenderPlanBuilds: Long = 0L,
+    val totalRenderPlanCacheHits: Long = 0L,
 )
 
 internal data class EditorHitZones(

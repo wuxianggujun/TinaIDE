@@ -69,6 +69,59 @@ class DocumentSessionTest {
     }
 
     @Test
+    fun reloadFromDisk_shouldUseStreamingBindingWhenAvailable() = runTest {
+        val file = Files.createTempFile("document-session-stream-reload", ".txt").toFile()
+        file.writeText("streamed content")
+        val session = createSession(file, this)
+        val binding = FakeEditorBinding(
+            text = "stale",
+            canUndo = true,
+            canRedo = true,
+            supportsStreamingReload = true,
+        )
+
+        try {
+            session.attachEditor(binding)
+
+            assertThat(session.reloadFromDisk()).isTrue()
+            assertThat(binding.readText()).isEqualTo("streamed content")
+            assertThat(binding.streamingReloadCalls).isEqualTo(1)
+            assertThat(binding.setTextCalls).isEqualTo(0)
+        } finally {
+            session.stopFileWatcher()
+            file.delete()
+        }
+    }
+
+    @Test
+    fun detachEditor_shouldNotMaterializeCleanDocument() = runTest {
+        val file = Files.createTempFile("document-session-clean-detach", ".txt").toFile()
+        file.writeText("unchanged")
+        val session = createSession(file, this)
+        val binding = FakeEditorBinding(
+            text = "unchanged",
+            canUndo = false,
+            canRedo = false,
+            supportsFingerprint = true,
+        )
+
+        try {
+            session.attachEditor(binding)
+            session.markEditorSnapshotClean()
+            val readsBeforeDetach = binding.readTextCalls
+
+            session.detachEditor(binding)
+
+            assertThat(binding.readTextCalls).isEqualTo(readsBeforeDetach)
+            assertThat(session.detachedEditorSnapshot()).isNull()
+            assertThat(session.state.value.isDirty).isFalse()
+        } finally {
+            session.stopFileWatcher()
+            file.delete()
+        }
+    }
+
+    @Test
     fun save_shouldPreserveDetectedCharset() = runTest {
         val gbk = Charset.forName("GBK")
         val file = Files.createTempFile("document-session-save", ".txt").toFile()
@@ -299,13 +352,22 @@ class DocumentSessionTest {
         text: String,
         private var canUndo: Boolean,
         private var canRedo: Boolean,
-        private val viewState: EditorViewState? = null
+        private val viewState: EditorViewState? = null,
+        private val supportsStreamingReload: Boolean = false,
+        private val supportsFingerprint: Boolean = false,
     ) : DocumentSession.EditorBinding {
         private var currentText = text
         private var version = 0L
         private var mutationAfterRead: String? = null
+        var readTextCalls: Int = 0
+            private set
+        var setTextCalls: Int = 0
+            private set
+        var streamingReloadCalls: Int = 0
+            private set
 
         override fun readText(): String {
+            readTextCalls++
             val snapshot = currentText
             mutationAfterRead?.let { replacement ->
                 mutationAfterRead = null
@@ -316,6 +378,7 @@ class DocumentSessionTest {
         }
 
         override fun setText(text: CharSequence) {
+            setTextCalls++
             currentText = text.toString()
             version++
             canUndo = false
@@ -335,6 +398,31 @@ class DocumentSessionTest {
         override fun currentDocumentVersion(): Long = version
 
         override fun currentViewState(): EditorViewState? = viewState
+
+        override fun readFingerprintSnapshot(): DocumentSession.FingerprintSnapshot? {
+            if (!supportsFingerprint) return null
+            var hash = -0x340d631b8c4675d9L
+            val prime = 0x100000001b3L
+            currentText.forEach { char ->
+                hash = hash xor char.code.toLong()
+                hash *= prime
+            }
+            return DocumentSession.FingerprintSnapshot(
+                length = currentText.length,
+                hash = hash,
+                documentVersion = version,
+            )
+        }
+
+        override suspend fun reloadFromFile(file: File, charset: Charset): Result<Unit>? {
+            if (!supportsStreamingReload) return null
+            streamingReloadCalls++
+            currentText = file.readText(charset)
+            version++
+            canUndo = false
+            canRedo = false
+            return Result.success(Unit)
+        }
 
         fun mutateAfterNextRead(text: String) {
             mutationAfterRead = text

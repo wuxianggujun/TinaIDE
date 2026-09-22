@@ -29,7 +29,6 @@ class TerminalCommandBuilder(context: Context) {
      * @param args 命令行参数(已经过变量替换)
      * @param projectRoot 项目根目录,用于解析已安装包的 runtime lib 目录
      * @param extraEnvironment 额外注入到运行 shell 的环境变量
-     * @param showLinkerWarnings 是否原样显示已知的 AArch64 Auth RELR linker 兼容告警
      */
     fun build(
         workingDir: String,
@@ -38,7 +37,6 @@ class TerminalCommandBuilder(context: Context) {
         projectRoot: File,
         extraEnvironment: Map<String, String> = emptyMap(),
         nativeRuntimeIdentity: NativeRuntimeIdentity? = null,
-        showLinkerWarnings: Boolean = false,
     ): String {
         val outputFile = File(outputPath)
         val stageDir = File(appContext.filesDir, "run-bin")
@@ -90,10 +88,39 @@ class TerminalCommandBuilder(context: Context) {
                 envPrefix = envPrefix,
                 ldLibraryPrefix = ldLibraryPrefix,
                 waitForEnterSuffix = waitForEnterSuffix,
-                showLinkerWarnings = showLinkerWarnings,
                 kind = sourceKind,
             )
         )
+    }
+
+    /**
+     * 组装在 PRoot guest 内直接执行 Linux 产物的命令。
+     *
+     * guest 产物已经由 Linux 工具链生成，不应再复制到 Android host 的 run-bin，
+     * 也不能注入 Android sysroot 的运行库或通过 `/system/bin/linker64` 启动。
+     */
+    fun buildPRoot(
+        workingDir: String,
+        outputPath: String,
+        args: List<String>,
+        extraEnvironment: Map<String, String> = emptyMap(),
+    ): String {
+        val environmentPrefix = LaunchEnvironment.buildShellPrefix(
+            LaunchEnvironment.sanitized(extraEnvironment)
+        )
+        val arguments = args.joinToString(separator = " ", prefix = " ") { argument ->
+            shellQuotePosix(argument)
+        }.takeIf { args.isNotEmpty() }.orEmpty()
+
+        return buildString {
+            append("cd ").append(shellQuotePosix(workingDir))
+            append(" && (chmod 700 ").append(shellQuotePosix(outputPath))
+            append(" 2>/dev/null || true) && printf '\\033[H\\033[2J' && ")
+            append(environmentPrefix)
+            append(shellQuotePosix(outputPath))
+            append(arguments)
+            append(buildWaitForEnterSuffix())
+        }
     }
 
     /**

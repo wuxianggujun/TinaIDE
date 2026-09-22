@@ -1,24 +1,29 @@
 # TinaIDE
 
+[![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-blue.svg?style=flat-square)](LICENSE)
 [![爱发电](https://img.shields.io/badge/%E7%88%B1%E5%8F%91%E7%94%B5-%E6%94%AF%E6%8C%81%E5%BC%80%E6%BA%90-946ce6?style=flat-square)](https://ifdian.net/a/wuxianggujun)
 
-> 最后人工核验：2026-08-21
+> 最后人工核验：2026-09-09
 >
 > 运行在 Android 设备上的 C/C++ IDE，默认使用 `native tina-toolchain + Android sysroot`；可选提供自研 Linux distro / PRoot 环境。
+>
+> 自 `0.18.29` 起，本项目以 **GPL-3.0-or-later** 分发，详见 [许可证](#许可证)。
 
 [English](README_EN.md)
 
 ---
 
-TinaIDE 是面向手机和平板的移动端 IDE。当前版本的核心变化是运行时被拆成了两层：
+TinaIDE 是面向手机和平板的移动端 IDE。运行时按职责分层：
 
 - 默认开发链路：内置 `native tina-toolchain`、`Android sysroot`、native clangd/LSP
-- 可选 Linux 环境：基于 `core:linux-distro + PRoot` 的终端与 Linux 工具链路
+- 可选 Linux 环境：基于 `core:linux-distro + PRoot` 的 Ubuntu 24.04 终端与 Linux 工具链路
+- 可选图形桌面（开发中）：基于 `core:linux-desktop` + termux-x11 的 X11 桌面，跑在 `:x11` 独立进程
 
 这意味着：
 
 - 基础编译、运行、clangd 补全不再依赖 PRoot
 - PRoot 主要服务终端、Linux 工具、部分插件 / 调试扩展能力
+- X11 桌面是最上面一层可选能力，尚未在真机验证
 
 ## 特性
 
@@ -28,11 +33,12 @@ TinaIDE 是面向手机和平板的移动端 IDE。当前版本的核心变化�
 - C++ 编译上下文诊断：从编辑器状态栏查看当前文件实际使用的编译数据库、编译器、语言标准、Target、Sysroot、头文件路径、宏和完整参数，并可刷新 clangd 连接
 - 自研编辑器：Tina Editor（Compose + Canvas），支持多标签、增量高亮、会话管理
 - Tree-sitter 高亮：支持 C/C++/CMake 及扩展语言
-- 终端与 Linux 环境：可选 Linux distro / PRoot 终端
+- 终端与 Linux 环境：可选 Ubuntu 24.04 rootfs + PRoot 终端
 - Git 集成：状态、提交、分支、拉取、推送、冲突处理、SSH / HTTPS 凭据
 - 文件预览：Markdown、图片、Hex、Diff、大文件文本，JSON 等文本类文件可走文本预览
-- 内嵌 RikkaHub：AI 聊天、模型、渠道和 MCP 设置由 RikkaHub 维护
+- 内嵌 RikkaHub：AI 聊天、模型、渠道和 MCP 设置由 RikkaHub 维护（分发限制见 [许可证](#许可证)）
 - 插件系统：主题、代码片段、LSP / 菜单扩展
+- X11 图形桌面（开发中）：集成 termux-x11 的 Android 原生 X server，在 `:x11` 独立进程运行 Ubuntu 桌面。**尚未在真机验证 XFCE 桌面**
 
 ## 插件、包与 Linux distro Registry
 
@@ -132,11 +138,17 @@ pwsh ./tools/build-apk.ps1 -Variant release -AllAbi
 
 ### 可选 Linux 环境
 
-用于终端与 Linux 工具：
+用于终端与 Linux 工具，当前唯一支持的发行版是 Ubuntu 24.04：
 
 - `core:linux-distro` 提供发行版 manifest、下载校验与安装描述
 - `core:proot` 通过 `SelfHostedLinuxDistroRuntime` 管理 rootfs 安装与 PRoot 生命周期
 - `feature:terminal` 提供终端 UI 与会话管理
+
+### 可选 X11 图形桌面（尚未在真机验证）
+
+- `core:linux-desktop` 管理 X server 状态机、`$TMPDIR` socket 布局、guest 桌面组件安装与会话启动
+- `:termux-x11-lorie`（`external/termux-x11/lorie`）提供 `libXlorie.so`，即编译为单个 `.so` 的完整 X.Org 栈
+- X server 与渲染 UI 同处 `:x11` 进程，与主进程隔离：lorie 把 libc 的 `exit()`/`abort()` 覆盖成 `_exit()`，放在主进程会让 X server 崩溃连带杀死 IDE
 
 ### 维护者可选资产重建
 
@@ -182,8 +194,30 @@ Release 任务不只是“生成 APK”，还可能触发以下副作用：
 - [开发指南](docs/开发指南.md)
 - [文档中心](docs/README.md)
 - [Linux distro 运行时](docs/linux-distro-self-hosted-runtime.md)
+- [X11 图形桌面模块说明](core/linux-desktop/README.md)
 - [GitHub Registry](docs/registry/GitHub-Registry.md)
+- [第三方组件与许可证清单](NOTICE.md)
 - [更新日志](CHANGELOG.md)
+
+## 许可证
+
+TinaIDE 以 **GPL-3.0-or-later** 分发。
+
+- [`LICENSE`](LICENSE)：GPL-3.0 全文
+- [`COPYRIGHT.md`](COPYRIGHT.md)：SPDX 标识符、许可证变更原因与分发要求
+- [`NOTICE.md`](NOTICE.md)：第三方组件与许可证清单
+
+`0.18.29` 之前使用的自定义许可证 "TinaIDE Open Source License Version 1.0" 已废弃，
+文本备份在 [`docs/third-party-notices/TinaIDE-Custom-License-v1.0-superseded.txt`](docs/third-party-notices/TinaIDE-Custom-License-v1.0-superseded.txt)。
+改用 GPL-3.0 的直接原因是集成 termux-x11 提供的 Android 原生 X server（GPL-3.0）。
+
+### 分发前必读：RikkaHub 许可证冲突
+
+`external/rikkahub` 采用 "Segmented Dual Licensing"，在 AGPL-3.0 之外附加了非商业使用与
+≤10 用户限制。GPL-3.0 第 7 条禁止在下游施加 further restrictions，因此**在冲突解决前，
+包含 RikkaHub 的构建产物不得对外分发**。详情与可选处理路径见 [`NOTICE.md`](NOTICE.md)。
+
+自行构建供个人使用不受影响；对外分发 APK 前请先确认该组件的状态。
 
 ## 技术栈
 
@@ -199,7 +233,8 @@ Release 任务不只是“生成 APK”，还可能触发以下副作用：
 | 构建 | Gradle + CMake |
 | 依赖注入 | Koin |
 | 并发 | Kotlin Coroutines + Flow |
-| 可选 Linux 环境 | PRoot + self-hosted Linux distro rootfs |
+| 可选 Linux 环境 | PRoot + Ubuntu 24.04 rootfs |
+| 可选图形桌面 | termux-x11（libXlorie.so），`:x11` 独立进程 |
 
 ## 支持架构
 
@@ -211,6 +246,9 @@ Release 任务不只是“生成 APK”，还可能触发以下副作用：
 - `minSdk`: 28
 - `targetSdk`: 36
 - `compileSdk`: 37
+
+以上是 `:app` 的口径。`core:*`、`feature:*` 等 library 模块走 `TinaVersions`，其中
+`COMPILE_SDK` 常量当前是 36，与 `:app` 不一致。
 
 ## 项目结构
 
@@ -234,6 +272,7 @@ TinaIDE/
 - `core/*` 负责复用能力与运行时基础设施
 - 默认编译 / LSP 依赖 native toolchain，不要求 PRoot
 - PRoot 是可选 Linux 环境，而不是默认编译宿主
+- X11 桌面跑在 `:x11` 独立进程，X server 崩溃不影响主进程
 
 ## 系统要求
 

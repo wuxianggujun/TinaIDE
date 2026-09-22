@@ -67,7 +67,7 @@ class PluginThemeColorResolverTest {
 
         assertThat(resolved[EditorThemeColorKey.EDITOR_FOREGROUND.wireName]).isEqualTo("#AABBCC")
         assertThat(resolved[EditorThemeColorKey.SYNTAX_FUNCTION.wireName]).isEqualTo("#112233")
-        assertThat(resolved).doesNotContainValue("#445566")
+        assertThat(resolved.values).doesNotContain("#445566")
     }
 
     @Test

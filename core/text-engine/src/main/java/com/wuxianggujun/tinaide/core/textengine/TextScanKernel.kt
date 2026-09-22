@@ -23,14 +23,6 @@ object TextScanKernel {
         return backend.hasActiveSignatureHelpContext(textBeforeCursor)
     }
 
-    fun computeBracketInfo(
-        startDepth: Int,
-        lineText: String
-    ): List<BracketScanResult> {
-        if (lineText.isEmpty()) return emptyList()
-        return backend.computeBracketInfo(startDepth.coerceAtLeast(0), lineText)
-    }
-
     fun advanceBracketDepth(startDepth: Int, lineText: String): Int {
         if (lineText.isEmpty()) return startDepth.coerceAtLeast(0)
         return backend.advanceBracketDepth(startDepth.coerceAtLeast(0), lineText)
@@ -185,12 +177,6 @@ object TextScanKernel {
     fun isWordChar(char: Char): Boolean = char == '_' || char.isLetterOrDigit()
 }
 
-data class BracketScanResult(
-    val column: Int,
-    val depth: Int,
-    val isOpen: Boolean
-)
-
 data class BracketPairMatchResult(
     val openOffset: Int,
     val closeOffset: Int
@@ -260,7 +246,6 @@ internal val SIGNATURE_HELP_NON_CALL_TERMINALS = SIGNATURE_HELP_CONTROL_KEYWORDS
 
 private interface TextScanBackend {
     fun hasActiveSignatureHelpContext(textBeforeCursor: String): Boolean
-    fun computeBracketInfo(startDepth: Int, lineText: String): List<BracketScanResult>
     fun advanceBracketDepth(startDepth: Int, lineText: String): Int
     fun advanceBracketDepth(startDepth: Int, lineText: String, endColumn: Int): Int
     fun computeLineBoundaryBracketDepths(startDepth: Int, text: String): IntArray
@@ -300,26 +285,6 @@ private class NativeTextScanBackend private constructor() : TextScanBackend {
     }
 
     override fun hasActiveSignatureHelpContext(textBeforeCursor: String): Boolean = NativeTextScanKernel.nativeHasActiveSignatureHelpContext(textBeforeCursor)
-
-    override fun computeBracketInfo(
-        startDepth: Int,
-        lineText: String
-    ): List<BracketScanResult> {
-        val raw = NativeTextScanKernel.nativeComputeBracketInfo(startDepth, lineText)
-        if (raw.isEmpty()) return emptyList()
-
-        val result = ArrayList<BracketScanResult>(raw.size / 3)
-        var index = 0
-        while (index + 2 < raw.size) {
-            result += BracketScanResult(
-                column = raw[index],
-                depth = raw[index + 1],
-                isOpen = raw[index + 2] != 0
-            )
-            index += 3
-        }
-        return result
-    }
 
     override fun advanceBracketDepth(startDepth: Int, lineText: String): Int = NativeTextScanKernel.nativeAdvanceBracketDepth(startDepth, lineText)
 
@@ -642,33 +607,6 @@ private class KotlinTextScanBackend : TextScanBackend {
                 SignatureHelpContextKind.OtherBrace -> false
             }
         }
-    }
-
-    override fun computeBracketInfo(
-        startDepth: Int,
-        lineText: String
-    ): List<BracketScanResult> {
-        val result = ArrayList<BracketScanResult>(4)
-        var depth = startDepth
-
-        for (column in lineText.indices) {
-            when (lineText[column]) {
-                '(', '[', '{' -> {
-                    result += BracketScanResult(column = column, depth = depth, isOpen = true)
-                    depth++
-                }
-                ')', ']', '}' -> {
-                    depth--
-                    result += BracketScanResult(
-                        column = column,
-                        depth = depth.coerceAtLeast(0),
-                        isOpen = false
-                    )
-                }
-            }
-        }
-
-        return result
     }
 
     override fun advanceBracketDepth(startDepth: Int, lineText: String): Int {
