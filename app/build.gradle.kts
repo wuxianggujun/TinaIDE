@@ -258,7 +258,14 @@ androidComponents {
                 output.versionCode.set(baseVersionCode * 10 + abiVersionCode)
             }
             if (targetAbi != null) {
-                output.outputFileName.set("app-$targetAbi-${variant.buildType}.apk")
+                // 输出文件名统一为「应用名-版本号-ABI-构建类型」，便于分发时一眼区分。
+                // 用惰性 map 读取 versionName，避免配置期属性尚未就绪时读到空值。
+                val buildType = variant.buildType
+                output.outputFileName.set(
+                    output.versionName.map { versionName ->
+                        "TinaIDE-${versionName ?: "unversioned"}-$targetAbi-$buildType.apk"
+                    }
+                )
             }
         }
     }
