@@ -60,6 +60,14 @@ Robolectric 4.13 不附带 SDK 34 之上的 `android-all`，凡未显式 pin SDK
 
 验证：从 `wuxianggujun/TinaEditor` 干净 clone 后 `:core:editor-api` / `:core:text-engine` / `:core:tree-sitter` / `:core:editor-view:compileDebugKotlin` 全部 `BUILD SUCCESSFUL`；`examples/consumer` 复合构建消费、宿主 `:app:compileArm64DebugKotlin` 均编译通过；kit 侧全量单测为 `editor-api` 无测试、`text-engine` 全绿、`tree-sitter` 全绿、`editor-view` 493 条全部通过。
 
+#### 补齐全部 Tree-sitter grammar 的复合构建替换
+
+`:core:tree-sitter` 声明了 15 个 grammar 依赖，但两侧 `settings.gradle.kts` 只替换了 9 个，`aidl` / `kotlin` / `log` / `properties` / `python` / `xml` 一直悄悄从 Maven Central 解析，与本仓库「不依赖 Maven 发布的 grammar 产物」的初衷相悖（那也是不做 Maven/AAR 发布的理由之一）。宿主与 `editor-kit` 两个构建根现已补齐全部 15 个替换，grammar 一律走本地复合构建。
+
+#### `editor-kit` 四个模块恢复 ktlint 检查
+
+四个编辑器模块抽离后改用裸 `com.android.library` 插件，不再经过 `tina.android.library` → `tina.kotlin.quality`，宿主 `ktlintCheck` 因此覆盖不到它们。四个模块现在直接应用 ktlint 插件（插件 12.1.2、工具 1.5.0、`android = true`，与宿主 `TinaKotlinQualityPlugin` 一致），宿主与 kit 两个构建根都会检查。由于这些文件抽离前就处于 ktlint 清洁状态，恢复检查没有暴露风格违规。
+
 ## [0.18.32] - 2026-09-21
 
 ### Added

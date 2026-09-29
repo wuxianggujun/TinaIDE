@@ -129,6 +129,12 @@ if (shouldIncludeTreeSitterComposite) {
             substitute(module("com.itsaky.androidide.treesitter:tree-sitter-cmake")).using(project(":tree-sitter-cmake"))
             substitute(module("com.itsaky.androidide.treesitter:tree-sitter-rust")).using(project(":tree-sitter-rust"))
             substitute(module("com.itsaky.androidide.treesitter:tree-sitter-toml")).using(project(":tree-sitter-toml"))
+            substitute(module("com.itsaky.androidide.treesitter:tree-sitter-aidl")).using(project(":tree-sitter-aidl"))
+            substitute(module("com.itsaky.androidide.treesitter:tree-sitter-kotlin")).using(project(":tree-sitter-kotlin"))
+            substitute(module("com.itsaky.androidide.treesitter:tree-sitter-log")).using(project(":tree-sitter-log"))
+            substitute(module("com.itsaky.androidide.treesitter:tree-sitter-properties")).using(project(":tree-sitter-properties"))
+            substitute(module("com.itsaky.androidide.treesitter:tree-sitter-python")).using(project(":tree-sitter-python"))
+            substitute(module("com.itsaky.androidide.treesitter:tree-sitter-xml")).using(project(":tree-sitter-xml"))
         }
     }
 } else {
