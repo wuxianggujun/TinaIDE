@@ -100,7 +100,7 @@ TinaIDE 是 Android 上的 C/C++ IDE。当前默认运行链路是 **native tina
 
 - `app/`：启动、导航、DI 装配、跨模块协调；不要堆领域逻辑。
 - `core/`：无界面复用能力和运行时基础设施，如 i18n、designsystem、storage、security、database、compile、lsp、plugin、tree-sitter。
-- `editor-kit/`：`:core:editor-api` / `:core:text-engine` / `:core:tree-sitter` / `:core:editor-view` 的**唯一源码**所在，宿主经 `settings.gradle.kts` 的 `projectDir` 映射消费；同时是自带 wrapper 与 Tree-sitter 复合构建的独立工程，可 `includeBuild` 给别的项目用。编辑器内核不得反向依赖宿主的 config / common / designsystem / i18n / editor-lsp；宿主偏好、Markdown Hover 与 LSP 装配通过 `EditorState.config`、`EditorRuntimeOptions`、`TinaEditor(hoverContent = ...)` 注入。
+- `editor-kit/`：`:core:editor-api` / `:core:text-engine` / `:core:tree-sitter` / `:core:editor-view` 的**唯一源码**所在，宿主经 `settings.gradle.kts` 的 `projectDir` 映射消费；同时是自带 wrapper 与 Tree-sitter 复合构建的独立工程，可 `includeBuild` 给别的项目用。该目录是公开仓库 [wuxianggujun/TinaEditor](https://github.com/wuxianggujun/TinaEditor) 的 Git submodule：克隆主仓库后必须 `git submodule update --init --recursive` 才能编译；改编辑器内核要先在 submodule 内提交并推送，再在主仓库更新 gitlink，顺序与 `external/` 子模块一致。编辑器内核不得反向依赖宿主的 config / common / designsystem / i18n / editor-lsp；宿主偏好、Markdown Hover 与 LSP 装配通过 `EditorState.config`、`EditorRuntimeOptions`、`TinaEditor(hoverContent = ...)` 注入。
 - `feature/`：用户可见功能切片，如设置、工作区、编辑器、帮助、教程。
 - `external/`：第三方源码或本地 fork；改动前先确认上游边界和子模块状态。
 - `tools/`：构建、i18n、toolchain、插件 starter、APK/R8 分析等脚本。

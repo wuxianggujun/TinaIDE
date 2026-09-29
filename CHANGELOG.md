@@ -35,7 +35,7 @@
 
 #### 编辑器内核抽离为可独立构建的 `editor-kit`
 
-`:core:editor-api`、`:core:text-engine`、`:core:tree-sitter`、`:core:editor-view` 的唯一源码迁入 `editor-kit/`。该目录是自带 Gradle wrapper、version catalog 与 Tree-sitter 复合构建的独立工程，可单独构建，也可作为 `includeBuild` 被其他项目按坐标 `io.github.tinaide.editor:editor-view:0.1.0-SNAPSHOT` 消费（见 `examples/consumer`）。TinaIDE 主工程通过 `settings.gradle.kts` 的 `projectDir` 映射消费同一份源码，不复制实现。
+`:core:editor-api`、`:core:text-engine`、`:core:tree-sitter`、`:core:editor-view` 的唯一源码迁入 `editor-kit/`。该目录是自带 Gradle wrapper、version catalog 与 Tree-sitter 复合构建的独立工程，可单独构建，也可作为 `includeBuild` 被其他项目按坐标 `io.github.tinaide.editor:editor-view:0.1.0-SNAPSHOT` 消费（见 `examples/consumer`）。TinaIDE 主工程通过 `settings.gradle.kts` 的 `projectDir` 映射消费同一份源码，不复制实现。该目录现已发布为公开仓库 [wuxianggujun/TinaEditor](https://github.com/wuxianggujun/TinaEditor)，并以 Git submodule 挂载在 `editor-kit/`；克隆 TinaIDE 后需 `git submodule update --init --recursive` 才能编译（CI 已全部带 `submodules: recursive`）。
 
 为了让编辑器内核不再依赖宿主基础设施，本轮切断了 `editor-view` 对 `core:common`、`core:config`、`core:designsystem`、`core:i18n`、`core:editor-lsp` 的依赖：
 
@@ -58,7 +58,7 @@ Robolectric 4.13 不附带 SDK 34 之上的 `android-all`，凡未显式 pin SDK
 - `EditorInputConnectionEditTest.externalSelectionOutsideComposition_shouldFinishCompositionHistory`：composing 区间是半开的 `[start, end)`，光标停在 `end` 是 IME 输入后的自然落点（仍在区间内），停到 `start` 则是外部移动。原判断把 `start` 也算作区间内，于是移动到 `start` 不结束 composing，留下未闭合的复合编辑作用域，`canUndo()` 恒为 false，undo 整段失效。
 - `TreeSitterHighlighterDisposeTest.dispose_shouldReturnWithoutWaitingForActiveLifecycleReaders`：并非实现缺陷，而是桩不全——`TreeSitterQueryPredicateEvaluator` 构造时读 `query.getCaptureNames()` 建名字→下标表，测试只桩了 `close()`。补桩后通过，断言本身（dispose 不等待活跃读锁、native 资源在锁释放后才关闭）验证无误。
 
-验证：`editor-kit` 独立构建、`examples/consumer` 复合构建消费、宿主 `:app:compileArm64DebugKotlin` 均编译通过；kit 侧全量单测为 `editor-api` 无测试、`text-engine` 全绿、`tree-sitter` 全绿、`editor-view` 493 条全部通过。
+验证：从 `wuxianggujun/TinaEditor` 干净 clone 后 `:core:editor-api` / `:core:text-engine` / `:core:tree-sitter` / `:core:editor-view:compileDebugKotlin` 全部 `BUILD SUCCESSFUL`；`examples/consumer` 复合构建消费、宿主 `:app:compileArm64DebugKotlin` 均编译通过；kit 侧全量单测为 `editor-api` 无测试、`text-engine` 全绿、`tree-sitter` 全绿、`editor-view` 493 条全部通过。
 
 ## [0.18.32] - 2026-09-21
 

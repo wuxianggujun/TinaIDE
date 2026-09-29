@@ -17,7 +17,6 @@
 	url = https://github.com/wuxianggujun/termux-x11.git
 	branch = tinaide-lorie-windows-build
 	ignore = dirty
-[submodule "editor-kit/external/tina-android-tree-sitter"]
-	path = editor-kit/external/tina-android-tree-sitter
-	url = https://github.com/wuxianggujun/tina-android-tree-sitter.git
-	ignore = untracked
+[submodule "editor-kit"]
+	path = editor-kit
+	url = https://github.com/wuxianggujun/TinaEditor.git
