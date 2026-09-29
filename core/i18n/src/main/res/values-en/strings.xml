@@ -828,6 +828,12 @@
   <string name="settings_user_templates_edit_primary_language">Primary language</string>
   <string name="settings_user_templates_edit_primary_language_value">Primary language: %1$s</string>
   <string name="settings_user_templates_edit_ndk_template">Show as an NDK template</string>
+  <string name="settings_user_templates_edit_run_target_label">Default run target</string>
+  <string name="settings_user_templates_edit_run_target_placeholder">For example, {{PROJECT_NAME}}_test</string>
+  <string name="settings_user_templates_edit_run_target_desc">Written to the project run configuration at install time; supports placeholders like {{PROJECT_NAME}}</string>
+  <string name="settings_user_templates_edit_sdl_target_label">Default SDL target</string>
+  <string name="settings_user_templates_edit_sdl_target_placeholder">For example, {{PROJECT_NAME}}</string>
+  <string name="settings_user_templates_edit_sdl_target_desc">Executable target for SDL graphical templates; supports placeholders like {{PROJECT_NAME}}</string>
   <string name="settings_user_templates_preview_title">tina-template.json preview</string>
   <string name="settings_user_templates_metadata_auto_detect">Auto detect</string>
   <string name="settings_user_templates_language_c">C</string>

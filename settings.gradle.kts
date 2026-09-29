@@ -46,7 +46,8 @@ fun mayNeedTreeSitterComposite(taskName: String): Boolean {
         isTaskUnderModule(taskName, ":core:tree-sitter") ||
         isTaskUnderModule(taskName, ":core:editor-view") ||
         isTaskUnderModule(taskName, ":core:editor-lsp") ||
-        isTaskUnderModule(taskName, ":feature:editor")
+        isTaskUnderModule(taskName, ":feature:editor") ||
+        isTaskUnderModule(taskName, ":feature:settings")
 }
 
 val shouldIncludeTreeSitterComposite =

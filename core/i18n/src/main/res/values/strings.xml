@@ -1063,6 +1063,12 @@
   <string name="settings_user_templates_edit_primary_language">主要语言</string>
   <string name="settings_user_templates_edit_primary_language_value">主要语言：%1$s</string>
   <string name="settings_user_templates_edit_ndk_template">作为 NDK 模板显示</string>
+  <string name="settings_user_templates_edit_run_target_label">默认运行目标</string>
+  <string name="settings_user_templates_edit_run_target_placeholder">例如 {{PROJECT_NAME}}_test</string>
+  <string name="settings_user_templates_edit_run_target_desc">安装时写入项目运行配置，支持 {{PROJECT_NAME}} 等占位符</string>
+  <string name="settings_user_templates_edit_sdl_target_label">默认 SDL 目标</string>
+  <string name="settings_user_templates_edit_sdl_target_placeholder">例如 {{PROJECT_NAME}}</string>
+  <string name="settings_user_templates_edit_sdl_target_desc">SDL 图形模板的可执行目标，支持 {{PROJECT_NAME}} 等占位符</string>
   <string name="settings_user_templates_preview_title">tina-template.json 预览</string>
   <string name="settings_user_templates_metadata_auto_detect">自动检测</string>
   <string name="settings_user_templates_language_c">C</string>

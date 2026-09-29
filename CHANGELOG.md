@@ -31,6 +31,12 @@
 
 ## [Unreleased]
 
+### Added
+
+#### 用户项目模板编辑对话框补齐默认运行目标
+
+设置页「编辑模板信息」对话框原本只能编辑名称、说明、作者、构建系统、主要语言、NDK 标记与变量默认值，而 `tina-template.json` 支持的 `defaultRunTargetName` / `defaultSdlTargetName` 两个键只能手工改压缩包内的 JSON 才能设置——它们会在安装模板时被 `ProjectTemplateInstaller` 解析占位符后写入项目运行配置。现在对话框新增「默认运行目标」与「默认 SDL 目标」两个输入框，留空表示不写入，支持 `{{PROJECT_NAME}}` 等占位符，与新建项目向导读取的字段完全对齐。`docs/planning/Feature-Roadmap.md` 中「模板编辑对话框」一项随之标记完成。
+
 ### Changed
 
 #### 编辑器内核抽离为可独立构建的 `editor-kit`
@@ -67,6 +73,14 @@ Robolectric 4.13 不附带 SDK 34 之上的 `android-all`，凡未显式 pin SDK
 #### `editor-kit` 四个模块恢复 ktlint 检查
 
 四个编辑器模块抽离后改用裸 `com.android.library` 插件，不再经过 `tina.android.library` → `tina.kotlin.quality`，宿主 `ktlintCheck` 因此覆盖不到它们。四个模块现在直接应用 ktlint 插件（插件 12.1.2、工具 1.5.0、`android = true`，与宿主 `TinaKotlinQualityPlugin` 一致），宿主与 kit 两个构建根都会检查。由于这些文件抽离前就处于 ktlint 清洁状态，恢复检查没有暴露风格违规。
+
+#### `editor-kit` 四个模块的 `compileSdk` 回到宿主基线 36
+
+抽离时给四个模块的构建脚本硬编码了 `compileSdk = 37`，而宿主其余库模块仍走 `TinaVersions.COMPILE_SDK = 36`。AGP 会把 compileSdk 写进 AAR 元数据并强制消费者用同等或更高的 SDK 编译，于是 `:feature:settings`、`:core:editor-lsp`、`:feature:editor` 这类 36 模块的 `checkDebugUnitTestAarMetadata` 一律失败，单元测试根本跑不起来（`:app:compileArm64DebugKotlin` 不触发这些 AAR 元数据检查，所以此前整编验证没有暴露）。四个模块现已统一回到 `compileSdk = 36`——它们抽离前就是这个值，不存在 API 37 的使用；kit 侧 `examples/consumer` 仍是 37，满足元数据要求。
+
+#### `:feature:settings` 纳入 Tree-sitter 复合构建的门控
+
+根 `settings.gradle.kts` 只在任务属于 `:app` / `:core:tree-sitter` / `:core:editor-view` / `:core:editor-lsp` / `:feature:editor` 时才挂载 `external/tina-android-tree-sitter` 复合构建。但 `:feature:settings` 经 `:core:editor-view` 传递依赖 `:core:tree-sitter`，单独跑它的任何任务都会因 grammar 依赖无法从 Maven 解析而失败。`:feature:settings` 现已加入 `mayNeedTreeSitterComposite`。
 
 ## [0.18.32] - 2026-09-21
 
