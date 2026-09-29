@@ -100,6 +100,7 @@ TinaIDE 是 Android 上的 C/C++ IDE。当前默认运行链路是 **native tina
 
 - `app/`：启动、导航、DI 装配、跨模块协调；不要堆领域逻辑。
 - `core/`：无界面复用能力和运行时基础设施，如 i18n、designsystem、storage、security、database、compile、lsp、plugin、tree-sitter。
+- `editor-kit/`：`:core:editor-api` / `:core:text-engine` / `:core:tree-sitter` / `:core:editor-view` 的**唯一源码**所在，宿主经 `settings.gradle.kts` 的 `projectDir` 映射消费；同时是自带 wrapper 与 Tree-sitter 复合构建的独立工程，可 `includeBuild` 给别的项目用。编辑器内核不得反向依赖宿主的 config / common / designsystem / i18n / editor-lsp；宿主偏好、Markdown Hover 与 LSP 装配通过 `EditorState.config`、`EditorRuntimeOptions`、`TinaEditor(hoverContent = ...)` 注入。
 - `feature/`：用户可见功能切片，如设置、工作区、编辑器、帮助、教程。
 - `external/`：第三方源码或本地 fork；改动前先确认上游边界和子模块状态。
 - `tools/`：构建、i18n、toolchain、插件 starter、APK/R8 分析等脚本。
@@ -117,6 +118,13 @@ TinaIDE 是 Android 上的 C/C++ IDE。当前默认运行链路是 **native tina
 ./gradlew :app:assembleDebugAllAbi --no-daemon --console=plain
 ./gradlew ktlintCheck --no-daemon --console=plain
 ./gradlew :rikkahub:embedded:compileDebugKotlin --no-daemon --console=plain
+```
+
+- `editor-kit/` 的改动在 kit 侧验证（在 `editor-kit/` 目录内用 kit 自己的 `gradlew`，模块路径同样是 `:core:*`）：
+
+```bash
+cd editor-kit && ./gradlew :core:editor-view:compileDebugKotlin --no-daemon --console=plain
+cd editor-kit && ./gradlew -p examples/consumer :consumer:compileDebugKotlin --no-daemon --console=plain
 ```
 
 - 验证从改动所属模块开始：Android library 优先运行 `:module:testDebugUnitTest` 或 `:module:compileDebugKotlin`；只有 `app` 宿主、ABI、打包或跨模块集成发生变化时才运行 `:app:*`。
@@ -160,6 +168,7 @@ TinaIDE 是 Android 上的 C/C++ IDE。当前默认运行链路是 **native tina
 - RikkaHub 的模型、渠道和 API Key 由 `external/rikkahub` 自身数据层维护；TinaIDE 主仓库禁止新增旁路 API Key 存储、日志、导出配置或崩溃上报。
 - 项目、日志、缓存、配置路径优先走 `ProjectPaths`；Host/Guest 文件访问必须走白名单校验。
 - 修改 `tools/plugin-starters/**` 后必须重新构建并检查 starter zip：`tools/plugin-starters/dist/tinaide.plugin.starters/templates/*.zip`。
+- `editor-kit/` 四个模块的构建脚本被宿主构建和 kit 独立构建**共用**：只允许引用两套 `libs.versions.toml` 中都存在的别名，改插件或依赖时必须同时验证宿主 `:app:compileArm64DebugKotlin` 与 kit 侧 `:core:editor-view:compileDebugKotlin`。不要在编辑器内核里恢复对宿主 `core:common` / `config` / `designsystem` / `i18n` / `editor-lsp` 的依赖。
 
 **完成修改后的验证清单**：
 

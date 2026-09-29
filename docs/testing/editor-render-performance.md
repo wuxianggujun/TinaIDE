@@ -4,9 +4,9 @@
 
 被测实现入口：
 
-- 视觉行 Fenwick 索引：`core/editor-view/src/main/java/.../editorview/EditorVisualLineIndex.kt`
-- 增量映射与线性重建阈值：`core/editor-view/src/main/java/.../editorview/EditorVisualLineMapper.kt`（`MAX_INCREMENTAL_LINE_UPDATES`）
-- 着色计划缓存与上限：`core/editor-view/src/main/java/.../editorview/EditorLineRenderPlanCache.kt`
+- 视觉行 Fenwick 索引：`editor-kit/editor-view/src/main/java/.../editorview/EditorVisualLineIndex.kt`
+- 增量映射与线性重建阈值：`editor-kit/editor-view/src/main/java/.../editorview/EditorVisualLineMapper.kt`（`MAX_INCREMENTAL_LINE_UPDATES`）
+- 着色计划缓存与上限：`editor-kit/editor-view/src/main/java/.../editorview/EditorLineRenderPlanCache.kt`
 - 计数入口：`EditorRenderEngine.performanceSnapshot()`，实现位于 `EditorRenderer.kt`
 
 ## 本地定向验证

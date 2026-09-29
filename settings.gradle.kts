@@ -200,7 +200,12 @@ include(":core:storage")
 include(":core:text-engine")
 include(":core:tree-sitter")
 include(":core:editor-view")
+include(":core:editor-api")
 include(":core:editor-lsp")
+project(":core:text-engine").projectDir = file("editor-kit/text-engine")
+project(":core:tree-sitter").projectDir = file("editor-kit/tree-sitter")
+project(":core:editor-view").projectDir = file("editor-kit/editor-view")
+project(":core:editor-api").projectDir = file("editor-kit/editor-api")
 
 // ===== 功能层 =====
 include(":feature:editor")

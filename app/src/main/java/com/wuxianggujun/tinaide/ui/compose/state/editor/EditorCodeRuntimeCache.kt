@@ -2,12 +2,13 @@ package com.wuxianggujun.tinaide.ui.compose.state.editor
 
 import android.content.Context
 import com.wuxianggujun.tinaide.core.editor.EditorFileSizeLimits
-import com.wuxianggujun.tinaide.core.editorview.EditorConfig
 import com.wuxianggujun.tinaide.core.editorview.EditorState
 import com.wuxianggujun.tinaide.core.textengine.RopeTextBuffer
 import com.wuxianggujun.tinaide.core.treesitter.TreeSitterFoldingProvider
 import com.wuxianggujun.tinaide.core.treesitter.TreeSitterHighlighter
 import com.wuxianggujun.tinaide.ui.compose.components.editor.EditorTabState
+import com.wuxianggujun.tinaide.ui.compose.editor.editorConfigFromPrefs
+import com.wuxianggujun.tinaide.ui.compose.editor.editorRuntimeOptionsFromPrefs
 import java.io.File
 import timber.log.Timber
 
@@ -33,7 +34,8 @@ internal class EditorCodeRuntimeCache(
                     textBuffer = buffer,
                     file = tab.file,
                     projectRootPath = projectRootPathProvider(),
-                    config = EditorConfig.fromPrefs()
+                    config = editorConfigFromPrefs(),
+                    runtimeOptions = editorRuntimeOptionsFromPrefs()
                 )
             )
         }

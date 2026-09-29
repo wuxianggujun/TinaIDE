@@ -6,6 +6,7 @@ android {
 }
 
 dependencies {
+    api(project(":core:editor-api"))
     implementation(project.dependencies.project(":core:text-engine"))
     implementation(project.dependencies.project(":core:lsp"))
     implementation(project.dependencies.project(":core:common"))

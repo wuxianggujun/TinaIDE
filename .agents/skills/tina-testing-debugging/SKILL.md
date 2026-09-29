@@ -47,7 +47,7 @@ description: TinaIDE 测试、排障和质量验证指南。用于选择单元�
 
 ## 覆盖重点
 
-- `core/editor-view`：popup、gesture、overlay、rendering、instrumented editor 行为。
+- `editor-kit/editor-view`（宿主路径 `:core:editor-view`）：popup、gesture、overlay、rendering、instrumented editor 行为。
 - RikkaHub 集成：主仓库入口、embedded 编译、侧边栏容器和设置入口。
 - `core/database`：Room DAO、entity、migration 相关行为。
 - `core/security`：`PathValidator`、server config HMAC 校验。

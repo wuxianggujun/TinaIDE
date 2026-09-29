@@ -31,6 +31,35 @@
 
 ## [Unreleased]
 
+### Changed
+
+#### 编辑器内核抽离为可独立构建的 `editor-kit`
+
+`:core:editor-api`、`:core:text-engine`、`:core:tree-sitter`、`:core:editor-view` 的唯一源码迁入 `editor-kit/`。该目录是自带 Gradle wrapper、version catalog 与 Tree-sitter 复合构建的独立工程，可单独构建，也可作为 `includeBuild` 被其他项目按坐标 `io.github.tinaide.editor:editor-view:0.1.0-SNAPSHOT` 消费（见 `examples/consumer`）。TinaIDE 主工程通过 `settings.gradle.kts` 的 `projectDir` 映射消费同一份源码，不复制实现。
+
+为了让编辑器内核不再依赖宿主基础设施，本轮切断了 `editor-view` 对 `core:common`、`core:config`、`core:designsystem`、`core:i18n`、`core:editor-lsp` 的依赖：
+
+- 新增 `:core:editor-api`，收纳宿主与编辑器共享的文件类型（`CxxFileSupport` / `MakeFileSupport`，原属 `core:common`）、主题颜色键（`EditorThemeColorKey` / `EditorThemeColorGroup`，原属 `core:config`）以及语义 token 与 Signature Help 公共模型（`SemanticToken` / `SignatureHelpResult`，原属 `core:editor-lsp`）。类型保持原包名，宿主侧 `core:common`、`core:config`、`core:editor-lsp` 通过 `api` 依赖重新透出，引用方无需改导入。
+- `EditorConfig.fromPrefs()` 从编辑器移除，改由宿主 `editorConfigFromPrefs()`（`app/.../ui/compose/editor/EditorHostPreferences.kt`）构造后注入；`EditorState` 新增 `runtimeOptions: EditorRuntimeOptions`，字体大小持久化、IME / 布局 / 触摸诊断开关全部以回调形式由宿主提供，编辑器自身不再读取任何偏好存储。
+- `TinaEditor` 新增 `hoverContent` 参数，宿主用它接入 `MarkdownViewer`；编辑器不再为 Hover 渲染引入宿主 Markdown 组件。
+
+### Fixed
+
+#### `editor-kit` 单元测试套件可独立跑通
+
+Robolectric 4.13 不附带 SDK 34 之上的 `android-all`，凡未显式 pin SDK 的测试只要 `targetSdk > 34` 就 `initializationError`（`Package targetSdkVersion=37 > maxSdkVersion=34`）。这个问题在 HEAD 上就存在（`tina.android.library` 给 targetSdk=36，36>34 一样失败），所以既有回归命令只覆盖显式写了 `@Config(sdk = [34])` 的测试。抽离后 kit 侧 `compileSdk=37`，9 个类一次性全部暴露。新增 `editor-kit/editor-view/src/test/resources/robolectric.properties`，模块级固定 `sdk = 34`，与本模块既有 `@Config` 约定一致；properties 落在共享源码树里，宿主与 kit 两个构建根同时生效。
+
+解开这 9 个类之后，暴露出一条此前从未真正执行过的断言失败：`EditorSnippetUndoRedoTest.undo_shouldCancelSnippetSessionAndDismissChoiceCompletion` 要求 `undo()` 同时回退 snippet 展开文本，但 `docs/design/LSP-Snippet-Placeholder-Handling.md` 明确记载 `editorUndo` 的契约是只 `cancelSnippet()`（「无法可靠追踪偏移」），实现与设计文档一致。已把测试期望从「buffer 清空」改为「回退到展开文本」，该类现在 2/2 通过。若希望「snippet 展开 + choice 选择合并为一个 undo 单元」，属于编辑器新功能，另行处理。
+
+剩余 5 条失败随后也全部修复，编辑器内核测试套件现在全绿：
+
+- `EditorColorSchemeTest.fromThemeColorsAndExport_*` ×2：该类是纯 JUnit，`EditorColorScheme.parseColorOrNull` 走的是 `android.graphics.Color.parseColor`，在 JVM 单测里抛 `Method not mocked`，被 `runCatching{}.getOrNull()` 静默吞掉，于是每个键都回落到 fallback 主题色，往返断言自然对不上。补 `@RunWith(RobolectricTestRunner::class)` + `@Config(sdk = [34])` 走 Android 运行时后通过。
+- `EditorUndoRedoCursorTest.undoReplace_shouldMoveCursorAfterRestoredText`：`historyCursorAfter` 之前无条件记录编辑前光标位置作为 undo 目标。IME 的相对光标语义只在编辑区间内有效；程序化 `replaceRange` 时光标在区间外，undo 却被拉回编辑前位置。改为仅当编辑前光标落在半开区间 `[editStart, editEnd)` 内时才采用它，否则回到被还原文本末尾——这恰是 Insert/Delete/Replace 三类 op 各自的 `defaultCursorBefore`。带选区的编辑仍走 `runSelectionAwareEdit` 的 Compound `selectionBefore` 回退路径，不受影响。
+- `EditorInputConnectionEditTest.externalSelectionOutsideComposition_shouldFinishCompositionHistory`：composing 区间是半开的 `[start, end)`，光标停在 `end` 是 IME 输入后的自然落点（仍在区间内），停到 `start` 则是外部移动。原判断把 `start` 也算作区间内，于是移动到 `start` 不结束 composing，留下未闭合的复合编辑作用域，`canUndo()` 恒为 false，undo 整段失效。
+- `TreeSitterHighlighterDisposeTest.dispose_shouldReturnWithoutWaitingForActiveLifecycleReaders`：并非实现缺陷，而是桩不全——`TreeSitterQueryPredicateEvaluator` 构造时读 `query.getCaptureNames()` 建名字→下标表，测试只桩了 `close()`。补桩后通过，断言本身（dispose 不等待活跃读锁、native 资源在锁释放后才关闭）验证无误。
+
+验证：`editor-kit` 独立构建、`examples/consumer` 复合构建消费、宿主 `:app:compileArm64DebugKotlin` 均编译通过；kit 侧全量单测为 `editor-api` 无测试、`text-engine` 全绿、`tree-sitter` 全绿、`editor-view` 493 条全部通过。
+
 ## [0.18.32] - 2026-09-21
 
 ### Added

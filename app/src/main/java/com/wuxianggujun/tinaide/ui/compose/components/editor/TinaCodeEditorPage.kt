@@ -2,6 +2,7 @@
 
 import android.os.SystemClock
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -46,7 +47,6 @@ import com.wuxianggujun.tinaide.core.editorview.EditorCompletionFetchResult
 import com.wuxianggujun.tinaide.core.editorview.EditorCompletionItem
 import com.wuxianggujun.tinaide.core.editorview.EditorCompletionKind
 import com.wuxianggujun.tinaide.core.editorview.EditorCompletionTextEdit
-import com.wuxianggujun.tinaide.core.editorview.EditorConfig
 import com.wuxianggujun.tinaide.core.editorview.EditorDiagnostic
 import com.wuxianggujun.tinaide.core.editorview.EditorRenderPerformanceSnapshot
 import com.wuxianggujun.tinaide.core.editorview.EditorState
@@ -74,6 +74,8 @@ import com.wuxianggujun.tinaide.core.editorlsp.EditorStatus
 import com.wuxianggujun.tinaide.core.editorlsp.MakeLanguageSupport
 import com.wuxianggujun.tinaide.core.editorlsp.InlayHintsRequestResult
 import com.wuxianggujun.tinaide.core.editorlsp.SemanticTokensRequestResult
+import com.wuxianggujun.tinaide.ui.compose.components.MarkdownViewer
+import com.wuxianggujun.tinaide.ui.compose.editor.editorConfigFromPrefs
 import com.wuxianggujun.tinaide.ui.compose.state.editor.CodeEditorCallback
 import com.wuxianggujun.tinaide.ui.compose.state.editor.CodeEditorDocumentBinding
 import com.wuxianggujun.tinaide.ui.compose.state.editor.CodeEditorRuntime
@@ -352,7 +354,7 @@ fun TinaCodeEditorPage(
             },
             applyEditorSettings = { settings ->
                 // 统一从 Prefs 读取 EditorConfig，确保“设置页变更 → 已打开编辑器即时生效”。
-                editorState.config = EditorConfig.fromPrefs()
+                editorState.config = editorConfigFromPrefs()
                 editorState.fontSizeSp = settings.fontSize
 
                 val appContext = context.applicationContext
@@ -877,7 +879,16 @@ fun TinaCodeEditorPage(
             state = editorState,
             modifier = Modifier.fillMaxSize(),
             onPerformanceSnapshotReaderChanged = updatePerformanceSnapshotReader,
-            onExternalEditPreparerChanged = updateExternalEditPreparer
+            onExternalEditPreparerChanged = updateExternalEditPreparer,
+            hoverContent = { markdown, hoverModifier, onLinkClick, onCodeCopy ->
+                MarkdownViewer(
+                    markdown = markdown,
+                    modifier = hoverModifier,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                    onLinkClick = onLinkClick,
+                    onCodeCopy = onCodeCopy
+                )
+            }
         )
 
         state.peekDefinitionPanelState

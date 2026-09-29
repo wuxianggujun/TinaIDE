@@ -42,7 +42,7 @@
 - [统一布局快照](unified-layout-snapshot.md) — 历史参考。`charOffset` 统一坐标体系已落地（见 `EditorState.kt`、`EditorGestureCoordinator.kt`）；视觉行段数当前由 `EditorVisualLineMapper` 的 `segmentCount` / `segmentCountForLine` 维护，不是本文设想的命名。`EditorFrameLayout` / `VisualLineLayout` / `HitZone` / `OffsetViewport` 方案**未采纳**（这四个类在源码中不存在），第 4、5、8.2 节不代表当前架构。
 - [PRoot 运行时重构说明](PRoot-Runtime-Refactor.md) — 历史参考（迁移记录）。用于追溯已删除的 `ICompilerEnvironment`、`PRootCompiler`、`ToolchainManifest*`、`Symlink*` 等类；当前 PRoot 行为以 `PRoot-Feature-Analysis.md` 与源码为准。
 
-需要判断编辑器当前行为时，优先看 `core/editor-view`、`core/tree-sitter`、`core/editor-lsp`、`feature/editor`、`app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/editor` 与 `app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor` 下的源码和测试。当前不再索引一次性性能审计稿、旧主题 UI 方案和未落地的补全状态机方案。
+需要判断编辑器当前行为时，优先看 `editor-kit/editor-view`、`editor-kit/tree-sitter`、`core/editor-lsp`、`feature/editor`、`app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/editor` 与 `app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor` 下的源码和测试。当前不再索引一次性性能审计稿、旧主题 UI 方案和未落地的补全状态机方案。
 
 ## 相关文档
 

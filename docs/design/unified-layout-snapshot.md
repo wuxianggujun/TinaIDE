@@ -9,7 +9,7 @@
 已落地的部分：
 
 - charOffset 统一坐标：`EditorState.cursorOffset` / `selectionRange: OffsetRange?` 已是内部唯一坐标（第 3 节）。
-- `OffsetRange` 已存在（`core/editor-view/.../OffsetRange.kt`），旧 `Selection` 数据类已删除。
+- `OffsetRange` 已存在（`editor-kit/editor-view/.../OffsetRange.kt`），旧 `Selection` 数据类已删除。
 - `wrapSegmentCount()` 已删除，分段统一走 `EditorWordWrapLayoutCache`（第 6 节）。
 - `Position` 仅保留在 LSP 边界与状态栏派生显示：`EditorState.cursorPosition` 是由 offset 派生的只读属性。
 

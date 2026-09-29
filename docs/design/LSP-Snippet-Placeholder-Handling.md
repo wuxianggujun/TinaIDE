@@ -37,12 +37,12 @@ void ${1:functionName}(${2:int} ${3:param}) {
 
 | 文件 | 职责 |
 |------|------|
-| [`SnippetParser.kt`](../../core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SnippetParser.kt) | Snippet 语法解析，生成 `ParsedSnippet` 与展开文本 |
-| [`SnippetSession.kt`](../../core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SnippetSession.kt) | 会话状态管理，Tab/Shift+Tab 跳转，偏移与长度同步，同 index 分组同步编辑 |
-| [`EditorCompletionController.kt`](../../core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCompletionController.kt) | 占位符聚焦；choice 占位符复用补全弹窗展示选项列表 |
-| [`EditorState.kt`](../../core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt) | 编辑器集成，占位符焦点/选区管理 |
-| [`EditorKeyboardShortcuts.kt`](../../core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorKeyboardShortcuts.kt) | Tab/Shift+Tab/Escape 快捷键处理 |
-| [`EditorStateEditOperations.kt`](../../core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorStateEditOperations.kt) | 编辑操作时同步 snippet 偏移 |
+| [`SnippetParser.kt`](../../editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SnippetParser.kt) | Snippet 语法解析，生成 `ParsedSnippet` 与展开文本 |
+| [`SnippetSession.kt`](../../editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SnippetSession.kt) | 会话状态管理，Tab/Shift+Tab 跳转，偏移与长度同步，同 index 分组同步编辑 |
+| [`EditorCompletionController.kt`](../../editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCompletionController.kt) | 占位符聚焦；choice 占位符复用补全弹窗展示选项列表 |
+| [`EditorState.kt`](../../editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt) | 编辑器集成，占位符焦点/选区管理 |
+| [`EditorKeyboardShortcuts.kt`](../../editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorKeyboardShortcuts.kt) | Tab/Shift+Tab/Escape 快捷键处理 |
+| [`EditorStateEditOperations.kt`](../../editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorStateEditOperations.kt) | 编辑操作时同步 snippet 偏移 |
 | [`LspEditorManager.kt`](../../core/editor-lsp/src/main/java/com/wuxianggujun/tinaide/core/editorlsp/LspEditorManager.kt) | LSP 补全请求与结果装配 |
 | [`LspCompletionMapping.kt`](../../core/editor-lsp/src/main/java/com/wuxianggujun/tinaide/core/editorlsp/LspCompletionMapping.kt) | LSP 补全项转换，snippet 文本透传给引擎 |
 | [`PluginSnippetManager.kt`](../../core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/PluginSnippetManager.kt) | 插件 snippet 展开为纯文本 |
@@ -145,11 +145,11 @@ private fun normalizeCompletionPayloadText(
 
 ## 相关文件
 
-- [`SnippetParser.kt`](../../core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SnippetParser.kt)：解析器
-- [`SnippetSession.kt`](../../core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SnippetSession.kt)：状态管理
-- [`EditorState.kt`](../../core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt)：编辑器集成
-- [`EditorKeyboardShortcuts.kt`](../../core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorKeyboardShortcuts.kt)：快捷键
-- [`EditorStateEditOperations.kt`](../../core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorStateEditOperations.kt)：编辑操作偏移同步
+- [`SnippetParser.kt`](../../editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SnippetParser.kt)：解析器
+- [`SnippetSession.kt`](../../editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SnippetSession.kt)：状态管理
+- [`EditorState.kt`](../../editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt)：编辑器集成
+- [`EditorKeyboardShortcuts.kt`](../../editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorKeyboardShortcuts.kt)：快捷键
+- [`EditorStateEditOperations.kt`](../../editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorStateEditOperations.kt)：编辑操作偏移同步
 - [`LspEditorManager.kt`](../../core/editor-lsp/src/main/java/com/wuxianggujun/tinaide/core/editorlsp/LspEditorManager.kt)：LSP 补全请求与结果装配
 - [`LspCompletionMapping.kt`](../../core/editor-lsp/src/main/java/com/wuxianggujun/tinaide/core/editorlsp/LspCompletionMapping.kt)：LSP 补全项转换
 - [`PluginSnippetManager.kt`](../../core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/PluginSnippetManager.kt)：插件 snippet 展开

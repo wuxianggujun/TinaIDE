@@ -79,8 +79,8 @@
 10. 选区手柄
 
 关键位置：
-- `core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderer.kt`
-- `core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderEngine.kt`
+- `editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderer.kt`
+- `editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderEngine.kt`
 
 ### 3.3 文本高亮核心（TextRenderer）
 
@@ -92,8 +92,8 @@
 - 用 `TextRenderPlanner.Workspace.buildRuns()` 输出最终颜色 runs，并经 `EditorLineRenderPlanCache` 缓存逐行 render plan 后绘制
 
 关键位置：
-- `core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TextRenderer.kt`
-- `core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorLineRenderPlanCache.kt`
+- `editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TextRenderer.kt`
+- `editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorLineRenderPlanCache.kt`
 
 ### 3.4 语义高亮数据来源
 
@@ -121,9 +121,9 @@ LSP 侧请求 full/range semantic tokens 并写入 `editorState.semanticTokensBy
 - 当前 binding 的 `TSParser.parseString()` 明确将输入转换为 `UTF-16 string`，因此 `startByte/endByte` 与 Kotlin UTF-16 code unit 可通过 `<<1 / >>1` 对齐，不构成代理对错位问题
 
 关键位置：
-- `core/tree-sitter/src/main/java/com/wuxianggujun/tinaide/core/treesitter/TreeSitterHighlighter.kt`
-- `core/tree-sitter/src/main/java/com/wuxianggujun/tinaide/core/treesitter/IncrementalTreeSitterHighlightState.kt`
-- `core/tree-sitter/src/main/java/com/wuxianggujun/tinaide/core/treesitter/TreeSitterPrewarmPlan.kt`
+- `editor-kit/tree-sitter/src/main/java/com/wuxianggujun/tinaide/core/treesitter/TreeSitterHighlighter.kt`
+- `editor-kit/tree-sitter/src/main/java/com/wuxianggujun/tinaide/core/treesitter/IncrementalTreeSitterHighlightState.kt`
+- `editor-kit/tree-sitter/src/main/java/com/wuxianggujun/tinaide/core/treesitter/TreeSitterPrewarmPlan.kt`
 - `external/tina-android-tree-sitter/android-tree-sitter/src/main/java/com/itsaky/androidide/treesitter/TSParser.java`
 
 ## 4.2 语义高亮（Semantic Tokens）
@@ -163,7 +163,7 @@ LSP 侧请求 full/range semantic tokens 并写入 `editorState.semanticTokensBy
 - `drawSelectionHandles()`：绘制拖拽手柄
 
 关键位置：
-- `core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SelectionRenderer.kt`
+- `editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SelectionRenderer.kt`
 
 ## 4.4 诊断高亮
 
@@ -172,7 +172,7 @@ LSP 侧请求 full/range semantic tokens 并写入 `editorState.semanticTokensBy
 - 以波浪线路径绘制到文本底部区域
 
 关键位置：
-- `core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/DiagnosticRenderer.kt`
+- `editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/DiagnosticRenderer.kt`
 
 ---
 
