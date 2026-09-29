@@ -13,7 +13,7 @@ TinaIDE 是一个面向 Android 设备的轻量级 C/C++ IDE。本文档作为�
 - 已具备稳定闭环：编辑器（多标签 + Tree-sitter + clangd + 按实际可用性展示 Quick Fix）、构建/运行/调试（原生工具链 + 可选 PRoot 模式）、终端、多语言 UI、Git 基础流、插件（主题/片段/菜单扩展/LSP/脚本与 hybrid/项目模板/APK 导出）。
 - 开源版已经移除账号登录、第三方登录、激活码/许可证、会员和官方 AI 额度入口；私有后端与管理端不再随公开仓库分发，插件与依赖包索引改由公开 GitHub Registry 承载。
 - 近期最值得优先补齐：插件脚本 API / 权限 / 生命周期的继续收敛。
-- 编辑器后续增强按移动端收益排序：先补安全执行与高频输入体验，再考虑 Diff View、Git Gutter / Blame、多光标、列选择和 Minimap。
+- 编辑器后续增强按移动端收益排序：先补安全执行与高频输入体验，再考虑 Diff View、Git Gutter / Blame、多光标、列选择（Minimap 已完成，默认关闭，见「设置 → 编辑器」）。
 - 当前产品范围继续聚焦 C/C++；更多语言与云同步暂不规划，不进入近期实现队列。
 - 许可证口径（0.18.29）：项目整体已改用 **GPL-3.0-or-later**，起因是内嵌 GPL-3.0 的 termux-x11。详见 `LICENSE`、`COPYRIGHT.md`、`NOTICE.md`。
 - X11 图形桌面（0.18.29）：`:core:linux-desktop` 模块、`:x11` 进程宿主、Koin 装配与设置页入口已落地，但**尚未在真机跑通 XFCE 桌面**。代码路径完整不等于设备可用，不能按"已完成功能"对外描述。
@@ -229,7 +229,7 @@ TinaIDE 是一个面向 Android 设备的轻量级 C/C++ IDE。本文档作为�
 - [x] Choice Snippet 候选选择 UI（复用编辑器补全弹层）
 - [x] 多文件 Code Action / WorkspaceEdit 执行前变更预览
 - [x] 诊断批量 Fix All（仅在语言服务器支持对应 action 时启用）
-- [ ] 编辑器小地图（Minimap）
+- [x] 编辑器小地图（Minimap）
 - [ ] 多光标编辑
 - [ ] 列选择模式
 - [ ] 文件对比（Diff View）

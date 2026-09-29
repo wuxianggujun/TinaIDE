@@ -16,6 +16,7 @@ Available controls include:
 
 - editor theme;
 - line numbers and word wrap;
+- minimap (a zoomed-out overview of the whole document on the right side; tap or drag to jump);
 - rainbow brackets and their maximum line count;
 - code folding;
 - whitespace display.

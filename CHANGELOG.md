@@ -33,6 +33,10 @@
 
 ### Added
 
+#### 编辑器小地图（默认关闭）
+
+编辑器右侧新增整篇文档的缩略色块带与当前视口指示框（thumb），沿用与竖直滚动条相同的布局约定（`EditorMinimapRenderer.calculateLayout()` 返回不可变几何 + 命中测试），点中或拖动即可把对应视觉行居中到视口。行几何与 thumb 同处视觉行空间，所以点击映射是精确的、thumb 只需在底部留白区钳制。整篇逐行重绘对大文件不可接受：token 层用 `android.graphics.Picture` 按文本/高亮版本缓存，thumb 始终实时绘制；超过 3000 行的文档按步长采样取 token，避免冲掉 Tree-sitter 的视口级逐行缓存。开关位于「设置 → 编辑器 → 显示小地图」，经 `Prefs.editorSettingsFlow` 传播，已打开的编辑器即时生效。内核侧实现在 `editor-kit/editor-view`（`EditorMinimapRenderer` / `EditorMinimapDragCoordinator`），不反向依赖宿主。
+
 #### 用户项目模板编辑对话框补齐默认运行目标
 
 设置页「编辑模板信息」对话框原本只能编辑名称、说明、作者、构建系统、主要语言、NDK 标记与变量默认值，而 `tina-template.json` 支持的 `defaultRunTargetName` / `defaultSdlTargetName` 两个键只能手工改压缩包内的 JSON 才能设置——它们会在安装模板时被 `ProjectTemplateInstaller` 解析占位符后写入项目运行配置。现在对话框新增「默认运行目标」与「默认 SDL 目标」两个输入框，留空表示不写入，支持 `{{PROJECT_NAME}}` 等占位符，与新建项目向导读取的字段完全对齐。`docs/planning/Feature-Roadmap.md` 中「模板编辑对话框」一项随之标记完成。

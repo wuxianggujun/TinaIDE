@@ -151,6 +151,14 @@ internal fun EditorSettingsSection(viewModel: SettingsViewModel) {
         )
 
         SettingsSwitchItem(
+            title = stringResource(Strings.settings_editor_show_minimap),
+            subtitle = stringResource(Strings.settings_editor_show_minimap_desc),
+            checked = state.editorShowMinimap,
+            onCheckedChange = { viewModel.setEditorShowMinimap(it) },
+            showDivider = true
+        )
+
+        SettingsSwitchItem(
             title = stringResource(Strings.settings_word_wrap),
             subtitle = stringResource(Strings.settings_word_wrap_desc),
             checked = state.editorWordWrap,

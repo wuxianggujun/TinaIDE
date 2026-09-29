@@ -27,7 +27,8 @@ data class EditorSettings(
     val insertSpacesForTabs: Boolean,
     val scrollFlingEnabled: Boolean,
     val singleDirectionDragging: Boolean,
-    val singleDirectionFling: Boolean
+    val singleDirectionFling: Boolean,
+    val showMinimap: Boolean
 )
 
 data class DeveloperDiagnosticsSettings(
@@ -392,7 +393,8 @@ object Prefs {
         insertSpacesForTabs = editorInsertSpacesForTabs,
         scrollFlingEnabled = editorScrollFlingEnabled,
         singleDirectionDragging = editorSingleDirectionDragging,
-        singleDirectionFling = editorSingleDirectionFling
+        singleDirectionFling = editorSingleDirectionFling,
+        showMinimap = editorShowMinimap
     )
 
     private fun readLspAssistSettings(): LspAssistSettings = LspAssistSettings(
@@ -479,6 +481,10 @@ object Prefs {
     /** 是否显示行号。 */
     val editorShowLineNumbers: Boolean
         get() = sharedPrefs.getBoolean("editor_line_numbers", true)
+
+    /** 是否在编辑器右侧显示小地图。 */
+    val editorShowMinimap: Boolean
+        get() = sharedPrefs.getBoolean("editor_minimap", false)
 
     /** 是否启用自动缩进。 */
     val editorAutoIndent: Boolean
@@ -807,6 +813,11 @@ object Prefs {
 
     fun setEditorShowLineNumbers(enabled: Boolean) {
         sharedPrefs.edit().putBoolean("editor_line_numbers", enabled).apply()
+        notifyEditorSettingsChanged()
+    }
+
+    fun setEditorShowMinimap(enabled: Boolean) {
+        sharedPrefs.edit().putBoolean("editor_minimap", enabled).apply()
         notifyEditorSettingsChanged()
     }
 
