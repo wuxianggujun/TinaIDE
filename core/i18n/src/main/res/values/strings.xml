@@ -1193,6 +1193,8 @@
   <string name="settings_show_line_numbers_desc">在编辑器左侧显示行号</string>
   <string name="settings_editor_show_minimap">显示小地图</string>
   <string name="settings_editor_show_minimap_desc">在编辑器右侧显示整篇文档的缩略图，点击或拖动可跳转视口</string>
+  <string name="settings_editor_show_git_gutter">显示 Git 修改指示</string>
+  <string name="settings_editor_show_git_gutter_desc">在行号栏左缘用色条标出相对 HEAD 新增、修改或删除的行；仅在 Git 仓库中生效，关闭行号时同时隐藏</string>
   <string name="settings_word_wrap">自动换行</string>
   <string name="settings_word_wrap_desc">超出屏幕宽度时自动换行</string>
   <string name="settings_rainbow_brackets">彩虹括号</string>

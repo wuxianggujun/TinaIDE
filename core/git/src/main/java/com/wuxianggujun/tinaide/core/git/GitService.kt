@@ -5,6 +5,7 @@ import com.wuxianggujun.tinaide.core.git.ssh.GitSshManager
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.str
 import java.io.File
+import java.nio.charset.Charset
 import java.text.SimpleDateFormat
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
@@ -16,6 +17,9 @@ import org.eclipse.jgit.api.MergeResult
 import org.eclipse.jgit.api.RebaseCommand
 import org.eclipse.jgit.api.RebaseResult
 import org.eclipse.jgit.api.ResetCommand
+import org.eclipse.jgit.diff.HistogramDiff
+import org.eclipse.jgit.diff.RawText
+import org.eclipse.jgit.diff.RawTextComparator
 import org.eclipse.jgit.lib.ProgressMonitor
 import org.eclipse.jgit.lib.Repository
 import org.eclipse.jgit.storage.file.FileRepositoryBuilder
@@ -36,6 +40,7 @@ class GitService(context: Context) {
 
     companion object {
         private const val TAG = "GitService"
+        private const val MAX_GIT_GUTTER_CHARS = 500_000
     }
 
     private val appContext = context.applicationContext
@@ -164,6 +169,58 @@ class GitService(context: Context) {
             } ?: notARepo()
         } catch (e: Exception) {
             GitResult.Error(e.message ?: Strings.git_error_get_diff_failed.str())
+        }
+    }
+
+    // ── Git Gutter（行号栏逐行改动色条） ──
+
+    /**
+     * 计算单个文件“相对 HEAD 的逐行改动”，用于编辑器行号栏色条。
+     *
+     * 与 [getDiff] 的区别：基线是 HEAD（不是 index），且直接拿 [currentText]（内存缓冲区）
+     * 与 HEAD blob 做行级 diff，所以未保存的编辑也能立刻反映，行号不漂移。
+     *
+     * - 未跟踪 / 无任何提交：整份视为新增（全部 ADDED）
+     * - 与 HEAD 内容完全一致：返回空表
+     * - 非 Git 仓库：[GitResult.Error]
+     */
+    suspend fun getLineChanges(
+        projectPath: String,
+        filePath: String,
+        currentText: String,
+        newLineCount: Int,
+        charset: Charset = Charsets.UTF_8
+    ): GitResult<Map<Int, GitLineChangeType>> = withContext(Dispatchers.IO) {
+        try {
+            if (currentText.length > MAX_GIT_GUTTER_CHARS) return@withContext GitResult.Success(emptyMap())
+            openRepo(projectPath)?.use { repo ->
+                val bufferBytes = currentText.toByteArray(charset)
+                val headBytes = readHeadBlobBytes(repo, filePath)
+                if (headBytes != null && headBytes.contentEquals(bufferBytes)) {
+                    return@use GitResult.Success(emptyMap())
+                }
+                val edits = HistogramDiff().diff(
+                    RawTextComparator.DEFAULT,
+                    RawText(headBytes ?: ByteArray(0)),
+                    RawText(bufferBytes)
+                )
+                GitResult.Success(mapDiffEditsToLineChanges(edits, newLineCount))
+            } ?: notARepo()
+        } catch (e: Exception) {
+            Timber.tag(TAG).w(e, "Failed to compute git line changes for $filePath")
+            GitResult.Error(e.message ?: Strings.git_error_get_diff_failed.str())
+        }
+    }
+
+    private fun readHeadBlobBytes(repo: Repository, repoRelativePath: String): ByteArray? {
+        val head = repo.resolve("HEAD") ?: return null
+        val tree = repo.parseCommit(head).tree ?: return null
+        org.eclipse.jgit.treewalk.TreeWalk(repo).use { walk ->
+            walk.isRecursive = true
+            walk.filter = org.eclipse.jgit.treewalk.filter.PathFilter.create(repoRelativePath)
+            walk.addTree(tree)
+            if (!walk.next()) return null
+            return repo.open(walk.getObjectId(0)).getBytes()
         }
     }
 

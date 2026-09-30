@@ -28,7 +28,8 @@ internal fun editorConfigFromPrefs(): EditorConfig = runCatching {
             else -> WhitespaceRenderMode.NONE
         },
         insertSpacesForTabs = Prefs.editorInsertSpacesForTabs,
-        showMinimap = Prefs.editorShowMinimap
+        showMinimap = Prefs.editorShowMinimap,
+        showGitGutter = Prefs.editorShowGitGutter
     )
 }.getOrDefault(EditorConfig())
 

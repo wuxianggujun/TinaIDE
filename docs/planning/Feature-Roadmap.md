@@ -233,7 +233,7 @@ TinaIDE 是一个面向 Android 设备的轻量级 C/C++ IDE。本文档作为�
 - [ ] 多光标编辑
 - [ ] 列选择模式
 - [ ] 文件对比（Diff View）
-- [ ] Git 修改指示（Gutter）
+- [x] Git 修改指示（Gutter）
 - [ ] Git blame 信息
 
 ---

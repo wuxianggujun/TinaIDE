@@ -28,7 +28,8 @@ data class EditorSettings(
     val scrollFlingEnabled: Boolean,
     val singleDirectionDragging: Boolean,
     val singleDirectionFling: Boolean,
-    val showMinimap: Boolean
+    val showMinimap: Boolean,
+    val showGitGutter: Boolean
 )
 
 data class DeveloperDiagnosticsSettings(
@@ -394,7 +395,8 @@ object Prefs {
         scrollFlingEnabled = editorScrollFlingEnabled,
         singleDirectionDragging = editorSingleDirectionDragging,
         singleDirectionFling = editorSingleDirectionFling,
-        showMinimap = editorShowMinimap
+        showMinimap = editorShowMinimap,
+        showGitGutter = editorShowGitGutter
     )
 
     private fun readLspAssistSettings(): LspAssistSettings = LspAssistSettings(
@@ -485,6 +487,10 @@ object Prefs {
     /** 是否在编辑器右侧显示小地图。 */
     val editorShowMinimap: Boolean
         get() = sharedPrefs.getBoolean("editor_minimap", false)
+
+    /** 是否在行号栏左侧用色条标出相对 HEAD 新增/修改/删除的行（git gutter）。仅在 Git 仓库中生效。 */
+    val editorShowGitGutter: Boolean
+        get() = sharedPrefs.getBoolean("editor_git_gutter", false)
 
     /** 是否启用自动缩进。 */
     val editorAutoIndent: Boolean
@@ -818,6 +824,11 @@ object Prefs {
 
     fun setEditorShowMinimap(enabled: Boolean) {
         sharedPrefs.edit().putBoolean("editor_minimap", enabled).apply()
+        notifyEditorSettingsChanged()
+    }
+
+    fun setEditorShowGitGutter(enabled: Boolean) {
+        sharedPrefs.edit().putBoolean("editor_git_gutter", enabled).apply()
         notifyEditorSettingsChanged()
     }
 

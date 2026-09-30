@@ -50,6 +50,7 @@ import com.wuxianggujun.tinaide.core.editorview.EditorCompletionKind
 import com.wuxianggujun.tinaide.core.editorview.EditorCompletionTextEdit
 import com.wuxianggujun.tinaide.core.editorview.EditorConfig
 import com.wuxianggujun.tinaide.core.editorview.EditorDiagnostic
+import com.wuxianggujun.tinaide.core.editorview.EditorGitLineChangeType
 import com.wuxianggujun.tinaide.core.editorview.EditorInlayHint
 import com.wuxianggujun.tinaide.core.editorview.EditorInlayHintKind
 import com.wuxianggujun.tinaide.core.editorview.EditorRenderPerformanceSnapshot
@@ -60,6 +61,7 @@ import com.wuxianggujun.tinaide.core.editorview.SemanticTokenModifier
 import com.wuxianggujun.tinaide.core.editorview.SemanticTokenType
 import com.wuxianggujun.tinaide.core.editorview.TinaEditor
 import com.wuxianggujun.tinaide.core.font.AppFontManager
+import com.wuxianggujun.tinaide.core.git.GitLineChangeType
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.core.lang.CxxFileSupport
@@ -339,6 +341,50 @@ internal fun applyBookmarks(editorState: EditorState, lines: Set<Int>) {
     }
 }
 
+/**
+ * 把 GitService 计算出的整份逐行修改状态写入内核。
+ *
+ * 与断点/书签不同，git 修改是整份异步重算、单一生产者，
+ * 因此走独立的 [EditorState.gitLineChanges] 字段而非 GutterDecoration。
+ */
+internal fun applyGitLineChanges(
+    editorState: EditorState,
+    changes: Map<Int, GitLineChangeType>
+) {
+    if (changes.isEmpty()) {
+        if (editorState.gitLineChanges.isNotEmpty()) {
+            editorState.gitLineChanges = emptyMap()
+        }
+        return
+    }
+
+    val lineCount = editorState.textBuffer.lineCount
+    val mapped = buildMap {
+        changes.forEach { (line, type) ->
+            if (line in 0 until lineCount) put(line, type.toEditorGitLineChangeType())
+        }
+    }
+    if (editorState.gitLineChanges != mapped) {
+        editorState.gitLineChanges = mapped
+    }
+}
+
+internal fun GitLineChangeType.toEditorGitLineChangeType(): EditorGitLineChangeType = when (this) {
+    GitLineChangeType.ADDED -> EditorGitLineChangeType.ADDED
+    GitLineChangeType.MODIFIED -> EditorGitLineChangeType.MODIFIED
+    GitLineChangeType.DELETED -> EditorGitLineChangeType.DELETED
+}
+
+/**
+ * 取文件相对仓库根的路径（JGit TreeWalk 需要），不在仓库目录下返回 null。
+ */
+internal fun resolveRepoRelativePath(projectRoot: String, file: File): String? = runCatching {
+    file.canonicalFile.relativeToOrNull(File(projectRoot).canonicalFile)?.path?.replace('\\', '/')
+}.getOrNull()
+
+internal fun resolveCharsetOrDefault(charsetName: String): Charset =
+    runCatching { Charset.forName(charsetName) }.getOrDefault(Charsets.UTF_8)
+
 internal fun resolveMarkerLine(buffer: RopeTextBuffer, requestedLine: Int): Int? = com.wuxianggujun.tinaide.ui.compose.state.editor.resolveMarkerLine(
     requestedLine = requestedLine,
     lineCount = buffer.lineCount,
@@ -468,6 +514,12 @@ internal data class InlayHintRequestKey(
     val documentVersion: Long,
     val enabled: Boolean,
     val lspReady: Boolean,
+)
+
+internal data class GitGutterRequestKey(
+    val documentVersion: Long,
+    val gitGutterEnabled: Boolean,
+    val resumeTick: Int,
 )
 
 internal fun resolveSelectedRangeOrCursor(

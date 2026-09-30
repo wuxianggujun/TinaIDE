@@ -76,6 +76,14 @@ enum class DiffLineType {
 }
 
 /**
+ * 行号栏 git 修改指示色条的逐行改动类型（相对 HEAD 的 diff）。
+ *
+ * 注意：[GitService.getLineChanges] 直接基于 HEAD blob 与当前文本的行级 diff，
+ * 与 [getDiff] 的 unified 文本（index 与 worktree 之间）语义不同。
+ */
+enum class GitLineChangeType { ADDED, MODIFIED, DELETED }
+
+/**
  * Git 提交信息
  */
 data class GitCommit(

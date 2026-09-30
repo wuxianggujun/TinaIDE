@@ -52,6 +52,7 @@ data class SettingsUiState(
     val editorWordWrap: Boolean,
     val editorShowLineNumbers: Boolean,
     val editorShowMinimap: Boolean,
+    val editorShowGitGutter: Boolean,
     val editorAutoIndent: Boolean,
     val editorRainbowBrackets: Boolean,
     val editorRainbowBracketsMaxLines: Int,
@@ -132,6 +133,7 @@ data class SettingsUiState(
             editorWordWrap = Prefs.editorWordWrap,
             editorShowLineNumbers = Prefs.editorShowLineNumbers,
             editorShowMinimap = Prefs.editorShowMinimap,
+            editorShowGitGutter = Prefs.editorShowGitGutter,
             editorAutoIndent = Prefs.editorAutoIndent,
             editorRainbowBrackets = Prefs.editorRainbowBrackets,
             editorRainbowBracketsMaxLines = Prefs.editorRainbowBracketsMaxLines,
@@ -382,6 +384,11 @@ class SettingsViewModel(
     fun setEditorShowMinimap(enabled: Boolean) {
         Prefs.setEditorShowMinimap(enabled)
         _uiState.update { it.copy(editorShowMinimap = enabled) }
+    }
+
+    fun setEditorShowGitGutter(enabled: Boolean) {
+        Prefs.setEditorShowGitGutter(enabled)
+        _uiState.update { it.copy(editorShowGitGutter = enabled) }
     }
 
     fun setEditorAutoIndent(enabled: Boolean) {

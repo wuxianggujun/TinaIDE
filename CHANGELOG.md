@@ -33,6 +33,14 @@
 
 ### Added
 
+#### 编辑器 Git 修改指示（默认关闭）
+
+行号栏左缘新增色条，标出相对 HEAD 的新增（绿）、修改（橙）、删除（红、半高）行，语义与 VSCode 的 gutter decoration 一致。开关位于「设置 → 编辑器 → 显示 Git 修改指示」，默认关闭，经 `Prefs.editorSettingsFlow` 传播，已打开的编辑器即时生效。
+
+diff 基线是 **HEAD blob vs 当前内存 buffer**（`GitService.getLineChanges()`，JGit `HistogramDiff`），而不是磁盘文件，因此暂存、未暂存与未保存改动一次覆盖，且行号不因保存与否漂移；`RawText` 与 `KotlinLineIndexBackend` 的行计数规则一致（`'\n' 数 + 1`），diff 行索引可直接当作文档行号。删除行的锚定由 `mapDiffEditsToLineChanges()` 按 Edit 形状派生（不依赖 `Edit.getType()`），HistogramDiff 会把末行删除归并成吸收前一行的替换，因此 EOF 位置用「删除覆盖已标出的 MODIFIED」收尾。
+
+整份逐行状态走独立的 `EditorState.gitLineChanges`（与 `diagnosticsByLine` 同型），而不是塞进 `GutterDecoration`：后者的「flags 全空即移除」清理逻辑分布在 4 处，且 git 数据是整份异步重算、单一生产者，生命周期完全不同。生产者是 `TinaCodeEditorPage` 里镜像语义 token 效应的 `combine(...).collectLatest`：400ms 防抖的编辑、开关变化、tab/文件/项目切换、应用恢复（`ON_RESUME` 递增 tick，覆盖在 Git 面板提交/暂存后回来）都会触发；请求前后都用 `buffer.version` 校验，版本不匹配作废结果。色条画在现有行号带内部左缘，不新增布局带，因此**关闭行号时色条一起消失**。内核侧实现在 `editor-kit/editor-view`（`EditorGitLineChangeType` / `LineNumberRenderer` 里的 `gitStripeRect()`），不出现 JGit 与偏好类型。
+
 #### 编辑器小地图（默认关闭）
 
 编辑器右侧新增整篇文档的缩略色块带与当前视口指示框（thumb），沿用与竖直滚动条相同的布局约定（`EditorMinimapRenderer.calculateLayout()` 返回不可变几何 + 命中测试），点中或拖动即可把对应视觉行居中到视口。行几何与 thumb 同处视觉行空间，所以点击映射是精确的、thumb 只需在底部留白区钳制。整篇逐行重绘对大文件不可接受：token 层用 `android.graphics.Picture` 按文本/高亮版本缓存，thumb 始终实时绘制；超过 3000 行的文档按步长采样取 token，避免冲掉 Tree-sitter 的视口级逐行缓存。开关位于「设置 → 编辑器 → 显示小地图」，经 `Prefs.editorSettingsFlow` 传播，已打开的编辑器即时生效。内核侧实现在 `editor-kit/editor-view`（`EditorMinimapRenderer` / `EditorMinimapDragCoordinator`），不反向依赖宿主。

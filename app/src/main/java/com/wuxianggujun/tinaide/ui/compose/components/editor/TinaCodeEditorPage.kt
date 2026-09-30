@@ -28,6 +28,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -56,6 +59,8 @@ import com.wuxianggujun.tinaide.core.editorview.SemanticTokenModifier
 import com.wuxianggujun.tinaide.core.editorview.SemanticTokenType
 import com.wuxianggujun.tinaide.core.editorview.TinaEditor
 import com.wuxianggujun.tinaide.core.font.AppFontManager
+import com.wuxianggujun.tinaide.core.git.GitResult
+import com.wuxianggujun.tinaide.core.git.GitService
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.core.lang.CxxFileSupport
@@ -86,6 +91,7 @@ import com.wuxianggujun.tinaide.ui.compose.state.editor.SelectionSnapshot
 import com.wuxianggujun.tinaide.ui.compose.state.editor.TextEditOperation
 import com.wuxianggujun.tinaide.ui.compose.state.editor.TinaTextContentProvider
 import java.io.File
+import java.nio.charset.Charset
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.max
 import kotlin.math.min
@@ -111,6 +117,7 @@ import timber.log.Timber
 
 private const val LSP_EDITOR_STATE_BINDING_KEY = "lsp-editor-actions"
 private const val GUTTER_EDITOR_STATE_BINDING_KEY = "gutter-actions"
+private const val GIT_GUTTER_DEBOUNCE_MS = 400L
 
 @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
 @Composable
@@ -153,6 +160,7 @@ fun TinaCodeEditorPage(
     val foldingProvider = remember(tab.id, runtime, tab.file) { state.getOrCreateFoldingProvider(tab) }
     val breakpointStore: BreakpointStore = koinInject()
     val bookmarkRepository: IBookmarkRepository = koinInject()
+    val gitService: GitService = koinInject()
     val bookmarkProjectRootPath = state.getBookmarksProjectRootPathOrNull()
     val breakpointSupportedExtensions = remember {
         CxxFileSupport.editorRelatedExtensions + setOf(
@@ -167,6 +175,11 @@ fun TinaCodeEditorPage(
 
     var loading by remember(tab.id) { mutableStateOf(!runtime.isContentLoaded) }
     var loadError by remember(tab.id) { mutableStateOf<String?>(null) }
+
+    // git gutter：读取当前 buffer 用的字符集，由工具栏状态流刷新。
+    var charsetName by remember(tab.id) { mutableStateOf(Charsets.UTF_8.name()) }
+    // 应用恢复时（例如从 Git 面板提交回来）递增，触发整份重算。
+    var gitGutterResumeTick by remember { mutableStateOf(0) }
     // 300ms 内加载完就不显示进度条，避免小文件一闪而过造成的 UI 抖动
     val showLoadingIndicator by produceState(initialValue = false, loading) {
         if (loading) {
@@ -709,6 +722,7 @@ fun TinaCodeEditorPage(
                     toolbarState.canRedo
                 )
                 latestOnFileEncodingChanged(toolbarState.charsetName)
+                charsetName = toolbarState.charsetName
             }
     }
 
@@ -811,6 +825,71 @@ fun TinaCodeEditorPage(
                         requestedVisibleLines = requestedLines,
                         documentVersion = key.documentVersion,
                     )
+                }
+            }
+    }
+
+    // 外部 git 操作（Git 面板提交/暂存）不会通知编辑器，只在回到前台时整体重算一次。
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, tab.id) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                gitGutterResumeTick++
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    // git 修改指示：HEAD blob 与当前内存 buffer 的行级 diff，整份异步重算。
+    // 基线是 buffer 而不是磁盘文件， staged/unstaged/未保存改动一次覆盖，且行号不漂。
+    LaunchedEffect(tab.id, state, editorState, buffer, tab.file, gitService) {
+        val gitGutterEnabledFlow = Prefs.editorSettingsFlow
+            .map { it.showGitGutter }
+            .distinctUntilChanged()
+
+        combine(
+            buffer.versionFlow.debounce(GIT_GUTTER_DEBOUNCE_MS),
+            gitGutterEnabledFlow,
+            snapshotFlow { gitGutterResumeTick }
+        ) { version, enabled, tick ->
+            GitGutterRequestKey(
+                documentVersion = version,
+                gitGutterEnabled = enabled,
+                resumeTick = tick
+            )
+        }
+            .distinctUntilChanged()
+            .collectLatest { key ->
+                val projectRootPath = editorState.projectRootPath
+                val relativePath = projectRootPath?.let { resolveRepoRelativePath(it, tab.file) }
+                if (!key.gitGutterEnabled || projectRootPath == null || relativePath == null) {
+                    applyGitLineChanges(editorState, emptyMap())
+                    return@collectLatest
+                }
+
+                // 文本和版本一起取，避免读到半更新的 buffer。
+                val snapshot = textSnapshot.readSnapshot()
+                if (buffer.version != snapshot.version) return@collectLatest
+                when (val result = gitService.getLineChanges(
+                    projectPath = projectRootPath,
+                    filePath = relativePath,
+                    currentText = snapshot.text,
+                    newLineCount = buffer.lineCount,
+                    charset = resolveCharsetOrDefault(charsetName)
+                )) {
+                    is GitResult.Success -> {
+                        // 请求期间又编辑过，作废结果。
+                        if (buffer.version == snapshot.version) {
+                            applyGitLineChanges(editorState, result.data)
+                        }
+                    }
+                    is GitResult.Error -> {
+                        applyGitLineChanges(editorState, emptyMap())
+                        Timber.tag("GitGutter").w("git gutter failed: ${result.message}")
+                    }
                 }
             }
     }

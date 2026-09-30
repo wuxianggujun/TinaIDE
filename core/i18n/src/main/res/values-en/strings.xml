@@ -957,6 +957,8 @@
   <string name="settings_show_line_numbers_desc">Show line numbers on the left side of editor</string>
   <string name="settings_editor_show_minimap">Show Minimap</string>
   <string name="settings_editor_show_minimap_desc">Show a zoomed-out overview of the whole document on the right side; tap or drag to jump</string>
+  <string name="settings_editor_show_git_gutter">Show Git Change Indicators</string>
+  <string name="settings_editor_show_git_gutter_desc">Mark added, modified and deleted lines against HEAD as colored stripes at the left edge of the gutter; only works inside a Git repository and is hidden while line numbers are off</string>
   <string name="settings_word_wrap">Word Wrap</string>
   <string name="settings_word_wrap_desc">Wrap lines when exceeding screen width</string>
   <string name="settings_rainbow_brackets">Rainbow Brackets</string>
