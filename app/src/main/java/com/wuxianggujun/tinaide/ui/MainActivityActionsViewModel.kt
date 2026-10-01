@@ -11,7 +11,6 @@ import com.wuxianggujun.tinaide.core.format.CodeFormatter
 import com.wuxianggujun.tinaide.core.format.FormatResult
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
-import com.wuxianggujun.tinaide.core.lang.CxxFileSupport
 import com.wuxianggujun.tinaide.core.linux.LinuxEnvironmentProvider
 import com.wuxianggujun.tinaide.core.linux.UnavailableLinuxEnvironmentProvider
 import com.wuxianggujun.tinaide.editor.IEditorManager
@@ -308,7 +307,7 @@ class MainActivityActionsViewModel(
     fun toggleLineComment(editorContainerState: EditorContainerState) {
         when (
             editorContainerState.requestToggleLineCommentInActiveEditor { file ->
-                guessLineCommentToken(file.extension.lowercase())
+                resolveLineCommentToken(file.extension)
             }
         ) {
             ActiveEditorCommandResult.SUCCESS -> Unit
@@ -677,15 +676,6 @@ class MainActivityActionsViewModel(
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         val clip = ClipData.newPlainText(label, text)
         clipboard.setPrimaryClip(clip)
-    }
-
-    private fun guessLineCommentToken(extension: String): String = when (extension.lowercase()) {
-        in CxxFileSupport.editorRelatedExtensions,
-        "java", "kt", "kts",
-        "js", "ts",
-        "rs", "go", "cs", "swift" -> "//"
-        "py", "sh", "bash", "zsh", "rb", "pl", "yaml", "yml", "toml", "ini", "conf" -> "#"
-        else -> "//"
     }
 
     companion object {

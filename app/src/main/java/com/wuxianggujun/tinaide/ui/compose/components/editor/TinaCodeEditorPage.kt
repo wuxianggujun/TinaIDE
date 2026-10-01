@@ -86,6 +86,7 @@ import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState
 import com.wuxianggujun.tinaide.ui.compose.state.editor.SelectionSnapshot
 import com.wuxianggujun.tinaide.ui.compose.state.editor.TextEditOperation
 import com.wuxianggujun.tinaide.ui.compose.state.editor.TinaTextContentProvider
+import com.wuxianggujun.tinaide.ui.resolveLineCommentToken
 import java.io.File
 import java.nio.charset.Charset
 import java.util.concurrent.atomic.AtomicInteger
@@ -971,6 +972,9 @@ fun TinaCodeEditorPage(
             modifier = Modifier.fillMaxSize(),
             onPerformanceSnapshotReaderChanged = updatePerformanceSnapshotReader,
             onExternalEditPreparerChanged = updateExternalEditPreparer,
+            onToggleLineComment = {
+                editorState.toggleLineComment(resolveLineCommentToken(tab.file.extension))
+            },
             hoverContent = { markdown, hoverModifier, onLinkClick, onCodeCopy ->
                 MarkdownViewer(
                     markdown = markdown,
