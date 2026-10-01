@@ -320,6 +320,7 @@ dependencies {
     implementation(project.dependencies.project(":core:search"))
     implementation(project.dependencies.project(":core:text-engine"))
     implementation(project.dependencies.project(":core:tree-sitter"))
+    implementation(project.dependencies.project(":core:tree-sitter-grammars"))
     implementation(project.dependencies.project(":core:editor-view"))
     implementation(project.dependencies.project(":core:editor-lsp"))
 
@@ -353,9 +354,8 @@ dependencies {
     // the app must package liblua54.so for script/hybrid plugins.
     runtimeOnly("party.iroiro.luajava:android:${libs.versions.luajava.get()}:lua54@aar")
 
-    // Tree-sitter grammar 依赖由 :core:tree-sitter 统一管理
-    // GenerateTreeSitterLanguageRegistry task 仍需要解析 implementation deps，
-    // 因此保留对 :core:tree-sitter 的依赖即可（grammar jars 通过传递依赖到达 classpath）。
+    // Tree-sitter parser 与 grammar pack 分离：宿主显式装配 grammar，
+    // GenerateTreeSitterLanguageRegistry 从 :core:tree-sitter-grammars 读取声明。
 
     // CMake 解析器
     implementation(project.dependencies.project(":core:cmake"))

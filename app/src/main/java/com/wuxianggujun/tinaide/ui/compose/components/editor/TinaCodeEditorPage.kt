@@ -208,6 +208,7 @@ fun TinaCodeEditorPage(
     val callbackRegistrationId = remember(tab.id, runtime) { Any() }
 
     LaunchedEffect(tab.id, editorState, buffer, foldingProvider) {
+        var latestFoldingRequestId = 0L
         combine(
             snapshotFlow { editorState.config.codeFolding }.distinctUntilChanged(),
             Prefs.lspFoldingRangeEnabledFlow
@@ -235,6 +236,7 @@ fun TinaCodeEditorPage(
                     return@collectLatest
                 }
                 val documentVersion = request.documentVersion
+                val requestId = ++latestFoldingRequestId
                 val provider = foldingProvider
 
                 if (request.preferLsp) {
@@ -249,7 +251,11 @@ fun TinaCodeEditorPage(
                         Timber.tag("EditorFolding").w(error, "LSP folding request failed for %s", tab.file.name)
                         null
                     }
-                    if (lspRegions != null) {
+                    if (
+                        lspRegions != null &&
+                        requestId == latestFoldingRequestId &&
+                        buffer.version == documentVersion
+                    ) {
                         editorState.setFoldRegions(lspRegions, documentVersion = documentVersion)
                         return@collectLatest
                     }
@@ -260,10 +266,20 @@ fun TinaCodeEditorPage(
                     return@collectLatest
                 }
 
-                val regions = withContext(Dispatchers.Default) {
-                    provider.computeFoldRegions(textSnapshot.readText())
+                val computation = provider.computeFoldRegionsAsync(
+                    text = withContext(Dispatchers.Default) { textSnapshot.readText() },
+                    documentVersion = documentVersion,
+                    requestId = requestId
+                )
+                if (
+                    computation.documentVersion != documentVersion ||
+                    computation.requestId != requestId ||
+                    requestId != latestFoldingRequestId ||
+                    buffer.version != documentVersion
+                ) {
+                    return@collectLatest
                 }
-                editorState.setFoldRegions(regions, documentVersion = documentVersion)
+                editorState.setFoldRegions(computation.regions, documentVersion = documentVersion)
             }
     }
 

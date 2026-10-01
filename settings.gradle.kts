@@ -44,6 +44,7 @@ fun mayNeedTreeSitterComposite(taskName: String): Boolean {
     if (!taskName.startsWith(":")) return true
     return isTaskUnderModule(taskName, ":app") ||
         isTaskUnderModule(taskName, ":core:tree-sitter") ||
+        isTaskUnderModule(taskName, ":core:tree-sitter-grammars") ||
         isTaskUnderModule(taskName, ":core:editor-view") ||
         isTaskUnderModule(taskName, ":core:editor-lsp") ||
         isTaskUnderModule(taskName, ":feature:editor") ||
@@ -206,11 +207,15 @@ include(":core:security")
 include(":core:storage")
 include(":core:text-engine")
 include(":core:tree-sitter")
+include(":core:language-support")
+include(":core:tree-sitter-grammars")
 include(":core:editor-view")
 include(":core:editor-api")
 include(":core:editor-lsp")
 project(":core:text-engine").projectDir = file("editor-kit/text-engine")
 project(":core:tree-sitter").projectDir = file("editor-kit/tree-sitter")
+project(":core:language-support").projectDir = file("editor-kit/language-support")
+project(":core:tree-sitter-grammars").projectDir = file("editor-kit/tree-sitter-grammars")
 project(":core:editor-view").projectDir = file("editor-kit/editor-view")
 project(":core:editor-api").projectDir = file("editor-kit/editor-api")
 
