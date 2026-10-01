@@ -56,9 +56,6 @@ import com.wuxianggujun.tinaide.core.editorview.EditorInlayHintKind
 import com.wuxianggujun.tinaide.core.editorview.EditorRenderPerformanceSnapshot
 import com.wuxianggujun.tinaide.core.editorview.EditorState
 import com.wuxianggujun.tinaide.core.editorview.GutterDecoration
-import com.wuxianggujun.tinaide.core.editorview.SemanticToken as EditorSemanticToken
-import com.wuxianggujun.tinaide.core.editorview.SemanticTokenModifier
-import com.wuxianggujun.tinaide.core.editorview.SemanticTokenType
 import com.wuxianggujun.tinaide.core.editorview.TinaEditor
 import com.wuxianggujun.tinaide.core.font.AppFontManager
 import com.wuxianggujun.tinaide.core.git.GitLineChangeType
@@ -183,7 +180,7 @@ internal class TextBufferSessionBinding(
             canRedo = canRedo,
             changeCausedByUndoManager = change.fromUndoRedo
         )
-        onBufferEdited(canUndo, canRedo, buffer.version, change)
+        onBufferEdited(canUndo, canRedo, change.documentVersion, change)
     }
 
     override fun readText(): String = textSnapshot.readText()
@@ -572,53 +569,15 @@ internal fun applySemanticTokens(
     tokens: List<LspSemanticToken>,
     requestedVisibleLines: IntRange?
 ) {
-    val mapped = tokens.mapNotNull { token -> token.toEditorSemanticTokenOrNull() }
+    val mapped = tokens.filter { token ->
+        token.line >= 0 && token.startColumn >= 0 && token.length > 0
+    }
     if (requestedVisibleLines == null) {
         editorState.replaceSemanticTokens(mapped)
         return
     }
 
     editorState.replaceSemanticTokensInLines(requestedVisibleLines, mapped)
-}
-
-internal fun LspSemanticToken.toEditorSemanticTokenOrNull(): EditorSemanticToken? {
-    if (line < 0 || startColumn < 0 || length <= 0) return null
-    val mappedType = tokenType.toEditorSemanticTokenTypeOrNull() ?: return null
-    return EditorSemanticToken(
-        line = line,
-        startColumn = startColumn,
-        length = length,
-        tokenType = mappedType,
-        tokenModifiers = tokenModifiers.mapNotNull { modifier ->
-            modifier.toEditorSemanticTokenModifierOrNull()
-        }.toSet()
-    )
-}
-
-internal fun String.toEditorSemanticTokenTypeOrNull(): SemanticTokenType? = when (trim().lowercase().replace('-', '_')) {
-    "namespace" -> SemanticTokenType.NAMESPACE
-    "type" -> SemanticTokenType.TYPE
-    "class" -> SemanticTokenType.CLASS
-    "enum" -> SemanticTokenType.ENUM
-    "interface" -> SemanticTokenType.INTERFACE
-    "struct" -> SemanticTokenType.STRUCT
-    "typeparameter", "type_parameter" -> SemanticTokenType.TYPE_PARAMETER
-    "parameter" -> SemanticTokenType.PARAMETER
-    "variable" -> SemanticTokenType.VARIABLE
-    "property" -> SemanticTokenType.PROPERTY
-    "enummember", "enum_member" -> SemanticTokenType.ENUM_MEMBER
-    "event" -> SemanticTokenType.EVENT
-    "function" -> SemanticTokenType.FUNCTION
-    "method" -> SemanticTokenType.METHOD
-    "macro" -> SemanticTokenType.MACRO
-    "keyword" -> SemanticTokenType.KEYWORD
-    "modifier" -> SemanticTokenType.MODIFIER
-    "comment" -> SemanticTokenType.COMMENT
-    "string" -> SemanticTokenType.STRING
-    "number" -> SemanticTokenType.NUMBER
-    "regexp", "regex" -> SemanticTokenType.REGEXP
-    "operator" -> SemanticTokenType.OPERATOR
-    else -> null
 }
 
 internal suspend fun ensureTreeSitterPrepared(
@@ -660,20 +619,6 @@ internal fun restoreEditorViewState(editorState: EditorState, viewState: EditorV
     editorState.gotoLine(viewState.cursorLine, viewState.cursorColumn)
     editorState.scrollOffsetXPx = viewState.scrollX.coerceAtLeast(0).toFloat()
     editorState.scrollOffsetPx = viewState.scrollY.coerceAtLeast(0).toFloat()
-}
-
-internal fun String.toEditorSemanticTokenModifierOrNull(): SemanticTokenModifier? = when (trim().lowercase().replace('-', '_')) {
-    "declaration" -> SemanticTokenModifier.DECLARATION
-    "definition" -> SemanticTokenModifier.DEFINITION
-    "readonly", "read_only" -> SemanticTokenModifier.READONLY
-    "static" -> SemanticTokenModifier.STATIC
-    "deprecated" -> SemanticTokenModifier.DEPRECATED
-    "abstract" -> SemanticTokenModifier.ABSTRACT
-    "async" -> SemanticTokenModifier.ASYNC
-    "modification" -> SemanticTokenModifier.MODIFICATION
-    "documentation" -> SemanticTokenModifier.DOCUMENTATION
-    "defaultlibrary", "default_library" -> SemanticTokenModifier.DEFAULT_LIBRARY
-    else -> null
 }
 
 internal fun CompletionItemKind.toEditorCompletionKind(): EditorCompletionKind = when (this) {

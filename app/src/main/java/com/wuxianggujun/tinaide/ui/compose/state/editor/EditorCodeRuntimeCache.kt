@@ -27,7 +27,7 @@ internal class EditorCodeRuntimeCache(
 
     fun getOrCreate(tab: EditorTabState): CodeEditorRuntime {
         val runtime = runtimesByTabId.getOrPut(tab.id) {
-            val buffer = RopeTextBuffer()
+            val buffer = RopeTextBuffer(changeExecutor = editorMainThreadChangeExecutor)
             CodeEditorRuntime(
                 buffer = buffer,
                 editorState = EditorState(

@@ -44,7 +44,6 @@ import com.wuxianggujun.tinaide.core.editorlsp.CompletionItemKind
 import com.wuxianggujun.tinaide.core.editorlsp.CompletionSource
 import com.wuxianggujun.tinaide.core.editorlsp.CompletionTextEdit
 import com.wuxianggujun.tinaide.core.editorlsp.DefaultCompletionProvider
-import com.wuxianggujun.tinaide.core.editorlsp.SemanticToken as LspSemanticToken
 import com.wuxianggujun.tinaide.core.editorview.DiagnosticSeverity
 import com.wuxianggujun.tinaide.core.editorview.EditorCompletionFetchResult
 import com.wuxianggujun.tinaide.core.editorview.EditorCompletionItem
@@ -54,9 +53,6 @@ import com.wuxianggujun.tinaide.core.editorview.EditorDiagnostic
 import com.wuxianggujun.tinaide.core.editorview.EditorRenderPerformanceSnapshot
 import com.wuxianggujun.tinaide.core.editorview.EditorState
 import com.wuxianggujun.tinaide.core.editorview.GutterDecoration
-import com.wuxianggujun.tinaide.core.editorview.SemanticToken as EditorSemanticToken
-import com.wuxianggujun.tinaide.core.editorview.SemanticTokenModifier
-import com.wuxianggujun.tinaide.core.editorview.SemanticTokenType
 import com.wuxianggujun.tinaide.core.editorview.TinaEditor
 import com.wuxianggujun.tinaide.core.font.AppFontManager
 import com.wuxianggujun.tinaide.core.git.GitResult
