@@ -20,6 +20,8 @@ import java.io.File
 import java.nio.file.Files
 import java.security.MessageDigest
 import java.util.Properties
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -36,7 +38,7 @@ class CompileDatabaseProviderRuntimeIdentityTest {
     private lateinit var projectRoot: File
 
     @Before
-    fun setUp() {
+    fun setUp() = runBlocking {
         context = RuntimeEnvironment.getApplication()
         File(context.filesDir, "toolchain-config.json").delete()
         File(context.filesDir, "toolchains").deleteRecursively()
@@ -61,7 +63,7 @@ class CompileDatabaseProviderRuntimeIdentityTest {
     }
 
     @Test
-    fun prepare_shouldRegenerateWhenActiveToolchainChanges() {
+    fun prepare_shouldRegenerateWhenActiveToolchainChanges()  = runTest {
         configureToolchain("toolchain-a")
         configureSysroot("sysroot-a")
         writeCompileCommandsWithMetadata(
@@ -81,7 +83,7 @@ class CompileDatabaseProviderRuntimeIdentityTest {
     }
 
     @Test
-    fun prepare_shouldRegenerateWhenActiveSysrootProfileChanges() {
+    fun prepare_shouldRegenerateWhenActiveSysrootProfileChanges()  = runTest {
         configureToolchain("toolchain-a")
         configureSysroot("sysroot-a")
         writeCompileCommandsWithMetadata(
@@ -101,7 +103,7 @@ class CompileDatabaseProviderRuntimeIdentityTest {
     }
 
     @Test
-    fun prepare_shouldRegenerateTinaFallbackWhenCmakeCxxStandardChanges() {
+    fun prepare_shouldRegenerateTinaFallbackWhenCmakeCxxStandardChanges()  = runTest {
         configureToolchain("toolchain-a")
         configureSysroot("sysroot-a")
         writeCMakeLists(CppStandard.CPP_17)
@@ -124,7 +126,7 @@ class CompileDatabaseProviderRuntimeIdentityTest {
     }
 
     @Test
-    fun prepare_shouldKeepExternalCmakeCompileDatabaseAuthoritative() {
+    fun prepare_shouldKeepExternalCmakeCompileDatabaseAuthoritative()  = runTest {
         configureToolchain("toolchain-a")
         configureSysroot("sysroot-a")
         writeCMakeLists(CppStandard.CPP_20)
@@ -144,7 +146,7 @@ class CompileDatabaseProviderRuntimeIdentityTest {
     }
 
     @Test
-    fun prepare_shouldFlagExternalCmakeDatabaseStaleWhenCMakeListsNewer() {
+    fun prepare_shouldFlagExternalCmakeDatabaseStaleWhenCMakeListsNewer()  = runTest {
         configureToolchain("toolchain-a")
         configureSysroot("sysroot-a")
         writeCMakeLists(CppStandard.CPP_20)
@@ -168,7 +170,7 @@ class CompileDatabaseProviderRuntimeIdentityTest {
     }
 
     @Test
-    fun prepare_shouldNotFlagExternalCmakeDatabaseStaleWhenCMakeListsOlder() {
+    fun prepare_shouldNotFlagExternalCmakeDatabaseStaleWhenCMakeListsOlder()  = runTest {
         configureToolchain("toolchain-a")
         configureSysroot("sysroot-a")
         writeCMakeLists(CppStandard.CPP_20)
@@ -192,7 +194,7 @@ class CompileDatabaseProviderRuntimeIdentityTest {
     }
 
     @Test
-    fun prepare_shouldNotFlagTinaFallbackDatabaseStaleEvenWhenCMakeListsNewer() {
+    fun prepare_shouldNotFlagTinaFallbackDatabaseStaleEvenWhenCMakeListsNewer()  = runTest {
         // 过期信号只针对外部权威库；Tina 兜底库靠 shouldGenerate 自愈，绝不置过期位，
         // 否则会和自愈路径打架、给出无意义的"重新配置"提示。
         configureToolchain("toolchain-a")
@@ -216,7 +218,7 @@ class CompileDatabaseProviderRuntimeIdentityTest {
     }
 
     @Test
-    fun isCompileDatabaseStale_returnsTrueWhenCMakeListsNewerThanDatabase() {
+    fun isCompileDatabaseStale_returnsTrueWhenCMakeListsNewerThanDatabase()  = runTest {
         // 这是缓存层 LspCompileSetupCache.isStillFresh 复用的 mtime 重算入口：
         // 缓存命中会冻结旧的 stale 快照，靠这个方法重新比一次 mtime 才能刷新过期信号。
         writeCMakeLists(CppStandard.CPP_20)
@@ -232,7 +234,7 @@ class CompileDatabaseProviderRuntimeIdentityTest {
     }
 
     @Test
-    fun isCompileDatabaseStale_returnsFalseWhenDatabaseNewerThanCMakeLists() {
+    fun isCompileDatabaseStale_returnsFalseWhenDatabaseNewerThanCMakeLists()  = runTest {
         writeCMakeLists(CppStandard.CPP_20)
         val buildDir = File(projectRoot, "build").apply { mkdirs() }
         val compileCommands = File(buildDir, "compile_commands.json").apply {
@@ -246,7 +248,7 @@ class CompileDatabaseProviderRuntimeIdentityTest {
     }
 
     @Test
-    fun isCompileDatabaseStale_returnsFalseWhenDatabaseMissing() {
+    fun isCompileDatabaseStale_returnsFalseWhenDatabaseMissing()  = runTest {
         // 数据库还没生成时不能误报过期，否则首次打开项目就弹无意义的"重新配置"。
         writeCMakeLists(CppStandard.CPP_20)
         val buildDir = File(projectRoot, "build").apply { mkdirs() }
@@ -255,7 +257,7 @@ class CompileDatabaseProviderRuntimeIdentityTest {
     }
 
     @Test
-    fun prepare_shouldForceOnlyTinaFallbackRegenerationAfterBuildFileSave() {
+    fun prepare_shouldForceOnlyTinaFallbackRegenerationAfterBuildFileSave()  = runTest {
         configureToolchain("toolchain-a")
         configureSysroot("sysroot-a")
         writeCompileCommandsWithMetadata(
@@ -290,7 +292,7 @@ class CompileDatabaseProviderRuntimeIdentityTest {
     }
 
     @Test
-    fun prepare_shouldTreatReplacedTinaFallbackAsExternalCmakeDatabase() {
+    fun prepare_shouldTreatReplacedTinaFallbackAsExternalCmakeDatabase()  = runTest {
         configureToolchain("toolchain-a")
         configureSysroot("sysroot-a")
         writeCMakeLists(CppStandard.CPP_20)
@@ -313,7 +315,7 @@ class CompileDatabaseProviderRuntimeIdentityTest {
     }
 
     @Test
-    fun prepare_shouldUseExplicitFutureStandardOverrideForTinaFallback() {
+    fun prepare_shouldUseExplicitFutureStandardOverrideForTinaFallback()  = runTest {
         configureToolchain("toolchain-a")
         configureSysroot("sysroot-a")
         writeCompileCommandsWithMetadata(
@@ -336,7 +338,7 @@ class CompileDatabaseProviderRuntimeIdentityTest {
     }
 
     @Test
-    fun prepare_shouldNotLetNativeCppFlagsOverrideCmakeStandard() {
+    fun prepare_shouldNotLetNativeCppFlagsOverrideCmakeStandard()  = runTest {
         configureToolchain("toolchain-a")
         configureSysroot("sysroot-a")
         val metadata = requireNotNull(ProjectMetadataStore.read(projectRoot))
@@ -413,7 +415,7 @@ class CompileDatabaseProviderRuntimeIdentityTest {
         )
     }
 
-    private fun writeCompileCommandsWithMetadata(
+    private suspend fun writeCompileCommandsWithMetadata(
         toolchainId: String,
         sysrootProfileId: String,
         sysrootApiLevel: Int,

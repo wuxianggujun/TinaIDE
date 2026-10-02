@@ -235,7 +235,7 @@ internal class LspCompileSetupCache(
         }.getOrDefault(true)
     }
 
-    private fun buildKey(
+    private suspend fun buildKey(
         file: File,
         projectRootPath: String?,
         compileProvider: CompileDatabaseProvider,
@@ -283,7 +283,7 @@ internal class LspCompileSetupCache(
         return file.parentFile?.takeIf { it.isDirectory }
     }
 
-    private fun resolveCppStandardFlag(projectRoot: File?, cppStandardOverride: String?): String =
+    private suspend fun resolveCppStandardFlag(projectRoot: File?, cppStandardOverride: String?): String =
         ProjectCppStandardResolver.resolveFlag(projectRoot, cppStandardOverride)
 
     private fun isRevisionCurrent(expectedRevision: Long): Boolean = synchronized(stateLock) {

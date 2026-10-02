@@ -117,7 +117,7 @@ class EditorContainerState(
     private val pluginThemeRegistry: PluginEditorThemeRegistry,
     private val projectSymbolIndexServiceProvider: () -> ProjectSymbolIndexService?,
     private val projectRootPathProvider: () -> String?,
-    private val cppStandardOverrideProvider: (File) -> String? = { null },
+    private val cppStandardOverrideProvider: suspend (File) -> String? = { null },
     private val fileWatchService: IFileWatchService? = null,
     private val linuxEnvironmentProvider: LinuxEnvironmentProvider = UnavailableLinuxEnvironmentProvider,
     private val lspPluginManager: LspPluginManager? = null,
@@ -1856,7 +1856,7 @@ fun rememberEditorContainerState(
     pluginThemeRegistry: PluginEditorThemeRegistry,
     projectSymbolIndexServiceProvider: () -> ProjectSymbolIndexService?,
     projectRootPathProvider: () -> String?,
-    cppStandardOverrideProvider: (File) -> String? = { null },
+    cppStandardOverrideProvider: suspend (File) -> String? = { null },
     onLspDiagnosticsChanged: ((fileUri: String, diagnostics: List<Diagnostic>) -> Unit)? = null
 ): EditorContainerState {
     val context = LocalContext.current

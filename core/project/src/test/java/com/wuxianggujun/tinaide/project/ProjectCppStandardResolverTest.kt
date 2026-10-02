@@ -3,12 +3,13 @@ package com.wuxianggujun.tinaide.project
 import com.google.common.truth.Truth.assertThat
 import java.io.File
 import java.nio.file.Files
+import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
 class ProjectCppStandardResolverTest {
 
     @Test
-    fun normalizeFlag_shouldAcceptSettingsCompilerAndFutureForms() {
+    fun normalizeFlag_shouldAcceptSettingsCompilerAndFutureForms() = runTest {
         val cases = mapOf(
             "CPP_20" to "c++20",
             "20" to "c++20",
@@ -28,7 +29,7 @@ class ProjectCppStandardResolverTest {
     }
 
     @Test
-    fun resolveFlag_shouldUseOverrideBeforeBuildFilesAndMetadata() {
+    fun resolveFlag_shouldUseOverrideBeforeBuildFilesAndMetadata() = runTest {
         withProject("CPP_14") { projectRoot ->
             File(projectRoot, "CMakeLists.txt").writeText("set(CMAKE_CXX_STANDARD 17)\n", Charsets.UTF_8)
             File(projectRoot, "Makefile").writeText("CXXFLAGS += -std=c++20\n", Charsets.UTF_8)
@@ -43,7 +44,7 @@ class ProjectCppStandardResolverTest {
     }
 
     @Test
-    fun resolveFlag_shouldPreferLastStaticCmakeStandardOverMakefileAndMetadata() {
+    fun resolveFlag_shouldPreferLastStaticCmakeStandardOverMakefileAndMetadata() = runTest {
         withProject("CPP_14") { projectRoot ->
             File(projectRoot, "CMakeLists.txt").writeText(
                 """
@@ -60,7 +61,7 @@ class ProjectCppStandardResolverTest {
     }
 
     @Test
-    fun resolveFlag_shouldIgnoreCmakeCommentsAndFallbackAfterDynamicValue() {
+    fun resolveFlag_shouldIgnoreCmakeCommentsAndFallbackAfterDynamicValue() = runTest {
         withProject("CPP_23") { projectRoot ->
             File(projectRoot, "CMakeLists.txt").writeText(
                 """
@@ -79,7 +80,7 @@ class ProjectCppStandardResolverTest {
     }
 
     @Test
-    fun resolveFlag_shouldFallbackAfterCmakeStandardIsUnset() {
+    fun resolveFlag_shouldFallbackAfterCmakeStandardIsUnset() = runTest {
         withProject("CPP_14") { projectRoot ->
             File(projectRoot, "CMakeLists.txt").writeText(
                 """
@@ -94,7 +95,7 @@ class ProjectCppStandardResolverTest {
     }
 
     @Test
-    fun resolveFlag_shouldUseLastValidMakefileStandardAndIgnoreComments() {
+    fun resolveFlag_shouldUseLastValidMakefileStandardAndIgnoreComments() = runTest {
         listOf("Makefile", "makefile", "GNUmakefile").forEach { makefileName ->
             withProject("CPP_14") { projectRoot ->
                 File(projectRoot, makefileName).writeText(
@@ -113,7 +114,7 @@ class ProjectCppStandardResolverTest {
     }
 
     @Test
-    fun resolveFlag_shouldPreserveFutureMetadataStandardAndDefaultToCpp17() {
+    fun resolveFlag_shouldPreserveFutureMetadataStandardAndDefaultToCpp17() = runTest {
         withProject("c++26") { projectRoot ->
             assertThat(ProjectCppStandardResolver.resolveFlag(projectRoot)).isEqualTo("c++26")
         }
@@ -126,9 +127,9 @@ class ProjectCppStandardResolverTest {
         }
     }
 
-    private fun withProject(
+    private suspend fun withProject(
         metadataStandard: String,
-        block: (File) -> Unit,
+        block: suspend (File) -> Unit,
     ) {
         val projectRoot = Files.createTempDirectory("project-cpp-standard-").toFile()
         try {

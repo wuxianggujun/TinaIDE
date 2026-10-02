@@ -113,7 +113,12 @@ class TinaApplication : Application() {
                 null
             }
         )
-        NativeCrashHandler.install(this)
+        NativeCrashHandler.install(
+            this,
+            // 形如 "0.18.34 (code 1834, build 00aca1bfa-20261001103000)"。
+            // buildId 与 R8 mapping 归档目录名同源，用于混淆栈反查。
+            appVersionLabel = "${BuildConfig.VERSION_NAME} (code ${BuildConfig.VERSION_CODE}, build ${BuildConfig.BUILD_ID})",
+        )
 
         // 初始化 Timber 日志框架（尽早初始化以捕获所有日志）
         val logsRoot = com.wuxianggujun.tinaide.storage.ProjectPaths.getLogsRoot(this)

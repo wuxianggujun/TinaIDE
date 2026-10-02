@@ -2,6 +2,9 @@ package com.wuxianggujun.tinaide.core.compile
 
 import com.wuxianggujun.tinaide.project.ProjectMetadataStore
 import java.io.File
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * 解析原生构建使用的 sysroot API level。
@@ -26,7 +29,11 @@ internal object ProjectSysrootApiLevelResolver {
         val invalidRunConfigApiLevel: Int? = null
     )
 
-    fun resolve(projectRoot: File, runConfigApiLevel: Int?): Resolution {
+    suspend fun resolve(projectRoot: File, runConfigApiLevel: Int?): Resolution = withContext(Dispatchers.IO) {
+        resolveOnIo(projectRoot, runConfigApiLevel)
+    }
+
+    private suspend fun resolveOnIo(projectRoot: File, runConfigApiLevel: Int?): Resolution {
         if (runConfigApiLevel != null && MakeCommandOverrides.isValidSysrootApiLevel(runConfigApiLevel)) {
             return Resolution(
                 apiLevel = runConfigApiLevel,
@@ -34,9 +41,13 @@ internal object ProjectSysrootApiLevelResolver {
             )
         }
 
-        val metadataApiLevel = runCatching {
+        val metadataApiLevel = try {
             ProjectMetadataStore.read(projectRoot)?.getNativeApiLevelOrNull()
-        }.getOrNull()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            null
+        }
 
         if (metadataApiLevel != null && MakeCommandOverrides.isValidSysrootApiLevel(metadataApiLevel)) {
             return Resolution(

@@ -95,7 +95,7 @@ sealed interface SemanticTokensRequestResult {
 class LspEditorManager(
     private val fileWatchService: IFileWatchService? = null,
     private val linuxEnvironmentProvider: LinuxEnvironmentProvider = UnavailableLinuxEnvironmentProvider,
-    private val cppStandardOverrideProvider: (File) -> String? = { null },
+    private val cppStandardOverrideProvider: suspend (File) -> String? = { null },
 ) {
 
     companion object {
@@ -429,11 +429,11 @@ class LspEditorManager(
             }
             val invalidationFile = cxxBinding?.file ?: file
             val projectRootPath = cxxBinding?.projectRootPath ?: savedBinding?.projectRootPath
-            val cppStandardOverride = cxxBinding?.file?.let(::resolveCppStandardOverride)
             compileSetupCache.invalidateForProject(invalidationFile, projectRootPath)
 
             lspScope.launch(Dispatchers.IO) {
                 val binding = cxxBinding ?: return@launch
+                val cppStandardOverride = binding.file?.let { resolveCppStandardOverride(it) }
                 if (isCompileCommandsFile) {
                     compileSetupCache.prepareProvidedCompileCommandsForLsp(
                         context = context,
@@ -1276,7 +1276,6 @@ class LspEditorManager(
         if (activateExistingSharedCxxIfPossible(tabId, file, projectRootPath, textProvider, remote = false)) {
             return true
         }
-        val cppStandardOverride = resolveCppStandardOverride(file)
         val compileAttachToken = Any()
         synchronized(stateLock) {
             attachTokenCache[tabId] = compileAttachToken
@@ -1326,6 +1325,7 @@ class LspEditorManager(
 
         updateLspStatus(tabId, EditorStatus.Connecting)
         lspScope.launch {
+            val cppStandardOverride = resolveCppStandardOverride(file)
             val compileSetup = resolveCompileSetup(
                 context = context,
                 file = file,
@@ -1783,7 +1783,7 @@ class LspEditorManager(
         cppStandardOverride = cppStandardOverride,
     )
 
-    private fun resolveCppStandardOverride(file: File): String? = runCatching {
+    private suspend fun resolveCppStandardOverride(file: File): String? = runCatching {
         cppStandardOverrideProvider(file)
     }.onFailure { error ->
         Timber.tag(TAG).w(error, "Failed to resolve C++ standard override for %s", file.absolutePath)

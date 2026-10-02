@@ -35,13 +35,16 @@ import com.wuxianggujun.tinaide.project.ProjectApkExportSupportResolver
 import com.wuxianggujun.tinaide.project.ProjectApkExportType
 import com.wuxianggujun.tinaide.project.ProjectMetadataStore
 import java.io.File
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import timber.log.Timber
 
 data class SettingsUiState(
     val appTheme: AppTheme,
@@ -185,6 +188,10 @@ class SettingsViewModel(
     private val appNavigator: IAppNavigator,
 ) : ViewModel() {
 
+    companion object {
+        private const val TAG = "SettingsViewModel"
+    }
+
     // 保存每个设置路由的垂直滚动偏移（像素）
     // Key = SettingsRoute.route, value = ScrollState.value
     // 采用内存存储，Activity/Process 存活期间可保持滚动位置
@@ -218,37 +225,46 @@ class SettingsViewModel(
     private var targetProjectRootOverride: File? = null
 
     /**
+     * 项目设置刷新任务。项目切换、能力流和手动修改都可能同时触发刷新；只保留最后一次，
+     * 避免旧项目扫描完成后覆盖新项目状态。
+     */
+    private var projectRefreshJob: Job? = null
+    private var projectRefreshGeneration: Long = 0L
+
+    /**
      * 被 SettingsActivity 在 onCreate 调用，用于从项目列表菜单进入时绑定目标项目。
      * 传 null 恢复为默认（使用当前会话项目）。
      */
     fun setTargetProjectRoot(path: String?) {
-        val next = path?.takeIf { it.isNotBlank() }?.let(::File)
-            ?.takeIf { it.exists() && it.isDirectory }
+        // 不在主线程执行 exists/isDirectory。目标目录的可读性在 IO 快照阶段统一校验。
+        val next = path?.trim()?.takeIf { it.isNotEmpty() }?.let(::File)
         if (next?.absolutePath == targetProjectRootOverride?.absolutePath) return
         targetProjectRootOverride = next
-        refreshProjectDependencyPaths()
+        requestProjectDependencyPathsRefresh()
     }
 
     private data class ResolvedTargetProject(
         val root: File,
         val displayName: String,
-        val buildDirPath: String?
+        val buildDirPath: String?,
+        val isTargetProjectMode: Boolean,
     )
 
     private fun resolveTargetProject(): ResolvedTargetProject? {
         targetProjectRootOverride?.let { root ->
-            val metadata = ProjectMetadataStore.ensure(root, displayNameFallback = root.name)
             return ResolvedTargetProject(
                 root = root,
-                displayName = metadata.displayName,
-                buildDirPath = null // 覆盖模式不做 APK 导出检测
+                displayName = root.name,
+                buildDirPath = null, // 覆盖模式不做 APK 导出检测
+                isTargetProjectMode = true,
             )
         }
         val project = projectContext.getCurrentProject() ?: return null
         return ResolvedTargetProject(
             root = File(project.rootPath),
             displayName = project.name,
-            buildDirPath = project.buildDirPath
+            buildDirPath = project.buildDirPath,
+            isTargetProjectMode = false,
         )
     }
 
@@ -258,7 +274,7 @@ class SettingsViewModel(
             // 当 MainPortalActivity.onStart 调用 clearInMemorySession 或用户打开/关闭
             // 项目时 flow 会发射，设置页 UI 随之同步。
             projectContext.currentProjectFlow.collect {
-                refreshProjectDependencyPaths()
+                requestProjectDependencyPathsRefresh()
             }
         }
 
@@ -289,14 +305,14 @@ class SettingsViewModel(
         viewModelScope.launch {
             pluginManager.enabledCapabilitiesFlow.collect { capabilities ->
                 updatePrefsState(PluginCapabilities.LINUX_ENVIRONMENT in capabilities)
-                refreshProjectDependencyPaths()
+                requestProjectDependencyPathsRefresh()
             }
         }
     }
 
     fun refreshFromPrefs() {
         updatePrefsState(pluginManager.hasEnabledCapability(PluginCapabilities.LINUX_ENVIRONMENT))
-        refreshProjectDependencyPaths()
+        requestProjectDependencyPathsRefresh()
     }
 
     private fun updatePrefsState(linuxEnvironmentEnabled: Boolean) {
@@ -896,19 +912,33 @@ class SettingsViewModel(
         includeDirs: List<String>,
         libraryDirs: List<String>,
         runtimeDirs: List<String>
-    ): Boolean {
-        val resolved = resolveTargetProject() ?: return false
-        ProjectMetadataStore.ensure(resolved.root, displayNameFallback = resolved.displayName)
-        val updated = ProjectMetadataStore.updateNativeDependencyPaths(
-            projectRoot = resolved.root,
-            includeDirs = includeDirs,
-            libraryDirs = libraryDirs,
-            runtimeDirs = runtimeDirs
-        )
-        if (updated) {
-            refreshProjectDependencyPaths()
+    ) {
+        // Resolve the target before dispatching. The user can switch the settings target while
+        // the write is queued; the edit must still apply to the project that was visible when it
+        // was submitted.
+        val target = resolveTargetProject()
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val resolved = target?.takeIf(::isReadableProject) ?: return@withContext false
+                    ProjectMetadataStore.ensure(
+                        resolved.root,
+                        displayNameFallback = resolved.displayName,
+                    )
+                    ProjectMetadataStore.updateNativeDependencyPaths(
+                        projectRoot = resolved.root,
+                        includeDirs = includeDirs,
+                        libraryDirs = libraryDirs,
+                        runtimeDirs = runtimeDirs,
+                    )
+                }
+            }.onSuccess { updated ->
+                if (updated) requestProjectDependencyPathsRefresh()
+            }.onFailure { error ->
+                if (error is CancellationException) throw error
+                Timber.tag(TAG).w(error, "Failed to update project native dependency paths")
+            }
         }
-        return updated
     }
 
     fun updateProjectNativeBuildFlags(
@@ -917,52 +947,148 @@ class SettingsViewModel(
         ldFlags: String,
         ldLibs: String,
         cmakeArgs: List<String>
-    ): Boolean {
-        val resolved = resolveTargetProject() ?: return false
-        ProjectMetadataStore.ensure(resolved.root, displayNameFallback = resolved.displayName)
-        val updated = ProjectMetadataStore.updateNativeBuildFlags(
+    ) {
+        val target = resolveTargetProject()
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val resolved = target?.takeIf(::isReadableProject) ?: return@withContext false
+                    ProjectMetadataStore.ensure(
+                        resolved.root,
+                        displayNameFallback = resolved.displayName,
+                    )
+                    ProjectMetadataStore.updateNativeBuildFlags(
+                        projectRoot = resolved.root,
+                        cFlags = cFlags,
+                        cppFlags = cppFlags,
+                        ldFlags = ldFlags,
+                        ldLibs = ldLibs,
+                        cmakeArgs = cmakeArgs,
+                    )
+                }
+            }.onSuccess { updated ->
+                if (updated) requestProjectDependencyPathsRefresh()
+            }.onFailure { error ->
+                if (error is CancellationException) throw error
+                Timber.tag(TAG).w(error, "Failed to update project native build flags")
+            }
+        }
+    }
+
+    fun updateProjectApkExportType(apkExportType: ProjectApkExportType) {
+        val target = resolveTargetProject()
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val resolved = target?.takeIf(::isReadableProject) ?: return@withContext false
+                    ProjectApkExportSupportResolver.invalidate(resolved.root)
+                    ProjectMetadataStore.updateApkExportType(resolved.root, apkExportType)
+                }
+            }.onSuccess { updated ->
+                if (updated) requestProjectDependencyPathsRefresh()
+            }.onFailure { error ->
+                if (error is CancellationException) throw error
+                Timber.tag(TAG).w(error, "Failed to update project APK export type")
+            }
+        }
+    }
+
+    fun redetectProjectApkExportType() {
+        val target = resolveTargetProject()
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val resolved = target?.takeIf(::isReadableProject) ?: return@withContext false
+                    // 覆盖模式下没有 buildDir，仍允许清空持久化结果，让下次进入时显示“未检测”。
+                    ProjectMetadataStore.ensure(
+                        resolved.root,
+                        displayNameFallback = resolved.displayName,
+                    )
+                    ProjectApkExportSupportResolver.invalidate(resolved.root)
+                    ProjectMetadataStore.updateApkExportType(resolved.root, null)
+                }
+            }.onSuccess { reset ->
+                if (reset) requestProjectDependencyPathsRefresh()
+            }.onFailure { error ->
+                if (error is CancellationException) throw error
+                Timber.tag(TAG).w(error, "Failed to reset project APK export detection")
+            }
+        }
+    }
+
+    private fun requestProjectDependencyPathsRefresh() {
+        projectRefreshJob?.cancel()
+        val generation = ++projectRefreshGeneration
+        val target = resolveTargetProject()
+        projectRefreshJob = viewModelScope.launch {
+            val snapshot = loadProjectDependencySnapshot(target)
+            if (generation != projectRefreshGeneration) return@launch
+            applyProjectDependencySnapshot(snapshot, target?.isTargetProjectMode == true)
+        }
+    }
+
+    private suspend fun loadProjectDependencySnapshot(
+        target: ResolvedTargetProject?,
+    ): ProjectDependencySnapshot? = withContext(Dispatchers.IO) {
+        val resolved = target?.takeIf(::isReadableProject) ?: return@withContext null
+        val metadata = ProjectMetadataStore.ensure(
             projectRoot = resolved.root,
-            cFlags = cFlags,
-            cppFlags = cppFlags,
-            ldFlags = ldFlags,
-            ldLibs = ldLibs,
-            cmakeArgs = cmakeArgs
+            displayNameFallback = resolved.displayName,
         )
-        if (updated) {
-            refreshProjectDependencyPaths()
-        }
-        return updated
+        // 覆盖模式下 buildDirPath 为 null，不做自动检测——只读持久化的 apkExportType；
+        // 默认模式下保留原有“缺失即自动检测”的行为。
+        val apkExportType = metadata.apkExportType
+            ?: resolved.buildDirPath?.let { buildPath ->
+                ProjectApkExportSupportResolver.ensureDetected(
+                    projectRoot = resolved.root,
+                    buildDir = File(buildPath),
+                )
+            }
+        ProjectDependencySnapshot(
+            currentProjectName = metadata.displayName,
+            currentProjectRootPath = resolved.root.absolutePath,
+            projectApkExportType = apkExportType,
+            isTargetProjectMode = resolved.isTargetProjectMode,
+            projectNativeIncludeDirs = metadata.normalizedNativeIncludeDirs(),
+            projectNativeLibraryDirs = metadata.normalizedNativeLibraryDirs(),
+            projectNativeRuntimeDirs = metadata.normalizedNativeRuntimeDirs(),
+            projectNativeCFlags = metadata.normalizedNativeCFlags(),
+            projectNativeCppFlags = metadata.normalizedNativeCppFlags(),
+            projectNativeLdFlags = metadata.normalizedNativeLdFlags(),
+            projectNativeLdLibs = metadata.normalizedNativeLdLibs(),
+            projectNativeCMakeArgs = metadata.normalizedNativeCMakeArgs(),
+        )
     }
 
-    fun updateProjectApkExportType(apkExportType: ProjectApkExportType): Boolean {
-        val resolved = resolveTargetProject() ?: return false
-        val updated = ProjectMetadataStore.updateApkExportType(resolved.root, apkExportType)
-        if (updated) {
-            refreshProjectDependencyPaths()
-        }
-        return updated
-    }
+    private fun isReadableProject(resolved: ResolvedTargetProject): Boolean =
+        resolved.root.isDirectory && resolved.root.canRead()
 
-    fun redetectProjectApkExportType(): Boolean {
-        val resolved = resolveTargetProject() ?: return false
-        // 覆盖模式下没有 buildDir，无法做自动检测；refreshProjectDependencyPaths 里也会跳过。
-        // 仍允许把 apkExportType 重置为 null，下次进入时显示"未检测"。
-        ProjectMetadataStore.ensure(resolved.root, displayNameFallback = resolved.displayName)
-        val reset = ProjectMetadataStore.updateApkExportType(resolved.root, null)
-        refreshProjectDependencyPaths()
-        return reset
-    }
+    private data class ProjectDependencySnapshot(
+        val currentProjectName: String?,
+        val currentProjectRootPath: String?,
+        val projectApkExportType: ProjectApkExportType?,
+        val isTargetProjectMode: Boolean,
+        val projectNativeIncludeDirs: List<String>,
+        val projectNativeLibraryDirs: List<String>,
+        val projectNativeRuntimeDirs: List<String>,
+        val projectNativeCFlags: String,
+        val projectNativeCppFlags: String,
+        val projectNativeLdFlags: String,
+        val projectNativeLdLibs: String,
+        val projectNativeCMakeArgs: List<String>,
+    )
 
-    private fun refreshProjectDependencyPaths() {
-        val resolved = resolveTargetProject()
-        val inTargetMode = targetProjectRootOverride != null
-        if (resolved == null) {
+    private fun applyProjectDependencySnapshot(
+        snapshot: ProjectDependencySnapshot?,
+        targetProjectMode: Boolean,
+    ) {
+        if (snapshot == null) {
             _uiState.update {
                 it.copy(
                     currentProjectName = null,
                     currentProjectRootPath = null,
                     projectApkExportType = null,
-                    isTargetProjectMode = inTargetMode,
+                    isTargetProjectMode = targetProjectMode,
                     projectNativeIncludeDirs = emptyList(),
                     projectNativeLibraryDirs = emptyList(),
                     projectNativeRuntimeDirs = emptyList(),
@@ -970,39 +1096,25 @@ class SettingsViewModel(
                     projectNativeCppFlags = "",
                     projectNativeLdFlags = "",
                     projectNativeLdLibs = "",
-                    projectNativeCMakeArgs = emptyList()
+                    projectNativeCMakeArgs = emptyList(),
                 )
             }
             return
         }
-
-        val metadata = ProjectMetadataStore.ensure(
-            projectRoot = resolved.root,
-            displayNameFallback = resolved.displayName
-        )
-        // 覆盖模式下 buildDirPath 为 null，不做自动检测——只读持久化的 apkExportType；
-        // 默认模式下保留原有"缺失即自动检测"的行为。
-        val apkExportType = metadata.apkExportType
-            ?: resolved.buildDirPath?.let { buildPath ->
-                ProjectApkExportSupportResolver.ensureDetected(
-                    projectRoot = resolved.root,
-                    buildDir = File(buildPath)
-                )
-            }
         _uiState.update {
             it.copy(
-                currentProjectName = resolved.displayName,
-                currentProjectRootPath = resolved.root.absolutePath,
-                projectApkExportType = apkExportType,
-                isTargetProjectMode = inTargetMode,
-                projectNativeIncludeDirs = metadata.normalizedNativeIncludeDirs(),
-                projectNativeLibraryDirs = metadata.normalizedNativeLibraryDirs(),
-                projectNativeRuntimeDirs = metadata.normalizedNativeRuntimeDirs(),
-                projectNativeCFlags = metadata.normalizedNativeCFlags(),
-                projectNativeCppFlags = metadata.normalizedNativeCppFlags(),
-                projectNativeLdFlags = metadata.normalizedNativeLdFlags(),
-                projectNativeLdLibs = metadata.normalizedNativeLdLibs(),
-                projectNativeCMakeArgs = metadata.normalizedNativeCMakeArgs()
+                currentProjectName = snapshot.currentProjectName,
+                currentProjectRootPath = snapshot.currentProjectRootPath,
+                projectApkExportType = snapshot.projectApkExportType,
+                isTargetProjectMode = snapshot.isTargetProjectMode,
+                projectNativeIncludeDirs = snapshot.projectNativeIncludeDirs,
+                projectNativeLibraryDirs = snapshot.projectNativeLibraryDirs,
+                projectNativeRuntimeDirs = snapshot.projectNativeRuntimeDirs,
+                projectNativeCFlags = snapshot.projectNativeCFlags,
+                projectNativeCppFlags = snapshot.projectNativeCppFlags,
+                projectNativeLdFlags = snapshot.projectNativeLdFlags,
+                projectNativeLdLibs = snapshot.projectNativeLdLibs,
+                projectNativeCMakeArgs = snapshot.projectNativeCMakeArgs,
             )
         }
     }

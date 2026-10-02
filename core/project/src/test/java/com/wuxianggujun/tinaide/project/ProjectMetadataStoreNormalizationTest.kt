@@ -3,12 +3,13 @@ package com.wuxianggujun.tinaide.project
 import com.google.common.truth.Truth.assertThat
 import java.io.File
 import java.nio.file.Files
+import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
 class ProjectMetadataStoreNormalizationTest {
 
     @Test
-    fun `read normalizes current metadata values`() {
+    fun `read normalizes current metadata values`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             writeProjectMetadata(
@@ -53,7 +54,7 @@ class ProjectMetadataStoreNormalizationTest {
     }
 
     @Test
-    fun `write normalizes current metadata and keeps unknown cpp standard`() {
+    fun `write normalizes current metadata and keeps unknown cpp standard`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             val metadata = ProjectMetadata(
@@ -76,7 +77,7 @@ class ProjectMetadataStoreNormalizationTest {
     }
 
     @Test
-    fun `read replaces path-like project identity and persists the replacement`() {
+    fun `read replaces path-like project identity and persists the replacement`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             writeProjectMetadata(
@@ -102,7 +103,7 @@ class ProjectMetadataStoreNormalizationTest {
     }
 
     @Test
-    fun `read rejects oversized metadata before decoding`() {
+    fun `read rejects oversized metadata before decoding`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             writeProjectMetadata(projectRoot, "x".repeat(300 * 1024))
@@ -114,7 +115,7 @@ class ProjectMetadataStoreNormalizationTest {
     }
 
     @Test
-    fun `write truncates display name without leaving an unpaired surrogate`() {
+    fun `write truncates display name without leaving an unpaired surrogate`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             val metadata = ProjectMetadata(
@@ -136,7 +137,7 @@ class ProjectMetadataStoreNormalizationTest {
     }
 
     @Test
-    fun `oversized write preserves existing metadata`() {
+    fun `oversized write preserves existing metadata`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             val baseline = ProjectMetadata(
@@ -164,7 +165,7 @@ class ProjectMetadataStoreNormalizationTest {
     }
 
     @Test
-    fun `read bounds untrusted metadata fields`() {
+    fun `read bounds untrusted metadata fields`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             val excessivePaths = (0 until 300).joinToString(",") { index ->
@@ -199,7 +200,7 @@ class ProjectMetadataStoreNormalizationTest {
     }
 
     @Test
-    fun `read removes incompatible SDL3 APK export from SDL2 metadata`() {
+    fun `read removes incompatible SDL3 APK export from SDL2 metadata`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             writeProjectMetadata(
@@ -227,7 +228,7 @@ class ProjectMetadataStoreNormalizationTest {
     }
 
     @Test
-    fun `read repairs legacy SDL3 export metadata when source uses SDL2`() {
+    fun `read repairs legacy SDL3 export metadata when source uses SDL2`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             File(projectRoot, "CMakeLists.txt").writeText(
@@ -264,7 +265,7 @@ class ProjectMetadataStoreNormalizationTest {
     }
 
     @Test
-    fun `read repairs legacy SDL3 export metadata when source uses raylib`() {
+    fun `read repairs legacy SDL3 export metadata when source uses raylib`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             File(projectRoot, "CMakeLists.txt").writeText(
@@ -308,7 +309,7 @@ class ProjectMetadataStoreNormalizationTest {
     }
 
     @Test
-    fun `read repairs legacy raylib metadata that already persisted SDL3 version`() {
+    fun `read repairs legacy raylib metadata that already persisted SDL3 version`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             File(projectRoot, "CMakeLists.txt").writeText(
@@ -353,7 +354,7 @@ class ProjectMetadataStoreNormalizationTest {
     }
 
     @Test
-    fun `read removes incompatible native activity export from SDL2 metadata`() {
+    fun `read removes incompatible native activity export from SDL2 metadata`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             writeProjectMetadata(
@@ -381,7 +382,7 @@ class ProjectMetadataStoreNormalizationTest {
     }
 
     @Test
-    fun `read repairs legacy raylib metadata whose target is not named main`() {
+    fun `read repairs legacy raylib metadata whose target is not named main`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             File(projectRoot, "CMakeLists.txt").writeText(
@@ -423,7 +424,7 @@ class ProjectMetadataStoreNormalizationTest {
     }
 
     @Test
-    fun `read clears native activity runtime for SDL metadata`() {
+    fun `read clears native activity runtime for SDL metadata`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             writeProjectMetadata(
@@ -451,7 +452,7 @@ class ProjectMetadataStoreNormalizationTest {
     }
 
     @Test
-    fun `read falls back to apk export type when native activity runtime is absent`() {
+    fun `read falls back to apk export type when native activity runtime is absent`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             writeProjectMetadata(

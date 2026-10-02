@@ -5,6 +5,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.wuxianggujun.tinaide.core.commands.HostCommandExecutor
@@ -22,6 +23,7 @@ import com.wuxianggujun.tinaide.ui.compose.state.DialogState
 import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState
 import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveEditorCommandResult
 import com.wuxianggujun.tinaide.ui.compose.state.editor.SplitEditorLayout
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -45,6 +47,7 @@ internal fun MainActivityTopBarHost(
     callbacks: MainActivityScreenCallbacks,
 ) {
     val context = LocalContext.current
+    val runConfigSaveScope = rememberCoroutineScope()
     val pluginManager = remember(context) {
         PluginManager.getInstance(context.applicationContext)
     }
@@ -128,15 +131,17 @@ internal fun MainActivityTopBarHost(
         runConfigManager = buildUiState.runConfigManager,
         isRunConfigLoading = buildUiState.isRunConfigLoading,
         onRunConfigManagerChange = { updated ->
-            if (
-                !buildUiState.commitRunConfigManager(
-                    updated = updated,
-                    persist = callbacks.onPersistRunConfigManager,
-                    onSelectedSingleFileCppStandardChanged =
-                        editorContainerState::refreshOpenCxxEditorsForCompileConfigChange,
-                )
-            ) {
-                context.toastError(Strings.toast_run_config_save_failed.strOr(context))
+            runConfigSaveScope.launch {
+                if (
+                    !buildUiState.commitRunConfigManager(
+                        updated = updated,
+                        persist = callbacks.onPersistRunConfigManager,
+                        onSelectedSingleFileCppStandardChanged =
+                            editorContainerState::refreshOpenCxxEditorsForCompileConfigChange,
+                    )
+                ) {
+                    context.toastError(Strings.toast_run_config_save_failed.strOr(context))
+                }
             }
         },
         onEditConfig = buildUiState::startEditingConfig,

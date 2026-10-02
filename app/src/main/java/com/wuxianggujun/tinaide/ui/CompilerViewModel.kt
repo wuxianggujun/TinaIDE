@@ -146,9 +146,9 @@ class CompilerViewModel(
     /**
      * 保存运行配置管理器
      */
-    fun saveRunConfigurationManager(manager: RunConfigurationManager): Boolean {
-        val project = projectContext.getCurrentProject() ?: return false
-        return RunConfigurationManager.save(project.rootPath, manager)
+    suspend fun saveRunConfigurationManager(manager: RunConfigurationManager): Boolean = withContext(Dispatchers.IO) {
+        val project = projectContext.getCurrentProject() ?: return@withContext false
+        RunConfigurationManager.save(project.rootPath, manager)
     }
 
     /**

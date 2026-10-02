@@ -9,6 +9,8 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import timber.log.Timber
@@ -38,7 +40,11 @@ object ProjectMetadataStore {
     /**
      * 读取项目元数据，如果需要会自动补全缺失字段
      */
-    fun read(projectRoot: File): ProjectMetadata? {
+    suspend fun read(projectRoot: File): ProjectMetadata? = withContext(Dispatchers.IO) {
+        readMetadata(projectRoot)
+    }
+
+    internal fun readMetadata(projectRoot: File): ProjectMetadata? {
         val file = getMetaFile(projectRoot)
         if (!file.exists()) return null
 
@@ -52,7 +58,7 @@ object ProjectMetadataStore {
             )
             if (normalized != decoded) {
                 Timber.tag(TAG).i("Normalized project metadata")
-                check(write(projectRoot, normalized)) { "Failed to persist normalized project metadata" }
+                check(writeMetadata(projectRoot, normalized)) { "Failed to persist normalized project metadata" }
             }
             normalized
         }.onFailure { error ->
@@ -63,7 +69,35 @@ object ProjectMetadataStore {
     /**
      * 确保项目有元数据，如果没有则创建，如果缺少字段则补全
      */
-    fun ensure(
+    suspend fun ensure(
+        projectRoot: File,
+        displayNameFallback: String = projectRoot.name,
+        buildSystem: ProjectBuildSystem? = null,
+        cppStandard: CppStandard? = null,
+        primaryLanguage: ProjectLanguage? = null,
+        apkExportType: ProjectApkExportType? = null,
+        sdlVersion: ProjectSdlVersion? = null,
+        nativeActivityRuntime: Boolean? = null,
+        nativeApiLevel: Int? = null,
+        defaultRunTargetName: String? = null,
+        defaultSdlTargetName: String? = null
+    ): ProjectMetadata = withContext(Dispatchers.IO) {
+        ensureMetadata(
+            projectRoot = projectRoot,
+            displayNameFallback = displayNameFallback,
+            buildSystem = buildSystem,
+            cppStandard = cppStandard,
+            primaryLanguage = primaryLanguage,
+            apkExportType = apkExportType,
+            sdlVersion = sdlVersion,
+            nativeActivityRuntime = nativeActivityRuntime,
+            nativeApiLevel = nativeApiLevel,
+            defaultRunTargetName = defaultRunTargetName,
+            defaultSdlTargetName = defaultSdlTargetName,
+        )
+    }
+
+    internal fun ensureMetadata(
         projectRoot: File,
         displayNameFallback: String = projectRoot.name,
         buildSystem: ProjectBuildSystem? = null,
@@ -79,7 +113,7 @@ object ProjectMetadataStore {
         val normalizedNativeApiLevel = normalizeNativeApiLevel(nativeApiLevel)
         val normalizedDefaultRunTargetName = normalizeTargetName(defaultRunTargetName)
         val normalizedDefaultSdlTargetName = normalizeTargetName(defaultSdlTargetName)
-        read(projectRoot)?.let { existing ->
+        readMetadata(projectRoot)?.let { existing ->
             var needsUpdate = false
             var updated = existing
 
@@ -134,7 +168,7 @@ object ProjectMetadataStore {
             }
 
             if (needsUpdate) {
-                check(write(projectRoot, updated)) { "Failed to persist updated project metadata" }
+                check(writeMetadata(projectRoot, updated)) { "Failed to persist updated project metadata" }
             }
             return updated
         }
@@ -157,11 +191,15 @@ object ProjectMetadataStore {
             defaultRunTargetName = normalizedDefaultRunTargetName,
             defaultSdlTargetName = normalizedDefaultSdlTargetName
         )
-        check(write(projectRoot, meta)) { "Failed to create project metadata" }
+        check(writeMetadata(projectRoot, meta)) { "Failed to create project metadata" }
         return meta
     }
 
-    fun write(projectRoot: File, metadata: ProjectMetadata): Boolean {
+    suspend fun write(projectRoot: File, metadata: ProjectMetadata): Boolean = withContext(Dispatchers.IO) {
+        writeMetadata(projectRoot, metadata)
+    }
+
+    internal fun writeMetadata(projectRoot: File, metadata: ProjectMetadata): Boolean {
         val metadataToPersist = normalizeMetadata(
             metadata = metadata.copy(schemaVersion = PROJECT_METADATA_SCHEMA_CURRENT),
             displayNameFallback = projectRoot.name,
@@ -179,25 +217,25 @@ object ProjectMetadataStore {
         }.getOrElse { false }
     }
 
-    fun updateBuildSystem(projectRoot: File, buildSystem: ProjectBuildSystem): Boolean {
+    suspend fun updateBuildSystem(projectRoot: File, buildSystem: ProjectBuildSystem): Boolean {
         val existing = read(projectRoot) ?: return false
         val updated = existing.copy(buildSystem = buildSystem)
         return write(projectRoot, updated)
     }
 
-    fun updateCppStandard(projectRoot: File, cppStandard: CppStandard): Boolean {
+    suspend fun updateCppStandard(projectRoot: File, cppStandard: CppStandard): Boolean {
         val existing = read(projectRoot) ?: return false
         val updated = existing.copy(cppStandard = cppStandard.name)
         return write(projectRoot, updated)
     }
 
-    fun updatePrimaryLanguage(projectRoot: File, language: ProjectLanguage): Boolean {
+    suspend fun updatePrimaryLanguage(projectRoot: File, language: ProjectLanguage): Boolean {
         val existing = read(projectRoot) ?: return false
         val updated = existing.copy(primaryLanguage = language.name)
         return write(projectRoot, updated)
     }
 
-    fun updateApkExportType(projectRoot: File, apkExportType: ProjectApkExportType?): Boolean {
+    suspend fun updateApkExportType(projectRoot: File, apkExportType: ProjectApkExportType?): Boolean {
         val existing = read(projectRoot) ?: return false
         // 导出类型与运行能力是两条轴，但显式动作要能带动运行链路：
         // - 选中 NATIVE_ACTIVITY：用户已确认这是 NativeActivity 项目，运行能力置 true
@@ -225,13 +263,13 @@ object ProjectMetadataStore {
         )
     }
 
-    fun updateSdlVersion(projectRoot: File, sdlVersion: ProjectSdlVersion?): Boolean {
+    suspend fun updateSdlVersion(projectRoot: File, sdlVersion: ProjectSdlVersion?): Boolean {
         val existing = read(projectRoot) ?: return false
         if (existing.sdlVersion == sdlVersion) return true
         return write(projectRoot, existing.copy(sdlVersion = sdlVersion))
     }
 
-    fun updateLastOpened(projectRoot: File): Boolean {
+    suspend fun updateLastOpened(projectRoot: File): Boolean {
         val existing = read(projectRoot) ?: return false
         val updated = existing.copy(
             lastOpenedIdeVersion = currentIdeVersion,
@@ -240,14 +278,14 @@ object ProjectMetadataStore {
         return write(projectRoot, updated)
     }
 
-    fun updateNativeApiLevel(projectRoot: File, nativeApiLevel: Int?): Boolean {
+    suspend fun updateNativeApiLevel(projectRoot: File, nativeApiLevel: Int?): Boolean {
         val existing = read(projectRoot) ?: return false
         val normalized = normalizeNativeApiLevel(nativeApiLevel)
         if (existing.nativeApiLevel == normalized) return true
         return write(projectRoot, existing.copy(nativeApiLevel = normalized))
     }
 
-    fun updateNativeDependencyPaths(
+    suspend fun updateNativeDependencyPaths(
         projectRoot: File,
         includeDirs: List<String>,
         libraryDirs: List<String>,
@@ -273,7 +311,7 @@ object ProjectMetadataStore {
         )
     }
 
-    fun updateNativeBuildFlags(
+    suspend fun updateNativeBuildFlags(
         projectRoot: File,
         cFlags: String,
         cppFlags: String,

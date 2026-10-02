@@ -17,6 +17,8 @@ import com.wuxianggujun.tinaide.ui.runtime.resolveNativeRuntimeLibrary
 import java.io.File
 import java.io.IOException
 import java.util.ArrayDeque
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 
 /**
@@ -67,12 +69,28 @@ object SdlRuntimeResolver {
         val packageVersion: String? = null,
     )
 
-    fun resolve(
+    suspend fun resolve(
         context: Context,
         mainLibraryPath: String,
         extraRuntimeLibDirs: List<File> = emptyList(),
         allowUndetectedSdl: Boolean = false,
         preferredSdlMajor: Int? = null,
+    ): ResolveResult = withContext(Dispatchers.IO) {
+        resolveOnIo(
+            context = context,
+            mainLibraryPath = mainLibraryPath,
+            extraRuntimeLibDirs = extraRuntimeLibDirs,
+            allowUndetectedSdl = allowUndetectedSdl,
+            preferredSdlMajor = preferredSdlMajor,
+        )
+    }
+
+    private suspend fun resolveOnIo(
+        context: Context,
+        mainLibraryPath: String,
+        extraRuntimeLibDirs: List<File>,
+        allowUndetectedSdl: Boolean,
+        preferredSdlMajor: Int?,
     ): ResolveResult {
         if (mainLibraryPath.isBlank()) {
             return ResolveResult.Error(Strings.sdl_runtime_error_main_library_missing.strOr(context))
@@ -89,7 +107,7 @@ object SdlRuntimeResolver {
             }
         }
         val projectSdlMajor = projectRoot
-            ?.let(ProjectMetadataStore::read)
+            ?.let { ProjectMetadataStore.read(it) }
             ?.getSdlVersionOrNull()
             ?.major
         val packagePaths = InstalledPackagePathResolver.resolve(

@@ -7,6 +7,8 @@ import com.wuxianggujun.tinaide.core.packages.InstalledPackagePathResolver
 import com.wuxianggujun.tinaide.core.util.NativeExecutableRunner
 import com.wuxianggujun.tinaide.core.util.NativeExecutableRunner.shellQuotePosix
 import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * 终端运行命令组装器。
@@ -30,13 +32,31 @@ class TerminalCommandBuilder(context: Context) {
      * @param projectRoot 项目根目录,用于解析已安装包的 runtime lib 目录
      * @param extraEnvironment 额外注入到运行 shell 的环境变量
      */
-    fun build(
+    suspend fun build(
         workingDir: String,
         outputPath: String,
         args: List<String>,
         projectRoot: File,
         extraEnvironment: Map<String, String> = emptyMap(),
         nativeRuntimeIdentity: NativeRuntimeIdentity? = null,
+    ): String = withContext(Dispatchers.IO) {
+        buildOnIo(
+            workingDir = workingDir,
+            outputPath = outputPath,
+            args = args,
+            projectRoot = projectRoot,
+            extraEnvironment = extraEnvironment,
+            nativeRuntimeIdentity = nativeRuntimeIdentity,
+        )
+    }
+
+    private suspend fun buildOnIo(
+        workingDir: String,
+        outputPath: String,
+        args: List<String>,
+        projectRoot: File,
+        extraEnvironment: Map<String, String>,
+        nativeRuntimeIdentity: NativeRuntimeIdentity?,
     ): String {
         val outputFile = File(outputPath)
         val stageDir = File(appContext.filesDir, "run-bin")

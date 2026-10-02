@@ -4,12 +4,13 @@ import com.google.common.truth.Truth.assertThat
 import java.io.File
 import java.io.RandomAccessFile
 import java.nio.file.Files
+import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
 class ProjectApkExportSupportResolverTest {
 
     @Test
-    fun `detect returns sdl3 when project outputs libmain and links SDL3`() {
+    fun `detect returns sdl3 when project outputs libmain and links SDL3`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             projectRoot.resolve("CMakeLists.txt").writeText(
@@ -33,7 +34,7 @@ class ProjectApkExportSupportResolverTest {
     }
 
     @Test
-    fun `detect records SDL2 runtime without enabling SDL3 APK export`() {
+    fun `detect records SDL2 runtime without enabling SDL3 APK export`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             projectRoot.resolve("CMakeLists.txt").writeText(
@@ -59,7 +60,7 @@ class ProjectApkExportSupportResolverTest {
     }
 
     @Test
-    fun `detect accepts bare SDL2 CMake target`() {
+    fun `detect accepts bare SDL2 CMake target`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             projectRoot.resolve("CMakeLists.txt").writeText(
@@ -82,7 +83,7 @@ class ProjectApkExportSupportResolverTest {
     }
 
     @Test
-    fun `detect scans SDL2 markers from included cmake modules`() {
+    fun `detect scans SDL2 markers from included cmake modules`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             projectRoot.resolve("CMakeLists.txt").writeText(
@@ -106,7 +107,7 @@ class ProjectApkExportSupportResolverTest {
     }
 
     @Test
-    fun `detect accepts SDL2 config command from GNUmakefile`() {
+    fun `detect accepts SDL2 config command from GNUmakefile`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             projectRoot.resolve("GNUmakefile").writeText(
@@ -126,7 +127,7 @@ class ProjectApkExportSupportResolverTest {
     }
 
     @Test
-    fun `detect does not classify SDL2 project as native activity`() {
+    fun `detect does not classify SDL2 project as native activity`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             projectRoot.resolve("CMakeLists.txt").writeText(
@@ -153,7 +154,7 @@ class ProjectApkExportSupportResolverTest {
     }
 
     @Test
-    fun `detect accepts versioned SDL2 soname markers`() {
+    fun `detect accepts versioned SDL2 soname markers`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             projectRoot.resolve("Android.mk").writeText(
@@ -174,7 +175,7 @@ class ProjectApkExportSupportResolverTest {
     }
 
     @Test
-    fun `detect does not treat shared SDLActivity marker as SDL3`() {
+    fun `detect does not treat shared SDLActivity marker as SDL3`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             projectRoot.resolve("CMakeLists.txt").writeText(
@@ -196,7 +197,7 @@ class ProjectApkExportSupportResolverTest {
     }
 
     @Test
-    fun `detect leaves conflicting SDL2 and SDL3 markers unresolved`() {
+    fun `detect leaves conflicting SDL2 and SDL3 markers unresolved`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             projectRoot.resolve("CMakeLists.txt").writeText(
@@ -216,7 +217,7 @@ class ProjectApkExportSupportResolverTest {
     }
 
     @Test
-    fun `detect returns null when project only outputs libmain`() {
+    fun `detect returns null when project only outputs libmain`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             projectRoot.resolve("CMakeLists.txt").writeText(
@@ -238,7 +239,7 @@ class ProjectApkExportSupportResolverTest {
     }
 
     @Test
-    fun `detect returns native activity for shared raylib project`() {
+    fun `detect returns native activity for shared raylib project`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             projectRoot.resolve("CMakeLists.txt").writeText(
@@ -268,7 +269,7 @@ class ProjectApkExportSupportResolverTest {
     }
 
     @Test
-    fun `detect does not classify raylib plus SDL as native activity`() {
+    fun `detect does not classify raylib plus SDL as native activity`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             projectRoot.resolve("CMakeLists.txt").writeText(
@@ -288,7 +289,7 @@ class ProjectApkExportSupportResolverTest {
     }
 
     @Test
-    fun `detect returns terminal when project has main entry without libmain markers`() {
+    fun `detect returns terminal when project has main entry without libmain markers`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             projectRoot.resolve("Makefile").writeText(
@@ -317,7 +318,7 @@ class ProjectApkExportSupportResolverTest {
     }
 
     @Test
-    fun `detect returns terminal when build directory contains runnable elf`() {
+    fun `detect returns terminal when build directory contains runnable elf`() = runTest {
         val projectRoot = createTempProjectRoot()
         val buildDir = projectRoot.resolve("build").apply { mkdirs() }
         try {
@@ -343,7 +344,7 @@ class ProjectApkExportSupportResolverTest {
     }
 
     @Test
-    fun `ensureDetected writes native activity export type for native activity project`() {
+    fun `ensureDetected writes native activity export type for native activity project`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             projectRoot.resolve("CMakeLists.txt").writeText(
@@ -386,7 +387,7 @@ class ProjectApkExportSupportResolverTest {
     }
 
     @Test
-    fun `ensureDetected persists SDL2 runtime without APK export type`() {
+    fun `ensureDetected persists SDL2 runtime without APK export type`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             projectRoot.resolve("CMakeLists.txt").writeText(
@@ -413,7 +414,7 @@ class ProjectApkExportSupportResolverTest {
     }
 
     @Test
-    fun `ensureDetected does not replace known SDL2 with native activity export`() {
+    fun `ensureDetected does not replace known SDL2 with native activity export`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             projectRoot.resolve("CMakeLists.txt").writeText(
@@ -446,7 +447,7 @@ class ProjectApkExportSupportResolverTest {
     }
 
     @Test
-    fun `ensureDetected respects disabled export type from metadata`() {
+    fun `ensureDetected respects disabled export type from metadata`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             ProjectMetadataStore.ensure(
@@ -465,7 +466,7 @@ class ProjectApkExportSupportResolverTest {
     }
 
     @Test
-    fun `detect reports native activity runtime when raylib target is not named main`() {
+    fun `detect reports native activity runtime when raylib target is not named main`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             projectRoot.resolve("CMakeLists.txt").writeText(
@@ -497,7 +498,7 @@ class ProjectApkExportSupportResolverTest {
     }
 
     @Test
-    fun `detect reports native activity runtime for single file raylib project`() {
+    fun `detect reports native activity runtime for single file raylib project`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             projectRoot.resolve("main.c").writeText(
@@ -516,7 +517,7 @@ class ProjectApkExportSupportResolverTest {
     }
 
     @Test
-    fun `detect does not report native activity runtime for plain terminal project`() {
+    fun `detect does not report native activity runtime for plain terminal project`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             projectRoot.resolve("main.cpp").writeText(
@@ -536,7 +537,7 @@ class ProjectApkExportSupportResolverTest {
     }
 
     @Test
-    fun `detect does not report native activity runtime when raylib links SDL`() {
+    fun `detect does not report native activity runtime when raylib links SDL`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             projectRoot.resolve("CMakeLists.txt").writeText(
@@ -556,7 +557,7 @@ class ProjectApkExportSupportResolverTest {
     }
 
     @Test
-    fun `detect ignores unopened 30 MiB text log in a terminal project`() {
+    fun `detect ignores unopened 30 MiB text log in a terminal project`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             projectRoot.resolve("main.c").writeText("int main(void) { return 0; }", Charsets.UTF_8)
@@ -577,7 +578,7 @@ class ProjectApkExportSupportResolverTest {
     }
 
     @Test
-    fun `detect ignores small text logs while still reading CMakeLists txt`() {
+    fun `detect ignores small text logs while still reading CMakeLists txt`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             projectRoot.resolve("runtime.txt").writeText("find_package(SDL2 CONFIG REQUIRED)", Charsets.UTF_8)
@@ -596,7 +597,7 @@ class ProjectApkExportSupportResolverTest {
     }
 
     @Test
-    fun `detect skips source files exceeding the byte limit`() {
+    fun `detect skips source files exceeding the byte limit`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             projectRoot.resolve("main.c").writeText("int main(void) { return 0; }", Charsets.UTF_8)
@@ -612,7 +613,7 @@ class ProjectApkExportSupportResolverTest {
     }
 
     @Test
-    fun `detect includes source files exactly at the byte limit`() {
+    fun `detect includes source files exactly at the byte limit`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             writeSizedFile(
@@ -631,7 +632,7 @@ class ProjectApkExportSupportResolverTest {
     }
 
     @Test
-    fun `ensureDetected upgrades runtime when raylib is added to an existing terminal project`() {
+    fun `ensureDetected upgrades runtime when raylib is added to an existing terminal project`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             projectRoot.resolve("main.c").writeText(
@@ -666,7 +667,7 @@ class ProjectApkExportSupportResolverTest {
     }
 
     @Test
-    fun `ensureDetected keeps runtime disabled for SDL projects`() {
+    fun `ensureDetected keeps runtime disabled for SDL projects`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             projectRoot.resolve("CMakeLists.txt").writeText(

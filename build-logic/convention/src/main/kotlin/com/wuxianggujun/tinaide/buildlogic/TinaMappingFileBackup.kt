@@ -2,8 +2,6 @@ package com.wuxianggujun.tinaide.buildlogic
 
 import org.gradle.api.logging.Logger
 import java.io.File
-import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
 
 /**
  * Core logic for the `backupMappingFiles` task registered by
@@ -17,13 +15,11 @@ import java.time.format.DateTimeFormatter
  */
 internal object TinaMappingFileBackup {
 
-    private val TIMESTAMP_FORMATTER: DateTimeFormatter =
-        DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
-
     fun backupMappings(
         mappingRoot: File,
         backupsRoot: File,
         versionName: String,
+        buildId: String,
         logger: Logger,
     ) {
         if (!mappingRoot.exists()) {
@@ -31,8 +27,9 @@ internal object TinaMappingFileBackup {
             return
         }
 
-        val timestamp = LocalDateTime.now().format(TIMESTAMP_FORMATTER)
-        val backupRoot = backupsRoot.resolve("$versionName-$timestamp")
+        // 目录名带 buildId，与 APK BuildConfig 里的 BUILD_ID 同源；
+        // 崩溃墓碑的 "App version" 会带上同一 buildId，据此反查唯一匹配的 mapping。
+        val backupRoot = backupsRoot.resolve("$versionName-$buildId")
 
         mappingRoot.listFiles()
             ?.filter { it.isDirectory && it.name.endsWith("Release") }

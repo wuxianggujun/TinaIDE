@@ -10,6 +10,9 @@ import com.wuxianggujun.tinaide.project.CppStandard
 import com.wuxianggujun.tinaide.project.ProjectMetadata
 import com.wuxianggujun.tinaide.project.ProjectMetadataStore
 import java.io.File
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * 统一解析「运行配置 + 全局设置」得到实际生效的构建参数。
@@ -52,7 +55,11 @@ internal object EffectiveBuildConfigResolver {
         val resolvedRunMode: LinuxRunModePolicy.RunMode
     )
 
-    fun resolve(input: Input): EffectiveBuildConfig {
+    suspend fun resolve(input: Input): EffectiveBuildConfig = withContext(Dispatchers.IO) {
+        resolveOnIo(input)
+    }
+
+    private suspend fun resolveOnIo(input: Input): EffectiveBuildConfig {
         val cmakeBuildType = resolveCMakeBuildType(
             launch = input.launch,
             buildSystem = input.buildSystem,
@@ -61,7 +68,13 @@ internal object EffectiveBuildConfigResolver {
         val cmakeGenerator = CMakeGeneratorOption.fromValue(Prefs.cmakeGenerator)
         val optimizationLevel = normalizeOptimizationLevel(Prefs.compilerOptimizationLevel)
         val parallelJobs = resolveParallelJobs(input.buildSystem)
-        val projectMetadata = runCatching { ProjectMetadataStore.read(input.projectRoot) }.getOrNull()
+        val projectMetadata = try {
+            ProjectMetadataStore.read(input.projectRoot)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            null
+        }
         val toolchainId = input.runConfig.toolchainId?.trim()?.takeIf { it.isNotBlank() }
             ?: input.appContext
                 ?.let { context ->

@@ -25,7 +25,7 @@ internal data class MainActivityEditorHostState(
 internal fun rememberMainActivityEditorHostState(
     editorManager: IEditorManager,
     projectRootPathProvider: () -> String?,
-    cppStandardOverrideProvider: (File) -> String?,
+    cppStandardOverrideProvider: suspend (File) -> String?,
     onLspDiagnosticsChanged: (String, List<Diagnostic>) -> Unit,
 ): MainActivityEditorHostState {
     val projectSymbolIndexService = koinInject<IProjectSymbolIndexService>() as? ProjectSymbolIndexService
@@ -37,8 +37,9 @@ internal fun rememberMainActivityEditorHostState(
     val stableProjectRootPathProvider = remember {
         { latestProjectRootPathProvider.value() }
     }
-    val stableCppStandardOverrideProvider = remember {
-        { file: File -> latestCppStandardOverrideProvider.value(file) }
+    val stableCppStandardOverrideProvider: suspend (File) -> String? = remember {
+        suspend fun resolve(file: File): String? = latestCppStandardOverrideProvider.value(file)
+        ::resolve
     }
     val pluginSnippetManager: PluginSnippetManager = koinInject()
     val pluginEditorThemeRegistry: PluginEditorThemeRegistry = koinInject()

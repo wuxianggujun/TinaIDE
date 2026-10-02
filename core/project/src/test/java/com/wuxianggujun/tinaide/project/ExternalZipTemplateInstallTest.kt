@@ -3,12 +3,13 @@ package com.wuxianggujun.tinaide.project
 import com.google.common.truth.Truth.assertThat
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
 class ExternalZipTemplateInstallTest {
 
     @Test
-    fun `zip template install replaces placeholders`() {
+    fun `zip template install replaces placeholders`() = runTest {
         val repoRoot = locateRepoRoot()
         val zipFile = repoRoot.resolve("test-plugins/tinaide.template.sdl3/templates/sdl3_cmake.zip").toFile()
         val tempDir = Files.createTempDirectory("sdl3-template-install").toFile()
@@ -41,7 +42,7 @@ class ExternalZipTemplateInstallTest {
     }
 
     @Test
-    fun `raylib zip template installs as native activity runtime project`() {
+    fun `raylib zip template installs as native activity runtime project`() = runTest {
         val repoRoot = locateRepoRoot()
         val zipFile = repoRoot.resolve("test-plugins/tinaide.template.raylib/templates/raylib_cmake.zip").toFile()
         val tempDir = Files.createTempDirectory("raylib-template-install").toFile()

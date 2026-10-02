@@ -128,9 +128,9 @@ internal class MainActivityBuildUiState(
         editingConfig = config
     }
 
-    fun commitRunConfigManager(
+    suspend fun commitRunConfigManager(
         updated: RunConfigurationManager,
-        persist: (RunConfigurationManager) -> Boolean,
+        persist: suspend (RunConfigurationManager) -> Boolean,
         onSelectedSingleFileCppStandardChanged: () -> Unit = {},
     ): Boolean {
         if (isRunConfigLoading) return false

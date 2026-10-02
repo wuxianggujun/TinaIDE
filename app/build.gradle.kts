@@ -1,4 +1,5 @@
 import com.wuxianggujun.tinaide.buildlogic.TinaAppAbiAggregationExtension
+import com.wuxianggujun.tinaide.buildlogic.TinaAppVersioningExtension
 import java.util.Properties
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
@@ -24,6 +25,9 @@ if (keystorePropsFile.exists()) {
 }
 // `appVersionCode` / `appVersionName` 由 `tina.android.app.versioning` 插件
 // 写入 Android defaultConfig；版本相关消费方通过插件扩展访问。
+// `buildId` 与 mapping 归档目录名同源，xCrash 墓碑据此反查唯一 mapping。
+val appVersioning = extensions.getByType(TinaAppVersioningExtension::class.java)
+val appBuildId = appVersioning.buildId
 val abiAggregation =
     extensions.getByType(TinaAppAbiAggregationExtension::class.java)
 val localDevAbi = abiAggregation.localDevAbi
@@ -54,6 +58,9 @@ android {
             ?: System.getenv("SERVER_CONFIG_HMAC_SECRET")
             ?: ""
         buildConfigField("String", "SERVER_CONFIG_HMAC_SECRET", "\"$serverConfigHmacSecret\"")
+
+        // 构建标识：与 R8 mapping 归档目录名同源，崩溃墓碑据此定位唯一可反查的 mapping。
+        buildConfigField("String", "BUILD_ID", "\"$appBuildId\"")
 
         // NDK 配置
         // 注意：当启用 ABI splits 时，不要在这里设置 abiFilters，否则会冲突

@@ -850,7 +850,7 @@ class CompileProjectUseCase(
         }
     }
 
-    private fun mapDescriptor(
+    private suspend fun mapDescriptor(
         descriptor: LaunchDescriptor,
         projectRoot: File,
         buildContext: BuildVariables.BuildContext,
@@ -1015,7 +1015,7 @@ class CompileProjectUseCase(
         null
     }
 
-    private fun getRunConfiguration(): RunConfiguration {
+    private suspend fun getRunConfiguration(): RunConfiguration {
         val project = projectContext.getCurrentProject() ?: return RunConfiguration()
         return RunConfigurationManager.load(
             projectPath = project.rootPath,
@@ -1023,7 +1023,7 @@ class CompileProjectUseCase(
         ).selectedConfig
     }
 
-    private fun resolveLaunchEnvironment(
+    private suspend fun resolveLaunchEnvironment(
         projectRoot: File,
         launchEnvironment: Map<String, String>,
         nativeRuntimeIdentity: NativeRuntimeIdentity,
@@ -1064,7 +1064,7 @@ class CompileProjectUseCase(
         return strategyRegistry.resolve(buildSystem)?.getTargets(ctxForTargetsQuery).orEmpty()
     }
 
-    private fun resolveBuildOptions(
+    private suspend fun resolveBuildOptions(
         launch: LaunchIntent,
         buildSystem: BuildSystem,
         runConfig: RunConfiguration,

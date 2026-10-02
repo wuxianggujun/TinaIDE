@@ -3,6 +3,8 @@ package com.wuxianggujun.tinaide.core.compile
 import com.wuxianggujun.tinaide.project.ProjectApkExportSupportResolver
 import com.wuxianggujun.tinaide.project.ProjectMetadataStore
 import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 
 /**
@@ -11,7 +13,11 @@ import timber.log.Timber
 object ProjectRunConfigBootstrapper {
     private const val TAG = "ProjectRunConfigBootstrapper"
 
-    fun initializeIfMissing(projectDir: File): Boolean {
+    suspend fun initializeIfMissing(projectDir: File): Boolean = withContext(Dispatchers.IO) {
+        initializeOnIo(projectDir)
+    }
+
+    private suspend fun initializeOnIo(projectDir: File): Boolean {
         if (!projectDir.isDirectory) return false
 
         val projectPath = projectDir.absolutePath

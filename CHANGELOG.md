@@ -31,6 +31,19 @@
 
 ## [Unreleased]
 
+### Fixed
+
+#### 崩溃墓碑无法反查 R8 mapping
+
+归档目录原以 `<versionName>-<时间戳>` 命名，但时间戳由备份任务自行生成，与 APK 无任何关联；
+同一 versionName 的多次构建无法区分，导致混淆栈对不上 mapping（本次 0.18.27 墓碑即为此类情况）。
+
+- `tina.android.app.versioning` 现在生成 `<gitShortSha>-<构建时间戳>` 形式的 `buildId`，
+  同一次 Gradle 运行内固定。
+- `BuildConfig.BUILD_ID` 暴露该值；mapping 归档目录改名为 `app/mappings/<versionName>-<buildId>/`。
+- xCrash 墓碑的 "App version" 改写为 `0.18.34 (code 1834, build <buildId>)`，
+  由此可唯一定位产生该 APK 的 mapping。
+
 ## [0.18.33] - 2026-09-30
 
 ### Added

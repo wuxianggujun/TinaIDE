@@ -1,11 +1,10 @@
-# TinaEditor 高亮链路审查报告（2026-03-28）
+# TinaEditor 高亮链路审查报告（2026-10-02）
 
-> 最后人工核验：2026-09-09
+> 最后人工核验：2026-10-02
 >
-> 本文原稿是 2026-03-28 的一次性审查。2026-08 之后语法高亮改成了 `IncrementalTreeSitterHighlightState`
-> 增量解析 + 逐行 segment 缓存 + 视口优先 bulk prewarm，渲染侧新增 `EditorLineRenderPlanCache` 与
-> `EditorVisualLineIndex`（Fenwick）。本次核验已按当前源码更新第 3、4、6 节的类名与机制描述，
-> 结论章（第 2 节）保留原审查口径作为历史记录。
+> 本文按当前源码和定向回归测试维护。语法高亮采用 `IncrementalTreeSitterHighlightState`
+> 增量解析、逐行 segment 缓存和视口优先 bulk prewarm，渲染侧使用 `EditorLineRenderPlanCache`
+> 与 `EditorVisualLineIndex`（Fenwick）。运行时性能结论仍以真机采样为准。
 
 ## 1. 背景与范围
 
@@ -37,14 +36,15 @@
 | 选择区 / 当前行高亮 | 直接用 EditorState offset | 正确 | 无 |
 | 诊断波浪线 | 直接用 diagnosticsByLine | 正确 | 无 |
 
-本轮已修复的问题：
+当前已验证的修复和能力：
 
-- **已修复**：语法高亮异步结果增加“运行中请求 / 排队请求 / 窗口覆盖”门禁，旧窗口结果不再回写覆盖新窗口。
-- **已修复**：移除语法高亮 cache miss 时的同步回退路径，避免主线程额外高亮计算压力。
-- **已修复**：语义高亮缓存从对象引用判断改为显式 `semanticTokensVersion`，解决 range 合并后每次 cache miss 的问题。
-- **待补强（P2）**：缺少针对“快速窗口切换”和“UTF-16 列索引”边界的定向测试。
+- **已验证**：语法高亮异步结果通过 `revision`、`sessionId` 和 `RenderSnapshot` 身份校验，过期结果不会回写当前缓存。
+- **已验证**：移除语法高亮 cache miss 时的同步回退路径，主线程只读取缓存并将 miss 排队到 worker。
+- **已验证**：语义高亮缓存使用显式 `semanticTokensVersion`，避免 range 合并后的无效 cache miss。
+- **已完成**：补充快速 viewport 切换异步一致性测试，以及 emoji/UTF-16 surrogate pair 边界测试。
+- **待验证**：真机上的滚动、输入、折叠和缩放性能数据。
 
-> 结论：整体设计成立，关键缓存与异步门禁问题已修复；后续重点应放在回归测试补强，而不是继续推翻现有高亮架构。
+> 结论：整体设计成立，关键缓存、异步门禁和 UTF-16 边界已有定向覆盖；下一步应进行真机性能采样，不应在缺少数据时继续重构高亮架构。
 
 ---
 
@@ -218,60 +218,53 @@ LSP 侧请求 full/range semantic tokens 并写入 `editorState.semanticTokensBy
 
 ### 6.2 关键风险点
 
-#### 已修复：异步窗口回写与当前窗口不一致
+#### 已验证：异步结果与当前快照一致
 
-结果回写不再只依赖 `textBuffer.version`。当前由 `IncrementalTreeSitterHighlightState` 用
+结果回写不再只依赖文本对象引用。当前由 `IncrementalTreeSitterHighlightState` 用
 `revision` 与 `sessionId` 双重校验：`parseRequest` / `applyResult` / prewarm 回调都会先比对期望的
 revision 与 session，过期结果直接丢弃，不写回 `lineCache`。渲染侧另有 `highlightVersion` 作为缓存 key，
 高亮状态更新后可见窗口缓存自然失效。
 
-> 原稿描述的 `runningHighlightRequest` / `queuedHighlightRequest` / `request.covers(...)`
-> 已随本次重构删除，不再存在于代码里。
-
-#### 已修复：同步回退路径主线程压力
+#### 已验证：同步回退路径不阻塞主线程
 
 当前 `TextRenderer` 的 `resolveDrawHighlightSegmentsForVisibleWindow()` 只调用 `highlighter.getLineSegments(line)`
 读缓存，cache miss 由高亮器自己排队到 worker 补算，主线程不做同步解析。
 
-#### 已修复：语义高亮缓存每次 miss（性能）
+#### 已验证：语义高亮缓存版本稳定
 
 当前 `resolveVisibleSemanticSegments()` 已改为以 `semanticTokensVersion` 作为缓存 key 之一，不再依赖 `semanticTokensByLine` 的对象引用。
 
-#### P2：测试覆盖缺口
+#### 已补齐：异步窗口与 UTF-16 边界测试
 
-当前 tree-sitter 测试主要覆盖 capture 分类，不覆盖：
+tree-sitter 定向测试现在覆盖：
 
-- 快速滚动与异步任务回写一致性
+- `AsyncTreeSitterLineHighlightTest.rapidViewportSwitch_shouldResolveLatestWindowWithoutReusingEarlierLineSegments`
+- `TreeSitterIncrementalSupportTest.toTsInputEdit_shouldPreserveUtf16OffsetsAroundSurrogatePair`
 
-`LspSemanticTokenDecoderTest` 已覆盖解码主路径，并已补充含代理对字符的 UTF-16 列偏移验证；但渲染侧仍缺少快速窗口切换的一致性测试。
+`LspSemanticTokenDecoderTest` 已覆盖解码主路径和含代理对字符的 UTF-16 列偏移；上述 tree-sitter 测试补齐了异步窗口切换与增量编辑边界。
 
 ---
 
-## 7. 最小改动建议（不做过度设计）
+## 7. 后续工作边界
 
-### 建议 A（优先）：补窗口切换一致性测试
+### 7.1 真机渲染性能采样（待完成）
 
-目标：验证异步高亮在快速滚动、多次视口切换时不会回写旧窗口结果。
+按 `docs/testing/editor-render-performance.md` 在包含当前改动的构建上采样：冷启动/预热、快速滚动、连续输入、折叠、软换行和缩放，记录 `EditorRenderEngine.performanceSnapshot()` 的命中与重建计数。
 
-### 建议 B（可选）：补测试
+### 7.2 暂不进行的重构
 
-1. 含代理对字符样本（emoji）高亮边界测试（Tree-sitter 层）
-2. 快速窗口切换下缓存与回写一致性测试
-3. LSP 语义解码层：含代理对字符时列偏移验证
-
-### 建议 C（可选）：增加滚动压测回归
-
-目标：在大文件、高频滚动、semantic tokens 开启场景下观察高亮刷新延迟与闪动情况。
+在没有真机数据证明瓶颈前，不继续拆分现有高亮状态机、替换缓存结构或引入新的异步调度层。
 
 ---
 
 ## 8. 回归验证建议
 
-1. 普通 C/C++/Kotlin 文件：语法色、语义色、折叠、诊断显示正常。
-2. 含 emoji/代理对字符的样本文件：确认 Tree-sitter 高亮边界正常，LSP 语义列偏移正常。
-3. 快速滚动 + 连续输入：观察是否有可见闪烁、旧窗口回写或错色。
-4. 打开/关闭 semantic tokens：确认优先级稳定（语义色覆盖语法色），且滚动时无明显重复分段开销。
-5. 多诊断重叠区域：确认 severity 优先级和波浪线连续性。
+1. `editor-kit` 内运行 tree-sitter 单元测试和 ktlint。
+2. 普通 C/C++/Kotlin 文件：语法色、语义色、折叠、诊断显示正常。
+3. 含 emoji/代理对字符的样本文件：确认 Tree-sitter 高亮边界正常，LSP 语义列偏移正常。
+4. 快速滚动 + 连续输入：观察是否有可见闪烁、旧窗口回写或错色。
+5. 打开/关闭 semantic tokens：确认优先级稳定（语义色覆盖语法色），且滚动时无明显重复分段开销。
+6. 多诊断重叠区域：确认 severity 优先级和波浪线连续性。
 
 ---
 

@@ -12,6 +12,9 @@ import com.wuxianggujun.tinaide.project.ProjectMetadataStore
 import com.wuxianggujun.tinaide.project.ProjectSdlVersion
 import java.io.File
 import java.util.UUID
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import timber.log.Timber
@@ -315,12 +318,12 @@ data class RunConfigurationManager(
         /**
          * 从项目目录加载配置
          */
-        fun load(
+        suspend fun load(
             projectPath: String,
             legacyCMakeBuildType: CMakeBuildTypeOption = CMakeBuildTypeOption.DEBUG,
-        ): RunConfigurationManager {
+        ): RunConfigurationManager = withContext(Dispatchers.IO) {
             val configFile = configFile(projectPath)
-            return try {
+            try {
                 if (configFile.exists()) {
                     val rawJson = configFile.readText()
                     val rawManager = json.decodeFromString<RunConfigurationManager>(rawJson)
@@ -412,6 +415,8 @@ data class RunConfigurationManager(
                 } else {
                     createDefault(projectPath)
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Timber.tag(TAG).w("Failed to load run configs: ${e.message}")
                 createDefault(projectPath)
@@ -421,12 +426,12 @@ data class RunConfigurationManager(
         /**
          * 保存配置到项目目录
          */
-        fun save(projectPath: String, manager: RunConfigurationManager): Boolean {
+        suspend fun save(projectPath: String, manager: RunConfigurationManager): Boolean = withContext(Dispatchers.IO) {
             val configFile = configFile(projectPath)
             val managerToPersist = normalizeManager(
                 manager.copy(schemaVersion = RUN_CONFIG_SCHEMA_CURRENT)
             )
-            return try {
+            try {
                 configFile.parentFile?.mkdirs()
                 JsonSerializer.encodePrettyToFile(configFile, managerToPersist)
                 true
@@ -439,7 +444,7 @@ data class RunConfigurationManager(
         /**
          * 创建默认配置
          */
-        private fun createDefault(projectPath: String? = null): RunConfigurationManager {
+        private suspend fun createDefault(projectPath: String? = null): RunConfigurationManager {
             val defaultConfig = createDefaultRunConfiguration(projectPath)
             return RunConfigurationManager(
                 schemaVersion = RUN_CONFIG_SCHEMA_CURRENT,
@@ -448,13 +453,13 @@ data class RunConfigurationManager(
             )
         }
 
-        private fun createDefaultRunConfiguration(projectPath: String?): RunConfiguration {
+        private suspend fun createDefaultRunConfiguration(projectPath: String?): RunConfiguration {
             val metadata = resolveProjectMetadata(projectPath)
             return CMakeRunTargetResolver.createDefaultRunConfiguration(metadata)
                 ?: RunConfiguration(name = "Debug")
         }
 
-        private fun resolveProjectMetadata(projectPath: String?): ProjectMetadata? {
+        private suspend fun resolveProjectMetadata(projectPath: String?): ProjectMetadata? {
             val projectRoot = projectPath
                 ?.trim()
                 ?.takeIf { it.isNotEmpty() }

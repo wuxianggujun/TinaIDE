@@ -6,12 +6,13 @@ import com.wuxianggujun.tinaide.project.ProjectMetadataStore
 import com.wuxianggujun.tinaide.project.ProjectSdlVersion
 import java.io.File
 import java.nio.file.Files
+import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
 class ProjectRunConfigBootstrapperTest {
 
     @Test
-    fun `initializeIfMissing writes explicit sdl config for sdl3 project`() {
+    fun `initializeIfMissing writes explicit sdl config for sdl3 project`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             ProjectMetadataStore.ensure(
@@ -35,7 +36,7 @@ class ProjectRunConfigBootstrapperTest {
     }
 
     @Test
-    fun `initializeIfMissing writes explicit sdl config for sdl2 project`() {
+    fun `initializeIfMissing writes explicit sdl config for sdl2 project`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             ProjectMetadataStore.ensure(
@@ -55,7 +56,7 @@ class ProjectRunConfigBootstrapperTest {
     }
 
     @Test
-    fun `initializeIfMissing detects sdl2 project before creating config`() {
+    fun `initializeIfMissing detects sdl2 project before creating config`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             projectRoot.resolve("CMakeLists.txt").writeText(
@@ -82,7 +83,7 @@ class ProjectRunConfigBootstrapperTest {
     }
 
     @Test
-    fun `initializeIfMissing does not overwrite existing config`() {
+    fun `initializeIfMissing does not overwrite existing config`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             ProjectMetadataStore.ensure(
@@ -108,7 +109,7 @@ class ProjectRunConfigBootstrapperTest {
     }
 
     @Test
-    fun `initializeIfMissing writes explicit terminal target from metadata`() {
+    fun `initializeIfMissing writes explicit terminal target from metadata`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             ProjectMetadataStore.ensure(
@@ -133,7 +134,7 @@ class ProjectRunConfigBootstrapperTest {
     }
 
     @Test
-    fun `initializeIfMissing writes native activity config for raylib metadata`() {
+    fun `initializeIfMissing writes native activity config for raylib metadata`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             ProjectMetadataStore.ensure(
@@ -155,7 +156,7 @@ class ProjectRunConfigBootstrapperTest {
     }
 
     @Test
-    fun `initializeIfMissing allows native activity to auto select a shared target`() {
+    fun `initializeIfMissing allows native activity to auto select a shared target`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             ProjectMetadataStore.ensure(
@@ -176,7 +177,7 @@ class ProjectRunConfigBootstrapperTest {
     }
 
     @Test
-    fun `initializeIfMissing writes sdl target when sdl3 metadata provides one`() {
+    fun `initializeIfMissing writes sdl target when sdl3 metadata provides one`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             ProjectMetadataStore.ensure(
@@ -199,7 +200,7 @@ class ProjectRunConfigBootstrapperTest {
     }
 
     @Test
-    fun `initializeIfMissing skips project without graphical metadata or target`() {
+    fun `initializeIfMissing skips project without graphical metadata or target`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             ProjectMetadataStore.ensure(
@@ -218,7 +219,7 @@ class ProjectRunConfigBootstrapperTest {
     }
 
     @Test
-    fun `initializeIfMissing writes native activity config for raylib target not named main`() {
+    fun `initializeIfMissing writes native activity config for raylib target not named main`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             projectRoot.resolve("CMakeLists.txt").writeText(
@@ -253,7 +254,7 @@ class ProjectRunConfigBootstrapperTest {
     }
 
     @Test
-    fun `load repairs terminal mode for misdetected raylib project`() {
+    fun `load repairs terminal mode for misdetected raylib project`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             projectRoot.resolve("CMakeLists.txt").writeText(
@@ -305,7 +306,7 @@ class ProjectRunConfigBootstrapperTest {
     }
 
     @Test
-    fun `load keeps terminal mode when project already has a graphical config`() {
+    fun `load keeps terminal mode when project already has a graphical config`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             projectRoot.resolve("main.c").writeText(

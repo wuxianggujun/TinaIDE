@@ -20,6 +20,9 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.security.MessageDigest
 import java.util.Properties
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 
 /**
@@ -119,12 +122,28 @@ class CompileDatabaseProvider(
         val regenerated: Boolean,
     )
 
-    fun prepare(
+    suspend fun prepare(
         file: File,
         projectRootPath: String?,
         toolchainId: String? = null,
         cppStandardOverride: String? = null,
         forceRegenerateFallback: Boolean = false,
+    ): Prepared? = withContext(Dispatchers.IO) {
+        prepareOnIo(
+            file = file,
+            projectRootPath = projectRootPath,
+            toolchainId = toolchainId,
+            cppStandardOverride = cppStandardOverride,
+            forceRegenerateFallback = forceRegenerateFallback,
+        )
+    }
+
+    private suspend fun prepareOnIo(
+        file: File,
+        projectRootPath: String?,
+        toolchainId: String?,
+        cppStandardOverride: String?,
+        forceRegenerateFallback: Boolean,
     ): Prepared? {
         val workspaceRoot = resolveWorkspaceRoot(file, projectRootPath) ?: return null
         val metadata = ProjectMetadataStore.read(workspaceRoot)
@@ -252,7 +271,7 @@ class CompileDatabaseProvider(
     fun isCompileDatabaseStale(workspaceRoot: File, compileCommandsDir: File): Boolean =
         isExternalCompileDatabaseStale(workspaceRoot, File(compileCommandsDir, "compile_commands.json"))
 
-    private fun ensure(prepared: Prepared): File? {
+    private suspend fun ensure(prepared: Prepared): File? {
         val compileCommandsFile = File(prepared.compileCommandsDir, "compile_commands.json")
         val effectiveRunMode = LinuxRunModePolicy.resolve(
             configuredMode = Prefs.clangdRunMode,
@@ -515,7 +534,11 @@ class CompileDatabaseProvider(
         }.getOrNull()
     }
 
-    fun ensureWithResult(prepared: Prepared): EnsureResult? {
+    suspend fun ensureWithResult(prepared: Prepared): EnsureResult? = withContext(Dispatchers.IO) {
+        ensureWithResultOnIo(prepared)
+    }
+
+    private suspend fun ensureWithResultOnIo(prepared: Prepared): EnsureResult? {
         val ensuredDir = ensure(prepared) ?: return null
         return EnsureResult(ensuredDir, regenerated = prepared.shouldGenerate)
     }
@@ -534,13 +557,29 @@ class CompileDatabaseProvider(
      * 复用 [prepare] 内部的同一套指纹算法，保证与写入 meta 的 packageFingerprint 一致。
      * 内部会扫描磁盘（installed-packages 目录、项目 metadata），**请勿在主线程调用**。
      */
-    fun computePackageFingerprint(projectRoot: File?): String = resolvePackageFingerprint(projectRoot)
+    suspend fun computePackageFingerprint(projectRoot: File?): String = withContext(Dispatchers.IO) {
+        resolvePackageFingerprint(projectRoot)
+    }
 
-    fun prepareProvidedCompileCommandsForLsp(
+    suspend fun prepareProvidedCompileCommandsForLsp(
         sourceCompileCommandsFile: File,
         projectRootPath: String?,
         toolchainId: String? = null,
         cppStandardOverride: String? = null,
+    ): File? = withContext(Dispatchers.IO) {
+        prepareProvidedCompileCommandsForLspOnIo(
+            sourceCompileCommandsFile = sourceCompileCommandsFile,
+            projectRootPath = projectRootPath,
+            toolchainId = toolchainId,
+            cppStandardOverride = cppStandardOverride,
+        )
+    }
+
+    private suspend fun prepareProvidedCompileCommandsForLspOnIo(
+        sourceCompileCommandsFile: File,
+        projectRootPath: String?,
+        toolchainId: String?,
+        cppStandardOverride: String?,
     ): File? {
         if (!sourceCompileCommandsFile.isFile || sourceCompileCommandsFile.length() <= 0L) return null
 
@@ -718,7 +757,7 @@ class CompileDatabaseProvider(
         }
     }
 
-    private fun resolvePackageFingerprint(projectRoot: File?): String {
+    private suspend fun resolvePackageFingerprint(projectRoot: File?): String {
         val packagePaths = InstalledPackagePathResolver.resolve(appContext, projectRoot)
         val installedPackages = LocalInstallStateStore(appContext).getAllInstalledPackages()
 
@@ -782,10 +821,17 @@ class CompileDatabaseProvider(
         return null
     }
 
-    private fun resolveCppStandardFlag(workspaceRoot: File, override: String?): String =
+    private suspend fun resolveCppStandardFlag(workspaceRoot: File, override: String?): String =
         ProjectCppStandardResolver.resolveFlag(workspaceRoot, override)
 
-    fun resolveRuntimeIdentity(projectRoot: File?, toolchainId: String? = null): RuntimeIdentity {
+    suspend fun resolveRuntimeIdentity(projectRoot: File?, toolchainId: String? = null): RuntimeIdentity = withContext(Dispatchers.IO) {
+        resolveRuntimeIdentityOnIo(projectRoot, toolchainId)
+    }
+
+    private suspend fun resolveRuntimeIdentityOnIo(
+        projectRoot: File?,
+        toolchainId: String?,
+    ): RuntimeIdentity {
         val normalizedToolchainId = resolveEffectiveToolchainId(toolchainId)
         val effectiveRunMode = resolveEffectiveRunMode()
         val sysrootProfileId = if (effectiveRunMode == LinuxRunModePolicy.RunMode.NATIVE) {
@@ -816,12 +862,17 @@ class CompileDatabaseProvider(
         linuxEnvironmentAvailable = linuxEnvironmentProvider.get().isAvailable()
     )
 
-    private fun resolveSysrootApiLevel(projectRoot: File?): Int {
-        return projectRoot
-            ?.let { root ->
-                runCatching { ProjectMetadataStore.read(root)?.getNativeApiLevelOrNull() }.getOrNull()
+    private suspend fun resolveSysrootApiLevel(projectRoot: File?): Int {
+        val metadataApiLevel = projectRoot?.let { root ->
+            try {
+                ProjectMetadataStore.read(root)?.getNativeApiLevelOrNull()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                null
             }
-            ?: DEFAULT_SYSROOT_API_LEVEL
+        }
+        return metadataApiLevel ?: DEFAULT_SYSROOT_API_LEVEL
     }
 
     private fun materializeCompileCommandsForLsp(

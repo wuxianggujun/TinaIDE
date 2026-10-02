@@ -9,6 +9,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -211,7 +212,7 @@ internal fun MainActivityDialogsSection(
     editorManager: IEditorManager,
     saveScope: CoroutineScope,
     onCloseProject: (forgetSession: Boolean) -> Unit,
-    onPersistRunConfigManager: (RunConfigurationManager) -> Boolean,
+    onPersistRunConfigManager: suspend (RunConfigurationManager) -> Boolean,
     onShowUnsavedExitDialogChange: (Boolean) -> Unit,
     onFinish: () -> Unit,
 ) {
@@ -485,9 +486,10 @@ internal fun MainActivityCloseProjectDialog(
 internal fun MainActivityRunConfigDialog(
     state: MainActivityBuildUiState,
     editorContainerState: EditorContainerState,
-    onPersistRunConfigManager: (RunConfigurationManager) -> Boolean,
+    onPersistRunConfigManager: suspend (RunConfigurationManager) -> Boolean,
 ) {
     val context = LocalContext.current
+    val runConfigSaveScope = rememberCoroutineScope()
     val currentConfig = state.editingConfig ?: return
     if (!state.showRunConfigDialog) return
 
@@ -496,24 +498,26 @@ internal fun MainActivityRunConfigDialog(
         buildSystem = state.currentBuildSystem,
         availableTargets = state.availableTargets,
         onSave = { newConfig ->
-            val isNew = state.runConfigManager.configurations.none { it.id == newConfig.id }
-            val updated = if (isNew) {
-                state.runConfigManager.addConfig(newConfig)
-            } else {
-                state.runConfigManager.updateConfig(newConfig)
-            }
-            if (
-                state.commitRunConfigManager(
-                    updated = updated,
-                    persist = onPersistRunConfigManager,
-                    onSelectedSingleFileCppStandardChanged =
-                        editorContainerState::refreshOpenCxxEditorsForCompileConfigChange,
-                )
-            ) {
-                state.closeRunConfigDialog()
-                context.toastSuccess(Strings.toast_run_config_saved.strOr(context))
-            } else {
-                context.toastError(Strings.toast_run_config_save_failed.strOr(context))
+            runConfigSaveScope.launch {
+                val isNew = state.runConfigManager.configurations.none { it.id == newConfig.id }
+                val updated = if (isNew) {
+                    state.runConfigManager.addConfig(newConfig)
+                } else {
+                    state.runConfigManager.updateConfig(newConfig)
+                }
+                if (
+                    state.commitRunConfigManager(
+                        updated = updated,
+                        persist = onPersistRunConfigManager,
+                        onSelectedSingleFileCppStandardChanged =
+                            editorContainerState::refreshOpenCxxEditorsForCompileConfigChange,
+                    )
+                ) {
+                    state.closeRunConfigDialog()
+                    context.toastSuccess(Strings.toast_run_config_saved.strOr(context))
+                } else {
+                    context.toastError(Strings.toast_run_config_save_failed.strOr(context))
+                }
             }
         },
         onDismiss = state::closeRunConfigDialog

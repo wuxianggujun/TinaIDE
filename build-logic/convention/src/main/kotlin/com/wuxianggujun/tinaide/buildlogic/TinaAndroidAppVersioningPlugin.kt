@@ -38,7 +38,11 @@ class TinaAndroidAppVersioningPlugin : Plugin<Project> {
                 readAppVersionInfo(versionPropsFile)
             }
 
-            val versioningExtension = TinaAppVersioningExtension(versionPropsFile, effectiveVersion)
+            val versioningExtension = TinaAppVersioningExtension(
+                versionPropsFile,
+                effectiveVersion,
+                resolveBuildId(rootProject.projectDir),
+            )
             extensions.add("tinaAppVersioning", versioningExtension)
 
             pluginManager.withPlugin("com.android.application") {

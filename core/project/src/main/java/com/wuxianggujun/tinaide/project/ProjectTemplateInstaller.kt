@@ -82,7 +82,7 @@ object ProjectTemplateInstaller {
             )
             copyStagedTemplate(staging, destDir)
             val detectedSupport = ProjectApkExportSupportResolver.detectSupport(destDir)
-            ProjectMetadataStore.ensure(
+            ProjectMetadataStore.ensureMetadata(
                 projectRoot = destDir,
                 displayNameFallback = projectName,
                 buildSystem = templateSpec.buildSystem,

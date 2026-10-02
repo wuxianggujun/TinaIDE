@@ -120,8 +120,9 @@ Release 构建不是普通只读验证：
 ```
 
 该任务可能递增 `version.properties`，并把 `build/outputs/mapping/<flavor>Release/mapping.txt`
-归档到 `app/mappings/<versionName>-<timestamp>/`。只在确实需要产出 Release 包时运行，
-不要拿它当日常检查。
+归档到 `app/mappings/<versionName>-<buildId>/`。目录名里的 `buildId` 与 APK 的
+`BuildConfig.BUILD_ID` 同源，xCrash 墓碑的 "App version" 会带上同一个 buildId，据此反查唯一
+匹配的 mapping。只在确实需要产出 Release 包时运行，不要拿它当日常检查。
 
 ---
 

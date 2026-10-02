@@ -8,7 +8,10 @@ import org.gradle.api.Project
  * Registers the release R8 mapping backup pipeline for the application module.
  *
  * `backupMappingFiles` copies `build/outputs/mapping/<flavor>Release/mapping.txt`
- * into `app/mappings/<versionName>-<timestamp>/<flavor>Release/mapping.txt`.
+ * into `app/mappings/<versionName>-<buildId>/<flavor>Release/mapping.txt`.
+ *
+ * `<buildId>` 与 APK `BuildConfig.BUILD_ID` 同源（见 [TinaAppVersioningExtension.buildId]），
+ * 因此崩溃墓碑 "App version" 中的 buildId 可以反查到唯一匹配的 mapping 目录。
  *
  * The open-source build logic only archives mapping files locally. If
  * maintainers need external symbol storage, keep that integration outside this
@@ -44,11 +47,12 @@ class TinaAndroidAppMappingPlugin : Plugin<Project> {
                 onlyIf { enabled && backupEnabled }
 
                 doLast {
-                    val versionName = project.readAppVersionName()
+                    val versioning = project.readVersioningExtension()
                     TinaMappingFileBackup.backupMappings(
                         mappingRoot = project.file("build/outputs/mapping"),
                         backupsRoot = project.file("mappings"),
-                        versionName = versionName,
+                        versionName = versioning.versionName,
+                        buildId = versioning.buildId,
                         logger = logger,
                     )
                 }
@@ -77,10 +81,6 @@ class TinaAndroidAppMappingPlugin : Plugin<Project> {
                 }
             }
         }
-    }
-
-    private fun Project.readAppVersionName(): String {
-        return readVersioningExtension().versionName
     }
 
     private fun Project.readVersioningExtension(): TinaAppVersioningExtension {

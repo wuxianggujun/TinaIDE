@@ -3,6 +3,8 @@ package com.wuxianggujun.tinaide.project
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 
 object ProjectApkExportSupportResolver {
@@ -22,6 +24,9 @@ object ProjectApkExportSupportResolver {
     private const val MAX_TOTAL_CANDIDATE_TEXT_BYTES = 8L * 1024L * 1024L
     private const val MAX_SCANNED_PROJECT_ENTRIES = 100_000
     private const val MAX_SCANNED_ARTIFACT_ENTRIES = 100_000
+    /** target_link_libraries 允许跨行，但不能无限回溯到候选文件末尾。 */
+    private const val MAX_TARGET_LINK_COMMAND_CHARS = 8_192
+    private const val MAX_DETECTION_CACHE_ENTRIES = 64
     private val terminalSourceExtensions = setOf("c", "cc", "cpp", "cxx")
     private val terminalMainEntryRegex = Regex("""(?m)^\s*(?:int|auto|void)\s+main\s*\(""")
     private val excludedDirNames = setOf(
@@ -61,7 +66,7 @@ object ProjectApkExportSupportResolver {
         Regex("""(?i)#\s*include\s*[<\"]raylib\.h[>\"]"""),
         Regex("""(?i)(?:^|\s)-lraylib(?:\s|$)""", RegexOption.MULTILINE),
         Regex("""(?i)\blibraylib\.so(?:\.[0-9A-Za-z_.+-]+)?\b"""),
-        Regex("""(?is)\btarget_link_libraries\s*\([^)]*\braylib(?:::\w+)?\b"""),
+        targetLinkLibrariesPattern("raylib(?:::\\w+)?"),
     )
     private val nativeActivityMarkers = listOf(
         "android.app.NativeActivity",
@@ -97,12 +102,47 @@ object ProjectApkExportSupportResolver {
         val byteSize: Long,
     )
 
-    fun resolve(projectRoot: File, buildDir: File? = null): ProjectApkExportType? {
+    private data class DetectionCacheKey(
+        val projectRootPath: String,
+        val buildDirPath: String?,
+    )
+
+    private data class FileStamp(
+        val path: String,
+        val exists: Boolean,
+        val length: Long,
+        val lastModified: Long,
+    )
+
+    private data class DetectionFingerprint(
+        val projectRoot: FileStamp,
+        val candidateFiles: List<FileStamp>,
+        val candidateParentDirectories: List<FileStamp>,
+        val artifactRoots: List<FileStamp>,
+    )
+
+    private data class DetectionCacheEntry(
+        val fingerprint: DetectionFingerprint,
+        val detection: Detection,
+    )
+
+    /**
+     * 只缓存输入文件指纹对应的探测结果。指纹变化会自动失效，显式重新检测还可以调用
+     * [invalidate]，不会把项目能力永久缓存成旧值。
+     */
+    private val detectionCache = LinkedHashMap<DetectionCacheKey, DetectionCacheEntry>(
+        MAX_DETECTION_CACHE_ENTRIES,
+        0.75f,
+        true,
+    )
+    private val detectionCacheLock = Any()
+
+    suspend fun resolve(projectRoot: File, buildDir: File? = null): ProjectApkExportType? = withContext(Dispatchers.IO) {
         val metadata = ProjectMetadataStore.read(projectRoot)
-        return metadata?.apkExportType ?: detect(projectRoot, buildDir)
+        metadata?.apkExportType ?: detectSupportCached(projectRoot, buildDir).apkExportType
     }
 
-    fun ensureDetected(projectRoot: File, buildDir: File? = null): ProjectApkExportType? {
+    suspend fun ensureDetected(projectRoot: File, buildDir: File? = null): ProjectApkExportType? = withContext(Dispatchers.IO) {
         val metadata = ProjectMetadataStore.read(projectRoot)
         val knownSdlVersion = metadata?.getSdlVersionOrNull()
         if (
@@ -110,11 +150,11 @@ object ProjectApkExportSupportResolver {
             metadata.sdlVersion != null &&
             metadata.nativeActivityRuntime != null
         ) {
-            return metadata.apkExportType
+            return@withContext metadata.apkExportType
         }
 
-        val detected = detectSupport(projectRoot, buildDir)
-        if (metadata == null) return detected.apkExportType
+        val detected = detectSupportCached(projectRoot, buildDir)
+        if (metadata == null) return@withContext detected.apkExportType
 
         val resolvedSdlVersion = knownSdlVersion ?: detected.sdlVersion
         val compatibleDetectedApkExportType = detected.apkExportType.takeUnless {
@@ -143,17 +183,44 @@ object ProjectApkExportSupportResolver {
                 )
             )
         }
-        return resolvedApkExportType
+        resolvedApkExportType
     }
 
-    internal fun detect(projectRoot: File, buildDir: File? = null): ProjectApkExportType? =
-        detectSupport(projectRoot, buildDir).apkExportType
+    suspend fun detect(projectRoot: File, buildDir: File? = null): ProjectApkExportType? = withContext(Dispatchers.IO) {
+        detectSupportCached(projectRoot, buildDir).apkExportType
+    }
 
-    internal fun detectSdlVersion(projectRoot: File, buildDir: File? = null): ProjectSdlVersion? =
-        detectSupport(projectRoot, buildDir).sdlVersion
+    suspend fun detectSdlVersion(projectRoot: File, buildDir: File? = null): ProjectSdlVersion? = withContext(Dispatchers.IO) {
+        detectSupportCached(projectRoot, buildDir).sdlVersion
+    }
+
+    /** 清除指定项目的探测缓存，供用户显式重新检测或项目结构发生已知变化时调用。 */
+    fun invalidate(projectRoot: File) {
+        val projectRootPath = cachePath(projectRoot)
+        synchronized(detectionCacheLock) {
+            val iterator = detectionCache.keys.iterator()
+            while (iterator.hasNext()) {
+                if (iterator.next().projectRootPath == projectRootPath) {
+                    iterator.remove()
+                }
+            }
+        }
+    }
 
     internal fun detectSupport(projectRoot: File, buildDir: File? = null): Detection {
-        val textMatches = readCandidateTexts(projectRoot)
+        return detectSupport(
+            projectRoot = projectRoot,
+            buildDir = buildDir,
+            candidateFiles = collectCandidateFiles(projectRoot),
+        )
+    }
+
+    private fun detectSupport(
+        projectRoot: File,
+        buildDir: File?,
+        candidateFiles: List<File>,
+    ): Detection {
+        val textMatches = readCandidateTexts(candidateFiles)
 
         val hasLibMainMarker = containsAnyMarker(textMatches, libmainMarkers) || hasCompiledLibMain(projectRoot, buildDir)
         val hasSdl2Marker = containsAnyPattern(textMatches, sdl2MarkerPatterns)
@@ -197,6 +264,116 @@ object ProjectApkExportSupportResolver {
         )
     }
 
+    private fun detectSupportCached(projectRoot: File, buildDir: File?): Detection {
+        val key = DetectionCacheKey(
+            projectRootPath = cachePath(projectRoot),
+            buildDirPath = buildDir?.let(::cachePath),
+        )
+
+        // Avoid walking the complete project tree on every recomposition. The common path only
+        // stats the files that participated in the previous detection and the relevant roots.
+        // A changed stamp falls through to a full candidate scan; explicit invalidate() remains
+        // available for callers that know a project changed outside these file-system stamps.
+        synchronized(detectionCacheLock) {
+            detectionCache[key]?.takeIf { isCacheFresh(it, projectRoot, buildDir) }?.let { cached ->
+                return cached.detection
+            }
+        }
+
+        val candidateFiles = collectCandidateFiles(projectRoot)
+        val fingerprint = buildFingerprint(projectRoot, buildDir, candidateFiles)
+
+        val detected = detectSupport(
+            projectRoot = projectRoot,
+            buildDir = buildDir,
+            candidateFiles = candidateFiles,
+        )
+        synchronized(detectionCacheLock) {
+            // Another coroutine may have completed the same scan while this one was reading
+            // files. Reuse an equivalent result instead of replacing it with a duplicate entry.
+            detectionCache[key]?.takeIf { it.fingerprint == fingerprint }?.let { cached ->
+                return cached.detection
+            }
+            detectionCache[key] = DetectionCacheEntry(fingerprint, detected)
+            while (detectionCache.size > MAX_DETECTION_CACHE_ENTRIES) {
+                detectionCache.entries.iterator().apply {
+                    if (hasNext()) {
+                        next()
+                        remove()
+                    }
+                }
+            }
+        }
+        return detected
+    }
+
+    private fun buildFingerprint(
+        projectRoot: File,
+        buildDir: File?,
+        candidateFiles: List<File>,
+    ): DetectionFingerprint {
+        val candidateParentDirectories = candidateFiles
+            .mapNotNull(File::getParentFile)
+            .distinctBy(::cachePath)
+            .map(::fileStamp)
+        return DetectionFingerprint(
+            projectRoot = fileStamp(projectRoot),
+            candidateFiles = candidateFiles.map(::fileStamp),
+            candidateParentDirectories = candidateParentDirectories,
+            artifactRoots = artifactRoots(projectRoot, buildDir).map(::fileStamp),
+        )
+    }
+
+    private fun isCacheFresh(
+        entry: DetectionCacheEntry,
+        projectRoot: File,
+        buildDir: File?,
+    ): Boolean {
+        val fingerprint = entry.fingerprint
+        if (fingerprint.projectRoot != fileStamp(projectRoot)) return false
+        if (fingerprint.artifactRoots != artifactRoots(projectRoot, buildDir).map(::fileStamp)) {
+            return false
+        }
+        if (fingerprint.candidateParentDirectories.any { stamp ->
+                fileStamp(File(stamp.path)) != stamp
+            }) {
+            return false
+        }
+        return fingerprint.candidateFiles.all { stamp -> fileStamp(File(stamp.path)) == stamp }
+    }
+
+    private fun readCandidateTexts(candidateFiles: List<File>): List<CandidateText> {
+        var remainingBytes = MAX_TOTAL_CANDIDATE_TEXT_BYTES
+        val candidates = ArrayList<CandidateText>()
+        for (file in candidateFiles) {
+            if (remainingBytes <= 0L) break
+            val fileSize = runCatching { file.length() }.getOrDefault(Long.MAX_VALUE)
+            if (fileSize > remainingBytes) continue
+            val candidate = readTextSafely(
+                file = file,
+                maxBytes = minOf(MAX_CANDIDATE_TEXT_BYTES, remainingBytes),
+            ) ?: continue
+            candidates.add(candidate)
+            remainingBytes -= candidate.byteSize
+        }
+        return candidates
+    }
+
+    private fun artifactRoots(projectRoot: File, buildDir: File?): List<File> = buildList {
+        buildDir?.let(::add)
+        add(File(projectRoot, "build"))
+    }.distinctBy { it.absolutePath }
+
+    private fun cachePath(file: File): String = runCatching { file.canonicalPath }
+        .getOrElse { file.absolutePath }
+
+    private fun fileStamp(file: File): FileStamp = FileStamp(
+        path = cachePath(file),
+        exists = file.exists(),
+        length = file.length(),
+        lastModified = file.lastModified(),
+    )
+
     private fun collectCandidateFiles(projectRoot: File): List<File> {
         if (!projectRoot.isDirectory) return emptyList()
 
@@ -213,23 +390,6 @@ object ProjectApkExportSupportResolver {
             }
             .take(MAX_SCANNED_TEXT_FILES)
             .toList()
-    }
-
-    private fun readCandidateTexts(projectRoot: File): List<CandidateText> {
-        var remainingBytes = MAX_TOTAL_CANDIDATE_TEXT_BYTES
-        val candidates = ArrayList<CandidateText>()
-        for (file in collectCandidateFiles(projectRoot)) {
-            if (remainingBytes <= 0L) break
-            val fileSize = runCatching { file.length() }.getOrDefault(Long.MAX_VALUE)
-            if (fileSize > remainingBytes) continue
-            val candidate = readTextSafely(
-                file = file,
-                maxBytes = minOf(MAX_CANDIDATE_TEXT_BYTES, remainingBytes),
-            ) ?: continue
-            candidates.add(candidate)
-            remainingBytes -= candidate.byteSize
-        }
-        return candidates
     }
 
     private fun readTextSafely(file: File, maxBytes: Long = MAX_CANDIDATE_TEXT_BYTES): CandidateText? {
@@ -277,14 +437,18 @@ object ProjectApkExportSupportResolver {
         Regex("""(?i)#\s*include\s*[<"]SDL$major/"""),
         Regex("""(?im)(?:^|\s)-lSDL$major(?:\s|$)"""),
         Regex("""(?i)\blibSDL$major(?:-[0-9][0-9.]*)?\.so(?:\.[0-9A-Za-z_.+-]+)?\b"""),
-        Regex("""(?i)\b(?:pkg_check_modules|pkg_search_module)\s*\([^)]*\bSDL$major\b"""),
+        Regex("""(?i)\b(?:pkg_check_modules|pkg_search_module)\s*\([^)]{0,$MAX_TARGET_LINK_COMMAND_CHARS}\bSDL$major\b"""),
         Regex("""(?i)\bSDL$major-config\b"""),
         Regex("""(?i)\bpkg-config\b[^\r\n]*\bSDL$major\b"""),
-        Regex("""(?is)\btarget_link_libraries\s*\([^)]*\bSDL$major\b"""),
+        targetLinkLibrariesPattern("SDL$major"),
         Regex("""(?i)\bSDL${major}_(?:LIBRARIES|LIBRARY|INCLUDE_DIRS?|DIR)\b"""),
         Regex(
             """(?im)\b(?:LOCAL_SHARED_LIBRARIES|LOCAL_STATIC_LIBRARIES)\s*[:+?]?=[^\r\n]*\bSDL$major\b"""
         ),
+    )
+
+    private fun targetLinkLibrariesPattern(marker: String): Regex = Regex(
+        """(?i)\btarget_link_libraries\s*\([^)]{0,$MAX_TARGET_LINK_COMMAND_CHARS}\b$marker\b"""
     )
 
     private fun hasTerminalMainEntry(textMatches: List<CandidateText>): Boolean = textMatches.any { candidate ->

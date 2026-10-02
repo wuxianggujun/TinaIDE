@@ -13,7 +13,7 @@ package com.wuxianggujun.tinaide.file
  *   便于下次在 [MainActivity] 里再次调用 [restoreLastSession] 恢复。
  */
 interface IProjectSession {
-    fun openProject(path: String): Project
+    suspend fun openProject(path: String): Project
     fun closeProject()
 
     /**
@@ -21,7 +21,7 @@ interface IProjectSession {
      */
     fun retargetProjectPath(oldPath: String, newPath: String)
 
-    fun restoreLastSession(): Project?
+    suspend fun restoreLastSession(): Project?
 
     fun clearInMemorySession()
 }

@@ -1,7 +1,7 @@
 # 设计文档索引
 
-> 更新日期：2026-09-09
-> 最后人工核验：2026-09-09
+> 更新日期：2026-10-02
+> 最后人工核验：2026-10-02
 
 本目录存放 TinaIDE 仍有维护价值的设计、审计与实现说明。这里的文档不是单独的当前事实源；涉及当前实现、类名、构建链路或用户可见行为时，必须回到源码、测试和 [文档状态与生命周期](../documentation-status.md) 校对。
 
@@ -35,7 +35,7 @@
 
 ## 设计参考
 
-- [高亮链路审查报告](TinaEditor-Highlight-Pipeline-Review.md) — 设计参考。原稿是 2026-03-28 的一次性审查；第 3、4、6 节已按 `IncrementalTreeSitterHighlightState` 增量高亮与 `EditorLineRenderPlanCache` 更新，第 2 节结论保留原审查口径。
+- [高亮链路审查报告](TinaEditor-Highlight-Pipeline-Review.md) — 当前维护版设计参考，已同步 `IncrementalTreeSitterHighlightState`、`EditorLineRenderPlanCache`、异步 viewport 回归测试和 UTF-16 边界测试；真机性能采样仍待完成。
 
 ## 历史参考
 

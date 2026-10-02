@@ -5,6 +5,7 @@ import com.wuxianggujun.tinaide.project.ProjectMetadata
 import com.wuxianggujun.tinaide.project.ProjectMetadataStore
 import java.io.File
 import org.junit.Rule
+import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
@@ -14,7 +15,7 @@ class ProjectSysrootApiLevelResolverTest {
     val tempFolder = TemporaryFolder()
 
     @Test
-    fun `run config value takes precedence over metadata`() {
+    fun `run config value takes precedence over metadata`() = runTest {
         val projectRoot = tempFolder.newFolder("run-config-priority")
         writeMetadata(projectRoot, nativeApiLevel = 33)
 
@@ -26,7 +27,7 @@ class ProjectSysrootApiLevelResolverTest {
     }
 
     @Test
-    fun `run config accepts future api levels for imported newer ndk profiles`() {
+    fun `run config accepts future api levels for imported newer ndk profiles`() = runTest {
         val projectRoot = tempFolder.newFolder("future-api-run-config")
         writeMetadata(projectRoot, nativeApiLevel = 33)
 
@@ -38,7 +39,7 @@ class ProjectSysrootApiLevelResolverTest {
     }
 
     @Test
-    fun `metadata nativeApiLevel is used when run config is empty`() {
+    fun `metadata nativeApiLevel is used when run config is empty`() = runTest {
         val projectRoot = tempFolder.newFolder("metadata-native")
         writeMetadata(projectRoot, nativeApiLevel = 31)
 
@@ -50,7 +51,7 @@ class ProjectSysrootApiLevelResolverTest {
     }
 
     @Test
-    fun `invalid run config falls back to metadata`() {
+    fun `invalid run config falls back to metadata`() = runTest {
         val projectRoot = tempFolder.newFolder("invalid-run-config")
         writeMetadata(projectRoot, nativeApiLevel = 34)
 
@@ -62,7 +63,7 @@ class ProjectSysrootApiLevelResolverTest {
     }
 
     @Test
-    fun `defaults to API 28 when no valid config exists`() {
+    fun `defaults to API 28 when no valid config exists`() = runTest {
         val projectRoot = tempFolder.newFolder("default-fallback")
         writeMetadata(projectRoot, nativeApiLevel = 100)
 
@@ -73,7 +74,7 @@ class ProjectSysrootApiLevelResolverTest {
         assertThat(resolution.invalidRunConfigApiLevel).isEqualTo(20)
     }
 
-    private fun writeMetadata(
+    private suspend fun writeMetadata(
         projectRoot: File,
         nativeApiLevel: Int?
     ) {
