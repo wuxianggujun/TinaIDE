@@ -1,6 +1,6 @@
 # TinaIDE GitHub Registry
 
-> 最后人工核验：2026-07-15
+> 最后人工核验：2026-09-09
 
 TinaIDE 开源版的插件市场、依赖包市场与 Linux distro manifest 不再从 TinaServer 读取元数据。
 客户端默认读取公开仓库：
@@ -72,8 +72,16 @@ scripts/build-registry.ps1
 读取 v2。任一入口失败时都不回退旧的 `plugins/index.json` / `packages/index.json`。
 Registry 默认不生成 v1 全量索引；确需服务更旧客户端时才显式生成。
 
-Linux distro 使用独立的 `linux-distro/manifest.v1.json` 协议。它不是市场 v1 fallback：
-显式刷新时按新鲜缓存、Registry 多端点、过期缓存、内置 asset 的顺序回落；启动和普通列表读取不会隐式请求网络。manifest 中的 artifact 保留官方 URL，`mirrors` 只负责派生替代下载地址，最终内容仍必须通过 SHA-256 校验。
+Linux distro 使用独立的 `linux-distro/manifest.v1.json` 协议。它不是市场 v1 fallback。
+
+**当前 Android 主干并不读取远程 distro manifest。** `LinuxDistroCatalogRepository.create()` 把
+bundled / cached / remote 三个来源全部绑定到内置 asset（`AndroidAssetLinuxDistroManifestSource`），
+因为 Registry 尚未发布带签名的 manifest；此前由未签名数据写入的缓存也被有意忽略。
+`RemoteLinuxDistroManifestSource` 已实现「新鲜缓存 → Registry 多端点 → 过期缓存 → 内置 asset」的
+回落顺序，但目前只被单元测试使用，未接入生产装配。
+
+具备签名验证后重新启用远程 manifest 时，manifest 中的 artifact 保留官方 URL，`mirrors` 只负责派生
+替代下载地址，最终内容仍必须通过 SHA-256 校验；启动和普通列表读取也不应隐式请求网络。
 
 `download_url`、兼容模型中的 `download_sources[].url`，以及 v2 详情中的
 `downloads["<package-id>:<version-id>"].sources[].url` 支持两种写法：

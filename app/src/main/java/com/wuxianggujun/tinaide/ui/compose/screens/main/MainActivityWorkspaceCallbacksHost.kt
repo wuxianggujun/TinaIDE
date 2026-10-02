@@ -15,7 +15,7 @@ internal fun rememberMainActivityWorkspaceCallbacksHost(
     toastError: (String) -> Unit,
     onOpenWithExternalApp: (File) -> Unit,
     onShareFileOrDirectory: (File) -> Unit,
-    onPersistRunConfigManager: (RunConfigurationManager) -> Boolean,
+    onPersistRunConfigManager: suspend (RunConfigurationManager) -> Boolean,
     onGitRefresh: () -> Unit,
 ): MainActivityWorkspaceCallbacks = rememberMainActivityWorkspaceCallbacks(
     onOpenSettings = workspaceActions::openSettings,

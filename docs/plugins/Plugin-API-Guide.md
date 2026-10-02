@@ -1,6 +1,7 @@
 # TinaIDE 插件 API 指南
 
-> 文档更新：2026-07-14
+> 文档状态：当前实现说明
+> 最后人工核验：2026-09-09
 > 目标：给插件开发者一份“当前真实可用”的 API 清单，避免继续踩字段存在但宿主没接完的坑。
 
 ---
@@ -85,6 +86,7 @@ Lua 不再运行在 TinaIDE 主进程。宿主通过 Binder 调用非导出的 `
 - `tina.config`
 - `tina.storage`
 - `tina.db`
+- `tina.clipboard`
 - `tina.network`
 - `tina.commands`
 - `tina.events`
@@ -320,6 +322,21 @@ Lua 不再运行在 TinaIDE 主进程。宿主通过 Binder 调用非导出的 `
 - SQL 最长 64 KiB，只允许单条语句；禁止 `ATTACH`、`DETACH`、`PRAGMA`、`VACUUM`、`LOAD_EXTENSION`，query API 会拒绝写入型 CTE。
 - `params` 必须为标量数组，支持字符串、整数、浮点数、布尔值与 `null`；所有操作和事务都在当前插件的单线程数据库执行器中顺序执行。
 
+### 4.9.1 `tina.clipboard`
+
+用途：读写系统剪贴板文本。
+
+已提供：
+
+- `tina.clipboard.getText()`
+- `tina.clipboard.setText(text)`
+- `tina.clipboard.hasText()`
+
+权限：
+
+- 读：`clipboard.read`
+- 写：`clipboard.write`
+
 ### 4.10 `tina.network`
 
 用途：网络请求。
@@ -495,10 +512,10 @@ Lua 不再运行在 TinaIDE 主进程。宿主通过 Binder 调用非导出的 `
 - `editor.write`
 - `clipboard.read`
 - `clipboard.write`
-- `command.execute`
 
 ### 5.3 中风险
 
+- `command.execute`（`commands.execute` 归一化到同一权限）
 - `file.read`
 - `file.write`
 - `workspace.read`（等价于 `file.read`）

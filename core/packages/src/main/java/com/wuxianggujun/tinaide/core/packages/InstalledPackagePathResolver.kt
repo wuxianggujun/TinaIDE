@@ -6,6 +6,9 @@ import com.wuxianggujun.tinaide.core.packages.model.Platform
 import com.wuxianggujun.tinaide.core.packages.store.LocalInstallStateStore
 import com.wuxianggujun.tinaide.project.ProjectMetadataStore
 import java.io.File
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 
 /**
@@ -64,7 +67,7 @@ object InstalledPackagePathResolver {
     /**
      * 扫描 installed-packages 目录，返回所有有效的 include/lib 路径。
      */
-    fun resolve(context: Context, projectRoot: File? = null): PackagePaths {
+    suspend fun resolve(context: Context, projectRoot: File? = null): PackagePaths = withContext(Dispatchers.IO) {
         val deviceAbi = PackageAbiCompatibility.currentAppAbi(
             nativeLibraryDir = context.applicationInfo.nativeLibraryDir,
             supportedAbis = Build.SUPPORTED_ABIS,
@@ -165,7 +168,7 @@ object InstalledPackagePathResolver {
             projectDependencyDirs.runtimeDirs.size,
             deviceAbi
         )
-        return PackagePaths(
+        PackagePaths(
             includeDirs = includeDirs.toList(),
             libDirs = libDirs.toList(),
             prefixDirs = prefixDirs.toList(),
@@ -175,7 +178,7 @@ object InstalledPackagePathResolver {
         )
     }
 
-    private fun resolveProjectDependencyDirs(projectRoot: File?): ProjectDependencyDirs {
+    private suspend fun resolveProjectDependencyDirs(projectRoot: File?): ProjectDependencyDirs {
         if (projectRoot == null || !projectRoot.isDirectory) {
             return ProjectDependencyDirs(
                 includeDirs = emptyList(),
@@ -184,11 +187,14 @@ object InstalledPackagePathResolver {
             )
         }
 
-        val metadata = runCatching { ProjectMetadataStore.read(projectRoot) }
-            .onFailure { error ->
-                Timber.tag(TAG).w(error, "Failed to read project metadata: %s", projectRoot.absolutePath)
-            }
-            .getOrNull()
+        val metadata = try {
+            ProjectMetadataStore.read(projectRoot)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            Timber.tag(TAG).w(error, "Failed to read project metadata: %s", projectRoot.absolutePath)
+            null
+        }
             ?: return ProjectDependencyDirs(
                 includeDirs = emptyList(),
                 libDirs = emptyList(),

@@ -10,6 +10,8 @@ import com.wuxianggujun.tinaide.ui.runtime.buildNativeRuntimeLibraryIndex
 import com.wuxianggujun.tinaide.ui.runtime.canonicalSharedLibraryName
 import com.wuxianggujun.tinaide.ui.runtime.resolveNativeRuntimeLibrary
 import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 
 /** Resolves the complete non-system dependency set for a NativeActivity shared library. */
@@ -34,10 +36,18 @@ object NativeActivityRuntimeResolver {
         val scanFailure: Throwable?,
     )
 
-    fun resolve(
+    suspend fun resolve(
         context: Context,
         mainLibraryPath: String,
         extraRuntimeLibDirs: List<File> = emptyList(),
+    ): ResolveResult = withContext(Dispatchers.IO) {
+        resolveOnIo(context, mainLibraryPath, extraRuntimeLibDirs)
+    }
+
+    private suspend fun resolveOnIo(
+        context: Context,
+        mainLibraryPath: String,
+        extraRuntimeLibDirs: List<File>,
     ): ResolveResult {
         val mainLibrary = File(mainLibraryPath)
         if (mainLibraryPath.isBlank() || !mainLibrary.isFile) {

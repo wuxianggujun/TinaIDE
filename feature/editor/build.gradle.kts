@@ -26,6 +26,7 @@ dependencies {
     implementation(project.dependencies.project(":core:storage"))
     implementation(project.dependencies.project(":core:cmake"))
     implementation(project.dependencies.project(":core:tree-sitter"))
+    implementation(project.dependencies.project(":core:tree-sitter-grammars"))
     implementation(libs.timber)
     implementation(libs.kotlinx.coroutines)
     implementation(libs.androidx.core.ktx)

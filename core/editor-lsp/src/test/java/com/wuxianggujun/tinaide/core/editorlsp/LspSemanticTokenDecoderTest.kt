@@ -22,15 +22,15 @@ class LspSemanticTokenDecoderTest {
         assertThat(tokens).hasSize(3)
         assertThat(tokens[0].line).isEqualTo(0)
         assertThat(tokens[0].startColumn).isEqualTo(4)
-        assertThat(tokens[0].tokenType).isEqualTo("function")
+        assertThat(tokens[0].tokenType).isEqualTo(SemanticTokenType.FUNCTION)
 
         assertThat(tokens[1].line).isEqualTo(0)
         assertThat(tokens[1].startColumn).isEqualTo(9)
-        assertThat(tokens[1].tokenType).isEqualTo("variable")
+        assertThat(tokens[1].tokenType).isEqualTo(SemanticTokenType.VARIABLE)
 
         assertThat(tokens[2].line).isEqualTo(2)
         assertThat(tokens[2].startColumn).isEqualTo(1)
-        assertThat(tokens[2].tokenType).isEqualTo("class")
+        assertThat(tokens[2].tokenType).isEqualTo(SemanticTokenType.CLASS)
     }
 
     @Test
@@ -51,7 +51,11 @@ class LspSemanticTokenDecoderTest {
 
         assertThat(tokens).hasSize(1)
         assertThat(tokens.first().tokenModifiers)
-            .containsExactly("declaration", "definition", "static")
+            .containsExactly(
+                SemanticTokenModifier.DECLARATION,
+                SemanticTokenModifier.DEFINITION,
+                SemanticTokenModifier.STATIC
+            )
     }
 
     @Test
@@ -71,7 +75,7 @@ class LspSemanticTokenDecoderTest {
         )
 
         assertThat(tokens).hasSize(1)
-        assertThat(tokens.first().tokenType).isEqualTo("variable")
+        assertThat(tokens.first().tokenType).isEqualTo(SemanticTokenType.VARIABLE)
     }
 
     @Test

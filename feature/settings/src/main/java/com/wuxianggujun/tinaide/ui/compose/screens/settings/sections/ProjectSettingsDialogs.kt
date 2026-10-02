@@ -198,6 +198,10 @@ internal fun UserProjectTemplateMetadataEditorDialog(
     onSelectLanguage: () -> Unit,
     isNdkTemplate: Boolean,
     onNdkTemplateChange: (Boolean) -> Unit,
+    runTargetName: String,
+    onRunTargetNameChange: (String) -> Unit,
+    sdlTargetName: String,
+    onSdlTargetNameChange: (String) -> Unit,
     metadataPreview: String,
     canSave: Boolean,
     onConfirm: () -> Unit,
@@ -293,6 +297,32 @@ internal fun UserProjectTemplateMetadataEditorDialog(
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
+                    OutlinedTextField(
+                        value = runTargetName,
+                        onValueChange = onRunTargetNameChange,
+                        label = { Text(stringResource(Strings.settings_user_templates_edit_run_target_label)) },
+                        placeholder = {
+                            Text(stringResource(Strings.settings_user_templates_edit_run_target_placeholder))
+                        },
+                        supportingText = {
+                            Text(stringResource(Strings.settings_user_templates_edit_run_target_desc))
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = sdlTargetName,
+                        onValueChange = onSdlTargetNameChange,
+                        label = { Text(stringResource(Strings.settings_user_templates_edit_sdl_target_label)) },
+                        placeholder = {
+                            Text(stringResource(Strings.settings_user_templates_edit_sdl_target_placeholder))
+                        },
+                        supportingText = {
+                            Text(stringResource(Strings.settings_user_templates_edit_sdl_target_desc))
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
                 }
                 TinaDialogCard {
                     Text(

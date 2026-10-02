@@ -3,12 +3,13 @@ package com.wuxianggujun.tinaide.project
 import com.google.common.truth.Truth.assertThat
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
 class ExternalZipTemplateInstallTest {
 
     @Test
-    fun `zip template install replaces placeholders`() {
+    fun `zip template install replaces placeholders`() = runTest {
         val repoRoot = locateRepoRoot()
         val zipFile = repoRoot.resolve("test-plugins/tinaide.template.sdl3/templates/sdl3_cmake.zip").toFile()
         val tempDir = Files.createTempDirectory("sdl3-template-install").toFile()
@@ -35,6 +36,43 @@ class ExternalZipTemplateInstallTest {
             assertThat(tempDir.resolve("src/main.cpp").readText()).contains("\"HelloSDL3\"")
             assertThat(ProjectMetadataStore.read(tempDir)?.apkExportType).isEqualTo(ProjectApkExportType.SDL3)
             assertThat(ProjectMetadataStore.read(tempDir)?.sdlVersion).isEqualTo(ProjectSdlVersion.SDL3)
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `raylib zip template installs as native activity runtime project`() = runTest {
+        val repoRoot = locateRepoRoot()
+        val zipFile = repoRoot.resolve("test-plugins/tinaide.template.raylib/templates/raylib_cmake.zip").toFile()
+        val tempDir = Files.createTempDirectory("raylib-template-install").toFile()
+
+        try {
+            val installed = ProjectTemplateInstaller.install(
+                destDir = tempDir,
+                projectName = "HelloRaylib",
+                templateSpec = ProjectTemplateSpec.Zip(
+                    id = "plugin:test:raylib",
+                    zipFile = zipFile,
+                    buildSystem = ProjectBuildSystem.CMAKE,
+                    primaryLanguage = ProjectLanguage.C
+                ),
+                cppStandard = CppStandard.CPP_20
+            )
+
+            assertThat(installed).isTrue()
+            val cmake = tempDir.resolve("CMakeLists.txt").readText()
+            assertThat(cmake).contains("project(HelloRaylib")
+            assertThat(cmake).contains("add_library(HelloRaylib SHARED")
+            assertThat(cmake).contains("OUTPUT_NAME \"main\"")
+            assertThat(tempDir.resolve("src/main.c").readText()).contains("\"HelloRaylib\"")
+
+            val metadata = ProjectMetadataStore.read(tempDir)
+            assertThat(metadata?.sdlVersion).isNull()
+            assertThat(metadata?.nativeActivityRuntime).isTrue()
+            assertThat(metadata?.isNativeActivityRuntime()).isTrue()
+            // 模板固定输出 libmain.so，所以导出能力也应可用。
+            assertThat(metadata?.apkExportType).isEqualTo(ProjectApkExportType.NATIVE_ACTIVITY)
         } finally {
             tempDir.deleteRecursively()
         }

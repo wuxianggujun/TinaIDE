@@ -46,8 +46,13 @@ object NativeCrashHandler {
      * 初始化 xCrash
      *
      * 必须在 Application.attachBaseContext() 中尽早调用
+     *
+     * @param appVersionLabel 写入墓碑 "App version" 的版本串。应包含 versionName、versionCode
+     *        与 buildId（见 [com.wuxianggujun.tinaide.BuildConfig.BUILD_ID]），这样混淆栈可以
+     *        反查到与该 APK 完全匹配的 R8 mapping。传 null 时回退到 PackageInfo.versionName，
+     *        该值无法区分同版本名的多次构建。
      */
-    fun install(context: Context) {
+    fun install(context: Context, appVersionLabel: String? = null) {
         appContext = context.applicationContext
         Timber.tag(TAG).i("Installing xCrash...")
 
@@ -79,6 +84,10 @@ object NativeCrashHandler {
             .setAnrRethrow(false)
             .setAnrLogCountMax(10)
             .setAnrCallback(callback)
+
+        // 覆盖 xCrash 默认的 versionName：带上 versionCode 与 buildId，
+        // 让墓碑能唯一定位到产生该 APK 的那一份 R8 mapping。
+        appVersionLabel?.takeIf { it.isNotBlank() }?.let { params.setAppVersion(it) }
 
         // 初始化 xCrash
         val result = XCrash.init(context, params)

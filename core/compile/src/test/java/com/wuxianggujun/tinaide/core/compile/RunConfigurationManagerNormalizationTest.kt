@@ -6,12 +6,13 @@ import com.wuxianggujun.tinaide.project.ProjectMetadataStore
 import com.wuxianggujun.tinaide.project.ProjectSdlVersion
 import java.io.File
 import java.nio.file.Files
+import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
 class RunConfigurationManagerNormalizationTest {
 
     @Test
-    fun `normalized clears stale SDL version outside SDL output mode`() {
+    fun `normalized clears stale SDL version outside SDL output mode`() = runTest {
         val config = RunConfiguration(
             outputMode = OutputMode.NATIVE_ACTIVITY,
             sdlVersion = ProjectSdlVersion.SDL3,
@@ -21,7 +22,7 @@ class RunConfigurationManagerNormalizationTest {
     }
 
     @Test
-    fun `load normalizes current schema values and selected id`() {
+    fun `load normalizes current schema values and selected id`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             writeRunConfig(
@@ -45,7 +46,7 @@ class RunConfigurationManagerNormalizationTest {
 
             val manager = RunConfigurationManager.load(projectRoot.absolutePath)
 
-            assertThat(manager.schemaVersion).isEqualTo(8)
+            assertThat(manager.schemaVersion).isEqualTo(9)
             assertThat(manager.selectedId).isEqualTo("cfg-current")
             assertThat(manager.selectedConfig.buildType).isEqualTo(BuildType.DEBUG)
             assertThat(manager.selectedConfig.singleFileCppStandard).isEqualTo("CPP_20")
@@ -53,7 +54,7 @@ class RunConfigurationManagerNormalizationTest {
             assertThat(manager.selectedConfig.customCppCompiler).isNull()
 
             val persisted = readRunConfig(projectRoot)
-            assertThat(persisted).contains("\"schemaVersion\": 8")
+            assertThat(persisted).contains("\"schemaVersion\": 9")
             assertThat(persisted).contains("\"selectedId\": \"cfg-current\"")
             assertThat(persisted).contains("\"singleFileCppStandard\": \"CPP_20\"")
             assertThat(persisted).contains("\"customCCompiler\": null")
@@ -64,7 +65,7 @@ class RunConfigurationManagerNormalizationTest {
     }
 
     @Test
-    fun `load current schema defaults missing build type to debug`() {
+    fun `load current schema defaults missing build type to debug`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             writeRunConfig(
@@ -92,7 +93,9 @@ class RunConfigurationManagerNormalizationTest {
     }
 
     @Test
-    fun `load defaults missing linker warning option to hidden`() {
+    fun `load ignores removed legacy showLinkerWarnings key`() = runTest {
+        // 兼容性回归：showLinkerWarnings 字段已移除（linker 告警改在终端显示层过滤）。
+        // 旧 run_configs.json 里残留的该键必须被安全忽略，不能导致解析失败。
         val projectRoot = createTempProjectRoot()
         try {
             writeRunConfig(
@@ -102,55 +105,27 @@ class RunConfigurationManagerNormalizationTest {
                   "schemaVersion": 4,
                   "configurations": [
                     {
-                      "id": "cfg-linker-warning-default",
-                      "name": "Debug"
-                    }
-                  ],
-                  "selectedId": "cfg-linker-warning-default"
-                }
-                """.trimIndent()
-            )
-
-            val manager = RunConfigurationManager.load(projectRoot.absolutePath)
-
-            assertThat(manager.selectedConfig.showLinkerWarnings).isFalse()
-        } finally {
-            projectRoot.deleteRecursively()
-        }
-    }
-
-    @Test
-    fun `load preserves explicitly enabled linker warnings`() {
-        val projectRoot = createTempProjectRoot()
-        try {
-            writeRunConfig(
-                projectRoot,
-                """
-                {
-                  "schemaVersion": 4,
-                  "configurations": [
-                    {
-                      "id": "cfg-linker-warning-enabled",
+                      "id": "cfg-legacy-linker-warning",
                       "name": "Debug",
                       "showLinkerWarnings": true
                     }
                   ],
-                  "selectedId": "cfg-linker-warning-enabled"
+                  "selectedId": "cfg-legacy-linker-warning"
                 }
                 """.trimIndent()
             )
 
             val manager = RunConfigurationManager.load(projectRoot.absolutePath)
 
-            assertThat(manager.selectedConfig.showLinkerWarnings).isTrue()
-            assertThat(readRunConfig(projectRoot)).contains("\"showLinkerWarnings\": true")
+            assertThat(manager.selectedConfig.id).isEqualTo("cfg-legacy-linker-warning")
+            assertThat(manager.selectedConfig.name).isEqualTo("Debug")
         } finally {
             projectRoot.deleteRecursively()
         }
     }
 
     @Test
-    fun `load migrates legacy global cmake build type into every run configuration`() {
+    fun `load migrates legacy global cmake build type into every run configuration`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             writeRunConfig(
@@ -186,7 +161,7 @@ class RunConfigurationManagerNormalizationTest {
                 )
                 .inOrder()
             val persisted = readRunConfig(projectRoot)
-            assertThat(persisted).contains("\"schemaVersion\": 8")
+            assertThat(persisted).contains("\"schemaVersion\": 9")
             assertThat(persisted).contains("\"cmakeBuildType\": \"REL_WITH_DEB_INFO\"")
         } finally {
             projectRoot.deleteRecursively()
@@ -194,7 +169,7 @@ class RunConfigurationManagerNormalizationTest {
     }
 
     @Test
-    fun `load preserves explicit cmake build type override`() {
+    fun `load preserves explicit cmake build type override`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             writeRunConfig(
@@ -227,7 +202,7 @@ class RunConfigurationManagerNormalizationTest {
     }
 
     @Test
-    fun `load preserves SDL2 run configuration override`() {
+    fun `load preserves SDL2 run configuration override`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             writeRunConfig(
@@ -250,10 +225,10 @@ class RunConfigurationManagerNormalizationTest {
 
             val manager = RunConfigurationManager.load(projectRoot.absolutePath)
 
-            assertThat(manager.schemaVersion).isEqualTo(8)
+            assertThat(manager.schemaVersion).isEqualTo(9)
             assertThat(manager.selectedConfig.sdlVersion).isEqualTo(ProjectSdlVersion.SDL2)
             val persisted = readRunConfig(projectRoot)
-            assertThat(persisted).contains("\"schemaVersion\": 8")
+            assertThat(persisted).contains("\"schemaVersion\": 9")
             assertThat(persisted).contains("\"sdlVersion\": \"SDL2\"")
         } finally {
             projectRoot.deleteRecursively()
@@ -261,7 +236,7 @@ class RunConfigurationManagerNormalizationTest {
     }
 
     @Test
-    fun `load defaults sdl3 project to sdl output when config file is missing`() {
+    fun `load defaults sdl3 project to sdl output when config file is missing`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             ProjectMetadataStore.ensure(
@@ -280,7 +255,7 @@ class RunConfigurationManagerNormalizationTest {
     }
 
     @Test
-    fun `load defaults sdl2 project to sdl output when config file is missing`() {
+    fun `load defaults sdl2 project to sdl output when config file is missing`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             ProjectMetadataStore.ensure(
@@ -299,7 +274,7 @@ class RunConfigurationManagerNormalizationTest {
     }
 
     @Test
-    fun `load migrates legacy raylib sdl mode to native activity`() {
+    fun `load migrates legacy raylib sdl mode to native activity`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             ProjectMetadataStore.ensure(
@@ -328,7 +303,7 @@ class RunConfigurationManagerNormalizationTest {
 
             val manager = RunConfigurationManager.load(projectRoot.absolutePath)
 
-            assertThat(manager.schemaVersion).isEqualTo(8)
+            assertThat(manager.schemaVersion).isEqualTo(9)
             assertThat(manager.selectedConfig.outputMode).isEqualTo(OutputMode.NATIVE_ACTIVITY)
             assertThat(readRunConfig(projectRoot)).contains("\"outputMode\": \"NATIVE_ACTIVITY\"")
         } finally {
@@ -337,7 +312,7 @@ class RunConfigurationManagerNormalizationTest {
     }
 
     @Test
-    fun `load keeps schema 7 native project sdl choice explicit`() {
+    fun `load keeps schema 7 native project sdl choice explicit`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             ProjectMetadataStore.ensure(
@@ -371,7 +346,7 @@ class RunConfigurationManagerNormalizationTest {
     }
 
     @Test
-    fun `load defaults target from project metadata when config file is missing`() {
+    fun `load defaults target from project metadata when config file is missing`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             ProjectMetadataStore.ensure(
@@ -392,7 +367,7 @@ class RunConfigurationManagerNormalizationTest {
     }
 
     @Test
-    fun `load repairs blank terminal target from project metadata`() {
+    fun `load repairs blank terminal target from project metadata`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             ProjectMetadataStore.ensure(
@@ -431,7 +406,7 @@ class RunConfigurationManagerNormalizationTest {
     }
 
     @Test
-    fun `load repairs blank sdl target from project metadata`() {
+    fun `load repairs blank sdl target from project metadata`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             ProjectMetadataStore.ensure(
@@ -470,7 +445,7 @@ class RunConfigurationManagerNormalizationTest {
     }
 
     @Test
-    fun `load does not overwrite non blank target from project metadata`() {
+    fun `load does not overwrite non blank target from project metadata`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {
             ProjectMetadataStore.ensure(

@@ -4,6 +4,8 @@ import com.wuxianggujun.tinaide.core.lang.CxxFileSupport
 import com.wuxianggujun.tinaide.project.ProjectBuildSystem
 import com.wuxianggujun.tinaide.project.ProjectMetadataStore
 import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -29,7 +31,11 @@ object BuildSystemDetector {
      * 2. 如果元数据中没有指定，则通过文件检测
      * 3. 如果检测成功，将结果保存到元数据中（避免下次再检测）
      */
-    fun detect(projectRoot: File): BuildSystem {
+    suspend fun detect(projectRoot: File): BuildSystem = withContext(Dispatchers.IO) {
+        detectOnIo(projectRoot)
+    }
+
+    private suspend fun detectOnIo(projectRoot: File): BuildSystem {
         Timber.tag(TAG).d("Detecting build system: ${projectRoot.absolutePath}")
 
         // 首先检查项目目录是否存在且可读

@@ -15,11 +15,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -27,6 +30,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -53,14 +57,18 @@ import com.wuxianggujun.tinaide.ui.compose.components.editor.EmptyEditorView
 import com.wuxianggujun.tinaide.ui.compose.components.editor.TinaCodeEditorPage
 import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState
 import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorPaneId
+import com.wuxianggujun.tinaide.ui.compose.state.editor.PluginLspDependencyAlert
 import com.wuxianggujun.tinaide.ui.compose.state.editor.SplitEditorLayout
 import com.wuxianggujun.tinaide.ui.compose.viewer.HexViewerScreen
 import com.wuxianggujun.tinaide.ui.compose.viewer.ImagePreviewScreen
 import com.wuxianggujun.tinaide.ui.compose.viewer.LargeTextViewerScreen
+import com.wuxianggujun.tinaide.utils.FileUtils
+import java.nio.charset.Charset
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import timber.log.Timber
-import com.wuxianggujun.tinaide.ui.compose.state.editor.PluginLspDependencyAlert
 
 /**
  * 编辑器容器组件
@@ -321,8 +329,8 @@ fun EditorContainer(
     val latestTabs by rememberUpdatedState(tabs)
     val latestActiveTabIndex by rememberUpdatedState(activeTabIndex)
 
-    // 同步 pager 和 state
-    // 使用 snapshotFlow 监听 settledPage（动画完成后的页面），避免动画过程中的中间状态触发循环
+    // 标签栏已经切到 activeTabIndex。正文必须立刻跟上，不能再 animate：
+    // 动画期间 currentPage 还停在旧页，看起来就像「标签过去了、文件没换」。
     LaunchedEffect(tabs.size, activeTabIndex) {
         val lastIndex = tabs.lastIndex
         if (lastIndex < 0) return@LaunchedEffect
@@ -334,7 +342,7 @@ fun EditorContainer(
         }
 
         if (pagerState.currentPage != safeActiveIndex) {
-            pagerState.animateScrollToPage(safeActiveIndex)
+            pagerState.scrollToPage(safeActiveIndex)
         }
     }
 
@@ -422,6 +430,7 @@ fun EditorContainer(
                 HorizontalPager(
                     state = pagerState,
                     modifier = Modifier.fillMaxSize(),
+                    beyondViewportPageCount = EditorPagerSwitchSupport.beyondViewportPageCount(tabs.size),
                     userScrollEnabled = false // 禁用手势滑动，避免与编辑器滑动冲突
                 ) { page ->
                     val tab = tabs.getOrNull(page)
@@ -560,7 +569,7 @@ private fun EditorPane(
 
         LaunchedEffect(paneTabs.map { it.id }, safeSelectedLocalIndex) {
             if (pagerState.currentPage != safeSelectedLocalIndex) {
-                pagerState.animateScrollToPage(safeSelectedLocalIndex)
+                pagerState.scrollToPage(safeSelectedLocalIndex)
             }
         }
 
@@ -584,6 +593,7 @@ private fun EditorPane(
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize(),
+                beyondViewportPageCount = EditorPagerSwitchSupport.beyondViewportPageCount(paneTabs.size),
                 userScrollEnabled = false
             ) { page ->
                 val tab = paneTabs.getOrNull(page)
@@ -827,15 +837,61 @@ private fun EditorPage(
             )
         }
         ContentType.LARGE_TEXT -> {
-            LaunchedEffect(tab.id) {
-                onFileEncodingChanged(FileCharsetDetector.detect(tab.file).name())
+            val detectedCharset by produceState<Charset?>(
+                initialValue = null,
+                key1 = tab.id,
+                key2 = tab.file.absolutePath,
+            ) {
+                value = withContext(Dispatchers.IO) { FileCharsetDetector.detect(tab.file) }
             }
-            LargeTextViewerScreen(
-                filePath = tab.file.absolutePath,
-                onOpenAsEditor = { state.openFileWithType(tab.file, ContentType.CODE) },
-                onOpenAsHex = { state.openFileWithType(tab.file, ContentType.HEX) },
-                modifier = activatingModifier
-            )
+            LaunchedEffect(tab.id, detectedCharset) {
+                detectedCharset?.let { onFileEncodingChanged(it.name()) }
+            }
+            // 用编辑器打开会绕过大文件阈值，整份载入内存。先让用户知道代价。
+            var pendingEditorOpen by remember(tab.id) { mutableStateOf(false) }
+            val largeTextCharset = detectedCharset
+            if (largeTextCharset == null) {
+                Box(modifier = activatingModifier, contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            } else {
+                LargeTextViewerScreen(
+                    filePath = tab.file.absolutePath,
+                    charset = largeTextCharset,
+                    onOpenAsEditor = { pendingEditorOpen = true },
+                    onOpenAsHex = { state.openFileWithType(tab.file, ContentType.HEX) },
+                    modifier = activatingModifier
+                )
+            }
+            if (pendingEditorOpen) {
+                TinaAlertDialog(
+                    onDismissRequest = { pendingEditorOpen = false },
+                    title = { TinaDialogTitleText(Strings.large_file_editor_confirm_title.str()) },
+                    text = {
+                        Text(
+                            text = Strings.large_file_editor_confirm_message.str(
+                                FileUtils.getFormattedSize(tab.file)
+                            ),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                pendingEditorOpen = false
+                                state.openFileWithType(tab.file, ContentType.CODE)
+                            }
+                        ) {
+                            Text(Strings.large_file_editor_confirm_action.str())
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { pendingEditorOpen = false }) {
+                            Text(Strings.btn_cancel.str())
+                        }
+                    }
+                )
+            }
         }
         ContentType.IMAGE -> {
             // 图片文件显示为二进制

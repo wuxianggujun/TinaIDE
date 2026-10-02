@@ -29,6 +29,7 @@ interface ITerminalPreferences {
     val fontNameFlow: StateFlow<String>
     val cursorBlinkEnabledFlow: StateFlow<Boolean>
     val cursorBlinkRateFlow: StateFlow<Int>
+    val showRawLinkerOutputFlow: StateFlow<Boolean>
 
     // 读写属性
     var fontSize: Float
@@ -39,6 +40,14 @@ interface ITerminalPreferences {
     var fontName: String
     var cursorBlinkEnabled: Boolean
     var cursorBlinkRate: Int
+
+    /**
+     * 是否原样显示 linker 兼容告警（关闭内置的已知噪音过滤）。
+     *
+     * 默认 false（保持过滤）。作为过滤器的安全阀：若过滤逻辑将来误吞真实告警，
+     * 用户可打开它，让所有会话（交互终端 + Run）原样输出 linker 信息。
+     */
+    var showRawLinkerOutput: Boolean
 
     /**
      * 获取字体显示名称

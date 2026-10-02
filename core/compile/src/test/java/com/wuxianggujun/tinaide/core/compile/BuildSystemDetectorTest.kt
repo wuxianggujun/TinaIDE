@@ -4,7 +4,9 @@ import com.google.common.truth.Truth.assertThat
 import com.wuxianggujun.tinaide.project.ProjectBuildSystem
 import com.wuxianggujun.tinaide.project.ProjectMetadata
 import com.wuxianggujun.tinaide.project.ProjectMetadataStore
+import io.mockk.coEvery
 import io.mockk.every
+import kotlinx.coroutines.runBlocking
 import io.mockk.mockkObject
 import io.mockk.unmockkAll
 import org.junit.After
@@ -29,8 +31,8 @@ class BuildSystemDetectorTest {
         mockkObject(ProjectMetadataStore)
 
         // 默认：元数据中没有构建系统信息
-        every { ProjectMetadataStore.read(any()) } returns null
-        every { ProjectMetadataStore.updateBuildSystem(any(), any()) } returns true
+        coEvery { ProjectMetadataStore.read(any()) } returns null
+        coEvery { ProjectMetadataStore.updateBuildSystem(any(), any()) } returns true
     }
 
     @After
@@ -43,13 +45,13 @@ class BuildSystemDetectorTest {
     @Test
     fun `returns UNKNOWN for non-existent directory`() {
         val nonExistent = tempFolder.root.resolve("does-not-exist")
-        assertThat(BuildSystemDetector.detect(nonExistent)).isEqualTo(BuildSystem.UNKNOWN)
+        assertThat(detect(nonExistent)).isEqualTo(BuildSystem.UNKNOWN)
     }
 
     @Test
     fun `returns UNKNOWN when path is a file not directory`() {
         val file = tempFolder.newFile("not-a-dir.txt")
-        assertThat(BuildSystemDetector.detect(file)).isEqualTo(BuildSystem.UNKNOWN)
+        assertThat(detect(file)).isEqualTo(BuildSystem.UNKNOWN)
     }
 
     // ==================== 元数据优先 ====================
@@ -58,46 +60,46 @@ class BuildSystemDetectorTest {
     fun `returns CMAKE from metadata when metadata specifies CMAKE`() {
         val projectRoot = tempFolder.newFolder("cmake-project")
         val metadata = createMetadata(ProjectBuildSystem.CMAKE)
-        every { ProjectMetadataStore.read(projectRoot) } returns metadata
+        coEvery { ProjectMetadataStore.read(projectRoot) } returns metadata
 
-        assertThat(BuildSystemDetector.detect(projectRoot)).isEqualTo(BuildSystem.CMAKE)
+        assertThat(detect(projectRoot)).isEqualTo(BuildSystem.CMAKE)
     }
 
     @Test
     fun `returns MAKE from metadata when metadata specifies MAKE`() {
         val projectRoot = tempFolder.newFolder("make-project")
         val metadata = createMetadata(ProjectBuildSystem.MAKE)
-        every { ProjectMetadataStore.read(projectRoot) } returns metadata
+        coEvery { ProjectMetadataStore.read(projectRoot) } returns metadata
 
-        assertThat(BuildSystemDetector.detect(projectRoot)).isEqualTo(BuildSystem.MAKE)
+        assertThat(detect(projectRoot)).isEqualTo(BuildSystem.MAKE)
     }
 
     @Test
     fun `returns SINGLE_FILE from metadata when metadata specifies SINGLE_FILE`() {
         val projectRoot = tempFolder.newFolder("single-project")
         val metadata = createMetadata(ProjectBuildSystem.SINGLE_FILE)
-        every { ProjectMetadataStore.read(projectRoot) } returns metadata
+        coEvery { ProjectMetadataStore.read(projectRoot) } returns metadata
 
-        assertThat(BuildSystemDetector.detect(projectRoot)).isEqualTo(BuildSystem.SINGLE_FILE)
+        assertThat(detect(projectRoot)).isEqualTo(BuildSystem.SINGLE_FILE)
     }
 
     @Test
     fun `returns PLUGIN from metadata when metadata specifies PLUGIN`() {
         val projectRoot = tempFolder.newFolder("plugin-project")
         val metadata = createMetadata(ProjectBuildSystem.PLUGIN)
-        every { ProjectMetadataStore.read(projectRoot) } returns metadata
+        coEvery { ProjectMetadataStore.read(projectRoot) } returns metadata
 
-        assertThat(BuildSystemDetector.detect(projectRoot)).isEqualTo(BuildSystem.PLUGIN)
+        assertThat(detect(projectRoot)).isEqualTo(BuildSystem.PLUGIN)
     }
 
     @Test
     fun `falls through to file detection when metadata has UNKNOWN build system`() {
         val projectRoot = tempFolder.newFolder("unknown-meta")
         val metadata = createMetadata(ProjectBuildSystem.UNKNOWN)
-        every { ProjectMetadataStore.read(projectRoot) } returns metadata
+        coEvery { ProjectMetadataStore.read(projectRoot) } returns metadata
 
         // 空目录 → UNKNOWN
-        assertThat(BuildSystemDetector.detect(projectRoot)).isEqualTo(BuildSystem.UNKNOWN)
+        assertThat(detect(projectRoot)).isEqualTo(BuildSystem.UNKNOWN)
     }
 
     // ==================== 文件检测：CMake ====================
@@ -107,7 +109,7 @@ class BuildSystemDetectorTest {
         val projectRoot = tempFolder.newFolder("cmake")
         projectRoot.resolve("CMakeLists.txt").createNewFile()
 
-        assertThat(BuildSystemDetector.detect(projectRoot)).isEqualTo(BuildSystem.CMAKE)
+        assertThat(detect(projectRoot)).isEqualTo(BuildSystem.CMAKE)
     }
 
     @Test
@@ -116,7 +118,7 @@ class BuildSystemDetectorTest {
         projectRoot.resolve("CMakeLists.txt").createNewFile()
         projectRoot.resolve("Makefile").createNewFile()
 
-        assertThat(BuildSystemDetector.detect(projectRoot)).isEqualTo(BuildSystem.CMAKE)
+        assertThat(detect(projectRoot)).isEqualTo(BuildSystem.CMAKE)
     }
 
     @Test
@@ -134,15 +136,15 @@ class BuildSystemDetectorTest {
             """.trimIndent()
         )
 
-        assertThat(BuildSystemDetector.detect(projectRoot)).isEqualTo(BuildSystem.PLUGIN)
+        assertThat(detect(projectRoot)).isEqualTo(BuildSystem.PLUGIN)
     }
 
     @Test
     fun `plugin manifest updates stale SINGLE_FILE metadata`() {
         val projectRoot = tempFolder.newFolder("plugin-stale-metadata")
         val metadata = createMetadata(ProjectBuildSystem.SINGLE_FILE)
-        every { ProjectMetadataStore.read(projectRoot) } returns metadata
-        every {
+        coEvery { ProjectMetadataStore.read(projectRoot) } returns metadata
+        coEvery {
             ProjectMetadataStore.updateBuildSystem(projectRoot, ProjectBuildSystem.PLUGIN)
         } returns true
         projectRoot.resolve("manifest.json").writeText(
@@ -157,7 +159,7 @@ class BuildSystemDetectorTest {
             """.trimIndent()
         )
 
-        assertThat(BuildSystemDetector.detect(projectRoot)).isEqualTo(BuildSystem.PLUGIN)
+        assertThat(detect(projectRoot)).isEqualTo(BuildSystem.PLUGIN)
     }
 
     // ==================== 文件检测：Make ====================
@@ -167,7 +169,7 @@ class BuildSystemDetectorTest {
         val projectRoot = tempFolder.newFolder("make")
         projectRoot.resolve("Makefile").createNewFile()
 
-        assertThat(BuildSystemDetector.detect(projectRoot)).isEqualTo(BuildSystem.MAKE)
+        assertThat(detect(projectRoot)).isEqualTo(BuildSystem.MAKE)
     }
 
     @Test
@@ -175,7 +177,7 @@ class BuildSystemDetectorTest {
         val projectRoot = tempFolder.newFolder("make-lower")
         projectRoot.resolve("makefile").createNewFile()
 
-        assertThat(BuildSystemDetector.detect(projectRoot)).isEqualTo(BuildSystem.MAKE)
+        assertThat(detect(projectRoot)).isEqualTo(BuildSystem.MAKE)
     }
 
     @Test
@@ -183,7 +185,7 @@ class BuildSystemDetectorTest {
         val projectRoot = tempFolder.newFolder("gnu-make")
         projectRoot.resolve("GNUmakefile").createNewFile()
 
-        assertThat(BuildSystemDetector.detect(projectRoot)).isEqualTo(BuildSystem.MAKE)
+        assertThat(detect(projectRoot)).isEqualTo(BuildSystem.MAKE)
     }
 
     // ==================== 文件检测：单文件 ====================
@@ -193,7 +195,7 @@ class BuildSystemDetectorTest {
         val projectRoot = tempFolder.newFolder("single-c")
         projectRoot.resolve("main.c").createNewFile()
 
-        assertThat(BuildSystemDetector.detect(projectRoot)).isEqualTo(BuildSystem.SINGLE_FILE)
+        assertThat(detect(projectRoot)).isEqualTo(BuildSystem.SINGLE_FILE)
     }
 
     @Test
@@ -201,7 +203,7 @@ class BuildSystemDetectorTest {
         val projectRoot = tempFolder.newFolder("single-cpp")
         projectRoot.resolve("main.cpp").createNewFile()
 
-        assertThat(BuildSystemDetector.detect(projectRoot)).isEqualTo(BuildSystem.SINGLE_FILE)
+        assertThat(detect(projectRoot)).isEqualTo(BuildSystem.SINGLE_FILE)
     }
 
     @Test
@@ -209,7 +211,7 @@ class BuildSystemDetectorTest {
         val projectRoot = tempFolder.newFolder("single-cc")
         projectRoot.resolve("hello.cc").createNewFile()
 
-        assertThat(BuildSystemDetector.detect(projectRoot)).isEqualTo(BuildSystem.SINGLE_FILE)
+        assertThat(detect(projectRoot)).isEqualTo(BuildSystem.SINGLE_FILE)
     }
 
     // ==================== 空目录 ====================
@@ -217,7 +219,7 @@ class BuildSystemDetectorTest {
     @Test
     fun `returns UNKNOWN for empty directory`() {
         val projectRoot = tempFolder.newFolder("empty")
-        assertThat(BuildSystemDetector.detect(projectRoot)).isEqualTo(BuildSystem.UNKNOWN)
+        assertThat(detect(projectRoot)).isEqualTo(BuildSystem.UNKNOWN)
     }
 
     @Test
@@ -226,7 +228,7 @@ class BuildSystemDetectorTest {
         projectRoot.resolve("README.md").createNewFile()
         projectRoot.resolve("data.txt").createNewFile()
 
-        assertThat(BuildSystemDetector.detect(projectRoot)).isEqualTo(BuildSystem.UNKNOWN)
+        assertThat(detect(projectRoot)).isEqualTo(BuildSystem.UNKNOWN)
     }
 
     // ==================== findMainSourceFile ====================
@@ -279,4 +281,8 @@ class BuildSystemDetectorTest {
         createdAt = System.currentTimeMillis(),
         buildSystem = buildSystem
     )
+
+    private fun detect(projectRoot: java.io.File): BuildSystem = runBlocking {
+        BuildSystemDetector.detect(projectRoot)
+    }
 }

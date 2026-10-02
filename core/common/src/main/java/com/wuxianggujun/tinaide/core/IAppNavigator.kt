@@ -14,4 +14,12 @@ interface IAppNavigator {
 
     /** 打开终端 */
     fun navigateToTerminal(context: Context, workDir: String)
+
+    /**
+     * 打开 Linux 图形桌面窗口。
+     *
+     * 实现必须启动 `com.termux.x11.MainActivity`；feature 模块不得直接依赖该类。
+     * X server 应已由调用方启动——本方法只负责打开渲染/输入窗口。
+     */
+    fun openLinuxDesktop(context: Context)
 }

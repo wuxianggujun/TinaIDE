@@ -1,4 +1,5 @@
 import com.wuxianggujun.tinaide.buildlogic.TinaAppAbiAggregationExtension
+import com.wuxianggujun.tinaide.buildlogic.TinaAppVersioningExtension
 import java.util.Properties
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
@@ -24,6 +25,9 @@ if (keystorePropsFile.exists()) {
 }
 // `appVersionCode` / `appVersionName` 由 `tina.android.app.versioning` 插件
 // 写入 Android defaultConfig；版本相关消费方通过插件扩展访问。
+// `buildId` 与 mapping 归档目录名同源，xCrash 墓碑据此反查唯一 mapping。
+val appVersioning = extensions.getByType(TinaAppVersioningExtension::class.java)
+val appBuildId = appVersioning.buildId
 val abiAggregation =
     extensions.getByType(TinaAppAbiAggregationExtension::class.java)
 val localDevAbi = abiAggregation.localDevAbi
@@ -54,6 +58,9 @@ android {
             ?: System.getenv("SERVER_CONFIG_HMAC_SECRET")
             ?: ""
         buildConfigField("String", "SERVER_CONFIG_HMAC_SECRET", "\"$serverConfigHmacSecret\"")
+
+        // 构建标识：与 R8 mapping 归档目录名同源，崩溃墓碑据此定位唯一可反查的 mapping。
+        buildConfigField("String", "BUILD_ID", "\"$appBuildId\"")
 
         // NDK 配置
         // 注意：当启用 ABI splits 时，不要在这里设置 abiFilters，否则会冲突
@@ -123,6 +130,9 @@ android {
         viewBinding = true
         compose = true
         aidl = true
+        // ByteHook 以 Android prefab 形式提供 native 头文件与导入库,供
+        // src/main/cpp 里的 sdl_asset_redirect GOT hook 通过 find_package 消费。
+        prefab = true
     }
 
     testOptions {
@@ -255,7 +265,14 @@ androidComponents {
                 output.versionCode.set(baseVersionCode * 10 + abiVersionCode)
             }
             if (targetAbi != null) {
-                output.outputFileName.set("app-$targetAbi-${variant.buildType}.apk")
+                // 输出文件名统一为「应用名-版本号-ABI-构建类型」，便于分发时一眼区分。
+                // 用惰性 map 读取 versionName，避免配置期属性尚未就绪时读到空值。
+                val buildType = variant.buildType
+                output.outputFileName.set(
+                    output.versionName.map { versionName ->
+                        "TinaIDE-${versionName ?: "unversioned"}-$targetAbi-$buildType.apk"
+                    }
+                )
             }
         }
     }
@@ -297,6 +314,7 @@ dependencies {
     implementation(project.dependencies.project(":core:debug"))
     implementation(project.dependencies.project(":core:git"))
     implementation(project.dependencies.project(":core:i18n"))
+    implementation(project.dependencies.project(":core:linux-desktop"))
     implementation(project.dependencies.project(":core:logging"))
     implementation(project.dependencies.project(":core:lsp"))
     implementation(project.dependencies.project(":core:ndk"))
@@ -309,6 +327,7 @@ dependencies {
     implementation(project.dependencies.project(":core:search"))
     implementation(project.dependencies.project(":core:text-engine"))
     implementation(project.dependencies.project(":core:tree-sitter"))
+    implementation(project.dependencies.project(":core:tree-sitter-grammars"))
     implementation(project.dependencies.project(":core:editor-view"))
     implementation(project.dependencies.project(":core:editor-lsp"))
 
@@ -342,9 +361,8 @@ dependencies {
     // the app must package liblua54.so for script/hybrid plugins.
     runtimeOnly("party.iroiro.luajava:android:${libs.versions.luajava.get()}:lua54@aar")
 
-    // Tree-sitter grammar 依赖由 :core:tree-sitter 统一管理
-    // GenerateTreeSitterLanguageRegistry task 仍需要解析 implementation deps，
-    // 因此保留对 :core:tree-sitter 的依赖即可（grammar jars 通过传递依赖到达 classpath）。
+    // Tree-sitter parser 与 grammar pack 分离：宿主显式装配 grammar，
+    // GenerateTreeSitterLanguageRegistry 从 :core:tree-sitter-grammars 读取声明。
 
     // CMake 解析器
     implementation(project.dependencies.project(":core:cmake"))
@@ -355,6 +373,22 @@ dependencies {
     // Kotlin Coroutines for async operations
     implementation(libs.kotlinx.coroutines)
     coreLibraryDesugaring(libs.desugar)
+
+    // ByteHook - PLT/GOT hook（MIT 许可,与 GPL-3.0 兼容）。
+    // 用于在 :sdl2 / :sdl 图形运行进程内 hook libSDL2/libSDL3 的 fopen 家族,
+    // 把落在 getFilesDir() 下、实际不存在的相对资源重定向回项目目录。
+    // 通过 Android prefab 暴露 native 库,由 src/main/cpp/sdl_asset_redirect 消费。
+    implementation(libs.bytehook)
+
+    // bytehook 的 POM 传递依赖 shadowhook（inline hook）。shadowhook 只有 arm 后端,
+    // 上游未发布 x86/x86_64 库,导致 x86_64 变体在 configureCMake 阶段报 CXX1210
+    // "No compatible library found [//shadowhook/shadowhook]"。经 readelf 核实:
+    //   - arm64 libbytehook.so NEEDED libshadowhook.so（生产包真依赖,不能动）
+    //   - x86_64 libbytehook.so 自包含,不 NEEDED shadowhook
+    // 因此仅对 x86_64 变体排除该传递依赖,让模拟器构建可用;arm64 完全不受影响。
+    configurations.matching { it.name.startsWith("x86_64") }.configureEach {
+        exclude(group = "com.bytedance.android", module = "shadowhook")
+    }
 
     // AndroidX Lifecycle (ViewModel + StateFlow)
     implementation(libs.lifecycle.runtime)

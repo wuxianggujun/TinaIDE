@@ -117,7 +117,7 @@ class EditorContainerState(
     private val pluginThemeRegistry: PluginEditorThemeRegistry,
     private val projectSymbolIndexServiceProvider: () -> ProjectSymbolIndexService?,
     private val projectRootPathProvider: () -> String?,
-    private val cppStandardOverrideProvider: (File) -> String? = { null },
+    private val cppStandardOverrideProvider: suspend (File) -> String? = { null },
     private val fileWatchService: IFileWatchService? = null,
     private val linuxEnvironmentProvider: LinuxEnvironmentProvider = UnavailableLinuxEnvironmentProvider,
     private val lspPluginManager: LspPluginManager? = null,
@@ -441,7 +441,7 @@ class EditorContainerState(
     }
 
     internal fun activeTabSupportsCxxCompileContext(): Boolean =
-        getActiveTab()?.file?.extension?.lowercase() in CxxFileSupport.clangdSupportedExtensions
+        getActiveTab()?.file?.let(CxxFileSupport::isClangdSupportedFile) == true
 
     internal fun getActiveCxxCompileContext(): CxxCompileContextSnapshot? {
         val tab = getActiveTab() ?: return null
@@ -1754,7 +1754,7 @@ class EditorContainerState(
 
         val refreshCandidates = tabs.count { tab ->
             if (!hasAttachedCodeEditor(tab.id, tab.contentType)) return@count false
-            tab.file.extension.lowercase() in CxxFileSupport.clangdSupportedExtensions
+            CxxFileSupport.isClangdSupportedFile(tab.file)
         }
 
         if (refreshCandidates <= 0) {
@@ -1856,7 +1856,7 @@ fun rememberEditorContainerState(
     pluginThemeRegistry: PluginEditorThemeRegistry,
     projectSymbolIndexServiceProvider: () -> ProjectSymbolIndexService?,
     projectRootPathProvider: () -> String?,
-    cppStandardOverrideProvider: (File) -> String? = { null },
+    cppStandardOverrideProvider: suspend (File) -> String? = { null },
     onLspDiagnosticsChanged: ((fileUri: String, diagnostics: List<Diagnostic>) -> Unit)? = null
 ): EditorContainerState {
     val context = LocalContext.current

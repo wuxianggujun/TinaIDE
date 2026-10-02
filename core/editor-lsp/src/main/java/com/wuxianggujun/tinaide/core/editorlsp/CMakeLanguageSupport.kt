@@ -488,7 +488,7 @@ object CMakeLanguageSupport {
             line = line,
             startColumn = column,
             length = length,
-            tokenType = tokenType
+            tokenType = SemanticTokenType.fromWireName(tokenType)
         )
     }
 

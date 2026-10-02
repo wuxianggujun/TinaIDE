@@ -106,6 +106,12 @@ class TerminalShellResolver(
         initialCommand: String? = null,
     ): ShellResolveResult = withContext(Dispatchers.IO) {
         // rows/cols 目前由 Termux TerminalSession 在后续 resize/updateSize 中处理，这里仅用于保持接口稳定。
+        val effectiveBackend = if (backend == TerminalBackend.PROOT && !isPRootInstalled()) {
+            Timber.tag("TerminalShellResolver").i("PRoot backend unavailable; falling back to HOST")
+            TerminalBackend.HOST
+        } else {
+            backend
+        }
         val configured = terminalPrefs.terminalShellType
         val preferredOrder = when (configured) {
             TerminalPreferences.ShellType.AUTO -> listOf(
@@ -121,16 +127,17 @@ class TerminalShellResolver(
 
         var resolvedType: TerminalPreferences.ShellType? = null
         for (type in preferredOrder) {
-            if (isShellAvailable(backend, type)) {
+            if (isShellAvailable(effectiveBackend, type)) {
                 resolvedType = type
                 break
             }
         }
-        val resolved = resolvedType ?: return@withContext ShellResolveResult.Error(buildNoShellMessage(context, backend, configured))
+        val resolved = resolvedType
+            ?: return@withContext ShellResolveResult.Error(buildNoShellMessage(context, effectiveBackend, configured))
 
         val cwd = normalizeExistingDir(workDir)
 
-        when (backend) {
+        when (effectiveBackend) {
             TerminalBackend.PROOT -> buildPRootResolution(
                 resolvedType = resolved,
                 cwd = cwd,

@@ -1,6 +1,6 @@
 # 远程 LSP 功能使用指南
 
-> 更新日期：2026-08-20
+> 最后人工核验：2026-09-09
 
 本文说明 TinaIDE 当前远程 LSP 客户端能力。当前仓库保留 Android 端
 `RemoteLspConnectionProvider`、远程 LSP 设置项、状态栏和同步配置，但不再内置

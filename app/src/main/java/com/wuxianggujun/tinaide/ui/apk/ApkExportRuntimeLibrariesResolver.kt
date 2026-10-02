@@ -10,6 +10,8 @@ import com.wuxianggujun.tinaide.ui.sdl.SdlRuntimeResolver
 import java.io.File
 import java.io.IOException
 import java.util.ArrayDeque
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 
 /**
@@ -38,10 +40,18 @@ object ApkExportRuntimeLibrariesResolver {
         val missingLibraries: List<String>
     )
 
-    fun resolve(
+    suspend fun resolve(
         context: Context,
         projectRoot: File?,
         buildDir: File?
+    ): Resolution = withContext(Dispatchers.IO) {
+        resolveOnIo(context, projectRoot, buildDir)
+    }
+
+    private suspend fun resolveOnIo(
+        context: Context,
+        projectRoot: File?,
+        buildDir: File?,
     ): Resolution {
         val buildLibraries = scanBuildLibraries(buildDir)
         if (buildLibraries.isEmpty()) {

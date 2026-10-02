@@ -72,4 +72,43 @@ class LspRoutingSupportTest {
 
         assertThat(route).isEqualTo(LspAttachmentRoute.PLUGIN)
     }
+
+    @Test
+    fun resolveAttachmentRoute_shouldRouteExtensionlessStdHeadersToCxx() {
+        val route = LspRoutingSupport.resolveAttachmentRoute(
+            file = File("usr/include/c++/v1/vector"),
+            editorLspEnabled = true,
+            builtinCmakeLspEnabled = false,
+            cxxExtensions = cxxExtensions,
+            hasPluginServer = false
+        )
+
+        assertThat(route).isEqualTo(LspAttachmentRoute.CXX)
+    }
+
+    @Test
+    fun resolveAttachmentRoute_shouldKeepExtensionlessStdHeadersDisabledWhenEditorLspOff() {
+        val route = LspRoutingSupport.resolveAttachmentRoute(
+            file = File("usr/include/c++/v1/vector"),
+            editorLspEnabled = false,
+            builtinCmakeLspEnabled = false,
+            cxxExtensions = cxxExtensions,
+            hasPluginServer = false
+        )
+
+        assertThat(route).isEqualTo(LspAttachmentRoute.NONE)
+    }
+
+    @Test
+    fun resolveAttachmentRoute_shouldNotTreatReadmeAsCxx() {
+        val route = LspRoutingSupport.resolveAttachmentRoute(
+            file = File("workspace/README"),
+            editorLspEnabled = true,
+            builtinCmakeLspEnabled = false,
+            cxxExtensions = cxxExtensions,
+            hasPluginServer = false
+        )
+
+        assertThat(route).isEqualTo(LspAttachmentRoute.NONE)
+    }
 }

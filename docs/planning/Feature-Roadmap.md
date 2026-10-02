@@ -1,6 +1,6 @@
 # TinaIDE 功能路线图
 
-> 更新日期：2026-08-21
+> 更新日期：2026-09-09
 
 TinaIDE 是一个面向 Android 设备的轻量级 C/C++ IDE。本文档作为当前仓库“已实现功能总览 + 待实现规划”的主文档。
 
@@ -12,9 +12,11 @@ TinaIDE 是一个面向 Android 设备的轻量级 C/C++ IDE。本文档作为�
 
 - 已具备稳定闭环：编辑器（多标签 + Tree-sitter + clangd + 按实际可用性展示 Quick Fix）、构建/运行/调试（原生工具链 + 可选 PRoot 模式）、终端、多语言 UI、Git 基础流、插件（主题/片段/菜单扩展/LSP/脚本与 hybrid/项目模板/APK 导出）。
 - 开源版已经移除账号登录、第三方登录、激活码/许可证、会员和官方 AI 额度入口；私有后端与管理端不再随公开仓库分发，插件与依赖包索引改由公开 GitHub Registry 承载。
-- 近期最值得优先补齐：用户项目模板编辑对话框，以及插件脚本 API / 权限 / 生命周期的继续收敛。
-- 编辑器后续增强按移动端收益排序：先补安全执行与高频输入体验，再考虑 Diff View、Git Gutter / Blame、多光标、列选择和 Minimap。
+- 近期最值得优先补齐：插件脚本 API / 权限 / 生命周期的继续收敛。
+- 编辑器后续增强按移动端收益排序：先补安全执行与高频输入体验，再考虑 Diff View、Git Gutter / Blame、多光标、列选择（Minimap 已完成，默认关闭，见「设置 → 编辑器」）。
 - 当前产品范围继续聚焦 C/C++；更多语言与云同步暂不规划，不进入近期实现队列。
+- 许可证口径（0.18.29）：项目整体已改用 **GPL-3.0-or-later**，起因是内嵌 GPL-3.0 的 termux-x11。详见 `LICENSE`、`COPYRIGHT.md`、`NOTICE.md`。
+- X11 图形桌面（0.18.29）：`:core:linux-desktop` 模块、`:x11` 进程宿主、Koin 装配与设置页入口已落地，但**尚未在真机跑通 XFCE 桌面**。代码路径完整不等于设备可用，不能按"已完成功能"对外描述。
 
 ## ✅ 代码扫描 TODO 核对结果
 
@@ -38,16 +40,16 @@ TinaIDE 是一个面向 Android 设备的轻量级 C/C++ IDE。本文档作为�
 |------|------|----------|
 | 多标签编辑器 | Tina Editor + Tree-sitter 高亮 | `EditorContainer.kt`, `DocumentSession.kt` |
 | 语法高亮 | C/C++/CMake/Bash/JSON/Make/YAML | `TreeSitterQueryLoader` + `syncTreeSitterQueries` |
-| 代码折叠 | 行号区域折叠图标、快捷键支持 | `FoldingManager.java` |
+| 代码折叠 | 行号区域折叠图标、快捷键支持 | `EditorFoldingManager.kt`（`core:editor-view`） |
 | 代码格式化 | clang-format 集成 | `CodeFormatter.kt` |
 | 头文件跳转 | include 路径解析和跳转 | `HeaderNavigationTextAction.kt` |
 | 全局搜索 | 跨文件搜索、正则表达式 | `ProjectSearchEngine.kt`, `GlobalSearchScreen.kt` |
 | LSP 集成 | clangd（native / PRoot / remote）+ CMake/Make 内建语言服务 | `LspEditorManager.kt`, `LspClientSession.kt` |
 | 诊断 Quick Fix | 仅在服务器返回未禁用 Quick Fix 时显示“查看修复”，并与通用 Refactor / Source Action 分流 | `DiagnosticsContent.kt`, `LspCodeActionService.kt` |
 | **智能补全增强** | 本地关键词/标识符候选、LSP 候选合并、参数提示、符号搜索 | [`DefaultCompletionProvider.kt`](../../core/editor-lsp/src/main/java/com/wuxianggujun/tinaide/core/editorlsp/CompletionProvider.kt), [`TinaCodeEditorPage.kt`](../../app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/editor/TinaCodeEditorPage.kt), [`ProjectSymbolIndexService.kt`](../../feature/editor/src/main/java/com/wuxianggujun/tinaide/editor/symbol/ProjectSymbolIndexService.kt) |
-| **参数提示** | LSP 函数签名、当前参数高亮与多签名切换 | [`LspEditorManager.kt`](../../core/editor-lsp/src/main/java/com/wuxianggujun/tinaide/core/editorlsp/LspEditorManager.kt), [`EditorHoverSignatureController.kt`](../../core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorHoverSignatureController.kt), [`EditorSignatureHelpPopup.kt`](../../core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSignatureHelpPopup.kt) |
-| **插件主题** | 通过插件自定义编辑器主题（60+ 颜色项） | [`EditorColorScheme.kt`](../../core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorColorScheme.kt), [`PluginEditorThemeRegistry.kt`](../../feature/editor/src/main/java/com/wuxianggujun/tinaide/editor/theme/PluginEditorThemeRegistry.kt) |
-| **代码片段** | 插件系统实现，支持占位符跳转、同编号同步编辑和 Choice 候选选择 | [`PluginSnippetManager.kt`](../../core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/PluginSnippetManager.kt), [`SnippetSession.kt`](../../core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SnippetSession.kt) |
+| **参数提示** | LSP 函数签名、当前参数高亮与多签名切换 | [`LspEditorManager.kt`](../../core/editor-lsp/src/main/java/com/wuxianggujun/tinaide/core/editorlsp/LspEditorManager.kt), [`EditorHoverSignatureController.kt`](../../editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorHoverSignatureController.kt), [`EditorSignatureHelpPopup.kt`](../../editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSignatureHelpPopup.kt) |
+| **插件主题** | 通过插件自定义编辑器主题（60+ 颜色项） | [`EditorColorScheme.kt`](../../editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorColorScheme.kt), [`PluginEditorThemeRegistry.kt`](../../feature/editor/src/main/java/com/wuxianggujun/tinaide/editor/theme/PluginEditorThemeRegistry.kt) |
+| **代码片段** | 插件系统实现，支持占位符跳转、同编号同步编辑和 Choice 候选选择 | [`PluginSnippetManager.kt`](../../core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/PluginSnippetManager.kt), [`SnippetSession.kt`](../../editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SnippetSession.kt) |
 | 符号面板 | 底部面板符号 Tab，前缀搜索和跳转 | `SymbolsContent.kt` |
 
 ### 构建与调试
@@ -141,7 +143,7 @@ TinaIDE 是一个面向 Android 设备的轻量级 C/C++ IDE。本文档作为�
 - [x] 书签备注
 
 **技术要点**：
-- 扩展 `BreakpointAwareCodeEditor`
+- 书签与断点共用 `core:editor-view` 的行号区域标记渲染（旧 Sora 时代的 `BreakpointAwareCodeEditor` 已随编辑器重写移除）
 - JSON 持久化存储
 - 类似断点的视觉标记
 
@@ -186,9 +188,10 @@ TinaIDE 是一个面向 Android 设备的轻量级 C/C++ IDE。本文档作为�
 - [x] 模板变量替换基础能力（`{{PROJECT_NAME}}` / `{{PROJECT_NAME_UPPER}}` / `{{CPP_STANDARD}}` / `{{CPP_STANDARD_FLAG}}` / `{{NDK_API_LEVEL}}`）
 - [x] 模板元数据/说明展示（`tina-template.json` 名称、描述、作者、构建系统提示）
 - [x] 模板变量扩展（`{{AUTHOR}}`）
+- [x] 模板编辑对话框（设置页「编辑模板信息」：名称、说明、作者、构建系统、主要语言、NDK 标记、默认运行目标、默认 SDL 目标、变量默认值，写入 `tina-template.json`）
 
 **待实现**：
-- [ ] 模板编辑对话框
+- 暂无遗留项；后续可考虑模板预览（解压后目录树）与多模板批量导入。
 
 ---
 
@@ -226,11 +229,11 @@ TinaIDE 是一个面向 Android 设备的轻量级 C/C++ IDE。本文档作为�
 - [x] Choice Snippet 候选选择 UI（复用编辑器补全弹层）
 - [x] 多文件 Code Action / WorkspaceEdit 执行前变更预览
 - [x] 诊断批量 Fix All（仅在语言服务器支持对应 action 时启用）
-- [ ] 编辑器小地图（Minimap）
+- [x] 编辑器小地图（Minimap）
 - [ ] 多光标编辑
 - [ ] 列选择模式
 - [ ] 文件对比（Diff View）
-- [ ] Git 修改指示（Gutter）
+- [x] Git 修改指示（Gutter）
 - [ ] Git blame 信息
 
 ---
@@ -261,7 +264,7 @@ TinaIDE 是一个面向 Android 设备的轻量级 C/C++ IDE。本文档作为�
 | | 代码片段系统 | 1 周 | ✅ 已完成 |
 | **第二阶段** | 书签功能 | 3-5 天 | ✅ 已完成 |
 | | 分屏编辑体验完善 | 3-5 天 | ✅ 状态持久化已完成 |
-| | 用户自定义模板 | 3-5 天 | 🟡 仅模板编辑对话框待补 |
+| | 用户自定义模板 | 3-5 天 | ✅ 已完成 |
 | **第三阶段** | Snippet 同步占位符与 Choice UI | 3-5 天 | ✅ 已完成 |
 | | Code Action 多文件变更预览 | 2-3 天 | ✅ 已完成 |
 | | 条件式 Fix All | 2-3 天 | ✅ 已完成 |
@@ -286,6 +289,7 @@ TinaIDE 是一个面向 Android 设备的轻量级 C/C++ IDE。本文档作为�
 
 | 日期 | 更新内容 |
 |------|----------|
+| 2026-09-09 | 同步 0.18.29 口径：补充 GPL-3.0-or-later 许可证变更与 X11 桌面（真机未验证）状态；修正编辑器重写后遗留的 `FoldingManager.java`、`BreakpointAwareCodeEditor` 旧引用 |
 | 2026-07-31 | 对齐当前编辑器与工作台：修正参数提示和构建日志源码引用，明确底部面板默认/按需标签与运行输出去向 |
 | 2026-07-03 | 对齐插件系统现状：快捷键、编辑器工具栏与插件设置页已落地，后续重点收敛脚本 API / 权限 / 生命周期 |
 | 2026-05-21 | 同步开源版账号/激活移除口径；后端、管理端、账号/激活/会员源码迁出公开仓库 |

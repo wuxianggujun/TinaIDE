@@ -81,13 +81,18 @@
 
 TinaIDE 是 Android 上的 C/C++ IDE。当前默认运行链路是 **native tina-toolchain + Android sysroot**；PRoot/Linux distro 是可选环境，不是默认编译宿主。
 
+**许可证**：自 `0.18.29` 起整体以 **GPL-3.0-or-later** 分发（起因是集成 termux-x11 的 X server）。事实源是根目录 `LICENSE`、`COPYRIGHT.md`、`NOTICE.md`。
+
 **技术栈**：Kotlin、Android、Jetpack Compose、Material 3、Koin、Room、DataStore/SharedPreferences、OkHttp、Tree-sitter、clangd/LSP、Gradle/CMake、native tina-toolchain。
+
+**可选运行时**：Linux 环境只支持 Ubuntu 24.04（Alpine 已在 `0.18.29` 移除）；X11 图形桌面由 `core:linux-desktop` + vendored `external/termux-x11` 承载，跑在 `:x11` 独立进程，**尚未在真机验证**。
 
 **关键入口**：
 
 - `MainPortalActivity`：首页/门户入口。
 - `MainActivity`：项目编辑器工作区入口。
-- `TinaApplication`：多进程初始化分流；主进程、`:toolchain`、`:crash`、用户 native runtime 不能混用初始化逻辑。
+- `TinaApplication`：多进程初始化分流；主进程、`:x11`、`:sdl`、`:sdl2`、`:gui`、`:crash`、用户 native runtime 不能混用初始化逻辑。
+- `core/linux-desktop/src/main/AndroidManifest.xml`：`:x11` 进程边界与 lorie 库 manifest 裁剪，改动前先读其中注释。
 - `MainScreen`：首页 Tab 组织；项目内没有全局统一 `NavHost`。
 - `MainActivityScreenHost` / `EditorContainerState` / `LspEditorManager`：主编辑器界面、编辑器状态和 LSP 路由。
 
@@ -95,6 +100,7 @@ TinaIDE 是 Android 上的 C/C++ IDE。当前默认运行链路是 **native tina
 
 - `app/`：启动、导航、DI 装配、跨模块协调；不要堆领域逻辑。
 - `core/`：无界面复用能力和运行时基础设施，如 i18n、designsystem、storage、security、database、compile、lsp、plugin、tree-sitter。
+- `editor-kit/`：`:core:editor-api` / `:core:text-engine` / `:core:tree-sitter` / `:core:editor-view` 的**唯一源码**所在，宿主经 `settings.gradle.kts` 的 `projectDir` 映射消费；同时是自带 wrapper 与 Tree-sitter 复合构建的独立工程，可 `includeBuild` 给别的项目用。该目录是公开仓库 [wuxianggujun/TinaEditor](https://github.com/wuxianggujun/TinaEditor) 的 Git submodule：克隆主仓库后必须 `git submodule update --init --recursive` 才能编译；改编辑器内核要先在 submodule 内提交并推送，再在主仓库更新 gitlink，顺序与 `external/` 子模块一致。编辑器内核不得反向依赖宿主的 config / common / designsystem / i18n / editor-lsp；宿主偏好、Markdown Hover 与 LSP 装配通过 `EditorState.config`、`EditorRuntimeOptions`、`TinaEditor(hoverContent = ...)` 注入。
 - `feature/`：用户可见功能切片，如设置、工作区、编辑器、帮助、教程。
 - `external/`：第三方源码或本地 fork；改动前先确认上游边界和子模块状态。
 - `tools/`：构建、i18n、toolchain、插件 starter、APK/R8 分析等脚本。
@@ -112,6 +118,13 @@ TinaIDE 是 Android 上的 C/C++ IDE。当前默认运行链路是 **native tina
 ./gradlew :app:assembleDebugAllAbi --no-daemon --console=plain
 ./gradlew ktlintCheck --no-daemon --console=plain
 ./gradlew :rikkahub:embedded:compileDebugKotlin --no-daemon --console=plain
+```
+
+- `editor-kit/` 的改动在 kit 侧验证（在 `editor-kit/` 目录内用 kit 自己的 `gradlew`，模块路径同样是 `:core:*`）：
+
+```bash
+cd editor-kit && ./gradlew :core:editor-view:compileDebugKotlin --no-daemon --console=plain
+cd editor-kit && ./gradlew -p examples/consumer :consumer:compileDebugKotlin --no-daemon --console=plain
 ```
 
 - 验证从改动所属模块开始：Android library 优先运行 `:module:testDebugUnitTest` 或 `:module:compileDebugKotlin`；只有 `app` 宿主、ABI、打包或跨模块集成发生变化时才运行 `:app:*`。
@@ -143,6 +156,11 @@ TinaIDE 是 Android 上的 C/C++ IDE。当前默认运行链路是 **native tina
 **高风险红线**：
 
 - 不要把 PRoot 当默认 C/C++ 编译链路。
+- 新增第三方依赖必须先确认许可证与 GPL-3.0 兼容，并同步更新 `NOTICE.md`。带非商业条款、用户数上限或其他附加限制的许可证不可引入（GPL-3.0 第 7 条禁止 further restrictions）。
+- `external/rikkahub` 当前是**未解决的分发阻塞项**：其附加限制违反 GPL-3.0 第 7 条，冲突解决前包含它的构建产物不得对外分发。不要在文档或发布说明里把“可对外分发的完整 APK”当成当前事实。
+- 不要把 X11 桌面写成已验证功能：代码路径完整，但尚未在真机跑通 XFCE。
+- 不要把 X server 或 lorie 组件搬进主进程：lorie 把 libc 的 `exit()`/`abort()` 覆盖成 `_exit()`，一次 `FatalError` 会直接杀死所在进程。
+- 不要在文档或代码里恢复 Alpine 支持口径：`0.18.29` 已删除 `AlpineMirrorManager`、Alpine 镜像设置项和 `ConfigKeys.AlpineMirrorUrl`。
 - 不要把 Release 构建当普通只读验证；Release 可能递增 `version.properties` 并备份 R8 mapping。mapping 文件仅由公开构建逻辑做本地归档。
 - 不要恢复或复制 `docs/workflows/receive-release.yml` 到 `.github/workflows/`；旧 `repository_dispatch` 私有仓库发布链路已废弃。
 - `README_EN.md` 存在历史口径；涉及构建、DI、工具链时以中文 README、`docs/开发指南.md`、`docs/架构概览.md`、当前代码和配置为准。
@@ -150,6 +168,7 @@ TinaIDE 是 Android 上的 C/C++ IDE。当前默认运行链路是 **native tina
 - RikkaHub 的模型、渠道和 API Key 由 `external/rikkahub` 自身数据层维护；TinaIDE 主仓库禁止新增旁路 API Key 存储、日志、导出配置或崩溃上报。
 - 项目、日志、缓存、配置路径优先走 `ProjectPaths`；Host/Guest 文件访问必须走白名单校验。
 - 修改 `tools/plugin-starters/**` 后必须重新构建并检查 starter zip：`tools/plugin-starters/dist/tinaide.plugin.starters/templates/*.zip`。
+- `editor-kit/` 四个模块的构建脚本被宿主构建和 kit 独立构建**共用**：只允许引用两套 `libs.versions.toml` 中都存在的别名，改插件或依赖时必须同时验证宿主 `:app:compileArm64DebugKotlin` 与 kit 侧 `:core:editor-view:compileDebugKotlin`。不要在编辑器内核里恢复对宿主 `core:common` / `config` / `designsystem` / `i18n` / `editor-lsp` 的依赖。
 
 **完成修改后的验证清单**：
 

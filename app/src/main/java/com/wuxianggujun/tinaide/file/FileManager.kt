@@ -88,7 +88,7 @@ class FileManager(
         saveRecentFiles()
     }
 
-    override fun openProject(path: String): Project {
+    override suspend fun openProject(path: String): Project {
         val projectDir = File(path)
         require(projectDir.exists() && projectDir.isDirectory) { "Invalid project path: $path" }
         val access = storageManager.checkProjectDirAccess(projectDir)
@@ -221,7 +221,7 @@ class FileManager(
 
     override fun getCurrentProject(): Project? = _currentProject.value
 
-    override fun restoreLastSession(): Project? {
+    override suspend fun restoreLastSession(): Project? {
         _currentProject.value?.let { return it }
         try {
             val lastPath = configManager.get(ConfigKeys.CurrentProject)

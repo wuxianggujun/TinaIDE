@@ -270,6 +270,30 @@ class BuildPlannerTest {
     }
 
     @Test
+    fun `configureOnly intent yields ConfigureOnly without touching artifact cache`() = runTest {
+        // ConfigureOnly 和 Clean 一样在 describeOutput 之前短路:不查缓存、不算指纹,
+        // 只把解析到的 strategy 交给下游执行 configure。
+        store.put(newArtifact())
+        val plan = planner.plan(
+            CompileRequest(BuildIntent.ConfigureOnly, LaunchIntent.None),
+            newContext(),
+        )
+        assertThat(plan).isInstanceOf(BuildPlan.ConfigureOnly::class.java)
+        assertThat((plan as BuildPlan.ConfigureOnly).strategy).isSameInstanceAs(strategy)
+    }
+
+    @Test
+    fun `configureOnly without registered strategy yields Invalid`() = runTest {
+        val emptyRegistry = BuildStrategyRegistry(emptyList())
+        val planner = BuildPlanner(emptyRegistry, store, FingerprintCalculator())
+        val plan = planner.plan(
+            CompileRequest(BuildIntent.ConfigureOnly, LaunchIntent.None),
+            newContext(),
+        )
+        assertThat(plan).isInstanceOf(BuildPlan.Invalid::class.java)
+    }
+
+    @Test
     fun `unknown buildSystem yields Invalid`() = runTest {
         val emptyRegistry = BuildStrategyRegistry(emptyList())
         val planner = BuildPlanner(emptyRegistry, store, FingerprintCalculator())

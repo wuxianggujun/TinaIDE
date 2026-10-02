@@ -58,6 +58,7 @@ fun BottomPanel(
     editorStateViewModel: EditorStateViewModel,
     debugViewModel: DebugViewModel,
     projectSymbolIndexService: ProjectSymbolIndexService?,
+    onReconfigureCMake: () -> Unit,
     onBookmarkNavigate: (filePath: String, line: Int) -> Unit,
     onDiagnosticClick: (Diagnostic) -> Unit,
     onDiagnosticCodeActionsClick: (Diagnostic) -> Unit,
@@ -383,6 +384,10 @@ fun BottomPanel(
             status = editorStatus,
             context = editorContainerState.getActiveCxxCompileContext(),
             onReload = editorContainerState::refreshLspConnections,
+            onReconfigure = {
+                showCxxCompileContextDialog = false
+                onReconfigureCMake()
+            },
             onDismiss = { showCxxCompileContextDialog = false },
         )
     }

@@ -8,6 +8,7 @@ import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import timber.log.Timber
 
 /**
  * PRoot guest 工具链安装器。
@@ -19,6 +20,10 @@ class PRootGuestToolchainInstaller(
     context: Context,
     private val configManager: IConfigManager = ConfigManager(context.applicationContext),
 ) {
+
+    private companion object {
+        const val TAG = "PRootGuestToolchain"
+    }
 
     data class InstallProgress(
         val current: Int,
@@ -40,7 +45,9 @@ class PRootGuestToolchainInstaller(
     private val pathResolver by lazy { ToolchainPathResolver(appContext) }
 
     suspend fun isInstalled(config: ToolchainConfig): Boolean = withContext(Dispatchers.IO) {
-        if (!prootEnvironment.isAvailable()) return@withContext false
+        val environmentAvailable = prootEnvironment.isAvailable()
+        logEnvironmentReadiness("check", environmentAvailable)
+        if (!environmentAvailable) return@withContext false
 
         val checks = mutableListOf<Boolean>()
         if (config.installClang) {
@@ -77,7 +84,9 @@ class PRootGuestToolchainInstaller(
             checks += prootEnvironment.isCommandAvailable("git")
         }
 
-        checks.all { it }
+        checks.all { it }.also { installed ->
+            Timber.tag(TAG).i("PRoot guest toolchain check completed: installed=%s", installed)
+        }
     }
 
     suspend fun install(
@@ -85,11 +94,14 @@ class PRootGuestToolchainInstaller(
         onProgress: (InstallProgress) -> Unit = {},
     ): Result<List<String>> = runCatching {
         withContext(Dispatchers.IO) {
-            check(prootEnvironment.isAvailable()) {
+            val environmentAvailable = prootEnvironment.isAvailable()
+            logEnvironmentReadiness("install", environmentAvailable)
+            check(environmentAvailable) {
                 Strings.proot_toolchain_error_not_installed.strOr(appContext)
             }
 
             val packageManager = prootEnvironment.getActiveGuestPackageManager()
+            Timber.tag(TAG).i("PRoot guest toolchain installation started: packageManager=%s", packageManager)
             updatePackageIndex(packageManager)
 
             val requests = buildRequests(config, packageManager)
@@ -145,8 +157,33 @@ class PRootGuestToolchainInstaller(
                 Strings.proot_toolchain_error_not_installed.strOr(appContext)
             }
 
-            installedPackages.distinct()
+            installedPackages.distinct().also { packages ->
+                Timber.tag(TAG).i(
+                    "PRoot guest toolchain installation completed: packageCount=%d",
+                    packages.size,
+                )
+            }
         }
+    }.onFailure { error ->
+        Timber.tag(TAG).e(error, "PRoot guest toolchain installation failed")
+    }
+
+    private fun logEnvironmentReadiness(operation: String, environmentAvailable: Boolean) {
+        Timber.tag(TAG).i(
+            "PRoot guest toolchain %s readiness: bootstrapState=%s, installing=%s, environmentAvailable=%s",
+            operation,
+            bootstrapStateName(PRootBootstrap.state.value),
+            PRootBootstrap.isInstalling(),
+            environmentAvailable,
+        )
+    }
+
+    private fun bootstrapStateName(state: PRootBootstrap.BootstrapState): String = when (state) {
+        PRootBootstrap.BootstrapState.Idle -> "Idle"
+        is PRootBootstrap.BootstrapState.Installing -> "Installing"
+        PRootBootstrap.BootstrapState.Installed -> "Installed"
+        is PRootBootstrap.BootstrapState.Failed -> "Failed"
+        PRootBootstrap.BootstrapState.NeedsToolchainRepair -> "NeedsToolchainRepair"
     }
 
     private suspend fun updatePackageIndex(packageManager: RootfsPackageManager) {
@@ -368,7 +405,9 @@ class PRootGuestToolchainInstaller(
     }
 
     private fun clangdPackages(packageManager: RootfsPackageManager): List<String> = when (packageManager) {
-        RootfsPackageManager.APK -> candidates("clang-extra-tools") + candidates("clang-tools-extra")
+        RootfsPackageManager.APK ->
+            candidates("clang-extra-tools", preferGeneric = true) +
+                candidates("clang-tools-extra", preferGeneric = true)
         RootfsPackageManager.APT -> hyphenatedCandidates("clangd", preferGeneric = true)
         RootfsPackageManager.PACMAN -> listOf("clang")
         RootfsPackageManager.DNF -> listOf("clang-tools-extra", "clang")
@@ -376,7 +415,9 @@ class PRootGuestToolchainInstaller(
     }
 
     private fun clangFormatPackages(packageManager: RootfsPackageManager): List<String> = when (packageManager) {
-        RootfsPackageManager.APK -> candidates("clang-extra-tools") + candidates("clang-tools-extra")
+        RootfsPackageManager.APK ->
+            candidates("clang-extra-tools", preferGeneric = true) +
+                candidates("clang-tools-extra", preferGeneric = true)
         RootfsPackageManager.APT -> hyphenatedCandidates("clang-format", preferGeneric = true)
         RootfsPackageManager.PACMAN -> listOf("clang")
         RootfsPackageManager.DNF -> listOf("clang-tools-extra", "clang")

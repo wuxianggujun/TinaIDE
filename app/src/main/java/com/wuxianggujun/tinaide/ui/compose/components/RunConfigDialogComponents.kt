@@ -403,6 +403,7 @@ fun RunConfigSelector(
     onRebuildAndRun: () -> Unit = {},
     onRunInTerminal: () -> Unit = {},
     onDebug: () -> Unit = {},
+    isConfigEnabled: Boolean = true,
     isBuildEnabled: Boolean = true,
     isRunEnabled: Boolean = true,
     isDebugEnabled: Boolean = true,
@@ -422,6 +423,12 @@ fun RunConfigSelector(
         1 + (if (showInlineBuild) 1 else 0) + (if (showInlineDebug) 1 else 0)
     val actionSegmentWidth = RunConfigActionSize + RunConfigDividerThickness
     val selectorMaxWidth = configSegmentMaxWidth + actionSegmentWidth * inlineActionCount.toFloat()
+
+    LaunchedEffect(isConfigEnabled) {
+        if (!isConfigEnabled) {
+            expanded = false
+        }
+    }
 
     BoxWithConstraints(
         modifier = modifier
@@ -456,6 +463,7 @@ fun RunConfigSelector(
                     // 配置段使用剩余宽度，固定尺寸的 Run 始终优先保留。
                     TinaPanelSegmentButton(
                         onClick = { expanded = true },
+                        enabled = isConfigEnabled,
                         modifier = Modifier
                             .weight(1f)
                             .height(RunConfigActionSize),
@@ -554,7 +562,7 @@ fun RunConfigSelector(
 
         // 下拉菜单 - 限制最大高度，支持滚动
         TinaDropdownMenu(
-            expanded = expanded,
+            expanded = expanded && isConfigEnabled,
             onDismissRequest = { expanded = false },
             modifier = Modifier.heightIn(max = 300.dp) // 限制下拉菜单最大高度
         ) {

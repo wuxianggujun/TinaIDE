@@ -5,12 +5,13 @@ import java.io.File
 import java.nio.file.Files
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
 class PluginZipTemplateInstallTest {
 
     @Test
-    fun `plugin zip template install replaces placeholders and writes plugin metadata`() {
+    fun `plugin zip template install replaces placeholders and writes plugin metadata`() = runTest {
         val tempDir = Files.createTempDirectory("plugin-template-install").toFile()
         val zipFile = Files.createTempFile("plugin-template", ".zip").toFile()
 
@@ -60,7 +61,7 @@ class PluginZipTemplateInstallTest {
     }
 
     @Test
-    fun `zip template install replaces author placeholder and skips template metadata`() {
+    fun `zip template install replaces author placeholder and skips template metadata`() = runTest {
         val tempDir = Files.createTempDirectory("template-author-install").toFile()
         val zipFile = Files.createTempFile("template-author", ".zip").toFile()
 
@@ -98,7 +99,7 @@ class PluginZipTemplateInstallTest {
     }
 
     @Test
-    fun `zip template install uses author variable default when author input is blank`() {
+    fun `zip template install uses author variable default when author input is blank`() = runTest {
         val tempDir = Files.createTempDirectory("template-author-default-install").toFile()
         val zipFile = Files.createTempFile("template-author-default", ".zip").toFile()
 
@@ -130,7 +131,7 @@ class PluginZipTemplateInstallTest {
     }
 
     @Test
-    fun `zip template install writes resolved default run targets to metadata`() {
+    fun `zip template install writes resolved default run targets to metadata`() = runTest {
         val tempDir = Files.createTempDirectory("template-default-target-install").toFile()
         val zipFile = Files.createTempFile("template-default-target", ".zip").toFile()
 
@@ -164,7 +165,7 @@ class PluginZipTemplateInstallTest {
     }
 
     @Test
-    fun `zip template install rejects entries escaping project directory`() {
+    fun `zip template install rejects entries escaping project directory`() = runTest {
         val tempRoot = Files.createTempDirectory("plugin-template-escape").toFile()
         val projectDir = tempRoot.resolve("project")
         val absoluteEscapedFile = tempRoot.resolve("absolute-escaped.txt")
@@ -216,7 +217,7 @@ class PluginZipTemplateInstallTest {
     }
 
     @Test
-    fun `zip template install does not leave partial files after later unsafe entry`() {
+    fun `zip template install does not leave partial files after later unsafe entry`() = runTest {
         val tempRoot = Files.createTempDirectory("plugin-template-partial").toFile()
         val projectDir = tempRoot.resolve("project").apply { mkdirs() }
         val existingFile = projectDir.resolve("existing.txt").apply {

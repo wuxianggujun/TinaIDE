@@ -1,0 +1,24 @@
+{
+  "id": "tinaide.template.sdl2",
+  "name": "SDL2 Project Template",
+  "version": "1.0.0",
+  "minAppVersion": "0.18.20",
+  "description": "Adds an SDL2 + CMake project template to New Project.",
+  "type": "config",
+  "author": {
+    "name": "TinaIDE"
+  },
+  "contributions": {
+    "projectTemplates": [
+      {
+        "id": "sdl2-cmake",
+        "name": "SDL2 + CMake",
+        "description": "Ready-to-run SDL2 app with a classic main() event loop and CMake.",
+        "templatePath": "templates/sdl2_cmake.zip",
+        "buildSystem": "cmake",
+        "primaryLanguage": "CPP",
+        "requiredPackages": ["sdl2"]
+      }
+    ]
+  }
+}

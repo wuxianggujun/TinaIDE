@@ -13,15 +13,20 @@ import com.wuxianggujun.tinaide.core.config.MTFileProviderManager
 import com.wuxianggujun.tinaide.core.config.NewProjectSourceLocation
 import com.wuxianggujun.tinaide.core.config.Prefs
 import com.wuxianggujun.tinaide.core.config.ThemeManager
+import com.wuxianggujun.tinaide.core.IAppNavigator
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.core.linux.LinuxRunModePolicy
+import com.wuxianggujun.tinaide.core.linuxdesktop.LinuxDesktopSupervisorPhase
+import com.wuxianggujun.tinaide.core.linuxdesktop.UbuntuDesktopProvisioner
+import com.wuxianggujun.tinaide.core.linuxdesktop.UbuntuLinuxDesktopCoordinator
 import com.wuxianggujun.tinaide.core.proot.LinuxDistroRootfsHealthLevel
 import com.wuxianggujun.tinaide.core.proot.LinuxDistroRootfsHealthProbe
 import com.wuxianggujun.tinaide.core.proot.LinuxDistroRootfsHealthReport
 import com.wuxianggujun.tinaide.core.proot.RootfsDistroRuntime
 import com.wuxianggujun.tinaide.core.proot.RootfsProfile
 import com.wuxianggujun.tinaide.core.proot.RootfsProfileStore
+import com.wuxianggujun.tinaide.core.proot.SelfHostedLinuxDistroRuntime
 import com.wuxianggujun.tinaide.core.proot.toHealthSummary
 import com.wuxianggujun.tinaide.file.IProjectContext
 import com.wuxianggujun.tinaide.plugin.PluginCapabilities
@@ -30,12 +35,16 @@ import com.wuxianggujun.tinaide.project.ProjectApkExportSupportResolver
 import com.wuxianggujun.tinaide.project.ProjectApkExportType
 import com.wuxianggujun.tinaide.project.ProjectMetadataStore
 import java.io.File
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import timber.log.Timber
 
 data class SettingsUiState(
     val appTheme: AppTheme,
@@ -45,6 +54,8 @@ data class SettingsUiState(
     val editorTabSize: Int,
     val editorWordWrap: Boolean,
     val editorShowLineNumbers: Boolean,
+    val editorShowMinimap: Boolean,
+    val editorShowGitGutter: Boolean,
     val editorAutoIndent: Boolean,
     val editorRainbowBrackets: Boolean,
     val editorRainbowBracketsMaxLines: Int,
@@ -88,6 +99,14 @@ data class SettingsUiState(
     val rootfsInstallMessage: String = "",
     val rootfsInstallProgress: Float = 0f,
     val rootfsHealth: RootfsHealthUiState = RootfsHealthUiState(),
+    val linuxDesktopReady: Boolean = false,
+    val linuxDesktopStatusText: String = "",
+    val linuxDesktopBusy: Boolean = false,
+    val linuxDesktopStarting: Boolean = false,
+    val linuxDesktopStopping: Boolean = false,
+    val linuxDesktopSessionActive: Boolean = false,
+    val linuxDesktopMessage: String = "",
+    val linuxDesktopProgress: Float = 0f,
     // MT 管理器文件提供器
     val mtFileProviderEnabled: Boolean,
     // 当前项目上下文（用于项目设置页）
@@ -116,6 +135,8 @@ data class SettingsUiState(
             editorTabSize = Prefs.editorTabSize,
             editorWordWrap = Prefs.editorWordWrap,
             editorShowLineNumbers = Prefs.editorShowLineNumbers,
+            editorShowMinimap = Prefs.editorShowMinimap,
+            editorShowGitGutter = Prefs.editorShowGitGutter,
             editorAutoIndent = Prefs.editorAutoIndent,
             editorRainbowBrackets = Prefs.editorRainbowBrackets,
             editorRainbowBracketsMaxLines = Prefs.editorRainbowBracketsMaxLines,
@@ -163,7 +184,13 @@ class SettingsViewModel(
     private val configManager: IConfigManager,
     private val pluginManager: PluginManager,
     private val projectContext: IProjectContext,
+    private val linuxDesktopCoordinator: UbuntuLinuxDesktopCoordinator,
+    private val appNavigator: IAppNavigator,
 ) : ViewModel() {
+
+    companion object {
+        private const val TAG = "SettingsViewModel"
+    }
 
     // 保存每个设置路由的垂直滚动偏移（像素）
     // Key = SettingsRoute.route, value = ScrollState.value
@@ -185,7 +212,7 @@ class SettingsViewModel(
     private val _uiState = MutableStateFlow(
         SettingsUiState.fromPrefs(
             configManager = configManager,
-            linuxEnvironmentEnabled = pluginManager.hasEnabledCapability(PluginCapabilities.LINUX_ENVIRONMENT)
+            linuxEnvironmentEnabled = pluginManager.hasEnabledCapability(PluginCapabilities.LINUX_ENVIRONMENT),
         )
     )
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
@@ -198,37 +225,46 @@ class SettingsViewModel(
     private var targetProjectRootOverride: File? = null
 
     /**
+     * 项目设置刷新任务。项目切换、能力流和手动修改都可能同时触发刷新；只保留最后一次，
+     * 避免旧项目扫描完成后覆盖新项目状态。
+     */
+    private var projectRefreshJob: Job? = null
+    private var projectRefreshGeneration: Long = 0L
+
+    /**
      * 被 SettingsActivity 在 onCreate 调用，用于从项目列表菜单进入时绑定目标项目。
      * 传 null 恢复为默认（使用当前会话项目）。
      */
     fun setTargetProjectRoot(path: String?) {
-        val next = path?.takeIf { it.isNotBlank() }?.let(::File)
-            ?.takeIf { it.exists() && it.isDirectory }
+        // 不在主线程执行 exists/isDirectory。目标目录的可读性在 IO 快照阶段统一校验。
+        val next = path?.trim()?.takeIf { it.isNotEmpty() }?.let(::File)
         if (next?.absolutePath == targetProjectRootOverride?.absolutePath) return
         targetProjectRootOverride = next
-        refreshProjectDependencyPaths()
+        requestProjectDependencyPathsRefresh()
     }
 
     private data class ResolvedTargetProject(
         val root: File,
         val displayName: String,
-        val buildDirPath: String?
+        val buildDirPath: String?,
+        val isTargetProjectMode: Boolean,
     )
 
     private fun resolveTargetProject(): ResolvedTargetProject? {
         targetProjectRootOverride?.let { root ->
-            val metadata = ProjectMetadataStore.ensure(root, displayNameFallback = root.name)
             return ResolvedTargetProject(
                 root = root,
-                displayName = metadata.displayName,
-                buildDirPath = null // 覆盖模式不做 APK 导出检测
+                displayName = root.name,
+                buildDirPath = null, // 覆盖模式不做 APK 导出检测
+                isTargetProjectMode = true,
             )
         }
         val project = projectContext.getCurrentProject() ?: return null
         return ResolvedTargetProject(
             root = File(project.rootPath),
             displayName = project.name,
-            buildDirPath = project.buildDirPath
+            buildDirPath = project.buildDirPath,
+            isTargetProjectMode = false,
         )
     }
 
@@ -238,7 +274,7 @@ class SettingsViewModel(
             // 当 MainPortalActivity.onStart 调用 clearInMemorySession 或用户打开/关闭
             // 项目时 flow 会发射，设置页 UI 随之同步。
             projectContext.currentProjectFlow.collect {
-                refreshProjectDependencyPaths()
+                requestProjectDependencyPathsRefresh()
             }
         }
 
@@ -268,19 +304,15 @@ class SettingsViewModel(
 
         viewModelScope.launch {
             pluginManager.enabledCapabilitiesFlow.collect { capabilities ->
-                val linuxEnvironmentEnabled = capabilities.contains(PluginCapabilities.LINUX_ENVIRONMENT)
-                if (!linuxEnvironmentEnabled) {
-                    forceRunModesToNative()
-                }
-                updatePrefsState(linuxEnvironmentEnabled)
-                refreshProjectDependencyPaths()
+                updatePrefsState(PluginCapabilities.LINUX_ENVIRONMENT in capabilities)
+                requestProjectDependencyPathsRefresh()
             }
         }
     }
 
     fun refreshFromPrefs() {
-        updatePrefsState(_uiState.value.linuxEnvironmentEnabled)
-        refreshProjectDependencyPaths()
+        updatePrefsState(pluginManager.hasEnabledCapability(PluginCapabilities.LINUX_ENVIRONMENT))
+        requestProjectDependencyPathsRefresh()
     }
 
     private fun updatePrefsState(linuxEnvironmentEnabled: Boolean) {
@@ -300,7 +332,21 @@ class SettingsViewModel(
             projectNativeCppFlags = previousState.projectNativeCppFlags,
             projectNativeLdFlags = previousState.projectNativeLdFlags,
             projectNativeLdLibs = previousState.projectNativeLdLibs,
-            projectNativeCMakeArgs = previousState.projectNativeCMakeArgs
+            projectNativeCMakeArgs = previousState.projectNativeCMakeArgs,
+            rootfsProfiles = previousState.rootfsProfiles,
+            activeRootfsProfileId = previousState.activeRootfsProfileId,
+            rootfsInstallInProgress = previousState.rootfsInstallInProgress,
+            rootfsInstallMessage = previousState.rootfsInstallMessage,
+            rootfsInstallProgress = previousState.rootfsInstallProgress,
+            rootfsHealth = previousState.rootfsHealth,
+            linuxDesktopReady = previousState.linuxDesktopReady,
+            linuxDesktopStatusText = previousState.linuxDesktopStatusText,
+            linuxDesktopBusy = previousState.linuxDesktopBusy,
+            linuxDesktopStarting = previousState.linuxDesktopStarting,
+            linuxDesktopStopping = previousState.linuxDesktopStopping,
+            linuxDesktopSessionActive = previousState.linuxDesktopSessionActive,
+            linuxDesktopMessage = previousState.linuxDesktopMessage,
+            linuxDesktopProgress = previousState.linuxDesktopProgress,
         )
     }
 
@@ -308,21 +354,6 @@ class SettingsViewModel(
         configuredMode = mode,
         linuxEnvironmentAvailable = _uiState.value.linuxEnvironmentEnabled
     )
-
-    private fun forceRunModesToNative() {
-        if (Prefs.clangdRunMode == LinuxRunModePolicy.MODE_PROOT) {
-            Prefs.setClangdRunMode(LinuxRunModePolicy.MODE_NATIVE)
-        }
-        if (Prefs.cmakeRunMode == LinuxRunModePolicy.MODE_PROOT) {
-            Prefs.setCmakeRunMode(LinuxRunModePolicy.MODE_NATIVE)
-        }
-        if (Prefs.clangFormatRunMode == LinuxRunModePolicy.MODE_PROOT) {
-            Prefs.setClangFormatRunMode(LinuxRunModePolicy.MODE_NATIVE)
-        }
-        if (Prefs.makeRunMode == LinuxRunModePolicy.MODE_PROOT) {
-            Prefs.setMakeRunMode(LinuxRunModePolicy.MODE_NATIVE)
-        }
-    }
 
     fun setAppTheme(theme: AppTheme) {
         Prefs.setTheme(theme)
@@ -364,6 +395,16 @@ class SettingsViewModel(
     fun setEditorShowLineNumbers(enabled: Boolean) {
         Prefs.setEditorShowLineNumbers(enabled)
         _uiState.update { it.copy(editorShowLineNumbers = enabled) }
+    }
+
+    fun setEditorShowMinimap(enabled: Boolean) {
+        Prefs.setEditorShowMinimap(enabled)
+        _uiState.update { it.copy(editorShowMinimap = enabled) }
+    }
+
+    fun setEditorShowGitGutter(enabled: Boolean) {
+        Prefs.setEditorShowGitGutter(enabled)
+        _uiState.update { it.copy(editorShowGitGutter = enabled) }
     }
 
     fun setEditorAutoIndent(enabled: Boolean) {
@@ -541,6 +582,7 @@ class SettingsViewModel(
             val store = RootfsProfileStore(appContext, configManager)
             applyRootfsProfilesSnapshot(store)
             updateRootfsHealthSnapshot(appContext)
+            updateLinuxDesktopStatusSnapshot(appContext)
         }
     }
 
@@ -557,13 +599,17 @@ class SettingsViewModel(
 
             runCatching {
                 val store = RootfsProfileStore(appContext, configManager)
-                val activeProfile = store.setActiveProfile(profileId)
+                val activeProfile = store.setActiveProfileForDistro(
+                    profileId = profileId,
+                    distroId = SelfHostedLinuxDistroRuntime.DEFAULT_DISTRO_ID,
+                )
                 applyRootfsProfilesSnapshot(
                     store = store,
                     inProgress = false,
                     message = Strings.settings_linux_switch_success.strOr(appContext, activeProfile.displayName),
                 )
                 updateRootfsHealthSnapshot(appContext)
+                updateLinuxDesktopStatusSnapshot(appContext)
             }.onFailure { error ->
                 _uiState.update {
                     it.copy(
@@ -585,6 +631,151 @@ class SettingsViewModel(
         val appContext = context.applicationContext
         viewModelScope.launch(Dispatchers.IO) {
             updateRootfsHealthSnapshot(appContext)
+        }
+    }
+
+    fun refreshLinuxDesktopStatus(context: Context) {
+        val appContext = context.applicationContext
+        viewModelScope.launch(Dispatchers.IO) {
+            updateLinuxDesktopStatusSnapshot(appContext)
+        }
+    }
+
+    fun installUbuntuDesktop(context: Context) {
+        if (_uiState.value.linuxDesktopBusy) return
+        val appContext = context.applicationContext
+        viewModelScope.launch(Dispatchers.IO) {
+            _uiState.update {
+                it.copy(
+                    linuxDesktopBusy = true,
+                    linuxDesktopStarting = false,
+                    linuxDesktopMessage = Strings.settings_linux_desktop_checking.strOr(appContext),
+                    linuxDesktopProgress = 0f,
+                )
+            }
+
+            runCatching {
+                linuxDesktopCoordinator.install { progress ->
+                    _uiState.update {
+                        it.copy(
+                            linuxDesktopMessage = progress.phase.toDesktopMessage(appContext),
+                            linuxDesktopProgress = progress.progress.coerceIn(0f, 1f),
+                        )
+                    }
+                }.getOrThrow()
+            }.onSuccess { result ->
+                // 装完组件不代表桌面在跑，但也可能是在会话运行期间补装的，据实上报。
+                val sessionActive = linuxDesktopCoordinator.isSessionActive()
+                _uiState.update {
+                    it.copy(
+                        linuxDesktopBusy = false,
+                        linuxDesktopStarting = false,
+                        linuxDesktopReady = result.status.ready,
+                        linuxDesktopSessionActive = sessionActive,
+                        linuxDesktopStatusText = result.status.toStatusText(appContext, sessionActive),
+                        linuxDesktopMessage = Strings.settings_linux_desktop_install_success.strOr(appContext),
+                        linuxDesktopProgress = 1f,
+                    )
+                }
+            }.onFailure { error ->
+                _uiState.update {
+                    it.copy(
+                        linuxDesktopBusy = false,
+                        linuxDesktopStarting = false,
+                        linuxDesktopReady = false,
+                        linuxDesktopMessage = Strings.settings_linux_desktop_install_failed.strOr(
+                            appContext,
+                            error.message ?: Strings.error_unknown.strOr(appContext),
+                        ),
+                        linuxDesktopProgress = 0f,
+                    )
+                }
+            }
+        }
+    }
+
+    fun openLinuxDesktop(context: Context) {
+        if (_uiState.value.linuxDesktopBusy) return
+        val appContext = context.applicationContext
+        viewModelScope.launch(Dispatchers.IO) {
+            _uiState.update {
+                it.copy(
+                    linuxDesktopBusy = true,
+                    linuxDesktopStarting = true,
+                    linuxDesktopMessage = Strings.settings_linux_desktop_starting.strOr(appContext),
+                    linuxDesktopProgress = 0.3f,
+                )
+            }
+
+            runCatching {
+                linuxDesktopCoordinator.startSession().getOrThrow()
+                withContext(Dispatchers.Main) {
+                    appNavigator.openLinuxDesktop(appContext)
+                }
+            }.onSuccess {
+                _uiState.update {
+                    it.copy(
+                        linuxDesktopBusy = false,
+                        linuxDesktopStarting = false,
+                        linuxDesktopMessage = "",
+                        linuxDesktopProgress = 1f,
+                        linuxDesktopSessionActive = true,
+                    )
+                }
+            }.onFailure { error ->
+                _uiState.update {
+                    it.copy(
+                        linuxDesktopBusy = false,
+                        linuxDesktopStarting = false,
+                        linuxDesktopMessage = Strings.settings_linux_desktop_open_failed.strOr(
+                            appContext,
+                            error.message ?: Strings.error_unknown.strOr(appContext),
+                        ),
+                        linuxDesktopProgress = 0f,
+                        linuxDesktopSessionActive = linuxDesktopCoordinator.isSessionActive(),
+                    )
+                }
+            }
+        }
+    }
+
+    fun stopLinuxDesktop(context: Context) {
+        if (_uiState.value.linuxDesktopBusy) return
+        val appContext = context.applicationContext
+        viewModelScope.launch(Dispatchers.IO) {
+            _uiState.update {
+                it.copy(
+                    linuxDesktopBusy = true,
+                    linuxDesktopStopping = true,
+                    linuxDesktopMessage = Strings.settings_linux_desktop_stopping.strOr(appContext),
+                )
+            }
+
+            runCatching { linuxDesktopCoordinator.stopSession() }
+                .onSuccess {
+                    _uiState.update {
+                        it.copy(
+                            linuxDesktopBusy = false,
+                            linuxDesktopStopping = false,
+                            linuxDesktopMessage = Strings.settings_linux_desktop_stopped.strOr(appContext),
+                            linuxDesktopProgress = 0f,
+                            linuxDesktopSessionActive = false,
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update {
+                        it.copy(
+                            linuxDesktopBusy = false,
+                            linuxDesktopStopping = false,
+                            linuxDesktopMessage = Strings.settings_linux_desktop_stop_failed.strOr(
+                                appContext,
+                                error.message ?: Strings.error_unknown.strOr(appContext),
+                            ),
+                            linuxDesktopSessionActive = linuxDesktopCoordinator.isSessionActive(),
+                        )
+                    }
+                }
         }
     }
 
@@ -614,6 +805,7 @@ class SettingsViewModel(
                     progress = 1f,
                 )
                 updateRootfsHealthSnapshot(appContext)
+                updateLinuxDesktopStatusSnapshot(appContext)
             }.onFailure { error ->
                 _uiState.update {
                     it.copy(
@@ -686,6 +878,7 @@ class SettingsViewModel(
                     message = Strings.settings_linux_delete_success.strOr(appContext, deletedProfile.displayName),
                 )
                 updateRootfsHealthSnapshot(appContext)
+                updateLinuxDesktopStatusSnapshot(appContext)
             }.onFailure { error ->
                 _uiState.update {
                     it.copy(
@@ -719,19 +912,33 @@ class SettingsViewModel(
         includeDirs: List<String>,
         libraryDirs: List<String>,
         runtimeDirs: List<String>
-    ): Boolean {
-        val resolved = resolveTargetProject() ?: return false
-        ProjectMetadataStore.ensure(resolved.root, displayNameFallback = resolved.displayName)
-        val updated = ProjectMetadataStore.updateNativeDependencyPaths(
-            projectRoot = resolved.root,
-            includeDirs = includeDirs,
-            libraryDirs = libraryDirs,
-            runtimeDirs = runtimeDirs
-        )
-        if (updated) {
-            refreshProjectDependencyPaths()
+    ) {
+        // Resolve the target before dispatching. The user can switch the settings target while
+        // the write is queued; the edit must still apply to the project that was visible when it
+        // was submitted.
+        val target = resolveTargetProject()
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val resolved = target?.takeIf(::isReadableProject) ?: return@withContext false
+                    ProjectMetadataStore.ensure(
+                        resolved.root,
+                        displayNameFallback = resolved.displayName,
+                    )
+                    ProjectMetadataStore.updateNativeDependencyPaths(
+                        projectRoot = resolved.root,
+                        includeDirs = includeDirs,
+                        libraryDirs = libraryDirs,
+                        runtimeDirs = runtimeDirs,
+                    )
+                }
+            }.onSuccess { updated ->
+                if (updated) requestProjectDependencyPathsRefresh()
+            }.onFailure { error ->
+                if (error is CancellationException) throw error
+                Timber.tag(TAG).w(error, "Failed to update project native dependency paths")
+            }
         }
-        return updated
     }
 
     fun updateProjectNativeBuildFlags(
@@ -740,52 +947,148 @@ class SettingsViewModel(
         ldFlags: String,
         ldLibs: String,
         cmakeArgs: List<String>
-    ): Boolean {
-        val resolved = resolveTargetProject() ?: return false
-        ProjectMetadataStore.ensure(resolved.root, displayNameFallback = resolved.displayName)
-        val updated = ProjectMetadataStore.updateNativeBuildFlags(
+    ) {
+        val target = resolveTargetProject()
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val resolved = target?.takeIf(::isReadableProject) ?: return@withContext false
+                    ProjectMetadataStore.ensure(
+                        resolved.root,
+                        displayNameFallback = resolved.displayName,
+                    )
+                    ProjectMetadataStore.updateNativeBuildFlags(
+                        projectRoot = resolved.root,
+                        cFlags = cFlags,
+                        cppFlags = cppFlags,
+                        ldFlags = ldFlags,
+                        ldLibs = ldLibs,
+                        cmakeArgs = cmakeArgs,
+                    )
+                }
+            }.onSuccess { updated ->
+                if (updated) requestProjectDependencyPathsRefresh()
+            }.onFailure { error ->
+                if (error is CancellationException) throw error
+                Timber.tag(TAG).w(error, "Failed to update project native build flags")
+            }
+        }
+    }
+
+    fun updateProjectApkExportType(apkExportType: ProjectApkExportType) {
+        val target = resolveTargetProject()
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val resolved = target?.takeIf(::isReadableProject) ?: return@withContext false
+                    ProjectApkExportSupportResolver.invalidate(resolved.root)
+                    ProjectMetadataStore.updateApkExportType(resolved.root, apkExportType)
+                }
+            }.onSuccess { updated ->
+                if (updated) requestProjectDependencyPathsRefresh()
+            }.onFailure { error ->
+                if (error is CancellationException) throw error
+                Timber.tag(TAG).w(error, "Failed to update project APK export type")
+            }
+        }
+    }
+
+    fun redetectProjectApkExportType() {
+        val target = resolveTargetProject()
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val resolved = target?.takeIf(::isReadableProject) ?: return@withContext false
+                    // 覆盖模式下没有 buildDir，仍允许清空持久化结果，让下次进入时显示“未检测”。
+                    ProjectMetadataStore.ensure(
+                        resolved.root,
+                        displayNameFallback = resolved.displayName,
+                    )
+                    ProjectApkExportSupportResolver.invalidate(resolved.root)
+                    ProjectMetadataStore.updateApkExportType(resolved.root, null)
+                }
+            }.onSuccess { reset ->
+                if (reset) requestProjectDependencyPathsRefresh()
+            }.onFailure { error ->
+                if (error is CancellationException) throw error
+                Timber.tag(TAG).w(error, "Failed to reset project APK export detection")
+            }
+        }
+    }
+
+    private fun requestProjectDependencyPathsRefresh() {
+        projectRefreshJob?.cancel()
+        val generation = ++projectRefreshGeneration
+        val target = resolveTargetProject()
+        projectRefreshJob = viewModelScope.launch {
+            val snapshot = loadProjectDependencySnapshot(target)
+            if (generation != projectRefreshGeneration) return@launch
+            applyProjectDependencySnapshot(snapshot, target?.isTargetProjectMode == true)
+        }
+    }
+
+    private suspend fun loadProjectDependencySnapshot(
+        target: ResolvedTargetProject?,
+    ): ProjectDependencySnapshot? = withContext(Dispatchers.IO) {
+        val resolved = target?.takeIf(::isReadableProject) ?: return@withContext null
+        val metadata = ProjectMetadataStore.ensure(
             projectRoot = resolved.root,
-            cFlags = cFlags,
-            cppFlags = cppFlags,
-            ldFlags = ldFlags,
-            ldLibs = ldLibs,
-            cmakeArgs = cmakeArgs
+            displayNameFallback = resolved.displayName,
         )
-        if (updated) {
-            refreshProjectDependencyPaths()
-        }
-        return updated
+        // 覆盖模式下 buildDirPath 为 null，不做自动检测——只读持久化的 apkExportType；
+        // 默认模式下保留原有“缺失即自动检测”的行为。
+        val apkExportType = metadata.apkExportType
+            ?: resolved.buildDirPath?.let { buildPath ->
+                ProjectApkExportSupportResolver.ensureDetected(
+                    projectRoot = resolved.root,
+                    buildDir = File(buildPath),
+                )
+            }
+        ProjectDependencySnapshot(
+            currentProjectName = metadata.displayName,
+            currentProjectRootPath = resolved.root.absolutePath,
+            projectApkExportType = apkExportType,
+            isTargetProjectMode = resolved.isTargetProjectMode,
+            projectNativeIncludeDirs = metadata.normalizedNativeIncludeDirs(),
+            projectNativeLibraryDirs = metadata.normalizedNativeLibraryDirs(),
+            projectNativeRuntimeDirs = metadata.normalizedNativeRuntimeDirs(),
+            projectNativeCFlags = metadata.normalizedNativeCFlags(),
+            projectNativeCppFlags = metadata.normalizedNativeCppFlags(),
+            projectNativeLdFlags = metadata.normalizedNativeLdFlags(),
+            projectNativeLdLibs = metadata.normalizedNativeLdLibs(),
+            projectNativeCMakeArgs = metadata.normalizedNativeCMakeArgs(),
+        )
     }
 
-    fun updateProjectApkExportType(apkExportType: ProjectApkExportType): Boolean {
-        val resolved = resolveTargetProject() ?: return false
-        val updated = ProjectMetadataStore.updateApkExportType(resolved.root, apkExportType)
-        if (updated) {
-            refreshProjectDependencyPaths()
-        }
-        return updated
-    }
+    private fun isReadableProject(resolved: ResolvedTargetProject): Boolean =
+        resolved.root.isDirectory && resolved.root.canRead()
 
-    fun redetectProjectApkExportType(): Boolean {
-        val resolved = resolveTargetProject() ?: return false
-        // 覆盖模式下没有 buildDir，无法做自动检测；refreshProjectDependencyPaths 里也会跳过。
-        // 仍允许把 apkExportType 重置为 null，下次进入时显示"未检测"。
-        ProjectMetadataStore.ensure(resolved.root, displayNameFallback = resolved.displayName)
-        val reset = ProjectMetadataStore.updateApkExportType(resolved.root, null)
-        refreshProjectDependencyPaths()
-        return reset
-    }
+    private data class ProjectDependencySnapshot(
+        val currentProjectName: String?,
+        val currentProjectRootPath: String?,
+        val projectApkExportType: ProjectApkExportType?,
+        val isTargetProjectMode: Boolean,
+        val projectNativeIncludeDirs: List<String>,
+        val projectNativeLibraryDirs: List<String>,
+        val projectNativeRuntimeDirs: List<String>,
+        val projectNativeCFlags: String,
+        val projectNativeCppFlags: String,
+        val projectNativeLdFlags: String,
+        val projectNativeLdLibs: String,
+        val projectNativeCMakeArgs: List<String>,
+    )
 
-    private fun refreshProjectDependencyPaths() {
-        val resolved = resolveTargetProject()
-        val inTargetMode = targetProjectRootOverride != null
-        if (resolved == null) {
+    private fun applyProjectDependencySnapshot(
+        snapshot: ProjectDependencySnapshot?,
+        targetProjectMode: Boolean,
+    ) {
+        if (snapshot == null) {
             _uiState.update {
                 it.copy(
                     currentProjectName = null,
                     currentProjectRootPath = null,
                     projectApkExportType = null,
-                    isTargetProjectMode = inTargetMode,
+                    isTargetProjectMode = targetProjectMode,
                     projectNativeIncludeDirs = emptyList(),
                     projectNativeLibraryDirs = emptyList(),
                     projectNativeRuntimeDirs = emptyList(),
@@ -793,39 +1096,25 @@ class SettingsViewModel(
                     projectNativeCppFlags = "",
                     projectNativeLdFlags = "",
                     projectNativeLdLibs = "",
-                    projectNativeCMakeArgs = emptyList()
+                    projectNativeCMakeArgs = emptyList(),
                 )
             }
             return
         }
-
-        val metadata = ProjectMetadataStore.ensure(
-            projectRoot = resolved.root,
-            displayNameFallback = resolved.displayName
-        )
-        // 覆盖模式下 buildDirPath 为 null，不做自动检测——只读持久化的 apkExportType；
-        // 默认模式下保留原有"缺失即自动检测"的行为。
-        val apkExportType = metadata.apkExportType
-            ?: resolved.buildDirPath?.let { buildPath ->
-                ProjectApkExportSupportResolver.ensureDetected(
-                    projectRoot = resolved.root,
-                    buildDir = File(buildPath)
-                )
-            }
         _uiState.update {
             it.copy(
-                currentProjectName = resolved.displayName,
-                currentProjectRootPath = resolved.root.absolutePath,
-                projectApkExportType = apkExportType,
-                isTargetProjectMode = inTargetMode,
-                projectNativeIncludeDirs = metadata.normalizedNativeIncludeDirs(),
-                projectNativeLibraryDirs = metadata.normalizedNativeLibraryDirs(),
-                projectNativeRuntimeDirs = metadata.normalizedNativeRuntimeDirs(),
-                projectNativeCFlags = metadata.normalizedNativeCFlags(),
-                projectNativeCppFlags = metadata.normalizedNativeCppFlags(),
-                projectNativeLdFlags = metadata.normalizedNativeLdFlags(),
-                projectNativeLdLibs = metadata.normalizedNativeLdLibs(),
-                projectNativeCMakeArgs = metadata.normalizedNativeCMakeArgs()
+                currentProjectName = snapshot.currentProjectName,
+                currentProjectRootPath = snapshot.currentProjectRootPath,
+                projectApkExportType = snapshot.projectApkExportType,
+                isTargetProjectMode = snapshot.isTargetProjectMode,
+                projectNativeIncludeDirs = snapshot.projectNativeIncludeDirs,
+                projectNativeLibraryDirs = snapshot.projectNativeLibraryDirs,
+                projectNativeRuntimeDirs = snapshot.projectNativeRuntimeDirs,
+                projectNativeCFlags = snapshot.projectNativeCFlags,
+                projectNativeCppFlags = snapshot.projectNativeCppFlags,
+                projectNativeLdFlags = snapshot.projectNativeLdFlags,
+                projectNativeLdLibs = snapshot.projectNativeLdLibs,
+                projectNativeCMakeArgs = snapshot.projectNativeCMakeArgs,
             )
         }
     }
@@ -836,8 +1125,8 @@ class SettingsViewModel(
         message: String = _uiState.value.rootfsInstallMessage,
         progress: Float = _uiState.value.rootfsInstallProgress,
     ) {
-        val activeProfile = store.getActiveProfileOrNull()
-        val profiles = store.listProfiles()
+        val activeProfile = store.getActiveProfileForDistro(SelfHostedLinuxDistroRuntime.DEFAULT_DISTRO_ID)
+        val profiles = store.listProfilesForDistro(SelfHostedLinuxDistroRuntime.DEFAULT_DISTRO_ID)
         _uiState.update {
             it.copy(
                 rootfsPath = activeProfile?.rootfsPath.orEmpty(),
@@ -892,6 +1181,74 @@ class SettingsViewModel(
                 }
             }
     }
+
+    private suspend fun updateLinuxDesktopStatusSnapshot(appContext: Context) {
+        if (_uiState.value.linuxDesktopBusy) return
+        if (!_uiState.value.linuxEnvironmentEnabled) {
+            _uiState.update {
+                it.copy(
+                    linuxDesktopReady = false,
+                    linuxDesktopStatusText = "",
+                )
+            }
+            return
+        }
+
+        _uiState.update {
+            it.copy(
+                linuxDesktopStatusText = Strings.settings_linux_desktop_checking.strOr(appContext),
+            )
+        }
+
+        runCatching { linuxDesktopCoordinator.inspect() }
+            .onSuccess { status ->
+                val sessionActive = linuxDesktopCoordinator.isSessionActive()
+                _uiState.update {
+                    it.copy(
+                        linuxDesktopReady = status.ready,
+                        linuxDesktopSessionActive = sessionActive,
+                        linuxDesktopStatusText = status.toStatusText(appContext, sessionActive),
+                    )
+                }
+            }
+            .onFailure { error ->
+                _uiState.update {
+                    it.copy(
+                        linuxDesktopReady = false,
+                        linuxDesktopSessionActive = false,
+                        linuxDesktopStatusText = error.message
+                            ?: Strings.settings_linux_desktop_not_ready.strOr(appContext),
+                    )
+                }
+            }
+    }
+
+    private fun UbuntuDesktopProvisioner.Status.toStatusText(
+        appContext: Context,
+        sessionActive: Boolean,
+    ): String = when {
+        sessionActive -> Strings.settings_linux_desktop_running.strOr(appContext)
+        !ready -> Strings.settings_linux_desktop_not_ready.strOr(appContext)
+        // 组件齐全但看护器停在 FAILED：会话崩过且重启预算已耗尽，
+        // 报"已就绪"会让用户以为桌面还在。
+        linuxDesktopCoordinator.sessionPhase() == LinuxDesktopSupervisorPhase.FAILED ->
+            Strings.settings_linux_desktop_crashed.strOr(appContext)
+        else -> Strings.settings_linux_desktop_ready.strOr(appContext)
+    }
+
+    private fun UbuntuDesktopProvisioner.Phase.toDesktopMessage(appContext: Context): String =
+        when (this) {
+            UbuntuDesktopProvisioner.Phase.CHECKING ->
+                Strings.settings_linux_desktop_checking.strOr(appContext)
+            UbuntuDesktopProvisioner.Phase.UPDATING_INDEX ->
+                Strings.settings_linux_desktop_updating.strOr(appContext)
+            UbuntuDesktopProvisioner.Phase.INSTALLING_PACKAGES ->
+                Strings.settings_linux_desktop_installing.strOr(appContext)
+            UbuntuDesktopProvisioner.Phase.VERIFYING ->
+                Strings.settings_linux_desktop_verifying.strOr(appContext)
+            UbuntuDesktopProvisioner.Phase.COMPLETED ->
+                Strings.settings_linux_desktop_install_success.strOr(appContext)
+        }
 
     private fun LinuxDistroRootfsHealthReport.toRootfsHealthUiState(appContext: Context): RootfsHealthUiState {
         val summary = toHealthSummary { probe -> probe.toDisplayName(appContext) }

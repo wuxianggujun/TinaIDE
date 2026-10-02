@@ -65,6 +65,11 @@ add_library(tina_native_activity_host SHARED
     native_activity/native_activity_host.c
 )
 
+# SDL 资源相对路径重定向 hook（依赖 ByteHook，通过 Android prefab 提供）。
+add_library(tina_sdl_asset_redirect SHARED
+    sdl_asset_redirect/sdl_asset_redirect.cpp
+)
+
 target_include_directories(tina_native PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
@@ -74,11 +79,16 @@ target_include_directories(tina_native PRIVATE
 # ============================================================================
 
 find_library(log-lib log)
+
+# ByteHook：由 app/build.gradle.kts 的 prefab 暴露，提供 bytehook::bytehook 导入目标。
+find_package(bytehook REQUIRED CONFIG)
+
 target_link_libraries(tina_native PRIVATE c++_shared ${log-lib})
 target_link_libraries(tina_pty PRIVATE c++_shared ${log-lib})
 target_link_libraries(tina_log_redirect PRIVATE ${log-lib})
 target_link_libraries(tina_native_activity_host PRIVATE android dl ${log-lib})
 target_link_options(tina_native_activity_host PRIVATE "-Wl,-z,global")
+target_link_libraries(tina_sdl_asset_redirect PRIVATE bytehook::bytehook c++_shared ${log-lib})
 
 # ============================================================================
 # 注意：proot-loader (libproot-loader.so) 可以来自预编译 source set，

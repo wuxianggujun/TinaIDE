@@ -1,6 +1,7 @@
 # 插件开发者指南
 
-> 文档更新：2026-07-15
+> 文档状态：当前实现说明
+> 最后人工核验：2026-09-09
 
 当前仓库已具备“配置插件 + LSP 插件 + 脚本 / hybrid 插件”的基础闭环，
 当前已支持：
@@ -25,24 +26,32 @@
 
 ## 文档索引
 
-| 文档 | 说明 |
-|------|------|
-| [Plugin-Roadmap.md](Plugin-Roadmap.md) | 插件系统路线图 |
-| [Plugin-State-Model.md](Plugin-State-Model.md) | 插件状态模型与消费规则 |
-| [Plugin-Template-Design.md](Plugin-Template-Design.md) | **插件模板插件设计方案** |
-| [Plugin-Project-Template-Wizard-Troubleshooting.md](Plugin-Project-Template-Wizard-Troubleshooting.md) | 历史参考：插件项目模板向导排查记录 |
-| [Plugin-Tutorial-Acceptance-Checklist.md](Plugin-Tutorial-Acceptance-Checklist.md) | 插件教程端到端验收清单 |
-| [Plugin-Tutorial-Maintenance-Log.md](Plugin-Tutorial-Maintenance-Log.md) | 历史参考：插件教程维护记录与设计决策 |
-| [Plugin-Authoring-Tutorial.md](Plugin-Authoring-Tutorial.md) | **插件编写教程（基于模板）** |
-| [Plugin-API-Guide.md](Plugin-API-Guide.md) | **插件 API 指南（apiVersion 1 稳定边界）** |
-| [LSP-Plugin-Development-Guide.md](LSP-Plugin-Development-Guide.md) | **LSP 插件开发指南**（新） |
-| [Plugin-Marketplace-Troubleshooting.md](Plugin-Marketplace-Troubleshooting.md) | 插件市场 Registry 安装与更新排障 |
+状态分级按 `docs/documentation-status.md` 定义：`当前实现说明` 可直接作为实现依据（仍应回源码复核）；
+`设计参考` 表达方案与取舍，不代表已落地；`历史参考` 记录某一时间点的阶段结论，不要当作当前行为。
+
+| 文档 | 状态 | 说明 |
+|------|------|------|
+| [Plugin-API-Guide.md](Plugin-API-Guide.md) | 当前实现说明 | 插件 API 指南（apiVersion 1 稳定边界） |
+| [LSP-Plugin-Development-Guide.md](LSP-Plugin-Development-Guide.md) | 当前实现说明 | LSP 插件开发指南 |
+| [Plugin-State-Model.md](Plugin-State-Model.md) | 当前实现说明 | 插件状态模型与消费规则 |
+| [Plugin-Marketplace-Troubleshooting.md](Plugin-Marketplace-Troubleshooting.md) | 当前实现说明 | 插件市场 Registry 安装与更新排障 |
+| [Plugin-Authoring-Tutorial.md](Plugin-Authoring-Tutorial.md) | 当前实现说明 | 插件编写教程（基于模板） |
+| [Plugin-Template-Design.md](Plugin-Template-Design.md) | 设计参考 | 插件模板插件设计方案 |
+| [Plugin-Roadmap.md](Plugin-Roadmap.md) | 历史参考 | 插件系统路线图与阶段验收记录 |
+| [Plugin-Tutorial-Acceptance-Checklist.md](Plugin-Tutorial-Acceptance-Checklist.md) | 历史参考 | 插件教程端到端验收清单 |
+| [Plugin-Tutorial-Maintenance-Log.md](Plugin-Tutorial-Maintenance-Log.md) | 历史参考 | 插件教程维护记录与设计决策 |
+| [Plugin-Project-Template-Wizard-Troubleshooting.md](Plugin-Project-Template-Wizard-Troubleshooting.md) | 历史参考 | 插件项目模板向导排查记录 |
+
+跨目录相关文档：
+
+- [`docs/plugin-api-contract.md`](../plugin-api-contract.md)：apiVersion 1 稳定契约，字段与资源边界的事实源。
+- [`docs/registry/GitHub-Registry.md`](../registry/GitHub-Registry.md)：Registry 目录结构与索引协议。
 
 ---
 
 ## 路线图
 
-见：`docs/plugins/Plugin-Roadmap.md`
+见：`docs/plugins/Plugin-Roadmap.md`（历史参考，实现状态以代码和 `CHANGELOG.md` 为准）
 
 ## 快速开始
 
@@ -150,9 +159,36 @@ my-plugin/
 - `contributions.projectTemplates`：新建项目模板（插件携带受限校验的 zip 模板资源；可通过模板级 `requiredPackages` 声明创建前必须安装的 Android Registry 包）
 - `contributions.apkExports`：APK 导出模板扩展（插件携带模板 APK，宿主负责通用打包逻辑）
 - `configuration`：插件配置 schema（宿主在插件详情页自动生成设置 UI）
+- `contributions.fileIcons`：文件树/标签页文件图标（按扩展名或文件名匹配，`priority` 决定覆盖顺序）
 - `manifest.type = "script" / "hybrid"`：Lua 脚本运行时（需权限确认；不支持 DEX）
 - `contributions.panels`：脚本 / hybrid 文本面板；内容由 `tina.panels.*` 发布，在编辑器底部“插件”面板展示
+- `manifest.capabilities`：宿主能力门控声明；只在 `type: "system"` 且已启用时生效
 - 插件安装/卸载/启用/禁用（本地目录）
+
+### 宿主能力门控（`capabilities`）
+
+`system` 类型插件可以通过 `manifest.capabilities` 打开宿主保留的能力开关。当前唯一已识别的
+capability 是 `linuxEnvironment`：
+
+```json
+{
+  "id": "tinaide.linux-environment",
+  "type": "system",
+  "capabilities": ["linuxEnvironment"],
+  "lifecycle": { "requiresSetup": true }
+}
+```
+
+行为约束（与源码同步）：
+
+- `PluginStateSnapshot.enabledCapabilities` 只收集**已启用**且 `type == "system"` 插件声明的 capability；
+  `config` / `script` / `hybrid` / `lsp` 插件写了 `capabilities` 也不会生效。
+- `PluginLinuxEnvironmentProvider` 按该集合决定 `LinuxEnvironmentProvider.get()` 返回真实
+  `PRootEnvironment` 还是 `UnavailableLinuxEnvironment`。
+- PRoot 运行载荷随 APK 内置，但功能启停完全由这个 capability 决定；PRoot 不是默认 C/C++ 编译宿主。
+- 依赖 Linux 环境的能力（LSP 工具链安装、guest 包管理、Linux 终端会话、PRoot 编译模式）在
+  capability 未启用时按 readiness 失败处理，不会被归因为插件故障。
+- `lifecycle.requiresSetup` 表示启用后仍需用户完成一次环境准备（例如安装 rootfs）。
 
 > 备注（与源码同步）：`editor/toolbar` 已接入编辑器标签栏右侧插件动作菜单，
 > 同时会进入主编辑器命令面板；`keybindings` 已接入 MainActivity 硬件键盘快捷键分发。
@@ -198,6 +234,8 @@ my-plugin/
 - `editor.find`：查找
 - `editor.replace`：替换（Replace All）
 - `editor.gotoLine`：跳转到行
+- `editor.navigateBack`：后退（跳转历史）
+- `editor.navigateForward`：前进（跳转历史）
 - `editor.toggleWordWrap`：切换自动换行
 - `editor.format`：格式化代码
 - `editor.toggleComment`：切换注释（行注释）

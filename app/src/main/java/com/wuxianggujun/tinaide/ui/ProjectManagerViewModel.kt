@@ -302,7 +302,7 @@ class ProjectManagerViewModel(
         }
     }
 
-    fun openProject(dir: File): Result<Unit> = runCatching {
+    suspend fun openProject(dir: File): Result<Unit> = runCatching {
         ensureProjectFileAccess(dir)
         runCatching { projectLocationManager.registerProject(dir) }
         projectSession.openProject(dir.absolutePath)

@@ -147,4 +147,35 @@ class CxxFileSupportTest {
     fun `extensionOf returns empty for no extension`() {
         assertThat(CxxFileSupport.extensionOf(File("Makefile"))).isEmpty()
     }
+
+    @Test
+    fun `isClangdSupportedFile accepts sources headers and extensionless std headers`() {
+        assertThat(CxxFileSupport.isClangdSupportedFile(File("main.cpp"))).isTrue()
+        assertThat(CxxFileSupport.isClangdSupportedFile(File("foo.h"))).isTrue()
+        assertThat(CxxFileSupport.isClangdSupportedFile(File("vector"))).isTrue()
+        assertThat(CxxFileSupport.isClangdSupportedFile(File("README"))).isFalse()
+        assertThat(CxxFileSupport.isClangdSupportedFile(File("Makefile"))).isFalse()
+    }
+
+    @Test
+    fun `isExtensionlessCxxSystemHeader matches libcxx and libstdcxx paths`() {
+        assertThat(
+            CxxFileSupport.isExtensionlessCxxSystemHeader(
+                File("/data/files/android-sysroots/builtin-ndk-r27c-arm64/usr/include/c++/v1/vector")
+            )
+        ).isTrue()
+        assertThat(
+            CxxFileSupport.isExtensionlessCxxSystemHeader(
+                File("/ndk/sysroot/usr/include/c++/v1/__config")
+            )
+        ).isTrue()
+        assertThat(
+            CxxFileSupport.isExtensionlessCxxSystemHeader(
+                File("/usr/include/c++/13/string")
+            )
+        ).isTrue()
+        assertThat(CxxFileSupport.isExtensionlessCxxSystemHeader(File("include/vector"))).isTrue()
+        assertThat(CxxFileSupport.isExtensionlessCxxSystemHeader(File("vector.hpp"))).isFalse()
+        assertThat(CxxFileSupport.isExtensionlessCxxSystemHeader(File("README"))).isFalse()
+    }
 }

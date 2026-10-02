@@ -71,12 +71,6 @@ internal object GuestPackageManagerSpecs {
             commands = listOf("update-ca-certificates"),
             packageCandidates = listOf(caCertificatesPackage),
         ),
-        GuestPackageCommandGroup(
-            id = "proot",
-            commands = listOf("proot"),
-            packageCandidates = listOf("proot"),
-            required = false,
-        ),
     )
 
     private val specs = mapOf(
@@ -339,12 +333,11 @@ object GuestSystemPackageManager {
             RootfsPackageManager.APK ->
                 result.isSuccess &&
                     result.stdout.lineSequence()
-                        .map { it.trim() }
-                        .filter { it.isNotEmpty() }
-                        .any { line -> line.isApkExactSearchMatch(normalized) }
+                        .any { line -> line.isNotBlank() }
             else -> result.exitCode == 0
         }
     }
+
     private fun parseApkLine(
         line: String,
         requested: List<String>,
@@ -356,11 +349,6 @@ object GuestSystemPackageManager {
                 return
             }
         }
-    }
-
-    private fun String.isApkExactSearchMatch(packageName: String): Boolean {
-        val token = substringBefore(" - ").substringBefore('\t').substringBefore(' ')
-        return token == packageName || token.startsWith("$packageName-")
     }
 
     private fun parseTabOrSpaceSeparatedLine(

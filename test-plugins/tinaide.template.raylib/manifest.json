@@ -1,0 +1,24 @@
+{
+  "id": "tinaide.template.raylib",
+  "name": "raylib Project Template",
+  "version": "1.0.0",
+  "minAppVersion": "0.18.20",
+  "description": "Adds a raylib + CMake project template to New Project.",
+  "type": "config",
+  "author": {
+    "name": "TinaIDE"
+  },
+  "contributions": {
+    "projectTemplates": [
+      {
+        "id": "raylib-cmake",
+        "name": "raylib + CMake",
+        "description": "Ready-to-run raylib app rendering through NativeActivity.",
+        "templatePath": "templates/raylib_cmake.zip",
+        "buildSystem": "cmake",
+        "primaryLanguage": "C",
+        "requiredPackages": ["raylib"]
+      }
+    ]
+  }
+}

@@ -92,6 +92,8 @@ internal fun ProjectSettingsSection(viewModel: SettingsViewModel) {
     var userTemplateEditBuildSystem by remember { mutableStateOf<ProjectBuildSystem?>(null) }
     var userTemplateEditLanguage by remember { mutableStateOf<ProjectLanguage?>(null) }
     var userTemplateEditIsNdkTemplate by remember { mutableStateOf(false) }
+    var userTemplateEditRunTargetInput by remember { mutableStateOf("") }
+    var userTemplateEditSdlTargetInput by remember { mutableStateOf("") }
     var selectingUserTemplateBuildSystem by remember { mutableStateOf(false) }
     var selectingUserTemplateLanguage by remember { mutableStateOf(false) }
 
@@ -123,6 +125,8 @@ internal fun ProjectSettingsSection(viewModel: SettingsViewModel) {
         userTemplateEditBuildSystem = metadata?.buildSystem?.takeUnless { it == ProjectBuildSystem.UNKNOWN }
         userTemplateEditLanguage = metadata?.primaryLanguage?.takeUnless { it == ProjectLanguage.UNKNOWN }
         userTemplateEditIsNdkTemplate = metadata?.isNdkTemplate == true
+        userTemplateEditRunTargetInput = metadata?.defaultRunTargetName.orEmpty()
+        userTemplateEditSdlTargetInput = metadata?.defaultSdlTargetName.orEmpty()
         editingUserTemplateMetadata = template
     }
 
@@ -573,6 +577,8 @@ internal fun ProjectSettingsSection(viewModel: SettingsViewModel) {
             buildSystem = userTemplateEditBuildSystem,
             primaryLanguage = userTemplateEditLanguage,
             isNdkTemplate = userTemplateEditIsNdkTemplate,
+            defaultRunTargetName = userTemplateEditRunTargetInput,
+            defaultSdlTargetName = userTemplateEditSdlTargetInput,
             variables = UserProjectTemplateManager.parseVariableDefaults(userTemplateEditVariablesInput),
         )
         UserProjectTemplateMetadataEditorDialog(
@@ -598,6 +604,10 @@ internal fun ProjectSettingsSection(viewModel: SettingsViewModel) {
             onSelectLanguage = { selectingUserTemplateLanguage = true },
             isNdkTemplate = userTemplateEditIsNdkTemplate,
             onNdkTemplateChange = { userTemplateEditIsNdkTemplate = it },
+            runTargetName = userTemplateEditRunTargetInput,
+            onRunTargetNameChange = { userTemplateEditRunTargetInput = it },
+            sdlTargetName = userTemplateEditSdlTargetInput,
+            onSdlTargetNameChange = { userTemplateEditSdlTargetInput = it },
             metadataPreview = UserProjectTemplateManager.buildTemplateMetadataPreview(updatedMetadata),
             canSave = variableDefaultsError == null,
             onConfirm = {

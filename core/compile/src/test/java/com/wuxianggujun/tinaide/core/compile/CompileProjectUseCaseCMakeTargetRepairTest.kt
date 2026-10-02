@@ -29,6 +29,7 @@ import io.mockk.every
 import io.mockk.mockk
 import java.io.File
 import java.nio.file.Files
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -83,14 +84,16 @@ class CompileProjectUseCaseCMakeTargetRepairTest {
             """.trimIndent()
         )
         File(projectRoot, "main.cpp").writeText("int main() { return 0; }\n")
-        ProjectMetadataStore.ensure(
-            projectRoot = projectRoot,
-            displayNameFallback = "Target Repair",
-            buildSystem = ProjectBuildSystem.CMAKE,
-            apkExportType = ProjectApkExportType.TERMINAL,
-            defaultRunTargetName = "demo_test",
-            defaultSdlTargetName = "demo",
-        )
+        runBlocking {
+            ProjectMetadataStore.ensure(
+                projectRoot = projectRoot,
+                displayNameFallback = "Target Repair",
+                buildSystem = ProjectBuildSystem.CMAKE,
+                apkExportType = ProjectApkExportType.TERMINAL,
+                defaultRunTargetName = "demo_test",
+                defaultSdlTargetName = "demo",
+            )
+        }
     }
 
     @After

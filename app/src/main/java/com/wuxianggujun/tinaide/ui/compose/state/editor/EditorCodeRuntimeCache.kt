@@ -1,12 +1,14 @@
 package com.wuxianggujun.tinaide.ui.compose.state.editor
 
 import android.content.Context
-import com.wuxianggujun.tinaide.core.editorview.EditorConfig
+import com.wuxianggujun.tinaide.core.editor.EditorFileSizeLimits
 import com.wuxianggujun.tinaide.core.editorview.EditorState
 import com.wuxianggujun.tinaide.core.textengine.RopeTextBuffer
 import com.wuxianggujun.tinaide.core.treesitter.TreeSitterFoldingProvider
 import com.wuxianggujun.tinaide.core.treesitter.TreeSitterHighlighter
 import com.wuxianggujun.tinaide.ui.compose.components.editor.EditorTabState
+import com.wuxianggujun.tinaide.ui.compose.editor.editorConfigFromPrefs
+import com.wuxianggujun.tinaide.ui.compose.editor.editorRuntimeOptionsFromPrefs
 import java.io.File
 import timber.log.Timber
 
@@ -25,14 +27,15 @@ internal class EditorCodeRuntimeCache(
 
     fun getOrCreate(tab: EditorTabState): CodeEditorRuntime {
         val runtime = runtimesByTabId.getOrPut(tab.id) {
-            val buffer = RopeTextBuffer()
+            val buffer = RopeTextBuffer(changeExecutor = editorMainThreadChangeExecutor)
             CodeEditorRuntime(
                 buffer = buffer,
                 editorState = EditorState(
                     textBuffer = buffer,
                     file = tab.file,
                     projectRootPath = projectRootPathProvider(),
-                    config = EditorConfig.fromPrefs()
+                    config = editorConfigFromPrefs(),
+                    runtimeOptions = editorRuntimeOptionsFromPrefs()
                 )
             )
         }
@@ -42,6 +45,7 @@ internal class EditorCodeRuntimeCache(
     }
 
     fun getOrCreateSyntaxHighlighter(tab: EditorTabState): TreeSitterHighlighter? {
+        if (EditorFileSizeLimits.exceedsSyntaxHighlightLimit(tab.file)) return null
         val runtime = getOrCreate(tab)
         if (runtime.syntaxHighlighter == null) {
             runtime.installSyntaxHighlighter(
@@ -52,6 +56,7 @@ internal class EditorCodeRuntimeCache(
     }
 
     fun getOrCreateFoldingProvider(tab: EditorTabState): TreeSitterFoldingProvider? {
+        if (EditorFileSizeLimits.exceedsSyntaxHighlightLimit(tab.file)) return null
         val runtime = getOrCreate(tab)
         if (runtime.foldingProvider == null) {
             runtime.foldingProvider = TreeSitterFoldingProvider.create(context.applicationContext, tab.file)

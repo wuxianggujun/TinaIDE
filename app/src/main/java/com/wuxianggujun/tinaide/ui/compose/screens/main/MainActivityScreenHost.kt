@@ -26,7 +26,7 @@ internal fun MainActivityScreenHost(
     val mainScreenState = rememberMainActivityMainScreenState(
         drawerWidth = drawerWidth,
         projectContext = services.projectContext,
-        initialRunConfigManager = viewModels.compiler.getRunConfigurationManager(),
+        loadRunConfigManager = viewModels.compiler::loadRunConfigurationManager,
         detectBuildSystem = { viewModels.compiler.detectBuildSystem() },
         loadAvailableTargets = { viewModels.compiler.getAvailableTargets() },
         mainViewModel = viewModels.main,

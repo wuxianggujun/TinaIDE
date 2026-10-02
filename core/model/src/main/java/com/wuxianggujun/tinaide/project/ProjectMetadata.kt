@@ -72,6 +72,7 @@ enum class ProjectSdlVersion(val major: Int) {
  * @property cppStandard C++ 标准版本（存储 CppStandard.name，如 "CPP_17"）
  * @property primaryLanguage 项目主要编程语言（存储 ProjectLanguage.name，如 "CPP"）
  * @property apkExportType 项目支持的 APK 导出类型，null 表示不显示导出 APK 功能
+ * @property nativeActivityRuntime 是否走 NativeActivity 图形运行链路，null 表示尚未探测
  * @property lastOpenedIdeVersion 最后打开此项目的 IDE 版本
  * @property lastOpenedAt 最后打开时间戳
  * @property nativeApiLevel 原生构建默认 API Level（21-35，null 表示使用编译策略默认值）
@@ -108,6 +109,14 @@ data class ProjectMetadata(
     val apkExportType: ProjectApkExportType? = null,
     /** SDL 图形运行主版本；null 表示不是 SDL 项目或需要从产物自动检测 */
     val sdlVersion: ProjectSdlVersion? = null,
+    /**
+     * NativeActivity 图形运行能力；null 表示尚未探测。
+     *
+     * 该字段只描述运行能力，不代表项目一定支持 APK 导出：
+     * 运行链路按绝对路径 dlopen 共享库，与库名无关；而 APK 导出模板把
+     * `android.app.lib_name` 写死为 `main`，因此导出能力由 [apkExportType] 单独描述。
+     */
+    val nativeActivityRuntime: Boolean? = null,
     /** 最后打开此项目的 IDE 版本（如 "1.0.50"） */
     val lastOpenedIdeVersion: String? = null,
     /** 最后打开时间戳 */
@@ -173,6 +182,14 @@ data class ProjectMetadata(
      */
     fun getSdlVersionOrNull(): ProjectSdlVersion? = sdlVersion
         ?: ProjectSdlVersion.SDL3.takeIf { apkExportType == ProjectApkExportType.SDL3 }
+
+    /**
+     * 项目是否走 NativeActivity 图形运行链路。
+     *
+     * 字段为 null（尚未探测）时回退到 [apkExportType]，保证存量项目零迁移可用。
+     */
+    fun isNativeActivityRuntime(): Boolean = nativeActivityRuntime
+        ?: (apkExportType == ProjectApkExportType.NATIVE_ACTIVITY)
 
     /**
      * 获取项目元数据中的原生 API Level（合法范围 21-35）。

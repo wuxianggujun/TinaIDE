@@ -38,6 +38,7 @@ import io.mockk.mockk
 import java.io.File
 import java.nio.file.Files
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Before
@@ -63,6 +64,7 @@ class CompileProjectUseCaseLaunchEnvironmentTest {
 
     @Before
     fun setUp() {
+        runBlocking {
         val realContext = RuntimeEnvironment.getApplication()
         context = mockk(relaxed = true)
         every { context.applicationContext } returns context
@@ -96,12 +98,13 @@ class CompileProjectUseCaseLaunchEnvironmentTest {
             displayNameFallback = "Launch Env",
             buildSystem = ProjectBuildSystem.SINGLE_FILE,
         )
-        ProjectMetadataStore.updateNativeDependencyPaths(
-            projectRoot = projectRoot,
-            includeDirs = emptyList(),
-            libraryDirs = emptyList(),
-            runtimeDirs = listOf("runtime-libs"),
-        )
+            ProjectMetadataStore.updateNativeDependencyPaths(
+                projectRoot = projectRoot,
+                includeDirs = emptyList(),
+                libraryDirs = emptyList(),
+                runtimeDirs = listOf("runtime-libs"),
+            )
+        }
     }
 
     @After

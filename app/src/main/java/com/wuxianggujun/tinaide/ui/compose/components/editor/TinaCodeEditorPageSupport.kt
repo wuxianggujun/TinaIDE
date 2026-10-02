@@ -50,16 +50,15 @@ import com.wuxianggujun.tinaide.core.editorview.EditorCompletionKind
 import com.wuxianggujun.tinaide.core.editorview.EditorCompletionTextEdit
 import com.wuxianggujun.tinaide.core.editorview.EditorConfig
 import com.wuxianggujun.tinaide.core.editorview.EditorDiagnostic
+import com.wuxianggujun.tinaide.core.editorview.EditorGitLineChangeType
 import com.wuxianggujun.tinaide.core.editorview.EditorInlayHint
 import com.wuxianggujun.tinaide.core.editorview.EditorInlayHintKind
 import com.wuxianggujun.tinaide.core.editorview.EditorRenderPerformanceSnapshot
 import com.wuxianggujun.tinaide.core.editorview.EditorState
 import com.wuxianggujun.tinaide.core.editorview.GutterDecoration
-import com.wuxianggujun.tinaide.core.editorview.SemanticToken as EditorSemanticToken
-import com.wuxianggujun.tinaide.core.editorview.SemanticTokenModifier
-import com.wuxianggujun.tinaide.core.editorview.SemanticTokenType
 import com.wuxianggujun.tinaide.core.editorview.TinaEditor
 import com.wuxianggujun.tinaide.core.font.AppFontManager
+import com.wuxianggujun.tinaide.core.git.GitLineChangeType
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.core.lang.CxxFileSupport
@@ -88,6 +87,7 @@ import com.wuxianggujun.tinaide.ui.compose.state.editor.SelectionSnapshot
 import com.wuxianggujun.tinaide.ui.compose.state.editor.TextEditOperation
 import com.wuxianggujun.tinaide.ui.compose.state.editor.TinaTextContentProvider
 import java.io.File
+import java.nio.charset.Charset
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.max
 import kotlin.math.min
@@ -180,7 +180,7 @@ internal class TextBufferSessionBinding(
             canRedo = canRedo,
             changeCausedByUndoManager = change.fromUndoRedo
         )
-        onBufferEdited(canUndo, canRedo, buffer.version, change)
+        onBufferEdited(canUndo, canRedo, change.documentVersion, change)
     }
 
     override fun readText(): String = textSnapshot.readText()
@@ -192,6 +192,18 @@ internal class TextBufferSessionBinding(
             documentVersion = snapshot.version
         )
     }
+
+    override fun readFingerprintSnapshot(): DocumentSession.FingerprintSnapshot {
+        val snapshot = buffer.fingerprintSnapshot()
+        return DocumentSession.FingerprintSnapshot(
+            length = snapshot.fingerprint.length,
+            hash = snapshot.fingerprint.hash,
+            documentVersion = snapshot.documentVersion
+        )
+    }
+
+    override suspend fun reloadFromFile(file: File, charset: Charset): Result<Unit> =
+        withSuppressed { buffer.loadFromFile(file, charset) }
 
     override fun setText(text: CharSequence) {
         suppressNotifyDepth.incrementAndGet()
@@ -231,6 +243,7 @@ internal class VersionedBufferTextSnapshot(
 ) {
     private companion object {
         private const val MAX_SNAPSHOT_READ_ATTEMPTS = 8
+        private const val MAX_CACHED_TEXT_CHARS = 1_000_000
     }
 
     data class Snapshot(
@@ -264,8 +277,14 @@ internal class VersionedBufferTextSnapshot(
                 if (cachedVersion == versionAfter) {
                     return Snapshot(cachedText, cachedVersion)
                 }
-                cachedVersion = versionAfter
-                cachedText = latestSnapshot
+                if (latestSnapshot.length <= MAX_CACHED_TEXT_CHARS) {
+                    cachedVersion = versionAfter
+                    cachedText = latestSnapshot
+                } else {
+                    // 大文档不长期保留 Rope 之外的第二份完整 String。
+                    cachedVersion = Long.MIN_VALUE
+                    cachedText = ""
+                }
                 return Snapshot(latestSnapshot, versionAfter)
             }
         }
@@ -318,6 +337,50 @@ internal fun applyBookmarks(editorState: EditorState, lines: Set<Int>) {
         editorState.gutterDecorations[line] = existing.copy(bookmark = true)
     }
 }
+
+/**
+ * 把 GitService 计算出的整份逐行修改状态写入内核。
+ *
+ * 与断点/书签不同，git 修改是整份异步重算、单一生产者，
+ * 因此走独立的 [EditorState.gitLineChanges] 字段而非 GutterDecoration。
+ */
+internal fun applyGitLineChanges(
+    editorState: EditorState,
+    changes: Map<Int, GitLineChangeType>
+) {
+    if (changes.isEmpty()) {
+        if (editorState.gitLineChanges.isNotEmpty()) {
+            editorState.gitLineChanges = emptyMap()
+        }
+        return
+    }
+
+    val lineCount = editorState.textBuffer.lineCount
+    val mapped = buildMap {
+        changes.forEach { (line, type) ->
+            if (line in 0 until lineCount) put(line, type.toEditorGitLineChangeType())
+        }
+    }
+    if (editorState.gitLineChanges != mapped) {
+        editorState.gitLineChanges = mapped
+    }
+}
+
+internal fun GitLineChangeType.toEditorGitLineChangeType(): EditorGitLineChangeType = when (this) {
+    GitLineChangeType.ADDED -> EditorGitLineChangeType.ADDED
+    GitLineChangeType.MODIFIED -> EditorGitLineChangeType.MODIFIED
+    GitLineChangeType.DELETED -> EditorGitLineChangeType.DELETED
+}
+
+/**
+ * 取文件相对仓库根的路径（JGit TreeWalk 需要），不在仓库目录下返回 null。
+ */
+internal fun resolveRepoRelativePath(projectRoot: String, file: File): String? = runCatching {
+    file.canonicalFile.relativeToOrNull(File(projectRoot).canonicalFile)?.path?.replace('\\', '/')
+}.getOrNull()
+
+internal fun resolveCharsetOrDefault(charsetName: String): Charset =
+    runCatching { Charset.forName(charsetName) }.getOrDefault(Charsets.UTF_8)
 
 internal fun resolveMarkerLine(buffer: RopeTextBuffer, requestedLine: Int): Int? = com.wuxianggujun.tinaide.ui.compose.state.editor.resolveMarkerLine(
     requestedLine = requestedLine,
@@ -450,6 +513,12 @@ internal data class InlayHintRequestKey(
     val lspReady: Boolean,
 )
 
+internal data class GitGutterRequestKey(
+    val documentVersion: Long,
+    val gitGutterEnabled: Boolean,
+    val resumeTick: Int,
+)
+
 internal fun resolveSelectedRangeOrCursor(
     buffer: RopeTextBuffer,
     editorState: EditorState
@@ -500,53 +569,15 @@ internal fun applySemanticTokens(
     tokens: List<LspSemanticToken>,
     requestedVisibleLines: IntRange?
 ) {
-    val mapped = tokens.mapNotNull { token -> token.toEditorSemanticTokenOrNull() }
+    val mapped = tokens.filter { token ->
+        token.line >= 0 && token.startColumn >= 0 && token.length > 0
+    }
     if (requestedVisibleLines == null) {
         editorState.replaceSemanticTokens(mapped)
         return
     }
 
     editorState.replaceSemanticTokensInLines(requestedVisibleLines, mapped)
-}
-
-internal fun LspSemanticToken.toEditorSemanticTokenOrNull(): EditorSemanticToken? {
-    if (line < 0 || startColumn < 0 || length <= 0) return null
-    val mappedType = tokenType.toEditorSemanticTokenTypeOrNull() ?: return null
-    return EditorSemanticToken(
-        line = line,
-        startColumn = startColumn,
-        length = length,
-        tokenType = mappedType,
-        tokenModifiers = tokenModifiers.mapNotNull { modifier ->
-            modifier.toEditorSemanticTokenModifierOrNull()
-        }.toSet()
-    )
-}
-
-internal fun String.toEditorSemanticTokenTypeOrNull(): SemanticTokenType? = when (trim().lowercase().replace('-', '_')) {
-    "namespace" -> SemanticTokenType.NAMESPACE
-    "type" -> SemanticTokenType.TYPE
-    "class" -> SemanticTokenType.CLASS
-    "enum" -> SemanticTokenType.ENUM
-    "interface" -> SemanticTokenType.INTERFACE
-    "struct" -> SemanticTokenType.STRUCT
-    "typeparameter", "type_parameter" -> SemanticTokenType.TYPE_PARAMETER
-    "parameter" -> SemanticTokenType.PARAMETER
-    "variable" -> SemanticTokenType.VARIABLE
-    "property" -> SemanticTokenType.PROPERTY
-    "enummember", "enum_member" -> SemanticTokenType.ENUM_MEMBER
-    "event" -> SemanticTokenType.EVENT
-    "function" -> SemanticTokenType.FUNCTION
-    "method" -> SemanticTokenType.METHOD
-    "macro" -> SemanticTokenType.MACRO
-    "keyword" -> SemanticTokenType.KEYWORD
-    "modifier" -> SemanticTokenType.MODIFIER
-    "comment" -> SemanticTokenType.COMMENT
-    "string" -> SemanticTokenType.STRING
-    "number" -> SemanticTokenType.NUMBER
-    "regexp", "regex" -> SemanticTokenType.REGEXP
-    "operator" -> SemanticTokenType.OPERATOR
-    else -> null
 }
 
 internal suspend fun ensureTreeSitterPrepared(
@@ -577,7 +608,7 @@ private suspend fun refreshTreeSitterAfterBufferLoad(
     syntaxHighlighter: TreeSitterHighlighter,
     textSnapshot: VersionedBufferTextSnapshot
 ) {
-    val text = textSnapshot.readText()
+    val text = withContext(Dispatchers.Default) { textSnapshot.readText() }
     // 阻塞直到首个渲染快照就位：首帧不再闪默认色。
     withContext(Dispatchers.IO) { syntaxHighlighter.openDocumentBlocking(text) }
     editorState.notifyHighlightChanged()
@@ -588,20 +619,6 @@ internal fun restoreEditorViewState(editorState: EditorState, viewState: EditorV
     editorState.gotoLine(viewState.cursorLine, viewState.cursorColumn)
     editorState.scrollOffsetXPx = viewState.scrollX.coerceAtLeast(0).toFloat()
     editorState.scrollOffsetPx = viewState.scrollY.coerceAtLeast(0).toFloat()
-}
-
-internal fun String.toEditorSemanticTokenModifierOrNull(): SemanticTokenModifier? = when (trim().lowercase().replace('-', '_')) {
-    "declaration" -> SemanticTokenModifier.DECLARATION
-    "definition" -> SemanticTokenModifier.DEFINITION
-    "readonly", "read_only" -> SemanticTokenModifier.READONLY
-    "static" -> SemanticTokenModifier.STATIC
-    "deprecated" -> SemanticTokenModifier.DEPRECATED
-    "abstract" -> SemanticTokenModifier.ABSTRACT
-    "async" -> SemanticTokenModifier.ASYNC
-    "modification" -> SemanticTokenModifier.MODIFICATION
-    "documentation" -> SemanticTokenModifier.DOCUMENTATION
-    "defaultlibrary", "default_library" -> SemanticTokenModifier.DEFAULT_LIBRARY
-    else -> null
 }
 
 internal fun CompletionItemKind.toEditorCompletionKind(): EditorCompletionKind = when (this) {

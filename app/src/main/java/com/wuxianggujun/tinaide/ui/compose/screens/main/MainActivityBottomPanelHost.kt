@@ -62,6 +62,7 @@ internal fun MainActivityBottomPanelHost(
     debugViewModel: DebugViewModel,
     actionsDelegate: MainActivityActionsDelegate,
     navigationDelegate: MainActivityNavigationDelegate,
+    onReconfigureCMake: () -> Unit,
     callbacks: MainActivityScreenCallbacks,
 ) {
     val context = LocalContext.current
@@ -138,6 +139,7 @@ internal fun MainActivityBottomPanelHost(
                     editorStateViewModel = editorStateViewModel,
                     debugViewModel = debugViewModel,
                     projectSymbolIndexService = projectSymbolIndexService,
+                    onReconfigureCMake = onReconfigureCMake,
                     modifier = Modifier.fillMaxWidth(),
                     onBookmarkNavigate = { filePath, line ->
                         actionsDelegate.navigateToBookmark(editorContainerState, filePath, line)
