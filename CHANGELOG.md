@@ -31,6 +31,16 @@
 
 ## [Unreleased]
 
+## [0.18.34] - 2026-10-04
+
+### Added
+
+#### 编辑器捏合缩放实时预览
+
+编辑器内核（editor-kit）新增绘制期缩放预览：捏合缩放时按当前手势实时渲染放大/缩小后的文本视口，
+松手后落定到目标字号。`EditorRenderViewport` 以只读视口承载绘制期坐标（不回写 `EditorState`），
+各渲染器与选择/光标手柄布局改为从 `EditorRenderFrameContext` 读取可见行与滚动偏移。
+
 ### Fixed
 
 #### 崩溃墓碑无法反查 R8 mapping
