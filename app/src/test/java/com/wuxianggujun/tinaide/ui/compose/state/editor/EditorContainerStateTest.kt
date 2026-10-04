@@ -121,7 +121,6 @@ class EditorContainerStateTest {
                 replaceWholeText = { false },
                 applyTextEdits = { false },
                 toggleLineComment = { false },
-                replaceAll = { _, _, _, _ -> 0 },
                 undo = { false },
                 redo = { false },
                 insertTextAtCursor = { text -> insertedText = text },
@@ -155,7 +154,6 @@ class EditorContainerStateTest {
                 replaceWholeText = { false },
                 applyTextEdits = { false },
                 toggleLineComment = { false },
-                replaceAll = { _, _, _, _ -> 0 },
                 undo = { false },
                 redo = { false },
                 insertTextAtCursor = {},
@@ -192,7 +190,6 @@ class EditorContainerStateTest {
                     replaceWholeText = { false },
                     applyTextEdits = { false },
                     toggleLineComment = { false },
-                    replaceAll = { _, _, _, _ -> 0 },
                     undo = { false },
                     redo = { false },
                     insertTextAtCursor = {},
@@ -377,7 +374,6 @@ class EditorContainerStateTest {
                 replaceWholeText = { false },
                 applyTextEdits = { false },
                 toggleLineComment = { false },
-                replaceAll = { _, _, _, _ -> 0 },
                 undo = { false },
                 redo = { false },
                 insertTextAtCursor = {},
@@ -432,7 +428,6 @@ class EditorContainerStateTest {
                 replaceWholeText = { false },
                 applyTextEdits = { false },
                 toggleLineComment = { false },
-                replaceAll = { _, _, _, _ -> 0 },
                 undo = { false },
                 redo = { false },
                 insertTextAtCursor = {},
@@ -471,7 +466,6 @@ class EditorContainerStateTest {
                 replaceWholeText = { false },
                 applyTextEdits = { false },
                 toggleLineComment = { false },
-                replaceAll = { _, _, _, _ -> 0 },
                 undo = { false },
                 redo = { false },
                 insertTextAtCursor = {},
@@ -507,7 +501,6 @@ class EditorContainerStateTest {
                 replaceWholeText = { false },
                 applyTextEdits = { false },
                 toggleLineComment = { false },
-                replaceAll = { _, _, _, _ -> 0 },
                 undo = { false },
                 redo = { false },
                 insertTextAtCursor = {},
@@ -541,7 +534,6 @@ class EditorContainerStateTest {
                 replaceWholeText = { false },
                 applyTextEdits = { false },
                 toggleLineComment = { false },
-                replaceAll = { _, _, _, _ -> 0 },
                 undo = { false },
                 redo = { false },
                 insertTextAtCursor = {},
@@ -557,59 +549,16 @@ class EditorContainerStateTest {
     }
 
     @Test
-    fun requestReplaceAllInActiveEditor_shouldExposeCapabilityAndMatchResults() {
-        assertThat(state.requestReplaceAllInActiveEditor("foo", "bar"))
-            .isEqualTo(ReplaceAllInActiveEditorResult.NoOpenFile)
-
+    fun findAndReplace_shouldDelegateToKitWithoutOpeningViewerSearch() {
         setActiveTab()
-        assertThat(state.requestReplaceAllInActiveEditor("foo", "bar"))
-            .isEqualTo(ReplaceAllInActiveEditorResult.UnsupportedEditor)
-
-        state.registerCodeEditorCallback(
-            tabId = "tab-1",
-            callback = CodeEditorCallback(
-                goToPosition = { _, _ -> false },
-                selectAll = { false },
-                replaceSelection = { false },
-                replaceWholeText = { false },
-                applyTextEdits = { false },
-                toggleLineComment = { false },
-                replaceAll = { _, _, _, _ -> 0 },
-                undo = { false },
-                redo = { false },
-                insertTextAtCursor = {},
-                cursorPosition = { CursorSnapshot(0, 0) },
-                setSelectionRange = { _, _, _, _ -> false },
-                readAllText = { "" },
-                readSelection = { null }
-            )
-        )
-
-        assertThat(state.requestReplaceAllInActiveEditor("foo", "bar"))
-            .isEqualTo(ReplaceAllInActiveEditorResult.NoMatches)
-
-        state.registerCodeEditorCallback(
-            tabId = "tab-1",
-            callback = CodeEditorCallback(
-                goToPosition = { _, _ -> false },
-                selectAll = { false },
-                replaceSelection = { false },
-                replaceWholeText = { false },
-                applyTextEdits = { false },
-                toggleLineComment = { false },
-                replaceAll = { _, _, _, _ -> 3 },
-                undo = { false },
-                redo = { false },
-                insertTextAtCursor = {},
-                cursorPosition = { CursorSnapshot(0, 0) },
-                setSelectionRange = { _, _, _, _ -> false },
-                readAllText = { "" },
-                readSelection = { null }
-            )
-        )
-
-        assertThat(state.requestReplaceAllInActiveEditor("foo", "bar"))
-            .isEqualTo(ReplaceAllInActiveEditorResult.Success(3))
+        val requests = mutableListOf<Boolean>()
+        state.registerCodeEditorCallback("tab-1",
+            testCodeEditorCallback(readAllText = { "foo" }, replaceWholeText = { false })
+                .copy(showFind = { requests += it }))
+        state.showSearch()
+        state.showReplace()
+        assertThat(requests).containsExactly(false, true).inOrder()
+        assertThat(state.currentSearchState.isActive).isFalse()
     }
 
     @Test
@@ -637,7 +586,6 @@ class EditorContainerStateTest {
                     resolvedToken = token
                     true
                 },
-                replaceAll = { _, _, _, _ -> 0 },
                 undo = { false },
                 redo = { false },
                 insertTextAtCursor = {},
@@ -676,7 +624,6 @@ class EditorContainerStateTest {
                 replaceWholeText = { false },
                 applyTextEdits = { false },
                 toggleLineComment = { false },
-                replaceAll = { _, _, _, _ -> 0 },
                 undo = { false },
                 redo = { false },
                 insertTextAtCursor = {},
@@ -777,7 +724,6 @@ class EditorContainerStateTest {
                 replaceWholeText = { false },
                 applyTextEdits = { false },
                 toggleLineComment = { false },
-                replaceAll = { _, _, _, _ -> 0 },
                 undo = { false },
                 redo = { false },
                 insertTextAtCursor = {},
@@ -799,7 +745,6 @@ class EditorContainerStateTest {
                 },
                 applyTextEdits = { false },
                 toggleLineComment = { false },
-                replaceAll = { _, _, _, _ -> 0 },
                 undo = { false },
                 redo = { false },
                 insertTextAtCursor = {},
@@ -961,7 +906,6 @@ class EditorContainerStateTest {
                 replaceWholeText = { false },
                 applyTextEdits = { false },
                 toggleLineComment = { false },
-                replaceAll = { _, _, _, _ -> 0 },
                 undo = { false },
                 redo = { false },
                 insertTextAtCursor = {},
@@ -1006,7 +950,6 @@ class EditorContainerStateTest {
                 replaceWholeText = { false },
                 applyTextEdits = { false },
                 toggleLineComment = { false },
-                replaceAll = { _, _, _, _ -> 0 },
                 undo = { false },
                 redo = { false },
                 insertTextAtCursor = {},
@@ -1058,7 +1001,6 @@ class EditorContainerStateTest {
                 replaceWholeText = { false },
                 applyTextEdits = { false },
                 toggleLineComment = { false },
-                replaceAll = { _, _, _, _ -> 0 },
                 undo = { false },
                 redo = { false },
                 insertTextAtCursor = {},
@@ -1747,7 +1689,6 @@ class EditorContainerStateTest {
                 replaceWholeText = { false },
                 applyTextEdits = { false },
                 toggleLineComment = { false },
-                replaceAll = { _, _, _, _ -> 0 },
                 undo = { false },
                 redo = { false },
                 insertTextAtCursor = {},
@@ -1774,7 +1715,6 @@ class EditorContainerStateTest {
                 replaceWholeText = { false },
                 applyTextEdits = { false },
                 toggleLineComment = { false },
-                replaceAll = { _, _, _, _ -> 0 },
                 undo = { false },
                 redo = { false },
                 insertTextAtCursor = {},
@@ -1825,7 +1765,6 @@ class EditorContainerStateTest {
         replaceWholeText = replaceWholeText,
         applyTextEdits = { false },
         toggleLineComment = { false },
-        replaceAll = { _, _, _, _ -> 0 },
         undo = { false },
         redo = { false },
         insertTextAtCursor = {},

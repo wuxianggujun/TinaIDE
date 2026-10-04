@@ -54,7 +54,6 @@ import com.wuxianggujun.tinaide.ui.compose.components.LocationListDialog
 import com.wuxianggujun.tinaide.ui.compose.components.LspRenameDialog
 import com.wuxianggujun.tinaide.ui.compose.components.NewFileDialog
 import com.wuxianggujun.tinaide.ui.compose.components.RenameDialog
-import com.wuxianggujun.tinaide.ui.compose.components.ReplaceDialog
 import com.wuxianggujun.tinaide.ui.compose.components.RunConfigDialog
 import com.wuxianggujun.tinaide.ui.compose.components.TinaAlertDialog
 import com.wuxianggujun.tinaide.ui.compose.components.TinaDialogContentColumn
@@ -78,7 +77,6 @@ import kotlinx.coroutines.withContext
 import org.koin.compose.koinInject
 import timber.log.Timber
 import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveEditorCommandResult
-import com.wuxianggujun.tinaide.ui.compose.state.editor.ReplaceAllInActiveEditorResult
 
 private const val BUILTIN_APK_TEMPLATE_NATIVE = "builtin:native_activity"
 private const val BUILTIN_APK_TEMPLATE_SDL3 = "builtin:sdl3"
@@ -427,34 +425,6 @@ internal fun MainActivityFileDialogs(
         )
     }
 
-    // 替换（全文件 Replace All）
-    if (dialogState.showReplaceDialog) {
-        ReplaceDialog(
-            initialFind = editorContainerState.currentSearchState.query,
-            onDismiss = { dialogState.closeReplaceDialog() },
-            onReplaceAll = { findText, replaceText ->
-                dialogState.closeReplaceDialog()
-                if (findText.isEmpty()) return@ReplaceDialog
-                when (val result = editorContainerState.requestReplaceAllInActiveEditor(findText, replaceText)) {
-                    ReplaceAllInActiveEditorResult.NoOpenFile -> {
-                        context.toastInfo(Strings.toast_no_open_file.strOr(context))
-                    }
-
-                    ReplaceAllInActiveEditorResult.UnsupportedEditor -> {
-                        context.toastInfo(Strings.toast_file_not_support_format.strOr(context))
-                    }
-
-                    ReplaceAllInActiveEditorResult.NoMatches -> {
-                        context.toastInfo(Strings.toast_no_matches.strOr(context))
-                    }
-
-                    is ReplaceAllInActiveEditorResult.Success -> {
-                        context.toastSuccess(Strings.toast_replaced.strOr(context, result.count))
-                    }
-                }
-            }
-        )
-    }
 }
 
 @Composable

@@ -1,4 +1,4 @@
-﻿package com.wuxianggujun.tinaide.ui.compose.components.editor
+package com.wuxianggujun.tinaide.ui.compose.components.editor
 
 import android.os.SystemClock
 import androidx.compose.foundation.layout.Box
@@ -68,8 +68,6 @@ import com.wuxianggujun.tinaide.core.textengine.TextChangeListener
 import com.wuxianggujun.tinaide.core.treesitter.TreeSitterHighlighter
 import com.wuxianggujun.tinaide.editor.session.DocumentSession
 import com.wuxianggujun.tinaide.editor.session.EditorViewState
-import com.wuxianggujun.tinaide.search.CodeSearchEngine
-import com.wuxianggujun.tinaide.search.CodeSearchResult
 import com.wuxianggujun.tinaide.core.editorlsp.CMakeLanguageSupport
 import com.wuxianggujun.tinaide.core.editorlsp.EditorStatus
 import com.wuxianggujun.tinaide.core.editorlsp.MakeLanguageSupport
@@ -85,7 +83,6 @@ import com.wuxianggujun.tinaide.ui.compose.state.editor.CursorSnapshot
 import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState
 import com.wuxianggujun.tinaide.ui.compose.state.editor.SelectionSnapshot
 import com.wuxianggujun.tinaide.ui.compose.state.editor.TextEditOperation
-import com.wuxianggujun.tinaide.ui.compose.state.editor.TinaTextContentProvider
 import com.wuxianggujun.tinaide.ui.resolveLineCommentToken
 import java.io.File
 import java.nio.charset.Charset
@@ -131,8 +128,6 @@ fun TinaCodeEditorPage(
     val runtime = remember(tab.id, state, tab.file) { state.getOrCreateCodeEditorRuntime(tab) }
     val buffer = runtime.buffer
     val textSnapshot = remember(buffer) { VersionedBufferTextSnapshot(buffer) }
-    val textContentProvider = remember(tab.id, buffer) { TinaTextContentProvider(buffer) }
-    val codeSearchEngine = remember(tab.id, textContentProvider) { CodeSearchEngine(textContentProvider) }
     val completionProvider = remember(tab.id, buffer, textSnapshot, tab.file) {
         val localCompletionCache = LocalCompletionCache()
         DefaultCompletionProvider(
@@ -284,7 +279,7 @@ fun TinaCodeEditorPage(
             }
     }
 
-    DisposableEffect(tab.id, state, editorState, buffer, codeSearchEngine, callbackRegistrationId) {
+    DisposableEffect(tab.id, state, editorState, buffer, callbackRegistrationId) {
         val editorCallback = CodeEditorCallback(
             goToPosition = goToPosition@ { line, column ->
                 if (loading || loadError != null) {
@@ -319,14 +314,9 @@ fun TinaCodeEditorPage(
                 externalEditPreparer?.invoke()
                 editorState.toggleLineComment(commentToken)
             },
-            replaceAll = { findText, replaceText, caseSensitive, useRegex ->
+            showFind = { replace ->
                 externalEditPreparer?.invoke()
-                editorState.replaceAll(
-                    findText = findText,
-                    replaceText = replaceText,
-                    caseSensitive = caseSensitive,
-                    useRegex = useRegex
-                )
+                editorState.find.show(replace)
             },
             undo = {
                 externalEditPreparer?.invoke()
@@ -399,16 +389,6 @@ fun TinaCodeEditorPage(
         state.bindCodeEditorCallbacks(
             tabId = tab.id,
             registrationId = callbackRegistrationId,
-            search = { query, options ->
-                codeSearchEngine.search(query, options).filterIsInstance<CodeSearchResult>()
-            },
-            goToMatch = { hit ->
-                externalEditPreparer?.invoke()
-                editorState.selectRange(
-                    startOffset = hit.range.startIndex,
-                    endOffset = hit.range.endIndex
-                )
-            },
             editorCallback = editorCallback
         )
         onDispose {

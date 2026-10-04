@@ -4,29 +4,22 @@ import android.content.Context
 import androidx.compose.runtime.mutableStateMapOf
 import com.wuxianggujun.tinaide.core.config.Prefs
 import com.wuxianggujun.tinaide.core.editorview.EditorColorScheme
-import com.wuxianggujun.tinaide.search.CodeSearchResult
-import com.wuxianggujun.tinaide.search.SearchOptions
 import timber.log.Timber
 
 /**
- * 代码编辑器回调与搜索回调的注册表（按 tab + registrationId 管理）。
+ * 代码编辑器回调注册表（按 tab + registrationId 管理）；查找由 editor-kit 管理。
  */
 internal class EditorCodeCallbackRegistry(
     private val context: Context,
-    private val searchStateManager: SearchStateManager,
     private val codeRuntimeCache: EditorCodeRuntimeCache,
     private val resolveEditorColorScheme: (Context) -> EditorColorScheme,
 ) {
-    private data class Registration(
-        val searchCallback: SearchStateManager.CodeViewerCallback,
-        val editorCallback: CodeEditorCallback,
-    )
 
     // BottomPanel 会在 composition 中读取注册状态；使用 snapshot map 让首次 attach/detach
     // 能直接驱动符号栏可见性更新，而不依赖其它无关状态碰巧触发重组。
     private val callbacksByTabId = mutableStateMapOf<String, CodeEditorCallback>()
     private val registrationsByTabId =
-        mutableMapOf<String, LinkedHashMap<Any, Registration>>()
+        mutableMapOf<String, LinkedHashMap<Any, CodeEditorCallback>>()
 
     /** 供 FileMutationCoordinator 等直接 remap 的可变视图。 */
     val mutableCallbacks: MutableMap<String, CodeEditorCallback>
@@ -45,19 +38,10 @@ internal class EditorCodeCallbackRegistry(
     fun bindCodeEditorCallbacks(
         tabId: String,
         registrationId: Any,
-        search: (String, SearchOptions) -> List<CodeSearchResult>,
-        goToMatch: (CodeSearchResult) -> Unit,
         editorCallback: CodeEditorCallback,
     ) {
-        val registration = Registration(
-            searchCallback = SearchStateManager.CodeViewerCallback(
-                search = search,
-                goToMatch = goToMatch,
-            ),
-            editorCallback = editorCallback,
-        )
-        registrationsByTabId.getOrPut(tabId) { LinkedHashMap() }[registrationId] = registration
-        activate(tabId, registration)
+        registrationsByTabId.getOrPut(tabId) { LinkedHashMap() }[registrationId] = editorCallback
+        register(tabId, editorCallback)
     }
 
     fun unbindCodeEditorCallbacks(tabId: String, registrationId: Any) {
@@ -66,13 +50,12 @@ internal class EditorCodeCallbackRegistry(
         if (registrations.isEmpty()) {
             registrationsByTabId.remove(tabId)
         }
-        if (callbacksByTabId[tabId] === removed.editorCallback) {
+        if (callbacksByTabId[tabId] === removed) {
             val replacement = registrations.values.lastOrNull()
             if (replacement == null) {
                 callbacksByTabId.remove(tabId)
-                searchStateManager.unregisterCodeViewerCallback(tabId)
             } else {
-                activate(tabId, replacement)
+                register(tabId, replacement)
             }
         }
         codeRuntimeCache.trim()
@@ -97,7 +80,6 @@ internal class EditorCodeCallbackRegistry(
     fun remove(tabId: String) {
         registrationsByTabId.remove(tabId)
         callbacksByTabId.remove(tabId)
-        searchStateManager.unregisterCodeViewerCallback(tabId)
     }
 
     fun remapTabIds(idMap: Map<String, String>) {
@@ -114,11 +96,6 @@ internal class EditorCodeCallbackRegistry(
     fun clear() {
         val tabIds = (callbacksByTabId.keys + registrationsByTabId.keys).toSet()
         tabIds.forEach { remove(it) }
-    }
-
-    private fun activate(tabId: String, registration: Registration) {
-        searchStateManager.registerCodeViewerCallback(tabId, registration.searchCallback)
-        register(tabId, registration.editorCallback)
     }
 
     companion object {

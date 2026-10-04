@@ -1,4 +1,4 @@
-﻿package com.wuxianggujun.tinaide.ui
+package com.wuxianggujun.tinaide.ui
 
 import android.app.Application
 import com.google.common.truth.Truth.assertThat
@@ -94,7 +94,6 @@ class TinaPluginEditorBridgeTest {
                 replaceWholeText = { false },
                 applyTextEdits = { false },
                 toggleLineComment = { false },
-                replaceAll = { _, _, _, _ -> 0 },
                 undo = { false },
                 redo = { false },
                 insertTextAtCursor = {},
@@ -138,7 +137,6 @@ class TinaPluginEditorBridgeTest {
                     true
                 },
                 toggleLineComment = { false },
-                replaceAll = { _, _, _, _ -> 0 },
                 undo = { false },
                 redo = { false },
                 insertTextAtCursor = {},
@@ -183,7 +181,6 @@ class TinaPluginEditorBridgeTest {
                 replaceWholeText = { false },
                 applyTextEdits = { false },
                 toggleLineComment = { false },
-                replaceAll = { _, _, _, _ -> 0 },
                 undo = { false },
                 redo = { false },
                 insertTextAtCursor = {},

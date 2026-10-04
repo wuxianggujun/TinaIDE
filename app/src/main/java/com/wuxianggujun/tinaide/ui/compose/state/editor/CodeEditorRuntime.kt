@@ -45,12 +45,7 @@ data class CodeEditorCallback(
     val validateTextEdits: (edits: List<TextEditOperation>) -> Boolean = { true },
     val documentVersion: () -> Long? = { null },
     val toggleLineComment: (commentToken: String) -> Boolean,
-    val replaceAll: (
-        findText: String,
-        replaceText: String,
-        caseSensitive: Boolean,
-        useRegex: Boolean,
-    ) -> Int,
+    val showFind: (replace: Boolean) -> Unit = {},
     val undo: () -> Boolean,
     val redo: () -> Boolean,
     val insertTextAtCursor: (text: String) -> Unit,

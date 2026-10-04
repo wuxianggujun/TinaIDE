@@ -783,6 +783,7 @@ private fun EditorSearchOverlay(
     state: EditorContainerState,
     modifier: Modifier = Modifier
 ) {
+    if (state.tabs.getOrNull(state.activeTabIndex)?.contentType == ContentType.CODE) return
     FloatingSearchBarContainer(
         searchState = state.currentSearchState,
         onQueryChange = { state.updateSearchQuery(it) },
