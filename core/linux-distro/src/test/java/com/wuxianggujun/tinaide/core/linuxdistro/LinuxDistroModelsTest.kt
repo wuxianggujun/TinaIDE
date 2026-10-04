@@ -80,10 +80,10 @@ class LinuxDistroModelsTest {
         val stable = release(id = "stable")
         val edge = release(id = "edge")
         val definition = DistroDefinition(
-            id = "alpine",
-            family = DistroFamily.ALPINE,
-            displayName = "Alpine",
-            packageManager = DistroPackageManager.APK,
+            id = "debian",
+            family = DistroFamily.DEBIAN,
+            displayName = "Debian",
+            packageManager = DistroPackageManager.APT,
             defaultReleaseId = "stable",
             releases = listOf(stable, edge)
         )

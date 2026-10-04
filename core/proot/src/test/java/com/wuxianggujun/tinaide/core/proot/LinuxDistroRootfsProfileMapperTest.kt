@@ -14,9 +14,9 @@ class LinuxDistroRootfsProfileMapperTest {
     fun toRootfsProfile_shouldMapSelfHostedInstallationToLinuxProfile() {
         val rootfsDir = createRootfs(
             osRelease = """
-                ID=alpine
-                NAME="Alpine Linux"
-                PRETTY_NAME="Alpine Linux v3.20"
+                ID=debian
+                NAME="Debian GNU/Linux"
+                PRETTY_NAME="Debian GNU/Linux 12 (bookworm)"
             """.trimIndent(),
         )
         val installation = installedLinuxDistro(rootfsDir)
@@ -26,11 +26,11 @@ class LinuxDistroRootfsProfileMapperTest {
             now = UPDATED_AT,
         )
 
-        assertThat(profile.id).isEqualTo("linux-distro:alpine")
+        assertThat(profile.id).isEqualTo("linux-distro:debian")
         assertThat(profile.sourceType).isEqualTo(RootfsSourceType.LINUX_DISTRO)
-        assertThat(profile.displayName).isEqualTo("Alpine Linux")
-        assertThat(profile.distroId).isEqualTo("alpine")
-        assertThat(profile.packageManager).isEqualTo(RootfsPackageManager.APK)
+        assertThat(profile.displayName).isEqualTo("Debian GNU/Linux")
+        assertThat(profile.distroId).isEqualTo("debian")
+        assertThat(profile.packageManager).isEqualTo(RootfsPackageManager.APT)
         assertThat(profile.shellPath).isEqualTo("/bin/sh")
         assertThat(profile.createdAt).isEqualTo(INSTALLED_AT)
         assertThat(profile.updatedAt).isEqualTo(UPDATED_AT)
@@ -86,13 +86,13 @@ class LinuxDistroRootfsProfileMapperTest {
     }
 
     private fun installedLinuxDistro(rootfsDir: File): InstalledLinuxDistro = InstalledLinuxDistro(
-        distroId = "alpine",
-        releaseId = "3.20",
+        distroId = "debian",
+        releaseId = "12",
         architecture = DistroArchitecture.AARCH64,
-        displayName = "Alpine Linux",
-        packageManager = DistroPackageManager.APK,
+        displayName = "Debian GNU/Linux",
+        packageManager = DistroPackageManager.APT,
         rootfsPath = rootfsDir.absolutePath,
-        archivePath = File(rootfsDir.parentFile, "alpine.tar.gz").absolutePath,
+        archivePath = File(rootfsDir.parentFile, "debian.tar.gz").absolutePath,
         checksum = null,
         installedAtEpochMillis = INSTALLED_AT,
         updatedAtEpochMillis = UPDATED_AT,

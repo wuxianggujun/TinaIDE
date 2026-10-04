@@ -8,8 +8,8 @@ class RootfsDistroRuntimeTest {
     @Test
     fun onlyBuiltInDistro_shouldExposeUbuntuOnly() {
         val distros = listOf(
-            distroOption("alpine", "Alpine Linux"),
             distroOption("debian", "Debian"),
+            distroOption("fedora", "Fedora"),
             distroOption("ubuntu", "Ubuntu"),
         )
 
@@ -23,8 +23,8 @@ class RootfsDistroRuntimeTest {
     @Test
     fun onlyBuiltInDistro_shouldReturnEmptyWhenUbuntuIsUnavailable() {
         val distros = listOf(
-            distroOption("alpine", "Alpine Linux"),
             distroOption("debian", "Debian"),
+            distroOption("fedora", "Fedora"),
         )
 
         val filtered = distros.onlyBuiltInDistro("ubuntu")

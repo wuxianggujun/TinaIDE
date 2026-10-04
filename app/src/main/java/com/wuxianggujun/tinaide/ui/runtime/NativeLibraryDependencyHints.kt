@@ -8,10 +8,10 @@ import com.wuxianggujun.tinaide.core.packages.PackageAbiCompatibility
 import com.wuxianggujun.tinaide.core.packages.model.GUIPackage
 import com.wuxianggujun.tinaide.core.packages.model.Platform
 import com.wuxianggujun.tinaide.core.packages.store.LocalInstallStateStore
+import com.wuxianggujun.tinaide.storage.ProjectPaths
 import java.io.File
 
 object NativeLibraryDependencyHints {
-    private const val INSTALL_DIR_NAME = "installed-packages"
 
     private val sdlRuntimeLibraryPattern =
         Regex("""^libSDL([23])(?:-[0-9][0-9.]*)?\.so$""")
@@ -71,7 +71,7 @@ object NativeLibraryDependencyHints {
     }
 
     fun buildInstalledLibraryPackageIndex(context: Context): Map<String, String> {
-        val installRoot = File(context.filesDir, INSTALL_DIR_NAME)
+        val installRoot = ProjectPaths.getInstalledPackagesRoot(context)
         if (!installRoot.isDirectory) return emptyMap()
 
         val installedPackageIds = runCatching {

@@ -39,10 +39,10 @@ class RootfsProfileStoreTest {
 
     @Test
     fun activeProfileForDistro_shouldResolveUbuntuWithoutUsingAnotherDistro() {
-        val alpine = profile(
-            id = "linux-distro:alpine",
-            distroId = "alpine",
-            packageManager = RootfsPackageManager.APK,
+        val debian = profile(
+            id = "linux-distro:debian",
+            distroId = "debian",
+            packageManager = RootfsPackageManager.APT,
         )
         val ubuntu = profile(
             id = "linux-distro:ubuntu",
@@ -50,10 +50,10 @@ class RootfsProfileStoreTest {
             packageManager = RootfsPackageManager.APT,
         )
 
-        store.upsertProfile(alpine, makeActive = true)
+        store.upsertProfile(debian, makeActive = true)
         store.upsertProfile(ubuntu, makeActive = false)
 
-        assertThat(store.getActiveProfile().id).isEqualTo(alpine.id)
+        assertThat(store.getActiveProfile().id).isEqualTo(debian.id)
         assertThat(store.getActiveProfileForDistro("ubuntu")?.id).isEqualTo(ubuntu.id)
         assertThat(store.listProfilesForDistro("ubuntu").map { profile -> profile.id })
             .containsExactly(ubuntu.id)
@@ -81,15 +81,15 @@ class RootfsProfileStoreTest {
 
     @Test
     fun setActiveProfileForDistro_shouldRejectProfilesFromAnotherDistro() {
-        val alpine = profile(
-            id = "linux-distro:alpine",
-            distroId = "alpine",
-            packageManager = RootfsPackageManager.APK,
+        val debian = profile(
+            id = "linux-distro:debian",
+            distroId = "debian",
+            packageManager = RootfsPackageManager.APT,
         )
-        store.upsertProfile(alpine, makeActive = true)
+        store.upsertProfile(debian, makeActive = true)
 
         assertThrows(IllegalArgumentException::class.java) {
-            store.setActiveProfileForDistro(profileId = alpine.id, distroId = "ubuntu")
+            store.setActiveProfileForDistro(profileId = debian.id, distroId = "ubuntu")
         }
     }
 

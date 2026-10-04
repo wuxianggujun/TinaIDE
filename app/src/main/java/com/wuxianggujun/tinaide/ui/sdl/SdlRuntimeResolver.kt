@@ -9,6 +9,7 @@ import com.wuxianggujun.tinaide.core.packages.PackageAbiCompatibility
 import com.wuxianggujun.tinaide.core.packages.model.Platform
 import com.wuxianggujun.tinaide.core.packages.store.LocalInstallStateStore
 import com.wuxianggujun.tinaide.project.ProjectMetadataStore
+import com.wuxianggujun.tinaide.storage.ProjectPaths
 import com.wuxianggujun.tinaide.ui.runtime.AndroidSystemLibraries
 import com.wuxianggujun.tinaide.ui.runtime.NativeLibraryDependencyReader
 import com.wuxianggujun.tinaide.ui.runtime.buildNativeRuntimeLibraryIndex
@@ -407,7 +408,7 @@ object SdlRuntimeResolver {
     }
 
     private fun resolveManagedAndroidPackages(context: Context): List<ManagedAndroidPackage> {
-        val installRootDir = File(context.filesDir, INSTALL_DIR_NAME)
+        val installRootDir = ProjectPaths.getInstalledPackagesRoot(context)
         if (!installRootDir.isDirectory) return emptyList()
 
         val installedPackages = runCatching {
