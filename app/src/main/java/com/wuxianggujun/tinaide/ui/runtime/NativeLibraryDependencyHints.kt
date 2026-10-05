@@ -12,6 +12,7 @@ import com.wuxianggujun.tinaide.storage.ProjectPaths
 import java.io.File
 
 object NativeLibraryDependencyHints {
+    private const val INSTALL_DIR_NAME = "installed-packages"
 
     private val sdlRuntimeLibraryPattern =
         Regex("""^libSDL([23])(?:-[0-9][0-9.]*)?\.so$""")

@@ -6,6 +6,7 @@ import com.wuxianggujun.tinaide.project.ProjectBuildSystem
 import com.wuxianggujun.tinaide.project.ProjectMetadataStore
 import java.io.File
 import java.nio.file.Files
+import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -204,7 +205,7 @@ class ApkExportRuntimeLibrariesResolverTest {
     }
 
     @Test
-    fun `resolve uses project runtime dirs for SDL library when artifact is outside project root`() {
+    fun `resolve uses project runtime dirs for SDL library when artifact is outside project root`() = runTest {
         val tempDir = Files.createTempDirectory("apk-export-sdl-runtime-dir-test").toFile()
         try {
             val projectRoot = File(tempDir, "project").apply { mkdirs() }
