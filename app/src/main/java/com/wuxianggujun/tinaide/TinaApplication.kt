@@ -6,7 +6,6 @@ import android.app.Application.ActivityLifecycleCallbacks
 import android.content.Context
 import androidx.compose.ui.ComposeUiFlags
 import androidx.compose.ui.ExperimentalComposeUiApi
-import com.itsaky.androidide.treesitter.TreeSitter
 import com.wuxianggujun.tinaide.core.compile.di.compileModule
 import com.wuxianggujun.tinaide.core.config.IConfigManager
 import com.wuxianggujun.tinaide.core.config.di.configModule
@@ -168,14 +167,6 @@ class TinaApplication : Application() {
 
         // 初始化项目元数据存储的 IDE 版本信息
         ProjectMetadataInitializer(BuildConfig.VERSION_NAME).execute()
-
-        // 能执行到这里的只有 HOST 进程。
-        runCatching {
-            TreeSitter.loadLibrary()
-            Timber.i("android-tree-sitter native library loaded successfully")
-        }.onFailure { t ->
-            Timber.e(t, "CRITICAL: Failed to load android-tree-sitter native library — tree-sitter features will crash")
-        }
 
         // 清理旧的崩溃日志（保留最近 10 个）
         NativeCrashHandler.cleanupOldTombstones(10)
