@@ -31,6 +31,53 @@
 
 ## [Unreleased]
 
+## [0.18.35] - 2026-10-06
+
+### Added
+
+#### 编辑器内联查找/替换
+
+代码编辑器的查找/替换改由 editor-kit 内联查找条承载：内核新增 `EditorFindBar` / `EditorFindController` /
+`EditorFindEngine`，支持大小写、正则与全词匹配，`next/previous` 导航与逐个/全部替换
+（替换复用编辑事务，撤销后光标偏移保持），查找命中由 `FindMatchHighlightRenderer` 高亮。
+宿主删除了原先重复的搜索对话框 UI（`EditorCommandDialogs` 及 `DialogState` 查找状态等约 300 行），
+JSON/Hex 查看器搜索与宿主 Git/LSP 职责保持不变。同一批次还补齐手动多光标编辑与
+`EditorRenderExtension` 渲染扩展 API：编辑期间 inlay hint 位置保持稳定，
+并修复 IME 删除/纠错、缩放视口与折行括号边界。
+
+### Changed
+
+#### Tree-sitter 延迟到语言服务入口加载
+
+内核新增共享的 `TreeSitterRuntime`，Tree-sitter native 库改为按需初始化（`EditorState` 暴露语言服务就绪状态）；
+宿主不再在 `TinaApplication` 启动时加载 Tree-sitter，改由 `ProjectSymbolIndexService` 等语言服务入口触发，
+缩短冷启动路径。
+
+#### 项目清理与运行时包路径统一
+
+- 移除 `DistroFamily.ALPINE` 枚举残留（Alpine 支持已在 0.18.29 删除），相关测试数据改用 Debian。
+- 删除孤儿模块 `core/lang/`、`core/auth/` 与空的 `feature/license`、`feature/login`、`feature/membership` 目录。
+- 新增 `ProjectPaths.getInstalledPackagesRoot()` 统一管理运行时安装包根路径，
+  `NativeLibraryDependencyHints` / `SdlRuntimeResolver` 改走 `ProjectPaths`，
+  并恢复 `INSTALL_DIR_NAME` 安装目录常量兼容既有引用。
+- 架构文档（`docs/架构概览.md`）补充 RikkaHub 宿主桥接层边界说明。
+
+### Fixed
+
+#### 编辑器缓冲区关闭后的残留绘制帧崩溃
+
+宿主关闭 `RopeTextBuffer` 后，仍持有旧 `EditorState` 的 Canvas 节点可能再次执行绘制，
+读取已关闭 buffer 触发 `IllegalStateException`。现在 `TextBuffer.isClosed` 可在关闭后安全查询，
+两个 Canvas 绘制入口统一走 `drawEditorFrame`，已关闭的帧只画背景并恢复裁剪；
+关闭后文本访问仍 fail-fast（不返回伪造空文档），`TextBufferClosedException` 用于区分关闭与其他状态错误。
+配套 `EditorCanvasClosedBufferTest`（Robolectric Native Graphics 真实 `draw`）与
+`EditorDrawFrameTest`（跨线程确定性时序）回归测试。
+
+#### 光标手势与撤销边界修复
+
+输入法组合未结束时触发行号栏光标变更会先提交组合；Alt 点击与矩形选择手势补齐测试覆盖；
+全部替换撤销后的光标偏移与预期一致。
+
 ## [0.18.34] - 2026-10-04
 
 ### Added
