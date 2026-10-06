@@ -33,50 +33,73 @@
 
 ## [0.18.35] - 2026-10-06
 
+> **本版本发布说明覆盖 v0.18.27（上一个成功发布的 GitHub Release）以来的全部变化。**
+> 0.18.30 / 0.18.33 / 0.18.34 的 tag 构建因维护检查未通过，均未产出发布 APK；
+> 从 v0.18.27 升级的用户将一次性获得以下全部内容，各版本完整细节见下方对应区块。
+> 注意：包含 RikkaHub 的构建产物在其许可证冲突解决前，仍不视为可对外分发的完整产物（见 0.18.30 说明）。
+
 ### Added
 
-#### 编辑器内联查找/替换
+#### 编辑器功能（0.18.29–0.18.35 汇总）
 
-代码编辑器的查找/替换改由 editor-kit 内联查找条承载：内核新增 `EditorFindBar` / `EditorFindController` /
-`EditorFindEngine`，支持大小写、正则与全词匹配，`next/previous` 导航与逐个/全部替换
-（替换复用编辑事务，撤销后光标偏移保持），查找命中由 `FindMatchHighlightRenderer` 高亮。
-宿主删除了原先重复的搜索对话框 UI（`EditorCommandDialogs` 及 `DialogState` 查找状态等约 300 行），
-JSON/Hex 查看器搜索与宿主 Git/LSP 职责保持不变。同一批次还补齐手动多光标编辑与
-`EditorRenderExtension` 渲染扩展 API：编辑期间 inlay hint 位置保持稳定，
-并修复 IME 删除/纠错、缩放视口与折行括号边界。
+- **内联查找/替换**（0.18.35）：查找/替换由 editor-kit 内联查找条承载，支持大小写/正则/全词匹配、
+  命中高亮、逐个与全部替换（替换复用编辑事务，撤销后光标偏移保持）；宿主删除重复搜索对话框 UI。
+  同一批次补齐手动多光标编辑与 `EditorRenderExtension` 渲染扩展 API，编辑期间 inlay hint 位置保持稳定。
+- **Git 修改指示与小地图**（0.18.33，均默认关闭）：行号栏左缘色条标出相对 HEAD 的新增（绿）、
+  修改（橙）、删除（红、半高）行；编辑器右侧整篇文档缩略图与视口指示框，点按或拖动即可定位。
+  开关位于「设置 → 编辑器」，已打开的编辑器即时生效。
+- **捏合缩放实时预览**（0.18.34）：缩放手势期间按当前视口实时渲染文本，松手后落定到目标字号。
+- **X11 图形桌面**（0.18.29）：`:core:linux-desktop` + vendored termux-x11 承载，
+  X server 与渲染 UI 跑在 `:x11` 独立进程。**尚未在真机验证 XFCE 桌面**，不视为已交付功能。
+
+#### 模板与编译（0.18.30–0.18.33 汇总）
+
+- **编译数据库过期检测**（0.18.32）：`CMakeLists.txt` 晚于 `compile_commands.json` 时给出过期提示与
+  「重新配置」操作，只重新生成编译数据库、不做全量编译，完成后自动刷新 clangd 绑定。
+- **SDL2 + CMake 项目模板**（0.18.32）与 **raylib + CMake 项目模板**（0.18.30）：
+  侧载 plugin 交付，可直接运行的图形项目骨架，避免手写 CMakeLists 踩坑。
+- **模板编辑对话框补齐默认运行目标**（0.18.33）：新增「默认运行目标 / 默认 SDL 目标」输入框，
+  支持占位符，与新建项目向导读取的字段对齐。
 
 ### Changed
 
-#### Tree-sitter 延迟到语言服务入口加载
+- **许可证**：自 0.18.29 起整体改为 **GPL-3.0-or-later**（因集成 termux-x11）。
+- **Linux 可选运行时**：移除 Alpine 支持，Ubuntu 24.04 成为唯一发行版。
+- **编辑器内核抽离**（0.18.33）：`:core:editor-*` 六个模块的唯一源码迁入独立开源工程
+  `editor-kit`（[wuxianggujun/TinaEditor](https://github.com/wuxianggujun/TinaEditor)），以 Git submodule 供源，
+  克隆后需 `git submodule update --init --recursive` 才能编译；内核不再依赖宿主 config / i18n / designsystem / editor-lsp。
+- **Tree-sitter 按需加载**（0.18.35）：内核新增共享 `TreeSitterRuntime`，native 库延迟到语言服务入口
+  （如 `ProjectSymbolIndexService`）初始化，不再在 `TinaApplication` 启动时加载，缩短冷启动路径。
+- **APK 精简**（0.18.29）：strip ctest/cpack、移除扫码入口，APK 体积约减少 56MB。
+- **项目清理**（0.18.35）：移除 `DistroFamily.ALPINE` 枚举残留与孤儿模块（`core/lang`、`core/auth`、
+  空 feature 目录）；新增 `ProjectPaths.getInstalledPackagesRoot()` 统一管理运行时包路径。
 
-内核新增共享的 `TreeSitterRuntime`，Tree-sitter native 库改为按需初始化（`EditorState` 暴露语言服务就绪状态）；
-宿主不再在 `TinaApplication` 启动时加载 Tree-sitter，改由 `ProjectSymbolIndexService` 等语言服务入口触发，
-缩短冷启动路径。
+### Performance
 
-#### 项目清理与运行时包路径统一
-
-- 移除 `DistroFamily.ALPINE` 枚举残留（Alpine 支持已在 0.18.29 删除），相关测试数据改用 Debian。
-- 删除孤儿模块 `core/lang/`、`core/auth/` 与空的 `feature/license`、`feature/login`、`feature/membership` 目录。
-- 新增 `ProjectPaths.getInstalledPackagesRoot()` 统一管理运行时安装包根路径，
-  `NativeLibraryDependencyHints` / `SdlRuntimeResolver` 改走 `ProjectPaths`，
-  并恢复 `INSTALL_DIR_NAME` 安装目录常量兼容既有引用。
-- 架构文档（`docs/架构概览.md`）补充 RikkaHub 宿主桥接层边界说明。
+- **LSP 语义高亮首屏**（0.18.30）：先请求可见区域（约 480 行）的 `semanticTokens/range`，失败才回退 full，
+  不再等待整份文档最长 6 秒超时。
+- **编辑器标签切换**（0.18.30）：正文立即跟随标签，已打开页保留在组合树内；clangd 共享会话在标签间
+  切换不再断开重连，状态栏不再反复闪 `Connecting`。
+- **大文件加载**（0.18.30）：rope 建树与行索引重建移出主线程并流式化，30MB 文档加载期堆增量
+  97.4MB → 45.4MB；≥10MB 文件统一走只读分页查看器，堵住会话恢复与「用编辑器打开」两条绕过路径。
+- **滚动与增量高亮**（0.18.29）：编辑器滚动与增量高亮性能优化。
 
 ### Fixed
 
-#### 编辑器缓冲区关闭后的残留绘制帧崩溃
-
-宿主关闭 `RopeTextBuffer` 后，仍持有旧 `EditorState` 的 Canvas 节点可能再次执行绘制，
-读取已关闭 buffer 触发 `IllegalStateException`。现在 `TextBuffer.isClosed` 可在关闭后安全查询，
-两个 Canvas 绘制入口统一走 `drawEditorFrame`，已关闭的帧只画背景并恢复裁剪；
-关闭后文本访问仍 fail-fast（不返回伪造空文档），`TextBufferClosedException` 用于区分关闭与其他状态错误。
-配套 `EditorCanvasClosedBufferTest`（Robolectric Native Graphics 真实 `draw`）与
-`EditorDrawFrameTest`（跨线程确定性时序）回归测试。
-
-#### 光标手势与撤销边界修复
-
-输入法组合未结束时触发行号栏光标变更会先提交组合；Alt 点击与矩形选择手势补齐测试覆盖；
-全部替换撤销后的光标偏移与预期一致。
+- **编辑器缓冲区关闭后的残留绘制帧崩溃**（0.18.35）：Canvas 绘制入口统一帧级守卫，已关闭 buffer 只画背景
+  并恢复裁剪；关闭后文本访问仍 fail-fast，附 Robolectric 真实 `draw` 回归测试。
+- **无扩展名 C++ 系统头**（0.18.30）：`vector`、`iostream` 等标准库头现在能挂 clangd（语言 ID `cpp`）
+  并有 Tree-sitter 语法高亮。
+- **raylib / NativeActivity 误判**（0.18.30）：运行链路改由独立的 `nativeActivityRuntime` 字段描述，
+  不再被库名与旧值固化误判成终端程序导致运行无画面。
+- **运行终端回车关闭竞态**（0.18.30）：程序结束前的 Enter 不再误关面板；输入回车只送标准输入，
+  程序结束后需再次回车才关闭。
+- **崩溃墓碑反查 mapping**（0.18.34）：构建生成 `<gitShortSha>-<时间戳>` buildId，
+  mapping 归档 `app/mappings/<versionName>-<buildId>/`，墓碑 App version 可唯一定位产生 APK 的 mapping。
+- **光标手势与撤销边界**（0.18.35）：IME 组合未结束时行号栏光标变更先提交组合；
+  Alt 点击与矩形选择手势补齐覆盖；全部替换撤销后光标偏移正确。
+- **编辑器内核测试套件**（0.18.33）：修复 Robolectric SDK pin 与 undo 光标语义等问题，kit 侧单测全绿；
+  补齐全部 15 个 Tree-sitter grammar 复合构建替换、恢复 ktlint、`compileSdk` 回到宿主基线 36。
 
 ## [0.18.34] - 2026-10-04
 
