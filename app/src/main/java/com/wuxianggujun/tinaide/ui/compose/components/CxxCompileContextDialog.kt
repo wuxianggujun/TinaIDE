@@ -31,8 +31,10 @@ fun CxxCompileContextDialog(
     status: EditorStatus,
     context: CxxCompileContextSnapshot?,
     onReload: () -> Unit,
+    onReconfigure: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val showReconfigure = context?.issue == CxxCompileContextIssue.COMPILE_DATABASE_STALE
     TinaAlertDialog(
         onDismissRequest = onDismiss,
         title = {
@@ -79,6 +81,13 @@ fun CxxCompileContextDialog(
                                 text = issueText(issue),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                        if (showReconfigure) {
+                            TinaOutlinedButton(
+                                text = stringResource(Strings.cxx_context_reconfigure),
+                                onClick = onReconfigure,
+                                enabled = status != EditorStatus.Connecting && status != EditorStatus.Busy,
                             )
                         }
                     }
@@ -287,6 +296,8 @@ private fun issueText(issue: CxxCompileContextIssue): String = when (issue) {
         stringResource(Strings.cxx_context_issue_database_missing)
     CxxCompileContextIssue.COMPILE_DATABASE_INVALID ->
         stringResource(Strings.cxx_context_issue_database_invalid)
+    CxxCompileContextIssue.COMPILE_DATABASE_STALE ->
+        stringResource(Strings.cxx_context_issue_database_stale)
     CxxCompileContextIssue.FILE_COMMAND_MISSING ->
         stringResource(Strings.cxx_context_issue_command_missing)
     CxxCompileContextIssue.COMPILE_SETUP_UNAVAILABLE ->

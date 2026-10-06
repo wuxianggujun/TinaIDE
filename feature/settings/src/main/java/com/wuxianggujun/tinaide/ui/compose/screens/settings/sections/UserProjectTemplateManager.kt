@@ -39,6 +39,8 @@ internal data class UserProjectTemplateMetadataUpdate(
     val buildSystem: ProjectBuildSystem? = null,
     val primaryLanguage: ProjectLanguage? = null,
     val isNdkTemplate: Boolean = false,
+    val defaultRunTargetName: String? = null,
+    val defaultSdlTargetName: String? = null,
     val variables: Map<String, String> = emptyMap(),
 )
 
@@ -423,6 +425,8 @@ internal object UserProjectTemplateManager {
         if (isNdkTemplate) {
             put("ndkTemplate", true)
         }
+        defaultRunTargetName.trimToNull()?.let { put("defaultRunTargetName", it) }
+        defaultSdlTargetName.trimToNull()?.let { put("defaultSdlTargetName", it) }
         val normalizedVariables = variables.normalizedVariables()
         if (normalizedVariables.isNotEmpty()) {
             put(

@@ -13,4 +13,5 @@ dependencies {
     implementation(project.dependencies.project(":core:i18n"))
     implementation(libs.timber)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.kotlinx.coroutines)
 }

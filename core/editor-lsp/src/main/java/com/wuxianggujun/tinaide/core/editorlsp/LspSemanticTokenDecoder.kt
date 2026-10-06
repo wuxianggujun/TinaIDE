@@ -1,6 +1,8 @@
 ﻿package com.wuxianggujun.tinaide.core.editorlsp
 
 import com.wuxianggujun.tinaide.core.editorlsp.SemanticToken
+import com.wuxianggujun.tinaide.core.editorapi.SemanticTokenModifier
+import com.wuxianggujun.tinaide.core.editorapi.SemanticTokenType
 
 object LspSemanticTokenDecoder {
     private const val TOKEN_STEP = 5
@@ -37,7 +39,9 @@ object LspSemanticTokenDecoder {
                         line = line,
                         startColumn = startColumn.coerceAtLeast(0),
                         length = length,
-                        tokenType = tokenTypes.getOrElse(tokenTypeIndex) { FALLBACK_TOKEN_TYPE },
+                        tokenType = SemanticTokenType.fromWireName(
+                            tokenTypes.getOrElse(tokenTypeIndex) { FALLBACK_TOKEN_TYPE }
+                        ),
                         tokenModifiers = decodeModifierBits(modifierBits, tokenModifiers)
                     )
                 )
@@ -50,14 +54,16 @@ object LspSemanticTokenDecoder {
     private fun decodeModifierBits(
         bitset: Int,
         tokenModifiers: List<String>
-    ): Set<String> {
+    ): Set<SemanticTokenModifier> {
         if (bitset == 0 || tokenModifiers.isEmpty()) return emptySet()
-        val out = LinkedHashSet<String>()
+        val out = LinkedHashSet<SemanticTokenModifier>()
         var bits = bitset
         var bitIndex = 0
         while (bits != 0) {
             if ((bits and 1) != 0) {
-                tokenModifiers.getOrNull(bitIndex)?.let { out.add(it) }
+                tokenModifiers.getOrNull(bitIndex)
+                    ?.let(SemanticTokenModifier::fromWireName)
+                    ?.let(out::add)
             }
             bits = bits ushr 1
             bitIndex++

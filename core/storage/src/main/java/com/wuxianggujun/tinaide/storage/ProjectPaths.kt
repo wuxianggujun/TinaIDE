@@ -23,6 +23,7 @@ import java.io.File
  *    - rootfs/        - Linux rootfs（Ubuntu）
  *    - toolchain/     - 工具链
  *    - proot/         - PRoot 相关文件
+ *    - installed-packages/ - 已安装的运行时包（C/C++ 库）
  *    - sync-meta/     - 同步元数据
  *    - config.json    - 应用配置
  *
@@ -173,6 +174,14 @@ object ProjectPaths {
      * 工具链根目录
      */
     fun getToolchainRoot(context: Context): File = File(context.filesDir, "toolchain")
+
+    /**
+     * 已安装的运行时包根目录。
+     *
+     * 典型路径：/data/data/<package>/files/installed-packages
+     * 用途：C/C++ 运行时库包（用于 NativeActivity/SDL 运行时依赖解析）。
+     */
+    fun getInstalledPackagesRoot(context: Context): File = File(context.filesDir, "installed-packages")
 
     /**
      * 同步元数据目录（私有）

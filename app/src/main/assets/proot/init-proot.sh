@@ -301,6 +301,11 @@ ARGS="$ARGS --link2symlink"
 # --kill-on-exit: 退出时杀死所有子进程
 ARGS="$ARGS --kill-on-exit"
 
+# --sysvipc: 在 proot 内部实现 System V IPC（shmget/semget/msgget）。
+# Android 内核不暴露这些 syscall，而 dbus 与 X11 客户端库会用到；
+# 缺少时表现为桌面组件启动即失败。注意：每个 proot 实例是独立 IPC namespace。
+ARGS="$ARGS --sysvipc"
+
 # 绑定设备与进程目录
 bind_dir_if_accessible "/dev"
 # /dev/urandom -> /dev/random（某些程序依赖 /dev/random 但 Android 上不一定可用）
@@ -309,6 +314,16 @@ if [ -e "/dev/urandom" ]; then
 fi
 bind_dir_if_accessible "/proc"
 bind_dir_if_accessible "/sys"
+
+# /dev/shm：Android 的 /dev 里没有 shm，而 X11 的 MIT-SHM、dbus 和多数桌面工具都要它。
+# 缺失时 GTK/Qt 通常能退回 socket 传输，但 XFCE 的部分组件会直接报错。
+# 复用 <rootfs>/tmp 是刻意的：guest 的 /tmp 与它同 inode（见 X11SocketLayout），
+# 桌面进程在两个路径下看到的是同一份共享内存文件。
+SHM_DIR="$ROOTFS_PATH/tmp"
+mkdir -p "$SHM_DIR" 2>/dev/null || true
+if [ -d "$SHM_DIR" ]; then
+    add_bind "$SHM_DIR" "/dev/shm"
+fi
 
 # 绑定存储目录（让用户在 PRoot 环境内可访问外部存储）
 # 使用 bind_storage_dir：即使没有 -x 权限也尝试绑定

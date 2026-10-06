@@ -84,8 +84,44 @@ internal fun StorageSettingsSection(
                     fallbackValue = stringResource(Strings.settings_linux_health_unknown),
                 ),
                 onClick = { viewModel.refreshRootfsHealth(context) },
-                showDivider = false,
+                showDivider = activeProfile != null,
             )
+
+            if (activeProfile != null) {
+                SettingsClickableItem(
+                    title = stringResource(Strings.settings_linux_desktop_status),
+                    subtitle = state.linuxDesktopStatusText.ifBlank {
+                        stringResource(Strings.settings_linux_desktop_not_ready)
+                    },
+                    onClick = { viewModel.refreshLinuxDesktopStatus(context) },
+                    showDivider = true,
+                )
+
+                SettingsClickableItem(
+                    title = stringResource(Strings.settings_linux_desktop_install),
+                    subtitle = stringResource(Strings.settings_linux_desktop_install_desc),
+                    onClick = { viewModel.installUbuntuDesktop(context) },
+                    showDivider = true,
+                )
+
+                SettingsClickableItem(
+                    title = stringResource(Strings.settings_linux_desktop_open),
+                    subtitle = stringResource(Strings.settings_linux_desktop_open_desc),
+                    onClick = { viewModel.openLinuxDesktop(context) },
+                    showDivider = state.linuxDesktopSessionActive,
+                )
+
+                // 只在真的有会话时才给停止入口：没有会话时点它只会白跑一遍
+                // stopX11Server，还会让用户以为桌面本来在运行。
+                if (state.linuxDesktopSessionActive) {
+                    SettingsClickableItem(
+                        title = stringResource(Strings.settings_linux_desktop_stop),
+                        subtitle = stringResource(Strings.settings_linux_desktop_stop_desc),
+                        onClick = { viewModel.stopLinuxDesktop(context) },
+                        showDivider = false,
+                    )
+                }
+            }
         }
 
         SettingsCategoryTitle(stringResource(Strings.settings_linux_profiles))
@@ -109,15 +145,24 @@ internal fun StorageSettingsSection(
             }
         }
 
-        if (state.rootfsInstallMessage.isNotBlank()) {
+        if (state.rootfsInstallMessage.isNotBlank() || state.linuxDesktopMessage.isNotBlank()) {
             SettingsCategoryTitle(stringResource(Strings.settings_linux_install_status))
 
             SettingsCard {
-                SettingsDisplayItem(
-                    title = stringResource(Strings.settings_linux_install_status),
-                    value = state.rootfsInstallMessage,
-                    showDivider = false,
-                )
+                if (state.rootfsInstallMessage.isNotBlank()) {
+                    SettingsDisplayItem(
+                        title = stringResource(Strings.settings_linux_install_status),
+                        value = state.rootfsInstallMessage,
+                        showDivider = state.linuxDesktopMessage.isNotBlank(),
+                    )
+                }
+                if (state.linuxDesktopMessage.isNotBlank()) {
+                    SettingsDisplayItem(
+                        title = stringResource(Strings.settings_linux_desktop_status),
+                        value = state.linuxDesktopMessage,
+                        showDivider = false,
+                    )
+                }
             }
         }
     }
@@ -178,6 +223,20 @@ internal fun StorageSettingsSection(
             title = stringResource(Strings.settings_linux_installing),
             message = state.rootfsInstallMessage,
             progress = state.rootfsInstallProgress,
+        )
+    }
+
+    if (state.linuxDesktopBusy) {
+        TinaLoadingDialog(
+            title = stringResource(
+                when {
+                    state.linuxDesktopStopping -> Strings.settings_linux_desktop_stopping
+                    state.linuxDesktopStarting -> Strings.settings_linux_desktop_starting
+                    else -> Strings.settings_linux_desktop_installing
+                },
+            ),
+            message = state.linuxDesktopMessage,
+            progress = state.linuxDesktopProgress,
         )
     }
 

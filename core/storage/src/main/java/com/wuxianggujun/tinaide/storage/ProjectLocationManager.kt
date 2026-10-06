@@ -67,7 +67,7 @@ class ProjectLocationManager(
 
     fun getProjectLocation(projectId: String): ProjectLocation? = projectMappingsById[projectId]
 
-    fun registerProject(sourceDir: File): ProjectLocation {
+    suspend fun registerProject(sourceDir: File): ProjectLocation {
         val registration = prepareProjectRegistration(sourceDir)
         if (registration.changed) {
             saveProjectMapping(registration.location)
@@ -92,7 +92,7 @@ class ProjectLocationManager(
         registration.location
     }
 
-    private fun prepareProjectRegistration(sourceDir: File): PreparedProjectRegistration {
+    private suspend fun prepareProjectRegistration(sourceDir: File): PreparedProjectRegistration {
         require(sourceDir.exists() && sourceDir.isDirectory) {
             "Invalid project source directory"
         }
@@ -332,7 +332,7 @@ class ProjectLocationManager(
     fun findProjectByPath(projectPath: String): ProjectLocation? = projectIdBySourceRootPath[normalizePath(projectPath)]
         ?.let(projectMappingsById::get)
 
-    private fun migrateLegacyPrivateProjectsIfNeeded() {
+    private suspend fun migrateLegacyPrivateProjectsIfNeeded() {
         val markerFile = File(context.filesDir, LEGACY_PRIVATE_PROJECTS_MIGRATION_MARKER)
         if (markerFile.exists()) {
             return
@@ -372,7 +372,7 @@ class ProjectLocationManager(
         }
     }
 
-    private fun registerProjectsFromPrivateRoot() {
+    private suspend fun registerProjectsFromPrivateRoot() {
         val privateProjectsRoot = ProjectPaths.getPrivateProjectsRoot(context).apply { mkdirs() }
         privateProjectsRoot.listFiles()
             ?.asSequence()
@@ -385,7 +385,7 @@ class ProjectLocationManager(
             }
     }
 
-    private fun resolveLegacyProjectTarget(privateProjectsRoot: File, legacyDir: File): File {
+    private suspend fun resolveLegacyProjectTarget(privateProjectsRoot: File, legacyDir: File): File {
         val preferredTarget = File(privateProjectsRoot, legacyDir.name)
         if (!preferredTarget.exists()) {
             return preferredTarget
@@ -410,13 +410,13 @@ class ProjectLocationManager(
         }
     }
 
-    private fun moveLegacyProjectDir(source: File, target: File): Boolean {
+    private suspend fun moveLegacyProjectDir(source: File, target: File): Boolean {
         if (source.canonicalOrAbsolutePath() == target.canonicalOrAbsolutePath()) {
             return true
         }
 
         val sourceProjectId = ProjectMetadataStore.read(source)?.id
-        val targetProjectId = target.takeIf(File::exists)?.let(ProjectMetadataStore::read)?.id
+        val targetProjectId = target.takeIf(File::exists)?.let { ProjectMetadataStore.read(it) }?.id
         if (!sourceProjectId.isNullOrBlank() && sourceProjectId == targetProjectId) {
             if (!source.deleteRecursively()) {
                 Timber.tag(TAG).w("Failed to delete duplicate legacy project directory")

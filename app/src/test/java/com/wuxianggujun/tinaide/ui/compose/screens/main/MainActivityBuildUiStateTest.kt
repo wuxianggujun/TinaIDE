@@ -4,6 +4,7 @@ import com.google.common.truth.Truth.assertThat
 import com.wuxianggujun.tinaide.core.compile.BuildSystem
 import com.wuxianggujun.tinaide.core.compile.RunConfiguration
 import com.wuxianggujun.tinaide.core.compile.RunConfigurationManager
+import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
 class MainActivityBuildUiStateTest {
@@ -60,7 +61,7 @@ class MainActivityBuildUiStateTest {
     }
 
     @Test
-    fun commitRunConfigManager_whenPersistenceSucceeds_shouldUpdateState() {
+    fun commitRunConfigManager_whenPersistenceSucceeds_shouldUpdateState() = runTest {
         val initialManager = runConfigManagerWithSelectedName("Debug")
         val updatedManager = runConfigManagerWithSelectedName("Release")
         val state = MainActivityBuildUiState(initialManager)
@@ -72,7 +73,7 @@ class MainActivityBuildUiStateTest {
     }
 
     @Test
-    fun commitRunConfigManager_whenPersistenceFails_shouldKeepPreviousState() {
+    fun commitRunConfigManager_whenPersistenceFails_shouldKeepPreviousState() = runTest {
         val initialManager = runConfigManagerWithSelectedName("Debug")
         val updatedManager = runConfigManagerWithSelectedName("Release")
         val state = MainActivityBuildUiState(initialManager)
@@ -84,7 +85,7 @@ class MainActivityBuildUiStateTest {
     }
 
     @Test
-    fun commitRunConfigManager_whenPersistenceFails_shouldKeepPreviousSelection() {
+    fun commitRunConfigManager_whenPersistenceFails_shouldKeepPreviousSelection() = runTest {
         val debugConfig = RunConfiguration(name = "Debug")
         val releaseConfig = RunConfiguration(name = "Release")
         val initialManager = RunConfigurationManager(
@@ -102,7 +103,40 @@ class MainActivityBuildUiStateTest {
     }
 
     @Test
-    fun commitRunConfigManager_whenSelectedSingleFileStandardChanges_shouldNotifyAfterPersistence() {
+    fun runConfigLoading_shouldBlockEditingAndPersistenceUntilLoaded() = runTest {
+        val initialManager = runConfigManagerWithSelectedName("Temporary")
+        val loadedManager = runConfigManagerWithSelectedName("Loaded")
+        val state = MainActivityBuildUiState(initialRunConfigManager = initialManager)
+        var persistenceAttempted = false
+
+        state.openRunConfigDialog()
+        assertThat(state.showRunConfigDialog).isTrue()
+
+        state.beginRunConfigLoading()
+        val committed = state.commitRunConfigManager(
+            updated = loadedManager,
+            persist = {
+                persistenceAttempted = true
+                true
+            },
+        )
+
+        assertThat(state.showRunConfigDialog).isFalse()
+        assertThat(state.editingConfig).isNull()
+        assertThat(state.isRunConfigLoading).isTrue()
+        assertThat(committed).isFalse()
+        assertThat(persistenceAttempted).isFalse()
+
+        state.applyLoadedRunConfigManager(loadedManager)
+        state.openRunConfigDialog()
+
+        assertThat(state.isRunConfigLoading).isFalse()
+        assertThat(state.runConfigManager).isEqualTo(loadedManager)
+        assertThat(state.showRunConfigDialog).isTrue()
+    }
+
+    @Test
+    fun commitRunConfigManager_whenSelectedSingleFileStandardChanges_shouldNotifyAfterPersistence() = runTest {
         val initialConfig = RunConfiguration(name = "Debug", singleFileCppStandard = "CPP_17")
         val initialManager = managerWithSelectedConfig(initialConfig)
         val state = MainActivityBuildUiState(initialManager).apply {
@@ -121,7 +155,7 @@ class MainActivityBuildUiStateTest {
     }
 
     @Test
-    fun commitRunConfigManager_whenPersistenceFails_shouldNotNotifyStandardChange() {
+    fun commitRunConfigManager_whenPersistenceFails_shouldNotNotifyStandardChange() = runTest {
         val initialConfig = RunConfiguration(name = "Debug", singleFileCppStandard = "CPP_17")
         val initialManager = managerWithSelectedConfig(initialConfig)
         val state = MainActivityBuildUiState(initialManager).apply {
@@ -139,7 +173,7 @@ class MainActivityBuildUiStateTest {
     }
 
     @Test
-    fun commitRunConfigManager_whenUnselectedStandardChanges_shouldNotNotify() {
+    fun commitRunConfigManager_whenUnselectedStandardChanges_shouldNotNotify() = runTest {
         val selected = RunConfiguration(name = "Debug", singleFileCppStandard = "CPP_17")
         val unselected = RunConfiguration(name = "Release", singleFileCppStandard = "CPP_17")
         val initialManager = RunConfigurationManager(
@@ -161,7 +195,7 @@ class MainActivityBuildUiStateTest {
     }
 
     @Test
-    fun commitRunConfigManager_whenSelectionChangesToDifferentStandard_shouldNotify() {
+    fun commitRunConfigManager_whenSelectionChangesToDifferentStandard_shouldNotify() = runTest {
         val cpp17 = RunConfiguration(name = "C++17", singleFileCppStandard = "CPP_17")
         val cpp20 = RunConfiguration(name = "C++20", singleFileCppStandard = "CPP_20")
         val initialManager = RunConfigurationManager(
@@ -183,7 +217,7 @@ class MainActivityBuildUiStateTest {
     }
 
     @Test
-    fun commitRunConfigManager_whenSelectionKeepsSameStandard_shouldNotNotify() {
+    fun commitRunConfigManager_whenSelectionKeepsSameStandard_shouldNotNotify() = runTest {
         val first = RunConfiguration(name = "First", singleFileCppStandard = "CPP_20")
         val second = RunConfiguration(name = "Second", singleFileCppStandard = "c++20")
         val initialManager = RunConfigurationManager(
@@ -205,7 +239,7 @@ class MainActivityBuildUiStateTest {
     }
 
     @Test
-    fun commitRunConfigManager_forNonSingleFileProject_shouldNotNotify() {
+    fun commitRunConfigManager_forNonSingleFileProject_shouldNotNotify() = runTest {
         val initialConfig = RunConfiguration(name = "Debug", singleFileCppStandard = "CPP_17")
         val initialManager = managerWithSelectedConfig(initialConfig)
         val state = MainActivityBuildUiState(initialManager).apply {

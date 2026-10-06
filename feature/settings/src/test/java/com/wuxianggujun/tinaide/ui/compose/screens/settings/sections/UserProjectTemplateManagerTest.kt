@@ -304,6 +304,29 @@ class UserProjectTemplateManagerTest {
     }
 
     @Test
+    fun updateTemplateMetadata_shouldWriteRunAndSdlTargetNames() {
+        val dir = tempDir("user-template-target-update")
+        try {
+            val source = dir.resolve("demo.zip")
+            zipFile(source, "CMakeLists.txt" to "cmake_minimum_required(VERSION 3.10)")
+
+            val item = UserProjectTemplateManager.updateTemplateMetadata(
+                templatesDir = dir,
+                templateName = "demo.zip",
+                metadata = UserProjectTemplateMetadataUpdate(
+                    defaultRunTargetName = "{{PROJECT_NAME}}_test",
+                    defaultSdlTargetName = "{{PROJECT_NAME}}",
+                ),
+            )
+
+            assertThat(item.metadata?.defaultRunTargetName).isEqualTo("{{PROJECT_NAME}}_test")
+            assertThat(item.metadata?.defaultSdlTargetName).isEqualTo("{{PROJECT_NAME}}")
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
     fun updateTemplateMetadata_shouldRemoveMetadataWhenFieldsAreBlank() {
         val dir = tempDir("user-template-metadata-clear")
         try {
@@ -329,6 +352,8 @@ class UserProjectTemplateManagerTest {
                     buildSystem = null,
                     primaryLanguage = null,
                     isNdkTemplate = false,
+                    defaultRunTargetName = "  ",
+                    defaultSdlTargetName = "",
                 ),
             )
 

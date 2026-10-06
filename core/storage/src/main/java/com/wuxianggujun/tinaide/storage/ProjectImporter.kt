@@ -407,7 +407,7 @@ object ProjectImporter {
         }
     }
 
-    private fun ensureUniqueImportedProjectIdentity(
+    private suspend fun ensureUniqueImportedProjectIdentity(
         projectDir: File,
         projectsRoot: File,
         projectLocationManager: ProjectLocationManager,
@@ -418,12 +418,14 @@ object ProjectImporter {
             ?.takeIf { it.sourceRootPath != projectPath }
             ?.let { File(it.sourceRootPath).isDirectory }
             ?: false
-        val managedConflict = projectsRoot.listFiles()
-            .orEmpty()
-            .asSequence()
-            .filter { it.isDirectory && it.canonicalOrAbsolutePath() != projectPath }
-            .mapNotNull(ProjectMetadataStore::read)
-            .any { it.id == metadata.id }
+        var managedConflict = false
+        for (other in projectsRoot.listFiles().orEmpty()) {
+            if (!other.isDirectory || other.canonicalOrAbsolutePath() == projectPath) continue
+            if (ProjectMetadataStore.read(other)?.id == metadata.id) {
+                managedConflict = true
+                break
+            }
+        }
         if (!registeredConflict && !managedConflict) return metadata
 
         val reidentified = metadata.copy(id = ProjectIdentity.create())

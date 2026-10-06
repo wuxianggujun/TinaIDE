@@ -8,6 +8,7 @@ import com.wuxianggujun.tinaide.core.symbol.FuzzySymbolMatch
 import com.wuxianggujun.tinaide.core.symbol.IProjectSymbolIndexService
 import com.wuxianggujun.tinaide.core.symbol.SymbolIndexStatus
 import com.wuxianggujun.tinaide.core.symbol.SymbolInfo
+import com.wuxianggujun.tinaide.core.treesitter.TreeSitterRuntime
 import java.io.ByteArrayOutputStream
 import java.io.Closeable
 import java.io.File
@@ -73,6 +74,14 @@ class ProjectSymbolIndexService(
         private const val MAX_INDEX_FILES = 50_000
         private const val MAX_SCAN_ENTRIES = 100_000
         private const val MAX_SCAN_DEPTH = 64
+    }
+
+    init {
+        // This service uses raw parsers rather than the language registry. Initialize
+        // on demand, before allocating parsers or launching the service's scope.
+        runCatching { TreeSitterRuntime.ensureInitialized() }
+            .onFailure { Timber.tag(TAG).e(it, "Failed to initialize Tree-sitter for symbol indexing") }
+            .getOrThrow()
     }
 
     data class IndexStatus(

@@ -6,7 +6,6 @@ import android.app.Application.ActivityLifecycleCallbacks
 import android.content.Context
 import androidx.compose.ui.ComposeUiFlags
 import androidx.compose.ui.ExperimentalComposeUiApi
-import com.itsaky.androidide.treesitter.TreeSitter
 import com.wuxianggujun.tinaide.core.compile.di.compileModule
 import com.wuxianggujun.tinaide.core.config.IConfigManager
 import com.wuxianggujun.tinaide.core.config.di.configModule
@@ -17,6 +16,7 @@ import com.wuxianggujun.tinaide.core.i18n.AppStrings
 import com.wuxianggujun.tinaide.core.logging.LogProcessRegistry
 import com.wuxianggujun.tinaide.core.logging.TinaTimber
 import com.wuxianggujun.tinaide.core.proot.PRootBootstrap
+import com.wuxianggujun.tinaide.core.linuxdesktop.di.linuxDesktopModule
 import com.wuxianggujun.tinaide.core.proot.di.prootModule
 import com.wuxianggujun.tinaide.core.util.CrashLogPrivacyClassifier
 import com.wuxianggujun.tinaide.database.di.databaseModule
@@ -26,6 +26,8 @@ import com.wuxianggujun.tinaide.di.appViewModelModule
 import com.wuxianggujun.tinaide.editor.di.editorModule
 import com.wuxianggujun.tinaide.extensions.applyTinaSystemBars
 import com.wuxianggujun.tinaide.output.di.outputModule
+import com.wuxianggujun.tinaide.plugin.PluginCapabilities
+import com.wuxianggujun.tinaide.plugin.PluginManager
 import com.wuxianggujun.tinaide.plugin.di.pluginModule
 import com.wuxianggujun.tinaide.startup.BundledPackagesInstallTask
 import com.wuxianggujun.tinaide.startup.AppProcessRole
@@ -45,6 +47,7 @@ import com.wuxianggujun.tinaide.ui.workspace.di.workspaceModule
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import org.koin.android.ext.koin.androidContext
 import org.koin.core.context.startKoin
@@ -109,7 +112,12 @@ class TinaApplication : Application() {
                 null
             }
         )
-        NativeCrashHandler.install(this)
+        NativeCrashHandler.install(
+            this,
+            // 形如 "0.18.34 (code 1834, build 00aca1bfa-20261001103000)"。
+            // buildId 与 R8 mapping 归档目录名同源，用于混淆栈反查。
+            appVersionLabel = "${BuildConfig.VERSION_NAME} (code ${BuildConfig.VERSION_CODE}, build ${BuildConfig.BUILD_ID})",
+        )
 
         // 初始化 Timber 日志框架（尽早初始化以捕获所有日志）
         val logsRoot = com.wuxianggujun.tinaide.storage.ProjectPaths.getLogsRoot(this)
@@ -160,14 +168,6 @@ class TinaApplication : Application() {
         // 初始化项目元数据存储的 IDE 版本信息
         ProjectMetadataInitializer(BuildConfig.VERSION_NAME).execute()
 
-        // 能执行到这里的只有 HOST 进程。
-        runCatching {
-            TreeSitter.loadLibrary()
-            Timber.i("android-tree-sitter native library loaded successfully")
-        }.onFailure { t ->
-            Timber.e(t, "CRITICAL: Failed to load android-tree-sitter native library — tree-sitter features will crash")
-        }
-
         // 清理旧的崩溃日志（保留最近 10 个）
         NativeCrashHandler.cleanupOldTombstones(10)
 
@@ -188,6 +188,7 @@ class TinaApplication : Application() {
                 workspaceModule,
                 debugModule,
                 prootModule,
+                linuxDesktopModule,
                 compileModule,
                 appModule,
                 appViewModelModule,
@@ -234,22 +235,29 @@ class TinaApplication : Application() {
             override fun onActivityDestroyed(activity: Activity) = Unit
         })
 
-        // 启动时后台初始化 PRoot 环境（仅在工作空间配置完成后）
-        // 首次启动时，PRoot 环境会在 DependencyInstallActivity 中安装
-        // 非首次启动时，在后台检查并更新 PRoot 环境
-        // 注意：CrashActivity 运行在 :crash 进程，避免多进程同时解包导致环境损坏
+        // PRoot 运行载荷随 APK 内置，但功能启停只由插件 linuxEnvironment capability 决定。
+        // 注意：这里只在 HOST 进程监听，避免多进程同时操作 rootfs。
+        val pluginManager: PluginManager = koinGet(PluginManager::class.java)
+        val startupFlowManager = StartupFlowManager(
+            this,
+            koinGet(IConfigManager::class.java),
+        )
         applicationScope.launch(Dispatchers.IO) {
-            val prootEnvReady = StartupFlowManager(
-                this@TinaApplication,
-                koinGet(IConfigManager::class.java),
-            ).isPRootEnvironmentReady()
+            pluginManager.enabledCapabilitiesFlow.collect { capabilities ->
+                if (PluginCapabilities.LINUX_ENVIRONMENT !in capabilities) {
+                    PRootBootstrap.cancel(
+                        applicationContext = this@TinaApplication,
+                        reason = "Linux environment plugin disabled",
+                    )
+                    Timber.tag(TAG).i("Skip PRoot bootstrap: linuxEnvironment capability disabled")
+                    return@collect
+                }
 
-            // 注意：PRoot Linux 环境是可选功能，不应因为"启动流程完成"而自动触发下载/安装。
-            // 仅当检测到 PRoot 环境已就绪（rootfs 已存在）时，才在后台做更新/修复。
-            if (prootEnvReady) {
-                PRootBootstrap.start(this@TinaApplication)
-            } else {
-                Timber.tag(TAG).i("Skip PRoot bootstrap: environment not ready")
+                if (startupFlowManager.isPRootEnvironmentReady()) {
+                    PRootBootstrap.start(this@TinaApplication)
+                } else {
+                    Timber.tag(TAG).i("Skip PRoot bootstrap: environment not ready")
+                }
             }
         }
     }

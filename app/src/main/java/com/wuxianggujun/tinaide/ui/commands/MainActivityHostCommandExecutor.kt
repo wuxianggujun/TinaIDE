@@ -228,7 +228,7 @@ class MainActivityHostCommandExecutor(
                 editorContainerState.showSearch()
                 true
             }
-            HostCommands.EDITOR_REPLACE -> openDialogForActiveEditableEditor(dialogState::openReplaceDialog)
+            HostCommands.EDITOR_REPLACE -> openDialogForActiveEditableEditor(editorContainerState::showReplace)
             HostCommands.EDITOR_GOTO_LINE -> openDialogForActiveEditableEditor(dialogState::openGotoLineDialog)
             HostCommands.EDITOR_NAVIGATE_BACK -> editorContainerState.navigateBack()
             HostCommands.EDITOR_NAVIGATE_FORWARD -> editorContainerState.navigateForward()

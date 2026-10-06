@@ -58,8 +58,8 @@ class TinaAndroidAppTreeSitterPlugin : Plugin<Project> {
             val grammarModulesRootFile = rootProject
                 .file("external/tina-android-tree-sitter/grammar-modules")
 
-            // 强制 :core:tree-sitter 先 evaluate,这样在 task 执行阶段读取其
-            // `implementation` configuration 才能命中(configure-on-demand 下
+            // 强制 grammar pack 先 evaluate,这样在 task 执行阶段读取其
+            // `api` / `implementation` configuration 才能命中(configure-on-demand 下
             // 如果不 trigger, 会抛 "Configuration with name 'implementation' not found")。
             evaluationDependsOn(TinaTreeSitterSupport.DEFAULT_GRAMMAR_SOURCE_PROJECT_PATH)
 

@@ -1,7 +1,11 @@
 # PC 端远程 LSP 代理配置指南
 
-> 更新日期：2026-08-20
-> 适用版本：TinaIDE 0.18.11 及后续当前分支
+> 最后人工核验：2026-09-09
+> 适用版本：TinaIDE 0.18.29 及后续当前分支
+>
+> 定位：**外部工具使用说明 + 自定义代理实现要求**。本文不描述仓库内的代理实现，
+> 因为当前仓库不内置任何 PC 代理（`tools/` 下没有 LSP 代理脚本或工程）。
+> Android 客户端侧实现见 `core/lsp/.../RemoteLspConnectionProvider.kt` 与 `ProjectSyncManager.kt`。
 
 本文只描述当前仓库能验证的远程 LSP 代理部署方式。历史文档中的
 `tools/tina-lsp-proxy.py` 和 `tools/tina-lsp-proxy-kt` 当前不在仓库中，

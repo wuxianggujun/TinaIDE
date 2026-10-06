@@ -20,6 +20,9 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.security.MessageDigest
 import java.util.Properties
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 
 /**
@@ -99,6 +102,12 @@ class CompileDatabaseProvider(
         val toolchainId: String?,
         val sysrootProfileId: String?,
         val sysrootApiLevel: Int,
+        /**
+         * 外部（CMake 导出）编译数据库是否已过期：`CMakeLists.txt` 的修改时间晚于
+         * `compile_commands.json`，说明构建脚本改过但未重新 configure，数据库不再权威。
+         * 仅对 CMake 项目 + 外部权威数据库计算；Tina 兜底库走 [shouldGenerate] 自愈，不置此位。
+         */
+        val compileDatabaseStale: Boolean = false,
     )
 
     data class RuntimeIdentity(
@@ -113,12 +122,28 @@ class CompileDatabaseProvider(
         val regenerated: Boolean,
     )
 
-    fun prepare(
+    suspend fun prepare(
         file: File,
         projectRootPath: String?,
         toolchainId: String? = null,
         cppStandardOverride: String? = null,
         forceRegenerateFallback: Boolean = false,
+    ): Prepared? = withContext(Dispatchers.IO) {
+        prepareOnIo(
+            file = file,
+            projectRootPath = projectRootPath,
+            toolchainId = toolchainId,
+            cppStandardOverride = cppStandardOverride,
+            forceRegenerateFallback = forceRegenerateFallback,
+        )
+    }
+
+    private suspend fun prepareOnIo(
+        file: File,
+        projectRootPath: String?,
+        toolchainId: String?,
+        cppStandardOverride: String?,
+        forceRegenerateFallback: Boolean,
     ): Prepared? {
         val workspaceRoot = resolveWorkspaceRoot(file, projectRootPath) ?: return null
         val metadata = ProjectMetadataStore.read(workspaceRoot)
@@ -175,6 +200,10 @@ class CompileDatabaseProvider(
         } else {
             CxxCompileDatabaseSource.TINA_FALLBACK
         }
+        // 外部权威数据库不会被 fallback 重生成，需单独检测过期（CMakeLists 改过但未重新 configure）。
+        val compileDatabaseStale = compileDatabaseSource == CxxCompileDatabaseSource.EXTERNAL &&
+            isCmakeProject &&
+            isExternalCompileDatabaseStale(workspaceRoot, sourceCompileCommandsFile)
 
         if (CompileCommandsDebugLogger.isCompileCommandsSelectionEnabled()) {
             Timber.tag(TAG).i(
@@ -214,10 +243,35 @@ class CompileDatabaseProvider(
             toolchainId = runtimeIdentity.toolchainId,
             sysrootProfileId = runtimeIdentity.sysrootProfileId,
             sysrootApiLevel = runtimeIdentity.sysrootApiLevel,
+            compileDatabaseStale = compileDatabaseStale,
         )
     }
 
-    private fun ensure(prepared: Prepared): File? {
+    /**
+     * 外部编译数据库是否过期：`CMakeLists.txt` 修改时间晚于 `compile_commands.json`。
+     *
+     * 与 [com.wuxianggujun.tinaide.core.compile] 构建链路里 `CMakeStrategy.needsReconfigure`
+     * 的主信号一致（比较 CMakeLists.txt mtime vs 生成产物）。这里只做 MVP 主信号：
+     * 顶层 `CMakeLists.txt` 改过而数据库没跟上。装包漂移等 Phase 2 信号不在此判定。
+     */
+    private fun isExternalCompileDatabaseStale(workspaceRoot: File, compileCommandsFile: File): Boolean {
+        if (!compileCommandsFile.isFile) return false
+        val cmakeLists = File(workspaceRoot, "CMakeLists.txt")
+        if (!cmakeLists.isFile) return false
+        return cmakeLists.lastModified() > compileCommandsFile.lastModified()
+    }
+
+    /**
+     * 供缓存层（[com.wuxianggujun.tinaide.core.editorlsp.LspCompileSetupCache]）复用的过期判定：
+     * `CMakeLists.txt` 是否晚于给定目录下的 `compile_commands.json`。
+     *
+     * 缓存命中会冻结 [Prepared.compileDatabaseStale]，若不在自愈校验里重新比一次 mtime，
+     * 用户改完 CMakeLists 后过期信号会被旧快照盖掉。此方法就是那次重算入口。
+     */
+    fun isCompileDatabaseStale(workspaceRoot: File, compileCommandsDir: File): Boolean =
+        isExternalCompileDatabaseStale(workspaceRoot, File(compileCommandsDir, "compile_commands.json"))
+
+    private suspend fun ensure(prepared: Prepared): File? {
         val compileCommandsFile = File(prepared.compileCommandsDir, "compile_commands.json")
         val effectiveRunMode = LinuxRunModePolicy.resolve(
             configuredMode = Prefs.clangdRunMode,
@@ -480,7 +534,11 @@ class CompileDatabaseProvider(
         }.getOrNull()
     }
 
-    fun ensureWithResult(prepared: Prepared): EnsureResult? {
+    suspend fun ensureWithResult(prepared: Prepared): EnsureResult? = withContext(Dispatchers.IO) {
+        ensureWithResultOnIo(prepared)
+    }
+
+    private suspend fun ensureWithResultOnIo(prepared: Prepared): EnsureResult? {
         val ensuredDir = ensure(prepared) ?: return null
         return EnsureResult(ensuredDir, regenerated = prepared.shouldGenerate)
     }
@@ -499,13 +557,29 @@ class CompileDatabaseProvider(
      * 复用 [prepare] 内部的同一套指纹算法，保证与写入 meta 的 packageFingerprint 一致。
      * 内部会扫描磁盘（installed-packages 目录、项目 metadata），**请勿在主线程调用**。
      */
-    fun computePackageFingerprint(projectRoot: File?): String = resolvePackageFingerprint(projectRoot)
+    suspend fun computePackageFingerprint(projectRoot: File?): String = withContext(Dispatchers.IO) {
+        resolvePackageFingerprint(projectRoot)
+    }
 
-    fun prepareProvidedCompileCommandsForLsp(
+    suspend fun prepareProvidedCompileCommandsForLsp(
         sourceCompileCommandsFile: File,
         projectRootPath: String?,
         toolchainId: String? = null,
         cppStandardOverride: String? = null,
+    ): File? = withContext(Dispatchers.IO) {
+        prepareProvidedCompileCommandsForLspOnIo(
+            sourceCompileCommandsFile = sourceCompileCommandsFile,
+            projectRootPath = projectRootPath,
+            toolchainId = toolchainId,
+            cppStandardOverride = cppStandardOverride,
+        )
+    }
+
+    private suspend fun prepareProvidedCompileCommandsForLspOnIo(
+        sourceCompileCommandsFile: File,
+        projectRootPath: String?,
+        toolchainId: String?,
+        cppStandardOverride: String?,
     ): File? {
         if (!sourceCompileCommandsFile.isFile || sourceCompileCommandsFile.length() <= 0L) return null
 
@@ -683,7 +757,7 @@ class CompileDatabaseProvider(
         }
     }
 
-    private fun resolvePackageFingerprint(projectRoot: File?): String {
+    private suspend fun resolvePackageFingerprint(projectRoot: File?): String {
         val packagePaths = InstalledPackagePathResolver.resolve(appContext, projectRoot)
         val installedPackages = LocalInstallStateStore(appContext).getAllInstalledPackages()
 
@@ -747,10 +821,17 @@ class CompileDatabaseProvider(
         return null
     }
 
-    private fun resolveCppStandardFlag(workspaceRoot: File, override: String?): String =
+    private suspend fun resolveCppStandardFlag(workspaceRoot: File, override: String?): String =
         ProjectCppStandardResolver.resolveFlag(workspaceRoot, override)
 
-    fun resolveRuntimeIdentity(projectRoot: File?, toolchainId: String? = null): RuntimeIdentity {
+    suspend fun resolveRuntimeIdentity(projectRoot: File?, toolchainId: String? = null): RuntimeIdentity = withContext(Dispatchers.IO) {
+        resolveRuntimeIdentityOnIo(projectRoot, toolchainId)
+    }
+
+    private suspend fun resolveRuntimeIdentityOnIo(
+        projectRoot: File?,
+        toolchainId: String?,
+    ): RuntimeIdentity {
         val normalizedToolchainId = resolveEffectiveToolchainId(toolchainId)
         val effectiveRunMode = resolveEffectiveRunMode()
         val sysrootProfileId = if (effectiveRunMode == LinuxRunModePolicy.RunMode.NATIVE) {
@@ -781,12 +862,17 @@ class CompileDatabaseProvider(
         linuxEnvironmentAvailable = linuxEnvironmentProvider.get().isAvailable()
     )
 
-    private fun resolveSysrootApiLevel(projectRoot: File?): Int {
-        return projectRoot
-            ?.let { root ->
-                runCatching { ProjectMetadataStore.read(root)?.getNativeApiLevelOrNull() }.getOrNull()
+    private suspend fun resolveSysrootApiLevel(projectRoot: File?): Int {
+        val metadataApiLevel = projectRoot?.let { root ->
+            try {
+                ProjectMetadataStore.read(root)?.getNativeApiLevelOrNull()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                null
             }
-            ?: DEFAULT_SYSROOT_API_LEVEL
+        }
+        return metadataApiLevel ?: DEFAULT_SYSROOT_API_LEVEL
     }
 
     private fun materializeCompileCommandsForLsp(

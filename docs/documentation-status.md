@@ -1,6 +1,6 @@
 # TinaIDE 文档状态与生命周期
 
-> 最后人工核验：2026-08-20
+> 最后人工核验：2026-09-09
 
 本文用于说明仓库内文档的可信层级、维护边界和后续清理规则。遇到文档内容冲突时，先按这里的顺序判断，不要直接以历史设计稿或旧路线图作为当前实现依据。
 
@@ -11,7 +11,13 @@
    - `app/build.gradle.kts`
    - `build-logic/convention/**`
    - `core/**`、`feature/**`、`app/**` 当前源码
-2. 当前事实源文档
+2. 许可证与分发事实源
+   - `LICENSE`（GPL-3.0 全文）
+   - `COPYRIGHT.md`
+   - `NOTICE.md`
+
+   许可证口径以这三个文件为准，其他文档只做引用，不复制维护条款。
+3. 当前事实源文档
    - `README.md`
    - `README_EN.md`
    - `docs/README.md`
@@ -26,28 +32,40 @@
    - `docs/toolchain-build-guide.md`
    - `docs/proguard-rules-reference.md`
    - `docs/guides/MT-Data-Files-Provider.md`
-3. 当前专题文档
+   - `core/linux-desktop/README.md`（X11 桌面模块的当前实现说明）
+4. 当前专题文档
    - `docs/plugins/**`
    - `docs/guides/**`
    - `docs/testing/**`
    - `docs/troubleshooting/**`
-4. 设计与规划参考
+5. 设计与规划参考
    - `docs/design/**`
    - `docs/planning/**`
-5. 历史记录
+6. 历史记录
    - `CHANGELOG.md`
    - 明确标注为历史参考、阶段记录或迁移说明的文档
-6. 外部源码文档
+7. 对外申报材料
+   - `docs/software-copyright/**`：软著申报材料，功能描述必须与当前实际功能一致；
+     `private/` 属于保密信息，`generated/` 是生成产物，都不参与常规文档核验。
+8. 外部源码文档
    - `external/**` 下第三方项目或子模块自带文档
 
 ## 当前分级结果
 
 ### 当前事实源
 
+- 许可证：TinaIDE 整体以 **GPL-3.0-or-later** 分发（`0.18.29`，2026-09-03 变更）。根 `LICENSE` 是 FSF 官方 GPL-3.0 全文，`COPYRIGHT.md` 声明 SPDX 与分发要求，`NOTICE.md` 维护第三方组件清单。旧自定义许可证 "TinaIDE Open Source License Version 1.0" 已废弃，备份在 `docs/third-party-notices/TinaIDE-Custom-License-v1.0-superseded.txt`。变更起因是集成 termux-x11 的 X server（GPL-3.0）。
+- 分发阻塞项：`external/rikkahub` 采用 AGPL-3.0 加非商业与 ≤10 用户附加限制，违反 GPL-3.0 第 7 条。**冲突解决前，包含 RikkaHub 的构建产物不得对外分发。** 文档不得把“可对外分发的完整 APK”当成当前事实。
+- Linux 发行版：只支持 Ubuntu 24.04。Alpine 支持已在 `0.18.29` 整体移除，`AlpineMirrorManager`、Alpine 镜像设置 UI 和 `ConfigKeys.AlpineMirrorUrl` 都已删除；文档中的 Alpine 内容一律按过时处理，只有 `CHANGELOG.md` 允许保留历史记录。
+- X11 图形桌面：`:core:linux-desktop` 与 vendored `external/termux-x11`（`:termux-x11-lorie`、`:termux-x11-shell-loader-stub`）已进主干，`libXlorie.so` 在 Windows 宿主构建通过，X server 与渲染 UI 都在 `:x11` 独立进程。**尚未在真机验证 XFCE 桌面**，文档不得写成已交付功能。
 - 默认编译 / LSP：`native tina-toolchain + Android sysroot`，PRoot 只是可选 Linux 环境。
 - 编辑器 LSP 编排：`LspEditorManager`、内建 CMake / Make 会话和语义 token 解码已位于 `core:editor-lsp`，不再位于 `app` 状态包。
 - Linux distro manifest：启动和普通列表只读缓存或内置 asset；显式刷新可读取 Registry，按“新鲜缓存 → 远程多端点 → 过期缓存 → 内置 asset”回落，并支持下载镜像规则。
-- Android SDK 口径：`minSdk=28`、`targetSdk=36`、`compileSdk=37`，以 `app/build.gradle.kts` 为准。
+- Android SDK 口径：`minSdk=28`、`targetSdk=36`、`compileSdk=37`，以 `app/build.gradle.kts` 为准。注意这三个值只描述 `:app`；`core:*` / `feature:*` 等 library 模块由 `TinaVersions` 决定，其中 `COMPILE_SDK` 常量当前是 **36**，与 `:app` 的 37 不一致。引用编译期 SDK 时必须说明是哪一侧，只写一个数字会写错另一半。`editor-kit/` 下的 library 模块（含 `language-support`、`tree-sitter-grammars`）的 `compileSdk` 在 kit 构建脚本里统一为 **36**，不走 `TinaVersions`；示例 consumer 仍单独使用 37。
+- 模块清单只以 `settings.gradle.kts` 为准，本文与其他文档不维护副本。当前为 32 个 `core:*` 与 11 个 `feature:*`。`feature/license`、`feature/login`、`feature/membership` 三个空目录已在 0.18.35 清理删除。
+- 编辑器内核（`:core:editor-api` / `:core:language-support` / `:core:text-engine` / `:core:tree-sitter` / `:core:tree-sitter-grammars` / `:core:editor-view`）的唯一源码位于 `editor-kit/`。主工程通过 `settings.gradle.kts` 的 `projectDir` 映射消费这份源码，不在 `core/` 下保留副本。`editor-kit/` 同时是一个自带 Gradle wrapper、version catalog 与 `external/tina-android-tree-sitter` 复合构建的独立工程，可单独构建，也可被其他项目以 `includeBuild` 按坐标 `io.github.tinaide.editor:*:0.1.0-SNAPSHOT` 消费（`examples/consumer`）。**六个模块的构建脚本被两个构建根共用**：只能引用两套 `libs.versions.toml` 中都存在的别名，改动前必须同时考虑宿主 `tina` 约定插件与 kit 裸 AGP 配置的等价性。
+- 版本口径：当前 `versionName=0.18.35`、`versionCode=1836`，以 `version.properties` 为准。
+- 进程边界：除主进程外还有 `:x11`（X server 与桌面渲染）、`:sdl`、`:sdl2`、`:gui`、`:crash`；初始化逻辑不能混用，见 `TinaApplication` 的多进程分流。
 - RikkaHub：TinaIDE 主仓库不再维护自研 `feature:ai`；AI 聊天、模型、渠道、MCP 和 API Key 配置由内嵌 RikkaHub 维护。
 - App 内帮助：中文正文位于 `feature/help/src/main/assets/help/*.md`，英文正文位于 `feature/help/src/main/assets/help/en/*.md`；英文缺失或加载失败时回落到中文。
 - 远程 LSP：默认使用 WSS 且 Bearer Token 必需，WS 仅允许回环地址；Token 加密保存并排除备份。内置项目同步要求 `tina/syncProject`、`tina/syncProjectStart` 和每个 `tina/syncProjectChunk` 按 JSON-RPC `id` 返回 ACK。当前仓库不内置 PC 代理实现。
@@ -110,5 +128,7 @@
 
 - 每次 Release 前检查根 README、`docs/快速开始.md`、`docs/开发指南.md`、`docs/架构概览.md` 是否仍和构建脚本一致。
 - 文档改动至少运行 `py tools/checks/check_documentation.py`，并检查 `git diff` 与引用路径。
-- 修改插件 Registry、toolchain assets、PRoot/Linux distro、Release/R8 行为后，同步检查本文的“当前事实源”。
+- 修改插件 Registry、toolchain assets、PRoot/Linux distro、X11 桌面、Release/R8 行为后，同步检查本文的“当前事实源”。
+- 新增或升级第三方依赖后，同步检查 `NOTICE.md` 的组件清单与许可证兼容性结论。
+- X11 桌面在真机验证通过后，需要同时更新本文、`docs/架构概览.md`、根 README 和 `core/linux-desktop/README.md` 里的“尚未验证”表述。
 - 新增设计稿时，在 `docs/design/README.md` 中标注状态：`当前实现说明`、`设计参考` 或 `历史参考`。

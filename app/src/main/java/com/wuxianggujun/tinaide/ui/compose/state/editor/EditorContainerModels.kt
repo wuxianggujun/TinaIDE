@@ -110,13 +110,6 @@ sealed interface ActiveEditableEditorSnapshotResult {
     data class Success(val snapshot: ActiveEditableEditorSnapshot) : ActiveEditableEditorSnapshotResult
 }
 
-sealed interface ReplaceAllInActiveEditorResult {
-    object NoOpenFile : ReplaceAllInActiveEditorResult
-    object UnsupportedEditor : ReplaceAllInActiveEditorResult
-    object NoMatches : ReplaceAllInActiveEditorResult
-    data class Success(val count: Int) : ReplaceAllInActiveEditorResult
-}
-
 sealed interface ActiveBookmarkCursorContextResult {
     object NoOpenFile : ActiveBookmarkCursorContextResult
     object UnsupportedEditor : ActiveBookmarkCursorContextResult

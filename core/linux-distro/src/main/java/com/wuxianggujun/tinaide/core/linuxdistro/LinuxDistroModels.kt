@@ -7,7 +7,6 @@ import kotlinx.serialization.Transient
 
 @Serializable
 enum class DistroFamily {
-    ALPINE,
     DEBIAN,
     UBUNTU,
     ARCH,

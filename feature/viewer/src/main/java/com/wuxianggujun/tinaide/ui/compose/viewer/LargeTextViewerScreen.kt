@@ -34,124 +34,279 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.wuxianggujun.tinaide.core.i18n.Strings
-import java.io.BufferedReader
 import java.io.File
 import java.io.FileInputStream
 import java.io.InputStreamReader
+import java.nio.charset.Charset
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
-private class LargeTextPager(
-    private val file: File
-) {
-    private var reader: BufferedReader? = null
-    private var isEof: Boolean = false
+private const val MAX_RENDER_CHARS_PER_ROW = 2048
+private const val PAGE_CHAR_BUDGET = 256 * 1024
+private const val DEFAULT_MAX_CHARS_IN_MEMORY = 2 * 1024 * 1024
 
-    fun reset() {
-        close()
-        reader = BufferedReader(InputStreamReader(FileInputStream(file), Charsets.UTF_8))
-        isEof = false
+internal data class LargeTextRow(
+    val lineNumber: Long,
+    val text: String,
+    val isContinuation: Boolean,
+)
+
+internal data class LargeTextPage(
+    val rows: List<LargeTextRow>,
+    val isEof: Boolean,
+)
+
+internal class LargeTextPager(
+    private val file: File,
+    private val charset: Charset,
+) {
+    private companion object {
+        const val READ_BUFFER_CHARS = 8192
+        const val END_OF_STREAM = -1
+        const val NO_PENDING_CHAR = -2
+    }
+
+    private var reader: InputStreamReader? = null
+    private var isEof: Boolean = false
+    private var currentLineNumber: Long = 1L
+    private var currentLineContinues: Boolean = false
+    private val readBuffer = CharArray(READ_BUFFER_CHARS)
+    private var readBufferIndex: Int = 0
+    private var readBufferSize: Int = 0
+    private var pendingChar: Int = NO_PENDING_CHAR
+
+    suspend fun reset(): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            close()
+            reader = InputStreamReader(FileInputStream(file), charset)
+            isEof = false
+            currentLineNumber = 1L
+            currentLineContinues = false
+            readBufferIndex = 0
+            readBufferSize = 0
+            pendingChar = NO_PENDING_CHAR
+            Result.success(Unit)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (error: Exception) {
+            Result.failure(error)
+        }
     }
 
     fun close() {
         runCatching { reader?.close() }
         reader = null
         isEof = false
+        readBufferIndex = 0
+        readBufferSize = 0
+        pendingChar = NO_PENDING_CHAR
     }
 
-    suspend fun readNextLines(maxLines: Int): Result<Pair<List<String>, Boolean>> {
-        if (isEof) return Result.success(emptyList<String>() to true)
+    suspend fun readNextRows(
+        maxRows: Int,
+        maxChars: Int,
+        maxCharsPerRow: Int = MAX_RENDER_CHARS_PER_ROW,
+    ): Result<LargeTextPage> {
+        require(maxRows > 0) { "maxRows must be positive" }
+        require(maxChars > 0) { "maxChars must be positive" }
+        require(maxCharsPerRow > 0) { "maxCharsPerRow must be positive" }
+        if (isEof) return Result.success(LargeTextPage(emptyList(), isEof = true))
         val currentReader = reader ?: return Result.failure(IllegalStateException("Reader not initialized"))
         return withContext(Dispatchers.IO) {
-            runCatching {
-                val lines = ArrayList<String>(maxLines)
-                repeat(maxLines) {
-                    val line = currentReader.readLine()
-                    if (line == null) {
-                        isEof = true
-                        return@repeat
-                    }
-                    lines.add(line)
+            try {
+                val rows = ArrayList<LargeTextRow>(maxRows)
+                var loadedChars = 0
+                while (rows.size < maxRows && loadedChars < maxChars && !isEof) {
+                    val rowCharLimit = minOf(maxCharsPerRow, maxChars - loadedChars)
+                    val row = readNextRow(currentReader, rowCharLimit) ?: break
+                    rows.add(row)
+                    loadedChars += row.text.length
                 }
-                lines to isEof
+                Result.success(LargeTextPage(rows = rows, isEof = isEof))
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (error: Exception) {
+                Result.failure(error)
             }
         }
     }
+
+    private fun readNextRow(currentReader: InputStreamReader, maxChars: Int): LargeTextRow? {
+        val lineNumber = currentLineNumber
+        val isContinuation = currentLineContinues
+        val text = StringBuilder(minOf(maxChars, MAX_RENDER_CHARS_PER_ROW))
+
+        while (text.length < maxChars) {
+            when (val char = readChar(currentReader)) {
+                END_OF_STREAM -> {
+                    isEof = true
+                    currentLineContinues = false
+                    return if (text.isEmpty()) null else LargeTextRow(lineNumber, text.toString(), isContinuation)
+                }
+                '\n'.code -> {
+                    currentLineNumber++
+                    currentLineContinues = false
+                    return LargeTextRow(lineNumber, text.toString(), isContinuation)
+                }
+                '\r'.code -> {
+                    consumeOptionalLineFeed(currentReader)
+                    currentLineNumber++
+                    currentLineContinues = false
+                    return LargeTextRow(lineNumber, text.toString(), isContinuation)
+                }
+                else -> text.append(char.toChar())
+            }
+        }
+
+        var next = readChar(currentReader)
+        if (
+            text.isNotEmpty() &&
+            text.last().isHighSurrogate() &&
+            next != END_OF_STREAM &&
+            next.toChar().isLowSurrogate()
+        ) {
+            // 不在 UTF-16 surrogate pair 中间切块；最多只会比预算多 1 个 Char。
+            text.append(next.toChar())
+            next = readChar(currentReader)
+        }
+        when (next) {
+            END_OF_STREAM -> {
+                isEof = true
+                currentLineContinues = false
+            }
+            '\n'.code -> {
+                currentLineNumber++
+                currentLineContinues = false
+            }
+            '\r'.code -> {
+                consumeOptionalLineFeed(currentReader)
+                currentLineNumber++
+                currentLineContinues = false
+            }
+            else -> {
+                pendingChar = next
+                currentLineContinues = true
+            }
+        }
+        return LargeTextRow(lineNumber, text.toString(), isContinuation)
+    }
+
+    private fun consumeOptionalLineFeed(currentReader: InputStreamReader) {
+        when (val next = readChar(currentReader)) {
+            END_OF_STREAM -> isEof = true
+            '\n'.code -> Unit
+            else -> pendingChar = next
+        }
+    }
+
+    private fun readChar(currentReader: InputStreamReader): Int {
+        if (pendingChar != NO_PENDING_CHAR) {
+            return pendingChar.also { pendingChar = NO_PENDING_CHAR }
+        }
+        if (readBufferIndex >= readBufferSize) {
+            readBufferSize = currentReader.read(readBuffer)
+            readBufferIndex = 0
+            if (readBufferSize <= 0) return END_OF_STREAM
+        }
+        return readBuffer[readBufferIndex++].code
+    }
+
 }
 
 @Composable
 fun LargeTextViewerScreen(
     filePath: String,
+    charset: Charset = Charsets.UTF_8,
     modifier: Modifier = Modifier,
     pageSizeLines: Int = 300,
     maxLinesInMemory: Int = 50_000,
+    maxCharsInMemory: Int = DEFAULT_MAX_CHARS_IN_MEMORY,
     onOpenAsEditor: (() -> Unit)? = null,
     onOpenAsHex: (() -> Unit)? = null
 ) {
     val file = remember(filePath) { File(filePath) }
-    val pager = remember(filePath) { LargeTextPager(file) }
+    val pager = remember(filePath, charset) { LargeTextPager(file, charset) }
     val mutex = remember { Mutex() }
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
-    val lines = remember(filePath) { mutableStateListOf<String>() }
-    var isLoading by remember(filePath) { mutableStateOf(false) }
-    var isEof by remember(filePath) { mutableStateOf(false) }
-    var error by remember(filePath) { mutableStateOf<String?>(null) }
-    var reachedLimit by remember(filePath) { mutableStateOf(false) }
+    val rows = remember(filePath, charset) { mutableStateListOf<LargeTextRow>() }
+    var loadedChars by remember(filePath, charset) { mutableStateOf(0) }
+    var isLoading by remember(filePath, charset) { mutableStateOf(false) }
+    var isEof by remember(filePath, charset) { mutableStateOf(false) }
+    var error by remember(filePath, charset) { mutableStateOf<Throwable?>(null) }
+    var reachedLimit by remember(filePath, charset) { mutableStateOf(false) }
 
-    fun loadMore() {
-        if (isLoading || isEof || reachedLimit) return
-        isLoading = true
-        error = null
-        scope.launch {
-            mutex.withLock {
-                val result = pager.readNextLines(pageSizeLines)
-                result.onSuccess { (newLines, eof) ->
-                    val remainingCapacity = (maxLinesInMemory - lines.size).coerceAtLeast(0)
-                    val accepted = if (newLines.size <= remainingCapacity) newLines else newLines.take(remainingCapacity)
-                    lines.addAll(accepted)
-                    isEof = eof
-                    reachedLimit = lines.size >= maxLinesInMemory
-                }.onFailure { e ->
-                    error = e.message
+    suspend fun loadMoreNow() {
+        mutex.withLock {
+            if (isLoading || isEof || reachedLimit || error != null) return@withLock
+            val remainingRows = maxLinesInMemory - rows.size
+            val remainingChars = maxCharsInMemory - loadedChars
+            if (remainingRows <= 0 || remainingChars <= 0) {
+                reachedLimit = true
+                return@withLock
+            }
+
+            isLoading = true
+            error = null
+            try {
+                pager.readNextRows(
+                    maxRows = minOf(pageSizeLines, remainingRows),
+                    maxChars = minOf(PAGE_CHAR_BUDGET, remainingChars),
+                ).onSuccess { page ->
+                    rows.addAll(page.rows)
+                    loadedChars += page.rows.sumOf { it.text.length }
+                    isEof = page.isEof
+                    reachedLimit = rows.size >= maxLinesInMemory || loadedChars >= maxCharsInMemory
+                }.onFailure { throwable ->
+                    error = throwable
                 }
+            } finally {
                 isLoading = false
             }
         }
     }
 
-    fun resetAndLoad() {
-        isLoading = false
-        isEof = false
-        error = null
-        reachedLimit = false
-        lines.clear()
-        runCatching { pager.reset() }
-            .onFailure { e -> error = e.message }
-        if (error == null) {
-            loadMore()
-        }
+    fun loadMore() {
+        scope.launch { loadMoreNow() }
     }
 
-    LaunchedEffect(filePath) {
+    suspend fun resetAndLoad() {
+        val resetSucceeded = mutex.withLock {
+            isLoading = true
+            isEof = false
+            error = null
+            reachedLimit = false
+            loadedChars = 0
+            rows.clear()
+            try {
+                pager.reset().onFailure { throwable -> error = throwable }.isSuccess
+            } finally {
+                isLoading = false
+            }
+        }
+        if (resetSucceeded) loadMoreNow()
+    }
+
+    LaunchedEffect(filePath, charset) {
         resetAndLoad()
     }
 
-    LaunchedEffect(listState) {
+    LaunchedEffect(listState, filePath, charset) {
         snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
             .collect { lastVisibleIndex ->
                 val lastIndex = lastVisibleIndex ?: return@collect
-                if (lastIndex >= lines.size - 30) {
+                if (lastIndex >= rows.size - 30) {
                     loadMore()
                 }
             }
     }
 
-    DisposableEffect(filePath) {
+    DisposableEffect(pager) {
         onDispose { pager.close() }
     }
 
@@ -191,14 +346,20 @@ fun LargeTextViewerScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(text = error ?: stringResource(Strings.large_file_load_failed), color = MaterialTheme.colorScheme.error)
+                        Text(
+                            text = error?.localizedMessage?.takeIf { it.isNotBlank() }
+                                ?: stringResource(Strings.large_file_load_failed),
+                            color = MaterialTheme.colorScheme.error,
+                        )
                         Spacer(modifier = Modifier.padding(4.dp))
-                        TextButton(onClick = { resetAndLoad() }) { Text(stringResource(Strings.large_file_retry)) }
+                        TextButton(onClick = { scope.launch { resetAndLoad() } }) {
+                            Text(stringResource(Strings.large_file_retry))
+                        }
                     }
                 }
             }
 
-            lines.isEmpty() && isLoading -> {
+            rows.isEmpty() && isLoading -> {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
@@ -211,21 +372,21 @@ fun LargeTextViewerScreen(
                         .fillMaxSize()
                         .background(MaterialTheme.colorScheme.surface)
                 ) {
-                    itemsIndexed(lines) { index, line ->
+                    itemsIndexed(rows) { _, row ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 8.dp, vertical = 1.dp)
                         ) {
                             Text(
-                                text = (index + 1).toString().padStart(6),
+                                text = if (row.isContinuation) "" else row.lineNumber.toString().padStart(6),
                                 style = MaterialTheme.typography.labelSmall,
                                 fontFamily = FontFamily.Monospace,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.width(56.dp)
                             )
                             Text(
-                                text = line,
+                                text = row.text,
                                 style = MaterialTheme.typography.bodySmall,
                                 fontFamily = FontFamily.Monospace,
                                 color = MaterialTheme.colorScheme.onSurface
@@ -243,7 +404,7 @@ fun LargeTextViewerScreen(
                                     horizontalArrangement = Arrangement.Center
                                 ) {
                                     Text(
-                                        text = stringResource(Strings.large_file_reached_limit, maxLinesInMemory),
+                                        text = stringResource(Strings.large_file_reached_safe_limit),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )

@@ -1,9 +1,14 @@
 # TinaIDE
 
-> Last manually reviewed: 2026-07-11
+[![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-blue.svg?style=flat-square)](LICENSE)
+
+> Last manually reviewed: 2026-09-09
 >
 > A C/C++ IDE for Android devices. The default development path uses
 > `native tina-toolchain + Android sysroot`; Linux distro / PRoot is optional.
+>
+> Since `0.18.29` this project is distributed under **GPL-3.0-or-later**.
+> See [License](#license) — it includes an unresolved distribution blocker.
 
 [中文文档](README.md)
 
@@ -32,7 +37,7 @@ Basic C/C++ build, run, and clangd completion no longer require PRoot.
 - **Real-time Diagnostics**: Display errors and warnings in real-time while editing
 - **Modern Editor**: Powered by Tina Editor (Compose + Canvas) with multi-tab editing
 - **Material Design 3**: Following the latest Material Design guidelines
-- **Terminal and Linux Environment**: Optional self-hosted Linux distro / PRoot
+- **Terminal and Linux Environment**: Optional Ubuntu 24.04 rootfs + PRoot
   terminal
 - **LLDB Debugging**: Breakpoints, stepping, variables, and call stacks where
   the runtime environment supports it
@@ -41,7 +46,10 @@ Basic C/C++ build, run, and clangd completion no longer require PRoot.
   / hybrid plugins
 - **File Preview**: Built-in preview for Markdown/JSON/images/Hex and more
 - **Embedded RikkaHub**: AI chat, models, providers, and MCP settings are
-  handled by RikkaHub inside TinaIDE
+  handled by RikkaHub inside TinaIDE (distribution restrictions apply, see [License](#license))
+- **X11 Desktop (work in progress)**: Integrates the termux-x11 native X server
+  and runs an Ubuntu desktop in a separate `:x11` process.
+  **Not yet verified on a physical device.**
 
 ## UI Preview
 
@@ -221,6 +229,8 @@ Mapping files are only archived locally by the public build logic.
 - [Development Guide](docs/开发指南.md) - Contribute to the project
 - [Documentation Center](docs/README.md) - Complete documentation index
 - [Linux Distro Runtime](docs/linux-distro-self-hosted-runtime.md) - Optional Linux environment and manifest fallback
+- [X11 Desktop Module](core/linux-desktop/README.md) - `:x11` process boundary, socket layout, known issues
+- [Third-party Notices](NOTICE.md) - Component and license inventory
 - [Changelog](CHANGELOG.md) - Version update history
 
 ### Technical Documentation
@@ -230,6 +240,30 @@ Mapping files are only archived locally by the public build logic.
 - [Toolchain Build Guide](docs/toolchain-build-guide.md)
 - [Remote LSP Guide](docs/guides/Remote-LSP-Guide.md)
 - [MT Data Files Provider](docs/guides/MT-Data-Files-Provider.md)
+
+## License
+
+TinaIDE is distributed under **GPL-3.0-or-later**.
+
+- [`LICENSE`](LICENSE) — full GPL-3.0 text
+- [`COPYRIGHT.md`](COPYRIGHT.md) — SPDX identifier, rationale, distribution requirements
+- [`NOTICE.md`](NOTICE.md) — third-party components and their licenses
+
+The custom "TinaIDE Open Source License Version 1.0" used before `0.18.29` is
+superseded; its text is archived at
+[`docs/third-party-notices/TinaIDE-Custom-License-v1.0-superseded.txt`](docs/third-party-notices/TinaIDE-Custom-License-v1.0-superseded.txt).
+The relicensing was required to integrate the termux-x11 native X server (GPL-3.0).
+
+### Read before distributing: RikkaHub license conflict
+
+`external/rikkahub` uses "Segmented Dual Licensing", adding non-commercial and
+≤10-user restrictions on top of AGPL-3.0. GPL-3.0 section 7 forbids imposing
+further restrictions downstream, so **builds that include RikkaHub must not be
+distributed until this conflict is resolved.** See [`NOTICE.md`](NOTICE.md) for
+details and the available resolution paths.
+
+Building for your own use is unaffected; verify this component's status before
+publishing an APK.
 
 ## Tech Stack
 
@@ -245,6 +279,8 @@ Mapping files are only archived locally by the public build logic.
 | Build System | Gradle + CMake |
 | Dependency Injection | Koin |
 | Async Processing | Kotlin Coroutines + Flow |
+| Optional Linux Environment | PRoot + Ubuntu 24.04 rootfs |
+| Optional Graphical Desktop | termux-x11 (`libXlorie.so`) in a separate `:x11` process |
 
 ## Supported Architectures
 
@@ -256,6 +292,9 @@ Mapping files are only archived locally by the public build logic.
 - `minSdk`: 28 (Android 9.0+)
 - `targetSdk`: 36
 - `compileSdk`: 37
+
+These values describe `:app`. Library modules such as `core:*` and `feature:*` use
+`TinaVersions`, whose `COMPILE_SDK` constant is currently 36 — it does not match `:app`.
 
 ## System Requirements
 
@@ -294,6 +333,8 @@ Architecture reminders:
 - `core/*` owns reusable infrastructure.
 - Default compile / LSP depends on native toolchain, not PRoot.
 - PRoot is an optional Linux environment, not the default compiler host.
+- The X11 desktop runs in a separate `:x11` process, so an X server crash cannot
+  take down the IDE.
 
 ## Support
 

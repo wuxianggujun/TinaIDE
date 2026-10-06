@@ -13,6 +13,8 @@ import java.nio.charset.Charset
  */
 object FileCharsetDetector {
 
+    private const val SAMPLE_SIZE_BYTES = 8192
+
     fun detect(file: File): Charset {
         if (!file.exists() || !file.isFile) {
             return Charsets.UTF_8
@@ -20,7 +22,7 @@ object FileCharsetDetector {
 
         return try {
             file.inputStream().use { stream ->
-                val buffer = ByteArray(minOf(8192, file.length().toInt()))
+                val buffer = ByteArray(SAMPLE_SIZE_BYTES)
                 val bytesRead = stream.read(buffer)
                 if (bytesRead <= 0) {
                     return Charsets.UTF_8

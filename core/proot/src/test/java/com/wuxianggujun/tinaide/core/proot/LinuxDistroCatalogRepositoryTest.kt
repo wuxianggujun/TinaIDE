@@ -173,15 +173,15 @@ class LinuxDistroCatalogRepositoryTest {
 
     private fun distro(id: String): DistroDefinition = DistroDefinition(
         id = id,
-        family = DistroFamily.ALPINE,
+        family = DistroFamily.DEBIAN,
         displayName = id.replaceFirstChar { char -> char.uppercase() },
-        packageManager = DistroPackageManager.APK,
-        defaultReleaseId = "3.20",
+        packageManager = DistroPackageManager.APT,
+        defaultReleaseId = "12",
         releases = listOf(
             DistroRelease(
-                id = "3.20",
-                version = "3.20",
-                displayName = "Alpine 3.20",
+                id = "12",
+                version = "12",
+                displayName = "Debian 12",
                 artifacts = listOf(
                     DistroArtifact(
                         architecture = DistroArchitecture.AARCH64,

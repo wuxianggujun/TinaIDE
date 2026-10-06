@@ -3,6 +3,8 @@ package com.wuxianggujun.tinaide.ui.apk
 import android.content.Context
 import com.wuxianggujun.tinaide.core.packages.InstalledPackagePathResolver
 import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 
 /**
@@ -35,10 +37,18 @@ object TerminalApkExportResolver {
         val libraries: List<File>
     )
 
-    fun resolve(
+    suspend fun resolve(
         context: Context,
         projectRoot: File?,
         buildDir: File?
+    ): Resolution = withContext(Dispatchers.IO) {
+        resolveOnIo(context, projectRoot, buildDir)
+    }
+
+    private suspend fun resolveOnIo(
+        context: Context,
+        projectRoot: File?,
+        buildDir: File?,
     ): Resolution {
         val buildArtifacts = scanBuildArtifacts(buildDir)
         val executableFile = buildArtifacts.executableFiles.firstOrNull()

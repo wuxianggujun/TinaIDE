@@ -8,6 +8,7 @@ import com.wuxianggujun.tinaide.core.packages.model.Platform
 import com.wuxianggujun.tinaide.core.packages.store.LocalInstallStateStore
 import java.io.File
 import java.nio.file.Files
+import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -23,7 +24,7 @@ import org.robolectric.annotation.Config
 class SdlRuntimeResolverTest {
 
     @Test
-    fun `resolve finds SDL library from extra runtime dirs`() {
+    fun `resolve finds SDL library from extra runtime dirs`() = runTest {
         val tempDir = Files.createTempDirectory("sdl-runtime-extra-dir-test").toFile()
         try {
             val artifactDir = File(tempDir, "outside-build").apply { mkdirs() }
@@ -48,7 +49,7 @@ class SdlRuntimeResolverTest {
     }
 
     @Test
-    fun `resolve detects direct SDL2 dependency`() {
+    fun `resolve detects direct SDL2 dependency`() = runTest {
         val tempDir = Files.createTempDirectory("sdl2-runtime-direct-test").toFile()
         try {
             val artifactDir = File(tempDir, "build").apply { mkdirs() }
@@ -74,7 +75,7 @@ class SdlRuntimeResolverTest {
     }
 
     @Test
-    fun `resolve rejects SDL2 built for the unrelocated Android bridge`() {
+    fun `resolve rejects SDL2 built for the unrelocated Android bridge`() = runTest {
         val tempDir = Files.createTempDirectory("sdl2-runtime-legacy-bridge-test").toFile()
         try {
             val main = File(tempDir, "libmain.so").apply {
@@ -96,7 +97,7 @@ class SdlRuntimeResolverTest {
     }
 
     @Test
-    fun `resolve finds SDL2 runtime beside main library`() {
+    fun `resolve finds SDL2 runtime beside main library`() = runTest {
         val tempDir = Files.createTempDirectory("sdl2-runtime-colocated-test").toFile()
         try {
             val main = File(tempDir, "libmain.so").apply {
@@ -119,7 +120,7 @@ class SdlRuntimeResolverTest {
     }
 
     @Test
-    fun `resolve detects versioned SDL2 ABI soname`() {
+    fun `resolve detects versioned SDL2 ABI soname`() = runTest {
         val tempDir = Files.createTempDirectory("sdl2-runtime-versioned-test").toFile()
         try {
             val artifactDir = File(tempDir, "build").apply { mkdirs() }
@@ -145,7 +146,7 @@ class SdlRuntimeResolverTest {
     }
 
     @Test
-    fun `resolve detects SDL2 through transitive dependency`() {
+    fun `resolve detects SDL2 through transitive dependency`() = runTest {
         val tempDir = Files.createTempDirectory("sdl2-runtime-transitive-detect-test").toFile()
         try {
             val artifactDir = File(tempDir, "build").apply { mkdirs() }
@@ -175,7 +176,7 @@ class SdlRuntimeResolverTest {
     }
 
     @Test
-    fun `resolve rejects transitive SDL2 and SDL3 conflict`() {
+    fun `resolve rejects transitive SDL2 and SDL3 conflict`() = runTest {
         val tempDir = Files.createTempDirectory("sdl-runtime-transitive-conflict-test").toFile()
         try {
             val artifactDir = File(tempDir, "build").apply { mkdirs() }
@@ -199,7 +200,7 @@ class SdlRuntimeResolverTest {
     }
 
     @Test
-    fun `resolve rejects configured SDL2 when artifact depends on SDL3`() {
+    fun `resolve rejects configured SDL2 when artifact depends on SDL3`() = runTest {
         val tempDir = Files.createTempDirectory("sdl-runtime-config-conflict-test").toFile()
         try {
             val main = File(tempDir, "libmain.so").apply {
@@ -220,7 +221,7 @@ class SdlRuntimeResolverTest {
     }
 
     @Test
-    fun `resolve uses configured SDL2 before available SDL3 when dependency is undetected`() {
+    fun `resolve uses configured SDL2 before available SDL3 when dependency is undetected`() = runTest {
         val tempDir = Files.createTempDirectory("sdl-runtime-config-fallback-test").toFile()
         try {
             val artifactDir = File(tempDir, "build").apply { mkdirs() }
@@ -247,7 +248,7 @@ class SdlRuntimeResolverTest {
     }
 
     @Test
-    fun `resolve allows statically linked SDL main library without dynamic SDL dependency`() {
+    fun `resolve allows statically linked SDL main library without dynamic SDL dependency`() = runTest {
         val tempDir = Files.createTempDirectory("sdl-runtime-static-link-test").toFile()
         try {
             val artifactDir = File(tempDir, "outside-build").apply { mkdirs() }
@@ -274,7 +275,7 @@ class SdlRuntimeResolverTest {
     }
 
     @Test
-    fun `resolve prefers official SDL package and its runtime directory`() {
+    fun `resolve prefers official SDL package and its runtime directory`() = runTest {
         val context = appContext()
         val installRoot = File(context.filesDir, "installed-packages")
         val currentAbi = Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"

@@ -1,5 +1,12 @@
 # PRoot 运行时重构说明
 
+> 状态：历史参考（迁移记录）
+> 最后人工核验：2026-09-09
+>
+> 本文记录 PRoot 收缩为 Linux 运行时层那一轮重构的边界与删除清单，用于追溯「为什么这些类不在了」。
+> 判断当前 PRoot 行为请以 [PRoot 与自研 Linux 发行版运行时设计说明](PRoot-Feature-Analysis.md)
+> 和 `core/proot`、`core/linux-desktop` 源码为准。本次核验已就地修正与当前代码矛盾的描述。
+
 ## 目标
 
 - 将 `PRoot` 明确收缩为 **Linux 运行时层**。
@@ -54,8 +61,8 @@
 现在 `PRoot` 编译链不再依赖历史兼容层，而是通过新的 guest 安装服务显式安装：
 
 - `PRootGuestToolchainInstaller`
-- 使用 `apk update` + `apk add --no-cache`
-- 根据 `ToolchainConfig` 解析需要的 Linux 工具
+- 按 rootfs 实际包管理器执行索引更新与安装：`RootfsPackageManager` 枚举为 `APK / APT / PACMAN / DNF / UNKNOWN`，命令由 `GuestSystemPackageManager` 统一拼装（重构当时只支持 Alpine 的 `apk`）。注意枚举保留 `APK` 不等于仍支持 Alpine 发行版——`0.18.29` 起唯一维护的 rootfs 是 Ubuntu 24.04（`APT`）
+- 根据 `ToolchainConfig` 解析需要的 Linux 工具，并对每个工具做候选包名探测
 - 安装结果通过 `ToolchainPathResolver` 动态发现
 
 这意味着：
@@ -65,12 +72,12 @@
 
 ### 编译前检查
 
-`CompileEnvironmentChecker` 改为直接探测可执行文件：
-
-- 编译器：`<compiler> --version`
-- 调试器：`lldb --version`
-
+重构时把 `CompileEnvironmentChecker` 改为直接探测可执行文件（`<compiler> --version` / `lldb --version`），
 不再尝试自动安装已废弃的 PRoot 工具链。
+
+当前代码里 `CompileEnvironmentChecker` 已不存在：编译流水线的前置校验收缩为
+`core/compile` 的 `EnvironmentValidator`（只做项目根目录、buildDir 这类"便宜校验"），
+更细的工具链探测下沉到各 `BuildStrategy.execute` 内部。
 
 ### LSP
 

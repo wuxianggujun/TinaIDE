@@ -43,6 +43,7 @@ internal class MainActivityDrawerDependencies(
     val actionsDelegate: MainActivityActionsDelegate,
     val compileDelegate: MainActivityCompileDelegate,
     val navigationDelegate: MainActivityNavigationDelegate,
+    val onReconfigureCMake: () -> Unit,
 )
 
 @Composable
@@ -66,6 +67,7 @@ internal fun rememberMainActivityDrawerDependencies(
     actionsDelegate: MainActivityActionsDelegate,
     compileDelegate: MainActivityCompileDelegate,
     navigationDelegate: MainActivityNavigationDelegate,
+    onReconfigureCMake: () -> Unit,
 ): MainActivityDrawerDependencies = remember(
     fileTreeState,
     editorContainerState,
@@ -86,6 +88,7 @@ internal fun rememberMainActivityDrawerDependencies(
     actionsDelegate,
     compileDelegate,
     navigationDelegate,
+    onReconfigureCMake,
 ) {
     MainActivityDrawerDependencies(
         fileTreeState = fileTreeState,
@@ -107,5 +110,6 @@ internal fun rememberMainActivityDrawerDependencies(
         actionsDelegate = actionsDelegate,
         compileDelegate = compileDelegate,
         navigationDelegate = navigationDelegate,
+        onReconfigureCMake = onReconfigureCMake,
     )
 }

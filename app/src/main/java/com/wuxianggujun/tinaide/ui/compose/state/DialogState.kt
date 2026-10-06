@@ -119,16 +119,6 @@ class DialogState {
         showGotoLineDialog = false
     }
 
-    var showReplaceDialog by mutableStateOf(false)
-        private set
-
-    fun openReplaceDialog() {
-        showReplaceDialog = true
-    }
-
-    fun closeReplaceDialog() {
-        showReplaceDialog = false
-    }
 }
 
 /**

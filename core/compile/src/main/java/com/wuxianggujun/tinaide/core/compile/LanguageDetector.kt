@@ -4,6 +4,8 @@ import com.wuxianggujun.tinaide.core.lang.CxxFileSupport
 import com.wuxianggujun.tinaide.project.ProjectLanguage
 import com.wuxianggujun.tinaide.project.ProjectMetadataStore
 import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 
 /**
@@ -68,7 +70,11 @@ object LanguageDetector {
      * 2. 如果元数据中没有指定，则通过文件扫描检测
      * 3. 如果检测成功，将结果保存到元数据中
      */
-    fun detect(projectRoot: File): ProjectLanguage {
+    suspend fun detect(projectRoot: File): ProjectLanguage = withContext(Dispatchers.IO) {
+        detectOnIo(projectRoot)
+    }
+
+    private suspend fun detectOnIo(projectRoot: File): ProjectLanguage {
         Timber.tag(TAG).d("Detecting primary language: ${projectRoot.absolutePath}")
 
         if (!projectRoot.exists() || !projectRoot.isDirectory || !projectRoot.canRead()) {

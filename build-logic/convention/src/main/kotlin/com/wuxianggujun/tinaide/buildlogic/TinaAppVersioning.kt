@@ -3,6 +3,8 @@ package com.wuxianggujun.tinaide.buildlogic
 import org.gradle.api.GradleException
 import org.gradle.api.logging.Logger
 import java.io.File
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import java.util.Properties
 
 data class TinaAppVersionInfo(
@@ -13,12 +15,38 @@ data class TinaAppVersionInfo(
 class TinaAppVersioningExtension internal constructor(
     val versionPropsFile: File,
     val currentVersion: TinaAppVersionInfo,
+    /**
+     * 本次构建的唯一标识（`<gitShortSha>-<buildTimestamp>`）。
+     *
+     * 同一次 Gradle 运行内取值固定，因此 BuildConfig 与 mapping 归档目录拿到的是同一个值，
+     * 崩溃墓碑里的 "App version" 可以反查到唯一匹配的 mapping。
+     */
+    val buildId: String,
 ) {
     val versionCode: Int
         get() = currentVersion.versionCode
 
     val versionName: String
         get() = currentVersion.versionName
+}
+
+/**
+ * 生成 `<gitShortSha>-<buildTimestamp>` 形式的构建标识。
+ *
+ * git 不可用时退化为 `nogit-<timestamp>`，仍保证不同构建互不混淆。
+ * git 目录可能在工作树之外（submodule / shallow clone），失败一律走兜底。
+ */
+internal fun resolveBuildId(rootDir: File): String {
+    val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
+    val shortSha = runCatching {
+        val process = ProcessBuilder("git", "-C", rootDir.absolutePath, "rev-parse", "--short=10", "HEAD")
+            .redirectError(ProcessBuilder.Redirect.DISCARD)
+            .start()
+        process.inputStream.bufferedReader().readText().trim().also {
+            process.waitFor()
+        }
+    }.getOrNull()?.takeIf { it.isNotEmpty() && it.matches(Regex("[0-9a-fA-F]{4,40}")) }
+    return "${shortSha ?: "nogit"}-$timestamp"
 }
 
 internal fun ensureVersionProps(file: File) {

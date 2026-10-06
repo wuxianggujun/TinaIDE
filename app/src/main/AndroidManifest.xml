@@ -51,7 +51,7 @@
         android:networkSecurityConfig="@xml/network_security_config"
         android:requestLegacyExternalStorage="true"
         android:usesCleartextTraffic="false"
-        tools:replace="android:usesCleartextTraffic"
+        tools:replace="android:usesCleartextTraffic,android:allowBackup"
         tools:targetApi="r">
 
         <meta-data

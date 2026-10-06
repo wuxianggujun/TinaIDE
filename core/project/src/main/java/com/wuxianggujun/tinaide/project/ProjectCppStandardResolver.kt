@@ -1,6 +1,8 @@
 package com.wuxianggujun.tinaide.project
 
 import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /** Resolves the effective C++ standard flag used by TinaIDE fallback compile commands. */
 object ProjectCppStandardResolver {
@@ -28,14 +30,14 @@ object ProjectCppStandardResolver {
      * The returned value never includes the `-std=` prefix. Dynamic build expressions are not
      * evaluated here; they fall through to the next source so fallback commands remain predictable.
      */
-    fun resolveFlag(projectRoot: File?, override: String? = null): String {
-        resolveFromOverride(override)?.let { return it }
-        if (projectRoot == null) return DEFAULT_FLAG
+    suspend fun resolveFlag(projectRoot: File?, override: String? = null): String = withContext(Dispatchers.IO) {
+        resolveFromOverride(override)?.let { return@withContext it }
+        if (projectRoot == null) return@withContext DEFAULT_FLAG
 
-        resolveFromCMakeLists(File(projectRoot, "CMakeLists.txt"))?.let { return it }
-        resolveFromRootMakefile(projectRoot)?.let { return it }
-        resolveFromMetadata(projectRoot)?.let { return it }
-        return DEFAULT_FLAG
+        resolveFromCMakeLists(File(projectRoot, "CMakeLists.txt"))?.let { return@withContext it }
+        resolveFromRootMakefile(projectRoot)?.let { return@withContext it }
+        resolveFromMetadata(projectRoot)?.let { return@withContext it }
+        DEFAULT_FLAG
     }
 
     internal fun normalizeFlag(rawValue: String?): String? {
@@ -104,7 +106,7 @@ object ProjectCppStandardResolver {
     }
 
     private fun resolveFromMetadata(projectRoot: File): String? = runCatching {
-        normalizeFlag(ProjectMetadataStore.read(projectRoot)?.cppStandard)
+        normalizeFlag(ProjectMetadataStore.readMetadata(projectRoot)?.cppStandard)
     }.getOrNull()
 
     private fun extractLastStandardOption(content: String): String? = standardOptionPattern

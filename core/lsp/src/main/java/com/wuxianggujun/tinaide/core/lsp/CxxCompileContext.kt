@@ -27,6 +27,7 @@ enum class CxxCompileCommandMatch {
 enum class CxxCompileContextIssue {
     COMPILE_DATABASE_MISSING,
     COMPILE_DATABASE_INVALID,
+    COMPILE_DATABASE_STALE,
     FILE_COMMAND_MISSING,
     COMPILE_SETUP_UNAVAILABLE,
     TOOLCHAIN_SETUP_FAILED,
@@ -127,6 +128,8 @@ object CxxCompileContextInspector {
             includePaths = command.includePaths,
             defines = command.defines,
             commandArguments = selection.entry.arguments,
+            // 数据库能解析且命中命令，但外部数据库已过期时给出可点重配信号（不覆盖更严重的 MISSING/INVALID）。
+            issue = if (prepared.compileDatabaseStale) CxxCompileContextIssue.COMPILE_DATABASE_STALE else null,
         )
     }
 

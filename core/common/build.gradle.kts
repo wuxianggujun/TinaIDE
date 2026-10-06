@@ -9,6 +9,7 @@ android {
 }
 
 dependencies {
+    api(project(":core:editor-api"))
     implementation(project.dependencies.project(":core:i18n"))
     implementation(project.dependencies.project(":core:model"))
     implementation(project.dependencies.project(":tina-exec:integration"))

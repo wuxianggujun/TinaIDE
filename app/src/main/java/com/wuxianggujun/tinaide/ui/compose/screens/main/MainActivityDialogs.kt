@@ -9,6 +9,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -53,7 +54,6 @@ import com.wuxianggujun.tinaide.ui.compose.components.LocationListDialog
 import com.wuxianggujun.tinaide.ui.compose.components.LspRenameDialog
 import com.wuxianggujun.tinaide.ui.compose.components.NewFileDialog
 import com.wuxianggujun.tinaide.ui.compose.components.RenameDialog
-import com.wuxianggujun.tinaide.ui.compose.components.ReplaceDialog
 import com.wuxianggujun.tinaide.ui.compose.components.RunConfigDialog
 import com.wuxianggujun.tinaide.ui.compose.components.TinaAlertDialog
 import com.wuxianggujun.tinaide.ui.compose.components.TinaDialogContentColumn
@@ -77,7 +77,6 @@ import kotlinx.coroutines.withContext
 import org.koin.compose.koinInject
 import timber.log.Timber
 import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveEditorCommandResult
-import com.wuxianggujun.tinaide.ui.compose.state.editor.ReplaceAllInActiveEditorResult
 
 private const val BUILTIN_APK_TEMPLATE_NATIVE = "builtin:native_activity"
 private const val BUILTIN_APK_TEMPLATE_SDL3 = "builtin:sdl3"
@@ -211,7 +210,7 @@ internal fun MainActivityDialogsSection(
     editorManager: IEditorManager,
     saveScope: CoroutineScope,
     onCloseProject: (forgetSession: Boolean) -> Unit,
-    onPersistRunConfigManager: (RunConfigurationManager) -> Boolean,
+    onPersistRunConfigManager: suspend (RunConfigurationManager) -> Boolean,
     onShowUnsavedExitDialogChange: (Boolean) -> Unit,
     onFinish: () -> Unit,
 ) {
@@ -426,34 +425,6 @@ internal fun MainActivityFileDialogs(
         )
     }
 
-    // 替换（全文件 Replace All）
-    if (dialogState.showReplaceDialog) {
-        ReplaceDialog(
-            initialFind = editorContainerState.currentSearchState.query,
-            onDismiss = { dialogState.closeReplaceDialog() },
-            onReplaceAll = { findText, replaceText ->
-                dialogState.closeReplaceDialog()
-                if (findText.isEmpty()) return@ReplaceDialog
-                when (val result = editorContainerState.requestReplaceAllInActiveEditor(findText, replaceText)) {
-                    ReplaceAllInActiveEditorResult.NoOpenFile -> {
-                        context.toastInfo(Strings.toast_no_open_file.strOr(context))
-                    }
-
-                    ReplaceAllInActiveEditorResult.UnsupportedEditor -> {
-                        context.toastInfo(Strings.toast_file_not_support_format.strOr(context))
-                    }
-
-                    ReplaceAllInActiveEditorResult.NoMatches -> {
-                        context.toastInfo(Strings.toast_no_matches.strOr(context))
-                    }
-
-                    is ReplaceAllInActiveEditorResult.Success -> {
-                        context.toastSuccess(Strings.toast_replaced.strOr(context, result.count))
-                    }
-                }
-            }
-        )
-    }
 }
 
 @Composable
@@ -485,9 +456,10 @@ internal fun MainActivityCloseProjectDialog(
 internal fun MainActivityRunConfigDialog(
     state: MainActivityBuildUiState,
     editorContainerState: EditorContainerState,
-    onPersistRunConfigManager: (RunConfigurationManager) -> Boolean,
+    onPersistRunConfigManager: suspend (RunConfigurationManager) -> Boolean,
 ) {
     val context = LocalContext.current
+    val runConfigSaveScope = rememberCoroutineScope()
     val currentConfig = state.editingConfig ?: return
     if (!state.showRunConfigDialog) return
 
@@ -496,24 +468,26 @@ internal fun MainActivityRunConfigDialog(
         buildSystem = state.currentBuildSystem,
         availableTargets = state.availableTargets,
         onSave = { newConfig ->
-            val isNew = state.runConfigManager.configurations.none { it.id == newConfig.id }
-            val updated = if (isNew) {
-                state.runConfigManager.addConfig(newConfig)
-            } else {
-                state.runConfigManager.updateConfig(newConfig)
-            }
-            if (
-                state.commitRunConfigManager(
-                    updated = updated,
-                    persist = onPersistRunConfigManager,
-                    onSelectedSingleFileCppStandardChanged =
-                        editorContainerState::refreshOpenCxxEditorsForCompileConfigChange,
-                )
-            ) {
-                state.closeRunConfigDialog()
-                context.toastSuccess(Strings.toast_run_config_saved.strOr(context))
-            } else {
-                context.toastError(Strings.toast_run_config_save_failed.strOr(context))
+            runConfigSaveScope.launch {
+                val isNew = state.runConfigManager.configurations.none { it.id == newConfig.id }
+                val updated = if (isNew) {
+                    state.runConfigManager.addConfig(newConfig)
+                } else {
+                    state.runConfigManager.updateConfig(newConfig)
+                }
+                if (
+                    state.commitRunConfigManager(
+                        updated = updated,
+                        persist = onPersistRunConfigManager,
+                        onSelectedSingleFileCppStandardChanged =
+                            editorContainerState::refreshOpenCxxEditorsForCompileConfigChange,
+                    )
+                ) {
+                    state.closeRunConfigDialog()
+                    context.toastSuccess(Strings.toast_run_config_saved.strOr(context))
+                } else {
+                    context.toastError(Strings.toast_run_config_save_failed.strOr(context))
+                }
             }
         },
         onDismiss = state::closeRunConfigDialog

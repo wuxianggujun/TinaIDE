@@ -16,14 +16,14 @@ class LinuxDistroInstallerTest {
         val catalog = ManifestLinuxDistroCatalog(manifest)
 
         val resolved = catalog.resolveArtifact(
-            distroId = "alpine",
-            releaseId = "3.20",
+            distroId = "debian",
+            releaseId = "12",
             architecture = DistroArchitecture.AARCH64,
         )
 
         assertThat(resolved).isNotNull()
-        assertThat(resolved!!.distro.packageManager).isEqualTo(DistroPackageManager.APK)
-        assertThat(resolved.release.displayName).isEqualTo("Alpine 3.20")
+        assertThat(resolved!!.distro.packageManager).isEqualTo(DistroPackageManager.APT)
+        assertThat(resolved.release.displayName).isEqualTo("Debian 12")
         assertThat(resolved.artifact.format).isEqualTo(DistroArchiveFormat.TAR_GZ)
     }
 
@@ -35,7 +35,7 @@ class LinuxDistroInstallerTest {
         val aarch64 = catalog.listInstallableDefaultArtifacts(DistroArchitecture.AARCH64)
         val x86Artifacts = catalog.listInstallableDefaultArtifacts(DistroArchitecture.X86_64)
 
-        assertThat(aarch64.map { it.distro.id }).containsExactly("alpine")
+        assertThat(aarch64.map { it.distro.id }).containsExactly("debian")
         assertThat(aarch64.single().artifact.architecture).isEqualTo(DistroArchitecture.AARCH64)
         assertThat(x86Artifacts).isEmpty()
     }
@@ -68,7 +68,7 @@ class LinuxDistroInstallerTest {
             ManifestLinuxDistroCatalog(LinuxDistroManifestParser.decode(input))
         }
 
-        assertThat(catalog.resolveDistro("alpine")?.defaultReleaseId).isEqualTo("3.20")
+        assertThat(catalog.resolveDistro("debian")?.defaultReleaseId).isEqualTo("12")
     }
 
     @Test
@@ -90,9 +90,9 @@ class LinuxDistroInstallerTest {
 
         registry.upsert(installation)
 
-        assertThat(registry.find("alpine")).isEqualTo(installation)
+        assertThat(registry.find("debian")).isEqualTo(installation)
         assertThat(registry.list()).containsExactly(installation)
-        assertThat(registry.remove("alpine")).isTrue()
+        assertThat(registry.remove("debian")).isTrue()
         assertThat(registry.list()).isEmpty()
     }
 
@@ -108,16 +108,16 @@ class LinuxDistroInstallerTest {
 
         val result = installer.install(
             request = LinuxDistroInstallRequest(
-                distroId = "alpine",
-                releaseId = "3.20",
+                distroId = "debian",
+                releaseId = "12",
                 architecture = DistroArchitecture.AARCH64,
                 layout = LinuxDistroInstallLayout(runtimeDir = tempDir),
             ),
         ) { progress -> phases += progress.phase }
 
         assertThat(result.installed).isTrue()
-        assertThat(result.installation.distroId).isEqualTo("alpine")
-        assertThat(result.installation.profileId).isEqualTo("linux-distro:alpine")
+        assertThat(result.installation.distroId).isEqualTo("debian")
+        assertThat(result.installation.profileId).isEqualTo("linux-distro:debian")
         assertThat(File(result.rootfsDir, "bin/sh").isFile).isTrue()
         assertThat(File(result.rootfsDir, "etc/resolv.conf").readText()).contains("nameserver")
         assertThat(File(result.rootfsDir, ".tinaide/linux-distro.json").isFile).isTrue()
@@ -145,8 +145,8 @@ class LinuxDistroInstallerTest {
                 onDownload = { downloads += "download" },
             )
             val request = LinuxDistroInstallRequest(
-                distroId = "alpine",
-                releaseId = "3.20",
+                distroId = "debian",
+                releaseId = "12",
                 architecture = DistroArchitecture.AARCH64,
                 layout = LinuxDistroInstallLayout(runtimeDir = tempDir),
             )
@@ -168,8 +168,8 @@ class LinuxDistroInstallerTest {
         val checksum = sha256(archiveContent)
         val catalog = ManifestLinuxDistroCatalog(LinuxDistroManifestParser.decode(sampleManifest(checksum)))
         val layout = LinuxDistroInstallLayout(runtimeDir = tempDir).also { it.ensureDirectories() }
-        val targetRootfsDir = layout.rootfsDir("alpine")
-        val backupRootfsDir = File(layout.installedRootfsDir, ".alpine.replace-backup-1").apply {
+        val targetRootfsDir = layout.rootfsDir("debian")
+        val backupRootfsDir = File(layout.installedRootfsDir, ".debian.replace-backup-1").apply {
             File(this, "bin/sh").apply {
                 parentFile?.mkdirs()
                 writeText("#!/bin/sh\n")
@@ -186,8 +186,8 @@ class LinuxDistroInstallerTest {
 
         val result = fakeInstaller(catalog, archiveContent, onDownload = { downloadCount += 1 }).install(
             LinuxDistroInstallRequest(
-                distroId = "alpine",
-                releaseId = "3.20",
+                distroId = "debian",
+                releaseId = "12",
                 architecture = DistroArchitecture.AARCH64,
                 layout = layout,
             ),
@@ -215,7 +215,7 @@ class LinuxDistroInstallerTest {
                 onExtract = { extracts += "extract" },
             )
 
-            val targetRootfsDir = layout.rootfsDir("alpine").apply {
+            val targetRootfsDir = layout.rootfsDir("debian").apply {
                 File(this, "bin/sh").apply {
                     parentFile?.mkdirs()
                     writeText("#!/bin/sh\n")
@@ -224,22 +224,22 @@ class LinuxDistroInstallerTest {
             JsonLinuxDistroInstallMetadataStore().write(
                 rootfsDir = targetRootfsDir,
                 installation = installedLinuxDistro(tempDir).copy(
-                    releaseId = "3.19",
+                    releaseId = "11",
                     rootfsPath = targetRootfsDir.absolutePath,
                 ),
             )
 
             val result = installer.install(
                 request = LinuxDistroInstallRequest(
-                    distroId = "alpine",
-                    releaseId = "3.20",
+                    distroId = "debian",
+                    releaseId = "12",
                     architecture = DistroArchitecture.AARCH64,
                     layout = layout,
                 ),
             )
 
             assertThat(result.installed).isTrue()
-            assertThat(result.installation.releaseId).isEqualTo("3.20")
+            assertThat(result.installation.releaseId).isEqualTo("12")
             assertThat(File(result.rootfsDir, "bin/sh").isFile).isTrue()
             assertThat(extracts).containsExactly("extract")
         }
@@ -261,7 +261,7 @@ class LinuxDistroInstallerTest {
                 onExtract = { extracts += "extract" },
             )
 
-            val targetRootfsDir = layout.rootfsDir("alpine").apply { mkdirs() }
+            val targetRootfsDir = layout.rootfsDir("debian").apply { mkdirs() }
             JsonLinuxDistroInstallMetadataStore().write(
                 rootfsDir = targetRootfsDir,
                 installation = installedLinuxDistro(tempDir).copy(
@@ -272,8 +272,8 @@ class LinuxDistroInstallerTest {
 
             val result = installer.install(
                 request = LinuxDistroInstallRequest(
-                    distroId = "alpine",
-                    releaseId = "3.20",
+                    distroId = "debian",
+                    releaseId = "12",
                     architecture = DistroArchitecture.AARCH64,
                     layout = layout,
                 ),
@@ -301,17 +301,17 @@ class LinuxDistroInstallerTest {
         )
 
         val result = manager.install(
-            distroId = "alpine",
-            releaseId = "3.20",
+            distroId = "debian",
+            releaseId = "12",
             architecture = DistroArchitecture.AARCH64,
         )
 
         assertThat(result.installed).isTrue()
-        assertThat(manager.isInstalled("alpine")).isTrue()
-        assertThat(manager.listInstalled(syncFromDisk = false).map { it.distroId }).containsExactly("alpine")
-        assertThat(manager.listInstalled(syncFromDisk = true).map { it.distroId }).containsExactly("alpine")
-        assertThat(manager.uninstall("alpine")).isTrue()
-        assertThat(manager.isInstalled("alpine")).isFalse()
+        assertThat(manager.isInstalled("debian")).isTrue()
+        assertThat(manager.listInstalled(syncFromDisk = false).map { it.distroId }).containsExactly("debian")
+        assertThat(manager.listInstalled(syncFromDisk = true).map { it.distroId }).containsExactly("debian")
+        assertThat(manager.uninstall("debian")).isTrue()
+        assertThat(manager.isInstalled("debian")).isFalse()
         assertThat(registry.list()).isEmpty()
     }
 
@@ -333,7 +333,7 @@ class LinuxDistroInstallerTest {
                 ): File {
                     attemptedUrls += request.url
                     // 官方源失败，镜像源成功。
-                    if (request.url.startsWith("https://dl-cdn.alpinelinux.org/")) {
+                    if (request.url.startsWith("https://cdimage.debian.org/")) {
                         error("HTTP 404")
                     }
                     request.targetFile.writeText(archiveContent)
@@ -347,8 +347,8 @@ class LinuxDistroInstallerTest {
 
         val result = installer.install(
             request = LinuxDistroInstallRequest(
-                distroId = "alpine",
-                releaseId = "3.20",
+                distroId = "debian",
+                releaseId = "12",
                 architecture = DistroArchitecture.AARCH64,
                 layout = LinuxDistroInstallLayout(runtimeDir = tempDir),
             ),
@@ -357,9 +357,50 @@ class LinuxDistroInstallerTest {
         assertThat(result.installed).isTrue()
         // 先试官方，再切镜像。
         assertThat(attemptedUrls).containsExactly(
-            "https://dl-cdn.alpinelinux.org/alpine/v3.23/alpine-rootfs.tar.gz",
-            "https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.23/alpine-rootfs.tar.gz",
+            "https://cdimage.debian.org/debian-cd/12/debian-rootfs.tar.gz",
+            "https://mirrors.tuna.tsinghua.edu.cn/debian-cd/12/debian-rootfs.tar.gz",
         ).inOrder()
+    }
+
+    @Test
+    fun installer_shouldHonorInjectedPreferredMirrorOrder() {
+        runBlocking {
+            val tempDir = createTempDirectory("linux-distro-preferred-mirror").toFile()
+            val archiveContent = "fake archive"
+            val manifest = LinuxDistroManifestParser.decode(sampleMirrorManifest(sha256(archiveContent)))
+            val attemptedUrls = mutableListOf<String>()
+            val installer = LinuxDistroInstaller(
+                catalog = ManifestLinuxDistroCatalog(manifest),
+                downloader = object : LinuxDistroDownloader {
+                    override suspend fun download(
+                        request: DistroDownloadRequest,
+                        progress: (DistroDownloadProgress) -> Unit,
+                    ): File {
+                        attemptedUrls += request.url
+                        request.targetFile.writeText(archiveContent)
+                        return request.targetFile
+                    }
+                },
+                archiveExtractor = fakeExtractor(),
+                downloadCandidateOrder = { canonicalUrl, mirrorUrls ->
+                    listOf(mirrorUrls.last(), canonicalUrl) + mirrorUrls
+                },
+            )
+
+            val result = installer.install(
+                LinuxDistroInstallRequest(
+                    distroId = "debian",
+                    releaseId = "12",
+                    architecture = DistroArchitecture.AARCH64,
+                    layout = LinuxDistroInstallLayout(runtimeDir = tempDir),
+                )
+            )
+
+            assertThat(result.installed).isTrue()
+            assertThat(attemptedUrls).containsExactly(
+                "https://mirrors.aliyun.com/debian-cd/12/debian-rootfs.tar.gz"
+            )
+        }
     }
 
     @Test
@@ -388,8 +429,8 @@ class LinuxDistroInstallerTest {
             runBlocking {
                 installer.install(
                     request = LinuxDistroInstallRequest(
-                        distroId = "alpine",
-                        releaseId = "3.20",
+                        distroId = "debian",
+                        releaseId = "12",
                         architecture = DistroArchitecture.AARCH64,
                         layout = LinuxDistroInstallLayout(runtimeDir = tempDir),
                     ),
@@ -399,7 +440,7 @@ class LinuxDistroInstallerTest {
 
         // 取消时只试了官方源，没有继续切镜像。
         assertThat(attemptedUrls).containsExactly(
-            "https://dl-cdn.alpinelinux.org/alpine/v3.23/alpine-rootfs.tar.gz",
+            "https://cdimage.debian.org/debian-cd/12/debian-rootfs.tar.gz",
         )
     }
 
@@ -461,13 +502,13 @@ class LinuxDistroInstallerTest {
     }
 
     private fun installedLinuxDistro(tempDir: File): InstalledLinuxDistro = InstalledLinuxDistro(
-        distroId = "alpine",
-        releaseId = "3.20",
+        distroId = "debian",
+        releaseId = "12",
         architecture = DistroArchitecture.AARCH64,
-        displayName = "Alpine Linux",
-        packageManager = DistroPackageManager.APK,
+        displayName = "Debian",
+        packageManager = DistroPackageManager.APT,
         rootfsPath = File(tempDir, "rootfs").absolutePath,
-        archivePath = File(tempDir, "alpine.tar.gz").absolutePath,
+        archivePath = File(tempDir, "debian.tar.gz").absolutePath,
         checksum = DistroChecksum(DistroChecksumAlgorithm.SHA256, "0".repeat(64)),
         installedAtEpochMillis = 1_800_000_000_000L,
     )
@@ -478,21 +519,21 @@ class LinuxDistroInstallerTest {
           "generatedAt": "2026-04-28T00:00:00Z",
           "distros": [
             {
-              "id": "alpine",
-              "family": "ALPINE",
-              "displayName": "Alpine Linux",
-              "packageManager": "APK",
-              "defaultReleaseId": "3.20",
+              "id": "debian",
+              "family": "DEBIAN",
+              "displayName": "Debian",
+              "packageManager": "APT",
+              "defaultReleaseId": "12",
               "releases": [
                 {
-                  "id": "3.20",
-                  "version": "3.20",
-                  "displayName": "Alpine 3.20",
+                  "id": "12",
+                  "version": "12",
+                  "displayName": "Debian 12",
                   "channel": "stable",
                   "artifacts": [
                     {
                       "architecture": "AARCH64",
-                      "url": "https://example.invalid/alpine-rootfs.tar.gz",
+                      "url": "https://example.invalid/debian-rootfs.tar.gz",
                       "format": "TAR_GZ",
                       "checksum": {
                         "algorithm": "SHA256",
@@ -513,27 +554,31 @@ class LinuxDistroInstallerTest {
           "generatedAt": "2026-04-28T00:00:00Z",
           "mirrors": [
             {
-              "matchPrefix": "https://dl-cdn.alpinelinux.org/",
+              "matchPrefix": "https://cdimage.debian.org/",
               "replaceWith": "https://mirrors.tuna.tsinghua.edu.cn/"
+            },
+            {
+              "matchPrefix": "https://cdimage.debian.org/",
+              "replaceWith": "https://mirrors.aliyun.com/"
             }
           ],
           "distros": [
             {
-              "id": "alpine",
-              "family": "ALPINE",
-              "displayName": "Alpine Linux",
-              "packageManager": "APK",
-              "defaultReleaseId": "3.20",
+              "id": "debian",
+              "family": "DEBIAN",
+              "displayName": "Debian",
+              "packageManager": "APT",
+              "defaultReleaseId": "12",
               "releases": [
                 {
-                  "id": "3.20",
-                  "version": "3.20",
-                  "displayName": "Alpine 3.20",
+                  "id": "12",
+                  "version": "12",
+                  "displayName": "Debian 12",
                   "channel": "stable",
                   "artifacts": [
                     {
                       "architecture": "AARCH64",
-                      "url": "https://dl-cdn.alpinelinux.org/alpine/v3.23/alpine-rootfs.tar.gz",
+                      "url": "https://cdimage.debian.org/debian-cd/12/debian-rootfs.tar.gz",
                       "format": "TAR_GZ",
                       "checksum": {
                         "algorithm": "SHA256",

@@ -117,7 +117,7 @@ class EditorContainerState(
     private val pluginThemeRegistry: PluginEditorThemeRegistry,
     private val projectSymbolIndexServiceProvider: () -> ProjectSymbolIndexService?,
     private val projectRootPathProvider: () -> String?,
-    private val cppStandardOverrideProvider: (File) -> String? = { null },
+    private val cppStandardOverrideProvider: suspend (File) -> String? = { null },
     private val fileWatchService: IFileWatchService? = null,
     private val linuxEnvironmentProvider: LinuxEnvironmentProvider = UnavailableLinuxEnvironmentProvider,
     private val lspPluginManager: LspPluginManager? = null,
@@ -170,7 +170,6 @@ class EditorContainerState(
     )
     private val codeCallbackRegistry = EditorCodeCallbackRegistry(
         context = context,
-        searchStateManager = searchStateManager,
         codeRuntimeCache = codeRuntimeCache,
         resolveEditorColorScheme = ::resolveEditorColorScheme,
     ).also { registry ->
@@ -441,7 +440,7 @@ class EditorContainerState(
     }
 
     internal fun activeTabSupportsCxxCompileContext(): Boolean =
-        getActiveTab()?.file?.extension?.lowercase() in CxxFileSupport.clangdSupportedExtensions
+        getActiveTab()?.file?.let(CxxFileSupport::isClangdSupportedFile) == true
 
     internal fun getActiveCxxCompileContext(): CxxCompileContextSnapshot? {
         val tab = getActiveTab() ?: return null
@@ -489,7 +488,17 @@ class EditorContainerState(
 
     val currentSearchState get() = searchStateManager.currentSearchState
 
-    fun showSearch() = searchStateManager.showSearch()
+    fun showSearch() {
+        if (getActiveTab()?.contentType == ContentType.CODE) {
+            getActiveCodeEditorCallback()?.showFind?.invoke(false)
+        } else {
+            searchStateManager.showSearch()
+        }
+    }
+
+    fun showReplace() {
+        getActiveCodeEditorCallback()?.showFind?.invoke(true)
+    }
 
     fun hideSearch() = searchStateManager.hideSearch(getActiveTabId())
 
@@ -513,7 +522,7 @@ class EditorContainerState(
     fun performSearch() {
         val tab = getActiveTab() ?: return
         when (tab.contentType) {
-            ContentType.CODE,
+            ContentType.CODE -> Unit // Inline find belongs to editor-kit.
             ContentType.JSON -> {
                 if (!searchStateManager.hasCodeViewerCallback(tab.id)) return
                 searchStateManager.searchInCodeViewer(tab.id)
@@ -537,7 +546,7 @@ class EditorContainerState(
     private fun goToCurrentMatch() {
         val tab = getActiveTab() ?: return
         when (tab.contentType) {
-            ContentType.CODE,
+            ContentType.CODE -> Unit
             ContentType.JSON -> {
                 if (!searchStateManager.hasCodeViewerCallback(tab.id)) return
                 searchStateManager.goToMatchInCodeViewer(tab.id)
@@ -589,15 +598,11 @@ class EditorContainerState(
     internal fun bindCodeEditorCallbacks(
         tabId: String,
         registrationId: Any,
-        search: (String, SearchOptions) -> List<CodeSearchResult>,
-        goToMatch: (CodeSearchResult) -> Unit,
         editorCallback: CodeEditorCallback
     ) {
         codeCallbackRegistry.bindCodeEditorCallbacks(
             tabId = tabId,
             registrationId = registrationId,
-            search = search,
-            goToMatch = goToMatch,
             editorCallback = editorCallback,
         )
     }
@@ -756,29 +761,6 @@ class EditorContainerState(
                 text = activeEditor.callback.readAllText()
             )
         )
-    }
-
-    internal fun requestReplaceAllInActiveEditor(
-        findText: String,
-        replaceText: String
-    ): ReplaceAllInActiveEditorResult {
-        val activeEditor = when (val result = resolveActiveEditableEditorBindingResult()) {
-            ActiveEditableEditorBindingResult.NoOpenFile -> return ReplaceAllInActiveEditorResult.NoOpenFile
-            ActiveEditableEditorBindingResult.UnsupportedEditor -> return ReplaceAllInActiveEditorResult.UnsupportedEditor
-            is ActiveEditableEditorBindingResult.Available -> result
-        }
-        val searchState = currentSearchState
-        val count = activeEditor.callback.replaceAll(
-            findText,
-            replaceText,
-            searchState.caseSensitive,
-            searchState.useRegex
-        )
-        return if (count > 0) {
-            ReplaceAllInActiveEditorResult.Success(count)
-        } else {
-            ReplaceAllInActiveEditorResult.NoMatches
-        }
     }
 
     fun selectAllInActiveTab(): Boolean {
@@ -1754,7 +1736,7 @@ class EditorContainerState(
 
         val refreshCandidates = tabs.count { tab ->
             if (!hasAttachedCodeEditor(tab.id, tab.contentType)) return@count false
-            tab.file.extension.lowercase() in CxxFileSupport.clangdSupportedExtensions
+            CxxFileSupport.isClangdSupportedFile(tab.file)
         }
 
         if (refreshCandidates <= 0) {
@@ -1856,7 +1838,7 @@ fun rememberEditorContainerState(
     pluginThemeRegistry: PluginEditorThemeRegistry,
     projectSymbolIndexServiceProvider: () -> ProjectSymbolIndexService?,
     projectRootPathProvider: () -> String?,
-    cppStandardOverrideProvider: (File) -> String? = { null },
+    cppStandardOverrideProvider: suspend (File) -> String? = { null },
     onLspDiagnosticsChanged: ((fileUri: String, diagnostics: List<Diagnostic>) -> Unit)? = null
 ): EditorContainerState {
     val context = LocalContext.current

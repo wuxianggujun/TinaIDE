@@ -44,9 +44,11 @@ fun mayNeedTreeSitterComposite(taskName: String): Boolean {
     if (!taskName.startsWith(":")) return true
     return isTaskUnderModule(taskName, ":app") ||
         isTaskUnderModule(taskName, ":core:tree-sitter") ||
+        isTaskUnderModule(taskName, ":core:tree-sitter-grammars") ||
         isTaskUnderModule(taskName, ":core:editor-view") ||
         isTaskUnderModule(taskName, ":core:editor-lsp") ||
-        isTaskUnderModule(taskName, ":feature:editor")
+        isTaskUnderModule(taskName, ":feature:editor") ||
+        isTaskUnderModule(taskName, ":feature:settings")
 }
 
 val shouldIncludeTreeSitterComposite =
@@ -129,6 +131,12 @@ if (shouldIncludeTreeSitterComposite) {
             substitute(module("com.itsaky.androidide.treesitter:tree-sitter-cmake")).using(project(":tree-sitter-cmake"))
             substitute(module("com.itsaky.androidide.treesitter:tree-sitter-rust")).using(project(":tree-sitter-rust"))
             substitute(module("com.itsaky.androidide.treesitter:tree-sitter-toml")).using(project(":tree-sitter-toml"))
+            substitute(module("com.itsaky.androidide.treesitter:tree-sitter-aidl")).using(project(":tree-sitter-aidl"))
+            substitute(module("com.itsaky.androidide.treesitter:tree-sitter-kotlin")).using(project(":tree-sitter-kotlin"))
+            substitute(module("com.itsaky.androidide.treesitter:tree-sitter-log")).using(project(":tree-sitter-log"))
+            substitute(module("com.itsaky.androidide.treesitter:tree-sitter-properties")).using(project(":tree-sitter-properties"))
+            substitute(module("com.itsaky.androidide.treesitter:tree-sitter-python")).using(project(":tree-sitter-python"))
+            substitute(module("com.itsaky.androidide.treesitter:tree-sitter-xml")).using(project(":tree-sitter-xml"))
         }
     }
 } else {
@@ -199,8 +207,17 @@ include(":core:security")
 include(":core:storage")
 include(":core:text-engine")
 include(":core:tree-sitter")
+include(":core:language-support")
+include(":core:tree-sitter-grammars")
 include(":core:editor-view")
+include(":core:editor-api")
 include(":core:editor-lsp")
+project(":core:text-engine").projectDir = file("editor-kit/text-engine")
+project(":core:tree-sitter").projectDir = file("editor-kit/tree-sitter")
+project(":core:language-support").projectDir = file("editor-kit/language-support")
+project(":core:tree-sitter-grammars").projectDir = file("editor-kit/tree-sitter-grammars")
+project(":core:editor-view").projectDir = file("editor-kit/editor-view")
+project(":core:editor-api").projectDir = file("editor-kit/editor-api")
 
 // ===== 功能层 =====
 include(":feature:editor")
@@ -221,6 +238,7 @@ include(":core:compile")
 include(":core:crash")
 include(":core:debug")
 include(":core:git")
+include(":core:linux-desktop")
 include(":core:linux-distro")
 include(":core:lsp")
 include(":core:ndk")
@@ -266,3 +284,11 @@ include(":tools:template-common")
 include(":tools:template-native-activity")
 include(":tools:template-sdl3")
 include(":tools:template-terminal")
+
+// Include termux-x11 lorie library (GPL-3.0)
+// :shell-loader:stub 提供 lorie 编译期需要的 Android 隐藏 API 桩，仅 compileOnly
+// 注意：只引入所需子模块，不引入 termux-x11 根项目（它有自己的 build.gradle 会与主项目冲突）
+include(":termux-x11-lorie")
+include(":termux-x11-shell-loader-stub")
+project(":termux-x11-lorie").projectDir = file("external/termux-x11/lorie")
+project(":termux-x11-shell-loader-stub").projectDir = file("external/termux-x11/shell-loader/stub")

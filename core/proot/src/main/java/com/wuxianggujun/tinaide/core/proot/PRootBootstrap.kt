@@ -69,7 +69,9 @@ object PRootBootstrap {
         val manager = requireConfigManager("getActiveProfile")
             ?: error("PRootBootstrap.bindDependencies must be called before getActiveProfile")
         syncConfiguredRuntimeProfiles(appContext)
-        return RootfsProfileStore(appContext, manager).getActiveProfile()
+        return RootfsProfileStore(appContext, manager)
+            .getActiveProfileForDistro(defaultDistroId())
+            ?: error("Ubuntu Linux rootfs profile is not installed")
     }
 
     fun getActiveRootfsPath(context: Context): String = getActiveProfile(context).rootfsPath
@@ -78,7 +80,8 @@ object PRootBootstrap {
         val appContext = context.applicationContext
         val manager = requireConfigManager("getActiveProfileOrNull") ?: return null
         syncConfiguredRuntimeProfiles(appContext)
-        return RootfsProfileStore(appContext, manager).getActiveProfileOrNull()
+        return RootfsProfileStore(appContext, manager)
+            .getActiveProfileForDistro(defaultDistroId())
     }
 
     private fun hasProfileShell(profile: RootfsProfile): Boolean {
@@ -253,28 +256,47 @@ object PRootBootstrap {
     private fun launchInstallJob(context: Context, distroId: String) {
         lateinit var job: Job
         job = scope.launch(start = CoroutineStart.LAZY) {
+            var terminalState: BootstrapState? = null
             try {
                 installLogManager()?.clear()
                 logInfo(Strings.proot_install_begin.strOr(context))
-                installConfiguredDistro(context, distroId)
+                terminalState = installConfiguredDistro(context, distroId)
+            } catch (e: CancellationException) {
+                terminalState = BootstrapState.Idle
+                throw e
             } finally {
-                installing.set(false)
-                synchronized(jobLock) {
-                    if (currentJob === job) {
-                        currentJob = null
-                    }
-                }
+                finishBootstrapInstall(
+                    terminalState = terminalState,
+                    clearInstalling = { installing.set(false) },
+                    clearCurrentJob = {
+                        synchronized(jobLock) {
+                            if (currentJob === job) {
+                                currentJob = null
+                            }
+                        }
+                    },
+                    publishTerminalState = { state ->
+                        _state.value = state
+                        if (state is BootstrapState.Installed) {
+                            logSuccess(Strings.proot_install_success.strOr(context))
+                        }
+                    },
+                )
             }
         }
         synchronized(jobLock) { currentJob = job }
         job.start()
     }
 
-    private suspend fun installConfiguredDistro(context: Context, distroId: String) {
-        installSelfHostedLinuxDistro(context, distroId)
-    }
+    private suspend fun installConfiguredDistro(
+        context: Context,
+        distroId: String,
+    ): BootstrapState = installSelfHostedLinuxDistro(context, distroId)
 
-    private suspend fun installSelfHostedLinuxDistro(context: Context, distroId: String) {
+    private suspend fun installSelfHostedLinuxDistro(
+        context: Context,
+        distroId: String,
+    ): BootstrapState {
         val packages = getSelfHostedLinuxDistroPackages(context).toMutableList()
         fun allPackages() = packages.toList()
 
@@ -352,10 +374,8 @@ object PRootBootstrap {
                 packages = allPackages(),
                 currentPackage = null,
             )
-            _state.value = BootstrapState.Installed
-            logSuccess(Strings.proot_install_success.strOr(context))
+            return BootstrapState.Installed
         } catch (e: CancellationException) {
-            _state.value = BootstrapState.Idle
             logWarning(e.message ?: "PRoot installation cancelled")
             throw e
         } catch (t: Throwable) {
@@ -365,8 +385,8 @@ object PRootBootstrap {
                 message.contains("HTTP") ||
                 message.contains("timeout") ||
                 message.contains("connect")
-            _state.value = BootstrapState.Failed(message, isNetworkError)
             logError(Strings.proot_install_failed.strOr(context, message), t)
+            return BootstrapState.Failed(message, isNetworkError)
         }
     }
 
@@ -382,4 +402,15 @@ object PRootBootstrap {
 
     private const val PACKAGE_LINUX_DISTRO_RUNTIME = "linux-distro-runtime"
     private const val PACKAGE_LINUX_ROOTFS = "linux-rootfs"
+}
+
+internal fun finishBootstrapInstall(
+    terminalState: PRootBootstrap.BootstrapState?,
+    clearInstalling: () -> Unit,
+    clearCurrentJob: () -> Unit,
+    publishTerminalState: (PRootBootstrap.BootstrapState) -> Unit,
+) {
+    clearInstalling()
+    clearCurrentJob()
+    terminalState?.let(publishTerminalState)
 }

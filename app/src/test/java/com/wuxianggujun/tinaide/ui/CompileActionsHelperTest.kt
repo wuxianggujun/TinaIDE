@@ -584,6 +584,8 @@ private class RecordingCommandRunner : CompileActionsHelper.CommandRunner {
     override fun clearCMakeBuildDirectory() = Unit
 
     override fun clearAndReconfigureCMake() = Unit
+
+    override fun configureOnlyCMake() = Unit
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)

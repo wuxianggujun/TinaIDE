@@ -10,6 +10,9 @@ import com.wuxianggujun.tinaide.core.treesitter.TreeSitterFoldingProvider
 import com.wuxianggujun.tinaide.core.treesitter.TreeSitterHighlighter
 import com.wuxianggujun.tinaide.editor.session.DocumentSession
 import java.io.File
+import android.os.Handler
+import android.os.Looper
+import java.util.concurrent.Executor
 import kotlinx.coroutines.sync.Mutex
 
 data class TextEditOperation(
@@ -42,12 +45,7 @@ data class CodeEditorCallback(
     val validateTextEdits: (edits: List<TextEditOperation>) -> Boolean = { true },
     val documentVersion: () -> Long? = { null },
     val toggleLineComment: (commentToken: String) -> Boolean,
-    val replaceAll: (
-        findText: String,
-        replaceText: String,
-        caseSensitive: Boolean,
-        useRegex: Boolean,
-    ) -> Int,
+    val showFind: (replace: Boolean) -> Unit = {},
     val undo: () -> Boolean,
     val redo: () -> Boolean,
     val insertTextAtCursor: (text: String) -> Unit,
@@ -90,7 +88,12 @@ class CodeEditorRuntime(
 
     private val stateSyncListener = TextChangeListener { change ->
         editorState.applyTextBufferChange(change)
-        syntaxHighlighter?.applyTextChange(change)
+        // 流式加载发出的 TextChange 不携带完整 newText。tree-sitter 会在
+        // ensureTreeSitterPrepared 里通过 openDocument 单独喂入，这里不能把
+        // 它的 StringBuilder 用空字符串覆盖掉。
+        if (change.hasCompleteNewText) {
+            syntaxHighlighter?.applyTextChange(change)
+        }
     }
     private var documentBinding: CodeEditorDocumentBinding? = null
     private var documentBindingReferences: Int = 0
@@ -203,5 +206,15 @@ class CodeEditorRuntime(
         resetStateBindings()
         clearLanguageServices()
         buffer.removeChangeListener(stateSyncListener)
+        buffer.close()
+    }
+}
+
+internal val editorMainThreadChangeExecutor: Executor = Executor { command ->
+    val mainLooper = Looper.getMainLooper()
+    if (Looper.myLooper() === mainLooper) {
+        command.run()
+    } else {
+        check(Handler(mainLooper).post(command)) { "Main thread is not accepting editor changes" }
     }
 }

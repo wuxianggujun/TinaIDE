@@ -2,6 +2,7 @@ package com.wuxianggujun.tinaide.ui.compose.screens.main
 
 import android.app.Activity
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -31,6 +32,7 @@ import com.wuxianggujun.tinaide.ui.MainActivityEditorActionBridge
 import com.wuxianggujun.tinaide.ui.MainActivityNavigationDelegate
 import com.wuxianggujun.tinaide.ui.MainActivityShortcutDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 
 @Composable
 internal fun MainActivityWorkspaceSection(
@@ -71,6 +73,22 @@ internal fun MainActivityWorkspaceSection(
     var showCommandPalette by remember { mutableStateOf(false) }
     val openCommandPalette = { showCommandPalette = true }
     val dismissCommandPalette = { showCommandPalette = false }
+
+    // configure-only 成功后（异步经编译事件通道回到主线程）刷新已打开的 C/C++ 编辑器，
+    // 让 clangd 使用重新生成的 compile_commands.json。
+    DisposableEffect(compileActionsHelper, editorContainerState) {
+        compileActionsHelper.onCompileConfigInvalidated = {
+            editorContainerState.refreshOpenCxxEditorsForCompileConfigChange()
+        }
+        onDispose {
+            compileActionsHelper.onCompileConfigInvalidated = null
+        }
+    }
+
+    // C/C++ 编译上下文对话框里“重新配置”按钮的触发入口：只 configure 不全量编译。
+    val onReconfigureCMake: () -> Unit = {
+        lifecycleScope.launch { compileActionsHelper.configureOnlyCMake() }
+    }
 
     mainActivityHostEffects(
         projectContext = projectContext,
@@ -150,6 +168,7 @@ internal fun MainActivityWorkspaceSection(
         showCommandPalette = showCommandPalette,
         onOpenCommandPalette = openCommandPalette,
         onDismissCommandPalette = dismissCommandPalette,
+        onReconfigureCMake = onReconfigureCMake,
         callbacks = workspaceUi.screenCallbacks,
     )
 
