@@ -311,7 +311,6 @@ jobs:
           mapfile -t matches < <(
             find "$APK_ROOT" -type f -name "*${ABI}*release*.apk" \
               ! -path "${OUT_DIR}/*" \
-              ! -name "TinaIDE-*.apk" \
               | sort
           )
 
