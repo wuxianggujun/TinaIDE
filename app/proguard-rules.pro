@@ -218,3 +218,15 @@
 -keepclassmembers class **.R$* {
     public static <fields>;
 }
+
+# ============================================================================
+# 19. ByteHook（PLT/GOT hook，MIT 许可）
+# ============================================================================
+# bytehook 的 POM 传递依赖 shadowhook。x86_64 变体在 app/build.gradle.kts 中
+# 排除了 shadowhook（上游只有 arm 后端 native 库），因此 x86_64 的 R8 在
+# minify 阶段报 Missing class com.bytedance.shadowhook.ShadowHook$ILibLoader
+# （bytehook 字节码引用，运行时不会走到：x86_64 libbytehook.so 自包含，
+# 不 NEEDED libshadowhook.so）。arm64 变体类路径上有 shadowhook，
+# dontwarn 无副作用；arm64 libbytehook.so 生产依赖 libshadowhook.so，
+# 由全局 -keepclasseswithmembernames native 与 shadowhook 自带规则覆盖。
+-dontwarn com.bytedance.shadowhook.**
