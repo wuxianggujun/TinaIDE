@@ -62,7 +62,7 @@
 - 编辑器 LSP 编排：`LspEditorManager`、内建 CMake / Make 会话和语义 token 解码已位于 `core:editor-lsp`，不再位于 `app` 状态包。
 - Linux distro manifest：启动和普通列表只读缓存或内置 asset；显式刷新可读取 Registry，按“新鲜缓存 → 远程多端点 → 过期缓存 → 内置 asset”回落，并支持下载镜像规则。
 - Android SDK 口径：`minSdk=28`、`targetSdk=36`、`compileSdk=37`，以 `app/build.gradle.kts` 为准。注意这三个值只描述 `:app`；`core:*` / `feature:*` 等 library 模块由 `TinaVersions` 决定，其中 `COMPILE_SDK` 常量当前是 **36**，与 `:app` 的 37 不一致。引用编译期 SDK 时必须说明是哪一侧，只写一个数字会写错另一半。`editor-kit/` 下的 library 模块（含 `language-support`、`tree-sitter-grammars`）的 `compileSdk` 在 kit 构建脚本里统一为 **36**，不走 `TinaVersions`；示例 consumer 仍单独使用 37。
-- 模块清单只以 `settings.gradle.kts` 为准，本文与其他文档不维护副本。当前为 32 个 `core:*` 与 11 个 `feature:*`。`feature/license`、`feature/login`、`feature/membership` 三个空目录已在 0.18.35 清理删除。
+- 模块清单只以 `settings.gradle.kts` 为准，本文与其他文档不维护副本。当前为 32 个 `core:*` 与 11 个 `feature:*`。`feature/` 下曾残留的 `license`、`login`、`membership` 三个空目录已在 0.18.35 清理删除。
 - 编辑器内核（`:core:editor-api` / `:core:language-support` / `:core:text-engine` / `:core:tree-sitter` / `:core:tree-sitter-grammars` / `:core:editor-view`）的唯一源码位于 `editor-kit/`。主工程通过 `settings.gradle.kts` 的 `projectDir` 映射消费这份源码，不在 `core/` 下保留副本。`editor-kit/` 同时是一个自带 Gradle wrapper、version catalog 与 `external/tina-android-tree-sitter` 复合构建的独立工程，可单独构建，也可被其他项目以 `includeBuild` 按坐标 `io.github.tinaide.editor:*:0.1.0-SNAPSHOT` 消费（`examples/consumer`）。**六个模块的构建脚本被两个构建根共用**：只能引用两套 `libs.versions.toml` 中都存在的别名，改动前必须同时考虑宿主 `tina` 约定插件与 kit 裸 AGP 配置的等价性。
 - 版本口径：当前 `versionName=0.18.35`、`versionCode=1836`，以 `version.properties` 为准。
 - 进程边界：除主进程外还有 `:x11`（X server 与桌面渲染）、`:sdl`、`:sdl2`、`:gui`、`:crash`；初始化逻辑不能混用，见 `TinaApplication` 的多进程分流。

@@ -212,8 +212,7 @@ class CMakeStrategy(
 
     override suspend fun clean(ctx: BuildContext, reconfigure: Boolean) {
         if (reconfigure) {
-            File(ctx.buildDir, "CMakeCache.txt").delete()
-            File(ctx.buildDir, "CMakeFiles").deleteRecursively()
+            deleteCMakeConfigureCache(ctx.buildDir)
         } else {
             // 完整清理:委托给对应执行器以享有各自的清理语义
             if (isNativeMode(lastResolvedRunMode)) {
@@ -234,9 +233,14 @@ class CMakeStrategy(
     override suspend fun configureOnly(ctx: BuildContext): ConfigureResult {
         lastResolvedRunMode = ctx.options.resolvedRunMode
         // 强制重配:删掉 cache,让 configure 从头跑并刷新 compile_commands.json
-        File(ctx.buildDir, "CMakeCache.txt").delete()
-        File(ctx.buildDir, "CMakeFiles").deleteRecursively()
+        deleteCMakeConfigureCache(ctx.buildDir)
         return configure(ctx.projectRoot, ctx.buildDir, ctx.options)
+    }
+
+    /** 删除 CMake configure 缓存,使下一次 configure 从头执行(供 clean 与 configureOnly 复用)。 */
+    private fun deleteCMakeConfigureCache(buildDir: File) {
+        File(buildDir, "CMakeCache.txt").delete()
+        File(buildDir, "CMakeFiles").deleteRecursively()
     }
 
     override suspend fun getTargets(ctx: BuildContext): List<TargetInfo> = loadTargets(ctx.projectRoot, ctx.buildDir)
