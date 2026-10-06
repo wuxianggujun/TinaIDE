@@ -137,6 +137,11 @@ android {
 
     testOptions {
         unitTests.isIncludeAndroidResources = true
+        unitTests.all { test ->
+            // Native Graphics discovers JVM file-system providers outside Robolectric's
+            // Android sandbox. Their SLF4J logger must not call the Android Log stub.
+            test.systemProperty("slf4j.provider", "org.slf4j.helpers.NOP_FallbackServiceProvider")
+        }
     }
 
     externalNativeBuild {
