@@ -2,6 +2,7 @@ package com.wuxianggujun.tinaide.core.font
 
 import android.content.Context
 import android.graphics.Typeface
+import com.wuxianggujun.tinaide.core.editorapi.EditorFontSize
 import java.io.File
 import timber.log.Timber
 
@@ -24,16 +25,16 @@ object AppFontManager {
     // ========== 统一的字体大小常量 ==========
 
     /** 最小字体大小（sp） */
-    const val MIN_FONT_SIZE = 8f
+    const val MIN_FONT_SIZE = EditorFontSize.MIN_SP
 
     /** 最大字体大小（sp） */
-    const val MAX_FONT_SIZE = 48f
+    const val MAX_FONT_SIZE = EditorFontSize.MAX_SP
 
     /** 终端最大字体大小（sp）- 终端通常不需要太大的字体 */
     const val TERMINAL_MAX_FONT_SIZE = 32f
 
     /** 编辑器默认字体大小（sp） */
-    const val DEFAULT_EDITOR_FONT_SIZE = 14f
+    const val DEFAULT_EDITOR_FONT_SIZE = EditorFontSize.DEFAULT_SP
 
     /** 终端默认字体大小（sp） */
     const val DEFAULT_TERMINAL_FONT_SIZE = 13f

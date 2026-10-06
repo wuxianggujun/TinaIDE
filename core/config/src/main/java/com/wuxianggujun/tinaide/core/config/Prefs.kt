@@ -4,7 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.content.res.Configuration
 import androidx.appcompat.app.AppCompatDelegate
-import com.wuxianggujun.tinaide.core.font.AppFontManager
+import com.wuxianggujun.tinaide.core.editorapi.EditorFontSize
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -57,6 +57,7 @@ data class DeveloperDiagnosticsSettings(
 object Prefs {
     private const val CONFIG_PREFS_NAME = "tinaide_config"
     private const val CUSTOM_EDITOR_THEME_KEY = "editor_custom_theme_v1"
+    private const val EDITOR_FONT_SIZE_KEY = "editor_font_size"
 
     @Volatile
     private var configManagerRef: IConfigManager? = null
@@ -457,15 +458,15 @@ object Prefs {
 
     /**
      * 编辑器字体大小（sp）。
-     * 使用 AppFontManager 中定义的统一常量。
+     * 使用 EditorFontSize 中定义的统一范围，保留缩放产生的小数精度。
      * 存储于默认 SharedPreferences 中，键为 "editor_font_size"。
      * 注意：使用 String 存储以兼容 EditTextPreference。
      */
     val editorFontSize: Float
-        get() = sharedPrefs.getString("editor_font_size", AppFontManager.DEFAULT_EDITOR_FONT_SIZE.toInt().toString())
+        get() = sharedPrefs.getString(EDITOR_FONT_SIZE_KEY, EditorFontSize.DEFAULT_SP.toString())
             ?.toFloatOrNull()
-            ?.let { AppFontManager.clampFontSize(it) }
-            ?: AppFontManager.DEFAULT_EDITOR_FONT_SIZE
+            ?.let(EditorFontSize::normalize)
+            ?: EditorFontSize.DEFAULT_SP
 
     /**
      * Tab 宽度（空格数）。默认 4，范围 [2, 8]。
@@ -802,8 +803,10 @@ object Prefs {
     }
 
     fun setEditorFontSize(sizeSp: Float) {
-        val clamped = AppFontManager.clampFontSize(sizeSp)
-        sharedPrefs.edit().putString("editor_font_size", clamped.toInt().toString()).apply()
+        val clamped = EditorFontSize.normalize(sizeSp)
+        // Keep the legacy String key, but never quantize the live editor's Float size.
+        // A truncated preference is echoed into every open editor without its scale anchor.
+        sharedPrefs.edit().putString(EDITOR_FONT_SIZE_KEY, clamped.toString()).apply()
         notifyEditorSettingsChanged()
     }
 
