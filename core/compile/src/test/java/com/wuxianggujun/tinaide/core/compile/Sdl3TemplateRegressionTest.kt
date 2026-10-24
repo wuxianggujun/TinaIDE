@@ -28,6 +28,26 @@ class Sdl3TemplateRegressionTest {
         }
     }
 
+    @Test
+    fun `sdl3 plugin zip stays in sync with tools project template source`() {
+        // 源头是 tools/project-templates/sdl3_cmake；改了源码必须重新打包插件 zip，
+        // 否则插件安装出的项目与内置模板分叉。行尾按 LF 归一后逐字节比对。
+        val repoRoot = locateRepoRoot()
+        val zipPath = repoRoot.resolve("test-plugins/tinaide.template.sdl3/templates/sdl3_cmake.zip")
+        val sourceDir = repoRoot.resolve("tools/project-templates/sdl3_cmake")
+
+        ZipFile(zipPath.toFile()).use { zip ->
+            val entryNames = zip.entries().toList().map { it.name }
+            assertThat(entryNames).containsExactly(".gitignore", "CMakeLists.txt", "src/main.cpp")
+            entryNames.forEach { name ->
+                val zipText = zip.readText(name).replace("\r\n", "\n")
+                val sourceFile = sourceDir.resolve(name).toFile()
+                val sourceText = sourceFile.readText(StandardCharsets.UTF_8).replace("\r\n", "\n")
+                assertThat(zipText).isEqualTo(sourceText)
+            }
+        }
+    }
+
     private fun ZipFile.readText(entryName: String): String {
         val entry = requireNotNull(getEntry(entryName)) {
             "sdl3_cmake.zip 缺少 $entryName"

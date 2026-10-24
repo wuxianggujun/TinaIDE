@@ -1,3 +1,8 @@
+// 入口契约：SDL3 的 <SDL3/SDL.h> 不会自动包含 SDL_main.h（SDL2 的 <SDL2/SDL.h> 会）。
+// 漏掉它项目仍能编译成 libmain.so，但运行宿主 dlsym 找不到 SDL_main，表现为
+// “启动一闪而过”。TinaIDE 会在运行前检测并提示；请勿删掉下面这行 include。
+// 注意：SDL_main.h 是“单头文件库”，整个项目只能在这一个 .cpp 里包含它；
+// 回调写法必须在包含它之前定义 SDL_MAIN_USE_CALLBACKS。
 #define SDL_MAIN_USE_CALLBACKS 1
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
@@ -36,6 +41,8 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     SDL_SetWindowResizable(state->window, true);
     SDL_SetRenderVSync(state->renderer, 1);
     *appstate = state;
+    // 这一行会出现在悬浮日志与“启动失败”对话框里，可用来确认日志链路。
+    SDL_Log("{{PROJECT_NAME}}: SDL3 window ready");
     return SDL_APP_CONTINUE;
 }
 
