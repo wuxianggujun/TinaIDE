@@ -1,16 +1,20 @@
-name: Dev Static Checks
+name: Core Regression Checks
 
 on:
   push:
     branches:
       - dev
+      - main
+  pull_request:
+    branches: [main, dev]
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
 
 concurrency:
-  group: dev-static-${{ github.ref }}
+  group: core-checks-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 env:
@@ -22,7 +26,7 @@ env:
 jobs:
   static-check:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - name: Checkout code
@@ -34,6 +38,9 @@ jobs:
 
       - name: Run maintenance checks
         run: python3 tools/checks/check_all.py
+
+      - name: Test distribution policy and device result checks
+        run: python3 -m unittest discover -s tools/checks -p 'test_*.py'
 
       - name: Run i18n checks
         run: python3 tools/i18n/check_all.py
@@ -73,20 +80,28 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Run plugin, help, and tutorial JVM tests
+      - name: Run editor, compiler, debug, and security regression tests
         run: |
           ./gradlew -Ptina.devAbi=arm64 -Ptina.buildProotFromSource=false \
+            :core:text-engine:testDebugUnitTest :core:editor-view:testDebugUnitTest \
+            :feature:editor:testDebugUnitTest :core:compile:testDebugUnitTest \
+            :core:editor-lsp:testDebugUnitTest :core:debug:testDebugUnitTest \
+            :core:security:testDebugUnitTest :core:storage:testDebugUnitTest \
             :core:plugin:testDebugUnitTest :feature:help:testDebugUnitTest :feature:tutorial:testDebugUnitTest \
             --no-daemon --configure-on-demand \
             -Dorg.gradle.internal.http.connectionTimeout=120000 \
             -Dorg.gradle.internal.http.socketTimeout=120000 \
             -Dorg.gradle.internal.repository.max.retries=4
 
-      - name: Run app storage contract and tutorial JVM tests
+      - name: Run host lifecycle, split editor, and storage regression tests
         run: |
           ./gradlew -Ptina.devAbi=arm64 -Ptina.buildProotFromSource=false \
             :app:testArm64DebugUnitTest \
             --tests "com.wuxianggujun.tinaide.storage.Android10StorageManifestContractTest" \
+            --tests "*CodeEditorRuntimeTest" --tests "*CodeEditorRuntimeLifecycleTest" \
+            --tests "*CompileActionsHelperTest" \
+            --tests "*EditorFontSizeHostIntegrationTest" --tests "*EditorContainerStateTest" \
+            --tests "*EditorSplitPaneStateTest" --tests "*SplitEditorSessionStorageTest" \
             --tests "com.wuxianggujun.tinaide.ui.compose.screens.main.tutorial.TutorialArticleLoadStateTest" \
             --tests "com.wuxianggujun.tinaide.ui.compose.screens.main.tutorial.TutorialRelatedLearningSupportTest" \
             --no-daemon --configure-on-demand \
@@ -94,12 +109,18 @@ jobs:
             -Dorg.gradle.internal.http.socketTimeout=120000 \
             -Dorg.gradle.internal.repository.max.retries=4
 
-      - name: Upload plugin and tutorial JVM failure reports
+      - name: Upload regression failure reports
         if: ${{ failure() }}
         uses: actions/upload-artifact@v7
         with:
-          name: plugin-jvm-test-reports-${{ github.run_id }}-${{ github.run_attempt }}
+          name: core-jvm-test-reports-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
+            editor-kit/*/build/test-results/testDebugUnitTest/
+            editor-kit/*/build/reports/tests/testDebugUnitTest/
+            core/*/build/test-results/testDebugUnitTest/
+            core/*/build/reports/tests/testDebugUnitTest/
+            feature/editor/build/test-results/testDebugUnitTest/
+            feature/editor/build/reports/tests/testDebugUnitTest/
             core/plugin/build/test-results/testDebugUnitTest/
             core/plugin/build/reports/tests/testDebugUnitTest/
             feature/help/build/test-results/testDebugUnitTest/

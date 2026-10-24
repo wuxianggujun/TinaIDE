@@ -27,7 +27,21 @@ env:
   GRADLE_OPTS: "-Xmx8g -XX:MaxMetaspaceSize=1536m -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8 -XX:+UseG1GC -XX:-UseGCOverheadLimit"
 
 jobs:
+  distribution-policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Verify APK distribution is allowed
+        run: python3 tools/checks/check_distribution.py
+
+  core-regression:
+    needs: distribution-policy
+    uses: ./.github/workflows/dev-static-check.yml
+    permissions:
+      contents: read
+
   build-debug:
+    needs: [distribution-policy, core-regression]
     if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.build_type == 'debug' }}
     runs-on: ubuntu-latest
 
@@ -148,6 +162,7 @@ jobs:
         run: pgrep -af 'GradleDaemon|org.gradle.launcher.daemon' || true
 
   build-release:
+    needs: [distribution-policy, core-regression]
     if: ${{ github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_type == 'release') }}
     runs-on: ubuntu-latest
     timeout-minutes: 120

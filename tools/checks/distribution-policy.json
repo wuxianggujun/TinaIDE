@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "components": [
+    {
+      "name": "RikkaHub embedded",
+      "dependency": "me.rerere.rikkahub:rikkahub-embedded",
+      "status": "blocked",
+      "reason": "The additional license restrictions remain unresolved. See NOTICE.md."
+    }
+  ]
+}
