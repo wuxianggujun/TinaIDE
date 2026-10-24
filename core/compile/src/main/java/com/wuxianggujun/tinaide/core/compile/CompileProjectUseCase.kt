@@ -169,6 +169,8 @@ class CompileProjectUseCase(
             val workingDirectory: String,
             val arguments: List<String> = emptyList(),
             val environment: Map<String, String> = emptyMap(),
+            val backend: TerminalBackend = TerminalBackend.HOST,
+            val toolchainId: String? = null,
         ) : LaunchSpec()
         data class Sdl(
             val libraryPath: String,
@@ -885,6 +887,8 @@ class CompileProjectUseCase(
                 workingDirectory = descriptor.workingDir,
                 arguments = config.getArgsList(buildContext),
                 environment = resolvedLaunchEnvironment,
+                backend = if (runMode == LinuxRunModePolicy.RunMode.NATIVE) TerminalBackend.HOST else TerminalBackend.PROOT,
+                toolchainId = descriptor.artifact.fingerprint.toolchainId,
             )
             is LaunchDescriptor.Terminal -> {
                 val workingDir = config.getAbsoluteWorkDir(projectRoot.absolutePath, buildContext)

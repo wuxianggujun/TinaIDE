@@ -34,7 +34,9 @@ class BuildProcessRunnerTest {
         val result = BuildProcessRunner.run(
             processBuilder = ProcessBuilder(command).redirectErrorStream(true),
             commandLabel = "stdin-test",
-            timeoutMs = 2_000L,
+            // Allow for PowerShell cold startup on a busy Windows build host. Timeout
+            // behavior is covered separately with the short, non-consuming child.
+            timeoutMs = 10_000L,
             stdin = "formatter input",
         )
 

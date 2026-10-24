@@ -48,6 +48,8 @@ class CompileActionsHelper(
             workingDirectory: String?,
             arguments: List<String>,
             environment: Map<String, String>,
+            backend: TerminalBackend,
+            toolchainId: String?,
         )
     }
 
@@ -348,6 +350,8 @@ class CompileActionsHelper(
             workingDirectory = launch.workingDirectory,
             arguments = launch.arguments,
             environment = launch.environment,
+            backend = launch.backend,
+            toolchainId = launch.toolchainId,
         )
         showBuildLog()
     }
@@ -568,8 +572,12 @@ class ViewModelCompileUiBridge(
         workingDirectory: String?,
         arguments: List<String>,
         environment: Map<String, String>,
+        backend: TerminalBackend,
+        toolchainId: String?,
     ) {
-        debugViewModel.startDebugSession(programPath, workingDirectory, arguments, environment)
+        debugViewModel.startDebugSession(programPath, workingDirectory, arguments, environment,
+            if (backend == TerminalBackend.HOST) com.wuxianggujun.tinaide.core.debug.DebugBackend.NATIVE
+            else com.wuxianggujun.tinaide.core.debug.DebugBackend.PROOT, toolchainId)
     }
 }
 

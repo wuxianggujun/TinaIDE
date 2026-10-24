@@ -146,6 +146,8 @@ class CompileProjectUseCaseLaunchEnvironmentTest {
         val launch = (result as CompileProjectUseCase.Result.Success).report.launch
             as CompileProjectUseCase.LaunchSpec.Debug
         val ldLibraryPath = launch.environment["LD_LIBRARY_PATH"].orEmpty()
+        assertThat(launch.backend).isEqualTo(com.wuxianggujun.tinaide.core.terminal.TerminalBackend.HOST)
+        assertThat(launch.toolchainId).isEqualTo(artifact.fingerprint.toolchainId)
         val runtimePath = runtimeDir.canonicalFile.absolutePath
         assertThat(ldLibraryPath).contains(runtimePath)
         assertThat(ldLibraryPath).contains("/manual/lib")

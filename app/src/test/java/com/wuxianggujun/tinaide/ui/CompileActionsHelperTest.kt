@@ -482,7 +482,8 @@ class CompileActionsHelperTest {
             )
         )
         verify(exactly = 1) {
-            uiBridge.startDebugSession("/tmp/imgui-demo", "/tmp", emptyList(), emptyMap())
+            uiBridge.startDebugSession("/tmp/imgui-demo", "/tmp", emptyList(), emptyMap(),
+                com.wuxianggujun.tinaide.core.terminal.TerminalBackend.HOST, null)
         }
         verify(atLeast = 1) { uiBridge.showBuildLog() }
     }

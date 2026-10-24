@@ -6,22 +6,29 @@ import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.core.proot.PRootEnvironment
 import com.wuxianggujun.tinaide.core.proot.ToolchainPathResolver
 import java.io.File
+import java.util.UUID
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
- * 调试会话服务（LLDB + PRoot）
+ * 调试会话服务（native LLDB，或显式选择的 PRoot LLDB）
  *
  * 负责：
  * - 启动/停止 LLDB 会话
@@ -29,11 +36,14 @@ import kotlinx.coroutines.withContext
  * - 暂停时刷新调用栈和变量
  * - 将 LLDB 输出透传给 UI（用于调试控制台）
  */
-class DebugSessionService(
+class DebugSessionService internal constructor(
     private val context: Context,
     private val prootEnvironment: PRootEnvironment,
-    private val breakpointStore: BreakpointStore
+    private val breakpointStore: BreakpointStore,
+    private val debuggerFactory: (suspend (DebugBackend, String?) -> LldbDebugger)?,
 ) {
+    constructor(context: Context, prootEnvironment: PRootEnvironment, breakpointStore: BreakpointStore) :
+        this(context, prootEnvironment, breakpointStore, null)
     private val toolchainPathResolver by lazy { ToolchainPathResolver(context) }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -51,17 +61,24 @@ class DebugSessionService(
     val variables: StateFlow<List<Variable>> = _variables.asStateFlow()
 
     private var debugger: PRootDebugger? = null
-    private var sessionId: String? = null
+    private var outputJob: Job? = null
+    private var failureJob: Job? = null
+    private val startMutex = Mutex()
+    @Volatile private var sessionId: String? = null
+    @Volatile private var targetPid: Int? = null
+    private var activeBackend = DebugBackend.NATIVE
     private var isFirstStop: Boolean = true
 
     @Volatile private var breakpointSyncPending: Boolean = false
 
     private val stateRefreshMutex = Mutex()
+    private val breakpointSyncMutex = Mutex()
     private val outputBufferLock = Any()
     private var outputBuffer = StringBuilder()
-    private var lastHandledStopMarker = -1
-    private var lastHandledExitMarker = -1
-    private var lastHandledLaunchMarker = -1
+    private var outputOffset = 0L
+    private var lastHandledStopMarker = -1L
+    private var lastHandledExitMarker = -1L
+    private var lastHandledLaunchMarker = -1L
 
     private val stopRegex = Regex("""(?im)^\s*Process\s+\d+\s+stopped\b""")
     private val launchRegex = Regex("""(?im)^\s*Process\s+\d+\s+launched\b""")
@@ -71,7 +88,10 @@ class DebugSessionService(
     init {
         // 监听断点变化：尽量在暂停/启动阶段同步到调试器，避免 RUNNING 阶段阻塞交互
         scope.launch {
-            breakpointStore.breakpoints.collect {
+            breakpointStore.breakpoints
+                .map { list -> list.map { it.copy(verified = false, address = 0, hitCount = 0) } }
+                .distinctUntilChanged()
+                .collect {
                 breakpointSyncPending = true
                 val current = _state.value
                 if (current is DebugState.Paused || current is DebugState.Starting) {
@@ -86,6 +106,19 @@ class DebugSessionService(
         workingDirectory: String? = null,
         arguments: List<String> = emptyList(),
         environment: Map<String, String> = emptyMap(),
+        backend: DebugBackend = DebugBackend.NATIVE,
+        toolchainId: String? = null,
+    ): Result<String> = startMutex.withLock {
+        startSessionInternal(programPath, workingDirectory, arguments, environment, backend, toolchainId)
+    }
+
+    private suspend fun startSessionInternal(
+        programPath: String,
+        workingDirectory: String?,
+        arguments: List<String>,
+        environment: Map<String, String>,
+        backend: DebugBackend,
+        toolchainId: String?,
     ): Result<String> = withContext(Dispatchers.IO) {
         val current = _state.value
         if (current !is DebugState.Idle && current !is DebugState.Terminated) {
@@ -94,22 +127,9 @@ class DebugSessionService(
             )
         }
 
-        val debuggerCheck = runCatching {
-            prootEnvironment.execute(
-                command = listOf(toolchainPathResolver.getLldb(), "--version"),
-                workDir = "/",
-                timeout = 10_000
-            )
-        }.getOrNull()
-
-        if (debuggerCheck?.isSuccess != true) {
-            return@withContext Result.failure(
-                IllegalStateException(Strings.debug_error_lldb_unavailable.strOr(context))
-            )
-        }
-
-        val newSessionId = "dbg-${System.currentTimeMillis()}"
+        val newSessionId = "dbg-${UUID.randomUUID()}"
         sessionId = newSessionId
+        activeBackend = backend
         isFirstStop = true
 
         _state.value = DebugState.Starting(
@@ -122,14 +142,34 @@ class DebugSessionService(
         try {
             val workDir = workingDirectory ?: File(programPath).parent ?: "/workspace"
 
-            val dbg = PRootDebugger(context, prootEnvironment.getPRootManager())
+            val dbg = debuggerFactory?.invoke(backend, toolchainId) ?: when (backend) {
+                DebugBackend.NATIVE -> NativeDebuggerFactory.create(context, toolchainId)
+                DebugBackend.PROOT -> {
+                    val availability = prootEnvironment.execute(
+                        command = listOf(toolchainPathResolver.getLldb(), "--version"), workDir = "/", timeout = 10_000
+                    )
+                    check(availability.isSuccess) { Strings.debug_error_lldb_unavailable.strOr(context) }
+                    LldbDebugger(context, prootEnvironment.getPRootManager())
+                }
+            }
+            if (sessionId != newSessionId) { dbg.close(); return@withContext Result.failure(CancellationException("Session stopped")) }
             debugger = dbg
 
-            scope.launch {
+            outputJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
                 dbg.output.collect { chunk ->
+                    if (sessionId != newSessionId) return@collect
                     _events.emit(DebugEvent.OutputReceived(chunk.text, isStderr = chunk.isStderr))
                     if (!chunk.isStderr) {
-                        onStdoutChunk(chunk.text)
+                        onStdoutChunk(chunk.text, newSessionId)
+                    }
+                }
+            }
+            failureJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                dbg.failure.collect { failure ->
+                    if (failure != null && sessionId == newSessionId) {
+                        _state.value = DebugState.Terminated(newSessionId, TerminateReason.ERROR, message = failure.message)
+                        _events.tryEmit(DebugEvent.Error(Strings.debug_error_execute_failed.strOr(context, failure.message.orEmpty())))
+                        cleanupSession()
                     }
                 }
             }
@@ -140,28 +180,32 @@ class DebugSessionService(
                 workingDirectory = workDir,
                 environment = environment,
             ).getOrThrow()
+            if (sessionId != newSessionId) return@withContext Result.failure(CancellationException("Session stopped"))
 
             breakpointStore.clearVerification()
             breakpointSyncPending = true
             syncBreakpointsIfNeeded()
             // 总是停在入口（main）：保证一定能进入暂停态，从而可查看变量/调用栈并进行单步调试
-            dbg.sendCommand("breakpoint set --name main", timeoutMs = 10_000)
+            dbg.sendCommand("breakpoint set --name main", timeoutMs = 10_000).getOrThrow()
 
             dbg.sendCommand("run", timeoutMs = 300_000).getOrThrow()
             // 注意：run 的“stopped/exit”信息往往通过异步 stdout 输出。
             // 这里不要覆盖由 stdout 驱动的状态机（否则会出现“实际已断下但 UI 仍显示 Running”）。
-            if (_state.value is DebugState.Starting) {
+            if (sessionId == newSessionId && _state.value is DebugState.Starting) {
                 _state.value = DebugState.Running(newSessionId)
             }
             Result.success(newSessionId)
         } catch (t: Throwable) {
-            _state.value = DebugState.Terminated(
-                sessionId = newSessionId,
-                reason = TerminateReason.ERROR,
-                message = t.message
-            )
-            _events.tryEmit(DebugEvent.Error(t.message ?: Strings.debug_error_start_failed.strOr(context)))
-            cleanupSession()
+            if (sessionId == newSessionId) {
+                _state.value = DebugState.Terminated(
+                    sessionId = newSessionId,
+                    reason = TerminateReason.ERROR,
+                    message = t.message
+                )
+                _events.tryEmit(DebugEvent.Error(t.message ?: Strings.debug_error_start_failed.strOr(context)))
+                cleanupSession()
+            }
+            if (t is CancellationException) throw t
             Result.failure(t)
         }
     }
@@ -215,8 +259,9 @@ class DebugSessionService(
             return
         }
         scope.launch {
+            if (sessionId != current.sessionId) return@launch
             val dbg = debugger ?: run {
-                _events.emit(DebugEvent.Error("Debugger not running"))
+                _events.emit(DebugEvent.Error(Strings.debug_error_not_paused.strOr(context)))
                 return@launch
             }
 
@@ -225,10 +270,13 @@ class DebugSessionService(
 
             val output = runCatching { dbg.sendCommand("finish", timeoutMs = 60_000).getOrThrow() }
                 .getOrElse { t ->
+                    if (t is CancellationException) throw t
+                    if (sessionId != current.sessionId || debugger !== dbg) return@launch
                     _state.value = previousState
                     _events.emit(DebugEvent.Error(Strings.debug_error_execute_failed.strOr(context, t.message ?: "")))
                     return@launch
                 }
+            if (sessionId != current.sessionId || debugger !== dbg) return@launch
 
             val error = parseFirstError(output)
             if (error != null && error.contains("return address breakpoint", ignoreCase = true)) {
@@ -239,6 +287,8 @@ class DebugSessionService(
                 )
                 runCatching { dbg.sendCommand("continue", timeoutMs = 300_000).getOrThrow() }
                     .onFailure { t ->
+                        if (t is CancellationException) throw t
+                        if (sessionId != current.sessionId || debugger !== dbg) return@launch
                         _state.value = previousState
                         _events.emit(DebugEvent.Error(Strings.debug_error_continue_failed.strOr(context, t.message ?: "")))
                     }
@@ -261,12 +311,17 @@ class DebugSessionService(
             _events.tryEmit(DebugEvent.Error(Strings.debug_error_cannot_pause.strOr(context)))
             return
         }
-        runAsyncCommand(
-            sessionId = current.sessionId,
-            command = "process interrupt",
-            enteringState = current,
-            timeoutMs = 60_000
-        )
+        // `run` owns the command channel until a stop. Do not queue an interrupt behind it.
+        val pid = targetPid
+        if (activeBackend == DebugBackend.NATIVE && pid != null && pid > 0) {
+            try {
+                android.system.Os.kill(pid, android.system.OsConstants.SIGINT)
+            } catch (error: Exception) {
+                _events.tryEmit(DebugEvent.Error(Strings.debug_error_execute_failed.strOr(context, error.message.orEmpty())))
+            }
+        } else {
+            _events.tryEmit(DebugEvent.Error(Strings.debug_error_cannot_pause.strOr(context)))
+        }
     }
 
     fun stopSession() {
@@ -279,18 +334,9 @@ class DebugSessionService(
             else -> sessionId
         } ?: "dbg-unknown"
 
-        scope.launch {
-            try {
-                debugger?.stop()
-            } finally {
-                _state.value = DebugState.Terminated(
-                    sessionId = sid,
-                    reason = TerminateReason.USER_STOP
-                )
-                _events.emit(DebugEvent.SessionEnded(sid, Strings.debug_session_ended_user_stop.strOr(context)))
-                cleanupSession()
-            }
-        }
+        _state.value = DebugState.Terminated(sessionId = sid, reason = TerminateReason.USER_STOP)
+        cleanupSession()
+        _events.tryEmit(DebugEvent.SessionEnded(sid, Strings.debug_session_ended_user_stop.strOr(context)))
     }
 
     fun requestVariables(frameId: Int) {
@@ -298,12 +344,17 @@ class DebugSessionService(
         if (current !is DebugState.Paused) return
 
         scope.launch {
+            if (sessionId != current.sessionId) return@launch
             try {
                 val dbg = debugger ?: return@launch
                 dbg.sendCommand("frame select $frameId", timeoutMs = 5_000).getOrThrow()
+                if (sessionId != current.sessionId || debugger !== dbg) return@launch
                 val varsOutput = dbg.sendCommand("frame variable", timeoutMs = 10_000).getOrThrow()
+                if (sessionId != current.sessionId || debugger !== dbg) return@launch
                 _variables.value = parseVariables(varsOutput)
             } catch (t: Throwable) {
+                if (t is CancellationException) throw t
+                if (sessionId != current.sessionId) return@launch
                 _events.emit(DebugEvent.Error(Strings.debug_error_get_variables_failed.strOr(context, t.message ?: "")))
             }
         }
@@ -315,20 +366,26 @@ class DebugSessionService(
             return@withContext Result.failure(IllegalStateException(Strings.debug_error_not_paused.strOr(context)))
         }
         try {
-            val dbg = debugger ?: return@withContext Result.failure(IllegalStateException("Debugger not running"))
+            val dbg = debugger ?: return@withContext Result.failure(IllegalStateException(Strings.debug_error_not_paused.strOr(context)))
             val output = dbg.sendCommand("expression $expression", timeoutMs = 10_000).getOrThrow()
+            if (sessionId != current.sessionId || debugger !== dbg) {
+                return@withContext Result.failure(IllegalStateException(Strings.debug_error_not_paused.strOr(context)))
+            }
             Result.success(output.trim())
         } catch (t: Throwable) {
+            if (t is CancellationException) throw t
             Result.failure(t)
         }
     }
 
     fun reset() {
-        scope.launch {
-            debugger?.stop()
-            cleanupSession()
-            _state.value = DebugState.Idle
-        }
+        cleanupSession()
+        _state.value = DebugState.Idle
+    }
+
+    fun close() {
+        reset()
+        scope.cancel()
     }
 
     private fun runAsyncCommand(
@@ -338,14 +395,16 @@ class DebugSessionService(
         timeoutMs: Long
     ) {
         scope.launch {
+            if (this@DebugSessionService.sessionId != sessionId) return@launch
             try {
                 val dbg = debugger ?: run {
-                    _events.emit(DebugEvent.Error("Debugger not running"))
+                    _events.emit(DebugEvent.Error(Strings.debug_error_not_paused.strOr(context)))
                     return@launch
                 }
                 val previousState = _state.value
                 _state.value = enteringState
                 val output = dbg.sendCommand(command, timeoutMs = timeoutMs).getOrThrow()
+                if (this@DebugSessionService.sessionId != sessionId || debugger !== dbg) return@launch
                 val error = parseFirstError(output)
                 if (error != null) {
                     _state.value = previousState
@@ -355,6 +414,8 @@ class DebugSessionService(
                     }
                 }
             } catch (t: Throwable) {
+                if (t is CancellationException) throw t
+                if (this@DebugSessionService.sessionId != sessionId) return@launch
                 _state.value = DebugState.Terminated(
                     sessionId = sessionId,
                     reason = TerminateReason.ERROR,
@@ -367,28 +428,33 @@ class DebugSessionService(
     }
 
     private suspend fun refreshPausedState() {
+        val sid = sessionId ?: return
         val dbg = debugger ?: return
         try {
             val btOutput = dbg.sendCommand("thread backtrace", timeoutMs = 10_000).getOrThrow()
+            if (sessionId != sid || debugger !== dbg) return
             _callStack.value = parseBacktrace(btOutput)
 
             val varsOutput = dbg.sendCommand("frame variable", timeoutMs = 10_000).getOrThrow()
+            if (sessionId != sid || debugger !== dbg) return
             _variables.value = parseVariables(varsOutput)
         } catch (t: Throwable) {
+            if (t is CancellationException) throw t
+            if (sessionId != sid || debugger !== dbg) return
             _events.emit(DebugEvent.Error(Strings.debug_error_refresh_state_failed.strOr(context, t.message ?: "")))
         }
     }
 
-    private suspend fun syncBreakpointsIfNeeded() {
+    private suspend fun syncBreakpointsIfNeeded(): Unit = breakpointSyncMutex.withLock {
         if (!breakpointSyncPending) return
-        breakpointSyncPending = false
-
+        val sid = sessionId ?: return
         val dbg = debugger ?: return
+        breakpointSyncPending = false
         val all = breakpointStore.breakpoints.value
         val enabled = all.filter { it.enabled }
 
         // 先清空调试器内的断点（KISS：避免维护复杂映射）
-        runCatching {
+        try {
             val listOutput = dbg.sendCommand("breakpoint list", timeoutMs = 10_000).getOrThrow()
             val ids = Regex("""^\s*Breakpoint (\d+):""", RegexOption.MULTILINE)
                 .findAll(listOutput)
@@ -396,9 +462,17 @@ class DebugSessionService(
                 .distinct()
                 .toList()
             ids.forEach { id ->
-                dbg.sendCommand("breakpoint delete $id", timeoutMs = 10_000)
+                if (sessionId != sid || debugger !== dbg) return
+                dbg.sendCommand("breakpoint delete $id", timeoutMs = 10_000).getOrThrow()
             }
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            if (sessionId != sid || debugger !== dbg) return
+            breakpointSyncPending = true
+            _events.emit(DebugEvent.Error(Strings.debug_error_set_breakpoint_failed.strOr(context, error.message.orEmpty())))
+            return
         }
+        if (sessionId != sid || debugger !== dbg) return
 
         // 默认全部置为未验证；后续按实际设置结果刷新
         all.forEach { bp ->
@@ -408,6 +482,7 @@ class DebugSessionService(
         if (enabled.isEmpty()) return
 
         enabled.forEach { bp ->
+            if (sessionId != sid || debugger !== dbg) return
             fun buildCmd(): String = buildString {
                 append("breakpoint set --file ")
                 append(quoteForLldb(bp.file))
@@ -421,9 +496,12 @@ class DebugSessionService(
 
             val out = runCatching { dbg.sendCommand(buildCmd(), timeoutMs = 10_000).getOrThrow() }
                 .getOrElse { t ->
+                    if (t is CancellationException) throw t
+                    if (sessionId != sid || debugger !== dbg) return
                     _events.emit(DebugEvent.Error(Strings.debug_error_set_breakpoint_failed.strOr(context, t.message ?: "")))
                     ""
                 }
+            if (sessionId != sid || debugger !== dbg) return
             val lowered = out.lowercase()
             val ok = out.contains("Breakpoint", ignoreCase = true) &&
                 !lowered.contains("error:") &&
@@ -569,39 +647,38 @@ class DebugSessionService(
         return "\"$escaped\""
     }
 
-    private fun onStdoutChunk(text: String) {
+    private fun onStdoutChunk(text: String, expectedSessionId: String) {
+        if (sessionId != expectedSessionId) return
         val snapshot = synchronized(outputBufferLock) {
             outputBuffer.append(text)
             // 保留尾部，避免无限增长
             val maxChars = 50_000
             if (outputBuffer.length > maxChars) {
+                outputOffset += outputBuffer.length - maxChars
                 outputBuffer = StringBuilder(outputBuffer.takeLast(maxChars))
-                // 缓冲区被截断后，旧 marker 的索引已失效，重置避免漏处理/重复处理
-                lastHandledStopMarker = -1
-                lastHandledExitMarker = -1
-                lastHandledLaunchMarker = -1
             }
             outputBuffer.toString()
         }
 
         val stop = stopRegex.findAll(snapshot).lastOrNull()
-        if (stop != null && stop.range.first != lastHandledStopMarker) {
-            lastHandledStopMarker = stop.range.first
+        if (stop != null && stop.range.first + outputOffset != lastHandledStopMarker) {
+            lastHandledStopMarker = stop.range.first + outputOffset
             val slice = snapshot.substring(stop.range.first)
-            scope.launch { handleStopped(slice) }
+            scope.launch { handleStopped(slice, expectedSessionId) }
         }
 
         val exit = exitRegex.findAll(snapshot).lastOrNull()
-        if (exit != null && exit.range.first != lastHandledExitMarker) {
-            lastHandledExitMarker = exit.range.first
+        if (exit != null && exit.range.first + outputOffset != lastHandledExitMarker) {
+            lastHandledExitMarker = exit.range.first + outputOffset
             val slice = snapshot.substring(exit.range.first)
             val exitCode = parseExitCode(slice)
-            scope.launch { handleExited(exitCode) }
+            scope.launch { handleExited(exitCode, expectedSessionId) }
         }
 
         val launched = launchRegex.findAll(snapshot).lastOrNull()
-        if (launched != null && launched.range.first != lastHandledLaunchMarker) {
-            lastHandledLaunchMarker = launched.range.first
+        if (launched != null && launched.range.first + outputOffset != lastHandledLaunchMarker) {
+            lastHandledLaunchMarker = launched.range.first + outputOffset
+            targetPid = Regex("Process\\s+(\\d+)").find(launched.value)?.groupValues?.get(1)?.toIntOrNull()
             val sid = sessionId ?: return
             val current = _state.value
             if (current is DebugState.Starting) {
@@ -610,9 +687,9 @@ class DebugSessionService(
         }
     }
 
-    private suspend fun handleStopped(outputSnapshot: String) {
-        val sid = sessionId ?: return
+    private suspend fun handleStopped(outputSnapshot: String, sid: String) {
         stateRefreshMutex.withLock {
+            if (sessionId != sid) return
             val reason = parsePauseReason(outputSnapshot)
             val location = parseLocation(outputSnapshot)
             _state.value = DebugState.Paused(
@@ -623,13 +700,14 @@ class DebugSessionService(
             _events.emit(DebugEvent.TargetReady(sid))
             syncBreakpointsIfNeeded()
             refreshPausedState()
+            if (sessionId != sid) return
             isFirstStop = false
         }
     }
 
-    private suspend fun handleExited(exitCode: Int?) {
-        val sid = sessionId ?: return
+    private suspend fun handleExited(exitCode: Int?, sid: String) {
         stateRefreshMutex.withLock {
+            if (sessionId != sid) return
             _state.value = DebugState.Terminated(
                 sessionId = sid,
                 reason = TerminateReason.NORMAL_EXIT,
@@ -642,14 +720,22 @@ class DebugSessionService(
 
     private fun cleanupSession() {
         sessionId = null
+        targetPid = null
+        val closed = debugger
         debugger = null
+        outputJob?.cancel()
+        outputJob = null
+        failureJob?.cancel()
+        failureJob = null
+        closed?.close()
         isFirstStop = true
         breakpointSyncPending = false
         synchronized(outputBufferLock) {
             outputBuffer = StringBuilder()
-            lastHandledStopMarker = -1
-            lastHandledExitMarker = -1
-            lastHandledLaunchMarker = -1
+            outputOffset = 0L
+            lastHandledStopMarker = -1L
+            lastHandledExitMarker = -1L
+            lastHandledLaunchMarker = -1L
         }
         _callStack.value = emptyList()
         _variables.value = emptyList()

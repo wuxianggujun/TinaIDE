@@ -171,11 +171,13 @@ class DebugViewModel(
         workingDirectory: String? = null,
         arguments: List<String> = emptyList(),
         environment: Map<String, String> = emptyMap(),
+        backend: com.wuxianggujun.tinaide.core.debug.DebugBackend = com.wuxianggujun.tinaide.core.debug.DebugBackend.NATIVE,
+        toolchainId: String? = null,
     ) {
         viewModelScope.launch {
             clearConsole()
             debugSessionService
-                .startSession(programPath, workingDirectory, arguments, environment)
+                .startSession(programPath, workingDirectory, arguments, environment, backend, toolchainId)
                 .onFailure { appendConsole("[ERROR] ${it.message}\n") }
         }
     }
@@ -255,7 +257,7 @@ class DebugViewModel(
     override fun onCleared() {
         super.onCleared()
         // 清理调试服务资源
-        debugSessionService.reset()
+        debugSessionService.close()
     }
 
     private fun appendConsole(text: String) {
