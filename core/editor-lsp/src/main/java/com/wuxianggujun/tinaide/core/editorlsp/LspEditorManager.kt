@@ -51,7 +51,6 @@ import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
@@ -220,8 +219,7 @@ class LspEditorManager(
     private val inlayHintsCache = mutableMapOf<String, InlayHintsCache>()
     private val foldingRangesCache = mutableMapOf<String, FoldingRangesCache>()
     private val documentVersions = mutableMapOf<String, Long>()
-    private val builtinDiagnosticsRequestTokens = mutableMapOf<String, Any>()
-    private val builtinDiagnosticsJobs = mutableMapOf<String, Job>()
+    private val builtinDiagnostics = LspDiagnosticsScheduler(lspScope, stateLock)
     private val completionWarmupTabIds = mutableSetOf<String>()
 
     @Volatile
@@ -2138,9 +2136,7 @@ class LspEditorManager(
             }
             Triple(
                 sharedCxxSessions.currentSession(),
-                builtinDiagnosticsJobs.remove(tabId).also {
-                    builtinDiagnosticsRequestTokens.remove(tabId)
-                },
+                builtinDiagnostics.remove(tabId),
                 removed,
             ) to requests
         }
@@ -2265,11 +2261,7 @@ class LspEditorManager(
     private fun disposeProject(clearBindings: Boolean = true) {
         cancelPendingSharedCxxShutdown()
         clearDiagnosticsInUi()
-        val diagnosticsJobs = synchronized(stateLock) {
-            builtinDiagnosticsRequestTokens.clear()
-            builtinDiagnosticsJobs.values.toList().also { builtinDiagnosticsJobs.clear() }
-        }
-        diagnosticsJobs.forEach { job -> job.cancel() }
+        builtinDiagnostics.cancelAll()
         val sharedSession = sharedCxxSessions.takeForDispose()
         val clearedCxxCompileContextTabIds = mutableListOf<String>()
         val (sessions, inflightRequests) = synchronized(stateLock) {
@@ -2326,48 +2318,22 @@ class LspEditorManager(
 
     private fun scheduleBuiltinDiagnostics(tabSession: TabSession) {
         val builtinSession = tabSession.builtinSession ?: return
-        val requestToken = Any()
-        val previousJob = synchronized(stateLock) {
-            builtinDiagnosticsRequestTokens[tabSession.tabId] = requestToken
-            builtinDiagnosticsJobs.remove(tabSession.tabId)
-        }
-        previousJob?.cancel()
-
-        val job = lspScope.launch(Dispatchers.Default) {
-            val diagnostics = runCatchingPreservingCancellation { builtinSession.currentDiagnostics() }
-                .getOrElse { error ->
-                    Timber.tag(TAG).w(error, "builtin diagnostics failed for %s", tabSession.file.name)
-                    emptyList()
-                }
-            val stillActive = synchronized(stateLock) {
-                val current = tabSessions[tabSession.tabId]
-                if (current?.builtinSession === builtinSession &&
-                    builtinDiagnosticsRequestTokens[tabSession.tabId] === requestToken
-                ) {
+        builtinDiagnostics.schedule(
+            tabSession.tabId,
+            load = {
+                runCatchingPreservingCancellation { builtinSession.currentDiagnostics() }
+                    .getOrElse { error ->
+                        Timber.tag(TAG).w(error, "builtin diagnostics failed for %s", tabSession.file.name)
+                        emptyList()
+                    }
+            },
+            publish = { diagnostics ->
+                if (tabSessions[tabSession.tabId]?.builtinSession === builtinSession) {
                     lspKnownUris.add(tabSession.documentUri)
-                    true
-                } else {
-                    false
+                    onDiagnosticsChanged?.invoke(tabSession.documentUri, diagnostics)
                 }
-            }
-            if (stillActive) {
-                onDiagnosticsChanged?.invoke(tabSession.documentUri, diagnostics)
-            }
-        }
-        synchronized(stateLock) {
-            if (builtinDiagnosticsRequestTokens[tabSession.tabId] === requestToken) {
-                builtinDiagnosticsJobs[tabSession.tabId] = job
-            } else {
-                job.cancel()
-            }
-        }
-        job.invokeOnCompletion {
-            synchronized(stateLock) {
-                if (builtinDiagnosticsJobs[tabSession.tabId] === job) {
-                    builtinDiagnosticsJobs.remove(tabSession.tabId)
-                }
-            }
-        }
+            },
+        )
     }
 
     private fun scheduleCompletionWarmup(tabId: String, file: File) {

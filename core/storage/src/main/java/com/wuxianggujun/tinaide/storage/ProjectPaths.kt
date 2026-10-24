@@ -61,6 +61,9 @@ import java.io.File
  */
 object ProjectPaths {
 
+    /** Unsaved documents must survive process death without entering backups or exports. */
+    fun getEditorRecoveryRoot(context: Context): File = File(context.noBackupFilesDir, "editor-recovery")
+
     private fun requireSafePathComponent(value: String, label: String): String {
         require(
             value.isNotBlank() &&

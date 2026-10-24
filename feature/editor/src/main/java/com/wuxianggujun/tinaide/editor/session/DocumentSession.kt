@@ -8,6 +8,7 @@ import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.editor.io.AtomicTextFileWriter
 import com.wuxianggujun.tinaide.editor.io.FileCharsetDetector
 import com.wuxianggujun.tinaide.editor.symbol.ProjectSymbolIndexService
+import com.wuxianggujun.tinaide.storage.ProjectPaths
 import java.io.File
 import java.io.IOException
 import java.nio.charset.Charset
@@ -25,6 +26,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import timber.log.Timber
 data class DocumentSessionState(
     val tabId: String,
     val file: File,
@@ -36,6 +38,8 @@ data class DocumentSessionState(
     val lastSavedAt: Long? = null,
     val lastEditAt: Long? = null,
     val lastError: String? = null,
+    val hasRecoveredDraft: Boolean = false,
+    val recoveryError: String? = null,
     val cursorLine: Int = 0,
     val cursorColumn: Int = 0,
     val scrollX: Int = 0,
@@ -184,6 +188,10 @@ class DocumentSession(
 
     private val editorBinding = AtomicReference<EditorBinding?>()
     private val saveMutex = Mutex()
+    private val draftStore = DocumentDraftStore(ProjectPaths.getEditorRecoveryRoot(context))
+    private var recoveryPrepared = false
+    @Volatile private var recoveryDiscarded = false
+    private var lastCheckpointVersion: Long? = null
     private val initialFileCharset = FileCharsetDetector.detect(file)
 
     @Volatile
@@ -251,8 +259,9 @@ class DocumentSession(
 
         val viewState = binding.currentViewState() ?: currentViewState()
         val (currentFingerprint, currentVersion) = readFingerprintWithVersion(binding)
-        val dirty = currentVersion == UNSTABLE_DOCUMENT_VERSION ||
-            cleanFingerprint?.let { currentFingerprint != it } ?: _state.value.isDirty
+        val recoveredConflict = _state.value.hasRecoveredDraft && _state.value.hasExternalModification
+        val dirty = recoveredConflict || currentVersion == UNSTABLE_DOCUMENT_VERSION ||
+            (cleanFingerprint?.let { currentFingerprint != it } ?: _state.value.isDirty)
         if (!dirty) {
             detachedEditorSnapshot = null
             _state.update {
@@ -272,10 +281,10 @@ class DocumentSession(
         }
 
         val contentSnapshot = binding.readSnapshot()
-        val snapshotDirty = cleanFingerprint?.let { baseline ->
+        val snapshotDirty = recoveredConflict || (cleanFingerprint?.let { baseline ->
             contentSnapshot.documentVersion == UNSTABLE_DOCUMENT_VERSION ||
                 buildTextFingerprint(contentSnapshot.text) != baseline
-        } ?: true
+        } ?: true)
         val snapshot = DetachedEditorSnapshot(
             text = contentSnapshot.text,
             viewState = viewState,
@@ -303,13 +312,113 @@ class DocumentSession(
 
     fun detachedEditorSnapshot(): DetachedEditorSnapshot? = detachedEditorSnapshot
 
+    /** Called before the initial file load, never after the user has started editing. */
+    suspend fun prepareRecovery(): DetachedEditorSnapshot? = withContext(Dispatchers.IO) {
+        saveMutex.withLock {
+            detachedEditorSnapshot?.let { return@withLock it }
+            if (recoveryPrepared || recoveryDiscarded || baselineState == BaselineState.READY) return@withLock null
+            recoveryPrepared = true
+            try {
+                val draft = draftStore.read(file) ?: return@withLock null
+                val charset = Charset.forName(draft.charsetName)
+                val diskFingerprint = file.reader(FileCharsetDetector.detect(file)).use { reader ->
+                    var length = 0
+                    var hash = -0x340d631b8c4675d9L
+                    val buffer = CharArray(8192)
+                    while (true) {
+                        val count = reader.read(buffer)
+                        if (count < 0) break
+                        repeat(count) { hash = (hash xor buffer[it].code.toLong()) * 0x100000001b3L }
+                        length += count
+                    }
+                    TextFingerprint(length, hash)
+                }
+                val baseline = TextFingerprint(draft.baselineLength, draft.baselineHash)
+                if (buildTextFingerprint(draft.text) == diskFingerprint) {
+                    draftStore.delete(file)
+                    return@withLock null
+                }
+                cleanFingerprint = baseline
+                cleanVersion = -1L
+                fileCharset = charset
+                val snapshot = DetachedEditorSnapshot(
+                    draft.text, EditorViewState(draft.cursorLine, draft.cursorColumn, draft.scrollX, draft.scrollY),
+                    true, false, false, UNSTABLE_DOCUMENT_VERSION, charset.name()
+                )
+                detachedEditorSnapshot = snapshot
+                _state.update { it.copy(isDirty = true, hasRecoveredDraft = true, hasExternalModification = diskFingerprint != baseline) }
+                snapshot
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (error: Exception) {
+                // Keep the original record for diagnosis/retry; never silently replace corrupt recovery data.
+                recoveryDiscarded = true
+                Timber.w("Unable to read document recovery record (%s)", error.javaClass.simpleName)
+                _state.update { it.copy(recoveryError = Strings.editor_recovery_failed.strOr(context)) }
+                null
+            }
+        }
+    }
+
+    suspend fun checkpointDraft() = withContext(Dispatchers.IO) {
+        saveMutex.withLock {
+            if (recoveryDiscarded || baselineState != BaselineState.READY) return@withLock
+            try {
+                if (!_state.value.isDirty) {
+                    draftStore.delete(file)
+                    lastCheckpointVersion = null
+                    return@withLock
+                }
+                val binding = editorBinding.get()
+                if (binding != null && binding.currentDocumentVersion() == lastCheckpointVersion) return@withLock
+                if (binding != null && binding.textLength() > DocumentDraftStore.MAX_TEXT_CHARS) {
+                    throw IOException("Recovery content exceeds size limit")
+                }
+                val content = binding?.readSnapshot() ?: detachedEditorSnapshot?.let { EditorContentSnapshot(it.text, it.documentVersion) }
+                    ?: return@withLock
+                if (content.documentVersion == UNSTABLE_DOCUMENT_VERSION) return@withLock
+                val baseline = cleanFingerprint ?: return@withLock
+                val view = binding?.currentViewState() ?: currentViewState()
+                draftStore.write(file, DocumentDraftStore.Draft(
+                    sourcePath = file.canonicalPath, text = content.text, charsetName = fileCharset.name(),
+                    baselineLength = baseline.length, baselineHash = baseline.hash,
+                    cursorLine = view.cursorLine, cursorColumn = view.cursorColumn, scrollX = view.scrollX, scrollY = view.scrollY
+                ))
+                lastCheckpointVersion = content.documentVersion
+                _state.update { it.copy(recoveryError = null) }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (error: Exception) {
+                Timber.w("Unable to checkpoint document recovery record (%s)", error.javaClass.simpleName)
+                _state.update { it.copy(recoveryError = Strings.editor_recovery_checkpoint_failed.strOr(context)) }
+            }
+        }
+    }
+
+    suspend fun discardDraft(): Boolean = withContext(Dispatchers.IO) {
+        saveMutex.withLock {
+            try {
+                draftStore.delete(file)
+                recoveryDiscarded = true
+                _state.update { it.copy(hasRecoveredDraft = false, recoveryError = null) }
+                true
+            } catch (error: IOException) {
+                Timber.w("Unable to discard document recovery record (%s)", error.javaClass.simpleName)
+                _state.update { it.copy(recoveryError = Strings.editor_recovery_discard_failed.strOr(context)) }
+                false
+            }
+        }
+    }
+
     fun markDetachedEditorSnapshotRestored(snapshot: DetachedEditorSnapshot) {
         if (detachedEditorSnapshot === snapshot) {
             detachedEditorSnapshot = null
         }
         fileCharset = runCatching { Charset.forName(snapshot.charsetName) }.getOrDefault(fileCharset)
         baselineState = BaselineState.READY
-        val dirty = cleanFingerprint?.let { buildTextFingerprint(snapshot.text) != it } ?: snapshot.isDirty
+        cleanVersion = -1L
+        val dirty = (_state.value.hasRecoveredDraft && _state.value.hasExternalModification) ||
+            (cleanFingerprint?.let { buildTextFingerprint(snapshot.text) != it } ?: snapshot.isDirty)
         _state.update {
             it.copy(
                 isDirty = dirty,
@@ -443,6 +552,7 @@ class DocumentSession(
     fun retargetFile(newFile: File) {
         if (file.absolutePath == newFile.absolutePath) return
 
+        val previousFile = file
         stopFileWatcher()
         file = newFile
         val marker = readCurrentWriteMarker()
@@ -457,6 +567,24 @@ class DocumentSession(
             )
         }
         startFileWatcher()
+        coroutineScope.launch(Dispatchers.IO) {
+            saveMutex.withLock {
+                try {
+                    draftStore.read(previousFile)?.let { draft ->
+                        // A checkpoint under the new identity may already be newer.
+                        if (draftStore.read(newFile) == null) {
+                            draftStore.write(newFile, draft.copy(sourcePath = newFile.canonicalPath))
+                        }
+                        draftStore.delete(previousFile)
+                    }
+                    lastCheckpointVersion = null
+                } catch (error: Exception) {
+                    if (error is CancellationException) throw error
+                    Timber.w("Unable to migrate document recovery record (%s)", error.javaClass.simpleName)
+                    _state.update { it.copy(recoveryError = Strings.editor_recovery_checkpoint_failed.strOr(context)) }
+                }
+            }
+        }
     }
 
     private fun currentViewState(): EditorViewState {
@@ -600,11 +728,25 @@ class DocumentSession(
                     }
                     val isDirtyAfterSave = activeBindingDirty
                         ?: (detachedDirty || !snapshot.isUpToDate)
+                    // Serialize deletion with checkpoints so a stale task cannot resurrect a saved draft.
+                    var recoveryCleanupFailed = false
+                    if (!isDirtyAfterSave) {
+                        try {
+                            withContext(Dispatchers.IO) { draftStore.delete(targetFile) }
+                        } catch (error: IOException) {
+                            Timber.w(error, "Saved document, but could not remove recovery record")
+                            recoveryCleanupFailed = true
+                        }
+                    }
+                    lastCheckpointVersion = null
+                    recoveryDiscarded = false
                     _state.update {
                         it.copy(
                             isDirty = isDirtyAfterSave,
                             isSaving = false,
                             lastSavedAt = snapshot.timestamp,
+                            hasRecoveredDraft = false,
+                            recoveryError = if (recoveryCleanupFailed) Strings.editor_recovery_discard_failed.strOr(context) else null,
                             lastError = null,
                             charsetName = fileCharset.name()
                         )
@@ -724,9 +866,9 @@ class DocumentSession(
         return result
     }
 
-    suspend fun reloadFromDisk(): Boolean {
-        return try {
-            val binding = editorBinding.get() ?: return false
+    suspend fun reloadFromDisk(): Boolean = saveMutex.withLock {
+        try {
+            val binding = editorBinding.get() ?: return@withLock false
             val charset = withContext(Dispatchers.IO) {
                 FileCharsetDetector.detect(file)
             }
@@ -749,9 +891,22 @@ class DocumentSession(
             }
 
             acknowledgeExternalModification()
+            var recoveryCleanupFailed = false
+            try {
+                withContext(Dispatchers.IO) { draftStore.delete(file) }
+            } catch (error: IOException) {
+                // The buffer has already been reloaded. Report only recovery cleanup failure.
+                Timber.w("Reloaded document, but could not remove recovery record (%s)", error.javaClass.simpleName)
+                recoveryCleanupFailed = true
+            }
+            recoveryDiscarded = false
+            lastCheckpointVersion = null
+            detachedEditorSnapshot = null
             _state.update {
                 it.copy(
                     isDirty = false,
+                    hasRecoveredDraft = false,
+                    recoveryError = if (recoveryCleanupFailed) Strings.editor_recovery_discard_failed.strOr(context) else null,
                     canUndo = binding.canUndo(),
                     canRedo = binding.canRedo(),
                     lastError = null,
@@ -772,6 +927,7 @@ class DocumentSession(
         changeCausedByUndoManager: Boolean,
         forceCompare: Boolean
     ): Boolean {
+        if (_state.value.hasRecoveredDraft && _state.value.hasExternalModification) return true
         if (binding.currentDocumentVersion() == cleanVersion) {
             return false
         }

@@ -62,6 +62,10 @@ class EditorManager(
     private val sessionStateJobs = mutableMapOf<String, Job>()
     private var restoreJob: Job? = null
     private var autoSaveIntervalMillis: Long = 60_000L
+    private val recoveryScheduler = AutoSaveScheduler(scope, { 2_000L }) { session ->
+        session.checkpointDraft()
+        session.state.value.isDirty
+    }
     private val autoSaveScheduler = AutoSaveScheduler(scope, { autoSaveIntervalMillis }) { session ->
         session.save(SaveReason.AUTO)
         val state = session.state.value
@@ -125,6 +129,7 @@ class EditorManager(
         restoreJob?.cancel()
         restoreJob = null
         autoSaveScheduler.cancelAll()
+        recoveryScheduler.cancelAll()
         sessionsToStop.forEach { it.stopFileWatcher() }
         scope.cancel()
     }
@@ -207,6 +212,9 @@ class EditorManager(
         }
         jobToCancel?.cancel()
         autoSaveScheduler.cancel(tab.id)
+        recoveryScheduler.cancel(tab.id)
+        // Periodic checkpoints survive workspace teardown. Never launch an obsolete writer
+        // here: the same file may already belong to a newly opened session.
         sessionToStop?.stopFileWatcher()
         if (!removed) return
         Timber.tag(TAG).d("Close tab: %s", tab.id)
@@ -443,7 +451,7 @@ class EditorManager(
             synchronized(stateLock) {
                 sessions.values.forEach { session ->
                     val state = session.state.value
-                    if (state.isDirty && !state.hasExternalModification) {
+                    if (state.isDirty && !state.hasExternalModification && !state.hasRecoveredDraft) {
                         autoSaveScheduler.schedule(session)
                     }
                 }
@@ -455,9 +463,17 @@ class EditorManager(
     private fun observeSession(session: DocumentSession) {
         val job = scope.launch {
             var previousAutoSaveEligible: Boolean? = null
+            var previousDirty: Boolean? = null
             var previousError: String? = null
             session.state.collect { state ->
-                val autoSaveEligible = state.isDirty && !state.hasExternalModification
+                if (state.isDirty != previousDirty) {
+                    if (state.isDirty) recoveryScheduler.schedule(session) else {
+                        recoveryScheduler.cancel(session)
+                        session.checkpointDraft()
+                    }
+                    previousDirty = state.isDirty
+                }
+                val autoSaveEligible = state.isDirty && !state.hasExternalModification && !state.hasRecoveredDraft
                 if (autoSaveEligible != previousAutoSaveEligible) {
                     if (autoSaveEligible) {
                         autoSaveScheduler.schedule(session)

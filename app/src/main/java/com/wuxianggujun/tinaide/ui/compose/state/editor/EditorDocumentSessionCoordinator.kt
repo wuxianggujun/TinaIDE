@@ -39,7 +39,8 @@ internal class EditorDocumentSessionCoordinator(
                     tabId = activeTab.id,
                     file = activeTab.file,
                     hasExternalModification = docState.hasExternalModification,
-                    lastError = docState.lastError
+                    hasRecoveredDraft = docState.hasRecoveredDraft,
+                    lastError = (docState.recoveryError ?: docState.lastError)
                         ?.trim()
                         ?.takeIf { it.isNotEmpty() }
                 )
@@ -55,8 +56,10 @@ internal class EditorDocumentSessionCoordinator(
         getSession(tabId)?.detachEditor(binding)
     }
 
-    fun getDetachedEditorSnapshot(tabId: String): DetachedEditorSnapshot? =
-        getSession(tabId)?.detachedEditorSnapshot()
+    suspend fun getDetachedEditorSnapshot(tabId: String): DetachedEditorSnapshot? =
+        getSession(tabId)?.prepareRecovery()
+
+    suspend fun discardDraft(tabId: String): Boolean = getSession(tabId)?.discardDraft() ?: true
 
     fun markDetachedEditorSnapshotRestored(tabId: String, snapshot: DetachedEditorSnapshot) {
         getSession(tabId)?.markDetachedEditorSnapshotRestored(snapshot)

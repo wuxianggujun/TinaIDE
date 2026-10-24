@@ -1,6 +1,7 @@
 ﻿package com.wuxianggujun.tinaide.core.editorlsp
 
 import com.google.common.truth.Truth.assertThat
+import com.wuxianggujun.tinaide.core.editorapi.SemanticTokenType
 import com.wuxianggujun.tinaide.core.editorlsp.CompletionFetchResult
 import com.wuxianggujun.tinaide.core.textengine.Position
 import java.io.File
@@ -75,12 +76,12 @@ class CMakeLanguageServiceSessionTest {
         val tokens = session.requestSemanticTokens()
 
         assertThat(tokens).isNotEmpty()
-        assertThat(tokens.any { it.tokenType == "function" && it.line == 0 }).isTrue()
-        assertThat(tokens.any { it.tokenType == "keyword" && it.line == 0 }).isTrue()
-        assertThat(tokens.any { it.tokenType == "string" && it.line == 2 }).isTrue()
-        assertThat(tokens.any { it.tokenType == "variable" && it.line == 2 }).isTrue()
-        assertThat(tokens.any { it.tokenType == "class" && it.line == 3 }).isTrue()
-        assertThat(tokens.none { it.line == 3 && it.tokenType == "variable" && it.length == "main.cpp".length }).isTrue()
+        assertThat(tokens.any { it.tokenType == SemanticTokenType.FUNCTION && it.line == 0 }).isTrue()
+        assertThat(tokens.any { it.tokenType == SemanticTokenType.KEYWORD && it.line == 0 }).isTrue()
+        assertThat(tokens.any { it.tokenType == SemanticTokenType.STRING && it.line == 2 }).isTrue()
+        assertThat(tokens.any { it.tokenType == SemanticTokenType.VARIABLE && it.line == 2 }).isTrue()
+        assertThat(tokens.any { it.tokenType == SemanticTokenType.CLASS && it.line == 3 }).isTrue()
+        assertThat(tokens.none { it.line == 3 && it.tokenType == SemanticTokenType.VARIABLE && it.length == "main.cpp".length }).isTrue()
     }
 
     @Test

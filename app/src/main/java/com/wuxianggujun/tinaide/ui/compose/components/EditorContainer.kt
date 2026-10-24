@@ -98,6 +98,7 @@ fun EditorContainer(
     var conflictTabId by remember { mutableStateOf<String?>(null) }
     var conflictFile by remember { mutableStateOf<java.io.File?>(null) }
     val shownSessionErrors = remember { mutableMapOf<String, String>() }
+    val shownRecoveries = remember { mutableSetOf<String>() }
     val openErrorMessage = state.lastOpenError
 
     LaunchedEffect(openErrorMessage) {
@@ -131,6 +132,11 @@ fun EditorContainer(
     LaunchedEffect(activeEditorSessionAlertFlow) {
         val sessionAlertFlow = activeEditorSessionAlertFlow ?: return@LaunchedEffect
         sessionAlertFlow.collect { sessionAlert ->
+            if (sessionAlert.hasRecoveredDraft && shownRecoveries.add(sessionAlert.tabId)) {
+                scope.launch {
+                    snackbarHostState.showSnackbar(Strings.editor_recovery_restored.strOr(context), withDismissAction = true)
+                }
+            }
             if (sessionAlert.hasExternalModification && !showExternalModificationDialog) {
                 conflictTabId = sessionAlert.tabId
                 conflictFile = sessionAlert.file
@@ -209,7 +215,7 @@ fun EditorContainer(
                 }
             },
             onDiscardAndClose = {
-                state.confirmDiscardAndClose()
+                scope.launch { state.confirmDiscardAndClose() }
             },
             onCancel = {
                 state.cancelClose()

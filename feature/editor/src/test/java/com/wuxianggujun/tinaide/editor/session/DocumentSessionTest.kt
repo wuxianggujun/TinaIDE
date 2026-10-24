@@ -338,6 +338,167 @@ class DocumentSessionTest {
         }
     }
 
+    @Test
+    fun draftSurvivesNewSessionWithoutChangingSource() = runTest {
+        val file = File.createTempFile("recovery", ".cpp").apply { writeText("original", Charsets.UTF_8) }
+        val first = createSession(file, this)
+        val binding = FakeEditorBinding("original", false, false)
+        first.attachEditor(binding)
+        first.markEditorSnapshotClean()
+        binding.setText("未保存的正文🙂")
+        first.notifyEditorContentChanged(false, false)
+        first.checkpointDraft()
+        first.stopFileWatcher()
+        val reopened = createSession(file, this)
+        try {
+            val draft = reopened.prepareRecovery()
+            assertThat(draft?.text).isEqualTo("未保存的正文🙂")
+            assertThat(file.readText()).isEqualTo("original")
+            assertThat(reopened.state.value.hasRecoveredDraft).isTrue()
+            assertThat(reopened.state.value.hasExternalModification).isFalse()
+        } finally {
+            reopened.discardDraft()
+            reopened.stopFileWatcher()
+            file.delete()
+        }
+    }
+
+    @Test
+    fun recoveredDraftDetectsDiskChangesAndBlocksSave() = runTest {
+        val file = File.createTempFile("recovery", ".cpp").apply { writeText("original") }
+        val first = createSession(file, this)
+        val binding = FakeEditorBinding("original", false, false)
+        first.attachEditor(binding)
+        first.markEditorSnapshotClean()
+        binding.setText("")
+        first.notifyEditorContentChanged(false, false)
+        first.checkpointDraft()
+        first.stopFileWatcher()
+        file.writeText("external")
+        val reopened = createSession(file, this)
+        try {
+            assertThat(reopened.prepareRecovery()?.text).isEmpty()
+            assertThat(reopened.state.value.hasExternalModification).isTrue()
+            assertThat(reopened.save(SaveReason.MANUAL)).isInstanceOf(SaveResult.Failure::class.java)
+            assertThat(file.readText()).isEqualTo("external")
+        } finally {
+            reopened.discardDraft()
+            reopened.stopFileWatcher()
+            file.delete()
+        }
+    }
+
+    @Test
+    fun discardedDraftCannotBeResurrectedByDelayedCheckpoint() = runTest {
+        val file = File.createTempFile("recovery", ".cpp").apply { writeText("original") }
+        val session = createSession(file, this)
+        val binding = FakeEditorBinding("original", false, false)
+        session.attachEditor(binding)
+        session.markEditorSnapshotClean()
+        binding.setText("discarded")
+        session.notifyEditorContentChanged(false, false)
+        session.checkpointDraft()
+        assertThat(session.discardDraft()).isTrue()
+        session.checkpointDraft()
+        session.stopFileWatcher()
+        val reopened = createSession(file, this)
+        try {
+            assertThat(reopened.prepareRecovery()).isNull()
+            assertThat(file.readText()).isEqualTo("original")
+        } finally {
+            reopened.stopFileWatcher()
+            file.delete()
+        }
+    }
+
+    @Test
+    fun savingRemovesRecoveryRecord() = runTest {
+        val file = File.createTempFile("recovery", ".cpp").apply { writeText("original") }
+        val session = createSession(file, this)
+        val binding = FakeEditorBinding("original", false, false)
+        session.attachEditor(binding)
+        session.markEditorSnapshotClean()
+        binding.setText("saved")
+        session.notifyEditorContentChanged(false, false)
+        session.checkpointDraft()
+        assertThat(session.save(SaveReason.MANUAL)).isInstanceOf(SaveResult.Success::class.java)
+        session.stopFileWatcher()
+        val reopened = createSession(file, this)
+        try {
+            assertThat(reopened.prepareRecovery()).isNull()
+            assertThat(file.readText()).isEqualTo("saved")
+        } finally {
+            reopened.stopFileWatcher()
+            file.delete()
+        }
+    }
+
+    @Test
+    fun recoveredDraftRemainsDirtyAfterBindingReplacementAndReloadClearsRecord() = runTest {
+        val file = File.createTempFile("recovery", ".cpp").apply { writeText("original") }
+        val first = createSession(file, this)
+        val initial = FakeEditorBinding("original", false, false)
+        first.attachEditor(initial)
+        first.markEditorSnapshotClean()
+        initial.setText("recovered")
+        first.notifyEditorContentChanged(false, false)
+        first.checkpointDraft()
+        first.stopFileWatcher()
+        val reopened = createSession(file, this)
+        try {
+            val binding = FakeEditorBinding("", false, false)
+            reopened.attachEditor(binding)
+            val draft = requireNotNull(reopened.prepareRecovery())
+            binding.setText(draft.text)
+            reopened.markDetachedEditorSnapshotRestored(draft)
+            assertThat(reopened.state.value.isDirty).isTrue()
+            reopened.notifyEditorContentChanged(false, false)
+            assertThat(reopened.state.value.isDirty).isTrue()
+            assertThat(reopened.reloadFromDisk()).isTrue()
+            assertThat(binding.readText()).isEqualTo("original")
+            assertThat(reopened.state.value.hasRecoveredDraft).isFalse()
+            assertThat(reopened.state.value.isDirty).isFalse()
+            val third = createSession(file, this)
+            try { assertThat(third.prepareRecovery()).isNull() } finally { third.stopFileWatcher() }
+        } finally {
+            reopened.discardDraft()
+            reopened.stopFileWatcher()
+            file.delete()
+        }
+    }
+
+    @Test
+    fun recoveredConflictRemainsDirtyWhenDetachedAfterUndoToOldBaseline() = runTest {
+        val file = File.createTempFile("recovery", ".cpp").apply { writeText("original", Charsets.UTF_8) }
+        val first = createSession(file, this)
+        val initial = FakeEditorBinding("original", false, false)
+        first.attachEditor(initial)
+        first.markEditorSnapshotClean()
+        initial.setText("draft")
+        first.notifyEditorContentChanged(false, false)
+        first.checkpointDraft()
+        first.stopFileWatcher()
+        file.writeText("external", Charsets.UTF_8)
+        val reopened = createSession(file, this)
+        try {
+            val binding = FakeEditorBinding("", false, false)
+            reopened.attachEditor(binding)
+            val draft = requireNotNull(reopened.prepareRecovery())
+            binding.setText(draft.text)
+            reopened.markDetachedEditorSnapshotRestored(draft)
+            binding.setText("original")
+            reopened.notifyEditorContentChanged(false, false, changeCausedByUndoManager = true)
+            reopened.detachEditor(binding)
+            assertThat(reopened.state.value.isDirty).isTrue()
+            assertThat(reopened.detachedEditorSnapshot()?.text).isEqualTo("original")
+            assertThat(file.readText()).isEqualTo("external")
+        } finally {
+            reopened.discardDraft()
+            reopened.stopFileWatcher()
+            file.delete()
+        }
+    }
+
     private fun createSession(
         file: File,
         scope: CoroutineScope = TestScope(StandardTestDispatcher())

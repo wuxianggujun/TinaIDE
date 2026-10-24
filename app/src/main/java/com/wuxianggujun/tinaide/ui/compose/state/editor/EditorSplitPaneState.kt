@@ -3,6 +3,41 @@ package com.wuxianggujun.tinaide.ui.compose.state.editor
 import androidx.compose.runtime.mutableStateMapOf
 
 internal class EditorSplitPaneState {
+    data class Selection(val focusedPane: EditorPaneId, val activeTabId: String?)
+
+    fun normalize(
+        tabIds: List<String>,
+        splitEnabled: Boolean,
+        focusedPane: EditorPaneId,
+        preferredTabId: String?,
+    ): Selection {
+        val liveIds = tabIds.toSet()
+        removeMissingTabs(liveIds)
+        ensurePaneForTabs(tabIds, EditorPaneId.PRIMARY)
+        pruneMirroredTabs(liveIds) { paneFor(it, splitEnabled) }
+        if (!splitEnabled) {
+            moveAllTabsToPane(EditorPaneId.PRIMARY)
+            clearMirrors()
+        }
+        fun visible(id: String, pane: EditorPaneId) =
+            paneFor(id, splitEnabled) == pane || isMirroredToPane(id, pane, splitEnabled)
+        EditorPaneId.values().forEach { pane ->
+            if (activeTabId(pane)?.let { it in liveIds && visible(it, pane) } != true) {
+                tabIds.firstOrNull { visible(it, pane) }?.let { setActiveTabId(pane, it) }
+                    ?: removeActiveTab(pane)
+            }
+        }
+        val focus = if (!splitEnabled) EditorPaneId.PRIMARY else {
+            focusedPane.takeIf { pane -> tabIds.any { visible(it, pane) } }
+                ?: EditorPaneId.values().firstOrNull { pane -> tabIds.any { visible(it, pane) } }
+                ?: EditorPaneId.PRIMARY
+        }
+        val selected = preferredTabId?.takeIf { it in liveIds && visible(it, focus) }
+            ?: activeTabId(focus) ?: tabIds.firstOrNull()
+        selected?.let { setActiveTabId(focus, it) }
+        return Selection(focus, selected)
+    }
+
     private val paneByTabId = mutableStateMapOf<String, EditorPaneId>()
     private val mirroredIdsByPane =
         mutableStateMapOf<EditorPaneId, Set<String>>()

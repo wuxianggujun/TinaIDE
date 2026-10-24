@@ -1,5 +1,11 @@
 # Editor Basics
 
+## Unsaved draft recovery
+
+Dirty documents are checkpointed about every two seconds in private app storage, independently of saving the source file. Reopening the same file after an unexpected exit restores its draft as unsaved content. Review it and save manually. If the disk file changed, resolve the conflict by overwriting with the draft or reloading the disk file. Saving successfully or confirming discard clears the draft.
+
+Drafts are excluded from system backups and project exports. Uninstalling or clearing app data deletes them. Recent edits may fall within the checkpoint window. A storage failure or a document over 10Mi characters produces a warning; save manually. Missing source files are not recreated automatically. Keep separate project backups.
+
 TinaIDE uses a mobile workspace rather than a traditional desktop menu layout.
 
 ## Workspace layout

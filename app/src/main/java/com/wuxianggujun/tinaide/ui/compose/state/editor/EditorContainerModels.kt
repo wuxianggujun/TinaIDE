@@ -151,6 +151,7 @@ data class ActiveEditorSessionAlertState(
     val tabId: String,
     val file: File,
     val hasExternalModification: Boolean,
-    val lastError: String?
+    val lastError: String?,
+    val hasRecoveredDraft: Boolean = false,
 )
 
