@@ -40,6 +40,8 @@ Each run configuration owns its build type. CMake configurations support Debug, 
 
 Project Settings paths, compiler/linker flags, and CMake arguments remain shared by every run configuration in the project. Check the selected build type, target, arguments, environment variables, and working directory when a program builds but does not run as expected.
 
+The output mode of a shared library must match its entry contract: SDL projects export `SDL_main`, while raylib projects keep a plain `main` and use NativeActivity. Switching the mode alone never rewrites your entry point. Note that SDL3's `<SDL3/SDL.h>` does not include `SDL_main.h` automatically (SDL2's does). Without it the project still compiles, but the graphical run flashes and exits immediately. TinaIDE detects this before launch and asks you to add `#include <SDL3/SDL_main.h>`; if the program exits right after startup, the runtime screen shows its exit code and program output in a dialog.
+
 ## Debugging
 
 LLDB debugging can provide breakpoints, stepping, variables, and call stacks. The current debugging extension uses the optional Linux/PRoot environment. Basic compilation, execution, and local clangd still use the native toolchain by default.

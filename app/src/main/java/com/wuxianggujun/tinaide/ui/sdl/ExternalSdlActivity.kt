@@ -19,6 +19,8 @@ import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.ui.runtime.GraphicalRuntimeActivityHost
 import com.wuxianggujun.tinaide.ui.runtime.GraphicalRuntimeIntentOptions
 import com.wuxianggujun.tinaide.ui.runtime.NativeLaunchEnvironment
+import com.wuxianggujun.tinaide.ui.runtime.NativeRuntimeFailureDialog
+import com.wuxianggujun.tinaide.ui.runtime.NativeRuntimeOutputCapture
 import java.io.File
 import org.libsdl.app.SDLActivity
 import timber.log.Timber
@@ -126,6 +128,11 @@ class ExternalSdlActivity : SDLActivity() {
 
     @Volatile private var nativeShutdownRequested = false
 
+    // SDL_main 的退出码；null 表示还没跑完。用于区分“程序失败退出”与“用户主动退出”。
+    @Volatile private var sdlMainExitCode: Int? = null
+
+    @Volatile private var failureDialogShown = false
+
     // region Lifecycle
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -201,6 +208,18 @@ class ExternalSdlActivity : SDLActivity() {
     }
 
     override fun finish() {
+        // SDL_main 以非零码结束且不是用户主动退出：这是启动失败（如 SDL_Init 失败、
+        // 入口函数早退）。默认链路会立刻 finish，屏幕一闪就回编辑器，用户什么都看不到；
+        // 这里先拦下来，把原因和程序输出弹给用户，确认后再退出。
+        val exitCode = sdlMainExitCode
+        if (!nativeShutdownRequested && exitCode != null && exitCode != 0 && !isFinishing) {
+            showRuntimeFailureDialog(exitCode)
+            return
+        }
+        finishNow()
+    }
+
+    private fun finishNow() {
         finishHandler.removeCallbacks(forceFinishAfterQuitTimeout)
         runtimeHost.onFinish()
         super.finish()
@@ -308,6 +327,22 @@ class ExternalSdlActivity : SDLActivity() {
 
     override fun getMainSharedObject(): String = mainLibraryPath
 
+    /**
+     * 覆盖基类 main()：唯一能拿到 nativeRunMain 返回值（= SDL_main 退出码）的位置。
+     * 基类实现把它丢掉了，导致“程序启动即失败”与“正常运行结束”在 Java 侧无法区分。
+     */
+    override fun main() {
+        val startedAt = SystemClock.uptimeMillis()
+        Timber.tag(TAG).i("Running main function %s from library %s", getMainFunction(), mainLibraryPath)
+        val exitCode = SDLActivity.nativeRunMain(mainLibraryPath, getMainFunction(), getArguments())
+        sdlMainExitCode = exitCode
+        Timber.tag(TAG).i(
+            "SDL main function finished with exit code %d after %d ms",
+            exitCode,
+            SystemClock.uptimeMillis() - startedAt
+        )
+    }
+
     override fun getExpectedSdlVersion(): String = if (requiredSdlMajor == 2 || requiredSdlMajor == 3) {
         "$requiredSdlMajor.x"
     } else {
@@ -333,6 +368,29 @@ class ExternalSdlActivity : SDLActivity() {
         requestNativeShutdown(
             reason = "returning to parent",
         )
+    }
+
+    /**
+     * SDL_main 非零退出：抓一份本进程 logcat（用户程序输出 + SDL 日志），
+     * 弹不可取消的对话框说明“程序启动后立即退出”，用户确认后才回到编辑器。
+     * 在 SDL 线程被调用，对话框必须切回主线程展示。
+     */
+    private fun showRuntimeFailureDialog(exitCode: Int) {
+        if (failureDialogShown) return
+        failureDialogShown = true
+
+        Timber.tag(TAG).e("SDL main failed with exit code %d", exitCode)
+        val output = NativeRuntimeOutputCapture.capture(Process.myPid())
+        val baseMessage = Strings.sdl_runtime_error_exited_immediately.strOr(this, exitCode)
+        val message = if (output.isBlank()) {
+            baseMessage + "\n\n" + Strings.sdl_runtime_error_exited_hint.strOr(this)
+        } else {
+            NativeRuntimeFailureDialog.appendOutput(this, baseMessage, output)
+        }
+
+        runOnUiThread {
+            NativeRuntimeFailureDialog.show(this, message, ::finishNow)
+        }
     }
 
     private fun requestNativeShutdown(

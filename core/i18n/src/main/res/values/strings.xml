@@ -2378,6 +2378,14 @@
   <string name="sdl_runtime_error_missing_launch_params">SDL 启动参数缺失，无法启动 SDL 运行界面。</string>
   <string name="sdl_runtime_error_invalid_required_major">SDL 主版本参数无效：%1$d（仅支持 2 或 3）</string>
   <string name="sdl_runtime_error_launch_failed">启动 SDL 运行界面失败：%1$s</string>
+  <string name="sdl_runtime_error_missing_entry_sdl3">编译产物没有导出 SDL_main 入口，SDL 无法启动它。SDL3 的 SDL.h 不会自动包含 SDL_main.h，请在包含 SDL.h 的同一个源文件里加一行：\n#include &lt;SDL3/SDL_main.h&gt;\n如果使用的是回调写法（SDL_AppInit/SDL_AppIterate），还要在这一行之前加 #define SDL_MAIN_USE_CALLBACKS 1。</string>
+  <string name="sdl_runtime_error_missing_entry_sdl2">编译产物没有导出 SDL_main 入口，SDL 无法启动它。请确认源文件里包含了 &lt;SDL2/SDL_main.h&gt;，并且 main 没有被 SDL_MAIN_HANDLED 屏蔽。</string>
+  <string name="sdl_runtime_error_missing_entry_generic">编译产物没有导出 SDL_main 入口，SDL 无法启动它。请检查是否包含了 SDL_main.h。</string>
+  <string name="sdl_runtime_error_no_entry_at_all">编译产物既没有 SDL_main，也没有 main 入口。请检查源文件是否定义了入口函数，以及是否被链接器丢弃。</string>
+  <string name="sdl_runtime_title_start_failed">SDL 程序启动失败</string>
+  <string name="sdl_runtime_error_exited_immediately">SDL 程序启动后立即退出（退出码 %1$d），没有创建窗口。</string>
+  <string name="sdl_runtime_error_output_header">程序输出：</string>
+  <string name="sdl_runtime_error_exited_hint">请检查程序里的 SDL_Init、窗口创建是否失败，以及是否在初始化阶段直接 return。</string>
   <string name="native_activity_runtime_invalid_shared_library">NativeActivity 图形运行需要共享库（.so），当前目标不可加载：%1$s</string>
   <string name="native_activity_runtime_no_shared_library_target">NativeActivity 图形运行需要 CMake 共享库目标（.so）。请使用 add_library(... SHARED ...)，并让目标导出普通 main。</string>
   <string name="native_activity_runtime_auto_selected_shared_library_target">NativeActivity 图形模式已自动切换到共享库目标：%1$s</string>
@@ -5138,4 +5146,9 @@ kept=%3$d bytes
     <string name="error_project_import_too_large">项目内容超过导入限制</string>
     <string name="markdown_html_details">详细信息</string>
     <string name="markdown_html_progress">[进度：%1$d%%]</string>
+    <string name="editor_recovery_restored">已恢复未保存草稿，请检查后手动保存。原文件尚未改动。</string>
+    <string name="editor_recovery_failed">草稿读取失败，已保留恢复记录。当前显示磁盘文件。</string>
+    <string name="editor_recovery_checkpoint_failed">草稿备份失败（存储空间或大小限制），请及时手动保存。</string>
+    <string name="editor_recovery_discard_failed">无法删除草稿，请重试后再关闭。</string>
+    <string name="debug_error_native_lldb_unavailable">当前 native 工具链缺少 lldb 或 lldb-server。请安装含调试组件的工具链后重试。</string>
 </resources>

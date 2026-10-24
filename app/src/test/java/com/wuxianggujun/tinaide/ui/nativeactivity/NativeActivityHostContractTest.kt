@@ -139,6 +139,26 @@ class NativeActivityHostContractTest {
         assertThat(preCreateSource).contains("viewTreeOwner.performRestore(savedInstanceState)")
     }
 
+    @Test
+    fun `sdl host surfaces entry point failures instead of silent finish`() {
+        val sdl3Source = projectFile(
+            "app/src/main/java/com/wuxianggujun/tinaide/ui/sdl/ExternalSdlActivity.kt",
+            "src/main/java/com/wuxianggujun/tinaide/ui/sdl/ExternalSdlActivity.kt",
+        ).readText(Charsets.UTF_8)
+        val launcherSource = projectFile(
+            "app/src/main/java/com/wuxianggujun/tinaide/ui/ContextCompileSdlLauncher.kt",
+            "src/main/java/com/wuxianggujun/tinaide/ui/ContextCompileSdlLauncher.kt",
+        ).readText(Charsets.UTF_8)
+
+        // 启动前预检 + 运行期失败对话框，缺一不可：预检挡住“产物缺 SDL_main”，
+        // 对话框兜住“SDL_main 运行即失败”。
+        assertThat(launcherSource).contains("SdlEntryPointResolver")
+        assertThat(sdl3Source).contains("override fun main()")
+        assertThat(sdl3Source).contains("sdlMainExitCode")
+        assertThat(sdl3Source).contains("NativeRuntimeFailureDialog")
+        assertThat(sdl3Source).contains("!nativeShutdownRequested && exitCode != null && exitCode != 0")
+    }
+
     private fun parseXml(file: File) = DocumentBuilderFactory.newInstance().apply {
         isNamespaceAware = true
         setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
