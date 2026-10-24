@@ -136,6 +136,7 @@ class LspClientSession(
     private var staticServerSupportsCallHierarchy: Boolean = false
     @Volatile
     private var staticServerSupportsInlayHints: Boolean = false
+    private var staticServerSupportsSemanticTokensRange: Boolean = false
     private val capabilityLock = Any()
     private val dynamicCallHierarchyRegistrationIds = mutableSetOf<String>()
     private val dynamicInlayHintRegistrationIds = mutableSetOf<String>()
@@ -256,6 +257,8 @@ class LspClientSession(
 
                 staticServerSupportsCallHierarchy = false
                 staticServerSupportsInlayHints = false
+        staticServerSupportsSemanticTokensRange = false
+                staticServerSupportsSemanticTokensRange = false
                 synchronized(capabilityLock) {
                     dynamicCallHierarchyRegistrationIds.clear()
                     dynamicInlayHintRegistrationIds.clear()
@@ -270,6 +273,8 @@ class LspClientSession(
                 val serverCapabilities = initializeResult.capabilities
                 staticServerSupportsCallHierarchy = serverCapabilities.supportsCallHierarchyProvider()
                 staticServerSupportsInlayHints = serverCapabilities.supportsInlayHintProvider()
+                staticServerSupportsSemanticTokensRange =
+                    serverCapabilities?.semanticTokensProvider?.range != null
 
                 server.initialized(InitializedParams())
 
@@ -489,7 +494,9 @@ class LspClientSession(
 
     fun semanticTokensRange(params: SemanticTokensRangeParams): CompletableFuture<SemanticTokens>? {
         val server = synchronized(lock) { languageServer } ?: return null
-        if (!isConnected) return null
+        // clangd 只支持 semanticTokens/full；未声明 range 能力时直接返回 null，
+        // 让调用方静默回退 full，而不是每次编辑都收一条 method not found 的错误堆栈。
+        if (!isConnected || !staticServerSupportsSemanticTokensRange) return null
         return server.textDocumentService.semanticTokensRange(params)
     }
 

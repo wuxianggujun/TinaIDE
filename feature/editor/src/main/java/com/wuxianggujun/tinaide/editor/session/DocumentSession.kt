@@ -649,7 +649,8 @@ class DocumentSession(
         var saveStarted = false
         return try {
             saveMutex.withLock {
-                if (_state.value.hasExternalModification) {
+                if (_state.value.hasExternalModification || hasDiskDivergedFromLastKnownWrite()) {
+                    markExternalModification()
                     return@withLock SaveResult.Failure(
                         Strings.editor_conflict_message.strOr(context, file.name)
                     )
@@ -852,6 +853,9 @@ class DocumentSession(
         val marker = readCurrentWriteMarker()
         if (marker != null) {
             lastObservedWriteMarker = marker
+            // 用户已确认接受当前磁盘版本（或刚从磁盘重载），它就是新的已知基线；
+            // 否则保存前的磁盘兜底比对会把确认过的版本再次判成外部修改。
+            lastInternalWriteMarker = marker
         }
         _state.update { it.copy(hasExternalModification = false) }
     }
@@ -999,6 +1003,18 @@ class DocumentSession(
         }
         lastObservedWriteMarker = marker
         return false
+    }
+
+    /**
+     * FUSE 上跨 uid 的写入（如 adb shell / 其他 App 直接 cp、mv）不一定向本进程
+     * 投递 FileObserver 事件，只靠事件检测会漏。保存前用磁盘 stat 兜底比对：
+     * 当前签名与最近一次已知写入不同即视为外部修改——宁可弹冲突，也不静默覆盖。
+     */
+    private fun hasDiskDivergedFromLastKnownWrite(): Boolean {
+        if (isSavingInternally) return false
+        val current = readCurrentWriteMarker() ?: return false
+        val known = lastInternalWriteMarker ?: return false
+        return !known.hasSameFileSignature(current)
     }
 
     private fun shouldIgnoreInternalWrite(marker: FileWriteMarker): Boolean {
