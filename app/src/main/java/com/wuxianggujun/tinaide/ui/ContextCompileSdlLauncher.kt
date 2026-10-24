@@ -7,7 +7,6 @@ import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.ui.runtime.GraphicalRuntimeLaunchRequest
 import com.wuxianggujun.tinaide.ui.runtime.SdlRuntimeLibraryStager
 import com.wuxianggujun.tinaide.ui.sdl.ExternalSdlActivity
-import com.wuxianggujun.tinaide.ui.sdl.SdlEntryPointResolver
 import com.wuxianggujun.tinaide.ui.sdl.SdlRuntimeResolver
 import java.io.File
 import kotlinx.coroutines.Dispatchers
@@ -35,26 +34,11 @@ internal class ContextCompileSdlLauncher(
             )
         }
         when (runtime) {
-            is SdlRuntimeResolver.ResolveResult.Sdl -> {
-                // 启动前检查产物是否导出 SDL_main：缺失时直接提示用户补头文件，
-                // 而不是让宿主进程起来后 dlsym 失败、屏幕一闪就退回编辑器。
-                val entryPointError = withContext(Dispatchers.IO) {
-                    SdlEntryPointResolver.entryPointErrorMessage(
-                        context = context,
-                        info = SdlEntryPointResolver.resolve(File(normalizedLibraryPath)),
-                        sdlMajor = runtime.spec.requiredSdlMajor,
-                    )
-                }
-                if (entryPointError != null) {
-                    onError(entryPointError)
-                    return
-                }
-                launchSdlRuntime(
-                    request = request,
-                    libraryPath = normalizedLibraryPath,
-                    runtime = runtime,
-                )
-            }
+            is SdlRuntimeResolver.ResolveResult.Sdl -> launchSdlRuntime(
+                request = request,
+                libraryPath = normalizedLibraryPath,
+                runtime = runtime,
+            )
 
             SdlRuntimeResolver.ResolveResult.NonSdl -> Unit
             is SdlRuntimeResolver.ResolveResult.Error -> onError(runtime.message)

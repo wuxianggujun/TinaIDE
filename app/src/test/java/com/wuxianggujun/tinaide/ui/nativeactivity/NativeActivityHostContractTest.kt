@@ -145,14 +145,8 @@ class NativeActivityHostContractTest {
             "app/src/main/java/com/wuxianggujun/tinaide/ui/sdl/ExternalSdlActivity.kt",
             "src/main/java/com/wuxianggujun/tinaide/ui/sdl/ExternalSdlActivity.kt",
         ).readText(Charsets.UTF_8)
-        val launcherSource = projectFile(
-            "app/src/main/java/com/wuxianggujun/tinaide/ui/ContextCompileSdlLauncher.kt",
-            "src/main/java/com/wuxianggujun/tinaide/ui/ContextCompileSdlLauncher.kt",
-        ).readText(Charsets.UTF_8)
-
-        // 启动前预检 + 运行期失败对话框，缺一不可：预检挡住“产物缺 SDL_main”，
-        // 对话框兜住“SDL_main 运行即失败”。
-        assertThat(launcherSource).contains("SdlEntryPointResolver")
+        // 入口缺失预检已下沉到 core:compile 的 SdlLauncher（见 SdlLauncherTest）；
+        // 这里守住运行期失败对话框：兜住“SDL_main 运行即失败”。
         assertThat(sdl3Source).contains("override fun main()")
         assertThat(sdl3Source).contains("sdlMainExitCode")
         assertThat(sdl3Source).contains("NativeRuntimeFailureDialog")
