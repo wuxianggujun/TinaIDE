@@ -10,4 +10,5 @@ dependencies {
     implementation(project.dependencies.project(":core:common"))
     implementation(project.dependencies.project(":core:i18n"))
     implementation(project.dependencies.project(":core:storage"))
+    implementation(libs.androidx.security.crypto)
 }

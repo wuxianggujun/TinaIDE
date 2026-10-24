@@ -1,7 +1,6 @@
 package com.wuxianggujun.tinaide.core.git.ssh
 
 import android.content.Context
-import android.util.AtomicFile
 import java.io.File
 import java.net.InetSocketAddress
 import java.net.URI
@@ -440,20 +439,6 @@ class GitSshManager(context: Context) {
         // 写公钥（OpenSSH wire format，而不是 X.509 SubjectPublicKeyInfo）
         val pubLine = formatOpenSshEd25519PublicKey(keyPair.public, comment)
         writeUtf8Atomically(publicFile, pubLine + "\n")
-    }
-
-    private fun writeUtf8Atomically(file: File, content: String) {
-        val atomicFile = AtomicFile(file)
-        val output = atomicFile.startWrite()
-        try {
-            val writer = output.bufferedWriter(Charsets.UTF_8)
-            writer.write(content)
-            writer.flush()
-            atomicFile.finishWrite(output)
-        } catch (error: Throwable) {
-            atomicFile.failWrite(output)
-            throw error
-        }
     }
 
     private fun setFilePermissions(file: File) {

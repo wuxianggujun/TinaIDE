@@ -1,7 +1,6 @@
 package com.wuxianggujun.tinaide.core.git.ssh
 
 import android.content.Context
-import android.util.AtomicFile
 import java.io.File
 import java.io.FileNotFoundException
 import kotlinx.coroutines.Dispatchers
@@ -16,7 +15,6 @@ class GitSshStore(
 ) {
     private val appContext = context.applicationContext
     private val file = File(appContext.filesDir, FILE_NAME)
-    private val atomicFile = AtomicFile(file)
 
     suspend fun read(): GitSshState = STORE_MUTEX.withLock {
         withContext(Dispatchers.IO) {
@@ -34,7 +32,7 @@ class GitSshStore(
 
     private fun readUnlocked(): GitSshState {
         val text = try {
-            atomicFile.openRead().bufferedReader(Charsets.UTF_8).use { it.readText() }
+            file.bufferedReader(Charsets.UTF_8).use { it.readText() }
         } catch (_: FileNotFoundException) {
             return GitSshState()
         }
@@ -43,17 +41,7 @@ class GitSshStore(
     }
 
     private fun writeUnlocked(state: GitSshState) {
-        file.parentFile?.mkdirs()
-        val output = atomicFile.startWrite()
-        try {
-            val writer = output.bufferedWriter(Charsets.UTF_8)
-            writer.write(toJson(state).toString(2))
-            writer.flush()
-            atomicFile.finishWrite(output)
-        } catch (error: Throwable) {
-            atomicFile.failWrite(output)
-            throw error
-        }
+        writeUtf8Atomically(file, toJson(state).toString(2))
     }
 
     private fun parseState(json: JSONObject): GitSshState {

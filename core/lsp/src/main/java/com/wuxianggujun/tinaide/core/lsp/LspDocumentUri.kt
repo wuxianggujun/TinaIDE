@@ -6,12 +6,14 @@ import java.util.Locale
 
 /** Returns a stable key for LSP document URIs without changing non-file schemes. */
 fun canonicalizeLspDocumentUri(uri: String): String {
-    val parsed = runCatching { URI(uri).normalize() }.getOrNull() ?: return uri
-    if (!parsed.scheme.equals("file", ignoreCase = true)) return uri
+    val original = runCatching { URI(uri) }.getOrNull() ?: return uri
+    if (!original.scheme.equals("file", ignoreCase = true)) return uri
+    val parsed = original.normalize()
 
     val rawPath = parsed.rawPath ?: return uri
-    val explicitAuthority = parsed.rawAuthority
-    val uncPath = if (explicitAuthority.isNullOrEmpty()) splitUncPath(rawPath) else null
+    val explicitAuthority = original.rawAuthority ?: parsed.rawAuthority
+    // java.net.URI#normalize() 会吞掉 path 开头的 "//"，UNC 检测必须基于 normalize 之前的 path。
+    val uncPath = if (explicitAuthority.isNullOrEmpty()) splitUncPath(original.rawPath ?: rawPath) else null
     val authority = (explicitAuthority ?: uncPath?.first)
         ?.lowercase(Locale.ROOT)
         ?.let(::normalizePercentEncoding)

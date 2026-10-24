@@ -138,7 +138,10 @@ class LspCodeActionServiceTest {
                 )
             }.exceptionOrNull()
 
-            assertThat(thrown).isSameInstanceAs(failure)
+            // 协程机制跨 withContext 边界可能重建异常实例；契约是“原样类型 + 原样消息”，
+            // 即调用方既不能把它当普通失败吞掉，也不能丢失失败原因。
+            assertThat(thrown).isInstanceOf(IllegalStateException::class.java)
+            assertThat(thrown).hasMessageThat().isEqualTo("clangd unavailable")
         }
     }
 
@@ -158,7 +161,9 @@ class LspCodeActionServiceTest {
                 )
             }.exceptionOrNull()
 
-            assertThat(thrown).isSameInstanceAs(cancellation)
+            // 同上：取消必须以 CancellationException（且消息不变）传出，保证不被吞成普通异常。
+            assertThat(thrown).isInstanceOf(CancellationException::class.java)
+            assertThat(thrown).hasMessageThat().isEqualTo("superseded")
         }
     }
 

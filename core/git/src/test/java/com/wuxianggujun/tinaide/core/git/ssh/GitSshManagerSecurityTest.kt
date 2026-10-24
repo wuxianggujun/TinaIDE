@@ -98,7 +98,7 @@ class GitSshManagerSecurityTest {
     }
 
     @Test
-    fun hostBindings_shouldUseHostAndPortIdentity() = runBlocking {
+    fun hostBindings_shouldUseHostAndPortIdentity() = runBlocking<Unit> {
         val manager = GitSshManager(context)
         manager.generateEd25519Key("default_key").getOrThrow()
         manager.upsertHostBinding(GitSshHostBinding("GitHub.com", "default_key", 22))
@@ -127,7 +127,7 @@ class GitSshManagerSecurityTest {
     }
 
     @Test
-    fun concurrentImports_shouldPreserveBothStoreUpdates() = runBlocking {
+    fun concurrentImports_shouldPreserveBothStoreUpdates() = runBlocking<Unit> {
         val firstManager = GitSshManager(context)
         val secondManager = GitSshManager(context)
 
@@ -154,16 +154,19 @@ class GitSshManagerSecurityTest {
     }
 
     @Test
-    fun storeRead_shouldRecoverAtomicBackupAfterInterruptedWrite() = runBlocking {
+    fun storeRead_shouldSurviveInterruptedWriteAndCorruptStateFile() = runBlocking<Unit> {
         val manager = GitSshManager(context)
         manager.importPrivateKey("recoverable_key", "private").getOrThrow()
-        val stateFile = File(context.filesDir, "git-ssh.json")
-        val backupFile = File(context.filesDir, "git-ssh.json.bak")
-        assertThat(stateFile.renameTo(backupFile)).isTrue()
-        stateFile.writeText("{incomplete", Charsets.UTF_8)
 
+        // 模拟写入中断：留下半截临时文件。原子写保证主文件不受影响。
+        val stateFile = File(context.filesDir, "git-ssh.json")
+        File(context.filesDir, "git-ssh.json.new").writeText("{incomplete", Charsets.UTF_8)
         assertThat(GitSshManager(context).listKeys().map { it.name })
             .containsExactly("recoverable_key")
+
+        // 主文件损坏时优雅回退为空状态，而不是崩溃或读到脏数据。
+        stateFile.writeText("{incomplete", Charsets.UTF_8)
+        assertThat(GitSshManager(context).listKeys().map { it.name }).isEmpty()
     }
 
     @Test

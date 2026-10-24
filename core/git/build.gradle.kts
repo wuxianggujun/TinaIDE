@@ -20,9 +20,9 @@ android {
 
 dependencies {
     implementation(project.dependencies.project(":core:i18n"))
+    implementation(project.dependencies.project(":core:security"))
     implementation(libs.timber)
     implementation(libs.kotlinx.coroutines)
-    implementation(libs.androidx.security.crypto)
 
     // JGit
     implementation(libs.jgit)

@@ -1,11 +1,17 @@
 package com.wuxianggujun.tinaide.core.lsp
 
+import android.app.Application
 import com.google.common.truth.Truth.assertThat
 import java.io.File
 import java.nio.file.Files
 import kotlinx.coroutines.runBlocking
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34], manifest = Config.NONE, application = Application::class)
 class ProjectSyncManagerSecurityTest {
     @Test
     fun validateSyncFiles_shouldUseUtf8BytesAndRejectDuplicateOrUnsafePaths() {
@@ -36,13 +42,17 @@ class ProjectSyncManagerSecurityTest {
                 ProjectSyncManager.generateFileChangedMessage("renamed", "src/new.cpp")
             }.isFailure
         ).isTrue()
-        assertThat(
-            ProjectSyncManager.generateFileChangedMessage(
-                type = "renamed",
-                path = "src/new.cpp",
-                oldPath = "src/old.cpp",
-            )
-        ).contains("tina/fileChanged")
+        val message = ProjectSyncManager.generateFileChangedMessage(
+            type = "renamed",
+            path = "src/new.cpp",
+            oldPath = "src/old.cpp",
+        )
+        // org.json 序列化时会把 '/' 转义成 '\/'，两种形式 JSON 语义等价，做结构化断言。
+        val parsed = org.json.JSONObject(message)
+        assertThat(parsed.getString("method")).isEqualTo("tina/fileChanged")
+        assertThat(parsed.getJSONObject("params").getString("type")).isEqualTo("renamed")
+        assertThat(parsed.getJSONObject("params").getString("path")).isEqualTo("src/new.cpp")
+        assertThat(parsed.getJSONObject("params").getString("oldPath")).isEqualTo("src/old.cpp")
     }
 
     @Test

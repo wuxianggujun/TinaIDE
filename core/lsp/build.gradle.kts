@@ -20,10 +20,10 @@ dependencies {
     implementation(project.dependencies.project(":core:packages"))
     implementation(project.dependencies.project(":core:project"))
     implementation(project.dependencies.project(":core:proot"))
+    implementation(project.dependencies.project(":core:security"))
     implementation(libs.lsp4j)
     implementation(libs.timber)
     implementation(libs.kotlinx.coroutines)
     implementation(libs.okhttp)
     implementation(libs.androidx.annotation)
-    implementation(libs.androidx.security.crypto)
 }

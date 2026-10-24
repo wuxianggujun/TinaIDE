@@ -87,6 +87,12 @@ object GitHubRegistryConfig {
         val value = urlOrPath.trim()
         if (value.isBlank()) return emptyList()
         val primaryUrl = resolveRawUrl(value, endpoint)
+        // GitHub 镜像候选只对 GitHub 端点有意义；自定义 registry 端点必须只访问自身，
+        // 否则会拿别人的相对路径去请求 GitHub 上的 TinaIDE-Registry。
+        val primaryIsGitHub = isGitHubUrl(unproxiedGitHubUrl(primaryUrl, customProxyPrefix) ?: primaryUrl)
+        if (!primaryIsGitHub) {
+            return listOf(primaryUrl).filter(::isHttpsUrl)
+        }
         val rawGitHubUrl = if (value.startsWith("http://") || value.startsWith("https://")) {
             unproxiedGitHubUrl(value, customProxyPrefix) ?: value
         } else {

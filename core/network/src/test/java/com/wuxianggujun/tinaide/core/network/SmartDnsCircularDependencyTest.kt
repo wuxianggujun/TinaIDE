@@ -1,5 +1,6 @@
 package com.wuxianggujun.tinaide.core.network
 
+import com.google.common.truth.Truth.assertThat
 import org.junit.Test
 
 /**
@@ -42,6 +43,17 @@ class SmartDnsCircularDependencyTest {
     @Test
     fun probeClient_canBeInitializedWithoutStackOverflow() {
         OkHttpClientProvider.probe.toString()
+    }
+
+    /**
+     * 首次 lookup 才会真正构建 delegate（DohDnsResolver + 独立 OkHttpClient）。
+     * 使用 IP 字面量，避免触发真实 DNS/DoH 网络请求。
+     */
+    @Test
+    fun smartDns_firstLookupBuildsDelegateWithoutRecursion() {
+        val addresses = SmartDns.lookup("10.0.0.1")
+
+        assertThat(addresses.map { it.hostAddress }).contains("10.0.0.1")
     }
 
     /**

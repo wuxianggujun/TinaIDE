@@ -1,25 +1,23 @@
 package com.wuxianggujun.tinaide.core.lsp
 
 import android.content.Context
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
+import android.content.SharedPreferences
+import com.wuxianggujun.tinaide.core.security.EncryptedPreferencesFactory
+import timber.log.Timber
 
 internal class RemoteLspCredentialStore(context: Context) {
     private val appContext = context.applicationContext
-    private val preferences by lazy {
-        val masterKey = MasterKey.Builder(appContext)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-        EncryptedSharedPreferences.create(
-            appContext,
-            PREFERENCES_NAME,
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-        )
+    private val preferences: SharedPreferences? by lazy {
+        EncryptedPreferencesFactory.open(appContext, PREFERENCES_NAME)
     }
 
-    fun readToken(): String? = preferences.getString(KEY_TOKEN, null)?.takeIf { it.isNotBlank() }
+    fun readToken(): String? = try {
+        preferences?.getString(KEY_TOKEN, null)?.takeIf { it.isNotBlank() }
+    } catch (e: Exception) {
+        // 损坏的历史密文不应阻断启动或 LSP 连接，按“未配置令牌”处理。
+        Timber.tag(TAG).w(e, "Failed to read remote LSP authentication token")
+        null
+    }
 
     fun writeToken(token: String?) {
         val normalizedToken = RemoteLspAuthenticationTokenPolicy.normalize(token)
@@ -32,12 +30,16 @@ internal class RemoteLspCredentialStore(context: Context) {
                 throw IllegalArgumentException("Remote LSP authentication token contains control characters")
             }
         }
-        val editor = preferences.edit()
+        val store = checkNotNull(preferences) {
+            "Encrypted remote LSP credential store is unavailable"
+        }
+        val editor = store.edit()
         if (normalizedToken == null) editor.remove(KEY_TOKEN) else editor.putString(KEY_TOKEN, normalizedToken)
         check(editor.commit()) { "Failed to persist remote LSP authentication token" }
     }
 
     private companion object {
+        private const val TAG = "RemoteLspCredentialStore"
         private const val PREFERENCES_NAME = "remote_lsp_credentials"
         private const val KEY_TOKEN = "authentication_token"
     }
