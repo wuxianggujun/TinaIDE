@@ -102,6 +102,9 @@ fun NewProjectWizardScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
+                // 键盘弹出时把内容整体上移，否则底部的 Create 按钮被 IME 遮住，
+                // 用户点了没反应还以为创建失败。
+                .imePadding()
         ) {
             // 标题区域
             Column(
@@ -225,7 +228,9 @@ fun NewProjectWizardScreen(
                                     onCreateProject()
                                 }
                             },
-                            enabled = !state.isCreating && state.projectName.isNotBlank()
+                            // 空名不禁用按钮：点击后走 ViewModel 校验并显示
+                            // error_project_name_empty，静默禁用会让用户得不到任何反馈。
+                            enabled = !state.isCreating
                         )
                     }
                 }

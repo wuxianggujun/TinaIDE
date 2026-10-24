@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
@@ -148,6 +150,8 @@ fun ProjectScreen(
     val appUpdateInfo by viewModel.appUpdateInfo.collectAsStateWithLifecycle()
     val permissionStatus by storageManager.permissionStatus.collectAsStateWithLifecycle()
     val hasExternalStoragePermission = permissionStatus == PermissionStatus.GRANTED
+    // “暂不授权”只在本次会话内隐藏引导卡片；授予后永不出现。
+    var permissionCardDismissed by rememberSaveable { mutableStateOf(false) }
 
     // 仅在首次进入时加载项目列表，避免切换页面时重复刷新
     var hasInitialized by rememberSaveable { mutableStateOf(false) }
@@ -447,14 +451,15 @@ fun ProjectScreen(
                             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            if (!hasExternalStoragePermission) {
+                            if (!hasExternalStoragePermission && !permissionCardDismissed) {
                                 item {
                                     PublicProjectsPermissionCard(
                                         onGrantPermission = {
                                             launchProjectPermissionRequest(
                                                 PendingProjectPermissionAction.RefreshProjectList
                                             )
-                                        }
+                                        },
+                                        onDismiss = { permissionCardDismissed = true },
                                     )
                                 }
                             }
@@ -680,6 +685,7 @@ private fun openAppUpdateUrl(
 @Composable
 private fun PublicProjectsPermissionCard(
     onGrantPermission: () -> Unit,
+    onDismiss: () -> Unit,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -697,11 +703,16 @@ private fun PublicProjectsPermissionCard(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Button(
-                onClick = onGrantPermission,
-                modifier = Modifier.align(Alignment.End)
+            Row(
+                modifier = Modifier.align(Alignment.End),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text(text = stringResource(Strings.permission_btn_grant))
+                TextButton(onClick = onDismiss) {
+                    Text(text = stringResource(Strings.permission_btn_not_now))
+                }
+                Button(onClick = onGrantPermission) {
+                    Text(text = stringResource(Strings.permission_btn_grant))
+                }
             }
         }
     }

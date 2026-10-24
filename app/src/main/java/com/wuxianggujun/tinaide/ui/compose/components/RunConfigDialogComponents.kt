@@ -26,6 +26,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -698,6 +700,7 @@ internal fun RunActionButton(
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     val interactionSource = remember { MutableInteractionSource() }
+    val runLabel = stringResource(Strings.action_run)
 
     LaunchedEffect(enabled) {
         if (!enabled) {
@@ -724,6 +727,9 @@ internal fun RunActionButton(
         Box(
             modifier = Modifier
                 .matchParentSize()
+                // 覆盖层接管了点击，必须自带语义标签；否则无障碍与 UI 自动化
+                // 只能看到一个无名可点区域（NAF），下层 Icon 的描述被完全遮挡。
+                .semantics { contentDescription = runLabel }
                 .combinedClickable(
                     enabled = enabled,
                     role = Role.Button,

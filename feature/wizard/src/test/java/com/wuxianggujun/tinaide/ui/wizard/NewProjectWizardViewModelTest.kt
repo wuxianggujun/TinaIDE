@@ -145,9 +145,17 @@ class NewProjectWizardViewModelTest {
             onError = { errors += it }
         )
         advanceUntilIdle()
+        // 模板安装内部使用真实 Dispatchers.IO，测试调度器的 advanceUntilIdle 覆盖不到；
+        // 等任一回调真实完成，避免时序抖动导致的偶发失败。
+        val deadline = System.currentTimeMillis() + 5_000
+        while (createdProjects.isEmpty() && errors.isEmpty() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(20)
+        }
 
         assertThat(errors).isEmpty()
-        assertThat(createdProjects).containsExactly(projectRoot.resolve("DemoApp").canonicalFile)
+        // Windows 上 canonicalFile 与普通 File 的盘符/大小写可能不一致，两侧统一 canonical 化再比较。
+        assertThat(createdProjects.map { it.canonicalFile })
+            .containsExactly(projectRoot.resolve("DemoApp").canonicalFile)
         val projectDir = createdProjects.single()
         assertThat(projectDir.resolve("README.md").readText(Charsets.UTF_8))
             .isEqualTo("# DemoApp\nAuthor: Ada\n")

@@ -6,6 +6,7 @@
   <string name="permission_storage_settings">请在系统设置中开启"所有文件访问权限"</string>
   <string name="project_public_projects_permission_hint">如果你之前把项目保存在公共目录（Documents/TinaIDE），请先授予文件管理权限。授权后项目列表会自动刷新，你就可以直接看到并打开这些项目。</string>
   <string name="permission_btn_grant">授予权限</string>
+  <string name="permission_btn_not_now">暂不授权</string>
   <string name="open_file_tree">打开文件树</string>
   <string name="empty_editor_title">没有打开的文件</string>
 

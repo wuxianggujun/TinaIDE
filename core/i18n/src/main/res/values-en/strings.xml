@@ -6,6 +6,7 @@
   <string name="permission_storage_settings">Please enable "All files access" in system settings</string>
   <string name="project_public_projects_permission_hint">If you previously saved projects in the public directory (Documents/TinaIDE), grant file-management permission first. After that, the project list will refresh automatically and you can open those projects directly.</string>
   <string name="permission_btn_grant">Grant Permission</string>
+  <string name="permission_btn_not_now">Not Now</string>
   <string name="open_file_tree">Open File Tree</string>
   <string name="empty_editor_title">No file open</string>
 
