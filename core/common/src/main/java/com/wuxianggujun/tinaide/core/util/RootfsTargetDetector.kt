@@ -39,6 +39,15 @@ object RootfsTargetDetector {
                     File(includeDir, "x86_64-linux-gnu").isDirectory -> X86_64
                     File(includeDir, "arm-linux-gnueabihf").isDirectory -> ARMV7
                     File(includeDir, "i686-linux-gnu").isDirectory -> X86
+                    // Android NDK sysroot 的 per-arch UAPI 目录是 *-linux-android[-eabi]，
+                    // 必须与 GNU 检测并列；否则 x86_64 设备上的 NDK sysroot 会全部
+                    // 落到默认 AARCH64，兜底 compile_commands 的 target 与实际
+                    // sysroot 不匹配，clangd 解析 asm/types.h 等内核头全线失败。
+                    File(includeDir, "aarch64-linux-android").isDirectory -> AARCH64
+                    File(includeDir, "x86_64-linux-android").isDirectory -> X86_64
+                    File(includeDir, "armv7a-linux-androideabi").isDirectory -> ARMV7
+                    File(includeDir, "arm-linux-androideabi").isDirectory -> ARMV7
+                    File(includeDir, "i686-linux-android").isDirectory -> X86
                     // 默认假设 aarch64（移动设备最常见）
                     else -> AARCH64
                 }
