@@ -86,7 +86,7 @@ jobs:
             :core:text-engine:testDebugUnitTest :core:editor-view:testDebugUnitTest \
             :feature:editor:testDebugUnitTest :core:compile:testDebugUnitTest \
             :core:editor-lsp:testDebugUnitTest :core:debug:testDebugUnitTest \
-            :core:security:testDebugUnitTest :core:storage:testDebugUnitTest \
+            :core:security:testDebugUnitTest :core:storage:testDebugUnitTest :core:git:testDebugUnitTest \
             :core:plugin:testDebugUnitTest :feature:help:testDebugUnitTest :feature:tutorial:testDebugUnitTest \
             --no-daemon --configure-on-demand \
             -Dorg.gradle.internal.http.connectionTimeout=120000 \

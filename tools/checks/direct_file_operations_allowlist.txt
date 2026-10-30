@@ -28,6 +28,7 @@ core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/strategy/Single
 core/compile/src/main/java/com/wuxianggujun/tinaide/core/format/ClangFormatConfigManager.kt | delete=1 | Generated clang-format config cleanup.
 core/crash/src/main/java/com/wuxianggujun/tinaide/core/crash/NativeCrashHandler.kt | delete=1 | Native crash marker cleanup.
 core/git/src/main/java/com/wuxianggujun/tinaide/core/git/GitService.kt | delete=1 | Git service temporary file cleanup.
+core/git/src/main/java/com/wuxianggujun/tinaide/core/git/ssh/GitAtomicFileIo.kt | delete=1 | App-private SSH key/metadata staging cleanup after failed same-directory atomic replacement; committed files are never pre-deleted.
 core/git/src/main/java/com/wuxianggujun/tinaide/core/git/ssh/GitSshManager.kt | delete=3 | SSH key replacement and explicit private/public key cleanup.
 core/linux-desktop/src/main/java/com/wuxianggujun/tinaide/core/linuxdesktop/X11SocketLayout.kt | delete=1 | Stale X11 socket cleanup under app-private rootfs tmp before the X server binds the display.
 core/linux-distro/src/main/java/com/wuxianggujun/tinaide/core/linuxdistro/LinuxDistroDownloader.kt | delete=7 | App-private rootfs archive rejection after size, range, or completeness validation failures.
