@@ -3,7 +3,7 @@ package com.wuxianggujun.tinaide.ui.compose.components.editor
 import com.google.common.truth.Truth.assertThat
 import com.wuxianggujun.tinaide.core.editorapi.SemanticToken
 import com.wuxianggujun.tinaide.core.editorview.EditorState
-import com.wuxianggujun.tinaide.core.editorview.SemanticTokenType
+import com.wuxianggujun.tinaide.core.editorapi.SemanticTokenType
 import com.wuxianggujun.tinaide.core.textengine.RopeTextBuffer
 import org.junit.After
 import org.junit.Test

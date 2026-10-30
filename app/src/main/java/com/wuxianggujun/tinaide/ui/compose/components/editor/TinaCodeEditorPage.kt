@@ -237,7 +237,7 @@ fun TinaCodeEditorPage(
             }
             .collectLatest { requestOrNull ->
                 val request = requestOrNull ?: run {
-                    editorState.clearFoldRegions()
+                    editorState.folding.clearFoldRegions()
                     return@collectLatest
                 }
                 val documentVersion = request.documentVersion
@@ -261,13 +261,13 @@ fun TinaCodeEditorPage(
                         requestId == latestFoldingRequestId &&
                         buffer.version == documentVersion
                     ) {
-                        editorState.setFoldRegions(lspRegions, documentVersion = documentVersion)
+                        editorState.folding.setFoldRegions(lspRegions, documentVersion = documentVersion)
                         return@collectLatest
                     }
                 }
 
                 if (provider == null) {
-                    editorState.clearFoldRegions()
+                    editorState.folding.clearFoldRegions()
                     return@collectLatest
                 }
 
@@ -284,7 +284,7 @@ fun TinaCodeEditorPage(
                 ) {
                     return@collectLatest
                 }
-                editorState.setFoldRegions(computation.regions, documentVersion = documentVersion)
+                editorState.folding.setFoldRegions(computation.regions, documentVersion = documentVersion)
             }
     }
 
@@ -570,7 +570,7 @@ fun TinaCodeEditorPage(
                 onAttach = {
                     editorState.onLineNumberTap = toggleBreakpoint
                     editorState.onLineNumberLongPress = toggleBreakpoint
-                    editorState.onGutterFoldToggle = { line -> editorState.toggleFoldAtLine(line) }
+                    editorState.onGutterFoldToggle = { line -> editorState.folding.toggleFoldAtLine(line) }
                 },
                 onDetach = {
                     editorState.onLineNumberTap = null
@@ -865,7 +865,7 @@ fun TinaCodeEditorPage(
         }
             .distinctUntilChanged()
             .collectLatest { key ->
-                val projectRootPath = editorState.projectRootPath
+                val projectRootPath = state.resolveProjectRootPath()
                 val relativePath = projectRootPath?.let { resolveRepoRelativePath(it, tab.file) }
                 if (!key.gitGutterEnabled || projectRootPath == null || relativePath == null) {
                     applyGitLineChanges(editorState, emptyMap())

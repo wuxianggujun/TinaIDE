@@ -1,6 +1,8 @@
 ﻿package com.wuxianggujun.tinaide.core.editorlsp
 
 import com.google.common.truth.Truth.assertThat
+import com.wuxianggujun.tinaide.core.editorapi.SemanticTokenModifier
+import com.wuxianggujun.tinaide.core.editorapi.SemanticTokenType
 import org.junit.Test
 
 class LspSemanticTokenDecoderTest {

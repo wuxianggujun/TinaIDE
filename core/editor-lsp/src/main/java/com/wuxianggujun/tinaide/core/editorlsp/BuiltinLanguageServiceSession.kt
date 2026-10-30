@@ -1,8 +1,8 @@
 ﻿package com.wuxianggujun.tinaide.core.editorlsp
 
 import com.wuxianggujun.tinaide.core.editorlsp.CompletionFetchResult
-import com.wuxianggujun.tinaide.core.editorlsp.SemanticToken
-import com.wuxianggujun.tinaide.core.editorlsp.SignatureHelpResult
+import com.wuxianggujun.tinaide.core.editorapi.SemanticToken
+import com.wuxianggujun.tinaide.core.editorapi.SignatureHelpResult
 import com.wuxianggujun.tinaide.core.lsp.Diagnostic
 import com.wuxianggujun.tinaide.core.lsp.DocumentSymbolItem
 import com.wuxianggujun.tinaide.core.lsp.LocationItem

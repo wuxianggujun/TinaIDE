@@ -9,6 +9,8 @@ import com.wuxianggujun.tinaide.core.lang.CxxFileSupport
 import com.wuxianggujun.tinaide.core.linux.LinuxEnvironmentProvider
 import com.wuxianggujun.tinaide.core.linux.LinuxRunModePolicy
 import com.wuxianggujun.tinaide.core.linux.UnavailableLinuxEnvironmentProvider
+import com.wuxianggujun.tinaide.core.editorapi.SemanticToken
+import com.wuxianggujun.tinaide.core.editorapi.SignatureHelpResult
 import com.wuxianggujun.tinaide.core.lsp.CompileDatabaseProvider
 import com.wuxianggujun.tinaide.core.lsp.CxxCompileContextInspector
 import com.wuxianggujun.tinaide.core.lsp.CxxCompileContextIssue

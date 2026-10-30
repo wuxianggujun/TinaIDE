@@ -17,6 +17,7 @@ dependencies {
     implementation(project.dependencies.project(":core:project"))
     implementation(project.dependencies.project(":core:cmake"))
     implementation(project.dependencies.project(":core:tree-sitter"))
+    implementation(project.dependencies.project(":core:language-support"))
 
     implementation(libs.kotlinx.coroutines)
     implementation(libs.kotlinx.serialization.json)

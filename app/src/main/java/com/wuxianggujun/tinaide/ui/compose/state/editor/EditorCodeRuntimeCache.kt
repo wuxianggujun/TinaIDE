@@ -33,7 +33,6 @@ internal class EditorCodeRuntimeCache(
                 editorState = EditorState(
                     textBuffer = buffer,
                     file = tab.file,
-                    projectRootPath = projectRootPathProvider(),
                     config = editorConfigFromPrefs(),
                     runtimeOptions = editorRuntimeOptionsFromPrefs()
                 )

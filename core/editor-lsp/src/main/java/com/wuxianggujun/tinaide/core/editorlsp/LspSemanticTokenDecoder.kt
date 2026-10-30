@@ -1,6 +1,6 @@
 ﻿package com.wuxianggujun.tinaide.core.editorlsp
 
-import com.wuxianggujun.tinaide.core.editorlsp.SemanticToken
+import com.wuxianggujun.tinaide.core.editorapi.SemanticToken
 import com.wuxianggujun.tinaide.core.editorapi.SemanticTokenModifier
 import com.wuxianggujun.tinaide.core.editorapi.SemanticTokenType
 

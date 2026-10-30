@@ -3,7 +3,7 @@
 import com.wuxianggujun.tinaide.core.editorlsp.CompletionItem
 import com.wuxianggujun.tinaide.core.editorlsp.CompletionItemKind
 import com.wuxianggujun.tinaide.core.editorlsp.CompletionSource
-import com.wuxianggujun.tinaide.core.editorlsp.SemanticToken
+import com.wuxianggujun.tinaide.core.editorapi.SemanticToken
 import com.wuxianggujun.tinaide.core.lang.MakeFileSupport
 import com.wuxianggujun.tinaide.core.lsp.Diagnostic
 import com.wuxianggujun.tinaide.core.lsp.DocumentSymbolItem

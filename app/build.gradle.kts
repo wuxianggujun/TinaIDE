@@ -311,6 +311,7 @@ dependencies {
     // ===== 内部模块 =====
     implementation(project.dependencies.project(":core:apk-builder"))
     implementation(project.dependencies.project(":core:common"))
+    implementation(project.dependencies.project(":core:language-support"))
     implementation(project.dependencies.project(":core:compile"))
     implementation(project.dependencies.project(":core:config"))
     implementation(project.dependencies.project(":core:database"))

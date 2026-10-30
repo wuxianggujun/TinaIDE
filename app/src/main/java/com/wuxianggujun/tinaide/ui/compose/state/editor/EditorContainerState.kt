@@ -25,8 +25,8 @@ import com.wuxianggujun.tinaide.core.editorlsp.CompletionItemKind
 import com.wuxianggujun.tinaide.core.editorlsp.CompletionSource
 import com.wuxianggujun.tinaide.core.editorlsp.InlayHint
 import com.wuxianggujun.tinaide.core.editorlsp.InlayHintsRequestResult
-import com.wuxianggujun.tinaide.core.editorlsp.SemanticToken
-import com.wuxianggujun.tinaide.core.editorlsp.SignatureHelpResult
+import com.wuxianggujun.tinaide.core.editorapi.SemanticToken
+import com.wuxianggujun.tinaide.core.editorapi.SignatureHelpResult
 import com.wuxianggujun.tinaide.core.editorview.EditorColorScheme
 import com.wuxianggujun.tinaide.core.editorview.EditorRenderPerformanceSnapshot
 import com.wuxianggujun.tinaide.core.editorview.EditorState
@@ -288,7 +288,7 @@ class EditorContainerState(
     internal val peekDefinitionPanelState: PeekDefinitionPanelState?
         get() = peekDefinitionState.panelState
 
-    private fun resolveProjectRootPath(): String? = projectRootPathProvider()
+    fun resolveProjectRootPath(): String? = projectRootPathProvider()
         ?.takeIf { it.isNotBlank() }
 
     private fun resolveSplitEditorSessionProjectPath(): String? = resolveProjectRootPath()?.let(::normalizeOpenTabLookupPath)

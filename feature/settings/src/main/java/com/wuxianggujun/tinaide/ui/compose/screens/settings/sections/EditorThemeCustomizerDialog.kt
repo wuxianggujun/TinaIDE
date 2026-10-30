@@ -527,6 +527,24 @@ private fun EditorThemeColorKey.labelRes(): Int = when (this) {
     EditorThemeColorKey.SYNTAX_CONSTANT -> Strings.settings_editor_color_constant
     EditorThemeColorKey.SYNTAX_BUILTIN -> Strings.settings_editor_color_builtin
     EditorThemeColorKey.SYNTAX_DEPRECATED -> Strings.settings_editor_color_deprecated
+    EditorThemeColorKey.EDITOR_LINE_NUMBER_BACKGROUND -> Strings.settings_editor_color_line_number_background
+    EditorThemeColorKey.EDITOR_SELECTION_HANDLE -> Strings.settings_editor_color_selection_handle
+    EditorThemeColorKey.SCROLLBAR_TRACK -> Strings.settings_editor_color_scrollbar_track
+    EditorThemeColorKey.SCROLLBAR_THUMB -> Strings.settings_editor_color_scrollbar_thumb
+    EditorThemeColorKey.SCROLLBAR_THUMB_HOVER -> Strings.settings_editor_color_scrollbar_thumb_hover
+    EditorThemeColorKey.GUTTER_BREAKPOINT -> Strings.settings_editor_color_gutter_breakpoint
+    EditorThemeColorKey.GUTTER_BOOKMARK -> Strings.settings_editor_color_gutter_bookmark
+    EditorThemeColorKey.GUTTER_DIAGNOSTIC -> Strings.settings_editor_color_gutter_diagnostic
+    EditorThemeColorKey.GUTTER_GIT_ADDED -> Strings.settings_editor_color_gutter_git_added
+    EditorThemeColorKey.GUTTER_GIT_MODIFIED -> Strings.settings_editor_color_gutter_git_modified
+    EditorThemeColorKey.GUTTER_GIT_DELETED -> Strings.settings_editor_color_gutter_git_deleted
+    EditorThemeColorKey.FOLDING_ICON_EXPANDED -> Strings.settings_editor_color_folding_icon_expanded
+    EditorThemeColorKey.FOLDING_ICON_COLLAPSED -> Strings.settings_editor_color_folding_icon_collapsed
+    EditorThemeColorKey.FOLDING_ICON_WARNING -> Strings.settings_editor_color_folding_icon_warning
+    EditorThemeColorKey.FOLDING_PLACEHOLDER_FOREGROUND -> Strings.settings_editor_color_folding_placeholder_foreground
+    EditorThemeColorKey.FOLDING_PLACEHOLDER_BACKGROUND -> Strings.settings_editor_color_folding_placeholder_background
+    EditorThemeColorKey.EDITOR_FIND_MATCH -> Strings.settings_editor_color_find_match
+    EditorThemeColorKey.EDITOR_FIND_MATCH_ACTIVE -> Strings.settings_editor_color_find_match_active
     EditorThemeColorKey.DIAGNOSTIC_ERROR -> Strings.settings_editor_color_diagnostic_error
     EditorThemeColorKey.DIAGNOSTIC_WARNING -> Strings.settings_editor_color_diagnostic_warning
     EditorThemeColorKey.DIAGNOSTIC_INFO -> Strings.settings_editor_color_diagnostic_info

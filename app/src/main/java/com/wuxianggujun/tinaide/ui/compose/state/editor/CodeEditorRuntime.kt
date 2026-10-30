@@ -86,15 +86,6 @@ class CodeEditorRuntime(
 ) {
     val contentLoadMutex = Mutex()
 
-    private val stateSyncListener = TextChangeListener { change ->
-        editorState.applyTextBufferChange(change)
-        // 流式加载发出的 TextChange 不携带完整 newText。tree-sitter 会在
-        // ensureTreeSitterPrepared 里通过 openDocument 单独喂入，这里不能把
-        // 它的 StringBuilder 用空字符串覆盖掉。
-        if (change.hasCompleteNewText) {
-            syntaxHighlighter?.applyTextChange(change)
-        }
-    }
     private var documentBinding: CodeEditorDocumentBinding? = null
     private var documentBindingReferences: Int = 0
     private data class StateBindingRecord(
@@ -107,7 +98,8 @@ class CodeEditorRuntime(
     private var disposed = false
 
     init {
-        buffer.addChangeListener(stateSyncListener)
+        // buffer 变更由 EditorState 自己的监听器统一处理（applyTextBufferChange +
+        // 高亮同步），宿主不再重复注册，避免同一变更被应用两次。
     }
 
     internal fun acquireUiReference() {
@@ -211,7 +203,7 @@ class CodeEditorRuntime(
         resetStateBindings()
         clearLanguageServices()
         editorState.clearSemanticTokens()
-        editorState.clearFoldRegions()
+        editorState.folding.clearFoldRegions()
         editorState.retargetFile(newFile)
     }
 
@@ -228,7 +220,6 @@ class CodeEditorRuntime(
         resetDocumentBinding()
         resetStateBindings()
         clearLanguageServices()
-        buffer.removeChangeListener(stateSyncListener)
         buffer.close()
     }
 }

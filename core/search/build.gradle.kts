@@ -8,5 +8,6 @@ android {
 
 dependencies {
     implementation(project.dependencies.project(":core:common"))
+    implementation(project.dependencies.project(":core:language-support"))
     implementation(libs.kotlinx.coroutines)
 }

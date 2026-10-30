@@ -269,7 +269,20 @@ private fun HighlightedCodeContent(
             return@LaunchedEffect
         }
         highlightedText = withContext(Dispatchers.Default) {
-            val spans = highlighter.highlight(code, 0..code.length)
+            // 新 SyntaxHighlighter 是推模型：先同步建快照，再按行取缓存段。
+            highlighter.openDocumentBlocking(code)
+            val lineCount = code.count { it == '\n' } + 1
+            var offset = 0
+            val spans = buildList {
+                code.lineSequence().forEachIndexed { line, text ->
+                    highlighter.getLineSegments(line).forEach { segment ->
+                        val start = offset + segment.startColumn.coerceIn(0, text.length)
+                        val end = offset + segment.endColumn.coerceIn(start - offset, text.length)
+                        if (end > start) add(HighlightSpan(start, end, segment.type, segment.priority))
+                    }
+                    offset += text.length + 1
+                }
+            }
             buildHighlightedText(code, spans, syntaxColors)
         }
     }
