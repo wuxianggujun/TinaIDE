@@ -1,7 +1,5 @@
-﻿package com.wuxianggujun.tinaide.core.editorlsp
+package com.wuxianggujun.tinaide.core.editorlsp
 
-import com.wuxianggujun.tinaide.core.editorlsp.CompletionFetchResult
-import com.wuxianggujun.tinaide.core.editorlsp.CompletionSource
 import com.wuxianggujun.tinaide.core.editorapi.SemanticToken
 import com.wuxianggujun.tinaide.core.lsp.Diagnostic
 import com.wuxianggujun.tinaide.core.lsp.DocumentSymbolItem

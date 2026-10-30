@@ -161,7 +161,6 @@ class EditorContainerState(
     private val codeRuntimeCache = EditorCodeRuntimeCache(
         context = context,
         cacheLimit = CODE_EDITOR_RUNTIME_CACHE_LIMIT,
-        projectRootPathProvider = ::getEditorProjectRootPathOrNull,
         activeTabIdProvider = ::getActiveTabId,
         isSplitEditorEnabledProvider = { isSplitEditorEnabled },
         splitPaneState = splitPaneState,
@@ -288,7 +287,7 @@ class EditorContainerState(
     internal val peekDefinitionPanelState: PeekDefinitionPanelState?
         get() = peekDefinitionState.panelState
 
-    fun resolveProjectRootPath(): String? = projectRootPathProvider()
+    internal fun resolveProjectRootPath(): String? = projectRootPathProvider()
         ?.takeIf { it.isNotBlank() }
 
     private fun resolveSplitEditorSessionProjectPath(): String? = resolveProjectRootPath()?.let(::normalizeOpenTabLookupPath)

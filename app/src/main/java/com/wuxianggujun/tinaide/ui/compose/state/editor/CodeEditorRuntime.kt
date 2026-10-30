@@ -1,17 +1,16 @@
 package com.wuxianggujun.tinaide.ui.compose.state.editor
 
+import android.os.Handler
+import android.os.Looper
 import com.wuxianggujun.tinaide.core.config.EditorSettings
 import com.wuxianggujun.tinaide.core.editorview.EditorColorScheme
 import com.wuxianggujun.tinaide.core.editorview.EditorRenderPerformanceSnapshot
 import com.wuxianggujun.tinaide.core.editorview.EditorState
 import com.wuxianggujun.tinaide.core.textengine.RopeTextBuffer
-import com.wuxianggujun.tinaide.core.textengine.TextChangeListener
 import com.wuxianggujun.tinaide.core.treesitter.TreeSitterFoldingProvider
 import com.wuxianggujun.tinaide.core.treesitter.TreeSitterHighlighter
 import com.wuxianggujun.tinaide.editor.session.DocumentSession
 import java.io.File
-import android.os.Handler
-import android.os.Looper
 import java.util.concurrent.Executor
 import kotlinx.coroutines.sync.Mutex
 
@@ -74,6 +73,7 @@ internal interface CodeEditorStateBinding {
 
 /**
  * 单标签编辑器运行时：文本缓冲、语法高亮、折叠与 document/state 绑定引用计数。
+ * 文本变更和高亮回调订阅由 EditorState 统一处理，宿主只负责资源生命周期。
  * 从 [EditorContainerState] 抽出，降低容器状态体量。
  */
 class CodeEditorRuntime(
@@ -96,11 +96,6 @@ class CodeEditorRuntime(
     private var uiReferences = 0
     private var disposalRequested = false
     private var disposed = false
-
-    init {
-        // buffer 变更由 EditorState 自己的监听器统一处理（applyTextBufferChange +
-        // 高亮同步），宿主不再重复注册，避免同一变更被应用两次。
-    }
 
     internal fun acquireUiReference() {
         check(!disposed) { "Cannot attach a disposed editor runtime" }
@@ -135,10 +130,8 @@ class CodeEditorRuntime(
 
     internal fun installSyntaxHighlighter(highlighter: TreeSitterHighlighter?) {
         if (syntaxHighlighter === highlighter) return
-        syntaxHighlighter?.setOnStateUpdated(null)
         syntaxHighlighter = highlighter
         editorState.highlighter = highlighter
-        highlighter?.setOnStateUpdated(editorState::notifyHighlightChanged)
     }
 
     internal fun getOrCreateStateBinding(
@@ -167,7 +160,6 @@ class CodeEditorRuntime(
     }
 
     internal fun clearLanguageServices() {
-        syntaxHighlighter?.setOnStateUpdated(null)
         if (editorState.highlighter === syntaxHighlighter) {
             editorState.highlighter = null
         }
@@ -219,6 +211,7 @@ class CodeEditorRuntime(
         disposed = true
         resetDocumentBinding()
         resetStateBindings()
+        editorState.close()
         clearLanguageServices()
         buffer.close()
     }

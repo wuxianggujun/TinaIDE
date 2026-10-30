@@ -1,4 +1,4 @@
-﻿package com.wuxianggujun.tinaide.core.editorlsp
+package com.wuxianggujun.tinaide.core.editorlsp
 
 import com.wuxianggujun.tinaide.cmake.CMake
 import com.wuxianggujun.tinaide.cmake.CMakeDoc
@@ -10,9 +10,6 @@ import com.wuxianggujun.tinaide.cmake.parser.CMakeLexer
 import com.wuxianggujun.tinaide.cmake.parser.CMakeParser
 import com.wuxianggujun.tinaide.cmake.parser.CommandInvocation
 import com.wuxianggujun.tinaide.cmake.parser.Token
-import com.wuxianggujun.tinaide.core.editorlsp.CompletionItem
-import com.wuxianggujun.tinaide.core.editorlsp.CompletionItemKind
-import com.wuxianggujun.tinaide.core.editorlsp.CompletionSource
 import com.wuxianggujun.tinaide.core.editorapi.SemanticToken
 import com.wuxianggujun.tinaide.core.editorapi.SemanticTokenType
 import com.wuxianggujun.tinaide.core.lsp.Diagnostic

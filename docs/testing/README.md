@@ -18,6 +18,31 @@ raylib 包的帧循环契约、模板返回键退出，以及 SDL2/SDL3/NativeAc
 当前只支持修复包，不再把旧 raylib/SDL 包兼容作为交接验收目标。
 文档分别记录包体静态验证、现有宿主 APK 的设备验证和仍未完成的端到端验证，不能互相替代。
 
+## 编辑器迁移与 SSH 持久化回归
+
+2026-10-30 的宿主迁移使用新版 TinaEditor API，不再由宿主重复转发文本变更或覆盖高亮更新订阅。
+关闭标签时应等最后一个分屏释放 UI 引用，再关闭 `EditorState`、语言服务和文本缓冲。
+
+```bash
+./gradlew :core:git:testDebugUnitTest --no-daemon --console=plain
+./gradlew :core:editor-lsp:testDebugUnitTest --no-daemon --console=plain
+./gradlew :app:testArm64DebugUnitTest --tests "*CodeBlockHighlightingTest" --tests "*CodeEditorRuntimeTest" --tests "*CodeEditorRuntimeLifecycleTest" --tests "*TinaCodeEditorSemanticTokenMappingTest" --tests "*SplitEditorSessionStorageTest" --no-daemon --console=plain
+```
+
+固定检查以下边界：
+
+- SSH 密钥/元数据使用同目录唯一临时文件和原子替换；发布失败不能先删除旧文件，临时文件不能占用另一个合法的 `<key>.new` 密钥名；写入明确使用 UTF-8，fsync/清理错误不得静默丢失。
+- `CodeBlockHighlightingTest` 使用编辑器的 LF/UTF-16 行索引覆盖 CRLF、独立 CR、中文/emoji、空行和越界高亮段；异步缓存完成后刷新，并在取消或打开失败时解除订阅。
+- `CodeEditorRuntimeTest` 与 Compose 生命周期测试覆盖镜像分屏引用计数、缓存保留，以及关闭时清理新版 `EditorState` 的回调。
+- 语义 token 映射与拆分会话存储保持宿主迁移后的行为；对应测试已纳入 `Core Regression Checks`。
+
+如果宿主更新的 `editor-kit` 指针同时包含共享构建脚本变更，还需分别验证宿主与 kit 独立构建：
+
+```bash
+./gradlew :app:compileArm64DebugKotlin --no-daemon --console=plain
+cd editor-kit && ./gradlew :core:editor-view:compileDebugKotlin --no-daemon --console=plain
+```
+
 ## 文本编辑与工作区定向回归
 
 以下测试类已于 2026-09-09 在对应 `src/test` 目录核对存在。按模块分别运行：

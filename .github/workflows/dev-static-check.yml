@@ -99,6 +99,7 @@ jobs:
             :app:testArm64DebugUnitTest \
             --tests "com.wuxianggujun.tinaide.storage.Android10StorageManifestContractTest" \
             --tests "*CodeEditorRuntimeTest" --tests "*CodeEditorRuntimeLifecycleTest" \
+            --tests "*CodeBlockHighlightingTest" --tests "*TinaCodeEditorSemanticTokenMappingTest" \
             --tests "*CompileActionsHelperTest" \
             --tests "*EditorFontSizeHostIntegrationTest" --tests "*EditorContainerStateTest" \
             --tests "*EditorSplitPaneStateTest" --tests "*SplitEditorSessionStorageTest" \

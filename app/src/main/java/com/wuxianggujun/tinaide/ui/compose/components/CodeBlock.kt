@@ -55,6 +55,7 @@ import com.wuxianggujun.tinaide.core.treesitter.HighlightSpan
 import com.wuxianggujun.tinaide.core.treesitter.TreeSitterHighlighter
 import com.wuxianggujun.tinaide.core.treesitter.TreeSitterLanguageRegistry
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 
 /**
@@ -252,7 +253,8 @@ private fun HighlightedCodeContent(
 
     // 语法高亮器（按需创建，Composition 销毁时释放）
     val tsLanguage = remember(language) { TreeSitterLanguageRegistry.resolveLanguageName(language) }
-    val highlighter = remember(tsLanguage) {
+    // Each immutable code snapshot owns its parser, so a cancelled parse cannot recolor newer code.
+    val highlighter = remember(code, tsLanguage) {
         if (tsLanguage != null) TreeSitterHighlighter.create(context, tsLanguage) else null
     }
     DisposableEffect(highlighter) {
@@ -268,23 +270,13 @@ private fun HighlightedCodeContent(
             highlightedText = null
             return@LaunchedEffect
         }
-        highlightedText = withContext(Dispatchers.Default) {
-            // 新 SyntaxHighlighter 是推模型：先同步建快照，再按行取缓存段。
-            highlighter.openDocumentBlocking(code)
-            val lineCount = code.count { it == '\n' } + 1
-            var offset = 0
-            val spans = buildList {
-                code.lineSequence().forEachIndexed { line, text ->
-                    highlighter.getLineSegments(line).forEach { segment ->
-                        val start = offset + segment.startColumn.coerceIn(0, text.length)
-                        val end = offset + segment.endColumn.coerceIn(start - offset, text.length)
-                        if (end > start) add(HighlightSpan(start, end, segment.type, segment.priority))
-                    }
-                    offset += text.length + 1
+        codeBlockHighlightUpdates(code, highlighter)
+            .flowOn(Dispatchers.Default)
+            .collect { spans ->
+                highlightedText = withContext(Dispatchers.Default) {
+                    buildHighlightedText(code, spans, syntaxColors)
                 }
             }
-            buildHighlightedText(code, spans, syntaxColors)
-        }
     }
 
     val shouldCollapse = lineCount > 20
