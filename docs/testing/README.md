@@ -11,6 +11,13 @@
 - 若其他会话正在构建，本会话只做 `git diff --check`、路径/类名核对等静态检查，不启动或停止 Gradle。
 - 禁止执行 `gradlew --stop` 影响共享 daemon；清理时只终止本任务明确启动的进程。
 
+## Native 图形运行回归
+
+[SDL / raylib Native 图形运行回归](native-graphics-runtime.md) 覆盖运行与 APK 导出能力边界、
+raylib 包的帧循环契约、模板返回键退出，以及 SDL2/SDL3/NativeActivity 宿主隔离验证。
+当前只支持修复包，不再把旧 raylib/SDL 包兼容作为交接验收目标。
+文档分别记录包体静态验证、现有宿主 APK 的设备验证和仍未完成的端到端验证，不能互相替代。
+
 ## 文本编辑与工作区定向回归
 
 以下测试类已于 2026-09-09 在对应 `src/test` 目录核对存在。按模块分别运行：

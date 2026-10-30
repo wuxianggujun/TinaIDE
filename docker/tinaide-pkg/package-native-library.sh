@@ -193,6 +193,7 @@ case "$PACKAGE_ID" in
         DEPENDENCY_TARGET="SDL3::SDL3"
         ;;
     raylib)
+        PACKAGE_REVISION=2
         VERSION="6.0"
         NAME="raylib"
         DESCRIPTION="Simple and easy-to-use game programming library"
@@ -265,6 +266,20 @@ verify_raylib_runtime_contract() {
     fi
     if readelf -dW "$library_path" | grep -Eq 'Shared library: \[libSDL[23]'; then
         echo "[ERROR] libraylib.so must not depend on SDL" >&2
+        return 1
+    fi
+
+    # Entry symbols alone do not prove a usable renderer. EndDrawing must present
+    # frames and poll input. Clang may inline SwapScreenBuffer as eglSwapBuffers.
+    local end_drawing_disassembly
+    if ! end_drawing_disassembly="$(llvm-objdump -d --disassemble-symbols=EndDrawing "$library_path")"; then
+        echo "[ERROR] Failed to inspect libraylib.so EndDrawing" >&2
+        return 1
+    fi
+    if [[ ( "$end_drawing_disassembly" != *"<SwapScreenBuffer"* &&
+            "$end_drawing_disassembly" != *"<eglSwapBuffers"* ) ||
+          "$end_drawing_disassembly" != *"<PollInputEvents"* ]]; then
+        echo "[ERROR] libraylib.so EndDrawing must swap buffers and poll input; rebuild with CUSTOMIZE_BUILD=OFF" >&2
         return 1
     fi
 }
@@ -477,7 +492,7 @@ write_package_metadata "$PACKAGE_ROOT" "$ABI_JSON" "$ABI_LIST"
 LEGACY_ARCHIVE="${FINAL_DIR}/${PACKAGE_ID}.tar.xz"
 tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner \
     -C "$PACKAGE_ROOT" -cf - . | xz -9e --threads=0 > "$LEGACY_ARCHIVE"
-sha256sum "$LEGACY_ARCHIVE" > "${LEGACY_ARCHIVE}.sha256"
+(cd "$FINAL_DIR" && sha256sum "${PACKAGE_ID}.tar.xz") > "${LEGACY_ARCHIVE}.sha256"
 echo "[SUCCESS] Legacy universal Registry package created: ${LEGACY_ARCHIVE}"
 cat "${LEGACY_ARCHIVE}.sha256"
 
@@ -494,7 +509,7 @@ for ABI in "${ABIS[@]}"; do
     FINAL_ARCHIVE="${FINAL_DIR}/${PACKAGE_ID}-${ABI}.tar.xz"
     tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner \
         -C "$ABI_PACKAGE_ROOT" -cf - . | xz -9e --threads=0 > "$FINAL_ARCHIVE"
-    sha256sum "$FINAL_ARCHIVE" > "${FINAL_ARCHIVE}.sha256"
+    (cd "$FINAL_DIR" && sha256sum "${PACKAGE_ID}-${ABI}.tar.xz") > "${FINAL_ARCHIVE}.sha256"
 
     echo "[SUCCESS] Registry package created: ${FINAL_ARCHIVE}"
     cat "${FINAL_ARCHIVE}.sha256"

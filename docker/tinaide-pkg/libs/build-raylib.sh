@@ -27,6 +27,10 @@ BUILD_DIR="/build/build/raylib-${ARCH}"
 INSTALL_DIR="/build/install/raylib-${ARCH}"
 rm -rf "$BUILD_DIR" "$INSTALL_DIR"
 
+# raylib 6.0's CMake config parser treats every uncommented SUPPORT_* define as ON,
+# including numeric defaults of 0. Customization therefore enables custom frame
+# control and removes buffer swapping, event polling and timing from EndDrawing.
+# Keep the upstream config.h defaults; audio is already enabled there.
 cmake -B "$BUILD_DIR" -S "$SRC_DIR" \
     -G Ninja \
     -DCMAKE_TOOLCHAIN_FILE="${CMAKE_TOOLCHAIN_FILE}" \
@@ -40,8 +44,7 @@ cmake -B "$BUILD_DIR" -S "$SRC_DIR" \
     -DBUILD_EXAMPLES=OFF \
     -DPLATFORM=Android \
     -DGRAPHICS=GRAPHICS_API_OPENGL_ES2 \
-    -DCUSTOMIZE_BUILD=ON \
-    -DUSE_AUDIO=ON
+    -DCUSTOMIZE_BUILD=OFF
 
 cmake --build "$BUILD_DIR" --parallel "$(nproc)"
 cmake --install "$BUILD_DIR"

@@ -1,8 +1,8 @@
 {
   "id": "tinaide.template.raylib",
   "name": "raylib Project Template",
-  "version": "1.0.0",
-  "minAppVersion": "0.18.20",
+  "version": "1.0.1",
+  "minAppVersion": "0.18.36",
   "description": "Adds a raylib + CMake project template to New Project.",
   "type": "config",
   "author": {

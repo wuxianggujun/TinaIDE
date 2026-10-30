@@ -312,6 +312,63 @@ class RunConfigurationManagerNormalizationTest {
     }
 
     @Test
+    fun `load migrates legacy raylib sdl mode without apk export support`() = runTest {
+        val projectRoot = createTempProjectRoot()
+        try {
+            File(projectRoot, "CMakeLists.txt").writeText(
+                """
+                cmake_minimum_required(VERSION 3.22)
+                project(raylib_game C)
+                find_package(raylib CONFIG REQUIRED)
+                add_library(raylib_game SHARED main.c)
+                target_link_libraries(raylib_game PRIVATE raylib::raylib)
+                """.trimIndent(),
+                Charsets.UTF_8,
+            )
+            File(projectRoot, "main.c").writeText(
+                "#include <raylib.h>\nint main(void) { InitWindow(640, 480, \"game\"); return 0; }\n",
+                Charsets.UTF_8,
+            )
+            ProjectMetadataStore.ensure(
+                projectRoot = projectRoot,
+                displayNameFallback = projectRoot.name,
+                defaultRunTargetName = "raylib_game",
+            )
+            writeRunConfig(
+                projectRoot,
+                """
+                {
+                  "schemaVersion": 6,
+                  "configurations": [
+                    {
+                      "id": "cfg-raylib",
+                      "name": "Raylib Debug",
+                      "outputMode": "SDL",
+                      "sdlVersion": "SDL3",
+                      "targetName": "raylib_game"
+                    }
+                  ],
+                  "selectedId": "cfg-raylib"
+                }
+                """.trimIndent(),
+            )
+
+            val manager = RunConfigurationManager.load(projectRoot.absolutePath)
+            val metadata = requireNotNull(ProjectMetadataStore.read(projectRoot))
+
+            assertThat(metadata.apkExportType).isNotEqualTo(ProjectApkExportType.NATIVE_ACTIVITY)
+            assertThat(metadata.isNativeActivityRuntime()).isTrue()
+            assertThat(manager.selectedConfig.outputMode).isEqualTo(OutputMode.NATIVE_ACTIVITY)
+            assertThat(manager.selectedConfig.sdlVersion).isNull()
+            assertThat(manager.selectedConfig.targetName).isEqualTo("raylib_game")
+            assertThat(readRunConfig(projectRoot)).contains("\"outputMode\": \"NATIVE_ACTIVITY\"")
+            assertThat(RunConfigurationManager.load(projectRoot.absolutePath)).isEqualTo(manager)
+        } finally {
+            projectRoot.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `load keeps schema 7 native project sdl choice explicit`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {

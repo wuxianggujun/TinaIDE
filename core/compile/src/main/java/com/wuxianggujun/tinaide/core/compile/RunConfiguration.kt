@@ -6,7 +6,6 @@ import com.wuxianggujun.tinaide.core.lang.CxxFileSupport
 import com.wuxianggujun.tinaide.core.serialization.JsonSerializer
 import com.wuxianggujun.tinaide.project.CppStandard
 import com.wuxianggujun.tinaide.project.ProjectApkExportSupportResolver
-import com.wuxianggujun.tinaide.project.ProjectApkExportType
 import com.wuxianggujun.tinaide.project.ProjectMetadata
 import com.wuxianggujun.tinaide.project.ProjectMetadataStore
 import com.wuxianggujun.tinaide.project.ProjectSdlVersion
@@ -498,10 +497,12 @@ data class RunConfigurationManager(
             sourceSchemaVersion: Int,
             metadata: ProjectMetadata?,
         ): RunConfigurationManager {
+            // Runtime support does not require libmain.so; APK export support does.
+            // Using the export type here leaves legacy raylib targets in the SDL launcher.
             if (
                 sourceSchemaVersion >= RUN_CONFIG_SCHEMA_NATIVE_ACTIVITY ||
-                metadata?.apkExportType != ProjectApkExportType.NATIVE_ACTIVITY ||
-                metadata?.getSdlVersionOrNull() != null
+                metadata?.isNativeActivityRuntime() != true ||
+                metadata.getSdlVersionOrNull() != null
             ) {
                 return manager
             }
