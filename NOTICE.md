@@ -60,6 +60,24 @@ TinaIDE 整体以 **GPL-3.0-or-later** 分发（见 `LICENSE` 与 `COPYRIGHT.md`
 - clangd / LLVM 工具链（Apache-2.0 with LLVM Exception）
 - Android NDK sysroot 与工具链（Google NDK 许可条款）
 
+### RikkaHub 网页预览资源（2026-10-31 定点核验）
+
+网页预览通过 HTTPS CDN 加载固定版本，未把完整 JS 包加入 APK：
+
+| 组件 | 版本 | 许可证 |
+| --- | --- | --- |
+| markdown-it | 15.0.3 | MIT |
+| KaTeX（含 mhchem 扩展） | 0.19.1 | MIT |
+| @vscode/markdown-it-katex | 1.1.2 | MIT |
+| markdown-it-task-lists | 2.1.1 | ISC |
+| highlight.js | 11.12.0 | BSD-3-Clause |
+| Mermaid | 12.2.0 | MIT |
+| DOMPurify | 3.4.17 | MPL-2.0 **或** Apache-2.0；本项目按 Apache-2.0 分支使用 |
+
+DOMPurify 用于净化 Markdown 中的原始 HTML；版本与核验方法见
+`external/rikkahub/embedded/RESOURCE_MAINTENANCE.md`。
+此清单只记录上述资源，不代表下述 RikkaHub 分发阻塞已解决。
+
 ## 四、未解决事项
 
 **RikkaHub 许可证冲突（阻塞 GPL-3.0 合法分发）**

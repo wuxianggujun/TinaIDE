@@ -4,6 +4,13 @@
 
 本目录只保留当前仍值得固定维护的测试入口说明。
 
+## 0.18.37 Release 真机验收
+
+[0.18.37 Release 真机手测清单](release-0.18.37-manual-checklist.md) 包含升级/全新安装、
+RikkaHub 网页预览与生命周期、Mermaid 导出、IDE 编译/编辑/LSP 的 P0 验收，
+以及完整版本的 P1 回归、可直接粘贴的测试样例和问题记录方法。
+该清单记录的是待执行的真机测试，自动检查或本地 Release 构建通过不代表设备验收通过。
+
 ## 模块优先与共享会话约定
 
 - 先运行改动所属模块：Android library 使用 `:module:testDebugUnitTest` 或 `:module:compileDebugKotlin`；只有 `app` 宿主、ABI/flavor、打包或跨模块集成变化时才运行 `:app:*`。
