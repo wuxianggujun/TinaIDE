@@ -39,6 +39,8 @@
   NativeActivity、SDL2、SDL3 共用隔离进程启动和有界退出协议，不影响 IDE 主进程。
 - **图形 APK 导出壳**：单实例入口和明确的系统返回退出，两个模板共用独立线程退出保护。
   旧导出 APK 需要在新 IDE 中重新导出，安装新版 IDE 不会修改已经生成的 APK。
+- **多个导出 APK 共存**：修改包名时同步重写模板所属的 Provider authority 与私有权限，
+  不再因共享 AndroidX startup authority 拒绝安装；保留必需的自有签名权限，不增加未选设备权限。
 - **SDL3 模板**：1.0.4 在创建窗口时设置 `SDL_WINDOW_RESIZABLE`，避免启动时方向往返和部分画面未覆盖窗口。
 - **多 ABI 打包**：Tree-sitter、RikkaHub workspace 和 Xlorie 正确识别宿主 `AllAbi` 请求，
   单 ABI 模式尊重显式覆盖与 Android Studio 设备 ABI；发布前检查必需原生库及 ELF 架构，防止漏库 APK 上传。

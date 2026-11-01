@@ -10,6 +10,9 @@ from zipfile import BadZipFile, ZipFile
 
 
 ELF_MACHINES = {"arm64-v8a": 183, "x86_64": 62}
+# PRootManager executes this optional, static 32-bit guest loader. It is not a
+# JNI library; the lib*.so name only lets AGP put the executable in nativeLibDir.
+GUEST_LOADER_MACHINES = {"arm64-v8a": 40, "x86_64": 3}
 # Matches the grammars consumed by editor-kit/tree-sitter-grammars, including
 # Java (declared through the version catalog rather than a literal dependency).
 GRAMMARS = (
@@ -45,10 +48,15 @@ def native_library_errors(apk: Path, abi: str) -> list[str]:
             for entry in native_entries:
                 with archive.open(entry) as stream:
                     header = stream.read(20)
-                if len(header) < 20 or header[:6] != b"\x7fELF\x02\x01":
-                    errors.append(f"Invalid 64-bit little-endian ELF: {entry.filename}.")
-                elif struct.unpack_from("<H", header, 18)[0] != ELF_MACHINES[abi]:
+                guest_loader = entry.filename == f"lib/{abi}/libproot-loader32.so"
+                elf_class = 1 if guest_loader else 2
+                machine = GUEST_LOADER_MACHINES[abi] if guest_loader else ELF_MACHINES[abi]
+                if len(header) < 20 or header[:6] != b"\x7fELF" + bytes((elf_class, 1)):
+                    errors.append(f"Invalid {elf_class * 32}-bit little-endian ELF: {entry.filename}.")
+                elif struct.unpack_from("<H", header, 18)[0] != machine:
                     errors.append(f"ELF architecture does not match {abi}: {entry.filename}.")
+                elif guest_loader and struct.unpack_from("<H", header, 16)[0] != 2:
+                    errors.append(f"Expected a static PRoot guest executable: {entry.filename}.")
     except (OSError, BadZipFile, RuntimeError) as error:
         errors.append(f"Unable to inspect native APK entries: {type(error).__name__}.")
     return errors

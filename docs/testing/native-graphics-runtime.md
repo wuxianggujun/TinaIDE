@@ -150,6 +150,21 @@ API 36 日志记录到方向请求 `6 → 13` 和 Surface `720×1600 → 1600×7
 Home 不触发退出保护。模板源码、二进制资产及源码哈希须一起更新；具体 A/B 与完整 IDE
 导出验证结果按 [Release 清单](release-0.18.39-manual-checklist.md) 单独记录。
 
+### 8. 不同导出 APK 的 Provider 冲突
+
+API 36 完整 IDE 导出的 raylib 已安装时，再安装不同包名的 SDL3 导出 APK，系统明确拒绝：
+`INSTALL_FAILED_CONFLICTING_PROVIDER`。根 package 虽已替换，合并进模板的 AndroidX startup
+Provider authority 仍使用相同占位包名；单独安装/运行一个 APK 无法覆盖这个问题。
+
+统一的 `ManifestPatcher` 现在按原包名边界重写 Provider authority（含分号分隔的多个 authority）、
+私有权限定义及权限引用。不改 Activity/Provider 等字节码类名，不改第三方命名空间或相似前缀。
+SDL3 模板自有的 signature 权限声明与使用一起保留并重命名，供 AndroidX 非导出动态 receiver 使用；
+系统权限、普通自定义权限和第三方权限仍只有用户明确选择后才保留，不通过恢复模板全部权限绕过问题。
+
+`ManifestPatcherTest` 使用两份实际图形模板 AXML，覆盖不同包名、重复改包名、多 authority、
+非自有标识不变、私有权限配对，以及不保留未选普通权限；`core:apk-builder` 全模块 20 项测试通过。
+设备端必须在同一模拟器同时保留两个导出包并重复打开，不能卸载前一个 APK 再称为共存通过。
+
 ## 自动化验证
 
 从仓库根目录执行；其他会话正在构建时不要启动本轮 Gradle。

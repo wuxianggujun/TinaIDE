@@ -56,6 +56,7 @@
 5. 进入设置、切换中英文及明暗主题，检查模型/渠道配置保留；日志与分享不包含 API Key。
 6. 设置 → 关于 → 开源组件与许可证，离线打开 RikkaHub 条目读取 AGPL 全文，联网源码链接可达。
 7. 导出当前 raylib/SDL 样例 APK，在独立测试包中安装运行、返回、再次打开；不能用 IDE 内运行代替导出验收。
+   至少保留两个不同包名的导出 APK 同时安装，确认 Provider/私有权限不冲突；不能卸载前一个来绕过。
 
 RikkaHub 仍保留 TinaIDE embedded 适配，不声称整体升级至上游 3.x。
 更多现有样例见 [0.18.37 清单](release-0.18.37-manual-checklist.md)；许可依据见
@@ -273,3 +274,46 @@ SwiftShader，模拟器实际提升内存到 2560 MB。C 盘无法创建 Google 
 ABI 探针最初的整 App dry-run 超过 60 秒，后改为配置实际 native 模块并完成构建准备；
 超时不计为通过。准备工作中有一次 library Release 配置触发自动递增，已精确恢复本轮
 `0.18.39 / 1840`，随后所有构建固定 `-Ptina.autoIncrementReleaseVersion=false`，不发布临时的 0.18.40。
+
+### 7.9 原生库修复候选：图形回归通过，导出共存检查继续拦截
+
+源码 `d7ddc9fa9cb6e45d5f13cd3da469a0a39063e50b` 于 2026-11-02 完成双 ABI Release，
+耗时 34 分 15 秒，Build ID 为 `d7ddc9fa9c-20261102012812`。两个 ABI 均通过正式证书一致性、
+zipalign、许可、R8 Vector 路径、资源/模板哈希及新增的 26 个必需原生库门禁。
+
+| ABI | APK versionCode | 字节数 | SHA-256 |
+| --- | ---: | ---: | --- |
+| arm64-v8a | 18402 | 152937293 | `46cd980097629166627a6099793f4c0b77cb5cee1fde6529d83a55b3d73f1ed1` |
+| x86_64 | 18401 | 146008025 | `c8d8afffe57f22dd8a0dd71e7a5d3ca6e6e9846e6535eda145639117d32f1738` |
+
+门禁同时识别 PRoot 的可选 `libproot-loader32.so`：它是供 32 位 guest 使用的静态可执行文件，
+不是 64 位 JNI 库。只对这一精确路径检查 32 位 little-endian、对应 guest machine 和 `ET_EXEC`，
+不放宽其他原生库。新增正反例后 Python checks **57 项通过**。
+
+在 API 36 / x86_64 / host GPU 覆盖安装后，原有项目可正常打开、LSP Ready，未清空数据。
+IDE 主 PID `3426` 保持不变，完成 **40 轮运行/退出**：raylib 手势 20、快速 Run 20 下两组、
+浮动按钮确认返回 3、早退 5，SDL2 手势 5、修正后的 SDL3 手势 5。除早退组不采样帧外，
+每轮非黑比例 1.0、画面发生变化；每次明确退出后旧图形 PID 消失，无迟到重复启动。
+
+- 完整 IDE UI 重新导出 raylib，包名 `com.tinaide.test.raylibr3`、versionCode **3**；
+  桌面入口 5 轮、普通 Intent 5 轮均通过，Back 后导出进程消失，IDE PID 不变。
+  导出包 SHA-256 为 `28995cedf29b9c10bae888fe91241f24b7e89a211a3339a27380c5fc9126b215`，
+  DEX 与本轮 NativeActivity 模板逐字节一致，raylib 库为已核对的 r3。
+- 随后从同一 IDE UI 导出 `com.tinaide.test.sdl3final`，安装被系统拒绝：
+  `INSTALL_FAILED_CONFLICTING_PROVIDER`。两个导出包仍共享模板的
+  `com.tinaide.template.placeholder.padpadpadpadpad.androidx-startup` authority。
+  **因此本节 APK 不作为最终交付包，SDL3 导出组为失败，未计入成功轮数。**
+- 原 `ManifestPatcher` 只修改根 package，未同步 Provider authority 和应用私有权限名；
+  这与图形出帧/退出是两个问题。修复必须落在统一的 AXML 修改器，补上不同包名并存回归，
+  不通过卸载前一个导出包、移除 AndroidX 初始化组件或清空 IDE 数据绕过。
+
+证据：`release-all-abi-native-final.log`、`verification-native-final/`、
+`emulator-ide/api36-native-final/`、`api36-native-final-sdl3-install-failure.log`。
+目录名中的 `final` 是当时的候选名称，不覆盖本节后续发现的安装失败。
+
+统一 AXML 修复后 `:core:apk-builder:testDebugUnitTest` 全模块 **20 项通过**（39 秒，
+failures/errors/skipped 均为 0）；结合此前 135 项，本轮已执行 **155 项定向 JVM 测试**。
+证据为 `apk-builder-identity-all-tests.log` 与 `apk-builder-identity-tests/summary.json`。
+最初红灯测试保留；一次测试夹具误把 NativeActivity 当作带 AndroidX Core 私有权限的 SDL3 模板，
+并枚举了未打包的 terminal 模板，已按实际 AXML 修正测试输入。另一次 60 秒截止中断不计为通过。
+此处单元测试成功不能代替后续重建 APK 的共存安装和 UI 导出验收。

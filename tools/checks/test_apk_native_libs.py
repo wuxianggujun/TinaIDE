@@ -5,7 +5,7 @@ import unittest
 import warnings
 from zipfile import ZipFile
 
-from check_apk_native_libs import ELF_MACHINES, REQUIRED_LIBRARIES, native_library_errors
+from check_apk_native_libs import ELF_MACHINES, GUEST_LOADER_MACHINES, REQUIRED_LIBRARIES, native_library_errors
 
 
 class ApkNativeLibraryTest(unittest.TestCase):
@@ -70,6 +70,28 @@ class ApkNativeLibraryTest(unittest.TestCase):
             with ZipFile(self.apk, "a") as archive:
                 archive.writestr("lib/x86_64/libandroid-tree-sitter.so", self.header("x86_64"))
         self.assertTrue(any("Duplicate native entry" in error for error in native_library_errors(self.apk, "x86_64")))
+
+    def test_optional_static_guest_loader_is_not_a_jni_library(self):
+        for abi, machine in GUEST_LOADER_MACHINES.items():
+            with self.subTest(abi=abi):
+                self.write_apk(abi)
+                header = self.header(abi)
+                header[4] = 1
+                struct.pack_into("<HH", header, 16, 2, machine)
+                with ZipFile(self.apk, "a") as archive:
+                    archive.writestr(f"lib/{abi}/libproot-loader32.so", header)
+                self.assertEqual(native_library_errors(self.apk, abi), [])
+
+    def test_guest_loader_exception_still_checks_class_machine_and_executable_type(self):
+        for elf_class, elf_type, machine in ((2, 2, 3), (1, 3, 3), (1, 2, 40)):
+            with self.subTest(elf_class=elf_class, elf_type=elf_type, machine=machine):
+                self.write_apk()
+                header = self.header("x86_64")
+                header[4] = elf_class
+                struct.pack_into("<HH", header, 16, elf_type, machine)
+                with ZipFile(self.apk, "a") as archive:
+                    archive.writestr("lib/x86_64/libproot-loader32.so", header)
+                self.assertTrue(native_library_errors(self.apk, "x86_64"))
 
     def test_unreadable_apk_and_unknown_abi_fail_closed(self):
         self.assertTrue(native_library_errors(self.apk, "x86_64"))

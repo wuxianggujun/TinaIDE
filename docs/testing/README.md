@@ -10,7 +10,7 @@
 优先覆盖 raylib r3 手势返回重跑、快速连点、启动取消、三引擎切换和无限运行，
 并回归 RikkaHub 模型页、网页预览、许可全文与 APK 导出。独立夹具通过不代表 IDE 端到端通过。
 本轮按用户选择优先在模拟器上验证；记录实际 API、ABI 与 GPU 后端，不将结果扩大为所有真机已验证。
-双 ABI Release、135 项定向 JVM / 55 项 Python 检查，以及完整 IDE 的重复运行、取消和前台长运行
+双 ABI Release、155 项定向 JVM / 57 项 Python 检查，以及完整 IDE 的重复运行、取消和前台长运行
 证据均记录在清单第 7 节。首轮候选、导出壳 A/B、最终候选与失败驱动分开统计。
 
 [0.18.38 历史清单](release-0.18.38-manual-checklist.md) 保留 Vector XML/R8 崩溃与许可修复的记录。
@@ -64,6 +64,16 @@ python tools/checks/check_apk_native_libs.py \
 ```
 
 Release 工作流在上传前执行此检查，单元测试复用 `tools/checks` 的 unittest discovery。
+
+### APK 导出共存检查
+
+```bash
+./gradlew :core:apk-builder:testDebugUnitTest --no-daemon --console=plain
+```
+
+2026-11-02 全模块 20 项通过（failures/errors/skipped 均为 0），其中 Manifest 回归使用两份实际
+图形 APK 模板验证 Provider authority/私有权限随包名重写、组件类名不变和未选权限不回流。
+模拟器端仍须同时安装不同包名的 raylib 与 SDL3 导出包，不能只验证其中一个或靠卸载绕过冲突。
 
 ## 编辑器迁移与 SSH 持久化回归
 
