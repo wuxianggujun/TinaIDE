@@ -80,3 +80,61 @@ $apk = Join-Path (Get-Location).Path 'app\build\outputs\apk\arm64\release\TinaID
 默认和英文帮助、许可 JSON、新文档均为 UTF-8；测试 C/C++ 源码也保存为 UTF-8。
 发布前执行分发门禁，并在 APK 旁附精确主仓库提交、递归检出子模块的方法和构建说明。
 “许可门禁通过”“Release 构建通过”“真机 P0 通过”是三项独立结果。
+
+## 6. 本次本地构建记录（不代表真机通过）
+
+构建于 2026-11-01 12:56（Asia/Shanghai）完成，`:app:assembleArm64Release` 成功，
+Gradle 耗时 17 分 41 秒。R8 与资源压缩保持开启，未用关闭优化或全包 keep 掩盖问题。
+
+| 项目 | 实际结果 |
+| --- | --- |
+| 版本 / ABI | `0.18.38` / versionCode `18392` / `arm64-v8a` / minSdk `28` |
+| APK 体积 | 151,961,577 字节（144.92 MiB） |
+| APK SHA-256 | `4e3aa546b1431d5acedf4b650bb9e7e8a4b1fbbe73fdaf1a9b3a7a15fd02e451` |
+| Build ID | `97934cd7a1-20261101123923` |
+| 构建源码 | [TinaIDE `97934cd7a15bbb4fc0f6d2f7bd80f8ecc2983507`](https://github.com/wuxianggujun/TinaIDE/tree/97934cd7a15bbb4fc0f6d2f7bd80f8ecc2983507) |
+| RikkaHub 子模块 | [fork `7e9862c3279509a8965b8dcb1f6b6f458be96d32`](https://github.com/wuxianggujun/rikkahub/tree/7e9862c3279509a8965b8dcb1f6b6f458be96d32) |
+| 签名与对齐 | APK v2 验证通过，签名证书与 0.18.37 一致，zipalign 通过 |
+| mapping SHA-256 | `9144fe9d5d71d049cff92a23ecc3785f649571d35c4a3b91d7a29ba05992b8e2` |
+
+本机产物与排错材料如下；这些是构建生成物，不要求在新的源码检出中已经存在：
+
+```text
+app/build/outputs/apk/arm64/release/TinaIDE-0.18.38-arm64-v8a-release.apk
+app/mappings/0.18.38-97934cd7a1-20261101123923/arm64Release/mapping.txt
+app/build/reports/release-0.18.38/verification-summary.json
+app/build/reports/release-0.18.38/assemble-arm64-release-wrapper.log
+```
+
+已完成的本地验证：
+
+- 分发策略 20 项、raylib 包契约 9 项、embedded 资源契约 10 项、设备基线解析 5 项，共 44 项 Python 测试通过。
+- `core:apk-builder`、`feature:settings`、RikkaHub embedded 的 Debug Kotlin 编译通过。
+  `core:apk-builder` 单测报告为 15 项、0 失败/错误/跳过；本次执行复用了同输入的 UP-TO-DATE 结果。
+- 文档、文件操作基线、embedded 资源冲突和 i18n 检查通过，修改文本为 UTF-8 无 BOM。
+- **最终 APK** 的版本、ABI、最低系统、签名、对齐及 `check_distribution.py --apk` 均通过，
+  确认包内包含新的许可全文，而不是仅凭源码通过检查。
+- 最终 DEX 和 mapping 中没有 ARSCLib 的 6 个 Android/XML 平台桩类定义；
+  `painterResource` 的向量资源路径保留 `Resources.getXml → XmlPullParser.next → XmlPullParser.getName`。
+  已核对最终 mapping 与本地归档哈希一致。
+- 最终 APK 包含新的深浅色 WebP、Gemma / Kimi / Qwen 图标、JetBrains Mono、emoji 和网页预览资源；
+  被裁剪的旧 Google Sans Flex、banner、simple_dict 没有回流。
+
+本机首次构建在 R8 阶段发生 JVM native memory allocation 失败，不是 Kotlin/Java 编译错误；
+一次重试还遇到 Windows 嵌套 `cmd` 引号导致 JVM 参数被识别为 task。
+最终通过项目原有 wrapper JAR 启动，使用 `-Xmx5g`、`MaxMetaspaceSize=768m`、G1、
+`ActiveProcessorCount=4`、单 worker、`--no-parallel --no-daemon` 完成。
+重试始终设置 `-Ptina.autoIncrementReleaseVersion=false`，版本仅递增一次至 0.18.38。
+
+本 APK 对应上表的**构建源码提交**；后续追加本记录的文档提交不改变该 APK 的 Build ID。
+在新目录获取精确源码时执行以下命令，不使用不含子模块的 GitHub 自动 source ZIP 代替：
+
+```bash
+git clone https://github.com/wuxianggujun/TinaIDE.git TinaIDE-0.18.38
+cd TinaIDE-0.18.38
+git checkout 97934cd7a15bbb4fc0f6d2f7bd80f8ecc2983507
+git submodule update --init --recursive
+```
+
+**尚未完成：本次 ARM64 Release 真机安装与 P0 功能验收。**
+尤其不能把静态 XML 检查或旧 x86_64 图形对照当作用户设备上模型页、raylib 已通过的证明。
