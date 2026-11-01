@@ -1,7 +1,8 @@
 # SDL / raylib Native 图形运行回归
 
-> 设备验证：2026-10-29；交接回归：2026-10-30。修复包与模板已推送 Registry，
-> 但最新 APK 尚未完成端到端验收，不能把包体检查等同于真机验证。
+> 设备验证：2026-10-29；交接回归：2026-10-30；窗口/EGL 对照：2026-11-01。
+> 修复包与模板已推送 Registry，但最新 APK 尚未完成 ARM64 真机端到端验收，
+> 不能把包体检查或旧 Debug 宿主上的模拟器结果等同于真机验证。
 
 ## 支持策略（2026-10-30 交接范围）
 
@@ -139,6 +140,27 @@ SwiftShader。所有 ADB 操作显式指定 serial，未使用其他会话的模
 本地原始日志和截图位于 `.tmp/native-runtime-smoke/`，Kotlin 结果为
 `.tmp/native-graphics-runtime-final-tests.log` / `.json`；这些临时证据不随 Git 分发。
 
+### 2026-11-01：`GetWindowHandle() == 0` 与绘制线程的对照
+
+仍使用专属 API 34 / x86_64 / SwiftShader 模拟器、已有的 0.18.36 Debug 宿主和
+revision 2 动态库，额外在用户 `main` 的绘制线程查询 EGL。观察到：
+
+```text
+USER_MAIN_ENTERED pid=5372 renderTid=5402
+WINDOW_PROBE publicHandle=0x0 currentContext=0x7fed2c9611d0
+             drawSurface=0x7fed2c965430 surface=480x1010 ready=1
+             renderTid=5402 eglError=0x3000
+FRAME_OK frames=60 frameTime=0.033334
+INPUT_TAP count=1
+SMOKE_COMPLETE frames=742 touches=1
+```
+
+已人工检查截图：矩形可见并移动，点击后背景由蓝色变绿色，随后正常退出。
+因此 **公共 handle 为 0、绘制线程不等于 UI 线程，都不能作为本问题的黑屏根因**。
+这只是宿主路径的反证，不是对用户 Android 16 / ARM64 黑屏现场的复现或修复验收。
+本轮证据保存在 `app/build/reports/native-graphics-20261101/` 和
+`.tmp/native-runtime-smoke/ide-raylib-window-probe-egl-20261101-*`，不随 Git 分发。
+
 ## 固定制品与安装注意事项
 
 本地既有 `docker/tinaide-pkg/output` 中的两个 build archive 与三个 Registry archive
@@ -149,6 +171,14 @@ SwiftShader。所有 ADB 操作显式指定 serial，未使用其他会话的模
 | `raylib.tar.xz` | `ded1e14b407f13b7ffea1f4708593fea64a5e0bf2068d6136edf456ee4cfc145` |
 | `raylib-arm64-v8a.tar.xz` | `0a2807e18383df9676382c4f37bdb7592036828416085dfe442566da244f7fa3` |
 | `raylib-x86_64.tar.xz` | `c4f70f6107cf76e99cc2ba33f6ce8cfe67eed3988843efa84767165b3288a93d` |
+
+2026-11-01 从这些归档逐个核对的 **revision 2 库文件** SHA-256 如下。它们用于检查
+实际安装/装载的文件，不要把归档校验和与解压后的 `.so` 校验和混用：
+
+| 包内路径 | SHA-256 |
+| --- | --- |
+| `lib/arm64-v8a/libraylib.so` | `6dd20f595afbe7788972f90113eeae73f06576cf73e8759413aa907312621b0f` |
+| `lib/x86_64/libraylib.so` | `15c82ec88c65a5596f2fd6c81f9868f85289e8a83a3aac5f8b13c6eaff71b6fb` |
 
 已按授权清理旧 raylib 备份、旧对照库和旧对照 APK，保留日志与截图；未清理其他模块、
 其他会话缓存或其模拟器数据，也未重写 Git 历史。
@@ -164,6 +194,76 @@ SwiftShader。所有 ADB 操作显式指定 serial，未使用其他会话的模
 - 历史 `6.0/` 制品保持原样，当前包详情的所有下载源指向 `6.0-r2/`。
 
 刷新市场后重新安装 raylib 并重建项目。本轮未创建 Release/tag，也未发布 APK。
+
+## 黑屏现场排查
+
+### 不要用无效指标判断离屏或线程问题
+
+固定上游提交的 `src/platforms/rcore_android.c` 中，`GetWindowHandle()` 直接记录
+“not implemented”并返回 `NULL`；它不是 `android_app->window` 的访问器。
+该后端实际通过 `eglCreateWindowSurface(..., platform.app->window, ...)` 创建窗口
+surface，再调用 `eglMakeCurrent`，不是通过 pbuffer 做离屏显示。
+
+`ANativeActivity_onCreate` 接收 Android 生命周期回调，`native_app_glue` 的工作线程
+再执行 `android_main` / 用户 `main`，这是正常路径。真正需要遵守的是 **EGL context
+的线程归属**：同一 context 同一时刻只能 current 到一个线程，raylib 的初始化、绘制、
+交换帧和销毁保持在其渲染线程。自行创建另一个线程直接调用绘图 API 确实可能出问题，
+但不能由此推导为“必须在 Activity UI 线程绘制”。
+
+### 最短验证顺序
+
+1. 先保留旧项目，在独立的新项目中使用当前 raylib 模板。
+2. 刷新市场并重新安装 raylib，核对 `files/installed-packages/raylib/package.json`
+   的 `packageRevision: 2` 和对应 ABI 的库文件校验和；仅看到版本 `6.0` 不够。
+   Release 包通常不能通过 `adb run-as` 读取私有目录，应在 App 自身终端/同 UID 环境检查，
+   不要为排查清空整个 App 数据。
+3. 执行“清理构建目录 / 清理并重新配置”再编译；检查链接和运行日志，避免项目目录内
+   的旧 `libraylib.so` 遮蔽新安装包。宿主优先搜索主库目录和项目附加运行库目录。
+4. 验收可见动画、触摸、Back、连续两次运行，再测切后台/恢复。仅有循环计数、
+   `EGL 1.5` 或没有 `EGL Error` 不足以证明已交换帧并显示。
+5. 如果新项目仍黑屏，在实际绘制线程、`InitWindow()` 返回后增加下面的诊断；
+   不要在 Kotlin/UI 线程查询 EGL 后拿 `EGL_NO_CONTEXT` 当作 raylib 的状态。
+
+文件顶部添加头文件，然后把以下查询放在 `InitWindow()` 后、绘制循环前：
+
+```c
+#include <EGL/egl.h>
+#include <android/log.h>
+#include <unistd.h>
+
+/* Inside main(), immediately after InitWindow(). */
+EGLDisplay display = eglGetCurrentDisplay();
+EGLContext context = eglGetCurrentContext();
+EGLSurface surface = eglGetCurrentSurface(EGL_DRAW);
+EGLint priorError = eglGetError();
+EGLint width = 0, height = 0;
+EGLBoolean widthOk = EGL_FALSE, heightOk = EGL_FALSE;
+if (display != EGL_NO_DISPLAY && surface != EGL_NO_SURFACE) {
+    widthOk = eglQuerySurface(display, surface, EGL_WIDTH, &width);
+    heightOk = eglQuerySurface(display, surface, EGL_HEIGHT, &height);
+}
+__android_log_print(ANDROID_LOG_INFO, "NativeRuntimeSmoke",
+    "WINDOW_PROBE pid=%d tid=%d context=%p drawSurface=%p size=%dx%d "
+    "sizeOk=%d ready=%d priorError=0x%x queryError=0x%x",
+    getpid(), gettid(), context, surface, width, height,
+    widthOk && heightOk, IsWindowReady(), priorError, eglGetError());
+```
+
+必要时在该测试项目的 CMake 目标上增加 `target_link_libraries(${PROJECT_NAME} PRIVATE EGL log)`。
+`eglGetError()` 会消费当前线程的错误状态，上述代码仅用于定位，不要当成生产渲染逻辑。
+另外在 `EndDrawing()` 返回后记录一次 `GetFrameTime()`，以区分 revision 1 的无交换帧循环。
+
+保留复现前后日志（将 `<serial>` 换成目标设备；以下重定向在 Git Bash 中保持 UTF-8）：
+
+```bash
+adb -s <serial> logcat -d -v threadtime \
+  TinaNativeActivity:I NativeActivityResolver:I NativeActivityStager:I \
+  raylib:I NativeRuntimeSmoke:I AndroidRuntime:E '*:S' > raylib-logcat.txt
+```
+
+上报最小项目、包 revision/库校验和、ABI、日志与屏幕录像。当前附件中的 Java 模型列表
+NPE 是另一条问题，不能替代这个图形进程的 EGL/窗口现场；其根因与修复见
+[R8 平台接口冲突](../proguard-rules-reference.md#46-第三方-jar-重复定义-android-系统接口)。
 
 ## 尚需完成的验收
 

@@ -1,12 +1,13 @@
 # TinaIDE 第三方组件与许可证清单
 
-TinaIDE 整体以 **GPL-3.0-or-later** 分发（见 `LICENSE` 与 `COPYRIGHT.md`）。
+TinaIDE 自有代码以 **GPL-3.0-or-later** 分发（见 `LICENSE` 与 `COPYRIGHT.md`）；
+内嵌 RikkaHub 部分适用 **AGPL-3.0**，依据两份许可证第 13 条组合。
 本文件列出随程序一同分发或链接的第三方组件及其原始许可证。
 
 分发 TinaIDE 或其衍生作品时，必须保留本文件、`LICENSE`、
 `docs/third-party-notices/` 下的许可证文本，以及各组件源码内的原始版权声明。
 
-最后人工核验：2026-09-03
+最后定点核验：2026-11-01（RikkaHub 许可、预览资源及 ARSCLib；非全依赖重新审计）
 
 ## 一、仓库内嵌源码（external/、libs/）
 
@@ -19,7 +20,7 @@ TinaIDE 整体以 **GPL-3.0-or-later** 分发（见 `LICENSE` 与 `COPYRIGHT.md`
 | termux terminal-emulator / terminal-view | `external/termux-terminal` | GPL-3.0-only | 来自 termux-app；部分文件为 AOSP Apache-2.0（见文件头） |
 | android-rsync | `external/android-rsync` | GPL-3.0-or-later | 文件同步 |
 | tina-android-tree-sitter | `external/tina-android-tree-sitter` | LGPL-2.1（顶层）；各 grammar 见子目录 | tree-sitter Android 绑定与语法 |
-| RikkaHub (embedded) | `external/rikkahub` | **待确认，见下文"未解决事项"** | AI 聊天 / Provider / MCP |
+| RikkaHub (embedded) | `external/rikkahub` | AGPL-3.0-only（上游纯 AGPL 第 3 版，无额外限制） | AI 聊天 / Provider / MCP；许可同步与源码义务见下文 |
 | xCrash | `external/xcrash` | MIT（部分文件另有许可，见 `LICENSE`） | 原生崩溃捕获，iQIYI |
 | ImmersionBar | `external/immersionbar` | Apache-2.0 | 沉浸式状态栏 |
 | XXPermissions | `external/xxpermissions` | Apache-2.0 | 运行时权限 |
@@ -51,6 +52,7 @@ TinaIDE 整体以 **GPL-3.0-or-later** 分发（见 `LICENSE` 与 `COPYRIGHT.md`
 | LuaJava (party.iroiro.luajava) | Apache-2.0；内含 Lua 5.4（MIT） |
 | Material Components | Apache-2.0 |
 | ByteHook (com.bytedance:bytehook) | MIT；SDL 图形运行进程内 PLT/GOT hook，与 GPL-3.0 兼容 |
+| ARSCLib (io.github.reandroid:ARSCLib:1.3.8) | Apache-2.0；2026-11-01 核对 Maven POM。`core:apk-builder` 构建时移除其 Android/XML 平台桩类，保留资源解析实现 |
 
 ## 三、运行时下载的组件（不随 APK 分发）
 
@@ -76,21 +78,25 @@ TinaIDE 整体以 **GPL-3.0-or-later** 分发（见 `LICENSE` 与 `COPYRIGHT.md`
 
 DOMPurify 用于净化 Markdown 中的原始 HTML；版本与核验方法见
 `external/rikkahub/embedded/RESOURCE_MAINTENANCE.md`。
-此清单只记录上述资源，不代表下述 RikkaHub 分发阻塞已解决。
+此资源清单与组件自身的许可审查分别维护，RikkaHub 的后续许可同步见下节。
 
-## 四、未解决事项
+## 四、RikkaHub 许可同步与分发要求
 
-**RikkaHub 许可证冲突（阻塞 GPL-3.0 合法分发）**
+**已解除原“非商业 / ≤10 用户”附加限制这一分发阻塞。**
 
-`external/rikkahub/LICENSE` 采用 "Segmented Dual Licensing"，在 AGPL-3.0 之外
-附加了非商业使用与 ≤10 用户的限制。GPL-3.0 第 7 条禁止在下游施加
-"further restrictions"，因此该组件当前无法与 GPL-3.0 的 TinaIDE 合并分发。
+官方作者于 2026-07-18 在
+[`65a63e4ec9c649bd5404ebcbbedb55aad5741d84`](https://github.com/rikkahub/rikkahub/commit/65a63e4ec9c649bd5404ebcbbedb55aad5741d84)
+改为纯 AGPL-3.0。本地 fork 于 2026-11-01 回移该提交，`external/rikkahub/LICENSE`
+与官方原文一致。没有通过自行删除条款、停用门禁或移除 AI 功能来规避限制。
 
-该组件通过 `app/build.gradle.kts` 的
-`implementation("me.rerere.rikkahub:rikkahub-embedded")` 直接链接进主程序。
+RikkaHub 仍由 `rikkahub-embedded` 直接链接进主程序。GPLv3 与 AGPLv3 第 13 条允许
+这种组合：宿主 GPL 部分和 RikkaHub AGPL 部分各自保持原许可；适用时履行远程网络交互的源码提供义务。
 
-在冲突解决前，包含 RikkaHub 的构建产物**不得对外分发**。可选路径：
+分发时必须保留许可/版权/修改记录，并提供与 APK 对应的完整源码及构建脚本。
+Release 页附精确提交与递归检出命令；GitHub 自动 source ZIP 不含子模块，不能单独作为完整源码。
+应用内 **设置 → 关于 → 开源组件与许可证** 附 RikkaHub AGPL 全文与 fork 源码入口。
 
-1. 联系 RikkaHub 作者（re_dev@qq.com）取得 GPL-3.0 兼容的授权例外
-2. 将 RikkaHub 拆为可选组件，默认构建不包含
-3. 移除该组件，AI 聊天改由其他 GPL 兼容实现替代
+核验提交、许可哈希、作用范围与回滚规则见
+[`docs/licensing/rikkahub-agpl-review.md`](docs/licensing/rikkahub-agpl-review.md)。
+`tools/checks/check_distribution.py` 继续 fail closed，校验源码 LICENSE 和随 APK 展示的全文/源码链接，
+不是无条件放行；不满足源码交付或设备验收条件的构建仍不能宣称已完成公开发布。

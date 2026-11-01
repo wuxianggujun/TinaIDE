@@ -141,7 +141,7 @@ R8 对代码执行三项操作：
 | **ImmersionBar** | View 构造函数由全局规则覆盖 |
 | **JetBrains Markdown** | AST 解析器，纯 Kotlin，无反射 |
 | **Timber** | 纯日志库，无反射 |
-| **ARSCLib** | 纯 Java IO 解析 resources.arsc / AndroidManifest（仅抑制告警，保留 `-dontwarn com.reandroid.**` 作为安全网） |
+| **ARSCLib** | 直接 API 解析 resources.arsc / AndroidManifest；先由 `core:apk-builder` 的 `androidArscLibJar` 移除 Android/XML 系统桩类，再交给 R8。`-dontwarn com.reandroid.**` 只是告警安全网，不解决系统类重复定义 |
 | **Parcelize** | Kotlin 编译器插件在编译时生成 CREATOR，无运行时反射 |
 
 ---
@@ -209,6 +209,55 @@ R8 对代码执行三项操作：
 
 **解法**：同时保留运行时注解属性、注解类型、解析器/编码器、被 `@Asn1Class` 标记的模型类全部成员，以及被 `@Asn1Field` 标记的字段。不要只写 `-keep class ... { <init>(); <fields>; }`，因为这不足以阻止 R8 对注解反射链做局部优化。
 
+### 4.6 第三方 JAR 重复定义 Android 系统接口
+
+**症状**：0.18.37 Release 在 RikkaHub 渠道的模型选择列表加载推理图标时崩溃，
+反混淆后指向 `painterResource` → `loadVectorResource` → `seekToStartTag` 的 NPE。
+APK 内的 `deepthink` vector XML 完整；实际 DEX 的 XML 解析分支却已被优化成 `throw null`。
+
+**根因**：`io.github.reandroid:ARSCLib:1.3.8` 的桌面 JAR 包含
+`android.content.res.XmlResourceParser`、`android.util.AttributeSet` 和
+`org.xmlpull.v1.*` 共 6 个系统 API 桩类。这些类被当作 program classes 参与 R8，
+系统返回的真实 parser 与优化器看到的类型图不一致。原 APK 的 mapping 中甚至出现
+`android.content.res.XmlResourceParser` / `org.xmlpull.v1.XmlPullParser` 被重命名的记录。
+这不是图标缺失，也不是模型数据或 API Key 的问题。
+
+**解法**：[core/apk-builder/build.gradle.kts](../core/apk-builder/build.gradle.kts)
+通过独立的上游配置读取 ARSCLib，在模块标准 `build/` 目录生成可复现的 Android JAR，
+仅移除 `android/**`、`org/xmlpull/**` 和原 manifest；保留 `com.reandroid` 实现及其他资源。
+运行时只依赖过滤后的 JAR，系统接口由 Android 提供。不要通过关闭 R8、keep 整个
+Compose/XML 包、给模型列表加空值兜底或替换图标掩盖依赖问题。
+
+**回归**：`ArscLibAndroidRuntimeTest` 检查实际 runtime artifact 没有系统桩类且仍包含
+APK/Manifest 实现；APK Builder 的 Manifest 修改、库替换与签名测试一起运行：
+
+```bash
+./gradlew :core:apk-builder:testDebugUnitTest :core:apk-builder:compileDebugKotlin \
+  --no-daemon --console=plain
+```
+
+2026-11-01 本地 15 项测试全部通过。另用与问题 APK 相同的 R8 9.2.14 构建独立 XML
+解析 A/B 样例：原 JAR 在 API 34 模拟器上触发 `IncompatibleClassChangeError`，
+过滤后的 JAR 正常解析系统 vector，两组各重复 3 次结果一致。这验证了类型冲突；独立样例的异常形式与完整 App
+优化后的 NPE 不同，不能混称为同一条复现栈。
+
+完整宿主的 `:app:minifyArm64ReleaseWithR8` 验证也已通过；新 DEX 的 vector 分支
+恢复为 `Resources.getXml()` → `XmlPullParser.next()` / `getName()`，不再直接抛 NPE，
+新 mapping 中也不再有上述平台接口的 program class 映射。
+
+```bash
+./gradlew :app:minifyArm64ReleaseWithR8 -Ptina.autoIncrementReleaseVersion=false \
+  --no-daemon --console=plain
+```
+
+只执行 minify 不生成新 APK，也不发布或递增版本。AGP 9.2.1 此任务的新 mapping 位于
+`app/build/intermediates/mapping/arm64Release/minifyArm64ReleaseWithR8/mapping.txt`；
+`app/build/outputs/mapping/arm64Release/mapping.txt` 此时仍可能是旧 assemble 的结果。
+必须核对任务、生成时间和 DEX，不能拿旧 mapping 验收新编译，也不要覆盖旧 APK 对应的归档。
+
+Release 手测还需覆盖：渠道模型列表中的推理图标、聊天导出的同类图标，以及 APK
+导出时的包名/版本/图标修改、签名和安装。模拟器样例与单元测试不代替这些验收。
+
 ---
 
 ## 5. 新增库 Checklist
@@ -223,6 +272,10 @@ unzip -l ~/.gradle/caches/.../library.aar | grep proguard
 ```
 
 自带规则的库（OkHttp、Koin、Coil、AndroidX 等）通常无需额外处理。
+
+同时检查 JAR/AAR 是否夹带 `android/**`、`org/xmlpull/**` 等平台 API 桩类。
+桌面 JAR 能在 Debug 工作，不代表它可以原样作为 Android Release 的 program input。
+出现重复平台类时，应修复依赖边界，而不是添加 keep 规则。
 
 ### Step 2: 识别反射机制
 
@@ -277,6 +330,7 @@ rg -n "com.example.library|关键反射模型" app/build/outputs/mapping/arm64Re
 | 2026-04-30 | Release 打包 APK 签名失败：`SubjectPublicKeyInfo is not annotated with Asn1Class` | `apksig` 的 `Asn1BerParser` 通过运行时注解和反射解析 `SubjectPublicKeyInfo` / `RSAPublicKey` 等内部模型；R8 移除类级 `@Asn1Class` 注解后，签名阶段无法识别公钥模型 | 第一版规则保留了运行时注解属性、`@Asn1Class` 模型类无参构造和字段，但后续发现仍不足以保护完整 ASN.1 字段注解链；见下一条 |
 | 2026-04-30 | Release 包内再次打包 APK 报 `NullPointerException`：反混淆后为 `Asn1BerParser.lambda$parseSequence$0` / `Collections.sort` | 第一版 apksig 规则范围太窄，只保留模型类构造和字段，没有强保留 `com.android.apksig.internal.asn1.**` 解析器/编码器和 `@Asn1Field` 字段注解反射链；R8 局部优化后排序读取到空注解 | 将 `core:apk-builder/consumer-rules.pro` 升级为完整 ASN.1 规则：保留 `RuntimeVisibleAnnotations` / `AnnotationDefault` / `Signature` / 内部类属性，强保留 `com.android.apksig.internal.asn1.** { *; }`、`@Asn1Class` 模型全部成员，并用 `@Asn1Field <fields>` 兜底 |
 | 2026-04-30 | APK Builder 打包成功后点击“安装”失败：Release 日志显示 `Missing android.support.FILE_PROVIDER_PATHS meta-data`，即使最终 APK Manifest 中存在该 meta-data，设备侧 PackageManager 仍可能返回不可加载状态 | 单纯依赖 AndroidX `FileProvider.getUriForFile()` 会在生成 URI 阶段强依赖 PackageManager 的 `FILE_PROVIDER_PATHS` meta-data；一旦设备侧读取失败，安装入口直接失败 | 在 `core:storage` 引入 `TinaFileProvider`：Manifest 指向该 Provider，Provider 构造显式绑定 `R.xml.file_paths`；`ExternalFileIntents` 手工按同一份路径规则生成 `content://` URI，不再依赖 PackageManager meta-data；`core/storage/consumer-rules.pro` 保留 Provider 类和构造路径 |
+| 2026-11-01 | 0.18.37 的 RikkaHub 模型列表在 Compose vector 解析时 NPE | ARSCLib 1.3.8 自带 Android/XML 系统接口桩，污染 R8 program 类型图 | 在 `core:apk-builder` 构建 Android 专用过滤 JAR，并增加 runtime artifact 回归测试；详见 4.6 |
 
 ---
 

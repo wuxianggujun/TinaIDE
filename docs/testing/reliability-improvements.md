@@ -8,7 +8,7 @@
 - `app`：EditorDocumentSessionCoordinator 连接恢复状态与现有编辑器宿主；EditorSplitPaneState 负责分屏有效标签、焦点和选择收敛，宿主负责实际切换。
 - `core/editor-lsp`：LspDiagnosticsScheduler 负责同标签任务替换、取消与过期结果屏蔽，沿用宿主状态锁使关闭标签与发布结果互斥。
 - `core/debug`：LldbDebugger 负责增量 UTF-8 解码、唯一 prompt 与命令串行化。超时、EOF 使当前会话失效，停止不会被等待中的命令阻塞；native 与 PRoot 只在进程创建边界分流。编译报告传递后端和工具链 ID，宿主不自行猜测。
-- `tools/checks`、CI：PR 自动运行核心回归；发布构建依赖核心回归与许可证门禁。分发策略记录缺失、损坏、未知状态均阻断。当前 RikkaHub 依赖仍标为 blocked；更改策略需要有仓库内的许可审查依据。普通本地 Debug 开发构建不受分发脚本限制。
+- `tools/checks`、CI：PR 自动运行核心回归；发布构建依赖核心回归与许可证门禁。分发策略记录缺失、损坏、未知状态均阻断。RikkaHub 已依据 `docs/licensing/rikkahub-agpl-review.md` 标为 reviewed，并校验实际 LICENSE 哈希、随包全文及源码链接；缺失或不匹配仍阻断。普通本地 Debug 开发构建不受分发脚本限制。
 
 ## 验证与验收
 
@@ -22,10 +22,10 @@ python tools/checks/check_distribution.py
 ./gradlew :app:testArm64DebugUnitTest --tests '*EditorSplitPaneStateTest' --tests '*EditorContainerStateTest' --tests '*CompileActionsHelperTest' :app:compileArm64DebugKotlin --no-daemon --console=plain
 ```
 
-许可证检查当前预期失败，具体原因应为已知的 RikkaHub 许可冲突，不能把这个预期阻断当成可分发结论。无需运行 Release 验证，也不要改写版本或映射文件。设备测试按 [设备基线](editor-device-baseline.md) 执行；没有真机数据前，native LLDB 与 X11 不视为设备验证完成。
+同步纯 AGPL 许可的当前检出应通过许可证检查；缺失子模块、正文哈希变化或随包声明不一致应失败。此处核心回归无需运行 Release 验证，也不要改写版本或映射文件。设备测试按 [设备基线](editor-device-baseline.md) 执行；没有真机数据前，native LLDB 与 X11 不视为设备验证完成。
 
 ## 约束与回滚
 
 草稿按文件完整路径 SHA-256 命名，不进入项目导出和系统备份。每份正文最多 10Mi 字符，JSON 记录最多 64MiB；存储/容量错误会保留上一份记录并提示手动保存。进程在最近一个检查点前退出时可能丢失该时间窗口内的修改；未提供跨文件草稿浏览器、缺失源文件自动重建或加密源码保险库。
 
-恢复失败保留记录，成功保存/明确丢弃清理记录。格式版本不兼容时不自动转换。若撤回恢复功能，应保留 no-backup 中现有记录供后续恢复，不能作为缓存批量清理。CI 改动可独立回滚，但许可冲突未解决时不能移除发布阻断。状态重构未改变模块依赖方向；新增 native 调试仅依赖已有 ndk 模块，没有新增第三方库。
+恢复失败保留记录，成功保存/明确丢弃清理记录。格式版本不兼容时不自动转换。若撤回恢复功能，应保留 no-backup 中现有记录供后续恢复，不能作为缓存批量清理。CI 改动可独立回滚，但不得绕过许可校验；回退到旧受限许可时必须重新阻断。状态重构未改变模块依赖方向；新增 native 调试仅依赖已有 ndk 模块，没有新增第三方库。

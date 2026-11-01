@@ -55,7 +55,7 @@
 ### 当前事实源
 
 - 许可证：TinaIDE 整体以 **GPL-3.0-or-later** 分发（`0.18.29`，2026-09-03 变更）。根 `LICENSE` 是 FSF 官方 GPL-3.0 全文，`COPYRIGHT.md` 声明 SPDX 与分发要求，`NOTICE.md` 维护第三方组件清单。旧自定义许可证 "TinaIDE Open Source License Version 1.0" 已废弃，备份在 `docs/third-party-notices/TinaIDE-Custom-License-v1.0-superseded.txt`。变更起因是集成 termux-x11 的 X server（GPL-3.0）。
-- 分发阻塞项：`external/rikkahub` 采用 AGPL-3.0 加非商业与 ≤10 用户附加限制，违反 GPL-3.0 第 7 条。**冲突解决前，包含 RikkaHub 的构建产物不得对外分发。** 文档不得把“可对外分发的完整 APK”当成当前事实。
+- RikkaHub 许可：2026-11-01 回移上游纯 AGPL-3.0，已解除非商业/用户数附加限制；审查证据见 `licensing/rikkahub-agpl-review.md`。GPL / AGPL 第 13 条组合、随包许可全文及对应源码义务继续适用，发布门禁绑定实际 LICENSE 和应用内 notice；设备验收仍单独执行。
 - Linux 发行版：只支持 Ubuntu 24.04。Alpine 支持已在 `0.18.29` 整体移除，`AlpineMirrorManager`、Alpine 镜像设置 UI 和 `ConfigKeys.AlpineMirrorUrl` 都已删除；文档中的 Alpine 内容一律按过时处理，只有 `CHANGELOG.md` 允许保留历史记录。
 - X11 图形桌面：`:core:linux-desktop` 与 vendored `external/termux-x11`（`:termux-x11-lorie`、`:termux-x11-shell-loader-stub`）已进主干，`libXlorie.so` 在 Windows 宿主构建通过，X server 与渲染 UI 都在 `:x11` 独立进程。**尚未在真机验证 XFCE 桌面**，文档不得写成已交付功能。
 - 默认编译 / LSP：`native tina-toolchain + Android sysroot`，PRoot 只是可选 Linux 环境。

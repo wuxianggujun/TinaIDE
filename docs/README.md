@@ -20,7 +20,8 @@
 
 - [`LICENSE`](../LICENSE)：GPL-3.0 全文
 - [`COPYRIGHT.md`](../COPYRIGHT.md)：SPDX 标识符、变更原因与分发要求
-- [`NOTICE.md`](../NOTICE.md)：第三方组件与许可证清单，含**未解决的 RikkaHub 分发阻塞项**
+- [`NOTICE.md`](../NOTICE.md)：第三方组件与许可证清单
+- [`RikkaHub 许可审查`](licensing/rikkahub-agpl-review.md)：纯 AGPL-3.0 同步依据、GPL / AGPL 组合义务及发布校验
 
 新增第三方依赖前必须确认许可证与 GPL-3.0 兼容，并同步 `NOTICE.md`。
 

@@ -161,6 +161,22 @@ TinaIDE 已移除自研 AI。AI 聊天、模型和渠道配置由内嵌 RikkaHub
 
 这些文件属于后续构建和源码变更检测需要复用的持久产物。如果怀疑持久缓存异常，请优先使用“清理构建目录 / 清理并重新配置”，不要手动删除不明确的内部目录。
 
+## 11. raylib 在运行但画面全黑
+
+- 请使用 TinaIDE 0.18.36 或更新版本、raylib 6.0 revision 2 修复包和当前 raylib 模板。
+  只升级 TinaIDE APK 不会替换已经安装的 raylib 库；刷新市场并重新安装 raylib 后，
+  对测试项目执行“清理并重新配置”，再编译运行。不要为此清除整个 App 的数据。
+- revision 1 的已知问题是 `EndDrawing()` 没有执行交换帧、输入轮询和计时；因此
+  “EGL 初始化成功”和“循环一直运行”仍可能伴随黑屏。
+- raylib 的 Android 后端没有实现 `GetWindowHandle()`，它返回 `0` 不能说明没有
+  原生窗口。应在实际绘制线程检查当前 EGL context、draw surface 和尺寸。
+- NativeActivity 的生命周期回调与 raylib 的绘制线程本来就可以不同；不要把绘制
+  强行搬到 UI 线程。`InitWindow`、绘制和 `CloseWindow` 应保持在同一 raylib 渲染线程，
+  不要直接从新建线程调用绘图 API。
+- 验收时同时检查可见动画、触摸响应、返回键退出、再次运行和切到后台后恢复。
+  仍黑屏时请附上最小项目、已安装包的 `packageRevision`、设备 ABI 和本次图形运行日志；
+  主进程的 Java 崩溃日志不能替代 NativeActivity 渲染现场。
+
 ## 问题上报
 
 如果你遇到这里没有覆盖的问题，可以从关于页导出日志，并通过 GitHub Issue 上报。上报时尽量附上：
@@ -173,4 +189,4 @@ TinaIDE 已移除自研 AI。AI 聊天、模型和渠道配置由内嵌 RikkaHub
 
 ---
 
-最后更新：2026-08-23
+最后更新：2026-11-01

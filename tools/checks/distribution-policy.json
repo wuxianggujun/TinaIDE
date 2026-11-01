@@ -4,8 +4,18 @@
     {
       "name": "RikkaHub embedded",
       "dependency": "me.rerere.rikkahub:rikkahub-embedded",
-      "status": "blocked",
-      "reason": "The additional license restrictions remain unresolved. See NOTICE.md."
+      "status": "reviewed",
+      "evidence": "docs/licensing/rikkahub-agpl-review.md",
+      "license": {
+        "path": "external/rikkahub/LICENSE",
+        "sha256": "0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0"
+      },
+      "notice": {
+        "path": "feature/settings/src/main/res/raw/aboutlibraries.json",
+        "libraryId": "me.rerere.rikkahub:rikkahub-embedded",
+        "licenseId": "AGPL-3.0-only",
+        "sourceUrl": "https://github.com/wuxianggujun/rikkahub"
+      }
     }
   ]
 }

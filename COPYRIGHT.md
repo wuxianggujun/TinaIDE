@@ -36,8 +36,15 @@ SPDX-License-Identifier: GPL-3.0-or-later
 本程序集成和分发多个第三方组件，各自适用其原始许可证。完整清单见
 `NOTICE.md`，以及应用内 **设置 → 关于 → 开源组件与许可证** 页面。
 
+其中 RikkaHub 部分使用上游纯 **AGPL-3.0**，TinaIDE 自有部分保持 **GPL-3.0-or-later**；
+两者依据 GPLv3 / AGPLv3 第 13 条组合。RikkaHub 的许可不是 GPL，termux-x11 等组件也没有被重新许可为 AGPL。
+同步依据和内容哈希见 [`RikkaHub 许可审查`](docs/licensing/rikkahub-agpl-review.md)。
+对外分发须提供与二进制匹配的完整对应源码（含所有子模块及构建脚本）；
+存在适用的远程网络交互时，还须满足 AGPL 第 13 条的源码提供义务。
+
 分发本程序或其衍生作品时，必须同时保留：
 
 - 本文件与根目录 `LICENSE`（GPL-3.0 完整文本）
 - `NOTICE.md` 及 `docs/third-party-notices/` 下的第三方许可证文本
 - 各第三方组件源码内的原始版权声明
+- `external/rikkahub/LICENSE`（AGPL-3.0 完整文本）及其修改/来源说明

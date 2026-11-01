@@ -31,6 +31,24 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Release 模型选择页崩溃**：隔离 ARSCLib 桌面 JAR 中的 Android/XML 平台桩类，
+  防止 R8 将 Compose Vector XML 解析错误优化为无条件异常；保留资源压缩和正常 APK 导出能力。
+  增加运行时依赖回归，并接入核心 CI。
+- **RikkaHub 分发许可阻塞**：回移官方纯 AGPL-3.0 许可提交，解除原非商业和用户数附加限制，
+  保留现有 AI 功能与宿主适配，不是整体升级到 3.x。应用内补齐 AGPL / GPL 全文及源码入口，
+  纠正 Termux Terminal 的许可展示；发布门禁继续校验实际许可证、随包全文与源码链接。
+- **raylib 排障口径**：补充实际 EGL window surface、渲染线程和包修订号的验证步骤。
+  Android 的 `GetWindowHandle() == 0` 不等于没有窗口；ARM64 用户黑屏仍需使用 r2 库包清理重编后真机回测。
+
+### Changed
+
+- 保留上一轮 RikkaHub 资源更新：WebP 占位图、现用模型图标、网页预览依赖及 HTML 净化，
+  去除未使用字体/图片；不恢复已裁剪的大资源。
+- 公开 Release 工作流在 APK 旁附精确提交及递归检出指令，确保能获得含子模块的对应源码；
+  普通 GitHub source ZIP 不代表完整源码。
+
 ## [0.18.36] - 2026-10-12
 
 ### Fixed

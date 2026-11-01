@@ -157,7 +157,7 @@ cd editor-kit && ./gradlew -p examples/consumer :consumer:compileDebugKotlin --n
 
 - 不要把 PRoot 当默认 C/C++ 编译链路。
 - 新增第三方依赖必须先确认许可证与 GPL-3.0 兼容，并同步更新 `NOTICE.md`。带非商业条款、用户数上限或其他附加限制的许可证不可引入（GPL-3.0 第 7 条禁止 further restrictions）。
-- `external/rikkahub` 当前是**未解决的分发阻塞项**：其附加限制违反 GPL-3.0 第 7 条，冲突解决前包含它的构建产物不得对外分发。不要在文档或发布说明里把“可对外分发的完整 APK”当成当前事实。
+- `external/rikkahub` 已同步官方纯 AGPL-3.0（2026-11-01），原非商业/用户数附加限制已解除；依据见 `docs/licensing/rikkahub-agpl-review.md`。宿主 GPL 与 RikkaHub AGPL 部分依据第 13 条组合，分发须附完整对应源码与许可文本；不得绕过 `tools/checks/check_distribution.py` 的许可哈希/随包全文校验，也不得把门禁通过当成真机验收通过。
 - 不要把 X11 桌面写成已验证功能：代码路径完整，但尚未在真机跑通 XFCE。
 - 不要把 X server 或 lorie 组件搬进主进程：lorie 把 libc 的 `exit()`/`abort()` 覆盖成 `_exit()`，一次 `FatalError` 会直接杀死所在进程。
 - 不要在文档或代码里恢复 Alpine 支持口径：`0.18.29` 已删除 `AlpineMirrorManager`、Alpine 镜像设置项和 `ConfigKeys.AlpineMirrorUrl`。

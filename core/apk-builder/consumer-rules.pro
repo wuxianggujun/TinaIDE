@@ -38,6 +38,8 @@
 # ============================================================================
 # ARSCLib — resources.arsc / AndroidManifest 解析
 # ============================================================================
+# Android/XML 桩类在本模块的 androidArscLibJar 任务中移除，由系统提供。
+# 不要用 keep 桩类或关闭 R8 优化代替这层依赖隔离。
 # 主路径为直接 API 调用（ApkModule / AndroidManifestBlock / ResXmlElement / ValueType），
 # 无反射；保留警告抑制作为安全网。若后续使用 ARSCLib 的序列化/反序列化能力再补 -keep。
 -dontwarn com.reandroid.**

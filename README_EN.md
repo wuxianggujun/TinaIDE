@@ -8,7 +8,7 @@
 > `native tina-toolchain + Android sysroot`; Linux distro / PRoot is optional.
 >
 > Since `0.18.29` this project is distributed under **GPL-3.0-or-later**.
-> See [License](#license) — it includes an unresolved distribution blocker.
+> See [License](#license) for GPL / AGPL combination and corresponding-source requirements.
 
 [中文文档](README.md)
 
@@ -254,16 +254,20 @@ superseded; its text is archived at
 [`docs/third-party-notices/TinaIDE-Custom-License-v1.0-superseded.txt`](docs/third-party-notices/TinaIDE-Custom-License-v1.0-superseded.txt).
 The relicensing was required to integrate the termux-x11 native X server (GPL-3.0).
 
-### Read before distributing: RikkaHub license conflict
+### Read before distributing: RikkaHub AGPL and corresponding source
 
-`external/rikkahub` uses "Segmented Dual Licensing", adding non-commercial and
-≤10-user restrictions on top of AGPL-3.0. GPL-3.0 section 7 forbids imposing
-further restrictions downstream, so **builds that include RikkaHub must not be
-distributed until this conflict is resolved.** See [`NOTICE.md`](NOTICE.md) for
-details and the available resolution paths.
+On 2026-11-01 the fork backported the author's plain **AGPL-3.0** license change,
+removing the former non-commercial and user-count restrictions. The GPL-covered
+TinaIDE parts and AGPL-covered RikkaHub parts retain their respective licenses
+when combined under section 13. See the [recorded review](docs/licensing/rikkahub-agpl-review.md)
+for the upstream commit, exact license hash, and scope.
 
-Building for your own use is unaffected; verify this component's status before
-publishing an APK.
+Distribution must preserve license, copyright, and modification notices and provide
+complete corresponding source and build scripts matching the APK. Meet AGPL's
+remote-network source obligations where applicable. Release pages include the
+exact commit and recursive checkout instructions; ordinary source ZIPs omit submodules.
+Run `python tools/checks/check_distribution.py` before distribution. Passing this
+license check does not replace Release device acceptance testing.
 
 ## Tech Stack
 

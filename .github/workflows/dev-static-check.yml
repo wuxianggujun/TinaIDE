@@ -40,7 +40,9 @@ jobs:
         run: python3 tools/checks/check_all.py
 
       - name: Test distribution policy and device result checks
-        run: python3 -m unittest discover -s tools/checks -p 'test_*.py'
+        run: |
+          python3 -m unittest discover -s tools/checks -p 'test_*.py'
+          python3 tools/checks/check_distribution.py
 
       - name: Run i18n checks
         run: python3 tools/i18n/check_all.py
@@ -86,6 +88,7 @@ jobs:
             :core:text-engine:testDebugUnitTest :core:editor-view:testDebugUnitTest \
             :feature:editor:testDebugUnitTest :core:compile:testDebugUnitTest \
             :core:editor-lsp:testDebugUnitTest :core:debug:testDebugUnitTest \
+            :core:apk-builder:testDebugUnitTest \
             :core:security:testDebugUnitTest :core:storage:testDebugUnitTest :core:git:testDebugUnitTest \
             :core:plugin:testDebugUnitTest :feature:help:testDebugUnitTest :feature:tutorial:testDebugUnitTest \
             --no-daemon --configure-on-demand \

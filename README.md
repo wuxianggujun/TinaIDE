@@ -36,7 +36,7 @@ TinaIDE 是面向手机和平板的移动端 IDE。运行时按职责分层：
 - 终端与 Linux 环境：可选 Ubuntu 24.04 rootfs + PRoot 终端
 - Git 集成：状态、提交、分支、拉取、推送、冲突处理、SSH / HTTPS 凭据
 - 文件预览：Markdown、图片、Hex、Diff、大文件文本，JSON 等文本类文件可走文本预览
-- 内嵌 RikkaHub：AI 聊天、模型、渠道和 MCP 设置由 RikkaHub 维护（分发限制见 [许可证](#许可证)）
+- 内嵌 RikkaHub：AI 聊天、模型、渠道和 MCP 设置由 RikkaHub 维护（GPL / AGPL 组合分发要求见 [许可证](#许可证)）
 - 插件系统：主题、代码片段、LSP / 菜单扩展
 - X11 图形桌面（开发中）：集成 termux-x11 的 Android 原生 X server，在 `:x11` 独立进程运行 Ubuntu 桌面。**尚未在真机验证 XFCE 桌面**
 
@@ -211,13 +211,17 @@ TinaIDE 以 **GPL-3.0-or-later** 分发。
 文本备份在 [`docs/third-party-notices/TinaIDE-Custom-License-v1.0-superseded.txt`](docs/third-party-notices/TinaIDE-Custom-License-v1.0-superseded.txt)。
 改用 GPL-3.0 的直接原因是集成 termux-x11 提供的 Android 原生 X server（GPL-3.0）。
 
-### 分发前必读：RikkaHub 许可证冲突
+### 分发前必读：RikkaHub 的 AGPL 许可与对应源码
 
-`external/rikkahub` 采用 "Segmented Dual Licensing"，在 AGPL-3.0 之外附加了非商业使用与
-≤10 用户限制。GPL-3.0 第 7 条禁止在下游施加 further restrictions，因此**在冲突解决前，
-包含 RikkaHub 的构建产物不得对外分发**。详情与可选处理路径见 [`NOTICE.md`](NOTICE.md)。
+`external/rikkahub` 已于 2026-11-01 同步作者的纯 **AGPL-3.0** 许可变更，
+解除原非商业与用户数附加限制。TinaIDE 的 GPL 部分和 RikkaHub 的 AGPL 部分
+依两份许可证第 13 条组合，各自保留原许可；依据见
+[`RikkaHub 许可审查`](docs/licensing/rikkahub-agpl-review.md)。
 
-自行构建供个人使用不受影响；对外分发 APK 前请先确认该组件的状态。
+对外分发 APK 时须保留许可/版权与修改记录，提供匹配该产物的完整源码和构建脚本；
+适用时履行 AGPL 远程网络交互的源码提供义务。Release 页给出精确提交与递归检出命令，
+普通 source ZIP 不含子模块。`python tools/checks/check_distribution.py` 校验真实许可及随包全文，
+通过许可门禁不代替 Release 真机验收。
 
 ## 技术栈
 

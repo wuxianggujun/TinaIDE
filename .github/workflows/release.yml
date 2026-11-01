@@ -31,6 +31,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - name: Checkout reviewed component license
+        run: git submodule update --init --depth 1 -- external/rikkahub
       - name: Verify APK distribution is allowed
         run: python3 tools/checks/check_distribution.py
 
@@ -125,6 +127,12 @@ jobs:
           echo "name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
           echo "code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
           echo "Version: $VERSION_NAME ($VERSION_CODE)"
+
+      - name: Verify notices in the final Debug APK
+        run: |
+          for apk in app/build/outputs/apk/arm64/debug/*.apk; do
+            python3 tools/checks/check_distribution.py --apk "$apk"
+          done
 
       - name: Upload debug APK artifact
         uses: actions/upload-artifact@v7
@@ -389,6 +397,9 @@ jobs:
           require_text "fileprovider authority" 'fileprovider' "$MANIFEST"
           require_text "FILE_PROVIDER_PATHS meta-data" 'android.support.FILE_PROVIDER_PATHS' "$MANIFEST"
 
+      - name: Verify notices in the final Release APK
+        run: python3 tools/checks/check_distribution.py --apk "app/build/outputs/apk/release/TinaIDE-${{ steps.version.outputs.name }}-${{ matrix.abi }}.apk"
+
       - name: Upload release APK artifact
         uses: actions/upload-artifact@v7
         with:
@@ -464,6 +475,25 @@ jobs:
           fi
 
           printf '%s\n' "$CHANGELOG_CONTENT" > release_notes.md
+
+      - name: Add corresponding-source access instructions
+        env:
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          SOURCE_REVISION: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          {
+            printf '\n## Corresponding Source / 对应源码\n\n'
+            printf 'TinaIDE: GPL-3.0-or-later; RikkaHub: AGPL-3.0 (combined under section 13).\n\n'
+            printf '[Source and build instructions](https://github.com/%s/tree/%s)\n\n' "$SOURCE_REPOSITORY" "$SOURCE_REVISION"
+            printf 'The GitHub-generated source ZIP omits submodules. Fetch the exact source, including RikkaHub and native components, at no charge:\n\n'
+            printf '```bash\n'
+            printf 'git clone https://github.com/%s.git TinaIDE\n' "$SOURCE_REPOSITORY"
+            printf 'git -C TinaIDE checkout %s\n' "$SOURCE_REVISION"
+            printf 'git -C TinaIDE submodule update --init --recursive\n'
+            printf '```\n\n'
+            printf 'See `COPYRIGHT.md`, `NOTICE.md`, `external/rikkahub/LICENSE`, and `docs/开发指南.md` in that checkout for licenses and build instructions.\n'
+          } >> release_notes.md
 
       - name: Download arm64 release APK artifact
         uses: actions/download-artifact@v8
