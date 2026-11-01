@@ -126,7 +126,7 @@ adb -s DEVICE logcat -d -v threadtime \
 
 新建专用 `tina_release_r3_api36` AVD，GPU `host`（Intel Iris Xe / Android Emulator OpenGL ES
 Translator），2 GB RAM，720×1600，手势导航。只使用 `emulator-5554`，未清除旧 AVD 或用户设备数据。
-首次安装上述最终签名 x86_64 Release，经 App UI 完成工具链部署、文件权限、市场模板与
+首次安装上述首轮签名 x86_64 Release，经 App UI 完成工具链部署、文件权限、市场模板与
 raylib r3 安装，新建公共目录项目 `RaylibR3_36`，在设备内通过 native Clang/CMake/Ninja 构建。
 
 | 已执行场景 | 结果 |
@@ -249,3 +249,27 @@ SwiftShader，模拟器实际提升内存到 2560 MB。C 盘无法创建 Google 
   原始 Activity dump 证实只有 1 个实例。改为接受可变空白后在新报告目录重跑通过，未修改产品来绕过断言。
 
 新增文档、样例和 JSON 均使用 UTF-8 无 BOM；APK、日志、截图、测试用虚拟渠道与本地辅助脚本不提交。
+
+### 7.8 最终复测拦截的多 ABI 漏库候选
+
+2026-11-02，源码 `7b52f6cd5dba6b8befce614204d04f59fe84c2a2` 的双 ABI 重建完成
+（`release-all-abi-final-v2.log`，50 分 20 秒）。但 Build ID
+`7b52f6cd5d-20261102000235` 的 x86_64 包在 API 36 覆盖安装后无法打开已有项目，
+日志明确报告 `libandroid-tree-sitter.so` 缺失，**因此拒绝作为最终交付包**。
+
+- 该失败 APK 的 SHA-256 为 `e603e502c027c5db324bd9deeb90501218fad5540e2ed2b8777e854b5054455c`。
+- 签名、许可、R8 Vector 路径、资源与导出模板哈希检查曾通过，但原检查没有覆盖 JNI 库完整性，
+  不能据此判断 APK 可运行。`verification-final/` 保留的是这一轮旧检查，不覆盖本节的失败结论。
+- APK 实际还漏了其余 16 个 Tree-sitter grammar 库、RikkaHub `libworkspace.so` 和 `libXlorie.so`，
+  合计 19 个必需库；不是用户项目损坏，也不是 raylib 的第二次运行黑屏。
+- 根因是 included build 看不到宿主 `AllAbi` 任务，或只识别显式属性/CI，回退为 ARM64。
+  三处原生构建入口现在识别宿主请求链，显式 `tina.allAbi=false` 优先；单 ABI 选择与
+  Android Studio 的 `android.injected.build.abi` 保持一致。
+- 新增 `check_apk_native_libs.py` 校验 26 个必需 runtime/grammar 库、重复路径、ABI 和 ELF 机器类型，
+  并接入 Release 上传前检查。8 个新增检查测试通过，全套 Python checks 现为 **55 项通过**。
+- 证据：`api36-final-ide-logcat.txt`、`native-gate-before-x86_64.txt`、
+  `python-checks-native-gate.log`；既有项目、聊天和 AVD 数据均保留，未用清空数据绕过问题。
+
+ABI 探针最初的整 App dry-run 超过 60 秒，后改为配置实际 native 模块并完成构建准备；
+超时不计为通过。准备工作中有一次 library Release 配置触发自动递增，已精确恢复本轮
+`0.18.39 / 1840`，随后所有构建固定 `-Ptina.autoIncrementReleaseVersion=false`，不发布临时的 0.18.40。

@@ -31,6 +31,26 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **raylib 重复运行黑屏**：raylib 6.0 revision 3 在收到销毁请求后退出事件轮询，
+  修复手势返回后旧 native 线程未结束、再次运行复用残留进程的问题；窗口尚未创建时也允许取消。
+- **重复启动与停止竞态**：从保存文件开始锁定编译/运行请求，快速连点不排队；停止会撤销旧结果与启动票据。
+  NativeActivity、SDL2、SDL3 共用隔离进程启动和有界退出协议，不影响 IDE 主进程。
+- **图形 APK 导出壳**：单实例入口和明确的系统返回退出，两个模板共用独立线程退出保护。
+  旧导出 APK 需要在新 IDE 中重新导出，安装新版 IDE 不会修改已经生成的 APK。
+- **SDL3 模板**：1.0.4 在创建窗口时设置 `SDL_WINDOW_RESIZABLE`，避免启动时方向往返和部分画面未覆盖窗口。
+- **多 ABI 打包**：Tree-sitter、RikkaHub workspace 和 Xlorie 正确识别宿主 `AllAbi` 请求，
+  单 ABI 模式尊重显式覆盖与 Android Studio 设备 ABI；发布前检查必需原生库及 ELF 架构，防止漏库 APK 上传。
+
+### Changed
+
+- 只支持修复后的 raylib r3；安装、运行和导出均拒绝旧 r1/r2，包管理器能够发现同版本的新 revision。
+  清理重复旧归档，保留用户项目源码。
+- 图形游戏没有新增总运行时限；2 秒保护仅用于明确退出，Home 和普通后台暂停不触发退出保护。
+- 0.18.39 候选的模拟器、导出壳、自动化与最终制品记录分别保存在
+  [Release 验收清单](docs/testing/release-0.18.39-manual-checklist.md)，不把独立夹具或历史 APK 的结果混作最终验收。
+
 ## [0.18.38] - 2026-11-01
 
 > 本地 Release 验收版本，尚未创建公开 Release / tag；真机验收见 `docs/testing/release-0.18.38-manual-checklist.md`。

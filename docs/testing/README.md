@@ -1,6 +1,6 @@
 # TinaIDE 测试文档
 
-> Release/图形入口最后核验：2026-11-01；下文各模块的历史基线保留原核验日期。
+> Release/图形入口最后核验：2026-11-02；下文各模块的历史基线保留原核验日期。
 
 本目录只保留当前仍值得固定维护的测试入口说明。
 
@@ -10,7 +10,7 @@
 优先覆盖 raylib r3 手势返回重跑、快速连点、启动取消、三引擎切换和无限运行，
 并回归 RikkaHub 模型页、网页预览、许可全文与 APK 导出。独立夹具通过不代表 IDE 端到端通过。
 本轮按用户选择优先在模拟器上验证；记录实际 API、ABI 与 GPU 后端，不将结果扩大为所有真机已验证。
-双 ABI Release、135 项定向 JVM / 47 项 Python 检查，以及完整 IDE 的重复运行、取消和前台长运行
+双 ABI Release、135 项定向 JVM / 55 项 Python 检查，以及完整 IDE 的重复运行、取消和前台长运行
 证据均记录在清单第 7 节。首轮候选、导出壳 A/B、最终候选与失败驱动分开统计。
 
 [0.18.38 历史清单](release-0.18.38-manual-checklist.md) 保留 Vector XML/R8 崩溃与许可修复的记录。
@@ -35,6 +35,35 @@ RikkaHub 网页预览与生命周期、Mermaid 导出、IDE 编译/编辑/LSP �
 raylib 包的帧循环契约、模板返回键退出，以及 SDL2/SDL3/NativeActivity 宿主隔离验证。
 当前只支持修复包，不再把旧 raylib/SDL 包兼容作为交接验收目标。
 文档分别记录包体静态验证、现有宿主 APK 的设备验证和仍未完成的端到端验证，不能互相替代。
+
+### Native ABI 打包门禁
+
+`AllAbi` 聚合任务必须同时覆盖宿主和 included build；不能只检查 APK 声明了正确 ABI。
+2026-11-02 的候选包曾缺少 x86_64 Tree-sitter、RikkaHub workspace 和 Xlorie 原生库，
+导致项目无法打开。以下探针只配置真实的三个 native 模块，不构建 App、不递增版本：
+
+```bash
+./gradlew verifyNativeAllAbi -I tools/checks/native-abi-probe.init.gradle \
+  -Pprobe.expectedAbis=arm64-v8a,x86_64 --no-daemon --configure-on-demand --console=plain
+./gradlew verifyNativeAllAbi -I tools/checks/native-abi-probe.init.gradle \
+  -Ptina.allAbi=false -Ptina.devAbi=x86_64 -Pprobe.expectedAbis=x86_64 \
+  --no-daemon --configure-on-demand --console=plain
+```
+
+本地后台检查按 60 秒窗口执行；可用 `-Pprobe.modules=tree-sitter,lorie` 和
+`-Pprobe.modules=workspace` 分组。单 ABI 模式下还需验证 Android Studio 注入的
+`android.injected.build.abi` 优先于 `tina.devAbi`，与宿主的 ABI 选择一致。
+
+构建后仍必须检查实际 APK（含 26 个必需 runtime/grammar 库、重复路径、错误 ABI 和 ELF 机器类型）：
+
+```bash
+python tools/checks/check_apk_native_libs.py \
+  --apk app/build/outputs/apk/x86_64/release/TinaIDE-0.18.39-x86_64-release.apk --abi x86_64
+python tools/checks/check_apk_native_libs.py \
+  --apk app/build/outputs/apk/arm64/release/TinaIDE-0.18.39-arm64-v8a-release.apk --abi arm64-v8a
+```
+
+Release 工作流在上传前执行此检查，单元测试复用 `tools/checks` 的 unittest discovery。
 
 ## 编辑器迁移与 SSH 持久化回归
 

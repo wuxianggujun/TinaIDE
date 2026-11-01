@@ -1,0 +1,30 @@
+// Configure the real native modules without building the app or modifying its version.
+// The AllAbi task name deliberately exercises implicit ABI selection in included builds.
+gradle.afterProject { project ->
+    if ((project.rootProject.name == 'ATS' && project.path == ':android-tree-sitter') ||
+        (project.rootProject.name == 'rikkahub' && project.path == ':workspace') ||
+        project.path == ':termux-x11-lorie') {
+        def abis = project.extensions.getByName('android').defaultConfig.ndk.abiFilters
+        def expected = project.providers.gradleProperty('probe.expectedAbis').get().split(',') as Set
+        println("ABI_PROBE ${project.rootProject.name}${project.path}: ${abis.sort()}")
+        assert abis.containsAll(expected) : "Missing requested native ABIs: expected=${expected}, actual=${abis}"
+        if (project.providers.gradleProperty('tina.allAbi').orNull == 'false') {
+            assert abis == expected : "Explicit single-ABI override was ignored: ${abis}"
+        }
+        project.tasks.register('verifyNativeAbis')
+    }
+    if (project.path == ':' && project.rootProject.name == 'TinaIDE') {
+        def modules = project.providers.gradleProperty('probe.modules')
+            .getOrElse('tree-sitter,workspace,lorie').split(',') as Set
+        assert !modules.empty && ['tree-sitter', 'workspace', 'lorie'].containsAll(modules)
+        project.tasks.register('verifyNativeAllAbi') {
+            if (modules.contains('lorie')) dependsOn(':termux-x11-lorie:verifyNativeAbis')
+            if (modules.contains('tree-sitter')) {
+                dependsOn(project.gradle.includedBuild('tina-android-tree-sitter').task(':android-tree-sitter:verifyNativeAbis'))
+            }
+            if (modules.contains('workspace')) {
+                dependsOn(project.gradle.includedBuild('rikkahub').task(':workspace:verifyNativeAbis'))
+            }
+        }
+    }
+}

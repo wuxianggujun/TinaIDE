@@ -128,10 +128,11 @@ jobs:
           echo "code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
           echo "Version: $VERSION_NAME ($VERSION_CODE)"
 
-      - name: Verify notices in the final Debug APK
+      - name: Verify notices and native runtimes in the final Debug APK
         run: |
           for apk in app/build/outputs/apk/arm64/debug/*.apk; do
             python3 tools/checks/check_distribution.py --apk "$apk"
+            python3 tools/checks/check_apk_native_libs.py --apk "$apk" --abi arm64-v8a
           done
 
       - name: Upload debug APK artifact
@@ -397,8 +398,11 @@ jobs:
           require_text "fileprovider authority" 'fileprovider' "$MANIFEST"
           require_text "FILE_PROVIDER_PATHS meta-data" 'android.support.FILE_PROVIDER_PATHS' "$MANIFEST"
 
-      - name: Verify notices in the final Release APK
-        run: python3 tools/checks/check_distribution.py --apk "app/build/outputs/apk/release/TinaIDE-${{ steps.version.outputs.name }}-${{ matrix.abi }}.apk"
+      - name: Verify notices and native runtimes in the final Release APK
+        run: |
+          APK="app/build/outputs/apk/release/TinaIDE-${{ steps.version.outputs.name }}-${{ matrix.abi }}.apk"
+          python3 tools/checks/check_distribution.py --apk "$APK"
+          python3 tools/checks/check_apk_native_libs.py --apk "$APK" --abi "${{ matrix.abi }}"
 
       - name: Upload release APK artifact
         uses: actions/upload-artifact@v7
