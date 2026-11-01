@@ -4,7 +4,13 @@
 
 本目录只保留当前仍值得固定维护的测试入口说明。
 
-## 0.18.37 Release 真机验收
+## 0.18.38 Release 真机验收
+
+[0.18.38 Release 真机手测清单](release-0.18.38-manual-checklist.md) 是当前验收入口，
+优先覆盖模型选择页的 Vector XML/R8 崩溃、离线许可全文/源码入口、APK 导出，
+以及 r2 raylib 的 ARM64 可见画面和生命周期。真机项均为待测，不因许可证门禁通过而自动通过。
+
+### 0.18.37 历史清单与可复用样例
 
 [0.18.37 Release 真机手测清单](release-0.18.37-manual-checklist.md) 包含升级/全新安装、
 RikkaHub 网页预览与生命周期、Mermaid 导出、IDE 编译/编辑/LSP 的 P0 验收，

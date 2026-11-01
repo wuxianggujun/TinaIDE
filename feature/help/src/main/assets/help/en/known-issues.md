@@ -44,6 +44,20 @@ The template includes a shared library and a test executable. The default run co
 
 Syntax highlighting showing new code does not prove that the run configuration launches that code.
 
+## raylib runs but the screen stays black
+
+Use raylib 6.0 revision 2 and template 1.0.1. Updating TinaIDE alone does not replace an already installed library;
+reinstall the fixed package, clean the test project, and rebuild it. Existing projects are not rewritten by a template update.
+The old package accidentally enabled custom frame control, so `EndDrawing()` omitted normal buffer swapping and input polling.
+
+On Android, raylib's public `GetWindowHandle()` returns `NULL`; that value is not the underlying `ANativeWindow*`.
+The backend uses an EGL window surface, not an offscreen pbuffer. Rendering on the dedicated `native_app_glue` thread is normal;
+do not move EGL calls to the Android UI thread solely because the public handle is zero.
+
+If revision 2 is still black, record the device, Android version, package revision, actual EGL surface size/type,
+buffer-swap results, and a minimal project. Test IDE execution and an exported APK separately.
+An x86_64 emulator rendering successfully does not establish ARM64 device compatibility.
+
 ## Build cleanup after timeout or cancellation
 
 TinaIDE terminates short-lived compiler processes, closes output streams, and removes command-specific temporary directories. It does not automatically remove the project build directory, compile_commands.json, incremental cache, or successful artifacts.
@@ -65,4 +79,4 @@ Export logs from About and include:
 - [Terminal troubleshooting](terminal-troubleshooting.md)
 - [Build a project](build-project.md)
 
-Updated: 2026-08-23
+Updated: 2026-11-01

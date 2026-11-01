@@ -31,6 +31,10 @@
 
 ## [Unreleased]
 
+## [0.18.38] - 2026-11-01
+
+> 本地 Release 验收版本，尚未创建公开 Release / tag；真机验收见 `docs/testing/release-0.18.38-manual-checklist.md`。
+
 ### Fixed
 
 - **Release 模型选择页崩溃**：隔离 ARSCLib 桌面 JAR 中的 Android/XML 平台桩类，

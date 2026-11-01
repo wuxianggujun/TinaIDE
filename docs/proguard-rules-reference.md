@@ -250,9 +250,15 @@ APK/Manifest 实现；APK Builder 的 Manifest 修改、库替换与签名测试
   --no-daemon --console=plain
 ```
 
-只执行 minify 不生成新 APK，也不发布或递增版本。AGP 9.2.1 此任务的新 mapping 位于
-`app/build/intermediates/mapping/arm64Release/minifyArm64ReleaseWithR8/mapping.txt`；
-`app/build/outputs/mapping/arm64Release/mapping.txt` 此时仍可能是旧 assemble 的结果。
+只执行 minify 不生成新 APK，也不发布或递增版本。AGP 9.2.1 的生成路径如下
+（不是受版本控制的源码，干净检出或构建失败后可以不存在）：
+
+```text
+minify:  app/build/intermediates/mapping/arm64Release/minifyArm64ReleaseWithR8/mapping.txt
+assemble: app/build/outputs/mapping/arm64Release/mapping.txt
+```
+
+仅执行 minify 后，outputs 下的 mapping 仍可能是旧 assemble 的结果。
 必须核对任务、生成时间和 DEX，不能拿旧 mapping 验收新编译，也不要覆盖旧 APK 对应的归档。
 
 Release 手测还需覆盖：渠道模型列表中的推理图标、聊天导出的同类图标，以及 APK
