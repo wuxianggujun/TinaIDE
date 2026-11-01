@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -53,6 +54,7 @@ internal class TopBarCallbacks(
     val onOpenCommandPalette: () -> Unit,
     val onBuild: () -> Unit,
     val onCompile: () -> Unit,
+    val onStopCompile: () -> Unit = {},
     val onRebuildAndRun: () -> Unit,
     val onCompileInTerminal: () -> Unit,
     val onDebug: () -> Unit,
@@ -191,6 +193,16 @@ internal fun MainActivityTopBar(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = callbacks.onOpenDrawer) {
                     Icon(Icons.Default.Menu, stringResource(Strings.content_desc_open_file_tree))
+                }
+                if (isCompiling) {
+                    // Keep Stop separate from Run so rapid Run taps cannot toggle into Stop.
+                    IconButton(onClick = callbacks.onStopCompile) {
+                        Icon(
+                            Icons.Default.Stop,
+                            stringResource(Strings.content_desc_stop),
+                            tint = MaterialTheme.colorScheme.error,
+                        )
+                    }
                 }
                 if (!isDebugActive) {
                     EditHistoryActionButton(

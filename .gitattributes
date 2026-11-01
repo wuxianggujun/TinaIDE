@@ -4,5 +4,13 @@ app/src/**/assets/tina-toolchain/*.tar.xz filter=lfs diff=lfs merge=lfs -text
 # Ensure bash scripts/patches stay LF for Docker/Linux.
 *.sh text eol=lf
 *.patch text eol=lf
+# Unified patches represent unchanged empty lines with a required context-space prefix.
+docker/tinaide-pkg/patches/*.patch whitespace=-blank-at-eol,-blank-at-eof
 Dockerfile text eol=lf
 gradlew text eol=lf
+
+# APK template checksums use source bytes; keep Windows and Linux checkouts identical.
+tools/template-*/build.gradle.kts text eol=lf
+tools/template-*/**/*.java text eol=lf
+tools/template-*/**/*.xml text eol=lf
+app/src/main/java/org/libsdl/app/*.java text eol=lf

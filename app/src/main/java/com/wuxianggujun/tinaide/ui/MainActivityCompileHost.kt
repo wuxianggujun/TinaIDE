@@ -1,6 +1,7 @@
 package com.wuxianggujun.tinaide.ui
 
 import androidx.activity.ComponentActivity
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import com.wuxianggujun.tinaide.core.compile.ProcessManager
 import com.wuxianggujun.tinaide.editor.IEditorManager
@@ -42,6 +43,9 @@ internal fun createMainActivityCompileHost(
         projectContext = projectContext,
         editorManager = editorManager,
         processController = ProcessManagerCompileProcessController(processManager),
+        actionGate = compilerViewModel.actionGate,
+        uiEventsChannel = compilerViewModel.uiEventsChannel,
+        isHostReady = { activity.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) },
     )
     val compileRuntimeObserver = CompileRuntimeObserver(
         compileActionsHelper = compileActionsHelper,
@@ -58,16 +62,9 @@ internal fun createMainActivityCompileHost(
             onInfo = onToastInfo,
         ),
         graphicalRuntimeLauncher = ContextCompileGraphicalRuntimeLauncher(
-            sdlLauncher = ContextCompileSdlLauncher(
-                context = activity,
-                onError = onToastError,
-                activityStarter = activity::startActivity,
-            ),
-            nativeActivityLauncher = ContextCompileNativeActivityLauncher(
-                context = activity,
-                onError = onToastError,
-                activityStarter = activity::startActivity,
-            ),
+            context = activity,
+            onError = onToastError,
+            activityStarter = activity::startActivity,
         ),
         terminalLauncher = ContextCompileTerminalLauncher(
             context = activity,

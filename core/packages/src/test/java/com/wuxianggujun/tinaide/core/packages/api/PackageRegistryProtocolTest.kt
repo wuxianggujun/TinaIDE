@@ -9,7 +9,13 @@ import com.wuxianggujun.tinaide.core.network.registry.RegistryUrl
 import com.wuxianggujun.tinaide.core.packages.model.InstallType
 import com.wuxianggujun.tinaide.core.packages.model.PackageArtifactType
 import com.wuxianggujun.tinaide.core.packages.model.Platform
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
@@ -360,6 +366,73 @@ class PackageRegistryProtocolTest {
             .inOrder()
     }
 
+    @Test
+    fun refresh_reloadsSameVersionRevisionAndDownloadInfo() = runBlocking {
+        val indexUrl = registryUrl("https://registry.test", "packages/index.v2.json")
+        val detailUrl = "https://registry.test/packages/raylib/package.json"
+        val responses = mutableMapOf(
+            indexUrl.url to RegistryResponse(body = raylibIndex()),
+            detailUrl to RegistryResponse(body = raylibDetail(2)),
+        )
+        val interceptor = FakeRegistryInterceptor(responses)
+        val api = packageApi(indexUrl, interceptor.client())
+        assertThat((api.getPackageVersions("raylib") as ApiResult.Success).data.android!!.single().packageRevision)
+            .isEqualTo(2)
+        responses[detailUrl] = RegistryResponse(body = raylibDetail(3))
+        api.invalidateCache()
+        val version = (api.getPackageVersions("raylib") as ApiResult.Success).data.android!!.single()
+        assertThat(version.packageRevision).isEqualTo(3)
+        val download = (api.getDownloadInfo("raylib", version.id) as ApiResult.Success).data
+        assertThat(download.sources.first().url).contains("6.0-r3")
+        assertThat(interceptor.requestedUrls.count { it == detailUrl }).isEqualTo(2)
+    }
+
+    @Test
+    fun refresh_doesNotReuseAnOldDetailThatArrivesAfterInvalidation() = runBlocking {
+        val indexUrl = registryUrl("https://registry.test", "packages/index.v2.json")
+        val detailUrl = "https://registry.test/packages/raylib/package.json"
+        val responses = mutableMapOf(
+            indexUrl.url to RegistryResponse(body = raylibIndex()),
+            detailUrl to RegistryResponse(body = raylibDetail(2)),
+        )
+        val entered = CompletableDeferred<Unit>()
+        val release = CountDownLatch(1)
+        var blockOld = true
+        val interceptor = FakeRegistryInterceptor(responses) { url ->
+            if (url == detailUrl && blockOld) {
+                blockOld = false
+                entered.complete(Unit)
+                check(release.await(5, TimeUnit.SECONDS))
+            }
+        }
+        val api = packageApi(indexUrl, interceptor.client())
+        val old = async(Dispatchers.IO) { api.getPackageDetail("raylib") }
+        try {
+            withTimeout(5_000) { entered.await() }
+            api.invalidateCache()
+            responses[detailUrl] = RegistryResponse(body = raylibDetail(3))
+            release.countDown()
+            assertThat((old.await() as ApiResult.Success).data.android!!.packageRevision).isEqualTo(2)
+            val refreshed = (api.getPackageDetail("raylib") as ApiResult.Success).data
+            assertThat(refreshed.android!!.packageRevision).isEqualTo(3)
+        } finally {
+            release.countDown()
+        }
+    }
+
+    private fun raylibIndex() = """
+        {"schema_version":2,"packages":[
+          {"id":"raylib","name":"raylib","detail_url":"packages/raylib/package.json"}
+        ]}
+    """.trimIndent()
+
+    private fun raylibDetail(revision: Int) = """
+        {"package":{"id":"raylib","name":"raylib","android":{
+          "version":"6.0","package_revision":$revision,"install_type":"download",
+          "download_url":"https://registry.test/packages/raylib/6.0-r$revision/raylib.tar.xz"
+        }}}
+    """.trimIndent()
+
     private fun registryUrl(
         baseUrl: String,
         path: String,
@@ -404,6 +477,7 @@ class PackageRegistryProtocolTest {
 
     private class FakeRegistryInterceptor(
         private val responses: Map<String, RegistryResponse>,
+        private val beforeResponse: (String) -> Unit = {},
     ) : Interceptor {
         val requestedUrls = mutableListOf<String>()
 
@@ -416,6 +490,7 @@ class PackageRegistryProtocolTest {
             val url = request.url.toString()
             requestedUrls += url
             val registryResponse = responses[url] ?: RegistryResponse(code = 404)
+            beforeResponse(url)
             return Response.Builder()
                 .request(request)
                 .protocol(Protocol.HTTP_1_1)

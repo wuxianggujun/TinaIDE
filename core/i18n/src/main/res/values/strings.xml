@@ -2414,6 +2414,10 @@
   <string name="native_activity_runtime_sdl_conflict">当前目标依赖 SDL，不能通过 NativeActivity 运行。SDL 项目请选择 SDL 图形运行；raylib 项目不要把 main 重命名为 SDL_main。</string>
   <string name="native_activity_runtime_stage_failed">准备 NativeActivity 运行库失败：%1$s</string>
   <string name="native_activity_runtime_launch_failed">启动 NativeActivity 运行界面失败：%1$s</string>
+  <string name="graphical_runtime_previous_process_not_stopped">上一次图形运行尚未退出，请稍后重试。为避免覆盖仍在使用的运行库，本次未启动。</string>
+  <string name="graphical_runtime_launch_in_progress">图形运行正在启动，请等待当前启动完成。</string>
+  <string name="graphical_runtime_start_not_acknowledged">图形运行界面尚未响应启动请求。请返回编辑器后重试。</string>
+  <string name="raylib_runtime_update_required">旧 raylib 运行库已不受支持。请在资源包管理中刷新并更新 raylib 到 6.0 r3，然后清理构建并重新编译；若项目内手动复制了旧 libraylib.so，也必须删除或替换。项目源码无需删除。</string>
   <string name="native_activity_runtime_host_not_configured">NativeActivity 运行宿主尚未完成配置</string>
   <string name="native_activity_runtime_dependency_load_failed">加载 NativeActivity 依赖失败：%1$s</string>
   <string name="native_activity_runtime_main_load_failed">加载 NativeActivity 主共享库失败：%1$s</string>

@@ -13,6 +13,7 @@ import com.wuxianggujun.tinaide.core.packages.PackageAbiCompatibility
 import com.wuxianggujun.tinaide.core.packages.PackageArchivePolicy
 import com.wuxianggujun.tinaide.core.packages.PackageDownloadSourceSelector
 import com.wuxianggujun.tinaide.core.packages.PackageInstallCoordinator
+import com.wuxianggujun.tinaide.core.packages.RaylibRuntimePolicy
 import com.wuxianggujun.tinaide.core.packages.api.PackageApiClient
 import com.wuxianggujun.tinaide.core.packages.download.DownloadError
 import com.wuxianggujun.tinaide.core.packages.download.DownloadResult
@@ -414,6 +415,9 @@ class DownloadPackageBackend(
         require(metadata.id == expectedPackageId) { "Downloaded package id does not match the request" }
         require(metadata.version == expectedVersion) { "Downloaded package version does not match the request" }
         require(metadata.name.isNotBlank()) { "Downloaded package name is empty" }
+        require(RaylibRuntimePolicy.isSupportedPackage(packageDir, metadata)) {
+            Strings.raylib_runtime_update_required.str()
+        }
         return metadata
     }
 

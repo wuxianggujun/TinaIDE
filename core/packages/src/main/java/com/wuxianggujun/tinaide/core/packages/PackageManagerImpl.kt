@@ -11,6 +11,8 @@ import com.wuxianggujun.tinaide.core.packages.cache.PackageCacheManager
 import com.wuxianggujun.tinaide.core.packages.model.*
 import com.wuxianggujun.tinaide.core.packages.store.LocalInstallStateStore
 import com.wuxianggujun.tinaide.core.proot.PRootEnvironment
+import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -37,7 +39,7 @@ class PackageManagerImpl(
         DownloadPackageBackend(context, apiClient)
     }
 
-    private var cachedVersions: MutableMap<String, Map<Platform, Int>> = mutableMapOf()
+    private val cachedVersions = ConcurrentHashMap<String, Map<Platform, Int>>()
 
     override suspend fun getAvailablePackages(
         page: Int,
@@ -193,7 +195,7 @@ class PackageManagerImpl(
                         packageName = descriptor.packageName,
                         version = descriptor.platformPackage.version,
                         isRoot = descriptor.packageId == packageId,
-                        isAlreadyInstalled = installStateStore.isInstalled(
+                        isAlreadyInstalled = isUsableInstallation(
                             descriptor.packageId,
                             descriptor.platform
                         )
@@ -264,8 +266,15 @@ class PackageManagerImpl(
         rootPackageId = packageId,
         platform = platform,
         loadPackage = { dependencyId -> resolveInstallDescriptor(dependencyId, platform) },
-        isInstalled = installStateStore::isInstalled
+        isInstalled = ::isUsableInstallation
     )
+
+    private fun isUsableInstallation(packageId: String, platform: Platform): Boolean {
+        if (!installStateStore.isInstalled(packageId, platform)) return false
+        if (platform != Platform.ANDROID || packageId != "raylib") return true
+        val revision = InstalledPackageMetadataReader.read(context, packageId)?.packageRevision ?: 0
+        return revision >= RaylibRuntimePolicy.MINIMUM_PACKAGE_REVISION
+    }
 
     private suspend fun resolveInstallDescriptor(
         packageId: String,
@@ -628,19 +637,22 @@ class PackageManagerImpl(
         )
     }
 
-    override suspend fun refreshCache() {
-        cacheManager.invalidatePackages()
-        cacheManager.invalidateCategories()
+    override suspend fun refreshCache(): Unit = withContext(ioDispatcher) {
+        apiClient.invalidateCache()
+        // Package detail entries can otherwise survive a refresh for seven days.
+        cacheManager.clearCache()
         cachedVersions.clear()
     }
 
     override suspend fun clearCache(): Unit = withContext(ioDispatcher) {
+        apiClient.invalidateCache()
         cacheManager.clearCache()
         cachedVersions.clear()
         downloadBackend.clearDownloadCache()
     }
 
-    override suspend fun checkForUpdates(): Map<String, UpdateInfo> {
+    override suspend fun checkForUpdates(): Map<String, UpdateInfo> = withContext(ioDispatcher) {
+        apiClient.invalidateCache()
         val updates = mutableMapOf<String, UpdateInfo>()
         val installedPackages = installStateStore.getAllInstalledPackages()
 
@@ -653,10 +665,14 @@ class PackageManagerImpl(
                 val detailResult = apiClient.getPackageDetail(installed.packageId)
                 if (detailResult is ApiResult.Success) {
                     val pkg = detailResult.data
+                    if (pkg.id != installed.packageId) continue
+                    // Installing an announced revision must not reuse a cached older URL/hash.
+                    cacheManager.savePackageDetail(pkg)
+                    cachedVersions.remove(installed.packageId)
 
                     if (installed.platform == Platform.LINUX) {
                         pkg.linux?.let { platformPkg ->
-                            if (isNewerVersion(platformPkg.version, installed.version)) {
+                            if (isNewerPackageVersion(platformPkg.version, installed.version)) {
                                 updates[installed.packageId] = UpdateInfo(
                                     packageId = installed.packageId,
                                     packageName = pkg.name,
@@ -670,7 +686,15 @@ class PackageManagerImpl(
 
                     if (installed.platform == Platform.ANDROID) {
                         pkg.android?.let { platformPkg ->
-                            if (isNewerVersion(platformPkg.version, installed.version)) {
+                            val metadata = InstalledPackageMetadataReader.read(context, installed.packageId)
+                            val localRevision = metadata?.takeIf { it.version == installed.version }?.packageRevision
+                            if (isNewerPackageVersion(
+                                    platformPkg.version,
+                                    installed.version,
+                                    platformPkg.packageRevision,
+                                    localRevision,
+                                )
+                            ) {
                                 updates[installed.packageId] = UpdateInfo(
                                     packageId = installed.packageId,
                                     packageName = pkg.name,
@@ -683,6 +707,7 @@ class PackageManagerImpl(
                     }
                 }
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 Timber.tag(TAG).w(e, "Failed to check update for ${installed.packageId}")
             }
         }
@@ -696,20 +721,7 @@ class PackageManagerImpl(
             )
         }
 
-        return updates
-    }
-
-    private fun isNewerVersion(remote: String, local: String): Boolean {
-        val remoteParts = remote.split(".").mapNotNull { it.toIntOrNull() }
-        val localParts = local.split(".").mapNotNull { it.toIntOrNull() }
-
-        for (i in 0 until maxOf(remoteParts.size, localParts.size)) {
-            val r = remoteParts.getOrElse(i) { 0 }
-            val l = localParts.getOrElse(i) { 0 }
-            if (r > l) return true
-            if (r < l) return false
-        }
-        return false
+        updates
     }
 
     private fun filterValidPackages(packages: List<GUIPackage>, source: String): List<GUIPackage> =

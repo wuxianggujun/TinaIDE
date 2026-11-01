@@ -193,7 +193,7 @@ case "$PACKAGE_ID" in
         DEPENDENCY_TARGET="SDL3::SDL3"
         ;;
     raylib)
-        PACKAGE_REVISION=2
+        PACKAGE_REVISION=3
         VERSION="6.0"
         NAME="raylib"
         DESCRIPTION="Simple and easy-to-use game programming library"
@@ -266,6 +266,15 @@ verify_raylib_runtime_contract() {
     fi
     if readelf -dW "$library_path" | grep -Eq 'Shared library: \[libSDL[23]'; then
         echo "[ERROR] libraylib.so must not depend on SDL" >&2
+        return 1
+    fi
+
+    # Reject a stale r2 library even when it has a working frame loop. The marker
+    # comes from the pinned lifecycle patch, not from mutable package metadata.
+    local lifecycle_strings
+    if ! lifecycle_strings="$(readelf --string-dump=.rodata "$library_path")" ||
+       [[ "$lifecycle_strings" != *"PLATFORM: ANDROID: Initialized successfully (TinaIDE lifecycle r3)"* ]]; then
+        echo "[ERROR] libraylib.so is missing the Android destroy lifecycle fix; rebuild raylib r3" >&2
         return 1
     fi
 

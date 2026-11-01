@@ -45,7 +45,21 @@ class PackageApiClient private constructor(
     private val detailMutexes = ConcurrentHashMap<String, Mutex>()
     @Volatile
     private var cachedIndex: LoadedPackageRegistryCatalog? = null
-    private val cachedDetails = ConcurrentHashMap<String, PackageRegistryDetail>()
+    private val cachedDetails = ConcurrentHashMap<String, CachedDetail>()
+
+    private data class CachedDetail(
+        val index: LoadedPackageRegistryCatalog,
+        val detail: PackageRegistryDetail,
+    )
+
+    /** Refresh the live client too, not just the manager's on-disk JSON cache. */
+    suspend fun invalidateCache() = indexMutex.withLock {
+        cachedIndex = null
+        cachedDetails.clear()
+    }
+
+    private fun cachedDetail(index: LoadedPackageRegistryCatalog, packageId: String): PackageRegistryDetail? =
+        cachedDetails[packageId]?.takeIf { it.index === index }?.detail
 
     companion object {
         private const val TAG = "PackageApiClient"
@@ -286,10 +300,10 @@ class PackageApiClient private constructor(
         val detailUrl = entry.detailUrl
             ?: return ApiResult.Error(-1, Strings.pkg_manager_error_package_not_found.str(packageId))
 
-        cachedDetails[entry.id]?.let { return ApiResult.Success(it) }
+        cachedDetail(index, entry.id)?.let { return ApiResult.Success(it) }
         val detailMutex = detailMutexes.computeIfAbsent(entry.id) { Mutex() }
         return detailMutex.withLock {
-            cachedDetails[entry.id]?.let { return@withLock ApiResult.Success(it) }
+            cachedDetail(index, entry.id)?.let { return@withLock ApiResult.Success(it) }
             var lastError: ApiResult<PackageRegistryDetail>? = null
             for (candidateUrl in GitHubRegistryConfig.registryResourceUrlCandidates(
                 urlOrPath = detailUrl,
@@ -321,7 +335,9 @@ class PackageApiClient private constructor(
                             lastError = ApiResult.Error(-1, "Package detail id does not match registry entry")
                             return@use
                         }
-                        cachedDetails[entry.id] = detail
+                        // A pre-refresh response may finish late. It must not be reused by
+                        // requests belonging to the newly loaded catalog.
+                        cachedDetails[entry.id] = CachedDetail(index, detail)
                         return@withLock ApiResult.Success(detail)
                     }
                 } catch (e: ResponseBodyTooLargeException) {
@@ -405,6 +421,7 @@ class PackageApiClient private constructor(
                     packageId = packageId,
                     platform = Platform.LINUX,
                     version = pkg.version,
+                    packageRevision = pkg.packageRevision,
                     artifactType = pkg.artifactType,
                     installType = pkg.installType,
                     aptPackage = pkg.aptPackage,
@@ -426,6 +443,7 @@ class PackageApiClient private constructor(
                     packageId = packageId,
                     platform = Platform.ANDROID,
                     version = pkg.version,
+                    packageRevision = pkg.packageRevision,
                     artifactType = pkg.artifactType,
                     installType = pkg.installType,
                     aptPackage = pkg.aptPackage,

@@ -1,5 +1,8 @@
 package com.wuxianggujun.tinaide.ui.runtime
 
+import com.wuxianggujun.tinaide.core.i18n.Strings
+import com.wuxianggujun.tinaide.core.i18n.str
+import com.wuxianggujun.tinaide.core.packages.RaylibRuntimePolicy
 import java.io.File
 import java.io.IOException
 
@@ -11,6 +14,9 @@ internal class NativeRuntimeStagingArea private constructor(
 
     fun register(source: File): File {
         val canonicalSource = canonicalRuntimeFile(source)
+        require(RaylibRuntimePolicy.isSupportedRuntimeLibrary(canonicalSource)) {
+            Strings.raylib_runtime_update_required.str()
+        }
         val previous = sourceByName[canonicalSource.name]
         if (previous != null && canonicalRuntimeFile(previous) != canonicalSource) {
             throw IOException(

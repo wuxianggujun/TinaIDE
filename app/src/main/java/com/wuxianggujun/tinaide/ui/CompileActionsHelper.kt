@@ -29,13 +29,19 @@ class CompileActionsHelper(
     private val projectContext: IProjectContext,
     private val editorManager: IEditorManager,
     private val processController: ProcessController,
+    private val actionGate: CompileActionGate = CompileActionGate(),
+    private val uiEventsChannel: Channel<UiEvent> = Channel(
+        capacity = Channel.BUFFERED,
+        onUndeliveredElement = UiEvent::releaseUndeliveredLaunch,
+    ),
+    private val isHostReady: () -> Boolean = { true },
 ) {
     interface CommandRunner {
-        fun compile(operation: CompileProjectUseCase.Operation)
-        fun reconfigureCMake()
-        fun clearCMakeBuildDirectory()
-        fun clearAndReconfigureCMake()
-        fun configureOnlyCMake()
+        fun compile(operation: CompileProjectUseCase.Operation, ticket: CompileActionGate.Ticket)
+        fun reconfigureCMake(ticket: CompileActionGate.Ticket)
+        fun clearCMakeBuildDirectory(ticket: CompileActionGate.Ticket)
+        fun clearAndReconfigureCMake(ticket: CompileActionGate.Ticket)
+        fun configureOnlyCMake(ticket: CompileActionGate.Ticket)
     }
 
     interface UiBridge {
@@ -62,11 +68,27 @@ class CompileActionsHelper(
      */
     sealed class UiEvent {
         data class ShowToast(val message: String, val type: ToastType) : UiEvent()
-        data class OpenTerminal(val command: String, val workDir: String?, val backend: TerminalBackend = TerminalBackend.HOST) : UiEvent()
+        data class OpenTerminal(
+            val command: String,
+            val workDir: String?,
+            val ticket: CompileActionGate.Ticket,
+            val backend: TerminalBackend = TerminalBackend.HOST,
+        ) : UiEvent()
         data class OpenGraphicalRuntime(
             val request: GraphicalRuntimeLaunchRequest,
+            val ticket: CompileActionGate.Ticket,
         ) : UiEvent()
         data class RevealInProjectTree(val file: File, val selectTarget: Boolean = false) : UiEvent()
+
+        internal fun releaseUndeliveredLaunch() {
+            val ticket = when (this) {
+                is OpenGraphicalRuntime -> ticket
+                is OpenTerminal -> ticket
+                else -> return
+            }
+            BuildDiagnosticsLog.w { "Discarding undelivered launch ticket=${ticket.id}" }
+            ticket.finish()
+        }
     }
 
     enum class ToastType {
@@ -84,8 +106,8 @@ class CompileActionsHelper(
     }
 
     // 生命周期暂时未到 STARTED 时缓存一次性事件，恢复后逐个消费。
-    private val uiEventsChannel = Channel<UiEvent>(capacity = Channel.BUFFERED)
     val uiEvents = uiEventsChannel.receiveAsFlow()
+    private var processBusy = false
 
     // 仅 configure(重生成 compile_commands.json)成功后回调，用于让 clangd 使用新的编译数据库。
     // 由持有 EditorContainerState 的 Compose 层注册；本类不直接依赖编辑器状态。
@@ -176,58 +198,65 @@ class CompileActionsHelper(
     /**
      * 处理编译成功事件
      */
-    suspend fun handleCompileSuccess(event: CompileEvent.Success) {
+    suspend fun handleCompileSuccess(event: CompileEvent.Success): Boolean {
+        if (!event.ticket.claimResult()) return false
         val report = event.report
-        uiBridge.setCompiling(false)
-        when (report.action) {
-            CompileProjectUseCase.Action.DEBUG -> handleDebugSuccess(report)
-            CompileProjectUseCase.Action.RUN,
-            CompileProjectUseCase.Action.REBUILD_RUN,
-            CompileProjectUseCase.Action.TERMINAL -> handleRunLikeSuccess(report)
-            CompileProjectUseCase.Action.BUILD -> handleBuildSuccess(report)
-            else -> handleMaintenanceSuccess(report)
+        var launchQueued = false
+        try {
+            when (report.action) {
+                CompileProjectUseCase.Action.DEBUG -> handleDebugSuccess(report)
+                CompileProjectUseCase.Action.RUN,
+                CompileProjectUseCase.Action.REBUILD_RUN,
+                CompileProjectUseCase.Action.TERMINAL -> launchQueued = handleRunLikeSuccess(report, event.ticket)
+                CompileProjectUseCase.Action.BUILD -> handleBuildSuccess(report)
+                else -> handleMaintenanceSuccess(report)
+            }
+            finishCompileUi()
+        } finally {
+            // A successful compile is not the end of a run: the queued launch still owns it.
+            if (!launchQueued) event.ticket.finish()
+            refreshCompilingState()
         }
-        finishCompileUi()
+        return true
     }
 
     /**
      * 处理编译失败事件
      */
     suspend fun handleCompileError(event: CompileEvent.Error) {
-        uiBridge.setCompiling(false)
-        val message = if (event.action.isCMakeMaintenance()) {
-            val uiText = event.action.resolveUiText(context)
-            event.message.ifBlank { uiText.failureMessage }
-        } else {
-            event.message
+        if (!event.ticket.claimResult()) return
+        try {
+            val message = if (event.action.isCMakeMaintenance()) {
+                val uiText = event.action.resolveUiText(context)
+                event.message.ifBlank { uiText.failureMessage }
+            } else {
+                event.message
+            }
+            emitToast(message, ToastType.ERROR)
+            // Do not select unrelated/stale LSP diagnostics over this build's output.
+            showBuildLog()
+            finishCompileUi()
+        } finally {
+            event.ticket.finish()
+            refreshCompilingState()
         }
-        emitToast(message, ToastType.ERROR)
-        // 编译器输出属于 BUILD 通道；LSP diagnostics 可能来自旧文件或上一次分析，
-        // 在没有本次构建来源标识时不能据此切走失败日志。
-        showBuildLog()
-        finishCompileUi()
     }
 
     /**
      * 处理进程状态变化
      */
     suspend fun handleProcessStateChanged(processState: ExecutionProcessState) {
-        when (processState) {
-            ExecutionProcessState.IDLE -> {
-                uiBridge.setCompiling(false)
-            }
-            ExecutionProcessState.RUNNING -> {
-                uiBridge.setCompiling(true)
-            }
-            ExecutionProcessState.STOPPED -> {
-                uiBridge.setCompiling(false)
-            }
+        processBusy = when (processState) {
+            ExecutionProcessState.IDLE,
+            ExecutionProcessState.STOPPED -> false
+            ExecutionProcessState.RUNNING,
             ExecutionProcessState.STARTING,
-            ExecutionProcessState.STOPPING -> {
-                uiBridge.setCompiling(true)
-            }
+            ExecutionProcessState.STOPPING -> true
         }
+        refreshCompilingState()
     }
+
+    private fun refreshCompilingState() = uiBridge.setCompiling(actionGate.isBusy.value || processBusy)
 
     /**
      * 准备编译（清空日志、切换页签、展开面板）
@@ -243,51 +272,53 @@ class CompileActionsHelper(
         actionLabel: String,
         progressToast: String? = null,
     ) {
-        BuildDiagnosticsLog.i {
-            "ui compile action requested action=${operation.action} mode=${operation.mode} label=$actionLabel"
-        }
-        if (!ensureAllEditorsSaved(actionLabel)) {
-            BuildDiagnosticsLog.w {
-                "ui compile action cancelled before dispatch: action=${operation.action} mode=${operation.mode}"
+        startAction(actionLabel, progressToast) { ticket ->
+            BuildDiagnosticsLog.i {
+                "ui compile dispatch ticket=${ticket.id} action=${operation.action} mode=${operation.mode}"
             }
-            return
+            commandRunner.compile(operation, ticket)
         }
-
-        processController.reset()
-        prepareForCompile()
-        uiBridge.setCompiling(true)
-        progressToast?.let { emitToast(it, ToastType.INFO) }
-        BuildDiagnosticsLog.i {
-            "ui compile action dispatching action=${operation.action} mode=${operation.mode}"
-        }
-        commandRunner.compile(operation)
     }
 
     private suspend fun runCMakeMaintenance(action: CompileProjectUseCase.Action) {
         val uiText = action.resolveUiText(context)
-        BuildDiagnosticsLog.i { "ui cmake maintenance requested action=$action label=${uiText.menuLabel}" }
-        if (!ensureAllEditorsSaved(uiText.menuLabel)) {
-            BuildDiagnosticsLog.w { "ui cmake maintenance cancelled before dispatch: action=$action" }
+        startAction(uiText.menuLabel, uiText.progressMessage) { ticket ->
+            when (action) {
+                CompileProjectUseCase.Action.CMAKE_RECONFIGURE -> commandRunner.reconfigureCMake(ticket)
+                CompileProjectUseCase.Action.CMAKE_CLEAR_BUILD_DIRECTORY -> commandRunner.clearCMakeBuildDirectory(ticket)
+                CompileProjectUseCase.Action.CMAKE_CLEAR_AND_RECONFIGURE -> commandRunner.clearAndReconfigureCMake(ticket)
+                CompileProjectUseCase.Action.CMAKE_CONFIGURE_ONLY -> commandRunner.configureOnlyCMake(ticket)
+                else -> ticket.finish()
+            }
+        }
+    }
+
+    private suspend fun startAction(
+        actionLabel: String,
+        progressToast: String?,
+        dispatch: (CompileActionGate.Ticket) -> Unit,
+    ) {
+        // Acquire before saveAll/animations suspend, not merely before startActivity.
+        if (!isHostReady()) return
+        val ticket = actionGate.tryBegin() ?: run {
+            BuildDiagnosticsLog.i { "Ignoring duplicate compile/run input while an action is pending" }
             return
         }
-
-        processController.reset()
-        prepareForCompile()
         uiBridge.setCompiling(true)
-        emitToast(uiText.progressMessage, ToastType.INFO)
-
-        when (action) {
-            CompileProjectUseCase.Action.CMAKE_RECONFIGURE -> commandRunner.reconfigureCMake()
-            CompileProjectUseCase.Action.CMAKE_CLEAR_BUILD_DIRECTORY -> {
-                commandRunner.clearCMakeBuildDirectory()
+        var dispatched = false
+        try {
+            if (!ensureAllEditorsSaved(actionLabel) || !ticket.isCurrent || !isHostReady()) return
+            processController.reset()
+            prepareForCompile()
+            if (!ticket.isCurrent || !isHostReady()) return
+            progressToast?.let { emitToast(it, ToastType.INFO) }
+            dispatch(ticket)
+            dispatched = true
+        } finally {
+            if (!dispatched) {
+                ticket.finish()
+                refreshCompilingState()
             }
-            CompileProjectUseCase.Action.CMAKE_CLEAR_AND_RECONFIGURE -> {
-                commandRunner.clearAndReconfigureCMake()
-            }
-            CompileProjectUseCase.Action.CMAKE_CONFIGURE_ONLY -> {
-                commandRunner.configureOnlyCMake()
-            }
-            else -> return
         }
     }
 
@@ -356,13 +387,13 @@ class CompileActionsHelper(
         showBuildLog()
     }
 
-    private fun handleRunLikeSuccess(report: CompileProjectUseCase.Report) {
+    private fun handleRunLikeSuccess(report: CompileProjectUseCase.Report, ticket: CompileActionGate.Ticket): Boolean {
         when (val launch = report.launch) {
-            is CompileProjectUseCase.LaunchSpec.Sdl -> handleSdlLaunchSuccess(launch)
-            is CompileProjectUseCase.LaunchSpec.NativeActivity -> handleNativeActivityLaunchSuccess(launch)
+            is CompileProjectUseCase.LaunchSpec.Sdl -> return handleSdlLaunchSuccess(launch, ticket)
+            is CompileProjectUseCase.LaunchSpec.NativeActivity -> return handleNativeActivityLaunchSuccess(launch, ticket)
             is CompileProjectUseCase.LaunchSpec.PluginInstalled -> handlePluginInstallSuccess(launch)
             is CompileProjectUseCase.LaunchSpec.Terminal -> {
-                handleTerminalLaunchSuccess(launch, report.artifact)
+                return handleTerminalLaunchSuccess(launch, report.artifact, ticket)
             }
             CompileProjectUseCase.LaunchSpec.None,
             is CompileProjectUseCase.LaunchSpec.Debug -> {
@@ -372,11 +403,12 @@ class CompileActionsHelper(
                 )
             }
         }
+        return false
     }
 
-    private fun handleSdlLaunchSuccess(launch: CompileProjectUseCase.LaunchSpec.Sdl) {
+    private fun handleSdlLaunchSuccess(launch: CompileProjectUseCase.LaunchSpec.Sdl, ticket: CompileActionGate.Ticket): Boolean {
         emitToast(Strings.toast_compile_done_opening_sdl.strOr(context), ToastType.SUCCESS)
-        uiEventsChannel.trySend(
+        return enqueueLaunch(
             UiEvent.OpenGraphicalRuntime(
                 request = GraphicalRuntimeLaunchRequest.Sdl(
                     libraryPath = launch.libraryPath,
@@ -385,24 +417,27 @@ class CompileActionsHelper(
                     orientation = launch.orientation,
                     enableFloatingLog = launch.enableFloatingLog,
                 ),
+                ticket = ticket,
             )
         )
     }
 
     private fun handleNativeActivityLaunchSuccess(
         launch: CompileProjectUseCase.LaunchSpec.NativeActivity,
-    ) {
+        ticket: CompileActionGate.Ticket,
+    ): Boolean {
         emitToast(
             Strings.toast_compile_done_opening_native_activity.strOr(context),
             ToastType.SUCCESS,
         )
-        uiEventsChannel.trySend(
+        return enqueueLaunch(
             UiEvent.OpenGraphicalRuntime(
                 request = GraphicalRuntimeLaunchRequest.NativeActivity(
                     libraryPath = launch.libraryPath,
                     environment = launch.environment,
                     enableFloatingLog = launch.enableFloatingLog,
                 ),
+                ticket = ticket,
             )
         )
     }
@@ -417,8 +452,9 @@ class CompileActionsHelper(
 
     private fun handleTerminalLaunchSuccess(
         launch: CompileProjectUseCase.LaunchSpec.Terminal,
-        artifact: CompileProjectUseCase.BuildArtifact?
-    ) {
+        artifact: CompileProjectUseCase.BuildArtifact?,
+        ticket: CompileActionGate.Ticket,
+    ): Boolean {
         when {
             launch.runnablePath.isNullOrBlank() -> {
                 emitLaunchUnavailableToast(
@@ -431,15 +467,26 @@ class CompileActionsHelper(
             }
             else -> {
                 emitToast(Strings.toast_compile_done_opening_terminal.strOr(context), ToastType.SUCCESS)
-                uiEventsChannel.trySend(
+                return enqueueLaunch(
                     UiEvent.OpenTerminal(
-                        launch.command,
-                        launch.workingDirectory,
-                        launch.backend,
+                        command = launch.command,
+                        workDir = launch.workingDirectory,
+                        ticket = ticket,
+                        backend = launch.backend,
                     )
                 )
             }
         }
+        return false
+    }
+
+    private fun enqueueLaunch(event: UiEvent): Boolean {
+        val result = uiEventsChannel.trySend(event)
+        if (result.isFailure) {
+            event.releaseUndeliveredLaunch()
+            showBuildLog()
+        }
+        return result.isSuccess
     }
 
     private fun handleBuildSuccess(report: CompileProjectUseCase.Report) {
@@ -524,24 +571,24 @@ class CompileActionsHelper(
 class CompilerViewModelCommandRunner(
     private val compilerViewModel: CompilerViewModel
 ) : CompileActionsHelper.CommandRunner {
-    override fun compile(operation: CompileProjectUseCase.Operation) {
-        compilerViewModel.compile(operation)
+    override fun compile(operation: CompileProjectUseCase.Operation, ticket: CompileActionGate.Ticket) {
+        compilerViewModel.compile(operation, ticket)
     }
 
-    override fun reconfigureCMake() {
-        compilerViewModel.reconfigureCMake()
+    override fun reconfigureCMake(ticket: CompileActionGate.Ticket) {
+        compilerViewModel.reconfigureCMake(ticket)
     }
 
-    override fun clearCMakeBuildDirectory() {
-        compilerViewModel.clearCMakeBuildDirectory()
+    override fun clearCMakeBuildDirectory(ticket: CompileActionGate.Ticket) {
+        compilerViewModel.clearCMakeBuildDirectory(ticket)
     }
 
-    override fun clearAndReconfigureCMake() {
-        compilerViewModel.clearAndReconfigureCMake()
+    override fun clearAndReconfigureCMake(ticket: CompileActionGate.Ticket) {
+        compilerViewModel.clearAndReconfigureCMake(ticket)
     }
 
-    override fun configureOnlyCMake() {
-        compilerViewModel.configureOnlyCMake()
+    override fun configureOnlyCMake(ticket: CompileActionGate.Ticket) {
+        compilerViewModel.configureOnlyCMake(ticket)
     }
 }
 

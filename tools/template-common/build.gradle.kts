@@ -17,8 +17,13 @@ android {
 }
 
 dependencies {
+    testImplementation(libs.junit)
     api(project.dependencies.project(":xxpermissions-local"))
     api("androidx.fragment:fragment:1.8.8") {
         exclude(group = "org.jetbrains.kotlin")
     }
+}
+
+tasks.withType<JavaCompile>().configureEach {
+    options.encoding = "UTF-8"
 }

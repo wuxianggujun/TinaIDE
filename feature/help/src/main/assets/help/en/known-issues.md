@@ -46,15 +46,38 @@ Syntax highlighting showing new code does not prove that the run configuration l
 
 ## raylib runs but the screen stays black
 
-Use raylib 6.0 revision 2 and template 1.0.1. Updating TinaIDE alone does not replace an already installed library;
-reinstall the fixed package, clean the test project, and rebuild it. Existing projects are not rewritten by a template update.
-The old package accidentally enabled custom frame control, so `EndDrawing()` omitted normal buffer swapping and input polling.
+Use TinaIDE 0.18.39 or later, raylib 6.0 revision 3, and the current raylib template. Updating TinaIDE alone
+does not replace an already installed library. Refresh the package market, check for updates, install raylib,
+then clean and rebuild the test project. The upstream version can still read `6.0`; the package revision matters.
+Do not clear the IDE data or delete project sources. Replace any old raylib library copied into the project.
+
+Revision 1 accidentally enabled custom frame control, so `EndDrawing()` omitted normal buffer swapping and input polling.
+Revision 2 could deadlock while handling Android destruction after gesture Back, leaving the old process alive.
+Revision 3 fixes that event loop, including cancellation before a window is available. The host also reclaims a stuck
+graphical child process after an explicit exit without terminating the IDE. Old r1/r2 libraries are rejected
+during installation, launch preparation, and APK export.
+
+Starting in 0.18.39, one request owns saving, compilation, and the queued launch. Rapid Run taps do not queue
+additional windows. Use the separate Stop button to cancel a pending build or launch before starting another run.
+Refreshing the market also refreshes the live registry index, and updates compare revisions of the same upstream version.
+
+Games have no total runtime limit. The two-second guard applies only after an explicit exit; Home and ordinary
+backgrounding do not arm it. A new explicit Run replaces the previous graphical session.
+
+Updating the IDE does not modify previously exported standalone APKs. Export raylib/SDL3 projects again with
+the updated IDE to include the single-instance entry point and explicit-exit guard. Home still backgrounds
+the game without imposing a runtime limit.
+
+Update the SDL3 market template to 1.0.4 or later. For an existing project with a half-screen startup frame,
+pass `SDL_WINDOW_RESIZABLE` directly to `SDL_CreateWindowAndRenderer` rather than creating with `0` and then
+calling `SDL_SetWindowResizable`; this avoids conflicting orientation requests during startup.
 
 On Android, raylib's public `GetWindowHandle()` returns `NULL`; that value is not the underlying `ANativeWindow*`.
 The backend uses an EGL window surface, not an offscreen pbuffer. Rendering on the dedicated `native_app_glue` thread is normal;
 do not move EGL calls to the Android UI thread solely because the public handle is zero.
 
-If revision 2 is still black, record the device, Android version, package revision, actual EGL surface size/type,
+Verify visible animation and touch input, 20 successive runs with gesture Back, rapid Run taps, cancellation, and background recovery.
+If the current package is still black, record the device, Android version, package revision, actual EGL surface size/type,
 buffer-swap results, and a minimal project. Test IDE execution and an exported APK separately.
 An x86_64 emulator rendering successfully does not establish ARM64 device compatibility.
 

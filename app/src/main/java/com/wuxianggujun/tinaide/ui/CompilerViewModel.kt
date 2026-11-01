@@ -17,8 +17,10 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -46,55 +48,81 @@ class CompilerViewModel(
     val progress: StateFlow<CompileProjectUseCase.CompileProgress?> = _progress.asStateFlow()
 
     // Activity 暂时不可见时也要保留编译结果，恢复后只消费一次。
-    private val eventsChannel = Channel<CompileEvent>(capacity = Channel.BUFFERED)
+    private val eventsChannel = Channel<CompileEvent>(
+        capacity = Channel.BUFFERED,
+        onUndeliveredElement = { event ->
+            Timber.tag(TAG).w("Discarding undelivered compile result ticket=%s", event.ticket.id)
+            event.ticket.finish()
+        },
+    )
     val events = eventsChannel.receiveAsFlow()
+
+    val actionGate = CompileActionGate()
+    // Keep the second event queue with the ViewModel too: rotation must not orphan a ticket.
+    internal val uiEventsChannel = Channel<CompileActionsHelper.UiEvent>(
+        capacity = Channel.BUFFERED,
+        onUndeliveredElement = CompileActionsHelper.UiEvent::releaseUndeliveredLaunch,
+    )
 
     private var compileJob: Job? = null
 
     fun compile(
-        operation: CompileProjectUseCase.Operation = CompileProjectUseCase.Operation.forRun()
+        operation: CompileProjectUseCase.Operation = CompileProjectUseCase.Operation.forRun(),
+        ticket: CompileActionGate.Ticket? = null,
     ) {
-        launchOperation(operation.action) {
+        val request = ticket ?: actionGate.tryBegin() ?: return
+        launchOperation(operation.action, request) {
             compileUseCase.execute(
                 operation = operation,
-                onProgress = { p -> _progress.value = p }
+                onProgress = { p -> if (request.isCurrent) _progress.value = p }
             )
         }
     }
 
-    fun reconfigureCMake() {
-        runCMakeMaintenance(CompileProjectUseCase.Action.CMAKE_RECONFIGURE)
+    fun reconfigureCMake(ticket: CompileActionGate.Ticket? = null) {
+        runCMakeMaintenance(CompileProjectUseCase.Action.CMAKE_RECONFIGURE, ticket)
     }
 
-    fun clearCMakeBuildDirectory() {
-        runCMakeMaintenance(CompileProjectUseCase.Action.CMAKE_CLEAR_BUILD_DIRECTORY)
+    fun clearCMakeBuildDirectory(ticket: CompileActionGate.Ticket? = null) {
+        runCMakeMaintenance(CompileProjectUseCase.Action.CMAKE_CLEAR_BUILD_DIRECTORY, ticket)
     }
 
-    fun clearAndReconfigureCMake() {
-        runCMakeMaintenance(CompileProjectUseCase.Action.CMAKE_CLEAR_AND_RECONFIGURE)
+    fun clearAndReconfigureCMake(ticket: CompileActionGate.Ticket? = null) {
+        runCMakeMaintenance(CompileProjectUseCase.Action.CMAKE_CLEAR_AND_RECONFIGURE, ticket)
     }
 
-    fun configureOnlyCMake() {
-        runCMakeMaintenance(CompileProjectUseCase.Action.CMAKE_CONFIGURE_ONLY)
+    fun configureOnlyCMake(ticket: CompileActionGate.Ticket? = null) {
+        runCMakeMaintenance(CompileProjectUseCase.Action.CMAKE_CONFIGURE_ONLY, ticket)
     }
 
-    private fun runCMakeMaintenance(action: CompileProjectUseCase.Action) {
-        launchOperation(action) {
+    private fun runCMakeMaintenance(action: CompileProjectUseCase.Action, ticket: CompileActionGate.Ticket?) {
+        val request = ticket ?: actionGate.tryBegin() ?: return
+        launchOperation(action, request) {
             compileUseCase.executeCMakeMaintenance(action)
         }
     }
 
     private fun launchOperation(
         action: CompileProjectUseCase.Action,
+        ticket: CompileActionGate.Ticket,
         operation: suspend () -> CompileProjectUseCase.Result
     ) {
-        compileJob?.cancel()
+        if (!ticket.startCompilation()) return
+        val previousJob = compileJob
         val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
             val runningJob = currentCoroutineContext().job
+            var resultQueued = false
             try {
-                when (val result = operation()) {
+                // Cancellation may still be unwinding native/compiler resources.
+                previousJob?.cancelAndJoin()
+                currentCoroutineContext().ensureActive()
+                if (!ticket.isCurrent) return@launch
+                val result = operation()
+                currentCoroutineContext().ensureActive()
+                if (!ticket.isCurrent) return@launch
+                when (result) {
                     is CompileProjectUseCase.Result.Success -> {
-                        eventsChannel.send(CompileEvent.Success(result.report))
+                        eventsChannel.send(CompileEvent.Success(result.report, ticket))
                     }
 
                     is CompileProjectUseCase.Result.Error -> {
@@ -102,25 +130,32 @@ class CompilerViewModel(
                             CompileEvent.Error(
                                 action = result.action,
                                 message = result.userMessage,
-                                throwable = result.throwable
+                                throwable = result.throwable,
+                                ticket = ticket,
                             )
                         )
                     }
                 }
-            } catch (_: CancellationException) {
-                // 操作被取消，不发送任何事件
+                resultQueued = true
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (t: Throwable) {
                 // 避免未处理异常沿 viewModelScope 冒泡到主线程并导致应用崩溃。
                 Timber.tag(TAG).e(t, "Compile operation failed unexpectedly: %s", action)
-                eventsChannel.send(
-                    CompileEvent.Error(
-                        action = action,
-                        message = t.message?.takeIf { it.isNotBlank() }
-                            ?: Strings.error_unknown_generic.str(),
-                        throwable = t
+                if (ticket.isCurrent) {
+                    eventsChannel.send(
+                        CompileEvent.Error(
+                            action = action,
+                            message = t.message?.takeIf { it.isNotBlank() }
+                                ?: Strings.error_unknown_generic.str(),
+                            throwable = t,
+                            ticket = ticket,
+                        )
                     )
-                )
+                    resultQueued = true
+                }
             } finally {
+                if (!resultQueued) ticket.finish()
                 if (compileJob === runningJob) {
                     compileJob = null
                 }
@@ -170,8 +205,8 @@ class CompilerViewModel(
     suspend fun getAvailableTargets() = compileUseCase.getAvailableTargets()
 
     fun cancelCompile() {
+        actionGate.cancel()
         compileJob?.cancel()
-        compileJob = null
     }
 
     /**
@@ -179,8 +214,7 @@ class CompilerViewModel(
      */
     fun stopRunningProgram() {
         // 先取消编译任务
-        compileJob?.cancel()
-        compileJob = null
+        cancelCompile()
         // 然后停止进程（直接使用 ProcessManager）
         if (processManager.isRunning()) {
             processManager.stopCurrentProcess()
@@ -192,8 +226,7 @@ class CompilerViewModel(
      */
     fun forceStopRunningProgram() {
         // 先取消编译任务
-        compileJob?.cancel()
-        compileJob = null
+        cancelCompile()
         // 然后强制停止进程
         if (processManager.isRunning()) {
             processManager.forceStopCurrentProcess()
@@ -203,8 +236,7 @@ class CompilerViewModel(
     override fun onCleared() {
         super.onCleared()
         // ViewModel 被清理时，取消编译任务
-        compileJob?.cancel()
-        compileJob = null
+        cancelCompile()
         // TerminalActivity 的 PTY 由 ITerminalSessionManager 独立管理，这里不能跨边界清理。
     }
 
@@ -214,10 +246,16 @@ class CompilerViewModel(
 }
 
 sealed class CompileEvent {
-    data class Success(val report: CompileProjectUseCase.Report) : CompileEvent()
+    abstract val ticket: CompileActionGate.Ticket
+
+    data class Success(
+        val report: CompileProjectUseCase.Report,
+        override val ticket: CompileActionGate.Ticket,
+    ) : CompileEvent()
     data class Error(
         val action: CompileProjectUseCase.Action,
         val message: String,
-        val throwable: Throwable?
+        val throwable: Throwable?,
+        override val ticket: CompileActionGate.Ticket,
     ) : CompileEvent()
 }

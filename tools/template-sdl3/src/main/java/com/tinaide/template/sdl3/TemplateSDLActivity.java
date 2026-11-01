@@ -1,9 +1,11 @@
 package com.tinaide.template.sdl3;
 
 import android.os.Bundle;
+import android.os.Process;
 import android.view.Window;
 
 import com.tinaide.template.common.TemplatePermissionFlow;
+import com.tinaide.template.common.TemplateRuntimeExitGuard;
 
 import org.libsdl.app.SDLActivity;
 
@@ -15,6 +17,9 @@ import org.libsdl.app.SDLActivity;
 public class TemplateSDLActivity extends SDLActivity {
 
     private TemplatePermissionFlow permissionFlow;
+    private final TemplateRuntimeExitGuard exitGuard = new TemplateRuntimeExitGuard(
+        () -> Process.killProcess(Process.myPid())
+    );
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -37,6 +42,32 @@ public class TemplateSDLActivity extends SDLActivity {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus) {
             setWindowStyle(true);
+        }
+    }
+
+    @Override
+    protected void performSystemBack() {
+        finish();
+    }
+
+    @Override
+    public void finish() {
+        exitGuard.requestExit();
+        super.finish();
+    }
+
+    @Override
+    protected void onDestroy() {
+        boolean exiting = isFinishing() && !isChangingConfigurations();
+        if (exiting) {
+            exitGuard.requestExit();
+        }
+        try {
+            super.onDestroy();
+        } finally {
+            if (exiting) {
+                exitGuard.onDestroyed();
+            }
         }
     }
 }

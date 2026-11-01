@@ -63,6 +63,8 @@ docker/proot-rootfs/output/
 docker/proot-build/output/
 # Rsync build outputs (intermediate build artifacts)
 docker/rsync-build/output/
+# raylib intermediate build archives duplicate the canonical Registry archives.
+docker/tinaide-pkg/output/raylib/
 
 # PRoot assets
 # 注意：proot 二进制文件和 libtalloc 需要提交到仓库以支持 CI/CD 构建

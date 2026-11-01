@@ -192,6 +192,7 @@ private fun rememberMainActivityTopBarCallbacks(
         onOpenCommandPalette = onOpenCommandPalette,
         onBuild = { compileDelegate.onBuildProject() },
         onCompile = { compileDelegate.onCompileProject() },
+        onStopCompile = { compileDelegate.onStopCompile() },
         onRebuildAndRun = { compileDelegate.onRebuildAndRunProject() },
         onCompileInTerminal = { compileDelegate.onCompileInTerminal() },
         onDebug = { compileDelegate.onDebugProject() },

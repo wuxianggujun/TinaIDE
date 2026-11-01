@@ -3,9 +3,6 @@ package com.wuxianggujun.tinaide.ui.sdl
 import android.annotation.SuppressLint
 import android.content.pm.ActivityInfo
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
-import android.os.Process
 import android.os.SystemClock
 import android.view.ViewGroup
 import android.widget.Toast
@@ -33,7 +30,6 @@ class ExternalSdl2Activity : SDLActivity() {
     companion object {
         private const val TAG = "ExternalSdl2Activity"
         private const val DOUBLE_BACK_EXIT_INTERVAL_MS = 2000L
-        private const val NATIVE_QUIT_GRACE_PERIOD_MS = 800L
     }
 
     private var sdlLibraryPath: String = ""
@@ -46,21 +42,17 @@ class ExternalSdl2Activity : SDLActivity() {
     private var enableFloatingLog: Boolean = false
     private var lastBackPressTime: Long = 0L
     private val runtimeHost = GraphicalRuntimeActivityHost(this, TAG)
-    private val finishHandler = Handler(Looper.getMainLooper())
-    private val forceFinishAfterQuitTimeout = Runnable {
-        if (isFinishing || isDestroyed) return@Runnable
-        Timber.tag(TAG).w(
-            "SDL thread did not exit within %d ms after quit request, forcing finish",
-            NATIVE_QUIT_GRACE_PERIOD_MS
-        )
-        finish()
-    }
 
     @Volatile private var nativeShutdownRequested = false
 
     // region Lifecycle
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        if (!runtimeHost.onPreCreate(savedInstanceState, intent)) {
+            super.onCreate(savedInstanceState)
+            return
+        }
+        runtimeHost.requestReturnToParentOnFinish()
         sdlLibraryPath = intent.getStringExtra(ExternalSdlActivity.EXTRA_SDL_LIBRARY_PATH).orEmpty()
         mainLibraryPath = intent.getStringExtra(ExternalSdlActivity.EXTRA_MAIN_LIBRARY_PATH).orEmpty()
         requiredSdlMajor = intent.getIntExtra(ExternalSdlActivity.EXTRA_REQUIRED_SDL_MAJOR, 0)
@@ -85,13 +77,11 @@ class ExternalSdl2Activity : SDLActivity() {
         if (validationError != null) {
             Toast.makeText(this, validationError, Toast.LENGTH_LONG).show()
             finish()
+            super.onCreate(savedInstanceState)
             return
         }
 
         applySdlOrientation()
-        runtimeHost.onPreCreate(savedInstanceState, intent)
-        runtimeHost.requestReturnToParentOnFinish()
-
         super.onCreate(savedInstanceState)
         attachRuntimeOverlay()
     }
@@ -117,22 +107,15 @@ class ExternalSdl2Activity : SDLActivity() {
     }
 
     override fun onDestroy() {
-        val shouldTerminateRuntimeProcess = isFinishing && !isChangingConfigurations
-        finishHandler.removeCallbacks(forceFinishAfterQuitTimeout)
+        runtimeHost.onBeforeDestroy()
         try {
             super.onDestroy()
         } finally {
-            try {
-                runtimeHost.onDestroy()
-            } finally {
-                // System.load keeps user libraries resident; each run needs a fresh process.
-                if (shouldTerminateRuntimeProcess) Process.killProcess(Process.myPid())
-            }
+            runtimeHost.onDestroy()
         }
     }
 
     override fun finish() {
-        finishHandler.removeCallbacks(forceFinishAfterQuitTimeout)
         runtimeHost.onFinish()
         super.finish()
     }
@@ -175,6 +158,10 @@ class ExternalSdl2Activity : SDLActivity() {
      *   悬浮球的退出按钮始终可用作备选退出方式。
      */
     override fun handleBackPressed() {
+        if (mBrokenLibraries || isFinishing) {
+            finish()
+            return
+        }
         val trapBack = nativeGetHintBoolean("SDL_ANDROID_TRAP_BACK_BUTTON", false)
         if (!trapBack) {
             exitToParent()
@@ -257,41 +244,11 @@ class ExternalSdl2Activity : SDLActivity() {
      * 这样可以避免 `surfaceDestroyed -> SDL_DestroyRenderer` 的 Android Surface 生命周期竞态。
      */
     private fun exitToParent() {
-        requestNativeShutdown(
-            reason = "returning to parent",
-        )
-    }
-
-    private fun requestNativeShutdown(
-        reason: String,
-    ) {
-        if (isFinishing) return
-
-        val sdlThread = mSDLThread
-        if (sdlThread == null || !sdlThread.isAlive) {
-            finish()
-            return
-        }
-
         if (nativeShutdownRequested) return
         nativeShutdownRequested = true
-        val quitRequested = runCatching {
-            Timber.tag(TAG).i("Requesting SDL quit before %s", reason)
-            nativeSendQuit()
-        }.onFailure { throwable ->
-            Timber.tag(TAG).w(throwable, "Failed to send SDL quit event before %s", reason)
-        }.isSuccess
-
-        if (!quitRequested) {
-            finish()
-            return
+        runtimeHost.requestExit {
+            if (mSDLThread?.isAlive == true) nativeSendQuit() else finish()
         }
-
-        finishHandler.removeCallbacks(forceFinishAfterQuitTimeout)
-        finishHandler.postDelayed(
-            forceFinishAfterQuitTimeout,
-            NATIVE_QUIT_GRACE_PERIOD_MS
-        )
     }
 
     private fun applySdlOrientation() {
@@ -317,6 +274,7 @@ class ExternalSdl2Activity : SDLActivity() {
             container = container,
             enableFloatingLog = enableFloatingLog,
             onExit = ::exitToParent,
+            onBack = ::handleBackPressed,
         )
     }
 

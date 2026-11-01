@@ -2,6 +2,7 @@
 agp = "9.2.1"
 kotlin = "2.2.20"
 androidxAnnotation = "1.9.1"
+androidxCore = "1.17.0"
 androidxCoreSplashscreen = "1.0.1"
 compose = "2026.05.01"
 lifecycle = "2.10.0"
@@ -36,7 +37,8 @@ bytehook = "1.1.2"
 # AndroidX libraries
 androidx-annotation = { module = "androidx.annotation:annotation", version.ref = "androidxAnnotation" }
 androidx-collection = { module = "androidx.collection:collection", version = "1.5.0" }
-androidx-core-ktx = { module = "androidx.core:core-ktx", version = "1.17.0" }
+androidx-core = { module = "androidx.core:core", version.ref = "androidxCore" }
+androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "androidxCore" }
 androidx-core-splashscreen = { module = "androidx.core:core-splashscreen", version.ref = "androidxCoreSplashscreen" }
 androidx-appcompat = { module = "androidx.appcompat:appcompat", version = "1.7.1" }
 androidx-activity = { module = "androidx.activity:activity", version = "1.12.2" }

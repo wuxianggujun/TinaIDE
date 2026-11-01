@@ -93,15 +93,48 @@ class NativeActivityHostContractTest {
 
             val nativeDestroyIndex = source.indexOf("super.onDestroy()")
             val sharedHostDestroyIndex = source.indexOf("runtimeHost.onDestroy()")
-            val processTerminationIndex = source.indexOf("Process.killProcess(Process.myPid())")
+            val beforeDestroyIndex = source.indexOf("runtimeHost.onBeforeDestroy()")
             assertThat(nativeDestroyIndex).isAtLeast(0)
             assertThat(sharedHostDestroyIndex).isGreaterThan(nativeDestroyIndex)
-            assertThat(source).contains("isFinishing && !isChangingConfigurations")
-            assertThat(processTerminationIndex).isGreaterThan(sharedHostDestroyIndex)
+            assertThat(beforeDestroyIndex).isAtLeast(0)
+            assertThat(beforeDestroyIndex).isLessThan(nativeDestroyIndex)
+            assertThat(source).doesNotContain("Process.killProcess(")
+            assertThat(source).doesNotContain("forceFinishAfterQuitTimeout")
         }
 
         val nativeActivitySource = activitySources.last()
         assertThat(nativeActivitySource).doesNotContain("FLAG_ACTIVITY_CLEAR_TOP")
+    }
+
+    @Test
+    fun `shared exit watchdog is armed before blocking callbacks but never for normal backgrounding`() {
+        val source = projectFile(
+            "app/src/main/java/com/wuxianggujun/tinaide/ui/runtime/GraphicalRuntimeActivityHost.kt",
+            "src/main/java/com/wuxianggujun/tinaide/ui/runtime/GraphicalRuntimeActivityHost.kt",
+        ).readText(Charsets.UTF_8)
+        val finish = source.substringAfter("fun onFinish()").substringBefore("fun onBeforeDestroy()")
+        val destroy = source.substringAfter("fun onBeforeDestroy()").substringBefore("fun onDestroy()")
+
+        assertThat(finish).contains("exitGuard.requestExit()")
+        assertThat(destroy).contains("activity.isFinishing && !activity.isChangingConfigurations")
+        assertThat(destroy).contains("exitGuard.requestExit()")
+        assertThat(source.substringBefore("fun requestExit(")).doesNotContain("exitGuard.requestExit()")
+        assertThat(source.substringAfter("fun onDestroy()")).contains("exitGuard.onDestroyed()")
+    }
+
+    @Test
+    fun `every graphical engine waits for old processes before staging and acknowledges startup`() {
+        val source = projectFile(
+            "app/src/main/java/com/wuxianggujun/tinaide/ui/ContextCompileGraphicalRuntimeLauncher.kt",
+            "src/main/java/com/wuxianggujun/tinaide/ui/ContextCompileGraphicalRuntimeLauncher.kt",
+        ).readText(Charsets.UTF_8)
+
+        assertThat(source.indexOf("stopPrevious()")).isAtLeast(0)
+        assertThat(source.indexOf("stopPrevious()")).isLessThan(source.indexOf("ContextCompileNativeActivityLauncher(context"))
+        assertThat(source.indexOf("stopPrevious()")).isLessThan(source.indexOf("ContextCompileSdlLauncher(context"))
+        assertThat(source).contains("graphical_runtime_previous_process_not_stopped")
+        assertThat(source).contains("launchMutex.tryLock()")
+        assertThat(source).contains("signal.awaitStarted()")
     }
 
     @Test

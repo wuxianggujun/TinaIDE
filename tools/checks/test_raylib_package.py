@@ -1,4 +1,4 @@
-"""Regression checks for the Android raylib package's standard frame loop."""
+"""Regression checks for the Android raylib package's frame loop and shutdown."""
 
 from pathlib import Path
 import hashlib
@@ -15,6 +15,8 @@ BUILDER = ROOT / "docker/tinaide-pkg/libs/build-raylib.sh"
 PACKAGER = ROOT / "docker/tinaide-pkg/package-native-library.sh"
 OUTPUT = ROOT / "docker/tinaide-pkg/output"
 ABIS = ("arm64-v8a", "x86_64")
+LIFECYCLE_PATCH = ROOT / "docker/tinaide-pkg/patches/raylib-android-destroy.patch"
+LIFECYCLE_MARKER = "PLATFORM: ANDROID: Initialized successfully (TinaIDE lifecycle r3)"
 
 
 class RaylibPackageTest(unittest.TestCase):
@@ -26,7 +28,22 @@ class RaylibPackageTest(unittest.TestCase):
     def test_fixed_package_has_a_new_revision(self):
         source = PACKAGER.read_text(encoding="utf-8")
         raylib_case = source.split("    raylib)", 1)[1].split(";;", 1)[0]
-        self.assertRegex(raylib_case, r"PACKAGE_REVISION=2\b")
+        self.assertRegex(raylib_case, r"PACKAGE_REVISION=3\b")
+
+    def test_build_applies_destroy_lifecycle_fix_before_configuring(self):
+        source = BUILDER.read_text(encoding="utf-8")
+        self.assertIn("raylib-android-destroy.patch", source)
+        self.assertIn('apply --check "$LIFECYCLE_PATCH"', source)
+        self.assertLess(source.index('apply "$LIFECYCLE_PATCH"'), source.index('cmake -B'))
+        dockerfile = (BUILDER.parents[1] / "Dockerfile").read_text(encoding="utf-8")
+        self.assertIn("COPY patches/ /build/patches/", dockerfile)
+
+    def test_destroy_exits_polling_and_aborts_startup_without_a_window(self):
+        patch = LIFECYCLE_PATCH.read_text(encoding="utf-8")
+        self.assertRegex(patch, r"CORE\.Window\.shouldClose = true;\n\+\s+//[^\n]+\n\+\s+break;")
+        self.assertIn("+            if (platform.app->destroyRequested != 0)", patch)
+        self.assertIn("+                return -1;", patch)
+        self.assertIn(LIFECYCLE_MARKER, patch)
 
     def test_tracked_registry_archives_have_fixed_metadata_and_checksums(self):
         for suffix, expected_abis in (("", ABIS), *((f"-{abi}", (abi,)) for abi in ABIS)):
@@ -42,7 +59,7 @@ class RaylibPackageTest(unittest.TestCase):
                     metadata = json.load(archive.extractfile("./package.json"))
                     self.assertEqual(metadata["id"], "raylib")
                     self.assertEqual(metadata["version"], "6.0")
-                    self.assertEqual(metadata["packageRevision"], 2)
+                    self.assertEqual(metadata["packageRevision"], 3)
                     self.assertEqual(metadata["abis"], list(expected_abis))
                     self.assertEqual(
                         metadata["upstreamCommit"],
@@ -56,17 +73,16 @@ class RaylibPackageTest(unittest.TestCase):
                     for name in ("LICENSE.txt", "include/raylib.h", "lib/cmake/raylib/raylibConfig.cmake"):
                         self.assertGreater(archive.getmember("./" + name).size, 0)
 
-    def test_build_and_registry_archives_contain_the_same_library(self):
+    def test_single_abi_and_universal_archives_contain_the_same_fixed_library(self):
         with tarfile.open(OUTPUT / "registry/raylib/6.0/raylib.tar.xz") as universal:
             for abi in ABIS:
                 with self.subTest(abi=abi):
-                    with tarfile.open(OUTPUT / f"raylib/{abi}/raylib-{abi}-shared.tar.xz") as build:
-                        expected_library = build.extractfile("lib/libraylib.so").read()
                     with tarfile.open(OUTPUT / f"registry/raylib/6.0/raylib-{abi}.tar.xz") as registry:
-                        self.assertEqual(expected_library, registry.extractfile(f"./lib/{abi}/libraylib.so").read())
+                        expected_library = registry.extractfile(f"./lib/{abi}/libraylib.so").read()
+                    self.assertIn(LIFECYCLE_MARKER.encode("utf-8"), expected_library)
                     self.assertEqual(expected_library, universal.extractfile(f"./lib/{abi}/libraylib.so").read())
 
-    def run_contract_check(self, *, frame_calls: tuple[str, ...], objdump_exit: int = 0):
+    def run_contract_check(self, *, frame_calls: tuple[str, ...], objdump_exit: int = 0, lifecycle_fixed: bool = True):
         # Run only the existing validation function, never the /output packaging flow.
         source = PACKAGER.read_text(encoding="utf-8")
         function = re.search(
@@ -76,11 +92,14 @@ class RaylibPackageTest(unittest.TestCase):
         )
         self.assertIsNotNone(function)
         disassembly = "\n".join(f"  1234: call <{name}@plt>" for name in frame_calls)
+        lifecycle_string = LIFECYCLE_MARKER if lifecycle_fixed else "PLATFORM: ANDROID: Initialized successfully"
         fixture = f"""
 set -euo pipefail
 readelf() {{
     if [ "$1" = "-dW" ]; then
         printf '%s\\n' 'Library soname: [libraylib.so]'
+    elif [ "$1" = "--string-dump=.rodata" ]; then
+        printf '%s\\n' '{lifecycle_string}'
     else
         printf '%s\\n' \\
             '1: 00001000 128 FUNC GLOBAL DEFAULT 13 ANativeActivity_onCreate' \\
@@ -123,6 +142,13 @@ verify_raylib_runtime_contract fixture.so
             with self.subTest(call=call):
                 result = self.run_contract_check(frame_calls=(call,))
                 self.assertNotEqual(result.returncode, 0)
+
+    def test_packager_rejects_r2_even_when_it_draws_frames(self):
+        result = self.run_contract_check(
+            frame_calls=("SwapScreenBuffer", "PollInputEvents"), lifecycle_fixed=False,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("lifecycle", result.stderr)
 
     def test_packager_does_not_ignore_disassembler_failure(self):
         result = self.run_contract_check(

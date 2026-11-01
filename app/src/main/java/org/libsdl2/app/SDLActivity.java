@@ -206,6 +206,8 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
 
     /** If shared libraries (e.g. SDL or the native application) could not be loaded. */
     public static boolean mBrokenLibraries = true;
+    // Per-Activity: a revoked launch must never mutate another run's SDL globals.
+    private boolean mNativeInitializationSkipped;
 
     // Main components
     protected static SDLActivity mSingleton;
@@ -356,6 +358,10 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         Log.v(TAG, "Model: " + Build.MODEL);
         Log.v(TAG, "onCreate()");
         super.onCreate(savedInstanceState);
+        if (isFinishing()) {
+            mNativeInitializationSkipped = true;
+            return;
+        }
 
         try {
             Thread.currentThread().setName("SDLActivity");
@@ -466,10 +472,11 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     }
 
     protected void pauseNativeThread() {
+        if (mNativeInitializationSkipped) return;
         mNextNativeState = NativeState.PAUSED;
         mIsResumedCalled = false;
 
-        if (SDLActivity.mBrokenLibraries) {
+        if (mNativeInitializationSkipped || SDLActivity.mBrokenLibraries) {
             return;
         }
 
@@ -477,10 +484,11 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     }
 
     protected void resumeNativeThread() {
+        if (mNativeInitializationSkipped) return;
         mNextNativeState = NativeState.RESUMED;
         mIsResumedCalled = true;
 
-        if (SDLActivity.mBrokenLibraries) {
+        if (mNativeInitializationSkipped || SDLActivity.mBrokenLibraries) {
            return;
         }
 
@@ -492,6 +500,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     protected void onPause() {
         Log.v(TAG, "onPause()");
         super.onPause();
+        if (mNativeInitializationSkipped) return;
 
         if (mHIDDeviceManager != null) {
             mHIDDeviceManager.setFrozen(true);
@@ -505,6 +514,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     protected void onResume() {
         Log.v(TAG, "onResume()");
         super.onResume();
+        if (mNativeInitializationSkipped) return;
 
         if (mHIDDeviceManager != null) {
             mHIDDeviceManager.setFrozen(false);
@@ -567,7 +577,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         super.onWindowFocusChanged(hasFocus);
         Log.v(TAG, "onWindowFocusChanged(): " + hasFocus);
 
-        if (SDLActivity.mBrokenLibraries) {
+        if (mNativeInitializationSkipped || SDLActivity.mBrokenLibraries) {
            return;
         }
 
@@ -593,7 +603,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         Log.v(TAG, "onLowMemory()");
         super.onLowMemory();
 
-        if (SDLActivity.mBrokenLibraries) {
+        if (mNativeInitializationSkipped || SDLActivity.mBrokenLibraries) {
            return;
         }
 
@@ -605,7 +615,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         Log.v(TAG, "onConfigurationChanged()");
         super.onConfigurationChanged(newConfig);
 
-        if (SDLActivity.mBrokenLibraries) {
+        if (mNativeInitializationSkipped || SDLActivity.mBrokenLibraries) {
            return;
         }
 
@@ -618,6 +628,10 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     @Override
     protected void onDestroy() {
         Log.v(TAG, "onDestroy()");
+        if (mNativeInitializationSkipped) {
+            super.onDestroy();
+            return;
+        }
 
         if (mHIDDeviceManager != null) {
             HIDDeviceManager.release(mHIDDeviceManager);
@@ -626,7 +640,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
 
         SDLAudioManager.release(this);
 
-        if (SDLActivity.mBrokenLibraries) {
+        if (mNativeInitializationSkipped || SDLActivity.mBrokenLibraries) {
            super.onDestroy();
            return;
         }
@@ -656,7 +670,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     }
 
     protected void handleBackPressed() {
-        if (SDLActivity.mBrokenLibraries) {
+        if (mNativeInitializationSkipped || SDLActivity.mBrokenLibraries) {
             performSystemBack();
             return;
         }
@@ -708,7 +722,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
 
-        if (SDLActivity.mBrokenLibraries) {
+        if (mNativeInitializationSkipped || SDLActivity.mBrokenLibraries) {
            return false;
         }
 
@@ -1688,6 +1702,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     };
 
     public void onSystemUiVisibilityChange(int visibility) {
+        if (mNativeInitializationSkipped) return;
         if (SDLActivity.mFullscreenModeActive && ((visibility & View.SYSTEM_UI_FLAG_FULLSCREEN) == 0 || (visibility & View.SYSTEM_UI_FLAG_HIDE_NAVIGATION) == 0)) {
 
             Handler handler = getWindow().getDecorView().getHandler();
@@ -1841,6 +1856,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
 
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        if (mNativeInitializationSkipped) return;
         boolean result = (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED);
         nativePermissionResult(requestCode, result);
     }

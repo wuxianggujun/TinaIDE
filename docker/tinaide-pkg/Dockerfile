@@ -65,6 +65,7 @@ COPY build-common.sh /build/
 COPY build.sh /build/
 COPY package-native-library.sh /build/
 COPY libs/ /build/libs/
+COPY patches/ /build/patches/
 
 RUN chmod +x /build/build-common.sh /build/build.sh /build/package-native-library.sh && \
     chmod +x /build/libs/*.sh 2>/dev/null || true

@@ -23,10 +23,11 @@ class CompileRuntimeObserver(
     suspend fun handleCompileEvent(event: CompileEvent) {
         when (event) {
             is CompileEvent.Success -> {
-                compileActionsHelper.handleCompileSuccess(event)
-                fileTreeSynchronizer.refreshAndRevealExportedArtifact(
-                    event.report.artifact?.exportedPath
-                )
+                if (compileActionsHelper.handleCompileSuccess(event)) {
+                    fileTreeSynchronizer.refreshAndRevealExportedArtifact(
+                        event.report.artifact?.exportedPath
+                    )
+                }
             }
 
             is CompileEvent.Error -> compileActionsHelper.handleCompileError(event)

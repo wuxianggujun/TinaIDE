@@ -2,8 +2,13 @@ package com.wuxianggujun.tinaide.ui.runtime
 
 import android.app.Activity
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.ViewGroup
+import android.window.OnBackInvokedCallback
+import android.window.OnBackInvokedDispatcher
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.lifecycle.Lifecycle
@@ -27,12 +32,22 @@ import timber.log.Timber
 internal class GraphicalRuntimeActivityHost(
     private val activity: Activity,
     private val logTag: String,
+    private val exitGuard: GraphicalRuntimeExitGuard = GraphicalRuntimeExitGuard(
+        terminateProcess = { GraphicalRuntimeProcessController.terminateCurrent(activity) },
+    ),
 ) {
+    private val finishHandler = Handler(Looper.getMainLooper())
+    private val finishAfterQuit = Runnable {
+        if (!activity.isFinishing && !activity.isDestroyed) activity.finish()
+    }
+    private var quitRequested = false
+    private var launchRejected = false
     private val viewTreeOwner = GraphicalRuntimeViewTreeOwner()
     private var environmentOwnerId: String? = null
     private var prepared = false
     private var overlayAttached = false
     private var overlayView: ComposeView? = null
+    private var backCallback: OnBackInvokedCallback? = null
 
     @Volatile
     private var returnToParentOnFinish = false
@@ -44,8 +59,15 @@ internal class GraphicalRuntimeActivityHost(
     fun onPreCreate(
         savedInstanceState: Bundle?,
         launchIntent: Intent,
-    ) {
+    ): Boolean {
         check(!prepared) { "Graphical runtime host was prepared more than once" }
+        if (!GraphicalRuntimeLaunchSignal.claim(launchIntent)) {
+            launchRejected = true
+            Timber.tag(logTag).i("Ignoring cancelled or duplicate graphical launch")
+            // Do not arm the process guard: a newer Activity may own this process.
+            activity.finish()
+            return false
+        }
         viewTreeOwner.performRestore(savedInstanceState)
         LogProcessRegistry.recordCurrentProcess(activity)
 
@@ -57,6 +79,7 @@ internal class GraphicalRuntimeActivityHost(
         )
         NativeStdStreamRedirect.start()
         prepared = true
+        return true
     }
 
     /** Attaches the shared floating return control above the runtime's rendering surface. */
@@ -64,6 +87,7 @@ internal class GraphicalRuntimeActivityHost(
         container: ViewGroup,
         enableFloatingLog: Boolean,
         onExit: () -> Unit,
+        onBack: () -> Unit = onExit,
     ) {
         check(prepared) { "Graphical runtime host must be prepared before attaching its overlay" }
         check(!overlayAttached) { "Graphical runtime overlay was attached more than once" }
@@ -95,6 +119,14 @@ internal class GraphicalRuntimeActivityHost(
         )
         overlayView = composeView
         overlayAttached = true
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val callback = OnBackInvokedCallback { onBack() }
+            activity.onBackInvokedDispatcher.registerOnBackInvokedCallback(
+                OnBackInvokedDispatcher.PRIORITY_DEFAULT,
+                callback,
+            )
+            backCallback = callback
+        }
     }
 
     fun onStart() = dispatchOverlayEvent(Lifecycle.Event.ON_START)
@@ -113,8 +145,30 @@ internal class GraphicalRuntimeActivityHost(
         returnToParentOnFinish = true
     }
 
+    /** An explicit user exit; never called for Home, onPause or ordinary onStop. */
+    fun requestExit(requestNativeQuit: (() -> Unit)? = null) {
+        if (launchRejected || quitRequested || activity.isFinishing) return
+        quitRequested = true
+        exitGuard.requestExit()
+        if (requestNativeQuit == null) {
+            activity.finish()
+            return
+        }
+
+        // Give an engine its native quit event first, without racing Surface destruction.
+        // If JNI blocks the UI thread, the independent worker still reclaims the process.
+        finishHandler.postDelayed(finishAfterQuit, NATIVE_QUIT_GRACE_PERIOD_MS)
+        runCatching(requestNativeQuit).onFailure { error ->
+            Timber.tag(logTag).w(error, "Failed to request graphical engine shutdown")
+            activity.finish()
+        }
+    }
+
     /** Called by the Activity's finish override before super.finish(). */
     fun onFinish() {
+        if (launchRejected) return
+        finishHandler.removeCallbacks(finishAfterQuit)
+        exitGuard.requestExit()
         if (!returnToParentOnFinish || parentNavigationStarted || !activity.isTaskRoot) return
         parentNavigationStarted = true
         runCatching {
@@ -128,24 +182,42 @@ internal class GraphicalRuntimeActivityHost(
         }
     }
 
-    fun onDestroy() {
-        if (overlayAttached) {
-            viewTreeOwner.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
-            overlayView = null
-            overlayAttached = false
+    /** Must precede super.onDestroy(): native_app_glue / engine joins can block forever. */
+    fun onBeforeDestroy() {
+        finishHandler.removeCallbacks(finishAfterQuit)
+        if (!launchRejected && activity.isFinishing && !activity.isChangingConfigurations) exitGuard.requestExit()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            backCallback?.let(activity.onBackInvokedDispatcher::unregisterOnBackInvokedCallback)
+            backCallback = null
         }
-        viewTreeOwner.clear()
+    }
 
-        if (prepared) {
-            NativeStdStreamRedirect.stop()
-            environmentOwnerId?.let(NativeLaunchEnvironment::clear)
-            environmentOwnerId = null
-            prepared = false
+    fun onDestroy() {
+        try {
+            if (overlayAttached) {
+                viewTreeOwner.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
+                overlayView = null
+                overlayAttached = false
+            }
+            viewTreeOwner.clear()
+
+            if (prepared) {
+                NativeStdStreamRedirect.stop()
+                environmentOwnerId?.let(NativeLaunchEnvironment::clear)
+                environmentOwnerId = null
+                prepared = false
+            }
+        } finally {
+            if (!launchRejected && activity.isFinishing && !activity.isChangingConfigurations) exitGuard.onDestroyed()
         }
     }
 
     private fun dispatchOverlayEvent(event: Lifecycle.Event) {
         if (overlayAttached) viewTreeOwner.handleLifecycleEvent(event)
+    }
+
+    private companion object {
+        const val NATIVE_QUIT_GRACE_PERIOD_MS = 800L
     }
 }
 

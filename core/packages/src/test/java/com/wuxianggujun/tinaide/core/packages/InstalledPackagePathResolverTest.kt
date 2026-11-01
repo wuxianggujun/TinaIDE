@@ -6,6 +6,7 @@ import com.wuxianggujun.tinaide.core.packages.model.InstallType
 import com.wuxianggujun.tinaide.core.packages.model.Platform
 import com.wuxianggujun.tinaide.core.packages.store.LocalInstallStateStore
 import java.io.File
+import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -34,7 +35,7 @@ class InstalledPackagePathResolverTest {
     }
 
     @Test
-    fun `resolve exposes installed header and source package include and pkgconfig paths`() {
+    fun `resolve exposes installed header and source package include and pkgconfig paths`() = runTest {
         createHeaderPackage("nlohmann-json", "nlohmann/json.hpp")
         createSourcePackage("tinyxml2", "tinyxml2.h", "tinyxml2.cpp")
         createHeaderPackage("not-installed", "ignored.hpp")
@@ -78,7 +79,7 @@ class InstalledPackagePathResolverTest {
     }
 
     @Test
-    fun `resolve discovers libraries only for installed Android packages`() {
+    fun `resolve discovers libraries only for installed Android packages`() = runTest {
         val deviceAbi = Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"
         createBinaryPackage(
             packageId = "sdl3",
@@ -121,7 +122,7 @@ class InstalledPackagePathResolverTest {
     }
 
     @Test
-    fun `resolve ignores stale package directories without installed state`() {
+    fun `resolve ignores stale package directories without installed state`() = runTest {
         val deviceAbi = Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"
         createBinaryPackage(
             packageId = "stale-sdl3",

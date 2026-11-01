@@ -55,6 +55,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import com.wuxianggujun.tinaide.core.apkbuilder.ApkBuildConfig
+import com.wuxianggujun.tinaide.core.packages.RaylibRuntimePolicy
 import com.wuxianggujun.tinaide.core.apkbuilder.ApkBuilder
 import com.wuxianggujun.tinaide.core.apkbuilder.ApkKeyStoreManager
 import com.wuxianggujun.tinaide.core.apkbuilder.ApkSigningConfig
@@ -1174,6 +1175,14 @@ fun ApkPackageDialog(
                                 val outputFile = File(outputDir, "${appName.trim().replace(" ", "_")}.apk")
 
                                 scope.launch {
+                                    val supportedRuntime = withContext(Dispatchers.IO) {
+                                        config.soFiles.all(RaylibRuntimePolicy::isSupportedRuntimeLibrary)
+                                    }
+                                    if (!supportedRuntime) {
+                                        buildError = Strings.raylib_runtime_update_required.strOr(context)
+                                        isBuilding = false
+                                        return@launch
+                                    }
                                     val result = apkBuilder.build(config, outputFile) { progress ->
                                         when (progress) {
                                             is ApkBuilder.BuildProgress.Step -> {

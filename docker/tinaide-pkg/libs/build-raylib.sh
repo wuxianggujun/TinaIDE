@@ -23,6 +23,13 @@ setup_toolchain "$ARCH"
 SRC_DIR="/build/src/raylib-${VERSION}"
 git_checkout_exact "raysan5/raylib" "$SRC_DIR" "$REF" "$COMMIT"
 
+# The upstream Android loop must stop polling after APP_CMD_DESTROY. Otherwise
+# native_app_glue and the UI thread deadlock on gesture Back / Activity.finish().
+# git_checkout_exact resets tracked sources, so every build applies this once.
+LIFECYCLE_PATCH="${SCRIPT_DIR}/../patches/raylib-android-destroy.patch"
+git -C "$SRC_DIR" apply --check "$LIFECYCLE_PATCH"
+git -C "$SRC_DIR" apply "$LIFECYCLE_PATCH"
+
 BUILD_DIR="/build/build/raylib-${ARCH}"
 INSTALL_DIR="/build/install/raylib-${ARCH}"
 rm -rf "$BUILD_DIR" "$INSTALL_DIR"

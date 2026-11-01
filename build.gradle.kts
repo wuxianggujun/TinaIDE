@@ -54,6 +54,7 @@ tasks.register<Zip>("packageTerminalApkExportPlugin") {
 tasks.register("checkApkTemplatesSync") {
     description = "Verify that app/src/main/assets/apk_templates/*.apk are in sync with tools/template-*/src/"
     group = "verification"
+    mustRunAfter("buildApkTemplates")
 
     doLast {
         val targetDir = file("app/src/main/assets/apk_templates")

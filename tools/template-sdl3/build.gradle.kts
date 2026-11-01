@@ -47,8 +47,16 @@ android {
 
 dependencies {
     implementation(project.dependencies.project(":tools:template-common"))
+    // The shared SDL bridge uses ContextCompat.registerReceiver's API 33 flags.
+    implementation(libs.androidx.core)
 }
 
 tasks.withType<JavaCompile>().configureEach {
+    options.encoding = "UTF-8"
+    dependsOn(copySDLSources)
+}
+
+// AGP's built-in Kotlin compilation also reads the generated Java source roots.
+tasks.matching { it.name.startsWith("compile") && it.name.endsWith("Kotlin") }.configureEach {
     dependsOn(copySDLSources)
 }
