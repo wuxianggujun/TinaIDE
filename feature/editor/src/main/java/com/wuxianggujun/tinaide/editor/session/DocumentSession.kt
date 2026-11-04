@@ -16,8 +16,11 @@ import java.nio.file.Files
 import java.nio.file.attribute.BasicFileAttributes
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -92,11 +95,15 @@ class DocumentSession(
     file: File,
     private val projectSymbolIndexServiceProvider: () -> ProjectSymbolIndexService? = { null },
     initialViewState: EditorViewState? = null,
-    private val coroutineScope: CoroutineScope
+    private val coroutineScope: CoroutineScope,
+    private val verificationDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
     companion object {
-        private const val DUPLICATE_FILE_EVENT_WINDOW_MS = 250L
-        private const val INTERNAL_WRITE_SUPPRESS_WINDOW_MS = 1500L
+        /**
+         * 可疑文件事件先防抖再校验：同一原子替换在 inotify/FUSE 上常产生
+         * CLOSE_WRITE + MOVED_TO 事件对，外部工具也可能连续多次写同一个文件。
+         */
+        internal const val EXTERNAL_EVENT_DEBOUNCE_MS = 250L
         private const val FILE_WATCH_EVENTS =
             FileObserver.CLOSE_WRITE or FileObserver.MOVED_TO or FileObserver.DELETE or FileObserver.MOVED_FROM
         private const val MAX_SNAPSHOT_READ_ATTEMPTS = 8
@@ -168,7 +175,6 @@ class DocumentSession(
     private data class FileWriteMarker(
         val modifiedAt: Long,
         val fileSize: Long,
-        val observedAt: Long,
         val fileKey: String?,
     )
 
@@ -219,8 +225,7 @@ class DocumentSession(
     @Volatile
     private var lastInternalWriteMarker: FileWriteMarker? = readCurrentWriteMarker()
 
-    @Volatile
-    private var lastObservedWriteMarker: FileWriteMarker? = readCurrentWriteMarker()
+    private var externalEventVerificationJob: Job? = null
 
     private val _state = MutableStateFlow(
         DocumentSessionState(
@@ -321,17 +326,11 @@ class DocumentSession(
             try {
                 val draft = draftStore.read(file) ?: return@withLock null
                 val charset = Charset.forName(draft.charsetName)
-                val diskFingerprint = file.reader(FileCharsetDetector.detect(file)).use { reader ->
-                    var length = 0
-                    var hash = -0x340d631b8c4675d9L
-                    val buffer = CharArray(8192)
-                    while (true) {
-                        val count = reader.read(buffer)
-                        if (count < 0) break
-                        repeat(count) { hash = (hash xor buffer[it].code.toLong()) * 0x100000001b3L }
-                        length += count
-                    }
-                    TextFingerprint(length, hash)
+                val diskFingerprint = readDiskTextFingerprint(file, FileCharsetDetector.detect(file))
+                if (diskFingerprint == null) {
+                    recoveryDiscarded = true
+                    _state.update { it.copy(recoveryError = Strings.editor_recovery_failed.strOr(context)) }
+                    return@withLock null
                 }
                 val baseline = TextFingerprint(draft.baselineLength, draft.baselineHash)
                 if (buildTextFingerprint(draft.text) == diskFingerprint) {
@@ -445,7 +444,6 @@ class DocumentSession(
         val marker = readCurrentWriteMarker()
         if (marker != null) {
             lastInternalWriteMarker = marker
-            lastObservedWriteMarker = marker
         }
         _state.update {
             it.copy(
@@ -557,7 +555,6 @@ class DocumentSession(
         file = newFile
         val marker = readCurrentWriteMarker()
         lastInternalWriteMarker = marker
-        lastObservedWriteMarker = marker
         _state.update {
             it.copy(
                 file = newFile,
@@ -680,11 +677,10 @@ class DocumentSession(
                         writeFileSafely(targetFile, text)
                         val versionAfterWrite = binding?.currentDocumentVersion() ?: snapshotVersion
                         val timestamp = System.currentTimeMillis()
-                        val fileMarker = readWriteMarker(targetFile, timestamp)
+                        val fileMarker = readWriteMarker(targetFile)
                             ?: FileWriteMarker(
                                 modifiedAt = targetFile.lastModified(),
                                 fileSize = targetFile.length(),
-                                observedAt = timestamp,
                                 fileKey = null,
                             )
                         SaveSnapshot(
@@ -700,9 +696,7 @@ class DocumentSession(
                     cleanVersion = snapshot.documentVersion
                     cleanFingerprint = snapshot.fingerprint
                     baselineState = BaselineState.READY
-                    val internalMarker = snapshot.fileMarker
-                    lastInternalWriteMarker = internalMarker
-                    lastObservedWriteMarker = internalMarker
+                    lastInternalWriteMarker = snapshot.fileMarker
                     if (fileObserver == null) {
                         startFileWatcher()
                     }
@@ -819,19 +813,7 @@ class DocumentSession(
         }
 
         if (isSavingInternally) return
-
-        if (event and (FileObserver.DELETE or FileObserver.MOVED_FROM) != 0) {
-            val replacementMarker = readCurrentWriteMarker()
-            if (replacementMarker != null && shouldIgnoreInternalWrite(replacementMarker)) return
-            markExternalModification()
-            return
-        }
-
-        val marker = readCurrentWriteMarker() ?: return
-        if (shouldIgnoreInternalWrite(marker)) return
-        if (isDuplicateObservedWrite(marker)) return
-
-        markExternalModification()
+        scheduleExternalWriteVerification()
     }
 
     internal fun markExternalModification() {
@@ -852,7 +834,6 @@ class DocumentSession(
     fun acknowledgeExternalModification() {
         val marker = readCurrentWriteMarker()
         if (marker != null) {
-            lastObservedWriteMarker = marker
             // 用户已确认接受当前磁盘版本（或刚从磁盘重载），它就是新的已知基线；
             // 否则保存前的磁盘兜底比对会把确认过的版本再次判成外部修改。
             lastInternalWriteMarker = marker
@@ -891,7 +872,6 @@ class DocumentSession(
             val marker = readCurrentWriteMarker()
             if (marker != null) {
                 lastInternalWriteMarker = marker
-                lastObservedWriteMarker = marker
             }
 
             acknowledgeExternalModification()
@@ -963,6 +943,27 @@ class DocumentSession(
     }
 
     /**
+     * 流式读取磁盘文本并按 [buildTextFingerprint] 同一套 FNV-1a 参数计算指纹，
+     * 不物化整份文本，两条路径的结果可直接互相比较。读取失败返回 null。
+     */
+    private fun readDiskTextFingerprint(targetFile: File, charset: Charset): TextFingerprint? = try {
+        targetFile.reader(charset).use { reader ->
+            var length = 0
+            var hash = -0x340d631b8c4675d9L
+            val buffer = CharArray(8192)
+            while (true) {
+                val count = reader.read(buffer)
+                if (count < 0) break
+                repeat(count) { hash = (hash xor buffer[it].code.toLong()) * 0x100000001b3L }
+                length += count
+            }
+            TextFingerprint(length, hash)
+        }
+    } catch (_: Exception) {
+        null
+    }
+
+    /**
      * 优先走 binding 的分片指纹；不支持时回退到物化文本再逐字符计算。
      * 两条路径使用同一套 FNV-1a 参数，结果可互相比较。
      */
@@ -978,9 +979,9 @@ class DocumentSession(
     }
 
     private fun readCurrentWriteMarker(): FileWriteMarker? =
-        readWriteMarker(file, System.currentTimeMillis())
+        readWriteMarker(file)
 
-    private fun readWriteMarker(targetFile: File, observedAt: Long): FileWriteMarker? {
+    private fun readWriteMarker(targetFile: File): FileWriteMarker? {
         if (!targetFile.exists() || !targetFile.isFile) return null
         val attributes = runCatching {
             Files.readAttributes(targetFile.toPath(), BasicFileAttributes::class.java)
@@ -988,40 +989,69 @@ class DocumentSession(
         return FileWriteMarker(
             modifiedAt = attributes?.lastModifiedTime()?.toMillis() ?: targetFile.lastModified(),
             fileSize = attributes?.size() ?: targetFile.length(),
-            observedAt = observedAt,
             fileKey = attributes?.fileKey()?.toString(),
         )
     }
 
-    private fun isDuplicateObservedWrite(marker: FileWriteMarker): Boolean {
-        val previous = lastObservedWriteMarker
-        if (previous != null &&
-            previous.hasSameFileSignature(marker) &&
-            marker.observedAt - previous.observedAt in 0..DUPLICATE_FILE_EVENT_WINDOW_MS
-        ) {
-            return true
+    /**
+     * 可疑事件（签名与最近一次内部写入不一致，或文件短暂消失）不立即判定冲突，
+     * 而是防抖后重新核对磁盘状态与内容。事件投递可能被进程冻结、线程繁忙推迟
+     * 数秒甚至数分钟，任何依赖"事件到达时间"的判断都会把自家写入误判为外部修改。
+     */
+    private fun scheduleExternalWriteVerification() {
+        externalEventVerificationJob?.cancel()
+        externalEventVerificationJob = coroutineScope.launch(verificationDispatcher) {
+            delay(EXTERNAL_EVENT_DEBOUNCE_MS)
+            verifySuspiciousWrite()
         }
-        lastObservedWriteMarker = marker
-        return false
+    }
+
+    private fun verifySuspiciousWrite() {
+        val marker = readCurrentWriteMarker() ?: run {
+            // 磁盘文件已不存在：视为外部删除。
+            markExternalModification()
+            return
+        }
+        if (shouldIgnoreInternalWrite(marker)) return
+        val baseline = cleanFingerprint ?: run {
+            // 编辑器尚未挂载、基线未建立，无法用内容判定，保持保守策略。
+            markExternalModification()
+            return
+        }
+        val diskFingerprint = readDiskTextFingerprint(file, fileCharset)
+        if (diskFingerprint != null && diskFingerprint == baseline) {
+            // 磁盘内容与最近一次保存一致：只是元数据变化或补发事件，不算外部修改。
+            lastInternalWriteMarker = marker
+            return
+        }
+        markExternalModification()
     }
 
     /**
      * FUSE 上跨 uid 的写入（如 adb shell / 其他 App 直接 cp、mv）不一定向本进程
      * 投递 FileObserver 事件，只靠事件检测会漏。保存前用磁盘 stat 兜底比对：
-     * 当前签名与最近一次已知写入不同即视为外部修改——宁可弹冲突，也不静默覆盖。
+     * 当前签名与最近一次已知写入不同时，先用内容指纹复核——内容一致说明只是
+     * 元数据差异（touch / 保留内容的重写），放行保存；内容不同才算外部修改。
+     * 宁可多读一次文件，也不静默覆盖别人的改动。
      */
     private fun hasDiskDivergedFromLastKnownWrite(): Boolean {
         if (isSavingInternally) return false
         val current = readCurrentWriteMarker() ?: return false
         val known = lastInternalWriteMarker ?: return false
-        return !known.hasSameFileSignature(current)
+        if (known.hasSameFileSignature(current)) return false
+        val baseline = cleanFingerprint ?: return true
+        val diskFingerprint = readDiskTextFingerprint(file, fileCharset) ?: return true
+        if (diskFingerprint == baseline) {
+            lastInternalWriteMarker = current
+            return false
+        }
+        return true
     }
 
+    /** 磁盘签名与最近一次内部写入一致时，无论事件何时送达都视为自家写入。 */
     private fun shouldIgnoreInternalWrite(marker: FileWriteMarker): Boolean {
         val internal = lastInternalWriteMarker ?: return false
-        if (!internal.hasSameFileSignature(marker)) return false
-        val delta = marker.observedAt - internal.observedAt
-        return delta in 0..INTERNAL_WRITE_SUPPRESS_WINDOW_MS
+        return internal.hasSameFileSignature(marker)
     }
 
     private fun FileWriteMarker.hasSameFileSignature(other: FileWriteMarker): Boolean {

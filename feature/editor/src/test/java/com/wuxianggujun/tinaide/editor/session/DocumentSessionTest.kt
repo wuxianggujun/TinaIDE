@@ -8,9 +8,9 @@ import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.BasicFileAttributes
 import java.nio.file.attribute.FileTime
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
@@ -31,7 +31,7 @@ class DocumentSessionTest {
             file.delete()
 
             session.handleFileEvent(FileObserver.DELETE, file.name)
-            runCurrent()
+            advancePastExternalEventDebounce()
 
             assertThat(session.state.value.hasExternalModification).isTrue()
         } finally {
@@ -163,6 +163,7 @@ class DocumentSessionTest {
             assertThat(session.save(SaveReason.MANUAL)).isInstanceOf(SaveResult.Success::class.java)
 
             session.handleFileEvent(FileObserver.DELETE, file.name)
+            advancePastExternalEventDebounce()
 
             assertThat(file.exists()).isTrue()
             assertThat(session.state.value.hasExternalModification).isFalse()
@@ -197,7 +198,178 @@ class DocumentSessionTest {
             if (replacementKey == savedKey) return@runTest
 
             session.handleFileEvent(FileObserver.DELETE, file.name)
+            advancePastExternalEventDebounce()
 
+            assertThat(session.state.value.hasExternalModification).isTrue()
+        } finally {
+            session.stopFileWatcher()
+            file.delete()
+        }
+    }
+
+    @Test
+    fun ownSaveCloseWriteEventDeliveredLate_shouldNotReportExternalModification() = runTest {
+        val file = Files.createTempFile("document-session-late-own-event", ".txt").toFile()
+        file.writeText("old")
+        val session = createSession(file, this)
+        val binding = FakeEditorBinding(
+            text = "new",
+            canUndo = true,
+            canRedo = false,
+        )
+
+        try {
+            session.attachEditor(binding)
+            assertThat(session.save(SaveReason.MANUAL)).isInstanceOf(SaveResult.Success::class.java)
+
+            // 模拟进程冻结/事件线程繁忙：自家保存的 CLOSE_WRITE 事件在任意时间后被补发，
+            // 磁盘签名与最近一次内部写入一致，不应判为外部修改。
+            session.handleFileEvent(FileObserver.CLOSE_WRITE, file.name)
+            advancePastExternalEventDebounce()
+
+            assertThat(session.state.value.hasExternalModification).isFalse()
+
+            binding.setText("second edit")
+            session.notifyEditorContentChanged(canUndo = true, canRedo = false)
+            assertThat(session.save(SaveReason.MANUAL)).isInstanceOf(SaveResult.Success::class.java)
+        } finally {
+            session.stopFileWatcher()
+            file.delete()
+        }
+    }
+
+    @Test
+    fun externalRewriteWithIdenticalContent_shouldNotReportExternalModification() = runTest {
+        val file = Files.createTempFile("document-session-identical-rewrite", ".txt").toFile()
+        file.writeText("same")
+        val session = createSession(file, this)
+        val binding = FakeEditorBinding(
+            text = "same",
+            canUndo = false,
+            canRedo = false,
+        )
+
+        try {
+            session.attachEditor(binding)
+            session.markEditorSnapshotClean()
+
+            // 备份/同步类工具保留内容重写磁盘：内容与最近一次保存一致，
+            // 只有元数据（mtime）变化，不应弹出冲突。
+            file.writeText("same")
+            Files.setLastModifiedTime(file.toPath(), FileTime.fromMillis(System.currentTimeMillis() + 60_000L))
+            session.handleFileEvent(FileObserver.CLOSE_WRITE, file.name)
+            advancePastExternalEventDebounce()
+
+            assertThat(session.state.value.hasExternalModification).isFalse()
+
+            binding.setText("edited")
+            session.notifyEditorContentChanged(canUndo = true, canRedo = false)
+            assertThat(session.save(SaveReason.MANUAL)).isInstanceOf(SaveResult.Success::class.java)
+        } finally {
+            session.stopFileWatcher()
+            file.delete()
+        }
+    }
+
+    @Test
+    fun externalRewriteWithDifferentContent_shouldReportModification() = runTest {
+        val file = Files.createTempFile("document-session-external-content", ".txt").toFile()
+        file.writeText("old")
+        val session = createSession(file, this)
+        val binding = FakeEditorBinding(
+            text = "new",
+            canUndo = true,
+            canRedo = false,
+        )
+
+        try {
+            session.attachEditor(binding)
+            assertThat(session.save(SaveReason.MANUAL)).isInstanceOf(SaveResult.Success::class.java)
+
+            file.writeText("external")
+            session.handleFileEvent(FileObserver.CLOSE_WRITE, file.name)
+            advancePastExternalEventDebounce()
+
+            assertThat(session.state.value.hasExternalModification).isTrue()
+        } finally {
+            session.stopFileWatcher()
+            file.delete()
+        }
+    }
+
+    @Test
+    fun suspiciousEventWithoutBaseline_shouldMarkExternalModification() = runTest {
+        val file = Files.createTempFile("document-session-no-baseline", ".txt").toFile()
+        file.writeText("old")
+        val session = createSession(file, this)
+        try {
+            // 编辑器尚未挂载、基线未建立：保持保守策略，直接视为外部修改。
+            file.writeText("external")
+            session.handleFileEvent(FileObserver.CLOSE_WRITE, file.name)
+            advancePastExternalEventDebounce()
+
+            assertThat(session.state.value.hasExternalModification).isTrue()
+        } finally {
+            session.stopFileWatcher()
+            file.delete()
+        }
+    }
+
+    @Test
+    fun metadataOnlyTouchAfterSave_shouldNotBlockSave() = runTest {
+        val file = Files.createTempFile("document-session-metadata-touch", ".txt").toFile()
+        file.writeText("old")
+        val session = createSession(file, this)
+        val binding = FakeEditorBinding(
+            text = "new",
+            canUndo = true,
+            canRedo = false,
+        )
+
+        try {
+            session.attachEditor(binding)
+            assertThat(session.save(SaveReason.MANUAL)).isInstanceOf(SaveResult.Success::class.java)
+
+            // 跨 uid 写入不投递事件，只能靠保存前兜底比对；仅元数据变化（touch）
+            // 且内容与最近一次保存一致时，不应阻断保存。
+            Files.setLastModifiedTime(file.toPath(), FileTime.fromMillis(System.currentTimeMillis() + 60_000L))
+
+            binding.setText("edited")
+            session.notifyEditorContentChanged(canUndo = true, canRedo = false)
+            val result = session.save(SaveReason.MANUAL)
+
+            assertThat(result).isInstanceOf(SaveResult.Success::class.java)
+            assertThat(file.readText()).isEqualTo("edited")
+        } finally {
+            session.stopFileWatcher()
+            file.delete()
+        }
+    }
+
+    @Test
+    fun realExternalContentChangeWithoutEvent_shouldBlockSave() = runTest {
+        val file = Files.createTempFile("document-session-external-no-event", ".txt").toFile()
+        file.writeText("old")
+        val session = createSession(file, this)
+        val binding = FakeEditorBinding(
+            text = "new",
+            canUndo = true,
+            canRedo = false,
+        )
+
+        try {
+            session.attachEditor(binding)
+            assertThat(session.save(SaveReason.MANUAL)).isInstanceOf(SaveResult.Success::class.java)
+
+            // 磁盘内容确实变化（跨 uid 写入、无事件）：保存必须被阻断。
+            file.writeText("external")
+
+            binding.setText("edited")
+            session.notifyEditorContentChanged(canUndo = true, canRedo = false)
+            val result = session.save(SaveReason.MANUAL)
+
+            assertThat(result).isInstanceOf(SaveResult.Failure::class.java)
+            assertThat(file.readText()).isEqualTo("external")
             assertThat(session.state.value.hasExternalModification).isTrue()
         } finally {
             session.stopFileWatcher()
@@ -501,13 +673,20 @@ class DocumentSessionTest {
 
     private fun createSession(
         file: File,
-        scope: CoroutineScope = TestScope(StandardTestDispatcher())
+        scope: TestScope = TestScope(StandardTestDispatcher())
     ): DocumentSession = DocumentSession(
         context = RuntimeEnvironment.getApplication(),
         tabId = "tab-id",
         file = file,
-        coroutineScope = scope
+        coroutineScope = scope,
+        verificationDispatcher = StandardTestDispatcher(scope.testScheduler)
     )
+
+    /** 驱动虚拟时间越过外部事件防抖窗口，让校验逻辑执行完毕。 */
+    private fun TestScope.advancePastExternalEventDebounce() {
+        advanceTimeBy(DocumentSession.EXTERNAL_EVENT_DEBOUNCE_MS)
+        runCurrent()
+    }
 
     private class FakeEditorBinding(
         text: String,
