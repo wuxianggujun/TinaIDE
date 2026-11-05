@@ -563,6 +563,7 @@ internal fun MainActivityApkPackageDialog(
                             context = context.applicationContext,
                             missingLibraries = resolution.missingLibraries,
                         ),
+                        assetDirectories = resolveProjectAssetDirectories(projectRoot),
                     )
                 }
 
@@ -583,6 +584,7 @@ internal fun MainActivityApkPackageDialog(
                             context = context.applicationContext,
                             missingLibraries = resolution.missingLibraries,
                         ),
+                        assetDirectories = resolveProjectAssetDirectories(projectRoot),
                     )
                 }
             }
@@ -693,6 +695,7 @@ internal fun MainActivityApkPackageDialog(
         missingLibraries = resolvedExportPayload.missingLibraries,
         availablePackages = availablePackages,
         installedLibraryPackageIndex = resolvedExportPayload.installedLibraryPackageIndex,
+        projectAssetDirectories = resolvedExportPayload.assetDirectories,
         onOpenPackageManager = { searchQuery ->
             state.closeApkPackageDialog()
             SettingsActivity.startPackages(context, searchQuery)
@@ -706,7 +709,19 @@ private data class MainActivityApkExportPayload(
     val executableFile: File?,
     val missingLibraries: List<String>,
     val installedLibraryPackageIndex: Map<String, String>,
+    val assetDirectories: List<File> = emptyList(),
 )
+
+/**
+ * 导出 APK 时要把哪些项目资源目录打进 `assets/`。
+ *
+ * 约定：项目根下的 `assets/`（不存在则视为没有资源）。这与 Android/CMake 的
+ * `ANDROID_ASSETS_DIRECTORIES` 常规用法一致：目录内容映射到 APK assets 根。
+ */
+private fun resolveProjectAssetDirectories(projectRoot: File?): List<File> {
+    val root = projectRoot ?: return emptyList()
+    return listOf(File(root, "assets")).filter { it.isDirectory }
+}
 
 private fun resolveInstalledLibraryPackageIndex(
     context: android.content.Context,

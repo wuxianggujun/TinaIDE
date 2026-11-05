@@ -15,7 +15,12 @@ import timber.log.Timber
  * 但项目根下存在的只读资源重定向回项目根。
  */
 object SdlAssetRedirect {
-    private const val TAG = "SdlAssetRedirect"
+    /**
+     * logcat 标签，同时也是 [com.wuxianggujun.tinaide.ui.compose.components.GraphicalRuntimeOverlay]
+     * 悬浮日志面板捕获的标签之一。改名必须两处同步。
+     */
+    const val LOG_TAG = "SdlAssetRedirect"
+
     private const val LIBRARY_NAME = "tina_sdl_asset_redirect"
 
     @Volatile
@@ -34,7 +39,7 @@ object SdlAssetRedirect {
     fun install(context: Context, projectRoot: String): Boolean {
         val normalizedRoot = projectRoot.trim()
         if (normalizedRoot.isEmpty()) {
-            Timber.tag(TAG).d("skip install: empty project root")
+            Timber.tag(LOG_TAG).d("skip install: empty project root")
             return false
         }
         if (installed) return true
@@ -49,11 +54,11 @@ object SdlAssetRedirect {
             .getOrElse { normalizedRoot }
 
         return runCatching { nativeInstall(filesDir, projectRootPath) }
-            .onFailure { Timber.tag(TAG).w(it, "nativeInstall threw") }
+            .onFailure { Timber.tag(LOG_TAG).w(it, "nativeInstall threw") }
             .getOrDefault(false)
             .also { result ->
                 installed = result
-                Timber.tag(TAG).i(
+                Timber.tag(LOG_TAG).i(
                     "install result=%b filesDir=%s projectRoot=%s",
                     result,
                     filesDir,
@@ -65,7 +70,7 @@ object SdlAssetRedirect {
     private fun ensureLibraryLoaded(): Boolean {
         if (libraryLoaded) return true
         return runCatching { System.loadLibrary(LIBRARY_NAME) }
-            .onFailure { Timber.tag(TAG).w(it, "failed to load %s", LIBRARY_NAME) }
+            .onFailure { Timber.tag(LOG_TAG).w(it, "failed to load %s", LIBRARY_NAME) }
             .isSuccess
             .also { libraryLoaded = it }
     }

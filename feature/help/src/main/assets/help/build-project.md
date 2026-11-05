@@ -121,6 +121,40 @@ SDL3 的 `<SDL3/SDL.h>` 不会自动包含 `SDL_main.h`（SDL2 的会）。漏�
 - 自定义脚本构建
 - 执行项目自带的工具链脚本
 
+## 项目资源（assets）
+
+程序要读图片、字体、着色器等资源时，把文件放进**项目根下的 `assets/` 目录**：
+
+```
+<项目根>/assets/ZiTiQuanWeiJunHei-W2-2.ttf
+<项目根>/assets/shaders/basic.glsl
+```
+
+同一个相对路径在两种运行方式下都能读到：
+
+| 运行方式 | 解析过程 |
+| --- | --- |
+| IDE 内直接运行（SDL） | SDL 先按 `filesDir/<路径>` 查找；找不到时由 TinaIDE 的资源重定向接回项目目录（先查 `<项目根>/<路径>`，再查 `<项目根>/assets/<路径>`） |
+| 导出 APK | 项目 `assets/` 的内容会被打进 APK 的 `assets/` 根，按 Android 标准 assets 语义读取 |
+
+因此推荐写法（两种方式都成立）：
+
+```cpp
+SDL_IOFromFile("ZiTiQuanWeiJunHei-W2-2.ttf", "rb");   // 相对 APK assets 根
+```
+
+`"assets/ZiTiQuanWeiJunHei-W2-2.ttf"` 这种带目录前缀的写法也支持（导出时会额外镜像到
+`assets/assets/`），但会多占一份 APK 体积，建议优先用上面的裸名写法。
+
+注意：
+
+- 只有**相对路径**会走资源重定向；绝对路径、`content://` 由 SDL 自己处理。
+- ImGui 等第三方库自己调用 `fopen` 时不属于 SDL 的解析链路，请改用绝对路径，
+  或把资源编译进 `.so`（最稳，两种运行方式完全一致）。
+- 资源通道的诊断信息会打印到 **SDL 悬浮日志面板**（也可用
+  `adb logcat -s SdlAssetRedirect` 查看），包括是否启用、项目 `assets/` 是否存在、
+  以及重定向是否命中。
+
 ## 结果应该看哪里
 
 ### 构建日志

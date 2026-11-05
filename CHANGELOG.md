@@ -53,6 +53,30 @@
 - 0.18.39 候选的模拟器、导出壳、自动化与最终制品记录分别保存在
   [Release 验收清单](docs/testing/release-0.18.39-manual-checklist.md)，不把独立夹具或历史 APK 的结果混作最终验收。
 
+## [0.19.40] - 2026-11-05
+
+### Added
+
+- **项目资源统一入口**：新增 `ProjectAssets`，导出 APK 时把 `<项目根>/assets` 递归映射进 APK 的 `assets/`
+  （并生成 `assets/assets/` 兼容镜像，保证 `assets/xxx` 写法仍可命中）；运行时重定向按
+  `<项目根>/<相对路径>`、`<项目根>/assets/<相对路径>` 的顺序解析，因此同一相对路径在 IDE 内运行与导出 APK
+  中都能读到。`ApkBuildConfig.assetDirectories` 把同一份目录列表透传给模板构建，不再出现
+  "IDE 里能读到、导出的 APK 里读不到"。
+- **SDL 3.2/3.4/3.5 兼容桥**：新增 `SdlNativeCompat`，用 `nativeGetVersion()` 探测实际链接的 SDL 版本并按版本
+  分发 JNI 签名，避免把"原生比 Java 新"误判成加载失败，也避免不同 SDL 版本各自打包一套桥接代码。
+
+### Changed
+
+- vendored SDL3 Android Java 桥更新到 3.5 基线；同时保留 TinaIDE 的生命周期隔离补丁
+  （`mNativeInitializationSkipped`、预测性返回手势收敛、decor fits system windows）。
+- `SdlAssetRedirect` 的命中/未命中信息接入应用内运行日志浮层（`System.err` 通道），
+  现场可直接看到是否命中重定向，不必再靠 logcat 猜。
+
+### Tests
+
+- `ProjectAssetsTest`：项目资产目录解析、缺失目录、递归导出路径。
+- `SdlAssetRedirectTest`：重定向命中、环境变量缺失与 hook 安装失败的可观测性。
+
 ## [0.18.38] - 2026-11-01
 
 > 本地 Release 验收版本，尚未创建公开 Release / tag；真机验收见 `docs/testing/release-0.18.38-manual-checklist.md`。

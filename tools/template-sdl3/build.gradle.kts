@@ -51,6 +51,9 @@ dependencies {
     implementation(libs.androidx.core)
 }
 
+// 生成目录里的 Java 源码来自 app 的 SDL 桥接层，因此所有编译任务都必须先跑 copySDLSources。
+// 只给 JavaCompile 加依赖不够：KGP 还会创建 compileXxxKotlin（它同样会看到这些 .java 源文件），
+// Gradle 会以 "implicit dependency" 校验失败告终。
 tasks.withType<JavaCompile>().configureEach {
     options.encoding = "UTF-8"
     dependsOn(copySDLSources)
@@ -58,5 +61,10 @@ tasks.withType<JavaCompile>().configureEach {
 
 // AGP's built-in Kotlin compilation also reads the generated Java source roots.
 tasks.matching { it.name.startsWith("compile") && it.name.endsWith("Kotlin") }.configureEach {
+    dependsOn(copySDLSources)
+}
+tasks.matching { task ->
+    task.name.startsWith("compile") && task.name.endsWith("Kotlin")
+}.configureEach {
     dependsOn(copySDLSources)
 }
