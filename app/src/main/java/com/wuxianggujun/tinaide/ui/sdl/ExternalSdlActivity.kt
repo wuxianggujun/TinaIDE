@@ -55,6 +55,9 @@ class ExternalSdlActivity : SDLActivity() {
         private const val SDL_RENDER_DRIVER_ENV = "SDL_RENDER_DRIVER"
         private const val DEFAULT_ANDROID_SDL_RENDER_DRIVER = "opengles2"
 
+        /** 资源目录诊断时最多列出多少个 entry，避免大目录拖慢启动。 */
+        private const val ASSET_DIAGNOSTIC_SAMPLE_LIMIT = 8
+
         const val EXTRA_SDL_LIBRARY_PATH = "extra_sdl_library_path"
         const val EXTRA_MAIN_LIBRARY_PATH = "extra_main_library_path"
         const val EXTRA_REQUIRED_SDL_MAJOR = "extra_required_sdl_major"
@@ -293,14 +296,43 @@ class ExternalSdlActivity : SDLActivity() {
     /**
      * 在 libSDL 已加载、SDL_main 之前安装资源重定向 hook。
      * projectRoot 来自编译链注入的 [CompileProjectUseCase.RUNTIME_ASSET_ROOT_ENV]；
-     * 缺省（如 APK 导出场景）时静默跳过，SDL 走原生 filesDir/APK asset 逻辑。
+     * 缺省（如 APK 导出场景）时跳过，SDL 走原生 filesDir/APK asset 逻辑。
+     *
+     * 注意：这里不再"静默"跳过/失败。`SdlAssetRedirect` 标签被
+     * [com.wuxianggujun.tinaide.ui.compose.components.GraphicalRuntimeOverlay] 的悬浮日志面板
+     * 捕获，所以用户能直接看到资源通道有没有生效——这正是此前最难排查的一环。
      */
     private fun installSdlAssetRedirect() {
         val projectRoot = NativeLaunchEnvironment.readFromIntent(intent)[
             CompileProjectUseCase.RUNTIME_ASSET_ROOT_ENV
         ].orEmpty()
-        if (projectRoot.isBlank()) return
-        SdlAssetRedirect.install(this, projectRoot)
+        if (projectRoot.isBlank()) {
+            Timber.tag(SdlAssetRedirect.LOG_TAG).i(
+                "asset redirect disabled: %s missing from intent (exported-APK runs use APK assets)",
+                CompileProjectUseCase.RUNTIME_ASSET_ROOT_ENV,
+            )
+            return
+        }
+
+        val installed = SdlAssetRedirect.install(this, projectRoot)
+        val projectAssetsDir = File(projectRoot, "assets")
+        val assetSample = runCatching {
+            projectAssetsDir.listFiles()?.take(ASSET_DIAGNOSTIC_SAMPLE_LIMIT)?.joinToString(",") { it.name }
+        }.getOrNull()
+        Timber.tag(SdlAssetRedirect.LOG_TAG).i(
+            "asset redirect installed=%b projectRoot=%s assetsDir=%s(exists=%b sample=%s)",
+            installed,
+            projectRoot,
+            projectAssetsDir.absolutePath,
+            projectAssetsDir.isDirectory,
+            assetSample.orEmpty(),
+        )
+        if (!installed) {
+            Timber.tag(SdlAssetRedirect.LOG_TAG).w(
+                "asset redirect install failed: relative paths fall back to SDL defaults " +
+                    "(filesDir / APK assets)."
+            )
+        }
     }
 
     override fun getBrokenLibrariesErrorTitle(): String = Strings.sdl_host_title.strOr(this)
