@@ -16,9 +16,17 @@
 //   1) 打开模式是只读（mode 以 'r' 开头）；
 //   2) 路径落在 getFilesDir() 前缀下；
 //   3) 该路径在 filesDir 下实际不存在；
-//   4) 把前缀换成项目根后，文件在项目根下存在；
+//   4) 把前缀换成项目根后，文件在项目根下存在（先试 `<项目根>/<rel>`，
+//      再试 `<项目根>/assets/<rel>`）；
 // 才把打开目标重定向回项目根。写入 / 追加（'w' / 'a' / 'r+' 之外的写模式）一律
 // 放行，存档仍留在 getFilesDir()，符合 Android 应用私有存储语义。
+//
+// 两个候选目录的意义：
+//   - `<项目根>/<rel>`：资源与源码平铺的工程（老行为，保持兼容）；
+//   - `<项目根>/assets/<rel>`：项目把资源放在 assets/ 目录里。导出 APK 时这些资源
+//     会映射到 APK 的 assets 根，因此 `SDL_IOFromFile("font.ttf")` 在 APK 里命中
+//     `assets/font.ttf`；IDE 直接运行时由这条候选把它接回项目目录，
+//     于是同一条相对路径在两种运行方式下都成立。
 
 #include <android/log.h>
 #include <bytehook.h>
@@ -78,12 +86,20 @@ std::string resolve_redirect(const char *path, const char *mode) {
     // 只有当 filesDir 下确实不存在、才考虑重定向，避免遮蔽用户真实写入的存档。
     if (access(path, F_OK) == 0) return {};
 
-    std::string candidate = g_project_root;
-    candidate.push_back('/');
-    candidate.append(relative);
+    // 候选顺序与 Kotlin 侧文档保持一致：
+    //   1) <项目根>/<rel>          —— 资源与源码平铺
+    //   2) <项目根>/assets/<rel>   —— 项目 assets 目录（与导出 APK 的 assets 根对齐）
+    std::string primary = g_project_root;
+    primary.push_back('/');
+    primary.append(relative);
+    if (access(primary.c_str(), F_OK) == 0) return primary;
 
-    if (access(candidate.c_str(), F_OK) != 0) return {};
-    return candidate;
+    std::string assets_candidate = g_project_root;
+    assets_candidate.append("/assets/");
+    assets_candidate.append(relative);
+    if (access(assets_candidate.c_str(), F_OK) == 0) return assets_candidate;
+
+    return {};
 }
 
 FILE *proxy_fopen(const char *path, const char *mode) {

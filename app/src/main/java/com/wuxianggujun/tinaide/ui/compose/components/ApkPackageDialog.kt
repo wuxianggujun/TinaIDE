@@ -122,6 +122,10 @@ fun ApkPackageDialog(
     missingLibraries: List<String> = emptyList(),
     availablePackages: List<GUIPackage> = emptyList(),
     installedLibraryPackageIndex: Map<String, String> = emptyMap(),
+    /**
+     * 需要打进导出 APK `assets/` 的项目资源目录（递归），通常是 `<项目根>/assets`。
+     */
+    projectAssetDirectories: List<File> = emptyList(),
     onOpenPackageManager: ((String) -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
@@ -1170,6 +1174,7 @@ fun ApkPackageDialog(
                                     sdlLibraryPath = if (resolvedTemplateOption.templateType == ApkTemplateType.SDL3) sdlLibraryPath else null,
                                     preloadLibraries = preloadLibraries,
                                     iconFile = effectiveIconFile,
+                                    assetDirectories = projectAssetDirectories,
                                     signingConfig = signingConfig
                                 )
                                 val outputFile = File(outputDir, "${appName.trim().replace(" ", "_")}.apk")

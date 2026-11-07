@@ -234,9 +234,52 @@ class ApkBuilder(private val context: Context) {
                             writtenEntries.add(TERMINAL_EXECUTABLE_ASSET_PATH)
                         }
                     }
+
+                    injectProjectAssets(zipOut, config, writtenEntries)
                 }
             }
         }
+    }
+
+    /**
+     * 把项目资源目录写进 APK 的 `assets/`。
+     *
+     * 只追加、不覆盖：模板已有的条目（例如 `assets/dexopt/` 下的基线 profile）优先，
+     * 冲突会记录日志。注意 Kotlin 块注释可嵌套，注释里不要再出现块注释起始符号。
+     * 资源一律使用 DEFLATED 并流式写入，避免把大文件读进内存。
+     */
+    private fun injectProjectAssets(
+        zipOut: ZipOutputStream,
+        config: ApkBuildConfig,
+        writtenEntries: MutableSet<String>,
+    ) {
+        if (config.assetDirectories.isEmpty()) return
+
+        val plan = ProjectAssets.collect(
+            directories = config.assetDirectories,
+            mirrorUnderAssetsNamespace = config.mirrorProjectAssetsUnderAssetsNamespace,
+            isEntryTaken = { it in writtenEntries },
+        )
+        plan.conflicts.forEach { conflict ->
+            Timber.tag(TAG).w("Skipping project asset entry: %s", conflict)
+        }
+        plan.entries.forEach { (entryName, source) ->
+            if (entryName in writtenEntries) return@forEach
+            Timber.tag(TAG).d(
+                "Injecting project asset: %s <- %s (%d bytes)",
+                entryName,
+                source.absolutePath,
+                source.length(),
+            )
+            writeFileEntry(zipOut, entryName, source, stored = false)
+            writtenEntries.add(entryName)
+        }
+        Timber.tag(TAG).i(
+            "Project assets injected=%d skipped=%d directories=%s",
+            plan.entries.size,
+            plan.conflicts.size,
+            config.assetDirectories.joinToString(",") { it.absolutePath },
+        )
     }
 
     private fun resolveNativeLibraryEntries(config: ApkBuildConfig): Map<String, File> {
@@ -306,6 +349,23 @@ class ApkBuilder(private val context: Context) {
         }
         zipOut.putNextEntry(entry)
         zipOut.write(data)
+        zipOut.closeEntry()
+    }
+
+    /**
+     * 流式写入文件条目（不把内容整体读入内存），用于体积不可控的项目资源。
+     * 仅支持 DEFLATED：STORED 需要提前知道 CRC，得不偿失。
+     */
+    private fun writeFileEntry(
+        zipOut: ZipOutputStream,
+        name: String,
+        file: File,
+        stored: Boolean,
+    ) {
+        require(!stored) { "writeFileEntry only supports DEFLATED entries" }
+        val entry = ZipEntry(name).apply { method = ZipEntry.DEFLATED }
+        zipOut.putNextEntry(entry)
+        file.inputStream().buffered().use { input -> input.copyTo(zipOut) }
         zipOut.closeEntry()
     }
 

@@ -427,12 +427,15 @@ private val FloatingLogPanelEmptyHeight = 112.dp
  * - TINA_USER_OUTPUT: 原生 log redirect 库重定向的 stdout/stderr
  * - SDL: SDL_Log 系列输出
  * - System.out / System.err: Java 标准输出
+ * - SdlAssetRedirect: 项目资源重定向（环境变量缺失 / hook 安装失败 / 命中重定向）
+ *   属于"用户看不出来就必然踩坑"的诊断信息，必须能在这里看到。
  */
 private val LOG_TAGS = listOf(
     "TINA_USER_OUTPUT",
     "SDL",
     "System.out",
-    "System.err"
+    "System.err",
+    "SdlAssetRedirect"
 )
 
 /**
