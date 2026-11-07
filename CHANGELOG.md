@@ -31,6 +31,17 @@
 
 ## [Unreleased]
 
+> 下一发布候选：**0.19.0**（versionCode **1901**），尚未创建对应 Tag / Release。
+> 新功能提升 minor，patch 从 0 开始；PR 中未发布的 `0.19.40` 编号统一归并至此候选版本。
+
+### Added
+
+- **项目资源导出**：把项目根下的 `assets/` 递归打进导出 APK 的 `assets/` 根，默认额外生成
+  `assets/assets/` 兼容镜像；`ApkBuildConfig.assetDirectories` 将资源目录传入导出流程。
+  SDL 资源重定向新增 `<项目根>/assets/<相对路径>` 候选，覆盖资源集中放在 `assets/` 的工程。
+- **SDL 原生版本探测**：引入 `SdlNativeCompat`，按 `nativeGetVersion()` 选择部分新旧 JNI 调用。
+  多版本兼容尚有已知缺口，具体范围见下方限制，不作为完整支持矩阵的验收结论。
+
 ### Fixed
 
 - **raylib 重复运行黑屏**：raylib 6.0 revision 3 在收到销毁请求后退出事件轮询，
@@ -52,30 +63,29 @@
 - 图形游戏没有新增总运行时限；2 秒保护仅用于明确退出，Home 和普通后台暂停不触发退出保护。
 - 0.18.39 候选的模拟器、导出壳、自动化与最终制品记录分别保存在
   [Release 验收清单](docs/testing/release-0.18.39-manual-checklist.md)，不把独立夹具或历史 APK 的结果混作最终验收。
-
-## [0.19.40] - 2026-11-05
-
-### Added
-
-- **项目资源统一入口**：新增 `ProjectAssets`，导出 APK 时把 `<项目根>/assets` 递归映射进 APK 的 `assets/`
-  （并生成 `assets/assets/` 兼容镜像，保证 `assets/xxx` 写法仍可命中）；运行时重定向按
-  `<项目根>/<相对路径>`、`<项目根>/assets/<相对路径>` 的顺序解析，因此同一相对路径在 IDE 内运行与导出 APK
-  中都能读到。`ApkBuildConfig.assetDirectories` 把同一份目录列表透传给模板构建，不再出现
-  "IDE 里能读到、导出的 APK 里读不到"。
-- **SDL 3.2/3.4/3.5 兼容桥**：新增 `SdlNativeCompat`，用 `nativeGetVersion()` 探测实际链接的 SDL 版本并按版本
-  分发 JNI 签名，避免把"原生比 Java 新"误判成加载失败，也避免不同 SDL 版本各自打包一套桥接代码。
-
-### Changed
-
-- vendored SDL3 Android Java 桥更新到 3.5 基线；同时保留 TinaIDE 的生命周期隔离补丁
+- vendored SDL3 Android Java 桥更新到新的 3.5 基线；同时保留 TinaIDE 的生命周期隔离补丁
   （`mNativeInitializationSkipped`、预测性返回手势收敛、decor fits system windows）。
-- `SdlAssetRedirect` 的命中/未命中信息接入应用内运行日志浮层（`System.err` 通道），
-  现场可直接看到是否命中重定向，不必再靠 logcat 猜。
+- SDL 悬浮日志面板增加 `SdlAssetRedirect` 标签过滤；资源目录、安装结果和 native 重定向命中信息
+  进入同一诊断通道，便于排查资源路径问题。
 
 ### Tests
 
-- `ProjectAssetsTest`：项目资产目录解析、缺失目录、递归导出路径。
-- `SdlAssetRedirectTest`：重定向命中、环境变量缺失与 hook 安装失败的可观测性。
+- 新增 `ProjectAssetsTest`：覆盖资源映射、兼容镜像、缺失目录、条目冲突、重复目录和遍历顺序。
+- 新增 `SdlAssetRedirectTest`：覆盖空白项目根拒绝路径；不把它视为 native hook 命中或安装失败的验证。
+
+### Known limitations
+
+- SDL 3.2 的 `nativeSetupJNI` 返回签名与当前桥接层不同；SDL 3.4 的旧双参数手柄回调声明尚未补齐。
+  本次按原代码合并，不宣称 SDL 3.2/3.4/3.5 全部运行链路已经兼容或通过真机验收。
+- PR 的代码、导出模板和模板校验值保持原样；后续 JNI 修复与多 ABI、设备验证独立跟进。
+- 按根构建脚本的输入哈希规则复核，两个模板的源码输入均与提交的校验清单不一致。
+  正式构建前需重新执行 `buildApkTemplates checkApkTemplatesSync`；本次没有修改模板或校验门禁。
+
+### Contributors
+
+- 感谢 [GavinJiang（@JIANGJIAYI0）](https://github.com/JIANGJIAYI0) 通过
+  [PR #15](https://github.com/wuxianggujun/TinaIDE/pull/15) 贡献项目资源导出、SDL Android 桥接层更新及资源诊断日志。
+  原始贡献提交保留在合并历史中。
 
 ## [0.18.38] - 2026-11-01
 
