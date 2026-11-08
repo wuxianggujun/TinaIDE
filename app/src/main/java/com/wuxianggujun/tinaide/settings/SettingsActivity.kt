@@ -61,6 +61,7 @@ internal object SettingsActivitySupport {
         SettingsRoute.PluginLog,
         SettingsRoute.Help,
         SettingsRoute.Developer,
+        SettingsRoute.Donation,
         SettingsRoute.About
     ).associateBy(SettingsRoute::route)
 

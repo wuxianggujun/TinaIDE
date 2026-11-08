@@ -1,33 +1,16 @@
 package com.wuxianggujun.tinaide.ui.compose.screens.settings.sections
 
-import android.content.Intent
-import android.net.Uri
 import android.widget.Toast
-import androidx.annotation.DrawableRes
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.wuxianggujun.tinaide.core.common.AppVersionInfoReader
@@ -36,7 +19,6 @@ import com.wuxianggujun.tinaide.core.config.ServerConfigManager
 import com.wuxianggujun.tinaide.core.crash.CrashLogUploadScheduler
 import com.wuxianggujun.tinaide.core.crash.CrashUploadState
 import com.wuxianggujun.tinaide.core.device.DeviceFingerprint
-import com.wuxianggujun.tinaide.core.i18n.SettingsDrawables
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.core.logging.LogExportProfile
@@ -53,7 +35,6 @@ import java.util.Locale
 import kotlinx.coroutines.launch
 
 private const val GITHUB_URL = "https://github.com/wuxianggujun/TinaIDE"
-private const val AFDIAN_URL = "https://ifdian.net/a/wuxianggujun"
 private const val QQ_GROUP_NUMBER = "557484133"
 private const val QQ_GROUP_JOIN_URL = ""
 
@@ -185,49 +166,6 @@ internal fun AboutSettingsSection(
                 }
             },
             showDivider = false
-        )
-    }
-
-    SettingsCategoryTitle(stringResource(Strings.about_donation_title))
-
-    SettingsCard {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(
-                text = stringResource(Strings.about_donation_desc),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                DonationCodeItem(
-                    label = stringResource(Strings.about_donation_wechat),
-                    drawableRes = SettingsDrawables.donation_weixin,
-                    modifier = Modifier.weight(1f),
-                )
-                DonationCodeItem(
-                    label = stringResource(Strings.about_donation_alipay),
-                    drawableRes = SettingsDrawables.donation_zhifubao,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        }
-
-        SettingsClickableItem(
-            title = stringResource(Strings.about_donation_afdian),
-            subtitle = stringResource(Strings.about_donation_afdian_desc),
-            onClick = {
-                if (!context.openFirstAvailableExternalUrl(listOf(AFDIAN_URL))) {
-                    Toast.makeText(context, cannotOpenLinkError, Toast.LENGTH_SHORT).show()
-                }
-            },
-            showDivider = false,
         )
     }
 
@@ -499,41 +437,3 @@ private fun android.content.Context.resolveAboutMessage(spec: AboutMessageSpec):
     } else {
         getString(spec.messageRes, *spec.formatArgs.toTypedArray())
     }
-
-private fun android.content.Context.openFirstAvailableExternalUrl(urls: List<String>): Boolean {
-    urls.forEach { url ->
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-        if (runCatching { startActivity(intent) }.isSuccess) {
-            return true
-        }
-    }
-    return false
-}
-
-@Composable
-private fun DonationCodeItem(
-    label: String,
-    @DrawableRes drawableRes: Int,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Image(
-            painter = painterResource(drawableRes),
-            contentDescription = label,
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(1f)
-                .clip(RoundedCornerShape(8.dp)),
-            contentScale = ContentScale.Fit,
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}

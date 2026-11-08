@@ -56,6 +56,7 @@ fun MainScreen(
     modifier: Modifier = Modifier,
     onOpenProject: (String) -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
+    onNavigateToDonation: () -> Unit = {},
     onNavigateToAbout: () -> Unit = {},
     onNavigateToPlugins: () -> Unit = {},
     onNavigateToPackages: () -> Unit = {},
@@ -122,6 +123,7 @@ fun MainScreen(
                             2 -> TutorialScreen(viewModel = tutorialViewModel)
                             3 -> ProfileScreen(
                                 onNavigateToSettings = onNavigateToSettings,
+                                onNavigateToDonation = onNavigateToDonation,
                                 onNavigateToAbout = onNavigateToAbout,
                                 onNavigateToPlugins = onNavigateToPlugins,
                                 onNavigateToPackages = onNavigateToPackages,

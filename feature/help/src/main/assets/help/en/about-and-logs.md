@@ -1,6 +1,6 @@
 # About and Logs
 
-The About page contains version information, community links, donation options, diagnostic tools, the Developer Options unlock entry, and open-source licenses.
+The About page contains version information, community links, diagnostic tools, the Developer Options unlock entry, and open-source licenses. Donation options have their own page.
 
 ## Licenses and source code
 
@@ -12,7 +12,7 @@ GitHub's ordinary source ZIP does not include submodules.
 
 ## Support the project
 
-The page can show WeChat and Alipay donation codes and a link to Afdian for users who want to support project maintenance.
+Open **Profile → Donate**, between **Settings** and **About**. This page shows WeChat and Alipay donation codes and a link to Afdian to support continued development and maintenance.
 
 ## Logs
 

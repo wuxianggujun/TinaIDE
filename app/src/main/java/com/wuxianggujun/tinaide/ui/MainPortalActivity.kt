@@ -100,6 +100,7 @@ class MainPortalActivity :
                     MainPortalScreen(
                         onOpenProject = ::openProjectEditor,
                         onNavigateToSettings = { SettingsActivity.start(this) },
+                        onNavigateToDonation = { SettingsActivity.start(this, SettingsRoute.Donation) },
                         onNavigateToAbout = { SettingsActivity.start(this, SettingsRoute.About) },
                         onNavigateToPlugins = { SettingsActivity.start(this, SettingsRoute.Plugins) },
                         onNavigateToPackages = { SettingsActivity.start(this, SettingsRoute.Packages) },
@@ -149,6 +150,7 @@ class MainPortalActivity :
 fun MainPortalScreen(
     onOpenProject: (String) -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
+    onNavigateToDonation: () -> Unit = {},
     onNavigateToAbout: () -> Unit = {},
     onNavigateToPlugins: () -> Unit = {},
     onNavigateToPackages: () -> Unit = {},
@@ -158,6 +160,7 @@ fun MainPortalScreen(
     MainScreen(
         onOpenProject = onOpenProject,
         onNavigateToSettings = onNavigateToSettings,
+        onNavigateToDonation = onNavigateToDonation,
         onNavigateToAbout = onNavigateToAbout,
         onNavigateToPlugins = onNavigateToPlugins,
         onNavigateToPackages = onNavigateToPackages,

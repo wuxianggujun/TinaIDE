@@ -47,6 +47,7 @@ import com.wuxianggujun.tinaide.ui.compose.screens.settings.sections.AboutSettin
 import com.wuxianggujun.tinaide.ui.compose.screens.settings.sections.AppearanceSettingsSection
 import com.wuxianggujun.tinaide.ui.compose.screens.settings.sections.CompilerSettingsSection
 import com.wuxianggujun.tinaide.ui.compose.screens.settings.sections.DeveloperOptionsSection
+import com.wuxianggujun.tinaide.ui.compose.screens.settings.sections.DonationSettingsSection
 import com.wuxianggujun.tinaide.ui.compose.screens.settings.sections.EditorSettingsSection
 import com.wuxianggujun.tinaide.ui.compose.screens.settings.sections.GitSettingsSection
 import com.wuxianggujun.tinaide.ui.compose.screens.settings.sections.KeyboardSettingsSection
@@ -85,6 +86,7 @@ sealed class SettingsRoute(val route: String, val title: Int) {
     data object PluginLog : SettingsRoute("plugin_log", Strings.plugin_log_title)
     data object Help : SettingsRoute("help", Strings.settings_title_help)
     data object Developer : SettingsRoute("developer", Strings.settings_title_developer)
+    data object Donation : SettingsRoute("donation", Strings.donation_title)
     data object About : SettingsRoute("about", Strings.settings_title_about)
 }
 
@@ -432,6 +434,7 @@ fun SettingsScreen(
                         onNavigateToPRootLog = onNavigateToPRootLog,
                         onNavigateToLicenses = onNavigateToLicenses
                     )
+                    SettingsScrollableContent.Donation -> DonationSettingsSection()
                     SettingsScrollableContent.Placeholder -> Unit
                 }
             }

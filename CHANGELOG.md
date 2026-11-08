@@ -4,6 +4,10 @@
 
 本文档记录 TinaIDE 项目的版本更新历史，包括新功能、Bug 修复和改进。
 
+历史条目描述当时版本的行为。早期的账号/会员、自研 AI、Alpine 和独立服务端相关内容不代表当前仍提供这些功能。
+当前使用方式以 [README](README.md) 和[应用内设置帮助](feature/help/src/main/assets/help/settings-overview.md)为准；
+默认编译环境是 native tina-toolchain + Android sysroot，可选 Linux 环境仅支持 Ubuntu 24.04。
+
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
@@ -14,7 +18,7 @@
 ### TinaIDE 主仓库更新记录写在此处
 
 - 本文件 `CHANGELOG.md` 记录 TinaIDE App，以及随 App 一起交付或维护的构建工具和文档变化。
-- 如需在提交时记录“文件级别操作”（A/M/D/R），可将 `git diff --cached --name-status` 的输出粘贴到对应版本区块的 `### Changed Files` 小节中（可选）。
+- 优先记录用户可感知的行为变化；文件增删清单、逐次测试输出和临时排障过程留在 Git 历史或对应验证文档中。
 
 ### 已发布版本保持稳定，开发中变化写入 Unreleased
 
@@ -28,10 +32,16 @@
 - **最新版本**（建议最近 1~3 个版本）允许写得更详细（可包含关键文件名/类名/链接/设计点）。
 - **旧版本**应逐步“压缩”为摘要：只保留用户可感知的变化点，避免继续维护大量已删除文件/类的链接与细节。
 - 若旧版本内容中引用的文件/类已不存在，可在整理时移除/合并相关条目（保持可读性优先）。
+- 源码移动后只更新能核验的链接；已删除实现保留历史名称，不再挂失效路径。同一版本的追加记录合并到一个区块。
 
 ## [Unreleased]
 
-暂无未发布更新。
+### Changed
+
+- **捐赠独立页面**：将微信、支付宝赞赏码和爱发电入口从「关于」移到独立的「捐赠支持」页面；
+  「我的」页入口按「设置 → 捐赠支持 → 关于」排列，并同步中英文文案与应用内帮助。
+- **更新日志整理**：合并重复的 0.14.51 记录，精简旧版本技术清单和验证流水，修复已移动源码的链接，
+  移除指向已删除文件的链接，并说明已移除功能及已解决许可问题的历史范围。
 
 ## [0.19.0] - 2026-11-08
 
@@ -175,7 +185,7 @@
 
 - **许可证**：自 0.18.29 起整体改为 **GPL-3.0-or-later**（因集成 termux-x11）。
 - **Linux 可选运行时**：移除 Alpine 支持，Ubuntu 24.04 成为唯一发行版。
-- **编辑器内核抽离**（0.18.33）：`:core:editor-*` 六个模块的唯一源码迁入独立开源工程
+- **编辑器内核抽离**（0.18.33）：编辑器内核源码迁入独立开源工程
   `editor-kit`（[wuxianggujun/TinaEditor](https://github.com/wuxianggujun/TinaEditor)），以 Git submodule 供源，
   克隆后需 `git submodule update --init --recursive` 才能编译；内核不再依赖宿主 config / i18n / designsystem / editor-lsp。
 - **Tree-sitter 按需加载**（0.18.35）：内核新增共享 `TreeSitterRuntime`，native 库延迟到语言服务入口
@@ -215,89 +225,26 @@
 
 ### Added
 
-#### 编辑器捏合缩放实时预览
-
-编辑器内核（editor-kit）新增绘制期缩放预览：捏合缩放时按当前手势实时渲染放大/缩小后的文本视口，
-松手后落定到目标字号。`EditorRenderViewport` 以只读视口承载绘制期坐标（不回写 `EditorState`），
-各渲染器与选择/光标手柄布局改为从 `EditorRenderFrameContext` 读取可见行与滚动偏移。
+- 编辑器双指缩放期间实时预览文本，松手后保存目标字号。
 
 ### Fixed
 
-#### 崩溃墓碑无法反查 R8 mapping
-
-归档目录原以 `<versionName>-<时间戳>` 命名，但时间戳由备份任务自行生成，与 APK 无任何关联；
-同一 versionName 的多次构建无法区分，导致混淆栈对不上 mapping（本次 0.18.27 墓碑即为此类情况）。
-
-- `tina.android.app.versioning` 现在生成 `<gitShortSha>-<构建时间戳>` 形式的 `buildId`，
-  同一次 Gradle 运行内固定。
-- `BuildConfig.BUILD_ID` 暴露该值；mapping 归档目录改名为 `app/mappings/<versionName>-<buildId>/`。
-- xCrash 墓碑的 "App version" 改写为 `0.18.34 (code 1834, build <buildId>)`，
-  由此可唯一定位产生该 APK 的 mapping。
+- 为构建和崩溃墓碑加入一致的构建标识，便于定位对应的 R8 mapping。
 
 ## [0.18.33] - 2026-09-30
 
 ### Added
 
-#### 编辑器 Git 修改指示（默认关闭）
-
-行号栏左缘新增色条，标出相对 HEAD 的新增（绿）、修改（橙）、删除（红、半高）行，语义与 VSCode 的 gutter decoration 一致。开关位于「设置 → 编辑器 → 显示 Git 修改指示」，默认关闭，经 `Prefs.editorSettingsFlow` 传播，已打开的编辑器即时生效。
-
-diff 基线是 **HEAD blob vs 当前内存 buffer**（`GitService.getLineChanges()`，JGit `HistogramDiff`），而不是磁盘文件，因此暂存、未暂存与未保存改动一次覆盖，且行号不因保存与否漂移；`RawText` 与 `KotlinLineIndexBackend` 的行计数规则一致（`'\n' 数 + 1`），diff 行索引可直接当作文档行号。删除行的锚定由 `mapDiffEditsToLineChanges()` 按 Edit 形状派生（不依赖 `Edit.getType()`），HistogramDiff 会把末行删除归并成吸收前一行的替换，因此 EOF 位置用「删除覆盖已标出的 MODIFIED」收尾。
-
-整份逐行状态走独立的 `EditorState.gitLineChanges`（与 `diagnosticsByLine` 同型），而不是塞进 `GutterDecoration`：后者的「flags 全空即移除」清理逻辑分布在 4 处，且 git 数据是整份异步重算、单一生产者，生命周期完全不同。生产者是 `TinaCodeEditorPage` 里镜像语义 token 效应的 `combine(...).collectLatest`：400ms 防抖的编辑、开关变化、tab/文件/项目切换、应用恢复（`ON_RESUME` 递增 tick，覆盖在 Git 面板提交/暂存后回来）都会触发；请求前后都用 `buffer.version` 校验，版本不匹配作废结果。色条画在现有行号带内部左缘，不新增布局带，因此**关闭行号时色条一起消失**。内核侧实现在 `editor-kit/editor-view`（`EditorGitLineChangeType` / `LineNumberRenderer` 里的 `gitStripeRect()`），不出现 JGit 与偏好类型。
-
-#### 编辑器小地图（默认关闭）
-
-编辑器右侧新增整篇文档的缩略色块带与当前视口指示框（thumb），沿用与竖直滚动条相同的布局约定（`EditorMinimapRenderer.calculateLayout()` 返回不可变几何 + 命中测试），点中或拖动即可把对应视觉行居中到视口。行几何与 thumb 同处视觉行空间，所以点击映射是精确的、thumb 只需在底部留白区钳制。整篇逐行重绘对大文件不可接受：token 层用 `android.graphics.Picture` 按文本/高亮版本缓存，thumb 始终实时绘制；超过 3000 行的文档按步长采样取 token，避免冲掉 Tree-sitter 的视口级逐行缓存。开关位于「设置 → 编辑器 → 显示小地图」，经 `Prefs.editorSettingsFlow` 传播，已打开的编辑器即时生效。内核侧实现在 `editor-kit/editor-view`（`EditorMinimapRenderer` / `EditorMinimapDragCoordinator`），不反向依赖宿主。
-
-#### 用户项目模板编辑对话框补齐默认运行目标
-
-设置页「编辑模板信息」对话框原本只能编辑名称、说明、作者、构建系统、主要语言、NDK 标记与变量默认值，而 `tina-template.json` 支持的 `defaultRunTargetName` / `defaultSdlTargetName` 两个键只能手工改压缩包内的 JSON 才能设置——它们会在安装模板时被 `ProjectTemplateInstaller` 解析占位符后写入项目运行配置。现在对话框新增「默认运行目标」与「默认 SDL 目标」两个输入框，留空表示不写入，支持 `{{PROJECT_NAME}}` 等占位符，与新建项目向导读取的字段完全对齐。`docs/planning/Feature-Roadmap.md` 中「模板编辑对话框」一项随之标记完成。
+- 编辑器新增 Git 行修改指示与小地图，两项默认关闭。
+- 项目模板编辑支持配置默认运行目标和 SDL 目标。
 
 ### Changed
 
-#### 编辑器内核抽离为可独立构建的 `editor-kit`
-
-`:core:editor-api`、`:core:text-engine`、`:core:tree-sitter`、`:core:editor-view` 的唯一源码迁入 `editor-kit/`。该目录是自带 Gradle wrapper、version catalog 与 Tree-sitter 复合构建的独立工程，可单独构建，也可作为 `includeBuild` 被其他项目按坐标 `io.github.tinaide.editor:editor-view:0.1.0-SNAPSHOT` 消费（见 `examples/consumer`）。TinaIDE 主工程通过 `settings.gradle.kts` 的 `projectDir` 映射消费同一份源码，不复制实现。该目录现已发布为公开仓库 [wuxianggujun/TinaEditor](https://github.com/wuxianggujun/TinaEditor)，并以 Git submodule 挂载在 `editor-kit/`；克隆 TinaIDE 后需 `git submodule update --init --recursive` 才能编译（CI 已全部带 `submodules: recursive`）。
-
-为了让编辑器内核不再依赖宿主基础设施，本轮切断了 `editor-view` 对 `core:common`、`core:config`、`core:designsystem`、`core:i18n`、`core:editor-lsp` 的依赖：
-
-- 新增 `:core:editor-api`，收纳宿主与编辑器共享的文件类型（`CxxFileSupport` / `MakeFileSupport`，原属 `core:common`）、主题颜色键（`EditorThemeColorKey` / `EditorThemeColorGroup`，原属 `core:config`）以及语义 token 与 Signature Help 公共模型（`SemanticToken` / `SignatureHelpResult`，原属 `core:editor-lsp`）。类型保持原包名，宿主侧 `core:common`、`core:config`、`core:editor-lsp` 通过 `api` 依赖重新透出，引用方无需改导入。
-- `EditorConfig.fromPrefs()` 从编辑器移除，改由宿主 `editorConfigFromPrefs()`（`app/.../ui/compose/editor/EditorHostPreferences.kt`）构造后注入；`EditorState` 新增 `runtimeOptions: EditorRuntimeOptions`，字体大小持久化、IME / 布局 / 触摸诊断开关全部以回调形式由宿主提供，编辑器自身不再读取任何偏好存储。
-- `TinaEditor` 新增 `hoverContent` 参数，宿主用它接入 `MarkdownViewer`；编辑器不再为 Hover 渲染引入宿主 Markdown 组件。
+- 将编辑器内核抽离到独立的 TinaEditor 子模块，宿主和独立工程共用源码。
 
 ### Fixed
 
-#### `editor-kit` 单元测试套件可独立跑通
-
-Robolectric 4.13 不附带 SDK 34 之上的 `android-all`，凡未显式 pin SDK 的测试只要 `targetSdk > 34` 就 `initializationError`（`Package targetSdkVersion=37 > maxSdkVersion=34`）。这个问题在 HEAD 上就存在（`tina.android.library` 给 targetSdk=36，36>34 一样失败），所以既有回归命令只覆盖显式写了 `@Config(sdk = [34])` 的测试。抽离后 kit 侧 `compileSdk=37`，9 个类一次性全部暴露。新增 `editor-kit/editor-view/src/test/resources/robolectric.properties`，模块级固定 `sdk = 34`，与本模块既有 `@Config` 约定一致；properties 落在共享源码树里，宿主与 kit 两个构建根同时生效。
-
-解开这 9 个类之后，暴露出一条此前从未真正执行过的断言失败：`EditorSnippetUndoRedoTest.undo_shouldCancelSnippetSessionAndDismissChoiceCompletion` 要求 `undo()` 同时回退 snippet 展开文本，但 `docs/design/LSP-Snippet-Placeholder-Handling.md` 明确记载 `editorUndo` 的契约是只 `cancelSnippet()`（「无法可靠追踪偏移」），实现与设计文档一致。已把测试期望从「buffer 清空」改为「回退到展开文本」，该类现在 2/2 通过。若希望「snippet 展开 + choice 选择合并为一个 undo 单元」，属于编辑器新功能，另行处理。
-
-剩余 5 条失败随后也全部修复，编辑器内核测试套件现在全绿：
-
-- `EditorColorSchemeTest.fromThemeColorsAndExport_*` ×2：该类是纯 JUnit，`EditorColorScheme.parseColorOrNull` 走的是 `android.graphics.Color.parseColor`，在 JVM 单测里抛 `Method not mocked`，被 `runCatching{}.getOrNull()` 静默吞掉，于是每个键都回落到 fallback 主题色，往返断言自然对不上。补 `@RunWith(RobolectricTestRunner::class)` + `@Config(sdk = [34])` 走 Android 运行时后通过。
-- `EditorUndoRedoCursorTest.undoReplace_shouldMoveCursorAfterRestoredText`：`historyCursorAfter` 之前无条件记录编辑前光标位置作为 undo 目标。IME 的相对光标语义只在编辑区间内有效；程序化 `replaceRange` 时光标在区间外，undo 却被拉回编辑前位置。改为仅当编辑前光标落在半开区间 `[editStart, editEnd)` 内时才采用它，否则回到被还原文本末尾——这恰是 Insert/Delete/Replace 三类 op 各自的 `defaultCursorBefore`。带选区的编辑仍走 `runSelectionAwareEdit` 的 Compound `selectionBefore` 回退路径，不受影响。
-- `EditorInputConnectionEditTest.externalSelectionOutsideComposition_shouldFinishCompositionHistory`：composing 区间是半开的 `[start, end)`，光标停在 `end` 是 IME 输入后的自然落点（仍在区间内），停到 `start` 则是外部移动。原判断把 `start` 也算作区间内，于是移动到 `start` 不结束 composing，留下未闭合的复合编辑作用域，`canUndo()` 恒为 false，undo 整段失效。
-- `TreeSitterHighlighterDisposeTest.dispose_shouldReturnWithoutWaitingForActiveLifecycleReaders`：并非实现缺陷，而是桩不全——`TreeSitterQueryPredicateEvaluator` 构造时读 `query.getCaptureNames()` 建名字→下标表，测试只桩了 `close()`。补桩后通过，断言本身（dispose 不等待活跃读锁、native 资源在锁释放后才关闭）验证无误。
-
-验证：从 `wuxianggujun/TinaEditor` 干净 clone 后 `:core:editor-api` / `:core:text-engine` / `:core:tree-sitter` / `:core:editor-view:compileDebugKotlin` 全部 `BUILD SUCCESSFUL`；`examples/consumer` 复合构建消费、宿主 `:app:compileArm64DebugKotlin` 均编译通过；kit 侧全量单测为 `editor-api` 无测试、`text-engine` 全绿、`tree-sitter` 全绿、`editor-view` 493 条全部通过。
-
-#### 补齐全部 Tree-sitter grammar 的复合构建替换
-
-`:core:tree-sitter` 声明了 15 个 grammar 依赖，但两侧 `settings.gradle.kts` 只替换了 9 个，`aidl` / `kotlin` / `log` / `properties` / `python` / `xml` 一直悄悄从 Maven Central 解析，与本仓库「不依赖 Maven 发布的 grammar 产物」的初衷相悖（那也是不做 Maven/AAR 发布的理由之一）。宿主与 `editor-kit` 两个构建根现已补齐全部 15 个替换，grammar 一律走本地复合构建。
-
-#### `editor-kit` 四个模块恢复 ktlint 检查
-
-四个编辑器模块抽离后改用裸 `com.android.library` 插件，不再经过 `tina.android.library` → `tina.kotlin.quality`，宿主 `ktlintCheck` 因此覆盖不到它们。四个模块现在直接应用 ktlint 插件（插件 12.1.2、工具 1.5.0、`android = true`，与宿主 `TinaKotlinQualityPlugin` 一致），宿主与 kit 两个构建根都会检查。由于这些文件抽离前就处于 ktlint 清洁状态，恢复检查没有暴露风格违规。
-
-#### `editor-kit` 四个模块的 `compileSdk` 回到宿主基线 36
-
-抽离时给四个模块的构建脚本硬编码了 `compileSdk = 37`，而宿主其余库模块仍走 `TinaVersions.COMPILE_SDK = 36`。AGP 会把 compileSdk 写进 AAR 元数据并强制消费者用同等或更高的 SDK 编译，于是 `:feature:settings`、`:core:editor-lsp`、`:feature:editor` 这类 36 模块的 `checkDebugUnitTestAarMetadata` 一律失败，单元测试根本跑不起来（`:app:compileArm64DebugKotlin` 不触发这些 AAR 元数据检查，所以此前整编验证没有暴露）。四个模块现已统一回到 `compileSdk = 36`——它们抽离前就是这个值，不存在 API 37 的使用；kit 侧 `examples/consumer` 仍是 37，满足元数据要求。
-
-#### `:feature:settings` 纳入 Tree-sitter 复合构建的门控
-
-根 `settings.gradle.kts` 只在任务属于 `:app` / `:core:tree-sitter` / `:core:editor-view` / `:core:editor-lsp` / `:feature:editor` 时才挂载 `external/tina-android-tree-sitter` 复合构建。但 `:feature:settings` 经 `:core:editor-view` 传递依赖 `:core:tree-sitter`，单独跑它的任何任务都会因 grammar 依赖无法从 Maven 解析而失败。`:feature:settings` 现已加入 `mayNeedTreeSitterComposite`。
+- 修复编辑器独立构建与消费示例的配置问题，补齐 Tree-sitter grammar 替换和代码检查。
 
 ## [0.18.32] - 2026-09-21
 
@@ -315,495 +262,43 @@ Robolectric 4.13 不附带 SDK 34 之上的 `android-all`，凡未显式 pin SDK
 
 ## [0.18.30] - 2026-09-16
 
-> 本版本覆盖 0.18.29 之后的 C/C++ 编辑器、LSP、raylib 运行链路和大文件加载修复。
-> 包含 RikkaHub 的构建产物仍不得对外分发。
+### Added
+
+- 新增 raylib + CMake 项目模板。
 
 ### Fixed
 
-#### LSP 语义高亮首屏过慢
-
-打开 C/C++ 文件后，Tree-sitter 会先上色，但 LSP 语义着色原先在缓存未命中时先向 clangd 要整份 `semanticTokens/full`。对带 `#include` 的源文件或系统头，这次请求经常要数秒，最长等到 6 秒超时，看起来就像「高亮很久才出来」。
-
-现在改为先请求可见区域（外加预取边距，最多约 480 行）的 `semanticTokens/range`；只有 range 失败才回退 full。滚动到尚未缓存的区域会再补一段 range，而不是一上来分析整份文档。
-
-#### 打开 C++ 系统头时没有 LSP
-
-从工程源文件跳进 libc++ / libstdc++ 系统头（`vector`、`string`、`iostream` 等没有 `.h` 的文件）时，语言服务被路由成 `NoLsp`，补全和跳转都不可用。
-
-原因是 clangd 挂载只认 `c/cc/cpp/h/hpp` 这类扩展名；标准库公共头没有扩展名，路径通常在 `c++/v1/` 或 `include/c++/` 下。现在这类文件按 C++ 头走 clangd，语言 ID 为 `cpp`。`README`、`Makefile` 等无扩展名文件不受影响。
-
-#### 无扩展名 C++ 系统头没有 Tree-sitter 语法高亮
-
-同一类文件（`vector`、`string`、`iostream`）虽然已经能挂 clangd，但 Tree-sitter 仍按「空扩展名 = 未知语言」直接放弃映射，编辑器正文只剩默认前景色。语法高亮现在复用 `CxxFileSupport.isExtensionlessCxxSystemHeader`，映射为 `cpp`；`README` 等无扩展名文件仍不高亮。
-
-#### raylib 项目被误判为终端程序，运行后没有画面
-
-修复 raylib / NativeActivity 项目在运行时被当成终端程序、既不出画面也不报错的问题。
-
-根因是项目元数据里 `apkExportType` 一个字段同时回答了两个问题：**能用哪个 APK 导出模板**
-和**默认走哪条运行链路**。前者对库名敏感（导出模板把 `android.app.lib_name` 写死为 `main`），
-后者与库名无关（运行时按绝对路径 `dlopen` 共享库）。用前者的答案回答后者，导致三种项目被误判：
-
-- CMake 目标没命名为 `main`（例如 `add_library(mygame SHARED ...)`）
-- 单文件 raylib 项目（没有 CMakeLists，库名标记永远匹配不到）
-- 先创建普通项目、之后才加入 raylib（旧值已固化，无法回升）
-
-误判成终端模式后，如果项目里恰好还有可执行产物，运行会挑中它进终端，因此没有任何报错。
-
-现在运行能力由独立的 `nativeActivityRuntime` 字段描述，探测只看 raylib / NativeActivity
-标记，不看库名；每次探测都会刷新该字段，不再被旧值固化；与 SDL 保持互斥。存量项目的
-`run_configs.json` 在升到 schema 9 时做一次性修复：仅当项目所有配置都是终端模式时，
-才把它们改为 NativeActivity——已经自己配好图形配置的项目不受影响。
-
-`libraylib.so` 与 `libtina_native_activity_host.so` 的符号导出、链接与加载链路经 ELF 核验
-均正确，本次未做改动。
-
-#### 运行终端只响应程序结束后的新回车
-
-修复程序读取输入后立即结束时，同一次 Enter 的残余事件被误判为关闭操作的问题：用户为程序输入
-数字后按下 Enter，程序读到输入随即退出，此时隐藏输入框抢焦并接住了同一次按键的抬起事件，界面
-立刻关闭。现在输入过程中的回车只会送入程序标准输入；程序结束后，需再次按下 Enter 才会关闭。
-
-关闭判据不再只看按键属性，而是以程序结束时刻（`uptimeMillis`，与 `KeyEvent.downTime` 同一
-时钟）为闸门，四个入口共用：
-
-- **物理/软键盘按键**（`onKeyDown`、隐藏输入框的 `onPreviewKeyEvent`）：精确判据——要求
-  `ACTION_DOWN`、`repeatCount == 0`，且 `downTime` 晚于程序结束时刻。按键在程序结束前按下即
-  被拒绝，不依赖时间窗猜测。被拒绝的 Enter 一律消费掉，避免落到输入框自身的 `ImeAction`。
-- **IME Done 与快捷键栏点击**：这两条路径不携带时间戳（`performEditorAction` 是 IPC 调用），
-  改用 300ms 宽限窗——程序结束瞬间已在途的事件都落在窗内。此前 `KeyboardActions(onDone)`
-  完全没有守卫，与已修的抬起事件竞态属同一形状。
-
-顺带修正 `onCodePoint` 的死分支：它原先比对 `'\n'` / `'\r'`，但 Termux 会把 commitText 型
-软键盘（Hacker's Keyboard、OpenBoard 等）的换行折成 ctrl+`'m'`，该分支永远不成立。
-
-**未在真机验证**：以上为静态分析加 JVM 单测（11 个用例覆盖跨状态抬起、自动重复、小键盘 Enter、
-宽限窗边界与软键盘换行编码）结论，实际 IME 行为需真机回归。
-
-#### 大文件打开卡死：堵住两条绕过 10MB 阈值的旁路
-
-`EditorTabManager.determineContentType()` 原本已有 10MB 阈值——超过就走只读分页查看器
-`LargeTextViewerScreen`，不进代码编辑器。但有两条路径绕过了它：
-
-- **会话恢复**（主要原因）：会话快照只存文件路径，不存"上次是用编辑器还是查看器打开的"。
-  用户一旦强制用编辑器打开过大文件，之后每次冷启动都会把它整份重新载入，反复卡死。
-  现在 `EditorManager.restoreEditorState()` 在恢复入口按大小跳过。
-  拦在恢复入口而不是 `syncFromManager()`：后者会在用户刚点完"用编辑器打开"时立刻把
-  contentType 改回 `LARGE_TEXT`，导致按钮失效。
-- **"用编辑器打开"按钮**：现在弹二次确认，说明会整份载入内存、可能卡顿或内存不足，
-  以及重启后不会自动恢复为编辑器。
-
-阈值常量提取到 `core:common` 的 `EditorFileSizeLimits`，`app` 与 `feature:editor` 共用同一个值。
-
-**行为变化**：≥10MB 的标签冷启动后不再自动进代码编辑器。不会丢未保存内容（这条路径本来就是
-整份读盘覆盖 buffer，会话里也不存正文），丢的是"曾强制用编辑器打开"这个意图和光标/滚动位置。
-
-### Added
-
-#### raylib + CMake 项目模板
-
-新增 `test-plugins/tinaide.template.raylib` 模板插件，提供可直接运行的 raylib 项目骨架
-（共享库 + `OUTPUT_NAME "main"` + 普通 `main` 入口），避免用户手写 CMakeLists 时踩到
-库名与入口约定。
+- 优化 LSP 首屏语义高亮，补齐无扩展名 C++ 系统头的语言服务和语法高亮。
+- 区分 NativeActivity 与终端运行，修复 raylib 项目运行后没有画面的问题。
+- 运行终端仅接受程序结束后的新回车作为关闭操作，避免输入与退出竞态。
+- 会话恢复遵守大文件打开阈值，手动使用编辑器打开大文件前增加确认。
 
 ### Performance
 
-#### 已打开的编辑器标签切换不再等 Pager 动画、也不再重挂 LSP
-
-切 tab 时标签栏立刻改 `activeTabIndex`，正文却走 `HorizontalPager.animateScrollToPage`，默认还把离屏页拆掉。于是会出现「标签已经过去、正文还停在上一份文件 0.5–2 秒」，即使 LSP 总开关关掉也一样。切回来还会再走一遍 `attachTinaLsp`，状态栏闪 `Connecting`。
-
-现在标签切换改为 `scrollToPage` 立即跟上；已打开的页在上限内留在组合树里（两三个标签会全部保留）。
-
-clangd 同一时刻只认一份当前文档，离开某个 C/C++ 标签后 `isCurrentDocument` 会变 false。原先把这一点当成「会话断了」，于是切到另一份已打开的 `.cpp` / 系统头仍会 `releaseSession` + 状态栏 `Connecting` + 再走一遍共享会话。现在只要共享 clangd 还活着、还是同一个工程，就只做 didClose/didOpen；同一标签切回来也按「会话还活着」复用，不再把状态打成 Connecting。
-
-#### 编辑器加载：rope 建树移出主线程，脏标记指纹改走分片
-
-- `RopeTextBuffer.replaceAllOffThread()`：把 rope 建树与行索引重建放到 `Dispatchers.Default`，
-  **listener 派发仍严格留在调用线程**。不能整个挪走——change listener 会写 Compose 状态和一批
-  非线程安全的渲染缓存（折叠区间、换行布局、可视行段数），而 `TinaEditor` 在加载期间就已组合、
-  这些缓存是活的，派发跑到后台会与主线程渲染竞争。
-- `RopeTextBuffer.contentFingerprint()` / `fingerprintSnapshot()`：按 rope 内部分片折叠
-  FNV-1a，不再把整份文档物化成 String 再逐字符扫描。`DocumentSession` 的四个调用点
-  （`attachEditor`、`markEditorSnapshotClean`、`computeDirty`、`save`）改走这条路，
-  不支持分片指纹的 binding 自动回退到原物化路径。
-  两条路径的哈希必须一致，否则脏标记误判，已用独立参考实现锁住该不变量
-  （跨分片、代理对、编辑后一致性）。
-
-30MB 文档桌面 JVM 实测：`replaceAll` 163ms → 12ms（主线程），指纹 76ms → 47ms 且省掉一次
-约 60MB 的 String 分配。
-
-#### 大文件加载改为流式，不再物化整份文档
-
-打开 30MB 文件时，加载期堆峰值来自四份等长副本叠加。现逐项消除：
-
-- **rope 流式建树**：`Rope.beginStreamingBuild()` 按 IO 分片直接产出叶子。
-  旧路径需先持有完整 String，`chunked()` 还会再造一份等长分片列表。
-- **行索引流式重建**：native `LineIndexKernel::AppendChunk` + `LineIndex.appendChunk()`，
-  不再要求单个连续的 30MB `jstring`。Kotlin 回退实现同步保持语义一致。
-- **IO 移出写锁**：先在锁外建好 rope 与行索引，再在写锁内 `stealFrom` 原子换入。
-  加载期间编辑器已在渲染，若写锁被整段磁盘读取占住，主线程的 `getLine` /
-  `offsetToPosition` 会全部阻塞。
-- **tree-sitter 超阈值不创建**：新增 `SYNTAX_HIGHLIGHT_THRESHOLD_BYTES`（4MB）。
-  tree-sitter 长期持有一份完整 `StringBuilder`，每次 parse 再物化一份快照，
-  对 30MB 文档这两笔各约 63MB；而它对这个量级本就几乎不可用（每次键入都要 replace
-  整个 StringBuilder）。超阈值放弃高亮与折叠，换取可编辑性。
-
-`TextChange` 随之新增 `hasCompleteNewText` / `newTextLength`，与既有 `hasCompleteOldText`
-对称。流式加载发出的事件不携带正文（文档从未以单个字符串存在过），元数据仍然准确。
-消费者已逐个审计：渲染四个缓存与折叠只用行偏移元数据；`EditorState` 与 tree-sitter 的
-单行快速路径改用元数据判断；LSP 侧加防御性跳过。
-
-**顺带修掉一个既有缺陷**：`EditorState.applyTextChangeToSemanticTokens` 与
-`HighlightLineCacheChange.from` 原先用 `newText.contains('\n')` 判断单行编辑。
-对**不含任何换行的大文件**（压缩 JS、单行 JSON），全量替换会满足 `lineDelta == 0` 而误入
-单行快速路径，把 `columnDelta` 算成负数。改用 `newLineBreakCount` 后不再有这个歧义。
-
-30MB 文档桌面 JVM 实测（隔离测量，取后台采样峰值）：加载期堆增量 **97.4MB → 45.4MB**。
-正文、行数、行边界、指纹与旧路径逐项一致（12 个等价性用例覆盖跨分片、代理对、
-CRLF、换行正好落在 4096 边界等情形）。
-
-**已知限制**：常驻堆未改善——rope 叶子对 30MB ASCII 文件固有约 63MB（UTF-16），
-这是硬下限。`VersionedBufferTextSnapshot` 的缓存副本仍常驻，未加阈值保护。
-Android 真机耗时与堆占用**均未实测**，上述数字为桌面 JVM 结果；JNI 改动无法由 JVM 单测覆盖
-（单测走 Kotlin 回退后端），必须真机验证。
+- 已打开的标签切换立即显示正文，并复用语言服务会话。
+- 文本缓冲区和行索引采用后台流式加载，减少大文件加载期间的主线程阻塞与临时内存。
+  当时的性能数据来自桌面 JVM，未据此认定 Android 真机性能已通过验收。
 
 ## [0.18.29] - 2026-09-07
 
-> 本版本包含许可证变更（GPL-3.0-or-later）、X11 图形桌面支持和编辑器性能优化。
-> **X11 桌面尚未在真机验证**，详见下文"仍未验证"。
-
 ### Changed
 
-#### 精简 APK 体积：strip ctest/cpack + 移除扫码入口（2026-09-12）
-
-**1. x86_64 工具链包少 49.6 MB（121.36 MB → 71.77 MB）**
-
-`scripts/build-android-tools.sh` 的 strip 步骤只处理 `bin/cmake`，但 `cmake --install` 会同时
-产出 `bin/ctest` 与 `bin/cpack`。这两个二进制带着完整 `.debug_info` 进了发布包：x86_64 上
-ctest 约 200 MB、cpack 约 185 MB，其中 93.8% 是调试段。arm64 包不受影响（本来就是 strip 过的）。
-
-- **根因修复**：strip 循环改为遍历 `cmake ctest cpack`，缺失的条目跳过而不报错。
-- **现有包重打**：未重新编译工具链，直接用 Python `tarfile` 流式替换这两个成员（Windows 无法
-  在解包时创建符号链接，无法走"解包—修改—重打"路径）。3805/3805 成员校验通过，元数据零漂移，
-  12 个符号链接完整。strip 后 ctest 11.88 MB、cpack 10.89 MB。
-- **同步更新** `tinaide-toolchain-x86_64-v0.2.4-patched.sha256`。
-- **新增防线**：`tools/verify-tina-toolchain-package.ps1` 增加体积闸门，`bin/cmake|ctest|cpack`
-  超过 40 MB 直接判失败（`clang-22` 合理体积约 122 MB，所以不能用全局上限）。同时兼容
-  bsdtar 与 GNU tar 两种 `-tvf` 列表格式，解析不到体积也算失败。
-
-> **注意**：tag `toolchain-v0.2.4` 的 GitHub Release 仍挂着旧包，`tools/ci/restore-tina-toolchain-assets.sh`
-> 在干净检出时会下载它并撞上新的 sha256。发布资产替换策略待定。
-
-**2. 移除 rikkahub 扫码入口，debug APK 少 6.95 MB**
-
-Provider 导入原先提供"相机扫码"和"从相册选图"两条路径，相机扫码依赖 ML Kit barcode
-（`quickie` + CameraX）。删除相机入口后仅保留相册路径，后者走纯 zxing 解码，功能不受影响。
-
-- 删除 `SettingProviderPage.kt` 中 163 行：quickie 导入、`scanQrCodeLauncher`、`handleQRResult`
-  与选择弹窗；按钮直接触发 `PickVisualMedia`。
-- `embedded/build.gradle.kts` 移除 quickie/barcode/camera 依赖。
-- **补声明 `androidx.exifinterface`**：`ImageUtils.kt` 一直在用它，但此前只是通过
-  `androidx.camera:camera-core` 传递进编译类路径，删掉 CameraX 后立即编译失败。
-- 产物中消失：`libbarhopper_v3.so`、2 个 CameraX `.so`、3 个 `.tflite` 模型。
-- CAMERA 权限保留 —— `ChatPage` 的拍照发图仍在用。
-
-#### 许可证变更：TinaIDE 改用 GPL-3.0-or-later（2026-09-03）
-
-为集成 [termux-x11](https://github.com/termux/termux-x11) 提供的 Android 原生 X server（GPL-3.0），
-整个 TinaIDE 项目从自定义许可证 "TinaIDE Open Source License Version 1.0" 改为 **GPL-3.0-or-later**。
-
-- **根目录 `LICENSE`**：替换为 FSF 官方 GPL-3.0 全文（674 行，18 节）
-- **新增 `COPYRIGHT.md`**：声明 SPDX 标识符、解释许可证变更原因、列出分发要求
-- **新增 `NOTICE.md`**：第三方组件与许可证清单，列出所有随 APK 分发或链接的依赖及其许可证
-- **备份旧许可证**：`docs/third-party-notices/TinaIDE-Custom-License-v1.0-superseded.txt`
-
-旧自定义许可证限定开源范围仅覆盖 1.0.0 版本，并对后续版本的二进制分发施加 "仅个人非商业使用" 限制。
-GPL-3.0 不允许在下游附加非商业限制或后续版本闭源，因此原许可证第 4(a)、4(b) 条已不再适用。
-
-**许可证兼容性审计结果**：
-
-- **PRoot (termux-proot)**：GPL-2.0-or-later（73 个源文件头确认 "any later version"），可升级至 GPL-3.0
-- **termux-terminal**：GPL-3.0-only（部分文件为 AOSP Apache-2.0），已补充根目录 LICENSE
-- **RikkaHub**：**阻塞项** — 采用 "Segmented Dual Licensing"（AGPL-3.0 + 非商业/≤10 用户限制），
-  违反 GPL-3.0 第 7 条禁止 "further restrictions"，**当前无法与 GPL-3.0 的 TinaIDE 合并分发**。
-  需联系作者取得 GPL 兼容授权例外，或将其拆为可选组件。
-- **QQ SDK (`libs/open_sdk_3.5.18.0_r2b95cc45_lite.jar`)**：已删除（proprietary，零引用，dead code）
-
-#### 移除 Alpine Linux 支持，Ubuntu 24.04 成为唯一运行时（2026-09-03）
-
-- **删除 Alpine 镜像管理**：
-  - `core/proot/src/main/java/.../AlpineMirrorManager.kt` 及其单元测试
-  - `feature/settings/.../AlpineMirrorSettingsItem.kt` 设置 UI
-  - `ConfigKeys.AlpineMirrorUrl` 配置项
-  - `tools/linux-distro/generate-linux-distro-manifest.ps1` 的 `Update-AlpineMetadata` 函数
-- **修复 Ubuntu profile 劫持 bug**：`SelfHostedLinuxDistroRuntime.syncInstalledProfiles()` 不再无条件将第一个 Ubuntu profile 提升为 active，
-  仅在无 active Ubuntu profile 时提升（`RootfsProfileStoreTest` 新增 2 个测试覆盖）
-- **文档更新**：
-  - `docs/linux-distro-self-hosted-runtime.md` 移除所有 Alpine 相关内容
-  - `docs/模块功能说明.md` 更新 `:core:linux-distro` 范围
-  - `core/i18n` 中英文资源移除 Alpine 镜像相关字符串
+- 整体许可证改为 GPL-3.0-or-later，补齐版权、第三方声明及分发说明。
+- 移除 Alpine 支持，可选 Linux 环境仅保留 Ubuntu 24.04；默认编译仍使用 native tina-toolchain 与 Android sysroot。
+- 精简工具链调试段和 RikkaHub 相机扫码依赖，保留相册导入与聊天拍照能力。
 
 ### Added
 
-#### X11 桌面 GUI 支持 — 集成 termux-x11（2026-09-04）
-
-**状态**：native 库、`:x11` 进程宿主、Koin 装配和设置页入口都已落地；
-**尚未在真机上跑通 XFCE 桌面**。代码路径完整不等于设备上可用，见本节末"仍未验证"。
-
-- **新增模块 `:core:linux-desktop`**：
-  - `LinuxDesktopService` 接口：管理 X11 服务器生命周期、显示配置、环境变量导出
-  - `X11ServerState` / `X11DisplayConfig` 数据类
-  - `LinuxDesktopServiceImpl`：状态机、socket 目录准备与环境变量导出（X server 启动委派给 `X11ServerLauncher`）
-- **新增 submodule `external/termux-x11`**：
-  - 指向 fork [wuxianggujun/termux-x11](https://github.com/wuxianggujun/termux-x11) 的 `tinaide-lorie-windows-build` 分支（GPL-3.0-or-later）
-  - 上游是 [termux/termux-x11](https://github.com/termux/termux-x11)
-  - 包含 `:lorie` Android library（libXlorie.so，完整 X.Org 栈编译为单个 .so）
-  - 包含 `:shell-loader:stub` 提供 Android 隐藏 API 桩（compileOnly 依赖）
-- **`settings.gradle.kts` 新增模块引用**：
-  - `:core:linux-desktop`
-  - `:termux-x11-lorie`（扁平路径，projectDir 指向 `external/termux-x11/lorie`）
-  - `:termux-x11-shell-loader-stub`
-
-  不使用 `:termux-x11:lorie` 形式：那会隐式创建 `:termux-x11` 父项目并执行上游根
-  `build.gradle`，其自带 repository 声明与本仓库的 `FAIL_ON_PROJECT_REPOS` 冲突。
-- **新增 `external/termux-x11/lorie/build.gradle.kts`**：替换上游 Groovy 脚本。
-  上游通过遍历 `rootProject.subprojects` 反查宿主 `APPLICATION_ID`，在多模块仓库中必然失败。
-- **文档**：`core/linux-desktop/README.md` 说明架构、依赖、构建要求与已知问题
-
-**native 构建已打通（Windows 宿主，2026-09-03）**：
-
-`:termux-x11-lorie:assembleDebug` 产出 arm64-v8a `libXlorie.so`（AArch64 ELF64 DYN，
-stripped 3.4 MB），并已打进 `termux-x11-lorie-debug.aar` 的 `jni/arm64-v8a/`。
-重复执行为增量（`42 actionable tasks: 2 executed, 40 up-to-date`），补丁不会重复应用。
-
-为此对 vendored 上游做了五处本地改动（升级 termux-x11 时需人工复核）：
-
-- `src/main/cpp/CMakeLists.txt`：`target_apply_patch` 不再走 `bash -c`。Windows 机器级 PATH 中
-  `C:\WINDOWS\system32` 在 Git `usr\bin` 之前，`bash` 会解析到 WSL 的 `bash.exe`，它无法处理
-  CMake 传入的 `C:/...` 路径。改为直接调用 `patch.exe`，保留上游"反向 dry-run 成功即跳过"的幂等逻辑。
-  同时为 Python3 / Bison / host C 编译器补充 `find_program` HINTS。
-- `src/main/cpp/generate-ks-tables.cmake`（新增）：上游把 `ks_tables.h` 的生成写成
-  `add_custom_command(COMMAND ... "&&" ... ">" ...)`，但 CMake 不经 shell 执行，`&&` 和 `>`
-  会被当作普通参数传给编译器。改为独立 CMake 脚本，显式两步执行并重定向输出。
-- `src/main/cpp/recipes/xkbcomp.cmake`：修复 `locale_t` 编译失败。该 target 按上游要求把
-  `libx11/include/X11` 直接加入头文件搜索路径（`KeyBind.c` 等使用裸 include），
-  而 Windows / macOS 文件系统大小写不敏感，导致 bionic 头文件里的 `#include <xlocale.h>`
-  命中 libX11 的 `Xlocale.h`；后者只 include `<locale.h>` 且从不声明 `locale_t`，
-  其 include guard 又已置位使 `locale.h` 的二次 include 被跳过。
-  解决方式是在更靠前位置放一个同名 shim 头，转发到 sysroot 中真正的 `xlocale.h`。
-- `src/main/cpp/lorie/cmdentrypoint.cpp`：敲门端口 7892 的监听地址从 `INADDR_ANY`
-  改为 `htonl(INADDR_LOOPBACK)`。上游监听全部网卡，同一 Wi-Fi 下任意设备都能触发
-  X server 的连接投递。敲门方（`activity.cpp`）本来就硬编码 `inet_addr("127.0.0.1")`，
-  只绑回环不损失任何功能。
-- `src/main/java/com/termux/x11/CmdEntryPoint.java`：新增 `startEmbedded(Context, String[])`
-  与私有无参构造。原构造是 package-private，无法从 TinaIDE 包内调用；`main()` 又是为
-  `app_process` 场景写的（反射 `ActivityThread` 伪造 Context、按绝对路径 dlopen、
-  最后 `Looper.loop()` 永不返回）。`startEmbedded` 还必须自己
-  `System.loadLibrary("Xlorie")`——`JNI_OnLoad` 是本类 native 方法的唯一注册者，
-  而它只在加载 `libXlorie.so` 时运行；Service 先于任何 `LorieView` 启动，
-  静态初始化没跑过，直接调 `start()` 会 `UnsatisfiedLinkError`。
-
-**host 工具链要求**：
-
-- NDK 29.0.14206865（termux-x11 `version.gradle` pinned）
-- Python 3、GNU Bison、GNU patch、host C 编译器（用于 X.Org 代码生成与补丁应用）
-- MSYS2/MinGW 的 `gcc.exe` 需要其所在 `bin` 目录在 PATH 中，否则 `cc1.exe` 无法加载
-  `libmpfr-6.dll`。CMake 只为 generator 子进程补这个 PATH，**不改 Gradle launcher 的 PATH**：
-  在 Windows 上把 Cygwin/MSYS 提前会让 `gradlew` 把 JDK 解析成 `/cygdrive/...` 从而找不到 `java`。
-- 路径可通过 Gradle property 覆盖，不必依赖内置 HINTS：
-  `tina.termuxX11.python`、`tina.termuxX11.bison`、`tina.termuxX11.hostCompiler`、
-  `tina.termuxX11.hostToolPath`。
-
-**X server 集成契约已固定（2026-09-04）**：
-
-阅读 lorie native 代码后确定了三条硬约束，`:core:linux-desktop` 按此重写。
-
-- **X server 必须独立进程，不能 in-process**：`lorie/src/main/cpp/lorie/cmdentrypoint.cpp`
-  把 libc 的 `exit()` / `abort()` 覆盖成 `_exit()`，而 X server 主线程执行
-  `exit(dix_main(argc, argv, envp))`。X server 任何一次 `FatalError()` 或正常退出都会
-  **直接终止整个进程**，不走 JVM 关闭流程、不抛异常、不可捕获。若 in-process 启动，
-  X server 崩溃会连带杀死 TinaIDE 主进程（IDE 无提示消失、未保存内容丢失）。
-  上游用 `app_process` 起独立进程正是这个原因。新增 `X11ServerLauncher` 接口固化该边界，
-  与既有 `:sdl` / `:crash` 进程隔离一致。
-- **`$TMPDIR` 是 host X server 与 guest client 唯一的交汇点**：`CmdEntryPoint.start()`
-  不接受 socket 路径参数，它只读 `$TMPDIR` 并把监听地址硬编码为
-  `$TMPDIR/.X11-unix/X<display>`；又用 `dirname($TMPDIR)` 推导 chroot 根去找 xkb 数据与字体。
-  新增 `X11SocketLayout` 把该布局建模为 `<rootfs>/tmp`：host 用绝对路径、guest 用 `/tmp`，
-  同一 inode 两侧都能命中，且 `dirname` 恰好落在 rootfs 根上，从而复用 guest 内
-  `xkb-data` 装出来的真实数据，无需往 APK 塞 xkb 副本。
-- **`LinuxDesktopServiceImpl` 不再伪装成功**：旧骨架在只有 TODO 注释的情况下把状态直接置为
-  `Running`，`getX11EnvironmentVariables()` 会导出一个指向不存在的 X server 的 `DISPLAY`，
-  在 guest 里只表现为难以诊断的 "cannot open display"。现在缺 launcher、rootfs 未安装、
-  xkb 数据缺失、display 格式非法都会明确失败并落到 `X11ServerState.Error`。
-  同时移除 `startX11Server()` 的 `SurfaceView` 参数：渲染 Surface 属于 X server 进程里的
-  `LorieView`，主进程无从提供。不再导出 `XAUTHORITY`（服务器以 `-ac` 启动，
-  socket 位于应用私有 rootfs，隔离由 Android 沙箱负责）。
-  新增 `LinuxDesktopServiceImplTest`（7 个测试）覆盖上述失败路径。
-
-**lorie 库 manifest 收敛到 `:x11` 进程（2026-09-04）**：
-
-`:termux-x11-lorie` 的库 manifest 按"独立 app"声明组件，直接合并会给 TinaIDE 多出
-第二个启动图标、一个无障碍服务和 `WRITE_SECURE_SETTINGS` 受保护权限。处理在直接消费者
-`:core:linux-desktop` 一侧完成，宿主 app 无需了解 lorie 内部结构：
-
-- **保留并关进 `:x11`**：`MainActivity`、`LoriePreferences`、`LorieBroadcastReceiver`，
-  全部 `android:exported="false"` 并去掉入口 `intent-filter`。
-  `MainActivity` 不能移除——`activity.cpp` 会 `FindClassOrDie("com/termux/x11/MainActivity")`
-  并按 `GetFieldID(..., "activity", "Lcom/termux/x11/MainActivity;")` 读 `LorieView.activity`，
-  类名和字段类型写死在 `.so` 里。沿用它同时白拿了约 3000 行触摸手势、额外按键栏、
-  鼠标辅助键、PiP、剪贴板同步与 IME 处理。
-  `LorieBroadcastReceiver` 也不能移除：`MainActivity` 没有 `onNewIntent`，
-  Binder 的唯一递送路径是 `LorieView.requestConnection()` 敲 127.0.0.1:7892 →
-  native `lorieListenForKnocks` 回调 `CmdEntryPoint.sendBroadcast()` → `ACTION_START`
-  广播携带 Binder → 本 receiver → `onReceiveConnection()`。上游是导出的跨 app 接收器，
-  这里改成进程内不导出。
-- **移除**：`KeyInterceptor`（无障碍服务，需要 `WRITE_SECURE_SETTINGS`）、
-  `LoriePreferences$Receiver`（导出的命令行改配置接收器，任何 app 都能改 X11 偏好）
-  以及 `WRITE_SECURE_SETTINGS` 权限本身。
-- lorie 的 `allowBackup="false"` 与 TinaIDE 冲突，由 app 侧 `tools:replace` 保留 TinaIDE 取值。
-
-**X server 进程宿主已实现（2026-09-04）**：
-
-- `X11ServerService`（`:x11` 进程、前台 `specialUse` 服务）通过 AIDL
-  `IX11ServerController` 暴露 `startServer`，内部调 `CmdEntryPoint.startEmbedded()`，
-  并在启动前 `Os.setenv` 设好 `TMPDIR` / `XKB_CONFIG_ROOT`。
-  X server 起来后无法在进程内停止（`dix_main` 的退出路径是 `_exit()`），
-  所以服务只记录是否已启动，不提供 stop；"停止"等于结束 `:x11` 进程。
-- `X11ServerProcessLauncher`（主进程）负责 `startForegroundService` + `bindService`，
-  并轮询 `<rootfs>/tmp/.X11-unix/X<n>` 出现才算就绪——`startServer()` 返回只代表
-  native `start()` 已被调用，socket 是 `dix_main` 之后才 bind 的。
-- `UbuntuLinuxDesktopCoordinator` 把三步串起来：环境可用 → 桌面软件包齐备 →
-  启动 X server → 拿到 `Running` 的 `DISPLAY` 后才 `startxfce4`。
-  任一步失败都不启动 guest 会话；X server 已起但会话失败时保留 X server 便于重试。
-- 桌面窗口由 `IAppNavigator.openLinuxDesktop()` 在主进程拉起 `MainActivity`，
-  feature 模块不直接依赖 `com.termux.x11.*`。关掉窗口不影响 guest 会话。
-- Koin 装配：`linuxDesktopModule` 提供 launcher / service / coordinator；
-  socket 布局由 `prootModule` 以 `() -> X11SocketLayout?` 注入，取当前已安装的
-  Ubuntu profile 路径，未安装时返回 `null` 并让启动明确失败。
-- `xkb-data` 加入 `UbuntuDesktopProvisioner.DESKTOP_PACKAGES`：
-  `X11SocketLayout.hostXkbConfigRoot` 指向 `<rootfs>/usr/share/X11/xkb`，
-  缺它 `LinuxDesktopServiceImpl` 会在启动前失败。
-
-**设置页入口（2026-09-04）**：
-
-存储设置的"Linux 系统"卡片在已安装 Ubuntu profile 时新增三项：图形桌面状态（点击重新检查）、
-安装图形桌面组件、打开图形桌面。安装与启动共用一个进度对话框，失败文案直出错误原因。
-
-**guest 会话迁入 `:x11` 进程，桌面不再随主进程消亡（2026-09-05）**：
-
-`init-proot.sh` 带 `--kill-on-exit`，proot 进程树的存亡跟着 **spawn 它的那个进程**。
-此前 XFCE 由主进程 `LinuxEnvironment.startInteractive()` 拉起，于是主进程被系统回收
-（或用户划掉 IDE）就会连带杀死桌面——与"X server 常驻、窗口可开可关"的既定拓扑矛盾。
-
-- **`IX11ServerController` 扩展**：新增 `startGuestSession` / `stopGuestSession` /
-  `isGuestSessionRunning` / `guestSessionPhase`。主进程传入已组装好的 host argv 与
-  `KEY=VALUE` 环境数组，`:x11` 只负责 `exec`。
-- **`X11ServerService` 接管会话**：在本进程 spawn proot 并持有
-  `LinuxDesktopSessionSupervisor`（重启看护也搬到这一侧，否则主进程死亡会留下无人看护
-  或被误杀的会话）。`onDestroy` 显式收会话，不指望"进程反正要死"。
-- **`LinuxDesktopHostProcessPlan` / `LinuxDesktopHostProcessPlanner`（新增）**：
-  命令行必须由主进程算——只有 `:core:proot` 知道 proot 二进制、init 脚本和整套
-  `ROOTFS_PATH` / `LINKER` / `PROOT_*` 变量。`:core:linux-desktop` 不能反向依赖它
-  （会成 Gradle 环），在 `:x11` 起 Koin 又会把 database/plugin/editor 拖进 X server 进程。
-  于是与 `X11SocketLayoutProvider` 一样，由 `prootModule` 注入
-  `PRootDesktopHostProcessPlanner`（内部走新增的 `PRootManager.buildHostLaunchPlan()`，
-  与 `startInteractive()` 共用 `buildPRootCommandLine` / `buildExecEnvironment`，不会漂移）。
-- **`LinuxDesktopSessionLauncher` → `LinuxDesktopSessionPlanner`**：不再 spawn 进程，
-  只计算 guest 命令与环境（`DISPLAY` / `PULSE_SERVER` 仍由 endpoint 独占）。
-  `PRootEnvironment.startUbuntuDesktop()` 这条绕过 coordinator 的旧入口一并删除。
-- **`UbuntuLinuxDesktopCoordinator`**：探测、准备、启 X server、组装命令行留在主进程；
-  会话状态改为每次跨进程询问而不缓存（缓存会在 `:x11` 被回收后继续报"运行中"）。
-  `startSession()` 返回 `Result<Unit>`，`sessionStatus` 属性换成 `sessionPhase()`。
-- **跨 binder 编码加固**：环境值中的 NUL / CR / LF 一律拒绝——换行能在解码侧伪造出
-  额外的环境条目。
-
-**开机分辨率按真机屏幕算（2026-09-05）**：
-
-新增 `resolveX11DisplayConfig(context)`：走 `maximumWindowMetrics`（API 30+）或
-`displayMetrics`（API 28/29）取整块屏幕尺寸，长边当宽做横屏归一化，尺寸 clamp 到
-640..7680、DPI clamp 到 72..640，由 `linuxDesktopModule` 注入 coordinator。
-
-这不是"顺手改好看点"：guest XFCE 现在先于桌面窗口启动，面板和桌面图标会按开机时拿到的
-root window 尺寸布一次版。之后 `LorieView.sendWindowChange()` 会推真实几何过去，但那已经是
-先错后纠——此前固定的 1920x1080 在竖屏手机上会让第一次打开的窗口面板宽度明显不对。
-`X11DisplayConfig.default()` 降级为拿不到屏幕信息时的兜底。
-
-**音频：明确标注为未实现**：
-
-`LinuxDesktopEndpoint.audioServer` 此前看着像个可用特性，实际上没有任何调用方会填它。
-核实过内置 lorie：`lorie/src/main/cpp` 下没有任何 AAudio / OpenSLES / PulseAudio 通道，
-X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`pulseaudio-utils` 只是装了
-`pactl` 这类客户端工具，不等于有声音。已在 KDoc 与 README 写清现状，避免继续暗示这条链路可用。
-
-**仍未验证**：
-
-1. **真机 XFCE 未跑通**：以上都是代码路径，没有在设备上实际看到桌面。
-2. `CmdEntryPoint` 静态初始化里的 `Looper.prepareMainLooper()` 在 Service 进程中的行为未验证。
-3. Android 15+ 前台服务启动限制对本路径的影响未验证。
-4. 关闭桌面窗口后再打开时，敲门 → 广播 → Activity 的重连路径未验证。
-
-**已知环境问题**：
-
-- **Gradle daemon loopback 失败**：`java.io.IOException: Unable to establish loopback connection`。
-  已定位为 JDK 17 / Windows AF_UNIX 临时目录问题（独立 Java 程序调用 `Selector.open()` 同样失败），
-  非 Gradle 或本项目依赖问题。当前绕过方式是构建前 `export TEMP=/c/gradle-tmp TMP=/c/gradle-tmp`；
-  仅在 `gradle.properties` 的 `org.gradle.jvmargs` 加 `-Djdk.net.unixdomain.tmpdir` 不足以修复 launcher JVM。
-
-**未来工作**：
-
-- [ ] 真机验证 XFCE 会话、输入映射与窗口关闭/重开
-- [ ] 桌面环境可选项：i3wm / Fluxbox
-- [ ] 硬件加速渲染：OpenGL ES passthrough（termux-x11 上游已有实验性实现）
-- [ ] 音频：需要先在宿主起一个音频端点（PulseAudio over TCP 或自写 AAudio sink），
-      当前完全没有实现，见上文
-- [ ] Wayland 协议支持（termux-x11 上游已有）
-
-> PRoot 侧**不需要**额外绑定 `/tmp`：PRoot 以 `--rootfs=<rootfsPath>` 启动，
-> guest 的 `/tmp` 本身就解析到 host 的 `<rootfsPath>/tmp`，两侧是同一个 inode。
-> `buildPRootCommandLine()` 的 bind 列表里只有 `--bind=<rootfs>/tmp:/dev/shm`，
-> 那是把同一目录额外再映射一份到 `/dev/shm`，不是对 `/tmp` 的覆盖。
-
-#### 编辑器滚动与增量高亮性能优化（2026-09-06）
-
-自动换行文档的滚动与输入路径此前存在两处线性开销，长文件下每帧都会重算。
-
-- **`EditorVisualLineIndex`（新增）**：视觉行数改用 Fenwick 树维护。
-  单点编辑此前要重写该行之后所有行的视觉行号（O(n)），现在为 O(log n)；
-  `EditorVisualLineMapper` 相应改为查询索引而不是线性扫描。
-- **`EditorLineRenderPlanCache`（新增）**：把每行的语法着色结果缓存成
-  不可变的 `TextLineRenderPlan`——列区间与颜色打包进单个 `IntArray`，
-  按列做二分定位。视口坐标不进入缓存，所以滚动不会让缓存失效。
-- **`IncrementalTreeSitterHighlightState`**：行级高亮请求改为批处理
-  （`LINE_CAPTURE_BATCH_SIZE = 16`），并对待处理队列设上限
-  （`MAX_PENDING_LINE_REQUESTS = 512`），避免快速滚动堆积无界请求。
-- `TextRenderer`、`WhitespaceRenderer`、`WordOccurrenceHighlightRenderer`
-  改为消费上述缓存，各自的重复计算被移除。
-
-新增测试：`EditorVisualLineIndexTest`、`EditorLineRenderPlanCacheTest`、
-`TextRendererCacheTest`、`WhitespaceRendererTest`、`DiagnosticRendererTest`、
-`EditorWordWrapLayoutCacheTest`，以及 `EditorRendererPerformanceSnapshotTest` 的补充用例。
-
-**未验证**：以上为算法层面改动并有单元测试覆盖，但**没有在真机上做过滚动帧率对比**，
-无法给出实测的性能提升数字。
+- 集成 termux-x11，新增独立 `:x11` 进程承载 X server 和 Linux 桌面会话；XFCE 尚未完成真机验收。
 
 ### Fixed
 
-- `SelfHostedLinuxDistroRuntime.syncInstalledProfiles()` 不再在每次启动时无条件劫持用户手动选择的 active profile，
-  仅在首次安装（无 active Ubuntu profile）时提升第一个 profile。
-- **`:core:linux-desktop` 缺少 `consumer-rules.pro` 导致 Release 构建失败**：
-  `TinaAndroidLibraryPlugin` 为每个 library 模块无条件注册 `consumerProguardFiles("consumer-rules.pro")`，
-  新增模块漏建该文件会让 `mergeReleaseConsumerProguardFiles` 直接失败（Debug 构建不受影响，因此此前未暴露）。
-  已补空规则文件并说明：lorie 的 JNI keep 由 `external/termux-x11/lorie/proguard-rules.pro`
-  作为 consumer rules 提供，manifest 组件由 AGP 自动生成 keep，AIDL Stub/Proxy 静态可达。
+- 修复 Ubuntu 配置档被错误切换为活动配置、Linux 桌面模块缺少 Release 混淆规则的问题。
+- 优化编辑器视觉行索引、行渲染缓存与增量高亮批处理，减少滚动时的重复计算。
 
-### Build
+### 后续状态
 
-- `tools/checks/direct_file_operations_allowlist.txt` 登记 `X11SocketLayout.clearStaleSocket()`
-  的 `delete` 调用：X server 走 `_exit()` 退出时不做清理，残留 socket 会让下次 bind 同一 display 失败。
-- 本版本 APK 经 `:app:assembleArm64Release` 构建并签名验证（`CN=TinaIDE, O=WuXiangGujun`）；
-  R8 mapping 归档至 `app/mappings/0.18.29-20260907-125117/`。
-
-> 版本号说明：0.18.28 是 Release 构建自动递增产生的跳号，未产出任何 APK，故不单独记录。
+- 当时记录的 RikkaHub 许可分发阻塞已在 0.19.0 通过同步官方纯 AGPL-3.0 许可解决，当前许可依据见根目录声明与应用内许可全文。
 
 ## [0.18.27] - 2026-08-26
 
@@ -816,10 +311,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - 深入修复 [Issue #10](https://github.com/wuxianggujun/TinaIDE/issues/10)：移除 v0.18.24 中无法解决 OriginOS 6 HD 触控板问题的 Activity 级事件兼容层，改用 Compose 官方 `ComposeUiFlags.isTrackpadGestureHandlingEnabled = false`，绕过与 vivo Pad 5 Pro 等 Android 16 平板反馈相关的 fake-finger 路径，等待用户复测编辑器、设置和文件列表的双指滚动。
 - 修复 Compose 与内嵌 RikkaHub Material3 版本升级后的 `BottomSheet` API 不兼容，确保宿主和嵌入模块可以使用同一套 Compose 运行时。
 
-### Tests
-
-- 通过 `:rikkahub:embedded:compileDebugKotlin`、`:core:designsystem:compileDebugKotlin` 与 `:app:compileArm64DebugKotlin` 验证；依赖解析确认 Compose UI 为 `1.11.2`，不再包含 `1.12.0-alpha02` 或 `1.12.0-alpha03`。
-
 ## [0.18.24] - 2026-08-25
 
 ### Changed
@@ -830,15 +321,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 
 - 修复项目级 `CMake Args` 可通过 `CMAKE_BUILD_TYPE` 覆盖当前运行配置的问题；设置页会拒绝冲突参数，构建执行端也保证运行配置最终生效。
 - 针对 [Issue #10](https://github.com/wuxianggujun/TinaIDE/issues/10) 首次加入 Android 14+ 触控板事件兼容层；该 Activity 级方案在 OriginOS 6 HD/vivo Pad 5 Pro 上仍无法恢复 Compose 双指滚动，已由 v0.18.27 的 Compose 官方开关方案替代。
-
-### Tests
-
-- 新增触控板双指滚动事件兼容层回归测试，覆盖 Android 版本、输入来源、事件分类和事件字段保留。
-
-### Verification
-
-- `pwsh ./tools/build-apk.ps1`：Debug Arm64 APK 构建成功，`BUILD SUCCESSFUL`，生成 `app-arm64-v8a-debug.apk`。
-- `git diff --check` 通过。
 
 ## [0.18.23] - 2026-08-23
 
@@ -857,32 +339,7 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - 修复 App 与内嵌 RikkaHub 的 `usesCleartextTraffic` manifest 合并冲突；宿主继续保持禁止明文流量。
 - 修复部分 Redmi/HyperOS 设备将 `/data/user/0` 与 `/data/data` 解析为同一应用目录时，Android sysroot 解包被误判为 `tar entry escapes target directory` 的问题；路径穿越与符号链接防护保持启用。
 
-### Tests
-
-- 新增底部面板展开后收起的返回行为回归测试，并补充菜单、底部面板、文件树抽屉的手工返回优先级检查项。
-- 新增编译数据库解析、头文件命令推断和编译上下文状态生命周期测试，并通过 LSP、编辑器状态、App arm64 Debug 编译与国际化检查。
-- 新增 Code Action kind 限定、服务端越界响应过滤与诊断 Quick Fix 按可用性显示的回归测试。
-- 新增 WorkspaceEdit 预览解析测试，覆盖多文件摘要、项目目录越界、资源操作拒绝、文档版本和容量限制。
-- 新增 SourceFixAll 严格 kind 过滤和整文档 UTF-16 范围测试，避免普通 Command 或 Quick Fix 误触发批量修复入口。
-- 新增 Android 应用数据目录 canonical alias 回归测试；`:core:common:testDebugUnitTest` 共 81 项测试全部通过。
-
-### Documentation
-
-- 更新 README、开发指南及 App 内中英文 LSP 帮助，补充 C++ 编译上下文诊断入口、字段含义和排障流程。
-- 补充诊断 Quick Fix 的显示条件、通用 Code Actions 边界、定向测试命令与后续编辑器体验路线。
-- 更新 App 内中英文已知问题，补充旧版本 sysroot 解包路径别名报错的升级与重新部署指引。
-
-### Verification
-
-- `py tools/checks/check_all.py`、`py tools/i18n/check_all.py` 与 `git diff --check` 全部通过。
-- 本地 ARM64 Release 构建通过，版本为 `0.18.23`（APK `versionCode=18242`）。
-- R8、Lint、ZipAlign、V2 签名及 tina-toolchain assets 校验全部通过。
-
 ## [0.18.20] - 2026-08-19
-
-### Fixed
-
-- 移除已不再存在的 LSP metadata cache 直接删除操作基线，恢复发布前维护检查。
 
 ### Changed
 
@@ -898,20 +355,11 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - 修复 Android C++ 可执行文件依赖 TinaIDE 私有 `libc++_shared.so`、复制到其他终端后因运行库版本不匹配而无法启动的问题；单文件与 CMake 可执行链路现在默认静态链接 libc++，共享库链路保持不变，并自动使旧构建缓存失效。
 - 自定义与内置 Android sysroot 现在会校验 `libc++_static.a`、`libc++abi.a` 及各 API 的 `libc++.a`，缺失时在构建前给出明确路径，避免到链接阶段才失败。
 
-### Tests
-
-- 新增 C++ 标准解析、CMake/Makefile/单文件 override、可执行文件 libc++ 链接与缓存失效策略、sysroot 静态运行库完整性、fallback 内容哈希、外部 compile database 保护和运行配置刷新回归测试。
-- 新增 Tree-sitter changed ranges、多行文档注释缓存失效与注释颜色优先级回归测试。
-
 ## [0.18.19] - 2026-08-18
 
 ### Fixed
 
 - 修复编辑器 Inlay Hint 直接覆盖参数、返回类型等源代码的问题；提示现作为虚拟宽度参与行内布局、软换行与横向滚动范围计算，代码文本、光标、选区、诊断、括号高亮与触摸命中会共同避让提示区域。
-
-### Tests
-
-- 新增 Inlay Hint 布局回归测试，覆盖参数前预留空间、行尾类型提示、同列多提示、提示区域命中、缓存失效、软换行与横向滚动范围。
 
 ## [0.18.18] - 2026-08-18
 
@@ -947,21 +395,9 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - 修复 native clang-format 在主线程同步读取进程输出、超时无法生效的问题，并避免异步格式化结果覆盖已切换或继续编辑的文件。
 - 修复遗留 `FILE` 默认风格在项目缺少 `.clang-format` 时导致格式化失败，以及单次格式化跨 native/PRoot 模式执行的问题。
 
-### Removed
-
-### Tests
-
-- 新增 LSP Code Action、诊断 URI/版本桥接、共享 clangd 竞态、Inlay Hint 模型与渲染状态回归测试。
-- 新增格式化风格解析、图形运行协议、raylib NativeActivity 契约、动态库 SONAME 解析、ABI 下载源选择与 Registry 序列化回归测试。
-- 新增格式化进程 stdin/超时与编辑器条件回写回归测试。
-- 新增依赖包下载大小校验与相对 URL 补全后 ABI/大小/checksum/range 元数据保留测试。
-- Registry 校验新增 ABI 元数据一致性、单源大小与 SHA-256，以及独立归档不得夹带其他 ABI 库的检查。
-
-### Documentation
-
-- 更新 SDL/raylib 图形运行说明、统一悬浮返回外壳、项目创建与构建帮助，以及 native 依赖包按 ABI 发布、source 选择和大小/checksum 完整性校验规范。
-
 ## [0.18.12] - 2026-07-25
+
+> 下述布局与快捷栏变动为当时版本记录；0.18.18 已恢复快捷符号栏。当前底部默认面板为「问题 / 构建」，编译失败时展示构建日志。
 
 ### Added
 
@@ -1015,20 +451,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - 将仅 androidTest 使用的 `AndroidElfExecutor` 从主 APK 源码移出到 `app` androidTest。
 - 移除底部 `EditorToolBar` 符号快捷栏实现。
 
-### Tests
-
-- 新增 Android 10 公共存储 Manifest 契约测试，防止 `requestLegacyExternalStorage` 兼容配置再次丢失。
-
-### Documentation
-
-- 补充公共/私有项目目录、Android 10/11+ 文件权限差异和“已授权仍创建失败”的排查步骤，并同步 App 内中英文帮助。
-- 清理编译/门户中过时的「AI 工具」「P3 stub」等注释，口径对齐当前 RikkaHub 嵌入与 native 默认链路。
-
-### Notes for Testers
-
-- 请重点验收：顶栏 Run 菜单与左侧撤销/重做、侧栏符号、溢出菜单分组、构建失败自动打开诊断、未保存/退出/冲突对话框竖排按钮、Git 同步与 APK 结果按钮布局、命令打开书签不再崩溃。
-- 已安装用户若曾手动将调试工具栏设为底部，设置项会保留原值；新装/重置后默认顶部。
-
 ## [0.18.11] - 2026-07-13
 
 ### Changed
@@ -1055,26 +477,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - 修复 SDL 工程导出 APK 时，native 依赖解析、ABI 目录判断和动态库装载顺序在部分项目结构下不稳定的问题。
 - 修复编辑器输入法组合文本、光标恢复、snippet 同步编辑、签名提示和撤销/重做在部分操作序列中的回归。
 - 修复自动保存与文件写入在并发或中断场景下可能留下不完整内容的问题。
-
-### Documentation
-
-- 修正远程 LSP 与 PC 代理指南中的设置入口，统一为当前的“设置 → 语言服务器”。
-- 更新 SDL 游戏引擎插件文档，补充当前 native runtime 打包与依赖处理口径。
-- 刷新当前事实源文档、Linux distro 运行时说明和 App 内设置帮助，并增加轻量文档一致性检查。
-- App 内 29 份帮助正文新增英文版本，帮助仓库按当前 Locale 加载英文并在缺失时回落到中文。
-- 同步中英文根 README 的 Registry、Linux distro 回落、SDK 与架构口径，并补齐架构/模块清单中的当前能力。
-
-### Tests
-
-- 新增大目录删除/取消/恢复、启动进程角色、终端参数与告警过滤、本地化退出提示、运行暂存清理、包安装就绪、工具链删除、日志保留和项目克隆清理回归测试。
-- 扩展 APK builder、SDL runtime、编辑器状态、文本缓冲、Tree-sitter、WorkspaceEdit、原子写入和自动保存回归测试。
-
-### Verification
-
-- 已执行 `py tools/checks/check_all.py`，文档、国际化、资源冲突和直接文件操作基线检查通过。
-- 已执行 `./gradlew :core:storage:testDebugUnitTest :core:compile:testDebugUnitTest :core:packages:testDebugUnitTest :core:ndk:testDebugUnitTest :feature:terminal:testDebugUnitTest :feature:projectlist:testDebugUnitTest :app:testArm64DebugUnitTest --continue --console=plain`。
-- 已执行 `./gradlew ktlintCheck --console=plain`。
-- 已执行 `./gradlew :app:assembleArm64Debug --console=plain`，Arm64 Debug 候选 APK 打包通过。
 
 ## [0.18.10] - 2026-06-29
 
@@ -1109,27 +511,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - 移除应用内反馈页面、反馈模型、反馈仓库和对应帮助入口；当前开源客户端不再依赖已停用的反馈服务器。
 - 移除 RikkaHub embedded 中不适合 TinaIDE 内嵌场景的独立版更新检查、捐赠、商店跳转和自带主题配置页面。
 
-### Documentation
-
-- 更新 `docs/guides/Hex-Viewer-Design.md`，补充 Reverse Action Pipeline、JNI/APK 报告弹窗和报告边界。
-- 更新 App 内帮助文档，说明 AI 能力由内嵌 RikkaHub 承担，并移除反馈服务器相关指引。
-
-### Tests
-
-- 扩展 `HexBinaryWorkbenchTest`，覆盖 action pipeline、JNI/APK 报告模型、Markdown/JSON 格式输出和 loadLibrary 候选字符串。
-
-### Verification
-
-- 已执行 `./gradlew :feature:viewer:ktlintFormat --console=plain`。
-- 已执行 `py tools/i18n/check_all.py`。
-- 已执行 `./gradlew :feature:viewer:ktlintCheck --console=plain`。
-- 已执行 `./gradlew :feature:viewer:testDebugUnitTest --tests "com.wuxianggujun.tinaide.ui.compose.viewer.HexBinaryWorkbenchTest" --console=plain`。
-- 已执行 `./gradlew :app:compileArm64DebugKotlin --console=plain`。
-- 已执行 `./gradlew :rikkahub:embedded:compileDebugKotlin --console=plain`。
-- 已执行 `./gradlew :app:compileArm64DebugKotlin --console=plain`，验证 RikkaHub embedded、设置页与主 App 集成编译通过。
-- 已执行 `./gradlew :rikkahub:embedded:exportReleaseConsumerProguardFiles --console=plain "-Ptina.autoIncrementReleaseVersion=false"`，验证 RikkaHub embedded 的 Release consumer ProGuard 规则可导出。
-- 已触发 GitHub Actions `Release Build`，验证 Release workflow 的 R8 内存与超时配置进入远端发版流程。
-
 ## [0.18.9] - 2026-06-29
 
 ### Added
@@ -1138,22 +519,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - 发现项支持 offset 跳转、批量标记书签，并可直接打开命令弹窗生成针对单个发现项的逆向脚本。
 - 命令弹窗新增 Rizin/radare2 只读分析脚本和 `pd` 反汇编预览脚本，默认不包含 `wx` 写命令，避免把 patch 脚本和只读分析混在一起。
 - 命令弹窗新增 Frida Hook 模板和 LLDB breakpoint/memory/disassemble 模板；从发现项打开时优先使用发现项 offset 和可用的 JNI/native symbol。
-
-### Documentation
-
-- 更新 `docs/guides/Hex-Viewer-Design.md`，补充发现项导航、只读逆向脚本、Frida/LLDB 模板以及“不在 App 内直接执行外部逆向工具”的边界。
-
-### Tests
-
-- 新增 `HexBinaryWorkbenchTest`，覆盖发现项严重度排序、APK native marker 绝对 offset、只读脚本避免 `wx` 写命令，以及 Frida/LLDB 模板生成。
-
-### Verification
-
-- 已执行 `./gradlew :feature:viewer:ktlintFormat --console=plain`。
-- 已执行 `py tools/i18n/check_all.py`。
-- 已执行 `./gradlew :feature:viewer:ktlintCheck --console=plain`。
-- 已执行 `./gradlew :feature:viewer:testDebugUnitTest --tests "com.wuxianggujun.tinaide.ui.compose.viewer.HexBinaryWorkbenchTest" --console=plain`。
-- 已执行 `./gradlew :app:compileArm64DebugKotlin --console=plain`。
 
 ## [0.18.8] - 2026-06-27
 
@@ -1184,24 +549,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - 删除 `feature:ai` 模块、AI 数据库实体/DAO、AI 配置模型、AI 设置页、AI 抽屉面板、AI 工具回调与相关测试。
 - 删除旧版低效 Hex 行模型测试，改由新的 Hex byte row、文件数据管理、搜索、选区 Inspector、导出和二进制分析测试覆盖。
 
-### Documentation
-
-- 新增并更新 `docs/guides/Hex-Viewer-Design.md`，记录 Hex Viewer 的 r2droid 风格设计取舍、二进制分析工作台布局、Rizin/radare2 命令入口、当前能力边界、后续扩展建议和开源致谢。
-- 新增 `docs/third-party-notices/r2droid-MIT-LICENSE.txt`，保留 r2droid 的 MIT License 文本并在文档中致谢。
-- 更新 RikkaHub 接入文档与 App 内已知问题说明，补充 `:rikkahub:embedded:compileDebugKotlin` 静态验证命令、子模块提交顺序，以及 AGP 9.2.1 内部 project dependency notation 弃用告警的判断口径。
-
-### Verification
-
-- 已执行 `./gradlew help --warning-mode all --build-cache --console=plain`。
-
-- 已执行 `py tools/i18n/check_all.py`。
-- 已执行 `./gradlew :feature:viewer:ktlintFormat --console=plain`。
-- 已执行 `./gradlew :feature:viewer:ktlintCheck --console=plain`。
-- 已执行 `./gradlew :feature:viewer:testDebugUnitTest --tests "com.wuxianggujun.tinaide.ui.compose.viewer.HexBinaryAnalysisTest" --console=plain`。
-- 已执行 `./gradlew :feature:viewer:testDebugUnitTest --tests "com.wuxianggujun.tinaide.ui.compose.viewer.HexViewerLayoutPolicyTest" --tests "com.wuxianggujun.tinaide.ui.compose.viewer.HexByteRowTest" --console=plain`。
-- 已执行 `./gradlew :app:compileArm64DebugKotlin --console=plain`。
-- 已执行 `./gradlew :rikkahub:embedded:compileDebugKotlin --offline --build-cache --console=plain --warning-mode all`；未运行真机测试。
-
 ## [0.18.7] - 2026-06-23
 
 ### Added
@@ -1220,15 +567,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - 调整应用启动早期 xCrash、Timber 与进程记录初始化顺序，降低崩溃阶段日志链路竞态。
 - 插件权限拒绝日志区分“未声明”和“未授权”，并带上 API namespace/method 上下文，便于插件开发者定位权限配置问题。
 
-### Documentation
-
-- 更新构建、编译器设置、新建项目和已知问题帮助文档，说明 NDK 共享库模板默认目标、源码保存检查、构建诊断日志入口以及构建临时资源清理边界。
-
-### Verification
-
-- 已执行 `git diff --check`。
-- 按本次要求未运行 Gradle 测试或构建；新补充的构建进程、崩溃日志上传、插件运行时并发和开发者选项支持测试需由后续 CI/本地验证覆盖。
-
 ## [0.18.6] - 2026-06-18
 
 ### Fixed
@@ -1246,11 +584,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - 构建日志底栏 Tab 支持角标显示日志条数，减少独立顶部工具栏占用空间。
 - 默认开启 MT 数据文件提供能力，降低日志无法上传且用户手动打不开目录的概率。
 - 更新 Linux 存储、MT 数据文件 Provider 与当前文档状态说明。
-
-### Verification
-
-- 已新增 NDK shared library 模板与 CMake 链接策略回归测试覆盖。
-- 已做静态校验与 i18n 资源检查；本次按要求不执行 Gradle 编译。
 
 ## [0.18.5] - 2026-06-12
 
@@ -1282,33 +615,12 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - 修复侧边栏删除已打开文件后编辑器没有同步反应的问题：删除动作现在统一走文件管理器删除入口，并在文件删除通知到达时自动关闭受影响的打开标签页，目录删除时也会同步处理其中已打开的文件。
 - 修复可取消下载没有真正取消底层网络请求的问题：可恢复下载器和插件市场 API 改为可取消执行，取消时保留临时文件以便后续续传，不再弹出误导性的失败提示。
 
-### Documentation
-- 更新编译器设置帮助和设置概览，说明 NDK Runtime profile、内置/自定义 sysroot 与切换后的编译指纹行为。
-- 更新工具链与 Linux 发行版维护文档，补充 sysroot profile 资产同步、校验脚本、远程发行版 registry 清单和镜像回落发布流程。
-- 新增 `.plan.md` 记录 Linux 发行版下载“远程清单 + 镜像回落”的实施计划，便于后续继续迭代和回溯设计边界。
-
-### Verification
-- `./gradlew :core:editor-view:testDebugUnitTest --tests "com.wuxianggujun.tinaide.core.editorview.EditorInputConnectionUtilsTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorInputConnectionExtractedTextTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorInputConnectionEditTest" --console=plain`
-- `./gradlew :core:editor-view:testDebugUnitTest --tests "com.wuxianggujun.tinaide.core.editorview.EditorCompletionStateTest" --console=plain`
-- `./gradlew :core:editor-view:testDebugUnitTest --tests "com.wuxianggujun.tinaide.core.editorview.EditorPopupComposeSmokeTest" --tests "com.wuxianggujun.tinaide.core.editorview.PopupOverlaySharedAnchorIntegrationTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorOverlaysIntegrationTest" --console=plain`
-- `./gradlew :core:editor-view:testDebugUnitTest --tests "com.wuxianggujun.tinaide.core.editorview.EditorSnippetChoiceCompletionTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorCompletionStateTest" --console=plain`
-- `./gradlew :core:editor-view:testDebugUnitTest --tests "com.wuxianggujun.tinaide.core.editorview.EditorStateSelectWordTest" --tests "com.wuxianggujun.tinaide.core.editorview.SelectionHandleLayoutTest" --console=plain`
-- `./gradlew :core:editor-view:testDebugUnitTest --tests "com.wuxianggujun.tinaide.core.editorview.EditorGestureCoordinatorLongPressTest" --console=plain`
-- `./gradlew :app:testArm64DebugUnitTest --tests "com.wuxianggujun.tinaide.ui.compose.components.FileTreeItemLongPressAnchorTest" --console=plain`
-- `./gradlew :app:testArm64DebugUnitTest --tests "com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerStateTest" --console=plain`
-- `./gradlew :core:editor-view:testDebugUnitTest --tests "com.wuxianggujun.tinaide.core.editorview.EditorGestureHandlerTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorGestureCoordinatorCtrlClickTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorPopupComposeSmokeTest" --tests "com.wuxianggujun.tinaide.core.editorview.PopupOverlaySharedAnchorIntegrationTest" --tests "com.wuxianggujun.tinaide.core.editorview.EditorOverlaysIntegrationTest" --console=plain`
-- `./gradlew :core:editor-view:testDebugUnitTest --console=plain`
-- `./gradlew :core:editor-view:compileDebugKotlin --console=plain`
-
 ## [0.18.4] - 2026-06-12
 
 ### Fixed
 - 修复“先创建 C/C++ 项目再安装依赖包”时编辑器持续报头文件找不到的假错（如安装 SDL3 后 clangd 仍提示找不到 SDL3 头文件，但实际编译运行正常）。现在区分 Tina 兜底生成与 CMake/外部导出的 `compile_commands.json`：兜底数据库会随已安装包指纹变化自动失效重建，外部权威数据库仍直接复用。
 - 修复“项目开着时安装包、但当前没有打开 C/C++ 文件”这条路径下编译数据库缓存不刷新的问题：依赖包变更事件现在会无条件失效 `LspEditorManager` 的内存编译缓存，并在缓存命中时再次校验包指纹做自愈兜底，避免下次打开文件时复用过时配置。
 - 修复 SDL 项目运行时偶发因加载到上一次残留的系统库脏副本（如 `libmediandk.so`）而崩溃的问题：每次 stage 运行库前先清空该项目的暂存目录；同时把 OS 提供的 NDK 系统库清单统一收敛到 `AndroidSystemLibraries`，避免 SDL 运行与 APK 导出两处各自维护、口径不一致。
-
-### Documentation
-- 新增设计文档《compile_commands 与依赖包同步机制》（`docs/design/CompileCommands-Package-Sync-Design.md`），记录 compile_commands 来源区分、包指纹失效与缓存自愈的完整链路；并在 LSP 调试指南补充“装包后 clangd 仍报找不到头文件”的排查小节。
 
 ## [0.18.3] - 2026-06-11
 
@@ -1328,15 +640,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - 删除 `AiAccessMode`、`AiConfigStrategy` 及对应测试，清理官方统一网关相关的历史配置和测试入口。
 - 删除无入口的 CI toolchain 资产维护记录和 Native CMake linker64 排障记录，并移除帮助中心中已被“关于与日志”和“已知问题”覆盖的反馈、我的、开发者选项与 FAQ 短文档。
 
-### Documentation
-- 更新 AI 设置帮助文档和设置概览，说明当前仅保留渠道管理、模型选择与工具调用相关配置。
-- 帮助中心保留 30 篇注册文档；FAQ 分类收敛到“已知问题”，并补入开源版在线能力、BYOK、插件市场和反馈入口说明。
-
-### Verification
-- `py tools/i18n/check_all.py`
-- `git diff --check`
-- 按要求未运行 Gradle 编译。
-
 ## [0.18.2] - 2026-06-09
 
 ### Changed
@@ -1348,9 +651,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 ### Fixed
 - 修复 GitHub 代理 fallback、包注册表协议解析和插件市场协议解析的边界问题。
 - 修复部分运行时库解析路径在 APK 导出或 SDL 启动场景下不一致的问题。
-
-### Verification
-- 新增/更新 GitHub Registry、Package Registry、Plugin Registry、LaunchEnvironment、AppUpdateChecker、SDL runtime 和 APK runtime resolver 相关单元测试覆盖。
 
 ## [0.18.1] - 2026-06-08
 
@@ -1367,14 +667,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - 修复 AI 工具安全测试、ktlint 和文档口径相关问题，保证当前开源分支能在禁用 LFS checkout 后继续通过关键构建校验。
 - 强化存储路径和 MT 管理器访问边界的安全测试覆盖，避免默认暴露不应公开的私有目录。
 
-### Verification
-- `bash tools/ci/restore-tina-toolchain-assets.sh arm64 x86_64`
-- `.\gradlew.bat :build-logic:convention:compileKotlin --console=plain --no-daemon`
-- `.\gradlew.bat :app:verifyTinaToolchainAssets --console=plain --no-daemon`
-- `.\gradlew.bat :app:tasks --all --console=plain --no-daemon`
-- `.\gradlew.bat :app:compileArm64DebugKotlin --console=plain --no-daemon`
-- `git diff --check`
-
 ## [0.18.0] - 2026-06-06
 
 ### Added
@@ -1389,19 +681,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - x86_64 tina-toolchain 资产更新为 `v0.2.4-patched`，用于修复模拟器链路上的工具链兼容问题。
 - 当前 App 版本收敛为 `0.18.0 / 1801`，避免从 `0.17.x` 直接跳到 `0.20.0` 造成版本节奏误解。
 
-### Verification
-- `.\gradlew.bat :app:compileArm64DebugKotlin --console=plain`
-- `.\gradlew.bat :app:testArm64DebugUnitTest --tests "com.wuxianggujun.tinaide.ui.MainActivityShortcutDispatcherTest" --tests "com.wuxianggujun.tinaide.ui.compose.screens.main.MainActivityCommandOrderingTest" --tests "com.wuxianggujun.tinaide.ui.compose.screens.main.MainActivityCommandPreferenceStoreTest" --console=plain`
-- `.\gradlew.bat :core:common:testDebugUnitTest --tests "com.wuxianggujun.tinaide.core.commands.HostCommandsTest" --console=plain`
-- `.\gradlew.bat :core:config:testDebugUnitTest --tests "com.wuxianggujun.tinaide.core.config.KeyboardShortcutTest" --console=plain`
-- `.\gradlew.bat :core:plugin:testDebugUnitTest --tests "com.wuxianggujun.tinaide.plugin.PluginKeyBindingResolverTest" --tests "com.wuxianggujun.tinaide.plugin.PluginMenuResolverTest" --tests "com.wuxianggujun.tinaide.plugin.script.ScriptPluginManagerTest" --tests "com.wuxianggujun.tinaide.plugin.script.api.PluginCommandRegistryTest" --console=plain`
-- `py tools/i18n/check_all.py`
-- `git diff --check`
-- `tools/plugin-starters/config-basic/validate.ps1`
-- `tools/plugin-starters/script-command/validate.ps1`
-- `tools/plugin-starters/script-basic/validate.ps1`
-- `tools/plugin-starters/lsp-basic/validate.ps1`
-
 ## [0.17.9] - 2026-06-02
 
 ### Changed
@@ -1409,32 +688,16 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - Git 提交表情插入逻辑收口，避免在已有提交信息前产生重复空格。
 - `version.properties` 升级到 `0.17.9 / 1710`，为下一轮测试包与 `v0.17.8` 发布包做版本区分。
 
-### Documentation
-- 校正 Feature Roadmap 中已接入的小 TODO 状态，避免路线图继续把安装引导、底部面板、调试变量和 Git 入口误标为未实现。
-
-### Verification
-- `py tools/i18n/check_all.py`
-- `.\gradlew.bat :app:ktlintCheck --console=plain --no-daemon`
-- `.\gradlew.bat :app:compileArm64DebugKotlin --console=plain --no-daemon`
-
 ## [0.17.8] - 2026-06-02
 
 ### Changed
 - 完善分屏编辑器与状态管理体验，补齐分栏焦点、布局切换、标签移动/复制和状态持久化闭环。
 - 增强自定义项目模板与内置模板管理链路，项目模板 ZIP 扫描、元数据展示和设置页管理进一步收口。
 
-### Verification
-- `.\gradlew.bat :app:compileArm64DebugKotlin --console=plain`
-- GitHub Actions `Build and Release` 已通过：run `26824061799`，并生成 `arm64-v8a` / `x86_64` Release APK。
-
 ## [0.17.7] - 2026-06-01
 
 ### Fixed
 - 发布 0.17.6 SmartDns 启动崩溃修复的确认版，便于用户通过最新 Release 下载到包含 `StackOverflowError` 修复的 APK。
-
-### Verification
-- 新增 `SmartDnsCircularDependencyTest` 回归测试，覆盖 `DohDnsResolver`、`SmartDns`、`OkHttpClientProvider.probe` 初始化不再形成循环依赖，并验证 `SmartDnsResolver` 能正常解析 `localhost`。
-- `.\gradlew.bat :core:network:testDebugUnitTest --tests "com.wuxianggujun.tinaide.core.network.SmartDnsCircularDependencyTest" --console=plain`
 
 ## [0.17.6] - 2026-05-31
 
@@ -1447,10 +710,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - 让本地 `tina.abi` flavor 跟随 Android Studio 注入的目标设备 ABI，避免开发期反复手动切换 flavor。
 - 大规模模块化整理与残留清理：移除 `app/src/main/assets/help/*.md` 帮助文档（已迁至各 feature 模块自有资源），同步清理 `MainActivity` / `TinaApplication` / `AndroidManifest` / `lint-baseline` / `app/src/main/cpp` 内的旧引用。
 - Linux 环境与 PRoot 一致性继续打磨：发行版安装与 PRoot 启动失败时具备恢复路径；要求复用发行版时元数据完全匹配，避免错位；新增环境健康刷新动作；安装完成提示提供"查看日志/打开终端"快捷入口；记录 Linux 健康检查结果便于排障。
-
-### Verification
-- `.\gradlew.bat :core:network:compileDebugKotlin --console=plain`
-- `.\gradlew.bat :app:compileArm64DebugKotlin --console=plain`
 
 ## [0.17.5] - 2026-05-27
 
@@ -1473,22 +732,12 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 ### Fixed
 - 旧版 `run_configs.json` 中的 `guiOrientation` 仍可读取，并会在保存时迁移为 `sdlOrientation`，避免用户升级后丢失屏幕方向设置。
 
-### Verification
-- `git diff --check`
-- `.\gradlew.bat :core:compile:testDebugUnitTest --tests com.wuxianggujun.tinaide.core.compile.RunConfigurationManagerMigrationTest --no-daemon`
-- `.\gradlew.bat :app:compileArm64DebugKotlin --no-daemon`
-- GitHub Actions `Dev APK Build` 已通过：run `26366034612`。
-
 ## [0.17.3] - 2026-05-24
 
 ### Changed
 - 图形运行时统一迁移到 SDL 输出模式：IDE 内部不再维护自定义 GUI 主机、绘制接口头文件或旧的 `run --gui` 入口，降低用户误用和后续支持成本。
 - 示例与文档同步收口到 SDL3 / NativeActivity 模板，避免继续引导用户使用已移除的自定义图形接口。
 - Release workflow 延长双 ABI Release APK 构建超时：`x86_64` 构建在 GitHub Actions 上进入后半段后不再被 35 分钟步骤超时提前终止。
-
-### Verification
-- GitHub Actions `Dev APK Build` 已在 `dev` 分支通过：run `26361907447`。
-- GitHub Actions `Build and Release` 的 `v0.17.2` 失败原因为 `x86_64` Release APK 步骤 35 分钟超时，不是源码编译错误；本版本通过新的 tag 重新触发发布构建。
 
 ## [0.17.1] - 2026-05-22
 
@@ -1505,22 +754,12 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - 清理 QQ 登录残留资源与文档入口，公开版不再暴露账号登录、QQ 登录、激活码或许可证激活相关入口。
 - 删除项目列表公告横幅、公告弹窗和通知中心相关模型/测试，保留反馈、日志、下载历史、插件系统和包下载能力。
 
-### Verification
-- `.\gradlew.bat :app:compileArm64DebugKotlin :core:network:compileDebugKotlin :feature:projectlist:compileDebugKotlin --no-configuration-cache`
-- `.\gradlew.bat :app:assembleArm64Debug --no-configuration-cache`
-- Debug APK 验证产物：`app/build/outputs/apk/arm64/debug/app-arm64-v8a-debug.apk`
-- `v0.17.0` 远端 Release 构建因未显式关闭 PRoot 源码编译而长时间停留在 `Build Release APKs`，已取消以回收 GitHub Actions 资源；本版本作为实际发布版本重新触发。
-
 ## [0.16.2] - 2026-05-21
 
 ### Changed
 - 修正开源仓库 Release workflow：移除 Pro 仓库时代的跨仓库 dispatch 发布链路，公开仓库现在直接构建并发布自身产物。
 - Release 构建显式启用双 ABI：固定使用 `-Ptina.allAbi=true`，并强制校验 `arm64-v8a` 与 `x86_64` 两个 APK 都存在。
 - APK 与 GitHub Actions artifact 命名统一包含版本号和架构名：`TinaIDE-0.16.2-arm64-v8a.apk`、`TinaIDE-0.16.2-x86_64.apk`。
-
-### Verification
-- GitHub Actions `Build and Release` 手动 release 验证通过：run `26229851905`。
-- 产物确认：`TinaIDE-0.16.2-arm64-v8a-apk`、`TinaIDE-0.16.2-x86_64-apk`。
 
 ## [0.16.0] - 2026-05-21
 
@@ -1529,10 +768,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - 保留反馈、日志、下载历史、插件系统、包管理和本地 IDE 能力。
 - 后端与旧分支/tag 已迁入私有归档仓库，公开仓库仅保留 `main` 与 `dev`。
 - 开源自动构建流程改为无签名密钥时也能完成 arm64 Debug APK 验证；签名密钥完整时再继续生成 Release APK。
-
-### Verification
-- `.\gradlew.bat :app:assembleArm64Debug --no-daemon`
-- `BUILD SUCCESSFUL`
 
 ## [0.15.18] - 2026-04-30
 
@@ -1556,16 +791,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - **CMake 无引号参数转义修复**：修正 `CMakeLexer` 对无引号参数中反斜杠转义的处理顺序，避免转义字符被提前归一化后影响解析结果。
 - **Windows 路径白名单校验修复**：`PathValidator` 统一使用 canonical/absolute 路径兜底比较，修复 Windows 与 Robolectric 环境下合法宿主路径因大小写或路径规范化差异被误拒的问题。
 
-### Verification
-- `./gradlew.bat :feature:ai:ktlintCheck :feature:ai:testDebugUnitTest :feature:ai:jacocoTestReport`
-- `feature:ai:testDebugUnitTest`：`403 tests`，失败 `0`，错误 `0`，跳过 `0`
-- `feature:ai:jacocoTestReport`：行覆盖率 `96.97%`，分支覆盖率 `80.50%`
-- `./gradlew.bat :app:mergeArm64DebugResources`
-- `./gradlew.bat :app:ktlintCheck :app:testArm64DebugUnitTest :feature:settings:ktlintCheck :feature:settings:testDebugUnitTest :termux-terminal:terminal-emulator:testDebugUnitTest`
-- `./gradlew :core:cmake:testDebugUnitTest :core:crash:testDebugUnitTest :core:database:testDebugUnitTest :core:debug:testDebugUnitTest :core:i18n:testDebugUnitTest :core:logging:testDebugUnitTest :core:ndk:testDebugUnitTest :core:network:testDebugUnitTest :core:security:testDebugUnitTest --no-daemon`
-- `./gradlew :feature:help:testDebugUnitTest :feature:license:testDebugUnitTest :feature:login:testDebugUnitTest :feature:membership:testDebugUnitTest :feature:output:testDebugUnitTest :feature:packages:testDebugUnitTest :feature:projectlist:testDebugUnitTest :feature:tutorial:testDebugUnitTest :feature:viewer:testDebugUnitTest :feature:wizard:testDebugUnitTest --no-daemon`
-- `git diff --check`
-
 ## [0.15.17] - 2026-04-30
 
 ### Fixed
@@ -1580,21 +805,11 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - **R8 规则文档同步**：更新 ProGuard/R8 参考文档，记录 apksig ASN.1 注解反射链、Provider keep 规则和本次 Release 签名/安装失败的排查结论。
 - **GitHub Release 校验兼容自定义 Provider**：发版 workflow 的 APK Manifest 校验识别 `core:storage` 中的 `TinaFileProvider` 与标准 AndroidX `FileProvider`，避免 Provider 路径调整后被旧校验脚本拦截发布。
 
-### Verification
-- `./gradlew.bat :app:assembleArm64Release --no-daemon --stacktrace`
-- `configuration.txt` / `usage.txt` 已确认 apksig ASN.1 解析器、模型字段与 `com.wuxianggujun.tinaide.storage.TinaFileProvider` 未被 R8 删除
-
 ## [0.15.4] - 2026-04-29
 
 ### Fixed
 - **APK 安装入口发布版追踪修复**：将修复版升级到 `0.15.4` / `1505`，避免继续与旧 `0.15.3` 发布包混淆，便于用户、安装包文件名和崩溃反馈明确区分修复前后版本。
 - **Release 发版守卫补齐**：GitHub Actions 增加 tag 与 `version.properties` 一致性校验，并在上传前检查最终 APK Manifest 内包含 `androidx.core.content.FileProvider`、`.fileprovider` authority 与 `android.support.FILE_PROVIDER_PATHS` 元数据，防止再次发布缺少安装/分享 Provider 配置的 APK。
-
-### Verification
-- `git diff --check`
-- `aapt dump badging <release-apk>`
-- `aapt dump xmltree <release-apk> AndroidManifest.xml`
-
 
 ## [0.15.3] - 2026-04-29
 
@@ -1615,25 +830,19 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - **QQ 登录回调兼容 warning 清理**：对 QQ SDK 必需的旧式 `onActivityResult` 入口增加局部 deprecation 抑制，避免 Release Kotlin 编译噪声。
 - **R8 consumer rules 缺失 warning 清理**：为 `core:linux-distro` 补齐 `consumer-rules.pro` 占位文件，保持库模块 Release 混淆配置一致。
 
-### Verification
-- `pwsh ./tools/build-apk.ps1 -Variant release -Abi arm64`
-- `apksigner verify --verbose --print-certs TinaIDE-0.15.3-arm64-v8a.apk`
-- `zipalign -c -p -v 4 TinaIDE-0.15.3-arm64-v8a.apk`
-
-
 ## [0.15.2] - 2026-04-22
 
 ### Added
 - **帮助中心扩展为“快速开始 + 设置索引 + 排障说明”三层结构**：
   - 新增 about-and-logs、ai-settings、appearance-settings、compiler-settings、developer-options、editor-settings、feedback-guide、git-settings、keyboard-settings、linux-storage、lsp-settings、package-manager、plugins-settings、profile-edit、project-settings、settings-overview、terminal-settings 与 terminal-troubleshooting，并更新 `HelpRepository.kt` 与多语言字符串：帮助中心现在把设置项、常见运维动作和反馈入口串成完整索引，用户不需要在设置页和历史文档之间来回找入口。
 - **文件树补齐插件图标贡献与路径过滤公共层**：
-  - 新增 [`FileTreeIconResolver.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/FileTreeIconResolver.kt)、[`PluginFileIconResolver.kt`](core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/PluginFileIconResolver.kt) 与 [`ProjectPathFilters.kt`](core/lang/src/main/java/com/wuxianggujun/tinaide/core/lang/ProjectPathFilters.kt)，并补充对应测试：工程树现在支持插件按文件名/扩展名贡献图标，同时把搜索、监听、同步共用的高噪声目录过滤规则抽成单一来源，避免各模块各写一套排除名单。
+  - 新增 [`FileTreeIconResolver.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/FileTreeIconResolver.kt)、[`PluginFileIconResolver.kt`](core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/PluginFileIconResolver.kt) 与 `ProjectPathFilters.kt`，并补充对应测试：工程树现在支持插件按文件名/扩展名贡献图标，同时把搜索、监听、同步共用的高噪声目录过滤规则抽成单一来源，避免各模块各写一套排除名单。
 - **插件状态与市场安装态补齐公共快照模型**：
   - 新增 [`PluginStateSnapshot.kt`](core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/PluginStateSnapshot.kt)、[`PluginLogSource.kt`](core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/PluginLogSource.kt)、[`PluginMarketplaceInstallState.kt`](core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/marketplace/PluginMarketplaceInstallState.kt)、[`PluginMarketplaceSelectionSupport.kt`](core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/marketplace/PluginMarketplaceSelectionSupport.kt) 与 [`MarketScreenPluginStateSupport.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/main/market/MarketScreenPluginStateSupport.kt)：插件安装态、启用态、版本映射、可更新状态和宿主日志来源都收口成显式模型，后续设置页、市场页和宿主桥接可以直接复用，不再各自缓存一份半同步状态。
 
 ### Changed
 - **编译入口继续收口到显式 Operation / LaunchSpec 模型**：
-  - 更新 [`CompileProjectUseCase.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/CompileProjectUseCase.kt)、[`CompileActionsHelper.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/CompileActionsHelper.kt)、[`CompileUiEventObserver.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/CompileUiEventObserver.kt)、[`DebugViewModel.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/DebugViewModel.kt)、[`GuiHostActivity.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/gui/GuiHostActivity.kt) 与 [`ExternalSdlActivity.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/sdl/ExternalSdlActivity.kt)，并新增 [`LaunchEnvironment.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/LaunchEnvironment.kt) 与 [`NativeLaunchEnvironment.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/runtime/NativeLaunchEnvironment.kt)：Run / Debug / GUI / SDL 启动参数现在统一走显式 launch 描述模型，额外环境变量的校验、透传与回滚也收敛到公共入口，减少布尔补丁和分叉逻辑。
+  - 更新 [`CompileProjectUseCase.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/CompileProjectUseCase.kt)、[`CompileActionsHelper.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/CompileActionsHelper.kt)、[`CompileUiEventObserver.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/CompileUiEventObserver.kt)、[`DebugViewModel.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/DebugViewModel.kt)、`GuiHostActivity.kt` 与 [`ExternalSdlActivity.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/sdl/ExternalSdlActivity.kt)，并新增 [`LaunchEnvironment.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/LaunchEnvironment.kt) 与 [`NativeLaunchEnvironment.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/runtime/NativeLaunchEnvironment.kt)：Run / Debug / GUI / SDL 启动参数现在统一走显式 launch 描述模型，额外环境变量的校验、透传与回滚也收敛到公共入口，减少布尔补丁和分叉逻辑。
 - **文件树刷新与监听链路改为按子树增量重建**：
   - 更新 [`FileManager.kt`](app/src/main/java/com/wuxianggujun/tinaide/file/FileManager.kt)、[`IFileWatchService.kt`](core/common/src/main/java/com/wuxianggujun/tinaide/file/IFileWatchService.kt)、[`FileTreeState.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/FileTreeState.kt)、[`FileTree.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/FileTree.kt)、[`FileTreeItem.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/FileTreeItem.kt)、[`FileTreeContextMenu.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/FileTreeContextMenu.kt)、[`FileTreeModels.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/FileTreeModels.kt)、[`ProjectSearchEngine.kt`](core/search/src/main/java/com/wuxianggujun/tinaide/search/ProjectSearchEngine.kt)、[`ProjectSyncManager.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/ProjectSyncManager.kt) 与 [`RsyncSyncProvider.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/RsyncSyncProvider.kt)：工程树现在会跳过 `build`、`.git`、`node_modules` 等高噪声目录，文件监听改为返回可释放注册句柄，目录刷新改为按受影响子树重算，避免大项目下重复节点、全树抖动和无效递归扫描。
 - **插件管理、市场页与设置页统一消费单一状态快照**：
@@ -1643,7 +852,7 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 
 ### Fixed
 - **修复 launchEnvironment 只在终端路径生效、GUI / SDL / Debug 丢参的问题**：
-  - 更新 [`CompileProjectUseCase.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/CompileProjectUseCase.kt)、[`CompileActionsHelper.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/CompileActionsHelper.kt)、[`CompileUiEventObserver.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/CompileUiEventObserver.kt)、[`DebugSessionService.kt`](core/debug/src/main/java/com/wuxianggujun/tinaide/core/debug/DebugSessionService.kt)、[`PRootDebugger.kt`](core/debug/src/main/java/com/wuxianggujun/tinaide/core/debug/PRootDebugger.kt)、[`GuiHostActivity.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/gui/GuiHostActivity.kt)、[`ExternalSdlActivity.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/sdl/ExternalSdlActivity.kt) 与对应测试：AI/运行配置传入的环境变量现在会分别透传到终端 shell、PRoot 调试进程以及 GUI/SDL 宿主进程，并在 GUI/SDL 退出时恢复原环境，避免“这次运行设置残留到下次运行”的隐性污染。
+  - 更新 [`CompileProjectUseCase.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/CompileProjectUseCase.kt)、[`CompileActionsHelper.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/CompileActionsHelper.kt)、[`CompileUiEventObserver.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/CompileUiEventObserver.kt)、[`DebugSessionService.kt`](core/debug/src/main/java/com/wuxianggujun/tinaide/core/debug/DebugSessionService.kt)、[`PRootDebugger.kt`](core/debug/src/main/java/com/wuxianggujun/tinaide/core/debug/PRootDebugger.kt)、`GuiHostActivity.kt`、[`ExternalSdlActivity.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/sdl/ExternalSdlActivity.kt) 与对应测试：AI/运行配置传入的环境变量现在会分别透传到终端 shell、PRoot 调试进程以及 GUI/SDL 宿主进程，并在 GUI/SDL 退出时恢复原环境，避免“这次运行设置残留到下次运行”的隐性污染。
 - **修复插件详情页与市场安装态容易因本地状态变化而陈旧的问题**：
   - 更新 [`MarketScreenViewModel.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/main/market/MarketScreenViewModel.kt)、[`PluginsSettingsSection.kt`](feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/PluginsSettingsSection.kt)、[`PluginsSettingsSectionSupport.kt`](feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/PluginsSettingsSectionSupport.kt) 与对应测试：插件详情页现在会在插件被卸载后自动关闭，市场页会监听安装态流实时刷新“已安装/可更新”标记，避免旧对象残留导致的 UI 错判。
 - **修复文件树与同步链路对高噪声目录过度响应的问题**：
@@ -1653,28 +862,23 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - **清理过期设计分析稿与旧插件样例资产**：
   - 删除 `docs/` 下大量历史分析文档、调试记录和旧样例插件清单（包括 `docs/API-Reference.md`、`docs/testing/*`、`docs/plugins/sample-*` 等）：文档主目录只保留当前仍会被维护和引用的说明，减少版本迭代时需要持续跟踪的历史包袱。
 
-### 技术细节
-- 主要变更：`core/compile/*`、`core/debug/*`、`core/plugin/*`、`core/search/*`、`core/lsp/*`、`feature/help/*`、`feature/settings/*`、`app/ui/compose/components/FileTree*`
-- 文档整理：帮助中心新增 18 篇设置/排障文档，`docs/` 目录集中清理一批过期分析稿与历史示例资源
-- 版本对齐：`0.15.2`
-
 ## [0.14.98] - 2026-04-21
 
 ### Added
 - **新增会员中心与爱发电扫码购买入口**：
-  - 新增 [`feature/membership/`](feature/membership/) 一组会员模块，并更新 [`ProfileScreen.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/main/profile/ProfileScreen.kt)、[`TinaServerApi.kt`](core/auth/src/main/java/com/wuxianggujun/tinaide/auth/api/TinaServerApi.kt)、[`strings.xml`](core/i18n/src/main/res/values/strings.xml) 与 [`strings.xml`](core/i18n/src/main/res/values-en/strings.xml)：已登录用户现在可从“我的”页进入会员中心，查看会员方案、拉起爱发电二维码并轮询支付结果；未登录状态会直接引导登录。
+  - 新增 `feature/membership/` 一组会员模块，并更新 [`ProfileScreen.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/main/profile/ProfileScreen.kt)、`TinaServerApi.kt`、[`strings.xml`](core/i18n/src/main/res/values/strings.xml) 与 [`strings.xml`](core/i18n/src/main/res/values-en/strings.xml)：已登录用户现在可从“我的”页进入会员中心，查看会员方案、拉起爱发电二维码并轮询支付结果；未登录状态会直接引导登录。
 - **新增存储空间清理总览与明细页**：
   - 新增 [`StorageCleanupManager.kt`](core/storage/src/main/java/com/wuxianggujun/tinaide/storage/StorageCleanupManager.kt)、[`StorageCleanupSupport.kt`](core/storage/src/main/java/com/wuxianggujun/tinaide/storage/StorageCleanupSupport.kt)、[`StorageCleanupViewModel.kt`](feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/StorageCleanupViewModel.kt)、[`StorageCleanupScreen.kt`](feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/StorageCleanupScreen.kt)、[`StorageCleanupDetailScreen.kt`](feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/StorageCleanupDetailScreen.kt) 与对应测试：设置页新增存储清理入口，可按类别查看构建中间产物、下载缓存、PRoot 缓存、导出缓存与日志占用，并支持一键清理或按路径精细清理；删除范围严格受白名单限制，不会触碰 `projects/` 等用户数据。
 - **新增 AI 自定义渠道管理 UI 与本地渠道表**：
-  - 新增 [`AiChannelDao.kt`](core/common/src/main/java/com/wuxianggujun/tinaide/core/ai/db/AiChannelDao.kt)、[`AiChannelEntity.kt`](core/common/src/main/java/com/wuxianggujun/tinaide/core/ai/db/AiChannelEntity.kt)、[`AiChannelRepository.kt`](feature/ai/src/main/java/com/wuxianggujun/tinaide/ai/channel/AiChannelRepository.kt)、[`AiChannelManagementUi.kt`](feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/AiChannelManagementUi.kt)：BYOK 模式改为支持多渠道增删改查、激活与独立 API Key 存储，设置页可以直接管理多个供应商配置。
+  - 新增 `AiChannelDao.kt`、`AiChannelEntity.kt`、`AiChannelRepository.kt`、`AiChannelManagementUi.kt`：BYOK 模式改为支持多渠道增删改查、激活与独立 API Key 存储，设置页可以直接管理多个供应商配置。
 - **新增终端 APK 导出模板链路与插件模板扩展点**：
   - 新增 [`TerminalApkExportResolver.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/apk/TerminalApkExportResolver.kt)、[`ApkExportTemplateOption.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/apk/ApkExportTemplateOption.kt)、[`TrackedInputCollector.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/artifact/TrackedInputCollector.kt) 与对应测试，并更新 [`ApkBuilder.kt`](core/apk-builder/src/main/java/com/wuxianggujun/tinaide/core/apkbuilder/ApkBuilder.kt)、[`ApkTemplateType.kt`](core/apk-builder/src/main/java/com/wuxianggujun/tinaide/core/apkbuilder/ApkTemplateType.kt)、[`MainActivityDialogs.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/main/MainActivityDialogs.kt)、[`ProjectApkExportSupportResolver.kt`](core/project/src/main/java/com/wuxianggujun/tinaide/project/ProjectApkExportSupportResolver.kt) 与 [`PluginModels.kt`](core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/PluginModels.kt)：项目 APK 导出现在可以识别终端型可执行项目，支持把 ELF 可执行文件和运行库一起打进终端模板 APK；插件清单也新增 APK 导出模板贡献入口，可按项目类型扩展模板选择。
 
 ### Changed
 - **AI 模块收口为“官方网关 + 多渠道 BYOK”双路径，并补齐 VIP 守卫**：
-  - 更新 [`AiPreferences.kt`](feature/ai/src/main/java/com/wuxianggujun/tinaide/ai/config/AiPreferences.kt)、[`AiConfig.kt`](core/config/src/main/java/com/wuxianggujun/tinaide/core/config/ai/AiConfig.kt)、[`AiConfigStrategy.kt`](core/config/src/main/java/com/wuxianggujun/tinaide/core/config/ai/AiConfigStrategy.kt)、[`AiSettingsSection.kt`](feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/AiSettingsSection.kt)、[`AiSettingsBridgeImpl.kt`](feature/ai/src/main/java/com/wuxianggujun/tinaide/ai/settings/AiSettingsBridgeImpl.kt)、[`DefaultVipGate.kt`](core/auth/src/main/java/com/wuxianggujun/tinaide/auth/DefaultVipGate.kt) 与 [`UserContentDatabase.kt`](core/database/src/main/java/com/wuxianggujun/tinaide/database/user/UserContentDatabase.kt)：老数据迁移不再凭遗留 API Key 隐式切到 BYOK，非 VIP 保存 BYOK 配置时会回退官方网关；本地配置、数据库与设置页围绕访问模式和活动渠道重新组织。
+  - 更新 `AiPreferences.kt`、`AiConfig.kt`、`AiConfigStrategy.kt`、`AiSettingsSection.kt`、`AiSettingsBridgeImpl.kt`、`DefaultVipGate.kt` 与 [`UserContentDatabase.kt`](core/database/src/main/java/com/wuxianggujun/tinaide/database/user/UserContentDatabase.kt)：老数据迁移不再凭遗留 API Key 隐式切到 BYOK，非 VIP 保存 BYOK 配置时会回退官方网关；本地配置、数据库与设置页围绕访问模式和活动渠道重新组织。
 - **流式聊天、鉴权与重试链路拆分为可测试组件**：
-  - 更新 [`AiApiClient.kt`](feature/ai/src/main/java/com/wuxianggujun/tinaide/ai/api/AiApiClient.kt) 与 [`AiChatViewModel.kt`](feature/ai/src/main/java/com/wuxianggujun/tinaide/ai/viewmodel/AiChatViewModel.kt)，并新增 [`AuthStrategy.kt`](feature/ai/src/main/java/com/wuxianggujun/tinaide/ai/api/AuthStrategy.kt)、[`SseReader.kt`](feature/ai/src/main/java/com/wuxianggujun/tinaide/ai/api/stream/SseReader.kt)、[`OpenAiCompatibleStreamParser.kt`](feature/ai/src/main/java/com/wuxianggujun/tinaide/ai/api/stream/OpenAiCompatibleStreamParser.kt)、[`ChatStreamController.kt`](feature/ai/src/main/java/com/wuxianggujun/tinaide/ai/stream/ChatStreamController.kt)、[`RetryCoordinator.kt`](feature/ai/src/main/java/com/wuxianggujun/tinaide/ai/retry/RetryCoordinator.kt) 与 [`ToolExecutionCoordinator.kt`](feature/ai/src/main/java/com/wuxianggujun/tinaide/ai/tools/ToolExecutionCoordinator.kt)：Gateway JWT 与 BYOK Bearer 鉴权改为策略化实现，SSE 解析、流式节流、自动重试与工具调度从超大 ViewModel / Client 中拆出，后续更容易回归测试和继续扩展。
+  - 更新 `AiApiClient.kt` 与 `AiChatViewModel.kt`，并新增 `AuthStrategy.kt`、`SseReader.kt`、`OpenAiCompatibleStreamParser.kt`、`ChatStreamController.kt`、`RetryCoordinator.kt` 与 `ToolExecutionCoordinator.kt`：Gateway JWT 与 BYOK Bearer 鉴权改为策略化实现，SSE 解析、流式节流、自动重试与工具调度从超大 ViewModel / Client 中拆出，后续更容易回归测试和继续扩展。
 - **原生可执行文件运行改为先 stage-copy，再启动独立终端会话**：
   - 更新 [`NativeExecutableRunner.kt`](core/common/src/main/java/com/wuxianggujun/tinaide/core/util/NativeExecutableRunner.kt)、[`CompileProjectUseCase.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/CompileProjectUseCase.kt)、[`TerminalRunShellCommand.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/TerminalRunShellCommand.kt)、[`TerminalActivity.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/TerminalActivity.kt)、[`TerminalSessionManager.kt`](feature/terminal/src/main/java/com/wuxianggujun/tinaide/terminal/session/TerminalSessionManager.kt) 与 [`FileManager.kt`](app/src/main/java/com/wuxianggujun/tinaide/file/FileManager.kt)：Run/Terminal 现在会在工作目录下 staging 可执行文件、统一拼装 shell 命令并记录会话元数据，降低直接运行源文件路径导致的 shebang、权限位和动态库前缀问题。
 - **APK 导出模板与权限配置继续迭代**：
@@ -1684,26 +888,21 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 
 ### Fixed
 - **修复 AI 网关与 BYOK 切换的若干边界问题**：
-  - 更新 [`AiConfigTest.kt`](core/config/src/test/java/com/wuxianggujun/tinaide/core/config/ai/AiConfigTest.kt)、[`AiConfigStrategyTest.kt`](core/config/src/test/java/com/wuxianggujun/tinaide/core/config/ai/AiConfigStrategyTest.kt)、[`AiSettingsSectionSupportTest.kt`](feature/settings/src/test/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/AiSettingsSectionSupportTest.kt) 与 [`AiPreferences.kt`](feature/ai/src/main/java/com/wuxianggujun/tinaide/ai/config/AiPreferences.kt)：避免会员过期后继续沿用自定义渠道、旧配置误判为 BYOK，以及 API Key 清洗、模型选择和访问模式决策不一致的问题。
+  - 更新 `AiConfigTest.kt`、`AiConfigStrategyTest.kt`、`AiSettingsSectionSupportTest.kt` 与 `AiPreferences.kt`：避免会员过期后继续沿用自定义渠道、旧配置误判为 BYOK，以及 API Key 清洗、模型选择和访问模式决策不一致的问题。
 - **修复终端与编辑器若干交互细节**：
-  - 更新 [`SelectionMagnifierController.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SelectionMagnifierController.kt)、[`TerminalSession.java`](external/termux-terminal/terminal-emulator/src/main/java/com/termux/terminal/TerminalSession.java)、[`TerminalSessionInfo.kt`](core/common/src/main/java/com/wuxianggujun/tinaide/core/terminal/TerminalSessionInfo.kt)、[`TinaTerminalSessionClient.kt`](feature/terminal/src/main/java/com/wuxianggujun/tinaide/terminal/session/TinaTerminalSessionClient.kt)、[`SpotlightTooltipChrome.kt`](feature/tutorial/src/main/java/com/wuxianggujun/tinaide/tutorial/spotlight/SpotlightTooltipChrome.kt) 与 [`DevEditorTestHost.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/testing/DevEditorTestHost.kt)：继续收敛终端状态同步、选区放大镜与少量 Compose 调试/引导交互的边界行为，减少运行中 UI 偏移和状态错乱。
+  - 更新 [`SelectionMagnifierController.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SelectionMagnifierController.kt)、[`TerminalSession.java`](external/termux-terminal/terminal-emulator/src/main/java/com/termux/terminal/TerminalSession.java)、[`TerminalSessionInfo.kt`](core/common/src/main/java/com/wuxianggujun/tinaide/core/terminal/TerminalSessionInfo.kt)、[`TinaTerminalSessionClient.kt`](feature/terminal/src/main/java/com/wuxianggujun/tinaide/terminal/session/TinaTerminalSessionClient.kt)、[`SpotlightTooltipChrome.kt`](feature/tutorial/src/main/java/com/wuxianggujun/tinaide/tutorial/spotlight/SpotlightTooltipChrome.kt) 与 `DevEditorTestHost.kt`：继续收敛终端状态同步、选区放大镜与少量 Compose 调试/引导交互的边界行为，减少运行中 UI 偏移和状态错乱。
 - **修复编译缓存把旧产物误判为最新产物的问题**：
   - 更新 [`BuildPlanner.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/pipeline/BuildPlanner.kt)、[`FingerprintCalculator.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/artifact/FingerprintCalculator.kt)、[`BuildFingerprint.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/artifact/BuildFingerprint.kt)、[`ArtifactSpec.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/artifact/ArtifactSpec.kt)、[`MakeStrategy.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/strategy/MakeStrategy.kt)、[`CMakeStrategy.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/strategy/CMakeStrategy.kt) 与对应测试：缓存复用现在会同时校验 tracked inputs、输出路径和产物类型，`Makefile` / `CMakeLists.txt` / 深层源码变化都会正确触发重建，不再把旧构建结果误当成当前产物。
 - **修复 APK 打包面板在模板缺失场景下的错误退出路径**：
   - 更新 [`ApkPackageDialog.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/ApkPackageDialog.kt)：当模板选项为空时，对话框现在会正确回滚构建状态并显示错误消息，不再因为非法 `return@launch` 造成 Kotlin 编译失败。
 
-### 技术细节
-- 主要变更：`feature/membership/*`、`feature/ai/*`、`feature/settings/*`、`core/storage/*`、`core/compile/*`、`core/apk-builder/*`、`core/plugin/*`
-- 设计文档：新增 [`AI-Channel-Audit-2026-04-20.md`](docs/design/AI-Channel-Audit-2026-04-20.md) 与 [`Afdian-Payment-Integration-Design.md`](docs/design/Afdian-Payment-Integration-Design.md)
-- 版本对齐：`0.14.98`
-
 ## [0.14.96] - 2026-04-15
 
 ### Added
 - **新增编辑器渲染性能快照与开发者底部性能页**：
-  - 新增 [`EditorPerformanceContent.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/EditorPerformanceContent.kt)，并更新 [`BottomPanel.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/BottomPanel.kt)、[`BottomPanelTypes.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/BottomPanelTypes.kt)、[`EditorRenderEngine.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderEngine.kt)、[`TinaEditor.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TinaEditor.kt)：编辑器现在可以输出渲染帧性能快照，并在开发者底部面板直接查看缓存命中、扫描耗时和当前渲染负载。
+  - 新增 [`EditorPerformanceContent.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/EditorPerformanceContent.kt)，并更新 [`BottomPanel.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/BottomPanel.kt)、[`BottomPanelTypes.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/BottomPanelTypes.kt)、[`EditorRenderEngine.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderEngine.kt)、[`TinaEditor.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TinaEditor.kt)：编辑器现在可以输出渲染帧性能快照，并在开发者底部面板直接查看缓存命中、扫描耗时和当前渲染负载。
 - **新增 text-engine 文本扫描内核抽象与原生实现链路**：
-  - 新增 [`TextScanKernel.kt`](core/text-engine/src/main/java/com/wuxianggujun/tinaide/core/textengine/TextScanKernel.kt)、[`NativeTextScanKernel.kt`](core/text-engine/src/main/java/com/wuxianggujun/tinaide/core/textengine/NativeTextScanKernel.kt)、[`NativeLineIndexKernel.kt`](core/text-engine/src/main/java/com/wuxianggujun/tinaide/core/textengine/NativeLineIndexKernel.kt)、[`TextEngineNativeBridge.kt`](core/text-engine/src/main/java/com/wuxianggujun/tinaide/core/textengine/TextEngineNativeBridge.kt) 以及 [`core/text-engine/src/main/cpp/`](core/text-engine/src/main/cpp/) 下的一组原生实现：长文本扫描与行索引链路现在具备 Kotlin / Native 双后端，为后续继续压缩热路径成本打基础。
+  - 新增 [`TextScanKernel.kt`](editor-kit/text-engine/src/main/java/com/wuxianggujun/tinaide/core/textengine/TextScanKernel.kt)、[`NativeTextScanKernel.kt`](editor-kit/text-engine/src/main/java/com/wuxianggujun/tinaide/core/textengine/NativeTextScanKernel.kt)、[`NativeLineIndexKernel.kt`](editor-kit/text-engine/src/main/java/com/wuxianggujun/tinaide/core/textengine/NativeLineIndexKernel.kt)、[`TextEngineNativeBridge.kt`](editor-kit/text-engine/src/main/java/com/wuxianggujun/tinaide/core/textengine/TextEngineNativeBridge.kt) 以及 [`core/text-engine/src/main/cpp/`](editor-kit/text-engine/src/main/cpp/) 下的一组原生实现：长文本扫描与行索引链路现在具备 Kotlin / Native 双后端，为后续继续压缩热路径成本打基础。
 - **编辑器标签页加载指示器统一到 TabBar 底部**：
   - 更新 [`EditorContainer.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/EditorContainer.kt)、[`EditorTab.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/EditorTab.kt)、[`EditorTabBar.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/editor/EditorTabBar.kt) 与 [`TinaCodeEditorPage.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/editor/TinaCodeEditorPage.kt)：每个 tab 的加载状态上浮到容器统一管理，TabBar 据此为活跃 tab 播放扩散指示器动画；同时移除单个 `EditorTab` 自己的底部选中指示器实现，避免选中/加载两个动画来源在同一位置冲突。
 - **APK 导出新增打包权限管理面板**：
@@ -1716,7 +915,7 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
   - 新增 [`TinaToolchainAssetsVerification.kt`](build-logic/convention/src/main/kotlin/com/wuxianggujun/tinaide/buildlogic/TinaToolchainAssetsVerification.kt) 与 [`TinaAndroidAppToolchainAssetsPlugin.kt`](build-logic/convention/src/main/kotlin/com/wuxianggujun/tinaide/buildlogic/TinaAndroidAppToolchainAssetsPlugin.kt)，并更新 [`build.gradle.kts`](build-logic/convention/build.gradle.kts) 与 [`build.gradle.kts`](app/build.gradle.kts)：`verifyTinaToolchainAssets` 任务体以及 `assemble*`/`bundle*`/`install*` 挂接统一收口到 `tina.android.app.toolchain.assets`，`app/build.gradle.kts` 不再内联 `current.properties` 读取、sha256 入口校验、legacy archive 拦截与任务挂接逻辑。
 - **构建脚本第三轮第 3 步完成，Tree-sitter 同步/注册生成链路迁入 build-logic 插件，同时修复 registry 生成空 entries 的回归**：
   - 新增 [`TinaTreeSitterSupport.kt`](build-logic/convention/src/main/kotlin/com/wuxianggujun/tinaide/buildlogic/TinaTreeSitterSupport.kt)、[`TinaTreeSitterQueriesSync.kt`](build-logic/convention/src/main/kotlin/com/wuxianggujun/tinaide/buildlogic/TinaTreeSitterQueriesSync.kt)、[`TinaGenerateTreeSitterLanguageRegistryTask.kt`](build-logic/convention/src/main/kotlin/com/wuxianggujun/tinaide/buildlogic/TinaGenerateTreeSitterLanguageRegistryTask.kt) 与 [`TinaAndroidAppTreeSitterPlugin.kt`](build-logic/convention/src/main/kotlin/com/wuxianggujun/tinaide/buildlogic/TinaAndroidAppTreeSitterPlugin.kt)，并更新 [`build.gradle.kts`](build-logic/convention/build.gradle.kts) 与 [`build.gradle.kts`](app/build.gradle.kts)：`syncTreeSitterQueries`、`generateTreeSitterLanguageRegistry`、主源集 `srcDir` 注入与 `preBuild` 挂接统一收口到 `tina.android.app.treesitter`；`app/build.gradle.kts` 不再内联 Tree-sitter 下载/解压、grammar 绑定解析、Kotlin 注册表拼装逻辑，同时移除相关 `java.net.URI` / `ZipInputStream` / `JFile` 冗余 import。
-  - grammar 语言枚举改为直接从 [`core/tree-sitter/build.gradle.kts`](core/tree-sitter/build.gradle.kts) 所在 project 的 `implementation` 配置读取（`:core:tree-sitter` 为单一数据源），并通过 `evaluationDependsOn(":core:tree-sitter")` 确保 configure-on-demand 下也能拿到依赖；顺手修复了 registry 在 grammar 依赖迁到 `:core:tree-sitter` 后一直生成空 `entries` 的回归（现在 `GeneratedTreeSitterLanguageRegistry.entries` 会完整枚举 16 个 grammar）。
+  - grammar 语言枚举改为直接从 [`core/tree-sitter/build.gradle.kts`](editor-kit/tree-sitter/build.gradle.kts) 所在 project 的 `implementation` 配置读取（`:core:tree-sitter` 为单一数据源），并通过 `evaluationDependsOn(":core:tree-sitter")` 确保 configure-on-demand 下也能拿到依赖；顺手修复了 registry 在 grammar 依赖迁到 `:core:tree-sitter` 后一直生成空 `entries` 的回归（现在 `GeneratedTreeSitterLanguageRegistry.entries` 会完整枚举 16 个 grammar）。
 - **构建脚本第三轮第 4 步完成，release R8 mapping 备份链路迁入 build-logic 插件（release 默认开启备份）**：
   - 新增 [`TinaMappingFileBackup.kt`](build-logic/convention/src/main/kotlin/com/wuxianggujun/tinaide/buildlogic/TinaMappingFileBackup.kt) 与 [`TinaAndroidAppMappingPlugin.kt`](build-logic/convention/src/main/kotlin/com/wuxianggujun/tinaide/buildlogic/TinaAndroidAppMappingPlugin.kt)，并更新 [`build.gradle.kts`](build-logic/convention/build.gradle.kts) 与 [`build.gradle.kts`](app/build.gradle.kts)：`backupMappingFiles` 任务以及 `assemble*Release` / `bundle*Release` 的 `finalizedBy` 挂接统一收口到 `tina.android.app.mapping`；`app/build.gradle.kts` 不再内联 mapping 备份实现，同时清理 `LocalDateTime` / `DateTimeFormatter` 以及 `appVersionName` 的 `by extra` 冗余 import 与本地变量。
   - 新增可配置 gradle 属性：`tina.releaseMapping.enabled`（默认 `true`）与 `tina.releaseMapping.backupEnabled`（默认 `true`）；当 `tina.releaseMapping.enabled=false` 时插件会跳过 `finalizedBy` 挂接并让备份任务 `onlyIf` 直接 no-op，保持与旧行为兼容。
@@ -1735,11 +934,11 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - **底部面板继续收窄常驻 Prefs 观察面，非活跃状态不再全时订阅调试条与诊断设置**：
   - 更新 [`BottomPanel.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/BottomPanel.kt)：`debugToolbarPositionFlow` 仅在调试会话活跃时订阅，`devDiagnosticsSettingsFlow` 仅在开发者选项启用时订阅，保持面板行为不变，同时减少普通编辑态下的无效配置流观察。
 - **AI 工具入口与插件桥接继续收窄活动编辑器语义，外层不再自己拼“当前文件 + 当前选区 + 活动 tab 文本编辑”**：
-  - 更新 [`EditorContainerState.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerState.kt)、[`EditorToolCallbacksImpl.kt`](app/src/main/java/com/wuxianggujun/tinaide/ai/integration/EditorToolCallbacksImpl.kt)、[`AiToolsIntegrationManager.kt`](app/src/main/java/com/wuxianggujun/tinaide/ai/integration/AiToolsIntegrationManager.kt)、[`TinaPluginEditorBridge.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/TinaPluginEditorBridge.kt)、[`EditorContainerStateTest.kt`](app/src/test/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerStateTest.kt) 与 [`TinaPluginEditorBridgeTest.kt`](app/src/test/java/com/wuxianggujun/tinaide/ui/TinaPluginEditorBridgeTest.kt)：状态层新增活动文件/选区组合快照、插件桥接专用活动上下文与活动页文本编辑入口，AI 工具回调和插件桥接不再自己组合 `ActiveEditorHandle + 文本/选区快照 + tabId` 来推导当前编辑器语义。
+  - 更新 [`EditorContainerState.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerState.kt)、`EditorToolCallbacksImpl.kt`、`AiToolsIntegrationManager.kt`、[`TinaPluginEditorBridge.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/TinaPluginEditorBridge.kt)、[`EditorContainerStateTest.kt`](app/src/test/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerStateTest.kt) 与 [`TinaPluginEditorBridgeTest.kt`](app/src/test/java/com/wuxianggujun/tinaide/ui/TinaPluginEditorBridgeTest.kt)：状态层新增活动文件/选区组合快照、插件桥接专用活动上下文与活动页文本编辑入口，AI 工具回调和插件桥接不再自己组合 `ActiveEditorHandle + 文本/选区快照 + tabId` 来推导当前编辑器语义。
 - **保存当前文件入口也继续收窄到状态层的活动保存目标语义**：
   - 更新 [`MainActivityActionsViewModel.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/MainActivityActionsViewModel.kt)、[`EditorContainerState.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerState.kt) 与 [`EditorContainerStateTest.kt`](app/src/test/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerStateTest.kt)：`saveCurrentFile()` 不再直接拿 `ActiveEditorHandle` 再自己取 `tabId/file`，改为消费状态层的 `ActiveSaveTargetResult`，只收口“当前保存目标判定”语义，不改保存执行链。
 - **测试侧也继续移除对旧活动句柄 getter 的反向依赖**：
-  - 更新 [`EditorContainerStateTest.kt`](app/src/test/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerStateTest.kt)、[`DevEditorTestInfrastructureTest.kt`](app/src/test/java/com/wuxianggujun/tinaide/ui/compose/screens/testing/DevEditorTestInfrastructureTest.kt) 与 [`EditorContainerState.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerState.kt)：活动 tab/file 断言统一改走插件活动上下文或可编辑编辑器快照，`getActiveEditorHandleOrNull()` 收紧为状态层私有实现，未再使用的 `getActiveEditableEditorHandleOrNull()` 与 `getActiveEditorLanguageIdOrNull()` 一并移除。
+  - 更新 [`EditorContainerStateTest.kt`](app/src/test/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerStateTest.kt)、`DevEditorTestInfrastructureTest.kt` 与 [`EditorContainerState.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerState.kt)：活动 tab/file 断言统一改走插件活动上下文或可编辑编辑器快照，`getActiveEditorHandleOrNull()` 收紧为状态层私有实现，未再使用的 `getActiveEditableEditorHandleOrNull()` 与 `getActiveEditorLanguageIdOrNull()` 一并移除。
 - **书签与活动会话告警结果也继续去掉整块活动编辑器句柄暴露**：
   - 更新 [`EditorContainerState.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerState.kt)、[`MainActivityActionsViewModel.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/MainActivityActionsViewModel.kt)、[`EditorContainer.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/EditorContainer.kt) 与 [`EditorContainerStateTest.kt`](app/src/test/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerStateTest.kt)：书签上下文/目标改为直接返回 `file + line`，活动会话告警改为直接返回 `tabId + file + 告警状态`，外层不再经由 `ActiveEditorHandle` 二次拆解。
 - **活动可编辑编辑器快照也继续去掉句柄暴露，只保留格式化入口真正需要的数据**：
@@ -1776,15 +975,15 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - **状态层旧布尔桥接继续收窄，测试也不再反向依赖已淘汰入口**：
   - 更新 [`EditorContainerState.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerState.kt) 与 [`EditorContainerStateTest.kt`](app/src/test/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerStateTest.kt)：删除 `hasActiveEditorTab`、`hasActiveEditableEditor`、`getActiveDocumentSymbolsTabIdOrNull`、`getActiveWorkspaceSymbolsTabIdOrNull` 这组已无生产代码使用的旧桥接，并将 `getActiveLspTabIdOrNull` 收成状态层私有实现；测试统一改为断言 `ActiveDocumentSymbolsTargetResult`、`ActiveWorkspaceSymbolsTargetResult` 与 `ActiveEditorCommandResult`，避免旧语义继续被保活。
 - **AI 当前文件/选区上下文快照也收回状态层，主界面与测试不再依赖 AI 扩展桥接**：
-  - 更新 [`EditorContainerState.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerState.kt)、[`MainActivity.kt`](app/src/main/java/com/wuxianggujun/tinaide/MainActivity.kt)、[`EditorContainerStateTest.kt`](app/src/test/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerStateTest.kt) 并删除 [`EditorMessageContextExt.kt`](app/src/main/java/com/wuxianggujun/tinaide/ai/integration/EditorMessageContextExt.kt)：`snapshotCurrentFileContext()` 与 `snapshotSelectedCodeContext()` 改为由状态层直接提供，外层不再通过 AI 集成扩展函数拼装活动编辑器上下文。
+  - 更新 [`EditorContainerState.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerState.kt)、[`MainActivity.kt`](app/src/main/java/com/wuxianggujun/tinaide/MainActivity.kt)、[`EditorContainerStateTest.kt`](app/src/test/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerStateTest.kt) 并删除 `EditorMessageContextExt.kt`：`snapshotCurrentFileContext()` 与 `snapshotSelectedCodeContext()` 改为由状态层直接提供，外层不再通过 AI 集成扩展函数拼装活动编辑器上下文。
 - **书签入口也继续移除活动文件/光标/marker line 的外层拼装**：
   - 更新 [`EditorContainerState.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerState.kt)、[`EditorMarkerLineResolver.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorMarkerLineResolver.kt)、[`MainActivityActionsViewModel.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/MainActivityActionsViewModel.kt) 与 [`EditorContainerStateTest.kt`](app/src/test/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerStateTest.kt)：书签切换与跳转前所需的活动文件、光标行和 bookmark target line 统一改由状态层结果对象提供，`MainActivityActionsViewModel` 不再自己组合 `getActiveEditorHandleOrNull() + getCursorPositionInActiveTab() + resolveMarkerLineFromSnapshot()`。
 - **编辑器容器的外部修改提示也不再自己拼活动句柄和会话告警流**：
   - 更新 [`EditorContainer.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/EditorContainer.kt)、[`EditorContainerState.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerState.kt) 与 [`EditorContainerStateTest.kt`](app/src/test/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerStateTest.kt)：活动编辑器的外部修改和错误提示改为直接消费状态层提供的 `ActiveEditorSessionAlertState`，UI 不再自己组合 `getActiveEditorHandleOrNull()` 和 `getActiveTabSessionAlertFlow()`。
 - **编辑器热路径继续收口到共享缓存与共享帧上下文**：
-  - 更新 [`EditorRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderer.kt)、[`EditorRenderAssembly.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderAssembly.kt)、[`EditorRenderFrameContext.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderFrameContext.kt)、[`EditorLineLayoutCache.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorLineLayoutCache.kt)、[`EditorLineTextLookup.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorLineTextLookup.kt)、[`EditorTextScanCache.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorTextScanCache.kt)、[`EditorBracketSnapshotCache.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorBracketSnapshotCache.kt)、[`BracketDepthCache.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/BracketDepthCache.kt)：行布局、文本扫描、括号深度与 bracket snapshot 进一步围绕统一缓存协作，减少 renderer 之间重复读取和重复扫描。
+  - 更新 [`EditorRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderer.kt)、[`EditorRenderAssembly.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderAssembly.kt)、[`EditorRenderFrameContext.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderFrameContext.kt)、[`EditorLineLayoutCache.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorLineLayoutCache.kt)、[`EditorLineTextLookup.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorLineTextLookup.kt)、[`EditorTextScanCache.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorTextScanCache.kt)、[`EditorBracketSnapshotCache.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorBracketSnapshotCache.kt)、[`BracketDepthCache.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/BracketDepthCache.kt)：行布局、文本扫描、括号深度与 bracket snapshot 进一步围绕统一缓存协作，减少 renderer 之间重复读取和重复扫描。
 - **底部面板与一批 Compose 对话框/面板继续收拢到更一致的 UI 结构**：
-  - 更新 [`BottomPanel.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/BottomPanel.kt)、[`BottomPanelDragHandle.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/BottomPanelDragHandle.kt)、[`BottomPanelTabRow.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/BottomPanelTabRow.kt) 以及多处 Compose Dialog / Panel 文件：性能页显示门控、底部面板状态与弹窗外壳继续去重，减少分散判断和重复视觉实现。
+  - 更新 [`BottomPanel.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/BottomPanel.kt)、`BottomPanelDragHandle.kt`、[`BottomPanelTabRow.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/BottomPanelTabRow.kt) 以及多处 Compose Dialog / Panel 文件：性能页显示门控、底部面板状态与弹窗外壳继续去重，减少分散判断和重复视觉实现。
 - **编辑器容器状态继续把活动态与桥接语义收回内部，减少 UI / AI / 插件层直接拆 tab 细节**：
   - 更新 [`EditorContainerState.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerState.kt)、[`BottomPanel.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/BottomPanel.kt)、[`EditorContainer.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/EditorContainer.kt)、[`OutlineContent.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/OutlineContent.kt)、[`MainActivityHostCommandExecutor.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/commands/MainActivityHostCommandExecutor.kt) 以及测试基础设施：活动文件、活动 tab、活动 LSP、撤销/重做/脏标记等派生语义继续统一从状态层提供，外层调用不再依赖 `getActiveTab()?.xxx` 这类旧桥接写法。
 - **会话状态桥接继续收口成更窄的派生 flow，减少 UI 直接消费 `DocumentSessionState` 大对象**：
@@ -1816,14 +1015,14 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - **活动编辑器内跳转与基础编辑动作继续收口成更窄的状态语义**：
   - 更新 [`EditorContainerState.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerState.kt)、[`MainActivityDialogs.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/main/MainActivityDialogs.kt)、[`TinaPluginEditorBridge.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/TinaPluginEditorBridge.kt)、[`MainActivityActionsViewModel.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/MainActivityActionsViewModel.kt)、[`MainActivity.kt`](app/src/main/java/com/wuxianggujun/tinaide/MainActivity.kt)、[`MainActivityHostCommandExecutor.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/commands/MainActivityHostCommandExecutor.kt)：跳转行对话框与插件桥接不再直接调用活动 tab 底层跳转方法，撤销/重做/全选/复制/剪切这些动作入口也移除了无意义的 `Context` 透传，继续减少外层桥接噪声。
 - **按文件定位已打开编辑器的读写/关闭语义也收回状态层**：
-  - 更新 [`EditorContainerState.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerState.kt)、[`MainActivityActionsViewModel.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/MainActivityActionsViewModel.kt)、[`FileSystemCallbacksImpl.kt`](app/src/main/java/com/wuxianggujun/tinaide/ai/integration/FileSystemCallbacksImpl.kt)：WorkspaceEdit 应用、AI 文件系统读写和文件移动/删除同步不再在外层用 `tabs.indexOfFirst + activeTabIndex` 自己查找并切换目标 tab，改为统一复用状态层的按文件查找、临时选中和关闭语义入口。
+  - 更新 [`EditorContainerState.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerState.kt)、[`MainActivityActionsViewModel.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/MainActivityActionsViewModel.kt)、`FileSystemCallbacksImpl.kt`：WorkspaceEdit 应用、AI 文件系统读写和文件移动/删除同步不再在外层用 `tabs.indexOfFirst + activeTabIndex` 自己查找并切换目标 tab，改为统一复用状态层的按文件查找、临时选中和关闭语义入口。
 - **AI 编辑器工具的格式化目标也不再偷用“当前活动页”语义**：
-  - 更新 [`EditorToolCallbacksImpl.kt`](app/src/main/java/com/wuxianggujun/tinaide/ai/integration/EditorToolCallbacksImpl.kt) 与 [`EditorContainerState.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerState.kt)：AI 触发 `formatCode(filePath)` 时，已打开文件改为按目标文件读取/写回对应编辑器内容，未打开文件才直接落盘，避免“文件存在但当前活动页并不是它”时误格式化错误对象。
+  - 更新 `EditorToolCallbacksImpl.kt` 与 [`EditorContainerState.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerState.kt)：AI 触发 `formatCode(filePath)` 时，已打开文件改为按目标文件读取/写回对应编辑器内容，未打开文件才直接落盘，避免“文件存在但当前活动页并不是它”时误格式化错误对象。
 - **AI 工具、插件桥接与主界面动作继续复用统一的活动编辑器语义入口**：
-  - 更新 [`EditorContainerState.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerState.kt)、[`TinaPluginEditorBridge.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/TinaPluginEditorBridge.kt)、[`AiToolsIntegrationManager.kt`](app/src/main/java/com/wuxianggujun/tinaide/ai/integration/AiToolsIntegrationManager.kt)、[`EditorMessageContextExt.kt`](app/src/main/java/com/wuxianggujun/tinaide/ai/integration/EditorMessageContextExt.kt)、[`EditorToolCallbacksImpl.kt`](app/src/main/java/com/wuxianggujun/tinaide/ai/integration/EditorToolCallbacksImpl.kt)、[`MainActivityActionsViewModel.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/MainActivityActionsViewModel.kt)、[`MainActivityDialogs.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/main/MainActivityDialogs.kt)：AI 当前文件/选中代码快照、插件桥接的活动文件与 tab 查询、语言识别，以及书签/注释/格式化/跳转行/整页替换等动作都改走 `ActiveEditorHandle` 与统一 languageId 语义入口，删除插件侧重复扩展名映射和更多分散的活动文件裸查询。
+  - 更新 [`EditorContainerState.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerState.kt)、[`TinaPluginEditorBridge.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/TinaPluginEditorBridge.kt)、`AiToolsIntegrationManager.kt`、`EditorMessageContextExt.kt`、`EditorToolCallbacksImpl.kt`、[`MainActivityActionsViewModel.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/MainActivityActionsViewModel.kt)、[`MainActivityDialogs.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/main/MainActivityDialogs.kt)：AI 当前文件/选中代码快照、插件桥接的活动文件与 tab 查询、语言识别，以及书签/注释/格式化/跳转行/整页替换等动作都改走 `ActiveEditorHandle` 与统一 languageId 语义入口，删除插件侧重复扩展名映射和更多分散的活动文件裸查询。
 - **存储权限体系统一：消除散落的 3 套请求入口 + 响应式化 + 修复"空壳项目"残留**：
   - 新增 [`StoragePermissionRequest.kt`](core/storage/src/main/java/com/wuxianggujun/tinaide/storage/StoragePermissionRequest.kt) 与 [`StoragePermissionRequester.kt`](core/storage/src/main/java/com/wuxianggujun/tinaide/storage/compose/StoragePermissionRequester.kt)，并更新 [`StorageManager.kt`](core/storage/src/main/java/com/wuxianggujun/tinaide/storage/StorageManager.kt) 与 [`build.gradle.kts`](core/storage/build.gradle.kts)：`StorageManager` 暴露 `permissionStatus: StateFlow<PermissionStatus>` + `nextPermissionRequest()` + `refreshPermissionStatus()`，Compose 侧统一走 `rememberStoragePermissionRequester { granted -> ... }`，两类 launcher（设置页跳转 / 运行时权限）的回调都在内部自动触发 `refreshPermissionStatus`，UI 无需额外钩子即可自动同步；`core:storage` 为此新增 Compose + koin-compose 依赖。
-  - 更新 [`ProjectScreen.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/main/project/ProjectScreen.kt)、[`NewProjectWizardActivity.kt`](feature/wizard/src/main/java/com/wuxianggujun/tinaide/ui/wizard/NewProjectWizardActivity.kt)、[`NewProjectWizardScreen.kt`](feature/wizard/src/main/java/com/wuxianggujun/tinaide/ui/wizard/NewProjectWizardScreen.kt)、[`NewProjectWizardViewModel.kt`](feature/wizard/src/main/java/com/wuxianggujun/tinaide/ui/wizard/NewProjectWizardViewModel.kt)、[`ToolchainConfigActivity.kt`](feature/workspace/src/main/java/com/wuxianggujun/tinaide/ui/workspace/ToolchainConfigActivity.kt) 与 [`ProjectCreationService.kt`](core/project/src/main/java/com/wuxianggujun/tinaide/project/ProjectCreationService.kt)：三处各自独立的 launcher + pending 状态机合并为单一 `StoragePermissionRequester`；`ProjectCreationService` 移除 `requiresPublicSourcePermission` 与 `PUBLIC_SOURCE_PERMISSION_REQUIRED` 枚举，权限判断由调用方（Wizard Screen）在创建前统一完成；`ToolchainConfigActivity` 弃用 `XXPermissions` 库并同步删除 [`app/build.gradle.kts`](app/build.gradle.kts) 与 [`feature/workspace/build.gradle.kts`](feature/workspace/build.gradle.kts) 中的 `:xxpermissions-local` 依赖引用（`tools/template-common` 的模板项目侧仍保留）。
+  - 更新 [`ProjectScreen.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/main/project/ProjectScreen.kt)、[`NewProjectWizardActivity.kt`](feature/wizard/src/main/java/com/wuxianggujun/tinaide/ui/wizard/NewProjectWizardActivity.kt)、[`NewProjectWizardScreen.kt`](feature/wizard/src/main/java/com/wuxianggujun/tinaide/ui/wizard/NewProjectWizardScreen.kt)、[`NewProjectWizardViewModel.kt`](feature/wizard/src/main/java/com/wuxianggujun/tinaide/ui/wizard/NewProjectWizardViewModel.kt)、`ToolchainConfigActivity.kt` 与 [`ProjectCreationService.kt`](core/project/src/main/java/com/wuxianggujun/tinaide/project/ProjectCreationService.kt)：三处各自独立的 launcher + pending 状态机合并为单一 `StoragePermissionRequester`；`ProjectCreationService` 移除 `requiresPublicSourcePermission` 与 `PUBLIC_SOURCE_PERMISSION_REQUIRED` 枚举，权限判断由调用方（Wizard Screen）在创建前统一完成；`ToolchainConfigActivity` 弃用 `XXPermissions` 库并同步删除 [`app/build.gradle.kts`](app/build.gradle.kts) 与 [`feature/workspace/build.gradle.kts`](feature/workspace/build.gradle.kts) 中的 `:xxpermissions-local` 依赖引用（`tools/template-common` 的模板项目侧仍保留）。
   - 更新 [`ProjectManagerViewModel.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/ProjectManagerViewModel.kt)、[`FileManager.kt`](app/src/main/java/com/wuxianggujun/tinaide/file/FileManager.kt)、[`ProjectImporter.kt`](core/storage/src/main/java/com/wuxianggujun/tinaide/storage/ProjectImporter.kt)、[`AppModule.kt`](app/src/main/java/com/wuxianggujun/tinaide/di/AppModule.kt) 与 [`AppViewModelModule.kt`](app/src/main/java/com/wuxianggujun/tinaide/di/AppViewModelModule.kt)：消费者全部改为 Koin 单例注入 `StorageManager`，移除多处散落的 `StorageManager(context)` new 实例；`StorageManager.getDefaultPublicProjectsDir*` 与 `ProjectCreationService` 里硬编码的 `Documents/TinaIDE` 路径统一收敛到 [`ProjectPaths.getPublicProjectsRoot`](core/storage/src/main/java/com/wuxianggujun/tinaide/storage/ProjectPaths.kt)，成为公有目录唯一事实源。
   - `ProjectManagerViewModel.reloadProjects` 扫描公有目录时新增"空壳项目"过滤：只剩 `.tinaide/` 元数据、无任何其它源码文件的目录不再展示。场景是 Android 11+ 清除应用数据不会撤销 `MANAGE_EXTERNAL_STORAGE` 这种特殊权限，因此 `/sdcard/Documents/TinaIDE/` 下历史遗留的空目录仍会被扫到，过滤后避免点进去看到空文件树。
 
@@ -1831,40 +1030,11 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - **修复 Windows 本地 Gradle 在 included build 配置期和 `bundleLibCompileToJar*` 阶段的双重阻塞，并恢复增量构建命中**：
   - 更新 [`external/tina-android-tree-sitter/build.gradle.kts`](external/tina-android-tree-sitter/build.gradle.kts)、[`build.gradle.kts`](build.gradle.kts)、[`gradle.properties`](gradle.properties)：修正 included build 中错误复用主工程插件别名导致的配置期失败；同时将 Windows 本地构建切换为单次 daemon 进程，并移除会强制预删 `classes.jar` 输出目录、打穿增量缓存的兜底逻辑。`assembleDebug` 连续验证已恢复稳定通过，且后续重复构建的 `up-to-date` 命中率明显回升。
 - **修复 bracket fallback 重复扫描与渲染侧重复失效的问题**：
-  - 更新 [`EditorBracketSnapshotCache.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorBracketSnapshotCache.kt)、[`BracketPairGuideRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/BracketPairGuideRenderer.kt)、[`MatchingBracketHighlightRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/MatchingBracketHighlightRenderer.kt)：括号高亮与 guide 共享的 fallback 扫描路径由双分支收成单一路径，减少热路径上的重复区间推导与无效 cache 失效入口。
+  - 更新 [`EditorBracketSnapshotCache.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorBracketSnapshotCache.kt)、[`BracketPairGuideRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/BracketPairGuideRenderer.kt)、[`MatchingBracketHighlightRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/MatchingBracketHighlightRenderer.kt)：括号高亮与 guide 共享的 fallback 扫描路径由双分支收成单一路径，减少热路径上的重复区间推导与无效 cache 失效入口。
 - **修复底部面板性能页切换条件分散导致的行为不一致问题**：
   - 新增 [`BottomPanelTabResolutionTest.kt`](app/src/test/java/com/wuxianggujun/tinaide/ui/compose/components/BottomPanelTabResolutionTest.kt)，并更新 [`BottomPanel.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/BottomPanel.kt)、[`BottomPanelTypes.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/BottomPanelTypes.kt)：性能页显隐决策改为纯函数统一管理，避免 UI 组合层和状态层各自做一套判断。
 - **修复主界面命令执行层仍调用旧签名、测试基础设施仍依赖活动 tab 公开结构的问题**：
-  - 更新 [`MainActivityActionsViewModel.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/MainActivityActionsViewModel.kt)、[`MainActivityHostCommandExecutor.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/commands/MainActivityHostCommandExecutor.kt)、[`DevEditorTestInfrastructureTest.kt`](app/src/test/java/com/wuxianggujun/tinaide/ui/compose/screens/testing/DevEditorTestInfrastructureTest.kt)：移除 `performPaste` / `toggleLineComment` 的无用 `Context` 透传，并让测试改用 `getActiveFile()` / `getActiveTabId()`，避免公开接口继续泄漏活动 tab 内部结构。
-
-### Technical
-- **版本对齐**：`0.14.96 (1497)`
-- **删除旧设计残留**：
-  - 删除 [`EditorTextLayoutMapper.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorTextLayoutMapper.kt)、[`ImeDeltaUtils.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/ImeDeltaUtils.kt)、[`ImeDeltaMappingTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/ImeDeltaMappingTest.kt)，并移除 bracket renderer 中无实际效果的 no-op `invalidate()` 入口与 hover 请求里的未使用锚点参数，继续收口旧编辑器过渡代码。
-- **继续删除编辑器状态层的旧桥接与死代码**：
-  - 删除 [`EditorContainerState.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerState.kt) 中未再使用的 `currentTabSupportsSearch()`，并将 `getActiveTab()` 收紧回状态层内部；同时把仅供 `app` 内部使用的 `projectRoot / diagnostics / session` 查询入口降为 `internal`，继续缩小旧桥接暴露面。
-  - 继续删除 [`EditorContainerState.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerState.kt) 的 `getActiveFile()` 旧桥接，并更新 [`EditorContainerStateTest.kt`](app/src/test/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerStateTest.kt) 与 [`DevEditorTestInfrastructureTest.kt`](app/src/test/java/com/wuxianggujun/tinaide/ui/compose/screens/testing/DevEditorTestInfrastructureTest.kt) 改为断言 `ActiveEditorHandle.file`，让活动编辑器语义彻底收口到统一 handle。
-  - 继续将 [`EditorContainerState.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerState.kt) 的 `getActiveTabId()` 收紧为私有实现，并更新 [`EditorContainerStateTest.kt`](app/src/test/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerStateTest.kt) 与 [`DevEditorTestInfrastructureTest.kt`](app/src/test/java/com/wuxianggujun/tinaide/ui/compose/screens/testing/DevEditorTestInfrastructureTest.kt) 改为复用 `ActiveEditorHandle.tabId`，避免测试继续依赖状态层旧 tabId 桥接。
-- **继续收紧编辑器状态层里仅供页面装配使用的内部入口**：
-  - 更新 [`EditorContainerState.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerState.kt)：`getLspStatus()`、`getActiveLspStatus()` 以及 code viewer / hex viewer / code editor callback 注册入口统一降为 `internal`，LSP 状态查询与编辑器绑定装配继续留在 `app` 模块内部，不再作为对外桥接接口泄漏。
-- **继续补强状态层收口回归**：
-  - 更新 [`EditorContainerStateTest.kt`](app/src/test/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerStateTest.kt) 与 [`DevEditorTestInfrastructureTest.kt`](app/src/test/java/com/wuxianggujun/tinaide/ui/compose/screens/testing/DevEditorTestInfrastructureTest.kt)，补上 `TabToolbarState`、`lastEditAt`、活动页告警 flow、底部状态栏编辑器状态、editor / bookmarks 根路径入口、Outline / Symbols 活动态语义入口以及 `ActiveEditorHandle` 映射测试，锁住这轮删除旧会话桥接后的行为。
-- **APK 打包功能审计（P0 / P1 / P2）整体收尾**，详见 [`docs/design/APK-Packaging-Audit-2026-04-18.md`](docs/design/APK-Packaging-Audit-2026-04-18.md) 与 [`docs/design/APK-Packaging-Next-Steps.md`](docs/design/APK-Packaging-Next-Steps.md)：
-  - **P0.1 / P1.1 / P1.2 — 模板代码 DRY 收口**：新增 [`tools/template-common/`](tools/template-common/) 模块，抽出 [`TemplatePermissionResolver.java`](tools/template-common/src/main/java/com/tinaide/template/common/TemplatePermissionResolver.java)（Manifest 驱动的特殊权限 / 危险权限分桶）与 [`TemplatePermissionFlow.java`](tools/template-common/src/main/java/com/tinaide/template/common/TemplatePermissionFlow.java)（两阶段请求 + 30s 冷却设置跳转 + 首次解释对话框 + 全部授予后清理 state）；同时把 `restricted_settings_*` 中英字符串统一迁到 `template-common/res/`。[`TemplateNativeActivity.java`](tools/template-native-activity/src/main/java/com/tinaide/template/nativeactivity/TemplateNativeActivity.java) 从 182 行瘦到 23 行，[`TemplateSDLActivity.java`](tools/template-sdl3/src/main/java/com/tinaide/template/sdl3/TemplateSDLActivity.java) 从 197 行瘦到 37 行，只保留生命周期钩子 + SDL3 特有的 `setWindowStyle`。两模板 `build.gradle.kts` 删除重复的 `xxpermissions-local` / `fragment` 依赖声明，统一走 `template-common` 的 `api` 传递。SDL3 项目勾选 `POST_NOTIFICATIONS` / `CAMERA` 等权限现在也能真正在运行时被请求。
-  - **P0.2 — 新增 `versionCode` UI + 持久化**：[`ApkPackageDialog.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/ApkPackageDialog.kt) 加数字输入（仅数字 / 上限 9 位 / `toIntOrNull() > 0` 校验），`ApkBuildConfig.versionCode` 透传；[`ApkExportPermissionProfile.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/ApkExportPermissionProfile.kt) 的 `RememberedApkExportPermissions` 新增 `versionCode` 字段持久化到 `permissions.json`，解决二次打包覆盖安装 `INSTALL_FAILED_VERSION_DOWNGRADE` 的问题。
-  - **P0.3 — 包名格式即时校验**：[`ApkPackageDialog.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/ApkPackageDialog.kt) 顶层常量 `PACKAGE_NAME_REGEX = ^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`，`OutlinedTextField` 用 `isError` + `supportingText` 即时反馈，`canBuild` 加 `isPackageNameValid` 闸门避免用户拿到"安装解析失败"的不友好错误。中英 i18n `apk_builder_package_invalid` 已补齐。
-  - **P0.5 — 自定义权限高风险检测**：[`ApkExportPermissionProfile.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/ApkExportPermissionProfile.kt) 新增 `hasHighRiskPermissionSelected()` 同时扫描内置勾选 + 自定义文本；警告卡片对手敲的 `MANAGE_EXTERNAL_STORAGE` 等高风险权限也生效。
-  - **P1.3 — 启动器图标自定义**：新增 [`IconRasterizer.kt`](core/apk-builder/src/main/java/com/wuxianggujun/tinaide/core/apkbuilder/IconRasterizer.kt)（按 DPI 解码 + WebP 压缩）与 [`TemplateIconPatcher.kt`](core/apk-builder/src/main/java/com/wuxianggujun/tinaide/core/apkbuilder/TemplateIconPatcher.kt)（读 `resources.arsc` 定位 `@mipmap/ic_launcher` 的所有 ZIP 条目，按各 DPI 重写图标字节）；[`ApkBuildConfig.iconFile`](core/apk-builder/src/main/java/com/wuxianggujun/tinaide/core/apkbuilder/ApkBuildConfig.kt) + [`ApkBuilder.kt`](core/apk-builder/src/main/java/com/wuxianggujun/tinaide/core/apkbuilder/ApkBuilder.kt) 打通链路；Dialog 加文件选择器 + 错误提示 + 持久化路径。用户不选图标时仍走模板自带的 TinaIDE 标识图标，不会再出现默认小机器人。
-  - **P1.4 — Keystore SHA-1 / SHA-256 指纹预览**：[`DebugKeyStore.computeFingerprints()`](core/apk-builder/src/main/java/com/wuxianggujun/tinaide/core/apkbuilder/DebugKeyStore.kt) + `CertificateFingerprints` 数据类；对话框在签名参数变化时 `LaunchedEffect` 异步重算，CUSTOM 签名模式下用 `SelectionContainer` 包裹 SHA-1 / SHA-256 文本（长按进入选择模式 → 复制）。对接微信 / 高德 / QQ 等第三方 SDK 不再需要跑 `keytool -list`。
-  - **P2.1 — 模板 APK 与源码同步校验任务**：根 [`build.gradle.kts`](build.gradle.kts) 扩展 `buildApkTemplates`，拷贝 APK 后把每个模板的**源输入集合**（`tools/template-*/src/` + `build.gradle.kts` + `tools/template-common/` + SDL3 额外依赖的 `app/src/main/java/org/libsdl/app/`）的 SHA-256 写入 [`app/src/main/assets/apk_templates/template-checksums.txt`](app/src/main/assets/apk_templates/template-checksums.txt)；新增 `./gradlew checkApkTemplatesSync` 任务重新计算哈希并与 manifest 对比，不一致即 fail 并给出 `./gradlew buildApkTemplates` 修复命令。manifest 是纯文本、Git diff 友好；不依赖 git diff，本地 + CI 都可调用。
-  - **P2.2 — 暴露更多常用权限到 UI**：`apkPermissionOptions` 现含 14 个权限（新增 `REQUEST_INSTALL_PACKAGES` / `SYSTEM_ALERT_WINDOW` / `WRITE_SETTINGS` / `SCHEDULE_EXACT_ALARM` / `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` / `RECORD_AUDIO` / `POST_NOTIFICATIONS`），其中 5 个标记 `isHighRisk = true` 触发警告卡片；不必再走"自定义权限"文本框。
-  - **P0.3 / P0.4 原 README 描述证伪**：更新 [`app/src/main/assets/apk_templates/README.md`](app/src/main/assets/apk_templates/README.md)，移除过时的"48/47 字符固定长度占位符"章节，改为 AXML 二进制 `AndroidManifestBlock` patch 说明；`setValueAsString` 支持任意长度 UTF-16 内容，也无需 XML 转义。
-- **APK 导出路径收口到 `ProjectDirStructure`，旧版 `apk-signing.properties` 自动迁入 `apk-export/`**：
-  - 更新 [`ProjectDirStructure.kt`](core/storage/src/main/java/com/wuxianggujun/tinaide/storage/ProjectDirStructure.kt)、[`ApkPackageDialog.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/ApkPackageDialog.kt)、[`ApkExportPermissionProfile.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/ApkExportPermissionProfile.kt)，并新增 [`ProjectDirStructureApkPathsTest.kt`](core/storage/src/test/java/com/wuxianggujun/tinaide/storage/ProjectDirStructureApkPathsTest.kt)：`.tinaide/apk-export/`（`permissions.json` / `signing.properties` / `icons/`）与 `.tinaide/keystore/` 全部通过 `ProjectDirStructure.getApkExportDir / getApkPermissionsFile / getApkSigningPropertiesFile / getKeystoreDir / getApkExportIconsDir` 获取，App 层 4 处绕过 `ProjectDirStructure` 的硬编码 `.tinaide/**` 路径已清零；首次打开 Dialog 时 `migrateLegacyApkSigningPropertiesIfNeeded()` 以 copy-先于-delete 的安全方式把旧版 `.tinaide/apk-signing.properties` 搬到 `.tinaide/apk-export/signing.properties`，迁移失败则保留旧文件供下次重试。
-- **编译运行入口改走一次性新终端会话，运行结束"按 Enter 关闭"后自动回到编辑器**：
-  - 更新 [`CompileUiEventObserver.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/CompileUiEventObserver.kt)、[`TerminalActivity.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/TerminalActivity.kt)、[`CompileProjectUseCase.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/CompileProjectUseCase.kt)、[`strings.xml`](core/i18n/src/main/res/values/strings.xml) 与 [`strings.xml`](core/i18n/src/main/res/values-en/strings.xml)：Run/Terminal 动作现在带 `EXTRA_NEW_SESSION`，`TerminalActivity` 在 Run 模式下跳过项目级会话恢复与 `onPause` 快照保存，避免一次性命令污染用户终端状态；运行命令尾部追加 `; __tina_rc=$?; printf "<按 Enter 关闭>" "$__tina_rc"; IFS= read -r __tina_ign || true; exit "$__tina_rc"`，程序退出后先展示"按 Enter 键关闭当前界面"提示，用户确认后 shell 以程序退出码退出，Activity 侦听 `SessionStatus.EXITED` 自动 `finish()` 回到编辑器。
-- **终端 pinch-zoom 改为整数 sp 阶梯切换，修复长时间缩放后字符间距逐渐漂移与滚动位置跳回底部**：
-  - 更新 [`TerminalViewWrapper.kt`](feature/terminal/src/main/java/com/wuxianggujun/tinaide/terminal/ui/TerminalViewWrapper.kt)：对齐 Termux 官方策略，只在累积 scale 跨过 ±10% 阈值时才让字号上下切一档（`MIN_FONT_SP=8` / `MAX_FONT_SP=32`），同一档字号对应的 Paint 字宽/行高始终一致，彻底消除浮点舍入累积导致的"间距逐渐变大/变小"；同时用 `appliedTextSizePxRef` 挡住 Compose 重组触发的重复 `setTextSize`，缩放/`update` 路径都会在调用 `setTextSize` 前后保存并 `clamp(topRow)`，避免翻阅 scrollback 时因 `updateSize()` 重建 Renderer 把视图跳回底部。
+  - 更新 [`MainActivityActionsViewModel.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/MainActivityActionsViewModel.kt)、[`MainActivityHostCommandExecutor.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/commands/MainActivityHostCommandExecutor.kt)、`DevEditorTestInfrastructureTest.kt`：移除 `performPaste` / `toggleLineComment` 的无用 `Context` 透传，并让测试改用 `getActiveFile()` / `getActiveTabId()`，避免公开接口继续泄漏活动 tab 内部结构。
 
 ## [0.14.95] - 2026-04-05
 
@@ -1872,11 +1042,11 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - **新增 Compose 图标安全加载入口与工作区图标适配器**：
   - 新增 [`TinaIconPainter.kt`](core/designsystem/src/main/java/com/wuxianggujun/tinaide/ui/compose/icons/TinaIconPainter.kt)、[`TinaTabIcons.kt`](core/designsystem/src/main/java/com/wuxianggujun/tinaide/ui/compose/icons/TinaTabIcons.kt)、[`WorkspaceIconPainter.kt`](feature/workspace/src/main/java/com/wuxianggujun/tinaide/ui/workspace/components/WorkspaceIconPainter.kt)：为抽屉栏、顶部菜单、登录页与 Workspace/Toolchain/InstallLog 等页面提供统一的 `ImageVector` / `BitmapPainter` 加载链路，后续页面不再直接依赖 Compose XML Vector 解析链。
 - **新增文件编码检测与编辑器回归测试**：
-  - 新增 [`FileCharsetDetector.kt`](feature/editor/src/main/java/com/wuxianggujun/tinaide/editor/io/FileCharsetDetector.kt)、[`DocumentSessionTest.kt`](feature/editor/src/test/java/com/wuxianggujun/tinaide/editor/session/DocumentSessionTest.kt)、[`RainbowBracketComputerTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/RainbowBracketComputerTest.kt)、[`TextRendererCacheTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/TextRendererCacheTest.kt)：补齐文件字符集检测、文档会话保存/重载、彩虹括号脏区重算和可见区高亮缓存失效等关键回归场景。
+  - 新增 [`FileCharsetDetector.kt`](feature/editor/src/main/java/com/wuxianggujun/tinaide/editor/io/FileCharsetDetector.kt)、[`DocumentSessionTest.kt`](feature/editor/src/test/java/com/wuxianggujun/tinaide/editor/session/DocumentSessionTest.kt)、[`RainbowBracketComputerTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/RainbowBracketComputerTest.kt)、[`TextRendererCacheTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/TextRendererCacheTest.kt)：补齐文件字符集检测、文档会话保存/重载、彩虹括号脏区重算和可见区高亮缓存失效等关键回归场景。
 - **新增统一编辑器 Popup 外壳与 Signature Help 参数提示链路**：
-  - 新增 [`EditorPopupChrome.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorPopupChrome.kt)、[`EditorSignatureHelpPopup.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSignatureHelpPopup.kt)、[`SignatureHelpFormatter.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SignatureHelpFormatter.kt)、[`SignatureHelpPopupLayoutResolver.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SignatureHelpPopupLayoutResolver.kt) 以及 [`CompletionPopupLayoutResolverTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/CompletionPopupLayoutResolverTest.kt)、[`EditorSignatureHelpStateTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorSignatureHelpStateTest.kt)、[`SignatureHelpFormatterTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/SignatureHelpFormatterTest.kt)、[`SignatureHelpPopupLayoutResolverTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/SignatureHelpPopupLayoutResolverTest.kt)：Compose 编辑器现在具备统一 popup 视觉外壳，并补齐参数提示的状态管理、布局解析与回归测试。
+  - 新增 [`EditorPopupChrome.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorPopupChrome.kt)、[`EditorSignatureHelpPopup.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSignatureHelpPopup.kt)、[`SignatureHelpFormatter.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SignatureHelpFormatter.kt)、[`SignatureHelpPopupLayoutResolver.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SignatureHelpPopupLayoutResolver.kt) 以及 [`CompletionPopupLayoutResolverTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/CompletionPopupLayoutResolverTest.kt)、[`EditorSignatureHelpStateTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorSignatureHelpStateTest.kt)、[`SignatureHelpFormatterTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/SignatureHelpFormatterTest.kt)、[`SignatureHelpPopupLayoutResolverTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/SignatureHelpPopupLayoutResolverTest.kt)：Compose 编辑器现在具备统一 popup 视觉外壳，并补齐参数提示的状态管理、布局解析与回归测试。
 - **新增原生构建产物导出目录、CMake 产物定位器与 SDL3 显式 run config 引导器**：
-  - 新增 [`BuildArtifactExporter.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/BuildArtifactExporter.kt)、[`CMakeBuildOutputLocator.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/cmake/CMakeBuildOutputLocator.kt)、[`ProjectRunConfigBootstrapper.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/ProjectRunConfigBootstrapper.kt)、[`BuildArtifactExporterTest.kt`](core/compile/src/test/java/com/wuxianggujun/tinaide/core/compile/BuildArtifactExporterTest.kt)、[`CMakeBuildOutputLocatorTest.kt`](core/compile/src/test/java/com/wuxianggujun/tinaide/core/compile/cmake/CMakeBuildOutputLocatorTest.kt)、[`ProjectRunConfigBootstrapperTest.kt`](core/compile/src/test/java/com/wuxianggujun/tinaide/core/compile/ProjectRunConfigBootstrapperTest.kt)：IDE 现在会把私有工作区中的最终二进制导出到项目 `.tinaide/artifacts/`，CMake 构建会按目标类型更准确地定位可执行文件 / `.so` / `.a`，SDL3 模板项目创建完成后也会自动写入显式 GUI 运行配置。
+  - 新增 [`BuildArtifactExporter.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/BuildArtifactExporter.kt)、`CMakeBuildOutputLocator.kt`、[`ProjectRunConfigBootstrapper.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/ProjectRunConfigBootstrapper.kt)、[`BuildArtifactExporterTest.kt`](core/compile/src/test/java/com/wuxianggujun/tinaide/core/compile/BuildArtifactExporterTest.kt)、`CMakeBuildOutputLocatorTest.kt`、[`ProjectRunConfigBootstrapperTest.kt`](core/compile/src/test/java/com/wuxianggujun/tinaide/core/compile/ProjectRunConfigBootstrapperTest.kt)：IDE 现在会把私有工作区中的最终二进制导出到项目 `.tinaide/artifacts/`，CMake 构建会按目标类型更准确地定位可执行文件 / `.so` / `.a`，SDL3 模板项目创建完成后也会自动写入显式 GUI 运行配置。
 - **新增新建项目来源位置模型与相关设置项**：
   - 新增 [`NewProjectSourceLocation.kt`](core/config/src/main/java/com/wuxianggujun/tinaide/core/config/NewProjectSourceLocation.kt)，并更新 [`ProjectScreen.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/main/project/ProjectScreen.kt)、[`NewProjectWizardActivity.kt`](feature/wizard/src/main/java/com/wuxianggujun/tinaide/ui/wizard/NewProjectWizardActivity.kt)、[`NewProjectWizardScreen.kt`](feature/wizard/src/main/java/com/wuxianggujun/tinaide/ui/wizard/NewProjectWizardScreen.kt)、[`SettingsViewModel.kt`](feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/SettingsViewModel.kt)、[`ProjectSettingsSection.kt`](feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/ProjectSettingsSection.kt)：新建项目、导入项目和 Git Clone 现在可以显式选择公有目录或私有目录，并支持在设置页记忆默认来源位置。
 
@@ -1884,109 +1054,83 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - **编辑器文档链路改为“字符集感知 + 文本快照复用”模型**：
   - 更新 [`DocumentSession.kt`](feature/editor/src/main/java/com/wuxianggujun/tinaide/editor/session/DocumentSession.kt)、[`FileEncodingDetector.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/editor/FileEncodingDetector.kt)、[`TinaCodeEditorPage.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/editor/TinaCodeEditorPage.kt)：文件打开/重载会记录检测到的 charset，保存时继续使用原编码写回；编辑器内部新增版本化文本快照，completion / folding / Tree-sitter / LSP 读取统一复用同一份文本快照，减少频繁 `buffer.toString()` 带来的额外开销和状态漂移。
 - **Tree-sitter 高亮与彩虹括号缓存改为增量更新**：
-  - 更新 [`IncrementalTreeSitterHighlightState.kt`](core/tree-sitter/src/main/java/com/wuxianggujun/tinaide/core/treesitter/IncrementalTreeSitterHighlightState.kt)、[`TextRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TextRenderer.kt)、[`RainbowBracketComputer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/RainbowBracketComputer.kt)、[`EditorState.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt)、[`EditorRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderer.kt)：高亮状态现在维护当前文本、脏行范围与可见窗口缓存，彩虹括号也改为按脏行增量重算，长文档输入和滚动时的重绘开销进一步收敛。
+  - 更新 [`IncrementalTreeSitterHighlightState.kt`](editor-kit/tree-sitter/src/main/java/com/wuxianggujun/tinaide/core/treesitter/IncrementalTreeSitterHighlightState.kt)、[`TextRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TextRenderer.kt)、[`RainbowBracketComputer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/RainbowBracketComputer.kt)、[`EditorState.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt)、[`EditorRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderer.kt)：高亮状态现在维护当前文本、脏行范围与可见窗口缓存，彩虹括号也改为按脏行增量重算，长文档输入和滚动时的重绘开销进一步收敛。
 - **AI 搜索、工具确认、错误提示与总结文案统一走国际化资源**：
-  - 更新 [`SearchTools.kt`](feature/ai/src/main/java/com/wuxianggujun/tinaide/ai/tools/search/SearchTools.kt)、[`AiApiErrorHandler.kt`](feature/ai/src/main/java/com/wuxianggujun/tinaide/ai/api/AiApiErrorHandler.kt)、[`AiChatViewModel.kt`](feature/ai/src/main/java/com/wuxianggujun/tinaide/ai/viewmodel/AiChatViewModel.kt)、[`FileSystemTools.kt`](feature/ai/src/main/java/com/wuxianggujun/tinaide/ai/tools/filesystem/FileSystemTools.kt)、[`strings.xml`](core/i18n/src/main/res/values/strings.xml)、[`strings.xml`](core/i18n/src/main/res/values-en/strings.xml)：GitHub/Web 搜索结果、危险操作确认、网络/API 异常、会话总结和验证码相关提示统一移除硬编码文本，便于中英文环境保持一致体验。
+  - 更新 `SearchTools.kt`、`AiApiErrorHandler.kt`、`AiChatViewModel.kt`、`FileSystemTools.kt`、[`strings.xml`](core/i18n/src/main/res/values/strings.xml)、[`strings.xml`](core/i18n/src/main/res/values-en/strings.xml)：GitHub/Web 搜索结果、危险操作确认、网络/API 异常、会话总结和验证码相关提示统一移除硬编码文本，便于中英文环境保持一致体验。
 - **工具链 / Sysroot / APK / 远程 LSP 诊断文案收敛到统一资源**：
   - 更新 [`AndroidNativeToolchainManager.kt`](core/ndk/src/main/java/com/wuxianggujun/tinaide/core/ndk/AndroidNativeToolchainManager.kt)、[`AndroidSysrootManager.kt`](core/ndk/src/main/java/com/wuxianggujun/tinaide/core/ndk/AndroidSysrootManager.kt)、[`ApkBuilder.kt`](core/apk-builder/src/main/java/com/wuxianggujun/tinaide/core/apkbuilder/ApkBuilder.kt)、[`RemoteLspConnectionProvider.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/RemoteLspConnectionProvider.kt)、[`RsyncSyncProvider.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/RsyncSyncProvider.kt)、[`CompilerSettingsSection.kt`](feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/CompilerSettingsSection.kt)、[`LspSettingsSection.kt`](feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/LspSettingsSection.kt)：导入、校验、安装、连接失败和构建进度提示不再散落硬编码字符串，设置页与运行时错误展示更一致。
 - **编辑器语言服务链路补齐参数提示、Make 支持复用和插件按文件名匹配**：
-  - 更新 [`TinaCodeEditorPage.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/editor/TinaCodeEditorPage.kt)、[`BuiltinLanguageServiceSession.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/BuiltinLanguageServiceSession.kt)、[`EditorContainerState.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerState.kt)、[`LspEditorManager.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/LspEditorManager.kt)、[`LspClientSession.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/LspClientSession.kt)、[`LspPluginManager.kt`](core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/lsp/LspPluginManager.kt)：编辑器现在可透传 LSP `signatureHelp` 请求，Makefile 补全逻辑复用统一语言支持入口，插件 LSP 也能命中无扩展名文件和 `pom.xml` 这类固定文件名。
+  - 更新 [`TinaCodeEditorPage.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/editor/TinaCodeEditorPage.kt)、`BuiltinLanguageServiceSession.kt`、[`EditorContainerState.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerState.kt)、`LspEditorManager.kt`、[`LspClientSession.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/LspClientSession.kt)、[`LspPluginManager.kt`](core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/lsp/LspPluginManager.kt)：编辑器现在可透传 LSP `signatureHelp` 请求，Makefile 补全逻辑复用统一语言支持入口，插件 LSP 也能命中无扩展名文件和 `pom.xml` 这类固定文件名。
 - **文档中心与开发文档重写为当前实现口径，并清理旧 TinaEditor 迁移稿**：
   - 更新 [`docs/README.md`](docs/README.md)、[`docs/design/README.md`](docs/design/README.md)、[`docs/guides/LSP-Debug-Guide.md`](docs/guides/LSP-Debug-Guide.md)、[`docs/toolchain-build-guide.md`](docs/toolchain-build-guide.md)、[`docs/开发指南.md`](docs/开发指南.md)、[`docs/快速开始.md`](docs/快速开始.md)、[`docs/架构概览.md`](docs/架构概览.md)，并删除一组已过时的 `docs/design/TinaEditor-*` 迁移文档：文档入口、LSP 排障、工具链同步与架构说明现在与当前代码实现保持一致，不再继续引用历史重构计划。
 - **原生构建链路重构为“私有 workspace 构建 + 项目目录导出产物 + UI 观察器解耦”**：
   - 更新 [`CompileProjectUseCase.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/CompileProjectUseCase.kt)、[`CompileActionsHelper.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/CompileActionsHelper.kt)、[`CompilerViewModel.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/CompilerViewModel.kt)、[`MainActivity.kt`](app/src/main/java/com/wuxianggujun/tinaide/MainActivity.kt)，并新增 [`CompileRuntimeObserver.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/CompileRuntimeObserver.kt)、[`CompileUiEventObserver.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/CompileUiEventObserver.kt)、[`CompileActionUiText.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/CompileActionUiText.kt)：真实构建继续留在私有目录，项目目录只保留可见的导出副本；编译完成后的 toast、面板切换、产物定位和运行态处理也从 `MainActivity` 拆分为独立观察器，减少 UI 层继续膨胀。
 - **项目存储与工作区模型继续收敛到统一的项目定位注册表**：
-  - 更新 [`ProjectLocationManager.kt`](core/storage/src/main/java/com/wuxianggujun/tinaide/storage/ProjectLocationManager.kt)、[`ProjectPaths.kt`](core/storage/src/main/java/com/wuxianggujun/tinaide/storage/ProjectPaths.kt)、[`ProjectImporter.kt`](core/storage/src/main/java/com/wuxianggujun/tinaide/storage/ProjectImporter.kt)、[`StorageDatabase.kt`](core/storage/src/main/java/com/wuxianggujun/tinaide/storage/db/StorageDatabase.kt)、[`ProjectLocationDao.kt`](core/storage/src/main/java/com/wuxianggujun/tinaide/storage/db/ProjectLocationDao.kt)、[`ProjectDirStructure.kt`](core/storage/src/main/java/com/wuxianggujun/tinaide/storage/ProjectDirStructure.kt)，并删除 [`WorkspaceManager.kt`](core/storage/src/main/java/com/wuxianggujun/tinaide/storage/WorkspaceManager.kt) 与 [`WorkspaceSelectionActivity.kt`](feature/workspace/src/main/java/com/wuxianggujun/tinaide/ui/workspace/WorkspaceSelectionActivity.kt)：项目注册、导入、构建路径和 `.tinaide` 目录结构继续围绕统一的 project location 模型收口，旧的 workspace 管理入口被移除。
+  - 更新 [`ProjectLocationManager.kt`](core/storage/src/main/java/com/wuxianggujun/tinaide/storage/ProjectLocationManager.kt)、[`ProjectPaths.kt`](core/storage/src/main/java/com/wuxianggujun/tinaide/storage/ProjectPaths.kt)、[`ProjectImporter.kt`](core/storage/src/main/java/com/wuxianggujun/tinaide/storage/ProjectImporter.kt)、[`StorageDatabase.kt`](core/storage/src/main/java/com/wuxianggujun/tinaide/storage/db/StorageDatabase.kt)、[`ProjectLocationDao.kt`](core/storage/src/main/java/com/wuxianggujun/tinaide/storage/db/ProjectLocationDao.kt)、[`ProjectDirStructure.kt`](core/storage/src/main/java/com/wuxianggujun/tinaide/storage/ProjectDirStructure.kt)，并删除 `WorkspaceManager.kt` 与 `WorkspaceSelectionActivity.kt`：项目注册、导入、构建路径和 `.tinaide` 目录结构继续围绕统一的 project location 模型收口，旧的 workspace 管理入口被移除。
 - **顶栏构建菜单新增 CMake 工具子菜单与产物目录入口**：
   - 更新 [`MainActivityTopBar.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/main/MainActivityTopBar.kt)、[`CompileActionsHelper.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/CompileActionsHelper.kt)：CMake 项目现在可以直接从顶栏访问“打开构建产物目录 / 重新配置 / 清空并重新配置 / 清空构建目录”等操作，不再只能靠重新编译间接处理缓存。
 
 ### Fixed
 - **修复 Release 包在 Android 15/16 上解析部分 Compose XML Vector 资源可能崩溃的问题**：
-  - 更新 [`MainActivityTopBar.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/main/MainActivityTopBar.kt)、[`LoginActivity.kt`](feature/login/src/main/java/com/wuxianggujun/tinaide/ui/activity/LoginActivity.kt)、[`WorkspaceSelectionActivity.kt`](feature/workspace/src/main/java/com/wuxianggujun/tinaide/ui/workspace/WorkspaceSelectionActivity.kt)、[`ToolchainConfigActivity.kt`](feature/workspace/src/main/java/com/wuxianggujun/tinaide/ui/workspace/ToolchainConfigActivity.kt)、[`InstallLogActivity.kt`](feature/workspace/src/main/java/com/wuxianggujun/tinaide/ui/workspace/InstallLogActivity.kt)、[`InstallContentComponents.kt`](feature/workspace/src/main/java/com/wuxianggujun/tinaide/ui/workspace/components/InstallContentComponents.kt)、[`MirrorComponents.kt`](feature/workspace/src/main/java/com/wuxianggujun/tinaide/ui/workspace/components/MirrorComponents.kt)、[`ProgressComponents.kt`](feature/workspace/src/main/java/com/wuxianggujun/tinaide/ui/workspace/components/ProgressComponents.kt)、[`SetupComponents.kt`](feature/workspace/src/main/java/com/wuxianggujun/tinaide/ui/workspace/components/SetupComponents.kt)：相关入口改为优先使用代码 `ImageVector` 或统一 Drawable -> Bitmap painter，规避部分机型/系统在 Release 环境下解析 XML Vector 的崩溃风险。
+  - 更新 [`MainActivityTopBar.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/main/MainActivityTopBar.kt)、`LoginActivity.kt`、`WorkspaceSelectionActivity.kt`、`ToolchainConfigActivity.kt`、[`InstallLogActivity.kt`](feature/workspace/src/main/java/com/wuxianggujun/tinaide/ui/workspace/InstallLogActivity.kt)、[`InstallContentComponents.kt`](feature/workspace/src/main/java/com/wuxianggujun/tinaide/ui/workspace/components/InstallContentComponents.kt)、`MirrorComponents.kt`、[`ProgressComponents.kt`](feature/workspace/src/main/java/com/wuxianggujun/tinaide/ui/workspace/components/ProgressComponents.kt)、[`SetupComponents.kt`](feature/workspace/src/main/java/com/wuxianggujun/tinaide/ui/workspace/components/SetupComponents.kt)：相关入口改为优先使用代码 `ImageVector` 或统一 Drawable -> Bitmap painter，规避部分机型/系统在 Release 环境下解析 XML Vector 的崩溃风险。
 - **修复 GBK / UTF-16 等非 UTF-8 文件在重新加载或保存后编码被重置的问题**：
   - 更新 [`DocumentSession.kt`](feature/editor/src/main/java/com/wuxianggujun/tinaide/editor/session/DocumentSession.kt)、[`FileCharsetDetector.kt`](feature/editor/src/main/java/com/wuxianggujun/tinaide/editor/io/FileCharsetDetector.kt)、[`TinaCodeEditorPage.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/editor/TinaCodeEditorPage.kt)：文档会话现在会保存检测到的字符集并在写回时沿用，避免中文文件保存后出现乱码或编码漂移。
 - **修复验证码错误自动刷新依赖中文关键字匹配的问题**：
-  - 更新 [`LoginViewModel.kt`](feature/login/src/main/java/com/wuxianggujun/tinaide/auth/LoginViewModel.kt)、[`LoginActivity.kt`](feature/login/src/main/java/com/wuxianggujun/tinaide/ui/activity/LoginActivity.kt)、[`CaptchaDialog.kt`](core/designsystem/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/CaptchaDialog.kt)、[`CaptchaInput.kt`](core/designsystem/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/CaptchaInput.kt)：验证码刷新改为识别 `CAPTCHA` 类错误码/英文提示，不再依赖 `result.message.contains("验证码")` 这样的本地化耦合判断。
+  - 更新 `LoginViewModel.kt`、`LoginActivity.kt`、`CaptchaDialog.kt`、`CaptchaInput.kt`：验证码刷新改为识别 `CAPTCHA` 类错误码/英文提示，不再依赖 `result.message.contains("验证码")` 这样的本地化耦合判断。
 - **修复编辑器高亮可见区缓存与彩虹括号全量重算导致的状态抖动与额外开销**：
-  - 更新 [`TextRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TextRenderer.kt)、[`RainbowBracketComputer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/RainbowBracketComputer.kt)、[`IncrementalTreeSitterHighlightState.kt`](core/tree-sitter/src/main/java/com/wuxianggujun/tinaide/core/treesitter/IncrementalTreeSitterHighlightState.kt)：文本变更后会精准失效相关缓存并按脏区重新计算，减少长文件编辑时的重复扫描。
+  - 更新 [`TextRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TextRenderer.kt)、[`RainbowBracketComputer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/RainbowBracketComputer.kt)、[`IncrementalTreeSitterHighlightState.kt`](editor-kit/tree-sitter/src/main/java/com/wuxianggujun/tinaide/core/treesitter/IncrementalTreeSitterHighlightState.kt)：文本变更后会精准失效相关缓存并按脏区重新计算，减少长文件编辑时的重复扫描。
 - **修复补全框定位飘移、窄屏遮挡和右键菜单样式割裂问题**：
-  - 更新 [`CompletionPopupLayoutResolver.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/CompletionPopupLayoutResolver.kt)、[`EditorCompletionPopup.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCompletionPopup.kt)、[`EditorOverlays.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorOverlays.kt)、[`EditorSelectionContextMenu.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSelectionContextMenu.kt)、[`TinaEditorScaffold.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TinaEditorScaffold.kt)：补全框改为基于窗口绝对坐标与可见画布约束定位，小屏下会自动切换更稳定的宽面板模式，选择菜单与补全/参数提示也统一到同一套 popup 视觉。
+  - 更新 [`CompletionPopupLayoutResolver.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/CompletionPopupLayoutResolver.kt)、[`EditorCompletionPopup.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCompletionPopup.kt)、[`EditorOverlays.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorOverlays.kt)、[`EditorSelectionContextMenu.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSelectionContextMenu.kt)、[`TinaEditorScaffold.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TinaEditorScaffold.kt)：补全框改为基于窗口绝对坐标与可见画布约束定位，小屏下会自动切换更稳定的宽面板模式，选择菜单与补全/参数提示也统一到同一套 popup 视觉。
 - **补强补全框/参数提示的共享光标锚点回归，避免滚动后再次出现错位**：
-  - 新增 [`CursorPopupAnchorResolver.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/CursorPopupAnchorResolver.kt)、[`CursorPopupAnchorResolverTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/CursorPopupAnchorResolverTest.kt)，并更新 [`CursorHandleLayout.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/CursorHandleLayout.kt)、[`EditorOverlays.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorOverlays.kt)：补全框、参数提示和光标句柄现在共用同一套光标锚点解析逻辑，补上横向滚动、纵向滚动和换行分段场景的回归测试，持续对齐 Sora 的重定位行为。
+  - 新增 [`CursorPopupAnchorResolver.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/CursorPopupAnchorResolver.kt)、[`CursorPopupAnchorResolverTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/CursorPopupAnchorResolverTest.kt)，并更新 [`CursorHandleLayout.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/CursorHandleLayout.kt)、[`EditorOverlays.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorOverlays.kt)：补全框、参数提示和光标句柄现在共用同一套光标锚点解析逻辑，补上横向滚动、纵向滚动和换行分段场景的回归测试，持续对齐 Sora 的重定位行为。
 - **继续补强 popup 滚动重定位回归，锁住共享锚点到布局解析的整条链路**：
-  - 新增 [`PopupOverlaySharedAnchorIntegrationTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/PopupOverlaySharedAnchorIntegrationTest.kt)：补全框与参数提示现在有更高一层的集成回归，覆盖横向滚动、纵向滚动以及二者共享同一水平锚点位移的场景，避免后续修改只修 resolver 却漏掉 overlay 组合逻辑。
+  - 新增 [`PopupOverlaySharedAnchorIntegrationTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/PopupOverlaySharedAnchorIntegrationTest.kt)：补全框与参数提示现在有更高一层的集成回归，覆盖横向滚动、纵向滚动以及二者共享同一水平锚点位移的场景，避免后续修改只修 resolver 却漏掉 overlay 组合逻辑。
 - **继续补强 popup 重定位回归，锁定 IME / 窗口变化与 Compose 组合层重组稳定性**：
-  - 更新 [`PopupOverlaySharedAnchorIntegrationTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/PopupOverlaySharedAnchorIntegrationTest.kt)、[`EditorPopupComposeSmokeTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorPopupComposeSmokeTest.kt)：新增 IME inset、窗口高度收缩以及 layout state 更新后的 Compose 交互回归，继续把“layout 解析正确”与“弹窗在重组后仍保持可交互”这两层一起锁住。
+  - 更新 [`PopupOverlaySharedAnchorIntegrationTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/PopupOverlaySharedAnchorIntegrationTest.kt)、[`EditorPopupComposeSmokeTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorPopupComposeSmokeTest.kt)：新增 IME inset、窗口高度收缩以及 layout state 更新后的 Compose 交互回归，继续把“layout 解析正确”与“弹窗在重组后仍保持可交互”这两层一起锁住。
 - **继续补强补全框设备侧验收链路，新增 Compose instrumentation smoke test**：
-  - 更新 [`build.gradle.kts`](core/editor-view/build.gradle.kts) 并新增 [`EditorCompletionPopupInstrumentationTest.kt`](core/editor-view/src/androidTest/java/com/wuxianggujun/tinaide/core/editorview/EditorCompletionPopupInstrumentationTest.kt)：`core:editor-view` 现在支持补全框的 Android 设备侧 Compose 验收，覆盖 popup 根节点、row / kind icon 稳定标签，以及 offset 变化后的点击交互。
+  - 更新 [`build.gradle.kts`](editor-kit/editor-view/build.gradle.kts) 并新增 [`EditorCompletionPopupInstrumentationTest.kt`](editor-kit/editor-view/src/androidTest/java/com/wuxianggujun/tinaide/core/editorview/EditorCompletionPopupInstrumentationTest.kt)：`core:editor-view` 现在支持补全框的 Android 设备侧 Compose 验收，覆盖 popup 根节点、row / kind icon 稳定标签，以及 offset 变化后的点击交互。
 - **继续补强 popup 状态切换回归，锁定 hover / completion / signature 的互斥与共存规则**：
-  - 更新 [`EditorInteractionControllerTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorInteractionControllerTest.kt)：新增 hover 抢占时会收起 completion / signature，以及手动触发 completion 或 signature help 时仅收起 hover、允许另外一个 popup 保持可见的回归，避免后续改交互控制器时把三者的层级关系改乱。
+  - 更新 [`EditorInteractionControllerTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorInteractionControllerTest.kt)：新增 hover 抢占时会收起 completion / signature，以及手动触发 completion 或 signature help 时仅收起 hover、允许另外一个 popup 保持可见的回归，避免后续改交互控制器时把三者的层级关系改乱。
 - **继续补强失焦收敛回归，锁定 completion 与上下文菜单在焦点切换下的收口规则**：
-  - 新增 [`EditorFocusCoordinatorTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorFocusCoordinatorTest.kt)：补充“编辑器完全失焦时收起 completion 并隐藏上下文菜单”“宿主 View 仍持有焦点时不误收起 completion”以及“重新获焦时恢复光标闪烁”的回归，避免后续焦点桥接调整把 overlay 生命周期弄乱。
+  - 新增 [`EditorFocusCoordinatorTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorFocusCoordinatorTest.kt)：补充“编辑器完全失焦时收起 completion 并隐藏上下文菜单”“宿主 View 仍持有焦点时不误收起 completion”以及“重新获焦时恢复光标闪烁”的回归，避免后续焦点桥接调整把 overlay 生命周期弄乱。
 - **继续补强运行时失焦回归，锁定 hover / signature 在真实生命周期中的自动收口**：
-  - 新增 [`EditorRuntimeEffectsTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorRuntimeEffectsTest.kt)：补充“编辑器失焦时 `EditorRuntimeEffects` 会自动收起 hover 与 signature help、关闭光标闪烁，但不越权处理 completion”的回归，避免后续运行时 effect 调整时把 overlay 分层职责改乱。
+  - 新增 [`EditorRuntimeEffectsTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorRuntimeEffectsTest.kt)：补充“编辑器失焦时 `EditorRuntimeEffects` 会自动收起 hover 与 signature help、关闭光标闪烁，但不越权处理 completion”的回归，避免后续运行时 effect 调整时把 overlay 分层职责改乱。
 - **继续补强宿主焦点桥接回归，锁定窗口切换与 detach 场景下的 completion 生命周期**：
-  - 更新 [`EditorFocusCoordinator.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorFocusCoordinator.kt)、[`EditorInputConnection.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorInputConnection.kt)、[`EditorInputHostLayer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorInputHostLayer.kt)、[`EditorInteractionController.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorInteractionController.kt)、[`TinaEditorScaffold.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TinaEditorScaffold.kt)，并新增 [`EditorInputHostLayerTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorInputHostLayerTest.kt)：宿主输入层现在会把 `View` 焦点、窗口焦点和 detach 生命周期统一回送到焦点协调器，补上“窗口失焦时收起 completion”和“宿主重建但 Compose 仍持焦时不误收起 completion”的回归，避免 Activity 切换或宿主重建时 popup 状态漂移。
+  - 更新 [`EditorFocusCoordinator.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorFocusCoordinator.kt)、[`EditorInputConnection.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorInputConnection.kt)、[`EditorInputHostLayer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorInputHostLayer.kt)、[`EditorInteractionController.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorInteractionController.kt)、[`TinaEditorScaffold.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TinaEditorScaffold.kt)，并新增 [`EditorInputHostLayerTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorInputHostLayerTest.kt)：宿主输入层现在会把 `View` 焦点、窗口焦点和 detach 生命周期统一回送到焦点协调器，补上“窗口失焦时收起 completion”和“宿主重建但 Compose 仍持焦时不误收起 completion”的回归，避免 Activity 切换或宿主重建时 popup 状态漂移。
 - **继续补强 popup 重组回归，锁定主题切换与密度变化下的交互稳定性**：
-  - 更新 [`EditorPopupComposeSmokeTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorPopupComposeSmokeTest.kt)：新增“补全框在颜色方案切换后仍可点击”和“参数提示在密度变化重组后仍可交互”的 Compose smoke 回归，避免后续主题/配置切换把 popup 组件层的 remember 状态或点击链路弄丢。
+  - 更新 [`EditorPopupComposeSmokeTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorPopupComposeSmokeTest.kt)：新增“补全框在颜色方案切换后仍可点击”和“参数提示在密度变化重组后仍可交互”的 Compose smoke 回归，避免后续主题/配置切换把 popup 组件层的 remember 状态或点击链路弄丢。
 - **继续修复 popup 横向锚点在异常字体度量下被压缩的问题，并补强字号变化回归**：
-  - 更新 [`CursorPopupAnchorResolver.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/CursorPopupAnchorResolver.kt)、[`EditorLineLayoutCache.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorLineLayoutCache.kt)、[`CursorPopupAnchorResolverTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/CursorPopupAnchorResolverTest.kt)、[`PopupOverlaySharedAnchorIntegrationTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/PopupOverlaySharedAnchorIntegrationTest.kt)：当运行时给出明显失真的列宽量测时，popup 锚点会回退到当前 `charWidthPx` 估算，避免补全框/参数提示横向塌回行首；同时新增字体度量增大后的集成回归，锁住 completion 与 signature help 会随字号变化重新定位。
+  - 更新 [`CursorPopupAnchorResolver.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/CursorPopupAnchorResolver.kt)、[`EditorLineLayoutCache.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorLineLayoutCache.kt)、[`CursorPopupAnchorResolverTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/CursorPopupAnchorResolverTest.kt)、[`PopupOverlaySharedAnchorIntegrationTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/PopupOverlaySharedAnchorIntegrationTest.kt)：当运行时给出明显失真的列宽量测时，popup 锚点会回退到当前 `charWidthPx` 估算，避免补全框/参数提示横向塌回行首；同时新增字体度量增大后的集成回归，锁住 completion 与 signature help 会随字号变化重新定位。
 - **继续对齐补全框与 Sora 的视觉密度，收敛补全项图标与外壳阴影样式**：
-  - 更新 [`EditorCompletionPopup.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCompletionPopup.kt)、[`EditorPopupChrome.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorPopupChrome.kt)、[`CompletionKindStyleTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/CompletionKindStyleTest.kt)：补全项左侧从字母 badge 改为按 kind 分组的 24dp 图标，文本间距和上下内边距收敛到更接近 Sora 的密度，popup 外壳阴影也从 `10dp` 收回到 `8dp`，减少补全框与参考实现之间的视觉割裂。
+  - 更新 [`EditorCompletionPopup.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCompletionPopup.kt)、[`EditorPopupChrome.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorPopupChrome.kt)、[`CompletionKindStyleTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/CompletionKindStyleTest.kt)：补全项左侧从字母 badge 改为按 kind 分组的 24dp 图标，文本间距和上下内边距收敛到更接近 Sora 的密度，popup 外壳阴影也从 `10dp` 收回到 `8dp`，减少补全框与参考实现之间的视觉割裂。
 - **继续补强补全框样式回归，锁定图标尺寸、列表密度与 popup 外壳参数**：
-  - 更新 [`EditorCompletionPopup.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCompletionPopup.kt)、[`EditorPopupChrome.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorPopupChrome.kt)、[`EditorPopupChromeTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorPopupChromeTest.kt)，并新增 [`EditorCompletionPopupMetricsTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorCompletionPopupMetricsTest.kt)：把补全项行高、内边距、文本间距、图标尺寸以及 popup 圆角/描边/阴影提炼成共享常量并补上纯单测，后续如果样式再次偏离 Sora 目标会被回归直接拦住。
+  - 更新 [`EditorCompletionPopup.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCompletionPopup.kt)、[`EditorPopupChrome.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorPopupChrome.kt)、[`EditorPopupChromeTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorPopupChromeTest.kt)，并新增 [`EditorCompletionPopupMetricsTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorCompletionPopupMetricsTest.kt)：把补全项行高、内边距、文本间距、图标尺寸以及 popup 圆角/描边/阴影提炼成共享常量并补上纯单测，后续如果样式再次偏离 Sora 目标会被回归直接拦住。
 - **继续补强补全框验收抓手，新增 popup / row / kind icon 的稳定测试标签**：
-  - 更新 [`EditorCompletionPopup.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCompletionPopup.kt)、[`EditorPopupComposeSmokeTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorPopupComposeSmokeTest.kt)：补全框根节点、每一行候选项和左侧 kind 图标现在都会暴露稳定 `testTag`，后续做 Compose 自动化或真机截图验收时可以直接精确命中，不必只靠文本节点做脆弱选择。
+  - 更新 [`EditorCompletionPopup.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCompletionPopup.kt)、[`EditorPopupComposeSmokeTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorPopupComposeSmokeTest.kt)：补全框根节点、每一行候选项和左侧 kind 图标现在都会暴露稳定 `testTag`，后续做 Compose 自动化或真机截图验收时可以直接精确命中，不必只靠文本节点做脆弱选择。
 - **修复参数提示缺失、遮挡补全框以及若干 UI 路由/文案遗漏问题**：
-  - 更新 [`EditorInteractionController.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorInteractionController.kt)、[`EditorKeyboardShortcuts.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorKeyboardShortcuts.kt)、[`EditorState.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt)、[`MainActivity.kt`](app/src/main/java/com/wuxianggujun/tinaide/MainActivity.kt)、[`MainPortalActivity.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/MainPortalActivity.kt)、[`TerminalActivity.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/TerminalActivity.kt)、[`ApkPackageDialog.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/ApkPackageDialog.kt)、[`AiApiClient.kt`](feature/ai/src/main/java/com/wuxianggujun/tinaide/ai/api/AiApiClient.kt)、[`strings.xml`](core/i18n/src/main/res/values/strings.xml)、[`strings.xml`](core/i18n/src/main/res/values-en/strings.xml)：输入 `(` / `,` 或按 `Ctrl+Shift+Space` 时可触发参数提示，提示优先展示在光标上方避免压住补全框，同时统一收敛设置页跳转入口、APK 构建错误格式化与编译诊断/AI 对话测试页的国际化文案。
+  - 更新 [`EditorInteractionController.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorInteractionController.kt)、[`EditorKeyboardShortcuts.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorKeyboardShortcuts.kt)、[`EditorState.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt)、[`MainActivity.kt`](app/src/main/java/com/wuxianggujun/tinaide/MainActivity.kt)、[`MainPortalActivity.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/MainPortalActivity.kt)、[`TerminalActivity.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/TerminalActivity.kt)、[`ApkPackageDialog.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/ApkPackageDialog.kt)、`AiApiClient.kt`、[`strings.xml`](core/i18n/src/main/res/values/strings.xml)、[`strings.xml`](core/i18n/src/main/res/values-en/strings.xml)：输入 `(` / `,` 或按 `Ctrl+Shift+Space` 时可触发参数提示，提示优先展示在光标上方避免压住补全框，同时统一收敛设置页跳转入口、APK 构建错误格式化与编译诊断/AI 对话测试页的国际化文案。
 - **修复参数提示不会随光标位置变化而更新的问题**：
-  - 更新 [`EditorInteractionController.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorInteractionController.kt)、[`EditorRuntimeEffects.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRuntimeEffects.kt)，并新增 [`SignatureHelpContextResolver.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SignatureHelpContextResolver.kt)、[`SignatureHelpContextResolverTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/SignatureHelpContextResolverTest.kt)：参数提示现在会在参数列表内随光标移动自动刷新，离开调用上下文、产生非空选区或失焦时自动收起，减少提示内容与当前位置脱节的问题。
+  - 更新 [`EditorInteractionController.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorInteractionController.kt)、[`EditorRuntimeEffects.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRuntimeEffects.kt)，并新增 [`SignatureHelpContextResolver.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SignatureHelpContextResolver.kt)、[`SignatureHelpContextResolverTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/SignatureHelpContextResolverTest.kt)：参数提示现在会在参数列表内随光标移动自动刷新，离开调用上下文、产生非空选区或失焦时自动收起，减少提示内容与当前位置脱节的问题。
 - **修复多重载参数提示只能查看当前单条签名的问题**：
-  - 更新 [`EditorState.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt)、[`EditorKeyboardShortcuts.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorKeyboardShortcuts.kt)、[`EditorOverlays.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorOverlays.kt)、[`EditorSignatureHelpPopup.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSignatureHelpPopup.kt)、[`TinaEditorScaffold.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TinaEditorScaffold.kt)、[`EditorSignatureHelpStateTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorSignatureHelpStateTest.kt)：参数提示弹窗现在会列出更多重载，支持点击切换查看，也可用 `Alt+↑ / Alt+↓` 在多签名之间轮换，避免服务端返回多条签名时只能看到当前一条。
+  - 更新 [`EditorState.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt)、[`EditorKeyboardShortcuts.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorKeyboardShortcuts.kt)、[`EditorOverlays.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorOverlays.kt)、[`EditorSignatureHelpPopup.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSignatureHelpPopup.kt)、[`TinaEditorScaffold.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TinaEditorScaffold.kt)、[`EditorSignatureHelpStateTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorSignatureHelpStateTest.kt)：参数提示弹窗现在会列出更多重载，支持点击切换查看，也可用 `Alt+↑ / Alt+↓` 在多签名之间轮换，避免服务端返回多条签名时只能看到当前一条。
 - **修复参数提示上下文解析会被注释、Kotlin 原始字符串和尾随 lambda 场景干扰的问题**：
-  - 更新 [`SignatureHelpContextResolver.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SignatureHelpContextResolver.kt)、[`SignatureHelpContextResolverTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/SignatureHelpContextResolverTest.kt)、[`EditorInteractionControllerTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorInteractionControllerTest.kt)：参数提示上下文扫描现在会跳过行注释、块注释、转义字符串和 `"""` 原始字符串中的括号内容，并把 Kotlin 尾随 lambda 视为调用上下文的一部分，同时继续排除 `if/while/when` 这类控制流 block，减少光标移动时的误收起与误刷新。
+  - 更新 [`SignatureHelpContextResolver.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SignatureHelpContextResolver.kt)、[`SignatureHelpContextResolverTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/SignatureHelpContextResolverTest.kt)、[`EditorInteractionControllerTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorInteractionControllerTest.kt)：参数提示上下文扫描现在会跳过行注释、块注释、转义字符串和 `"""` 原始字符串中的括号内容，并把 Kotlin 尾随 lambda 视为调用上下文的一部分，同时继续排除 `if/while/when` 这类控制流 block，减少光标移动时的误收起与误刷新。
 - **优化多重载参数提示过长时的弹窗可读性问题**：
-  - 更新 [`EditorSignatureHelpPopup.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSignatureHelpPopup.kt)，并新增 [`SignatureHelpVisibleSliceResolver.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SignatureHelpVisibleSliceResolver.kt)、[`SignatureHelpVisibleSliceResolverTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/SignatureHelpVisibleSliceResolverTest.kt)：参数提示弹窗现在会围绕当前选中项裁剪展示可见重载窗口，顶部/底部用紧凑计数提示仍有隐藏项，选中项切换时会始终保持在可见区域内，避免长列表把弹窗内容挤得过密。
+  - 更新 [`EditorSignatureHelpPopup.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSignatureHelpPopup.kt)，并新增 [`SignatureHelpVisibleSliceResolver.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SignatureHelpVisibleSliceResolver.kt)、[`SignatureHelpVisibleSliceResolverTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/SignatureHelpVisibleSliceResolverTest.kt)：参数提示弹窗现在会围绕当前选中项裁剪展示可见重载窗口，顶部/底部用紧凑计数提示仍有隐藏项，选中项切换时会始终保持在可见区域内，避免长列表把弹窗内容挤得过密。
 - **优化参数提示中“当前选中项”和“服务端 active 项”的视觉区分问题**：
-  - 更新 [`EditorSignatureHelpPopup.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSignatureHelpPopup.kt)，并新增 [`SignatureHelpRowPresentation.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SignatureHelpRowPresentation.kt)、[`SignatureHelpRowPresentationTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/SignatureHelpRowPresentationTest.kt)：参数提示列表现在会用不同的描边和标记形态区分“用户当前选中项”“服务端当前 active 项”以及两者重合场景，减少切换多重载时的识别成本。
+  - 更新 [`EditorSignatureHelpPopup.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSignatureHelpPopup.kt)，并新增 [`SignatureHelpRowPresentation.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SignatureHelpRowPresentation.kt)、[`SignatureHelpRowPresentationTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/SignatureHelpRowPresentationTest.kt)：参数提示列表现在会用不同的描边和标记形态区分“用户当前选中项”“服务端当前 active 项”以及两者重合场景，减少切换多重载时的识别成本。
 - **优化参数提示中当前参数的扫读效率问题**：
-  - 更新 [`EditorSignatureHelpPopup.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSignatureHelpPopup.kt)、[`SignatureHelpFormatter.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SignatureHelpFormatter.kt)、[`SignatureHelpFormatterTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/SignatureHelpFormatterTest.kt)：当前选中的重载行现在会额外显示一个紧凑参数预览胶囊，直接提炼出当前参数子串，切换 overload 时不必先通读整条签名也能快速确认正在填写的参数。
+  - 更新 [`EditorSignatureHelpPopup.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSignatureHelpPopup.kt)、[`SignatureHelpFormatter.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SignatureHelpFormatter.kt)、[`SignatureHelpFormatterTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/SignatureHelpFormatterTest.kt)：当前选中的重载行现在会额外显示一个紧凑参数预览胶囊，直接提炼出当前参数子串，切换 overload 时不必先通读整条签名也能快速确认正在填写的参数。
 - **补强编辑器 Popup 共享布局回归与设备侧验收抓手**：
-  - 更新 [`EditorOverlays.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorOverlays.kt)、[`EditorSelectionContextMenu.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSelectionContextMenu.kt)、[`EditorSignatureHelpPopup.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSignatureHelpPopup.kt)、[`EditorPopupComposeSmokeTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorPopupComposeSmokeTest.kt)、[`docs/testing/README.md`](docs/testing/README.md)，并新增 [`EditorOverlaysIntegrationTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorOverlaysIntegrationTest.kt)、[`EditorSharedPopupInstrumentationTest.kt`](core/editor-view/src/androidTest/java/com/wuxianggujun/tinaide/core/editorview/EditorSharedPopupInstrumentationTest.kt)：completion / signature help / selection menu 现在共享可注入的窗口视口度量与布局探针，补齐稳定 `testTag`、滚动与 IME 回归场景，以及真机侧 popup 交互验收入口。
+  - 更新 [`EditorOverlays.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorOverlays.kt)、[`EditorSelectionContextMenu.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSelectionContextMenu.kt)、[`EditorSignatureHelpPopup.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSignatureHelpPopup.kt)、[`EditorPopupComposeSmokeTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorPopupComposeSmokeTest.kt)、[`docs/testing/README.md`](docs/testing/README.md)，并新增 [`EditorOverlaysIntegrationTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorOverlaysIntegrationTest.kt)、[`EditorSharedPopupInstrumentationTest.kt`](editor-kit/editor-view/src/androidTest/java/com/wuxianggujun/tinaide/core/editorview/EditorSharedPopupInstrumentationTest.kt)：completion / signature help / selection menu 现在共享可注入的窗口视口度量与布局探针，补齐稳定 `testTag`、滚动与 IME 回归场景，以及真机侧 popup 交互验收入口。
 - **简化编辑器标签栏的分隔线绘制**：
   - 更新 [`EditorTabBar.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/editor/EditorTabBar.kt)：移除 Tab 之间额外的竖向分隔线，减少顶部栏视觉噪声，让标签选中态本身承担主层级提示。
 - **修复 CMake 重新配置时 `unused-cli` 警告刷屏的问题**：
   - 更新 [`NativeCMakeBuildExecutor.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/cmake/NativeCMakeBuildExecutor.kt)、[`NativeCMakeBuildExecutorConfigTest.kt`](core/compile/src/test/java/com/wuxianggujun/tinaide/core/compile/cmake/NativeCMakeBuildExecutorConfigTest.kt)：CMake configure 现在默认追加 `--no-warn-unused-cli`，避免在纯 CXX 项目或注入内部缓存项时反复出现 “Manually-specified variables were not used by the project” 噪声告警。
 - **修复 SDL3 模板项目首次运行仍需手动切换 GUI 模式的问题**：
-  - 更新 [`RunConfiguration.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/RunConfiguration.kt)、[`ProjectManagerViewModel.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/ProjectManagerViewModel.kt)、[`NewProjectWizardViewModel.kt`](feature/wizard/src/main/java/com/wuxianggujun/tinaide/ui/wizard/NewProjectWizardViewModel.kt)、[`RunConfigurationManagerMigrationTest.kt`](core/compile/src/test/java/com/wuxianggujun/tinaide/core/compile/RunConfigurationManagerMigrationTest.kt)：当项目元数据标记为 `SDL3` 时，默认 run config 会直接落成 GUI 模式；模板项目创建成功后也会立即写入显式的 `.tinaide/run_configs.json`，不再要求用户先手动打开运行配置对话框切换模式。
+  - 更新 [`RunConfiguration.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/RunConfiguration.kt)、[`ProjectManagerViewModel.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/ProjectManagerViewModel.kt)、[`NewProjectWizardViewModel.kt`](feature/wizard/src/main/java/com/wuxianggujun/tinaide/ui/wizard/NewProjectWizardViewModel.kt)、`RunConfigurationManagerMigrationTest.kt`：当项目元数据标记为 `SDL3` 时，默认 run config 会直接落成 GUI 模式；模板项目创建成功后也会立即写入显式的 `.tinaide/run_configs.json`，不再要求用户先手动打开运行配置对话框切换模式。
 - **修复构建成功但项目目录看不到产物、运行入口误判“无输出”的问题**：
   - 更新 [`CompileProjectUseCase.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/CompileProjectUseCase.kt)、[`CompileActionsHelper.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/CompileActionsHelper.kt)、[`FileTree.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/FileTree.kt)：构建报告现在会区分可执行文件、共享库和静态库，并把导出的产物路径回传给 UI；文件树也会把 `.tinaide/artifacts` 作为“构建产物”入口展示，减少 CMake 静态库 / SDL 共享库项目“明明构建成功却像什么都没有”的错觉。
-
-### Technical
-- 版本号：0.14.95 (versionCode: 1496)
-- 本次聚焦：Compose 图标解析稳定性、编辑器字符集与增量高亮链路、编辑器 popup / signature help 体验、AI/工具链/LSP 文案国际化，以及若干遗留重复实现与旧文档清理
-- 本次继续聚焦：原生构建产物导出与 CMake 缓存操作、SDL3 默认 GUI 运行配置，以及项目来源/工作区模型收敛
-- 架构清理：删除旧的 [`BuildCache.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/BuildCache.kt)、[`BuildMetrics.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/BuildMetrics.kt)、[`ProgramRunner.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/ProgramRunner.kt)、[`WorkspaceManager.kt`](core/storage/src/main/java/com/wuxianggujun/tinaide/storage/WorkspaceManager.kt) 等遗留实现，避免编译链路继续同时维护新旧两套职责边界
-- 测试补强：为参数提示补充状态收敛、快捷键分流与布局边界单测，锁定 `Alt+↑ / Alt+↓` 多重载轮换、IME 可见区约束与上下方回退逻辑，减少后续继续调整 popup 时的回归风险
-- 测试补强：继续为参数提示自动刷新链路补充 `EditorInteractionController` 单测，覆盖光标移动自动刷新、非空选区/失焦自动收起，以及文本编辑后首个同版本光标事件的抑制逻辑
-- 测试补强：继续补齐参数提示上下文在注释、Kotlin 原始字符串与控制器事件链上的回归，锁定“注释中的括号不会误触发/误关闭参数提示”的场景
-- 测试补强：继续补齐 Kotlin 尾随 lambda 与控制流 block 的参数提示上下文回归，锁定“尾随 lambda 内保持参数提示、离开 lambda 后及时收起”的行为
-- 测试补强：继续为多重载参数提示补充可见窗口裁剪规则测试，锁定“选中项居中展示、边界时向两端贴齐”的弹窗列表行为
-- 测试补强：继续为参数提示行样式状态补充纯逻辑测试，锁定“selected / active / selected+active”三种视觉语义的分流规则
-- 测试补强：继续为当前参数预览补充展示规则测试，锁定“只在选中项显示预览、selected+active 时使用强调样式”的行为
-- 测试补强：继续为 completion / signature help / selection menu 增加共享锚点、滚动重定位、IME 缩窗与设备侧稳定 tag 回归，避免后续调整 popup 布局时再次出现“位置变了但点击链路失效”的问题
-- 测试补强：继续为 overload 切换补充参数预览联动回归，锁定“切换 displayed signature 后，当前参数预览同步切到对应签名”的行为
-- 测试补强：继续为 `Loading(previousResult)` 状态补充参数预览联动回归，锁定“请求刷新尚未返回时，用户切换 overload 仍能基于旧结果看到正确预览”的行为
-- 测试补强：继续为参数提示刷新结果收缩场景补充预览 clamp 回归，锁定“旧选中项越界后，索引与当前参数预览一起回落到新结果范围内”的行为
-- 测试补强：继续为 `Alt+↑` 反向轮换补充 loading 状态下的回绕回归，锁定“从首项反向切换到末项时，当前参数预览同步回绕到对应签名”的行为
-- 测试补强：继续为 `Alt+↑ / Alt+↓` 快捷键补充 loading 状态下的参数预览联动回归，锁定“键盘切换 overload 时，当前参数预览与选中项保持同步”的行为
-- 测试补强：继续为 completion / signature popup 的位置启发式补充分支回归，锁定“下方空间虽不足最小高度但与上方接近时补全框仍贴近光标显示”和“参数提示在上下都拥挤时优先选择更大的可用侧”的行为
-- 测试补强：继续为 popup chrome 与补全项高亮补充样式语义回归，锁定“亮暗主题下容器/边框/强调色角色稳定”和“补全查询字符仅高亮命中的有序字符”的行为
-- 测试补强：继续为 completion kind 徽标补充样式分组回归，锁定“callable / value-like / file-like 类型沿用各自稳定的字母与色板分组”的行为
-- 测试补强：继续为 completion / signature popup 补充 Compose smoke 回归，锁定“弹窗在真实组合层能渲染关键文案并正确派发点击/轮换回调”的行为
-- 稳定性修复：`EditorState` 的慢操作日志节流改为 JVM 兼容的单调时钟，避免 `editor-view` 纯单测因 Android `SystemClock` stub 触发偶发失败
-- 测试补强：继续为 popup 组合层补充滚动与折叠窗口交互回归，锁定“补全选中项自动滚入可见区”和“参数提示上下隐藏指示器点击后跳到正确 overload slice”的行为
-- 测试补强：继续为 popup 定位解析器补充 Sora 风格布局回归，锁定“窄编辑区下 completion / signature 都保持居中宽面板”以及“参数提示在跟随光标模式下靠右时仍被裁剪进可见区”的行为
 
 ## [0.14.91] - 2026-04-02
 
@@ -2002,10 +1146,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - **修复 linker64 shim 模式下 CMake/Ninja 可能把 `llvm-ar` 错误改写为 `llvm-ranlib` 的问题**：
   - 更新 [`NativeCMakeBuildExecutor.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/cmake/NativeCMakeBuildExecutor.kt)、[`NativeCMakeBuildExecutorConfigTest.kt`](core/compile/src/test/java/com/wuxianggujun/tinaide/core/compile/cmake/NativeCMakeBuildExecutorConfigTest.kt)：Ninja 二进制命令映射不再让共享真实二进制的 canonical path 互相覆盖，避免静态库归档阶段生成 `llvm-ranlib qc libxxx.a` 这类错误命令，修复部分 CMake 项目在链接静态库时直接构建失败的问题。
 
-### Technical
-- 版本号：0.14.91 (versionCode: 1492)
-- 本次聚焦：本地项目导入来源模型收敛、压缩包导入能力补齐、外部项目安全删除，以及 linker64 模式下 Native CMake 归档命令稳定性修复
-
 ## [0.14.90] - 2026-04-01
 
 ### Added
@@ -2014,9 +1154,9 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 
 ### Changed
 - **clangd 会话收敛为“活动标签页独占 + 共享 C/C++ 会话”模型**：
-  - 更新 [`TinaCodeEditorPage.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/editor/TinaCodeEditorPage.kt)、[`EditorContainerState.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerState.kt)、[`LspEditorManager.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/LspEditorManager.kt)、[`LspClientSession.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/LspClientSession.kt)：clangd 连接现在随活动标签页切换及时释放非当前页绑定，C/C++ 标签页之间复用共享会话，并为 compile setup、文档切换与请求代次做缓存和隔离，降低同一项目并发拉起多个 clangd、旧请求串页和切换标签页后状态错乱的概率。
+  - 更新 [`TinaCodeEditorPage.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/editor/TinaCodeEditorPage.kt)、[`EditorContainerState.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerState.kt)、`LspEditorManager.kt`、[`LspClientSession.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/LspClientSession.kt)：clangd 连接现在随活动标签页切换及时释放非当前页绑定，C/C++ 标签页之间复用共享会话，并为 compile setup、文档切换与请求代次做缓存和隔离，降低同一项目并发拉起多个 clangd、旧请求串页和切换标签页后状态错乱的概率。
 - **LSP 导航、代码操作与重命名链路改为统一的超时感知挂起调用**：
-  - 更新 [`LspCodeActionService.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/LspCodeActionService.kt)、[`LspNavigationService.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/LspNavigationService.kt)、[`LspEditorManager.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/LspEditorManager.kt)：definition / references / implementation / workspace symbol / code action / rename 不再直接在各处阻塞等待 `CompletableFuture`，而是统一走带超时的 suspend 请求包装，减少 LSP 服务器慢响应时的卡顿与过期结果污染。
+  - 更新 [`LspCodeActionService.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/LspCodeActionService.kt)、[`LspNavigationService.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/LspNavigationService.kt)、`LspEditorManager.kt`：definition / references / implementation / workspace symbol / code action / rename 不再直接在各处阻塞等待 `CompletableFuture`，而是统一走带超时的 suspend 请求包装，减少 LSP 服务器慢响应时的卡顿与过期结果污染。
 - **工具链名称与版本展示统一走国际化标签**：
   - 新增 [`ToolchainInfoDisplay.kt`](core/ndk/src/main/java/com/wuxianggujun/tinaide/core/ndk/ToolchainInfoDisplay.kt)，并更新 [`RunConfigDialog.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/RunConfigDialog.kt)、[`CompilerSettingsSection.kt`](feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/CompilerSettingsSection.kt)、[`strings.xml`](core/i18n/src/main/res/values/strings.xml)、[`strings.xml`](core/i18n/src/main/res/values-en/strings.xml)：运行配置和编译设置中的内置/自定义工具链显示改为统一的本地化名称与 `vX.Y.Z` 版本标签，减少硬编码英文和 `unknown` 占位带来的歧义。
 - **APK Manifest 补丁改为结构化 AXML 重写**：
@@ -2032,119 +1172,107 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - **修复 linker64 模式下 Native CMake 归档工具路径解析不正确的问题**：
   - 更新 [`NativeCMakeBuildExecutor.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/cmake/NativeCMakeBuildExecutor.kt)、[`NativeCMakeBuildExecutorConfigTest.kt`](core/compile/src/test/java/com/wuxianggujun/tinaide/core/compile/cmake/NativeCMakeBuildExecutorConfigTest.kt)：CMake configure/build 现在会显式传递 `CMAKE_AR`、`CMAKE_RANLIB`，并在 linker64 模式下为 `AR`/`RANLIB` 使用真实 shim 路径，减少静态库归档、try_compile 或配置阶段因工具命令解析错误导致的失败。
 
-### Technical
-- 版本号：0.14.90 (versionCode: 1491)
-- 本次聚焦：clangd 会话隔离与请求稳定性、SDL Android 退出链路稳定性、APK 导出权限可配置化与安装分享链路修复、linker64 下 Native CMake 归档工具稳定性
-
 ## [0.14.89] - 2026-03-30
 
 ### Added
 - **内置 CMake 语言服务与隔离验证开关正式落地**：
-  - 新增 [`CMakeLanguageSupport.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/CMakeLanguageSupport.kt)、[`CMakeLanguageServiceSession.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/CMakeLanguageServiceSession.kt)，并更新 [`LspEditorManager.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/LspEditorManager.kt)、[`TinaCodeEditorPage.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/editor/TinaCodeEditorPage.kt)、[`Prefs.kt`](core/config/src/main/java/com/wuxianggujun/tinaide/core/config/Prefs.kt)、[`DeveloperOptionsSection.kt`](feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/DeveloperOptionsSection.kt)、[`TreeSitterTestScreen.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/testing/TreeSitterTestScreen.kt)：为 `CMakeLists.txt` / `.cmake` 提供内置 completion、semantic tokens、diagnostics、document symbols、definition / references / hover，并新增“内置 CMake LSP”开发者开关，方便与纯 Tree-sitter 高亮分离验证。
-  - 新增 [`CMakeLanguageServiceSessionTest.kt`](app/src/test/java/com/wuxianggujun/tinaide/ui/compose/state/editor/CMakeLanguageServiceSessionTest.kt)、[`TinaCodeEditorSemanticTokenMappingTest.kt`](app/src/test/java/com/wuxianggujun/tinaide/ui/compose/components/editor/TinaCodeEditorSemanticTokenMappingTest.kt)：补齐 CMake 内置语言服务与语义 token 映射回归测试。
+  - 新增 `CMakeLanguageSupport.kt`、`CMakeLanguageServiceSession.kt`，并更新 `LspEditorManager.kt`、[`TinaCodeEditorPage.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/editor/TinaCodeEditorPage.kt)、[`Prefs.kt`](core/config/src/main/java/com/wuxianggujun/tinaide/core/config/Prefs.kt)、[`DeveloperOptionsSection.kt`](feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/DeveloperOptionsSection.kt)、`TreeSitterTestScreen.kt`：为 `CMakeLists.txt` / `.cmake` 提供内置 completion、semantic tokens、diagnostics、document symbols、definition / references / hover，并新增“内置 CMake LSP”开发者开关，方便与纯 Tree-sitter 高亮分离验证。
+  - 新增 `CMakeLanguageServiceSessionTest.kt`、[`TinaCodeEditorSemanticTokenMappingTest.kt`](app/src/test/java/com/wuxianggujun/tinaide/ui/compose/components/editor/TinaCodeEditorSemanticTokenMappingTest.kt)：补齐 CMake 内置语言服务与语义 token 映射回归测试。
 - **编辑器 Hover 交互与 Markdown 浮层能力**：
-  - 新增 [`strings.xml`](core/editor-view/src/main/res/values/strings.xml)、[`strings.xml`](core/editor-view/src/main/res/values-en/strings.xml)、[`EditorHoverStateTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorHoverStateTest.kt)，并更新 [`EditorSelectionContextMenu.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSelectionContextMenu.kt)、[`EditorSelectionContextMenuCoordinator.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSelectionContextMenuCoordinator.kt)、[`EditorInteractionController.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorInteractionController.kt)、[`EditorOverlays.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorOverlays.kt)、[`EditorState.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt)、[`TinaEditorScaffold.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TinaEditorScaffold.kt)：选中文本后的上下文菜单现在可以直接触发 Hover，请求过程中显示加载态，返回内容通过浮层展示并支持关闭。
+  - 新增 [`strings.xml`](editor-kit/editor-view/src/main/res/values/strings.xml)、[`strings.xml`](editor-kit/editor-view/src/main/res/values-en/strings.xml)、[`EditorHoverStateTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorHoverStateTest.kt)，并更新 [`EditorSelectionContextMenu.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSelectionContextMenu.kt)、[`EditorSelectionContextMenuCoordinator.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSelectionContextMenuCoordinator.kt)、[`EditorInteractionController.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorInteractionController.kt)、[`EditorOverlays.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorOverlays.kt)、[`EditorState.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt)、[`TinaEditorScaffold.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TinaEditorScaffold.kt)：选中文本后的上下文菜单现在可以直接触发 Hover，请求过程中显示加载态，返回内容通过浮层展示并支持关闭。
 - **Tree-sitter 增量高亮基础设施与状态机测试**：
-  - 新增 [`SafeTsTree.kt`](core/tree-sitter/src/main/java/com/wuxianggujun/tinaide/core/treesitter/SafeTsTree.kt)、[`TreeSitterIncrementalSupport.kt`](core/tree-sitter/src/main/java/com/wuxianggujun/tinaide/core/treesitter/TreeSitterIncrementalSupport.kt)、[`IncrementalTreeSitterHighlightState.kt`](core/tree-sitter/src/main/java/com/wuxianggujun/tinaide/core/treesitter/IncrementalTreeSitterHighlightState.kt)、[`IncrementalTreeSitterHighlightStateTest.kt`](core/tree-sitter/src/test/java/com/wuxianggujun/tinaide/core/treesitter/IncrementalTreeSitterHighlightStateTest.kt)、[`TreeSitterIncrementalSupportTest.kt`](core/tree-sitter/src/test/java/com/wuxianggujun/tinaide/core/treesitter/TreeSitterIncrementalSupportTest.kt)：高亮器现在具备 `openDocument`、`applyTextChange`、按行读取 segments 与前后台树快照切换能力，为编辑器实时高亮稳定化打基础。
+  - 新增 [`SafeTsTree.kt`](editor-kit/tree-sitter/src/main/java/com/wuxianggujun/tinaide/core/treesitter/SafeTsTree.kt)、[`TreeSitterIncrementalSupport.kt`](editor-kit/tree-sitter/src/main/java/com/wuxianggujun/tinaide/core/treesitter/TreeSitterIncrementalSupport.kt)、[`IncrementalTreeSitterHighlightState.kt`](editor-kit/tree-sitter/src/main/java/com/wuxianggujun/tinaide/core/treesitter/IncrementalTreeSitterHighlightState.kt)、[`IncrementalTreeSitterHighlightStateTest.kt`](editor-kit/tree-sitter/src/test/java/com/wuxianggujun/tinaide/core/treesitter/IncrementalTreeSitterHighlightStateTest.kt)、[`TreeSitterIncrementalSupportTest.kt`](editor-kit/tree-sitter/src/test/java/com/wuxianggujun/tinaide/core/treesitter/TreeSitterIncrementalSupportTest.kt)：高亮器现在具备 `openDocument`、`applyTextChange`、按行读取 segments 与前后台树快照切换能力，为编辑器实时高亮稳定化打基础。
 - **GUI 运行时共享库 staging 与回归测试**：
-  - 新增 [`GuiRuntimeLibraryStager.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/runtime/GuiRuntimeLibraryStager.kt)、[`GuiRuntimeLibraryStagerTest.kt`](app/src/test/java/com/wuxianggujun/tinaide/ui/runtime/GuiRuntimeLibraryStagerTest.kt)，并更新 [`MainActivity.kt`](app/src/main/java/com/wuxianggujun/tinaide/MainActivity.kt)、[`GuiHostActivity.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/gui/GuiHostActivity.kt)：GUI / SDL 启动前会把项目构建目录中的主库与同目录依赖 staging 到 app 私有目录，installed-packages 中已位于私有目录的运行时库保持原路径，规避 Android 高版本直接从公有目录加载 `.so` 的 namespace / 权限限制。
+  - 新增 `GuiRuntimeLibraryStager.kt`、`GuiRuntimeLibraryStagerTest.kt`，并更新 [`MainActivity.kt`](app/src/main/java/com/wuxianggujun/tinaide/MainActivity.kt)、`GuiHostActivity.kt`：GUI / SDL 启动前会把项目构建目录中的主库与同目录依赖 staging 到 app 私有目录，installed-packages 中已位于私有目录的运行时库保持原路径，规避 Android 高版本直接从公有目录加载 `.so` 的 namespace / 权限限制。
 - **Make 产物定位器与第三方 Makefile 兼容兜底**：
   - 新增 [`MakeBuildOutputLocator.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/MakeBuildOutputLocator.kt)：对没有执行位的公有目录 ELF 也会按 ELF 头识别，优先使用项目 `build` 目录中的产物，同时继续兼容第三方 / 开源 Makefile 将可执行文件直接输出到项目根目录的情况。
 - **Android 原生构建 smoke 排障文档与对照诊断入口**：
-  - 新增 [`android-native-cmake-smoke-issues-2026-03-31.md`](docs/troubleshooting/android-native-cmake-smoke-issues-2026-03-31.md)、[`NativeCMakeBuildExecutorConfigTest.kt`](core/compile/src/test/java/com/wuxianggujun/tinaide/core/compile/cmake/NativeCMakeBuildExecutorConfigTest.kt)、[`EffectiveBuildConfigResolverTest.kt`](core/compile/src/test/java/com/wuxianggujun/tinaide/core/compile/EffectiveBuildConfigResolverTest.kt)、[`NativeMakeBuildStrategyTest.kt`](core/compile/src/test/java/com/wuxianggujun/tinaide/core/compile/NativeMakeBuildStrategyTest.kt)、[`CompileCommandsNormalizerTest.kt`](core/lsp/src/test/java/com/wuxianggujun/tinaide/core/lsp/CompileCommandsNormalizerTest.kt)、[`DefaultCompletionProviderTest.kt`](core/editor-lsp/src/test/java/com/wuxianggujun/tinaide/core/editorlsp/DefaultCompletionProviderTest.kt)，并更新 [`CompilerDiagnosticsTestScreen.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/testing/CompilerDiagnosticsTestScreen.kt)、[`CompilerProjectSmokeTests.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/testing/CompilerProjectSmokeTests.kt)：开发者测试页新增 launcher chain 对照诊断与更清晰的 smoke 输出，方便区分 configure / clangd / UI 聚合失败这几类问题。
+  - 新增 `android-native-cmake-smoke-issues-2026-03-31.md`、[`NativeCMakeBuildExecutorConfigTest.kt`](core/compile/src/test/java/com/wuxianggujun/tinaide/core/compile/cmake/NativeCMakeBuildExecutorConfigTest.kt)、[`EffectiveBuildConfigResolverTest.kt`](core/compile/src/test/java/com/wuxianggujun/tinaide/core/compile/EffectiveBuildConfigResolverTest.kt)、[`NativeMakeBuildStrategyTest.kt`](core/compile/src/test/java/com/wuxianggujun/tinaide/core/compile/NativeMakeBuildStrategyTest.kt)、[`CompileCommandsNormalizerTest.kt`](core/lsp/src/test/java/com/wuxianggujun/tinaide/core/lsp/CompileCommandsNormalizerTest.kt)、[`DefaultCompletionProviderTest.kt`](core/editor-lsp/src/test/java/com/wuxianggujun/tinaide/core/editorlsp/DefaultCompletionProviderTest.kt)，并更新 `CompilerDiagnosticsTestScreen.kt`、`CompilerProjectSmokeTests.kt`：开发者测试页新增 launcher chain 对照诊断与更清晰的 smoke 输出，方便区分 configure / clangd / UI 聚合失败这几类问题。
 
 ### Changed
 - **编辑器高亮主链路重构为“高亮器持久状态驱动渲染”**：
-  - 更新 [`TextRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TextRenderer.kt)、[`EditorTextBufferRendererSyncEffect.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorTextBufferRendererSyncEffect.kt)、[`TreeSitterHighlighter.kt`](core/tree-sitter/src/main/java/com/wuxianggujun/tinaide/core/treesitter/TreeSitterHighlighter.kt)、[`EditorRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderer.kt)、[`EditorRenderEngine.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderEngine.kt)、[`EditorRuntimeEffects.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRuntimeEffects.kt)：渲染层不再维护旧的可见区异步高亮缓存，而是直接读取高亮器按行产出的结果，输入和滚动时的高亮稳定性、缓存复用与职责边界进一步接近 Sora Editor。
-  - 删除 [`VisibleHighlightCacheUpdaterTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/VisibleHighlightCacheUpdaterTest.kt)，原有缓存平移与回归场景统一迁移到新的 Tree-sitter 增量测试体系。
+  - 更新 [`TextRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TextRenderer.kt)、[`EditorTextBufferRendererSyncEffect.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorTextBufferRendererSyncEffect.kt)、[`TreeSitterHighlighter.kt`](editor-kit/tree-sitter/src/main/java/com/wuxianggujun/tinaide/core/treesitter/TreeSitterHighlighter.kt)、[`EditorRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderer.kt)、[`EditorRenderEngine.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderEngine.kt)、[`EditorRuntimeEffects.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRuntimeEffects.kt)：渲染层不再维护旧的可见区异步高亮缓存，而是直接读取高亮器按行产出的结果，输入和滚动时的高亮稳定性、缓存复用与职责边界进一步接近 Sora Editor。
+  - 删除 `VisibleHighlightCacheUpdaterTest.kt`，原有缓存平移与回归场景统一迁移到新的 Tree-sitter 增量测试体系。
 - **编辑器状态、菜单与滚动联动继续收口**：
-  - 更新 [`EditorContainerState.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerState.kt)、[`EditorOverlays.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorOverlays.kt)、[`EditorScrollDeltaCoordinator.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorScrollDeltaCoordinator.kt)、[`EditorSessionGestureRuntime.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSessionGestureRuntime.kt)：上下文菜单、浮层、滚动与手势状态之间的同步逻辑更集中，便于后续继续扩展编辑器交互。
+  - 更新 [`EditorContainerState.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerState.kt)、[`EditorOverlays.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorOverlays.kt)、[`EditorScrollDeltaCoordinator.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorScrollDeltaCoordinator.kt)、[`EditorSessionGestureRuntime.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSessionGestureRuntime.kt)：上下文菜单、浮层、滚动与手势状态之间的同步逻辑更集中，便于后续继续扩展编辑器交互。
 - **MarkdownViewer 升级为可复用的悬停内容渲染器**：
   - 更新 [`MarkdownViewer.kt`](core/designsystem/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/MarkdownViewer.kt)：Markdown AST 解析改为后台线程 `collectLatest`，并补齐链接打开与代码复制回调，Hover 浮层和其他 Markdown 展示场景可以共享同一套渲染能力。
 - **设计文档与验证记录补齐**：
-  - 新增 [`editor-sora-highlight-refactor.md`](docs/editor-sora-highlight-refactor.md)、[`editor-hover-analysis.md`](docs/editor-hover-analysis.md)、[`editor-highlight-flicker-analysis.md`](docs/editor-highlight-flicker-analysis.md)：沉淀高亮重构目标、Hover 交互分析与闪烁问题根因，方便后续继续迭代。
+  - 新增 `editor-sora-highlight-refactor.md`、`editor-hover-analysis.md`、`editor-highlight-flicker-analysis.md`：沉淀高亮重构目标、Hover 交互分析与闪烁问题根因，方便后续继续迭代。
 - **原生构建目录模型重新收敛为“项目目录构建 + 私有目录运行”**：
-  - 更新 [`ProjectPaths.kt`](core/storage/src/main/java/com/wuxianggujun/tinaide/storage/ProjectPaths.kt)、[`ProjectLocationManager.kt`](core/storage/src/main/java/com/wuxianggujun/tinaide/storage/ProjectLocationManager.kt)、[`CompileProjectUseCase.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/CompileProjectUseCase.kt)、[`CompileDatabaseProvider.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/CompileDatabaseProvider.kt)、[`build-project.md`](app/src/main/assets/help/build-project.md)、[`cmake-guide.md`](app/src/main/assets/help/cmake-guide.md)、[`cmake-guide.md`](feature/help/src/main/assets/help/cmake-guide.md)：项目 `build`、`compile_commands.json` 与 APK 输出重新回到项目目录，IDE 与帮助文档同步按项目目录定位；真正需要执行的 GUI / SDL 产物仍走私有 staging，不再把整个构建目录整体塞回私有 build-workspace。
+  - 更新 [`ProjectPaths.kt`](core/storage/src/main/java/com/wuxianggujun/tinaide/storage/ProjectPaths.kt)、[`ProjectLocationManager.kt`](core/storage/src/main/java/com/wuxianggujun/tinaide/storage/ProjectLocationManager.kt)、[`CompileProjectUseCase.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/CompileProjectUseCase.kt)、[`CompileDatabaseProvider.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/CompileDatabaseProvider.kt)、`build-project.md`、`cmake-guide.md`、[`cmake-guide.md`](feature/help/src/main/assets/help/cmake-guide.md)：项目 `build`、`compile_commands.json` 与 APK 输出重新回到项目目录，IDE 与帮助文档同步按项目目录定位；真正需要执行的 GUI / SDL 产物仍走私有 staging，不再把整个构建目录整体塞回私有 build-workspace。
 - **Make / 单文件运行配置补齐显式 Build Type，并统一透传到模板与构建命令**：
-  - 更新 [`RunConfiguration.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/RunConfiguration.kt)、[`RunConfigDialog.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/RunConfigDialog.kt)、[`NativeMakeBuildStrategy.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/NativeMakeBuildStrategy.kt)、[`PRootMakeBuildStrategy.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/PRootMakeBuildStrategy.kt)、[`make_executable.zip`](app/src/main/assets/templates/make_executable.zip)、[`MakeTemplateRegressionTest.kt`](core/compile/src/test/java/com/wuxianggujun/tinaide/core/compile/MakeTemplateRegressionTest.kt)、[`RunConfigurationManagerMigrationTest.kt`](core/compile/src/test/java/com/wuxianggujun/tinaide/core/compile/RunConfigurationManagerMigrationTest.kt)：Make / Single File 现在可直接选择 Debug / Release，模板会透传 `BUILD_TYPE`，默认输出规范到 `build/$(BUILD_TYPE)`，但仍兼容第三方 / 开源 Makefile 的根目录产物布局。
+  - 更新 [`RunConfiguration.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/RunConfiguration.kt)、[`RunConfigDialog.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/RunConfigDialog.kt)、[`NativeMakeBuildStrategy.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/NativeMakeBuildStrategy.kt)、[`PRootMakeBuildStrategy.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/PRootMakeBuildStrategy.kt)、`make_executable.zip`、[`MakeTemplateRegressionTest.kt`](core/compile/src/test/java/com/wuxianggujun/tinaide/core/compile/MakeTemplateRegressionTest.kt)、`RunConfigurationManagerMigrationTest.kt`：Make / Single File 现在可直接选择 Debug / Release，模板会透传 `BUILD_TYPE`，默认输出规范到 `build/$(BUILD_TYPE)`，但仍兼容第三方 / 开源 Makefile 的根目录产物布局。
 - **CMake 原生 configure/build/clean 链路重新收敛到真实编译器路径与受控 launcher**：
-  - 更新 [`NativeCMakeBuildExecutor.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/cmake/NativeCMakeBuildExecutor.kt)、[`CMakeBuildStrategy.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/cmake/CMakeBuildStrategy.kt)、[`NinjaCmakePathPatcher.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/cmake/NinjaCmakePathPatcher.kt)、[`ToolchainLinker64ShimManager.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/toolchain/ToolchainLinker64ShimManager.kt)、[`TinaExecRuntime.kt`](external/tina-exec/integration/src/main/java/com/wuxianggujun/tinaide/exec/TinaExecRuntime.kt)、[`CMakeLists.txt`](external/tina-exec/runtime/src/main/cpp/CMakeLists.txt)：CMake 缓存校验改为对比真实 clang / clang++ 路径，configure / build / clean 显式禁用 tina-exec preload 污染，Ninja 补丁会覆盖嵌套工具命令；`tina-exec` 继续保留给通用 native 执行链，但不再充当 CMake try_compile 的编译器入口。
+  - 更新 [`NativeCMakeBuildExecutor.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/cmake/NativeCMakeBuildExecutor.kt)、`CMakeBuildStrategy.kt`、[`NinjaCmakePathPatcher.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/cmake/NinjaCmakePathPatcher.kt)、[`ToolchainLinker64ShimManager.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/toolchain/ToolchainLinker64ShimManager.kt)、[`TinaExecRuntime.kt`](external/tina-exec/integration/src/main/java/com/wuxianggujun/tinaide/exec/TinaExecRuntime.kt)、[`CMakeLists.txt`](external/tina-exec/runtime/src/main/cpp/CMakeLists.txt)：CMake 缓存校验改为对比真实 clang / clang++ 路径，configure / build / clean 显式禁用 tina-exec preload 污染，Ninja 补丁会覆盖嵌套工具命令；`tina-exec` 继续保留给通用 native 执行链，但不再充当 CMake try_compile 的编译器入口。
 - **clangd / compile_commands / 编辑器补全链路继续按真实项目布局归一化**：
-  - 更新 [`CompileCommandsNormalizer.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/CompileCommandsNormalizer.kt)、[`CompileDatabaseProvider.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/CompileDatabaseProvider.kt)、[`ProjectSyncManager.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/ProjectSyncManager.kt)、[`LspEditorManager.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/LspEditorManager.kt)、[`TinaCodeEditorPage.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/editor/TinaCodeEditorPage.kt)、[`CMakeLanguageSupport.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/CMakeLanguageSupport.kt)、[`CompletionProvider.kt`](core/editor-lsp/src/main/java/com/wuxianggujun/tinaide/core/editorlsp/CompletionProvider.kt)、[`EditorState.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt)：compile database 直接在项目构建目录内归一化，linker64 / `sh` / shim 命令会回写成 clang / clang++ 供 clangd 消费，补全候选去重、大小写匹配与本地 / LSP 混排策略也继续优化。
+  - 更新 [`CompileCommandsNormalizer.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/CompileCommandsNormalizer.kt)、[`CompileDatabaseProvider.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/CompileDatabaseProvider.kt)、[`ProjectSyncManager.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/ProjectSyncManager.kt)、`LspEditorManager.kt`、[`TinaCodeEditorPage.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/editor/TinaCodeEditorPage.kt)、`CMakeLanguageSupport.kt`、[`CompletionProvider.kt`](core/editor-lsp/src/main/java/com/wuxianggujun/tinaide/core/editorlsp/CompletionProvider.kt)、[`EditorState.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt)：compile database 直接在项目构建目录内归一化，linker64 / `sh` / shim 命令会回写成 clang / clang++ 供 clangd 消费，补全候选去重、大小写匹配与本地 / LSP 混排策略也继续优化。
 - **编辑器交互与文本/高亮状态继续打磨**：
-  - 更新 [`EditorGestureHandler.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorGestureHandler.kt)、[`EditorGestureCoordinator.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorGestureCoordinator.kt)、[`EditorSessionCoreRuntime.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSessionCoreRuntime.kt)、[`EditorConfig.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorConfig.kt)、[`RopeTextBuffer.kt`](core/text-engine/src/main/java/com/wuxianggujun/tinaide/core/textengine/RopeTextBuffer.kt)、[`IncrementalTreeSitterHighlightState.kt`](core/tree-sitter/src/main/java/com/wuxianggujun/tinaide/core/treesitter/IncrementalTreeSitterHighlightState.kt)、[`EditorGestureHandlerTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorGestureHandlerTest.kt)、[`RopeTextBufferTest.kt`](core/text-engine/src/test/java/com/wuxianggujun/tinaide/core/textengine/RopeTextBufferTest.kt)、[`TreeSitterHighlighterTest.kt`](core/tree-sitter/src/test/java/com/wuxianggujun/tinaide/core/treesitter/TreeSitterHighlighterTest.kt)：双击识别、手势抑制、Rope 替换终点列、changed 节点高亮查询容错进一步稳定。
+  - 更新 [`EditorGestureHandler.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorGestureHandler.kt)、[`EditorGestureCoordinator.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorGestureCoordinator.kt)、[`EditorSessionCoreRuntime.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSessionCoreRuntime.kt)、[`EditorConfig.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorConfig.kt)、[`RopeTextBuffer.kt`](editor-kit/text-engine/src/main/java/com/wuxianggujun/tinaide/core/textengine/RopeTextBuffer.kt)、[`IncrementalTreeSitterHighlightState.kt`](editor-kit/tree-sitter/src/main/java/com/wuxianggujun/tinaide/core/treesitter/IncrementalTreeSitterHighlightState.kt)、[`EditorGestureHandlerTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorGestureHandlerTest.kt)、[`RopeTextBufferTest.kt`](editor-kit/text-engine/src/test/java/com/wuxianggujun/tinaide/core/textengine/RopeTextBufferTest.kt)、[`TreeSitterHighlighterTest.kt`](editor-kit/tree-sitter/src/test/java/com/wuxianggujun/tinaide/core/treesitter/TreeSitterHighlighterTest.kt)：双击识别、手势抑制、Rope 替换终点列、changed 节点高亮查询容错进一步稳定。
 
 ### Fixed
 - **修复编辑器输入时高亮闪烁、当前行掉色与旧缓存回填抖动问题**：
-  - 更新 [`TextRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TextRenderer.kt)、[`EditorState.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt)、[`TreeSitterHighlighter.kt`](core/tree-sitter/src/main/java/com/wuxianggujun/tinaide/core/treesitter/TreeSitterHighlighter.kt)、[`IncrementalTreeSitterHighlightState.kt`](core/tree-sitter/src/main/java/com/wuxianggujun/tinaide/core/treesitter/IncrementalTreeSitterHighlightState.kt)：文本变化后不再先把当前行刷回默认色再等待后台结果，减少输入过程中的“白一下再恢复”现象。
+  - 更新 [`TextRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TextRenderer.kt)、[`EditorState.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt)、[`TreeSitterHighlighter.kt`](editor-kit/tree-sitter/src/main/java/com/wuxianggujun/tinaide/core/treesitter/TreeSitterHighlighter.kt)、[`IncrementalTreeSitterHighlightState.kt`](editor-kit/tree-sitter/src/main/java/com/wuxianggujun/tinaide/core/treesitter/IncrementalTreeSitterHighlightState.kt)：文本变化后不再先把当前行刷回默认色再等待后台结果，减少输入过程中的“白一下再恢复”现象。
 - **修复 Hover 请求时序、异常回收与展示可读性问题**：
-  - 更新 [`EditorState.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt)、[`EditorInteractionController.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorInteractionController.kt)、[`EditorOverlays.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorOverlays.kt)、[`MarkdownViewer.kt`](core/designsystem/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/MarkdownViewer.kt)：Hover 请求失败时会正确收起浮层，加载态与 Markdown 内容展示也更加清晰。
+  - 更新 [`EditorState.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt)、[`EditorInteractionController.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorInteractionController.kt)、[`EditorOverlays.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorOverlays.kt)、[`MarkdownViewer.kt`](core/designsystem/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/MarkdownViewer.kt)：Hover 请求失败时会正确收起浮层，加载态与 Markdown 内容展示也更加清晰。
 - **修复 Tree-sitter capture 归类与 CMake 注释着色不准确的问题**：
-  - 更新 [`HighlightModels.kt`](core/tree-sitter/src/main/java/com/wuxianggujun/tinaide/core/treesitter/HighlightModels.kt)、[`TreeSitterHighlighter.kt`](core/tree-sitter/src/main/java/com/wuxianggujun/tinaide/core/treesitter/TreeSitterHighlighter.kt)、[`EditorColorScheme.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorColorScheme.kt)、[`TreeSitterHighlighterTest.kt`](core/tree-sitter/src/test/java/com/wuxianggujun/tinaide/core/treesitter/TreeSitterHighlighterTest.kt)：`property / field / member`、`constant / builtin` 与 `@spell / @none` 这类 capture 的处理更准确，CMake `# comment` 不会再被默认文本色覆盖，注释、常量和属性颜色表现更稳定。
+  - 更新 [`HighlightModels.kt`](editor-kit/tree-sitter/src/main/java/com/wuxianggujun/tinaide/core/treesitter/HighlightModels.kt)、[`TreeSitterHighlighter.kt`](editor-kit/tree-sitter/src/main/java/com/wuxianggujun/tinaide/core/treesitter/TreeSitterHighlighter.kt)、[`EditorColorScheme.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorColorScheme.kt)、[`TreeSitterHighlighterTest.kt`](editor-kit/tree-sitter/src/test/java/com/wuxianggujun/tinaide/core/treesitter/TreeSitterHighlighterTest.kt)：`property / field / member`、`constant / builtin` 与 `@spell / @none` 这类 capture 的处理更准确，CMake `# comment` 不会再被默认文本色覆盖，注释、常量和属性颜色表现更稳定。
 - **修复 Make / 单文件运行配置在 Debug 场景下仍被错误解析为 Release 的问题**：
-  - 更新 [`EffectiveBuildConfigResolver.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/EffectiveBuildConfigResolver.kt)、[`RunConfiguration.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/RunConfiguration.kt)、[`RunConfigDialog.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/RunConfigDialog.kt)、[`EffectiveBuildConfigResolverTest.kt`](core/compile/src/test/java/com/wuxianggujun/tinaide/core/compile/EffectiveBuildConfigResolverTest.kt)、[`RunConfigurationManagerMigrationTest.kt`](core/compile/src/test/java/com/wuxianggujun/tinaide/core/compile/RunConfigurationManagerMigrationTest.kt)：非 CMake 场景不再默认强制回落到 Release，开发者选项里的 Make / 单文件项目可按真实选择进入 Debug 构建。
+  - 更新 [`EffectiveBuildConfigResolver.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/EffectiveBuildConfigResolver.kt)、[`RunConfiguration.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/RunConfiguration.kt)、[`RunConfigDialog.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/RunConfigDialog.kt)、[`EffectiveBuildConfigResolverTest.kt`](core/compile/src/test/java/com/wuxianggujun/tinaide/core/compile/EffectiveBuildConfigResolverTest.kt)、`RunConfigurationManagerMigrationTest.kt`：非 CMake 场景不再默认强制回落到 Release，开发者选项里的 Make / 单文件项目可按真实选择进入 Debug 构建。
 - **修复高版本 Android 上 GUI / SDL 直接加载项目公有目录 `.so` 失败的问题**：
-  - 更新 [`MainActivity.kt`](app/src/main/java/com/wuxianggujun/tinaide/MainActivity.kt)、[`GuiHostActivity.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/gui/GuiHostActivity.kt)、[`GuiRuntimeLibraryStager.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/runtime/GuiRuntimeLibraryStager.kt)、[`GuiRuntimeLibraryStagerTest.kt`](app/src/test/java/com/wuxianggujun/tinaide/ui/runtime/GuiRuntimeLibraryStagerTest.kt)：GUI 主库及同目录依赖会先 staging 到私有目录再启动，避免 namespace 拒绝与执行权限问题。
+  - 更新 [`MainActivity.kt`](app/src/main/java/com/wuxianggujun/tinaide/MainActivity.kt)、`GuiHostActivity.kt`、`GuiRuntimeLibraryStager.kt`、`GuiRuntimeLibraryStagerTest.kt`：GUI 主库及同目录依赖会先 staging 到私有目录再启动，避免 namespace 拒绝与执行权限问题。
 - **修复 Android 原生 CMake smoke test 中 configure/try_compile、Ninja 自动重配与 clangd 误报串在一起的假失败**：
-  - 更新 [`NativeCMakeBuildExecutor.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/cmake/NativeCMakeBuildExecutor.kt)、[`NinjaCmakePathPatcher.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/cmake/NinjaCmakePathPatcher.kt)、[`CompileCommandsNormalizer.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/CompileCommandsNormalizer.kt)、[`CompileDatabaseProvider.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/CompileDatabaseProvider.kt)、[`ProjectSyncManager.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/ProjectSyncManager.kt)、[`CompilerDiagnosticsTestScreen.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/testing/CompilerDiagnosticsTestScreen.kt)、[`CompilerProjectSmokeTests.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/testing/CompilerProjectSmokeTests.kt)：CMake configure 失败信息更可读，try_compile 假阴性与 compile_commands 启动链污染得到隔离，开发者测试页也能更明确区分“构建已成功但 clangd / UI 仍失败”的场景。
+  - 更新 [`NativeCMakeBuildExecutor.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/cmake/NativeCMakeBuildExecutor.kt)、[`NinjaCmakePathPatcher.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/cmake/NinjaCmakePathPatcher.kt)、[`CompileCommandsNormalizer.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/CompileCommandsNormalizer.kt)、[`CompileDatabaseProvider.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/CompileDatabaseProvider.kt)、[`ProjectSyncManager.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/ProjectSyncManager.kt)、`CompilerDiagnosticsTestScreen.kt`、`CompilerProjectSmokeTests.kt`：CMake configure 失败信息更可读，try_compile 假阴性与 compile_commands 启动链污染得到隔离，开发者测试页也能更明确区分“构建已成功但 clangd / UI 仍失败”的场景。
 - **修复编辑器补全结果质量、手势时序和底层文本/高亮边界问题**：
-  - 更新 [`CompletionProvider.kt`](core/editor-lsp/src/main/java/com/wuxianggujun/tinaide/core/editorlsp/CompletionProvider.kt)、[`EditorState.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt)、[`EditorGestureHandler.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorGestureHandler.kt)、[`RopeTextBuffer.kt`](core/text-engine/src/main/java/com/wuxianggujun/tinaide/core/textengine/RopeTextBuffer.kt)、[`IncrementalTreeSitterHighlightState.kt`](core/tree-sitter/src/main/java/com/wuxianggujun/tinaide/core/treesitter/IncrementalTreeSitterHighlightState.kt)、[`DefaultCompletionProviderTest.kt`](core/editor-lsp/src/test/java/com/wuxianggujun/tinaide/core/editorlsp/DefaultCompletionProviderTest.kt)、[`EditorCompletionStateTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorCompletionStateTest.kt)、[`EditorGestureHandlerTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorGestureHandlerTest.kt)、[`RopeTextBufferTest.kt`](core/text-engine/src/test/java/com/wuxianggujun/tinaide/core/textengine/RopeTextBufferTest.kt)：补全去重与排序更稳定，双击 / 抬手抑制更准确，多行替换的结束列与 changed 节点高亮查询也不再产生异常或错位。
-
-### Technical
-- 版本号：0.14.89 (versionCode: 1490)
-- 本次聚焦：内置 CMake 语言服务与编辑器高亮稳定化，外加原生 CMake / Make 构建链、compile_commands / clangd、GUI / SDL 私有 staging 与开发者 smoke test 排障闭环的收敛
+  - 更新 [`CompletionProvider.kt`](core/editor-lsp/src/main/java/com/wuxianggujun/tinaide/core/editorlsp/CompletionProvider.kt)、[`EditorState.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt)、[`EditorGestureHandler.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorGestureHandler.kt)、[`RopeTextBuffer.kt`](editor-kit/text-engine/src/main/java/com/wuxianggujun/tinaide/core/textengine/RopeTextBuffer.kt)、[`IncrementalTreeSitterHighlightState.kt`](editor-kit/tree-sitter/src/main/java/com/wuxianggujun/tinaide/core/treesitter/IncrementalTreeSitterHighlightState.kt)、[`DefaultCompletionProviderTest.kt`](core/editor-lsp/src/test/java/com/wuxianggujun/tinaide/core/editorlsp/DefaultCompletionProviderTest.kt)、[`EditorCompletionStateTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorCompletionStateTest.kt)、[`EditorGestureHandlerTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorGestureHandlerTest.kt)、[`RopeTextBufferTest.kt`](editor-kit/text-engine/src/test/java/com/wuxianggujun/tinaide/core/textengine/RopeTextBufferTest.kt)：补全去重与排序更稳定，双击 / 抬手抑制更准确，多行替换的结束列与 changed 节点高亮查询也不再产生异常或错位。
 
 ## [0.14.87] - 2026-03-27
 
 ### Added
 - **项目页通知中心与公告已读状态正式落地**：
-  - 新增 [`NotificationCenterDialog.kt`](feature/projectlist/src/main/java/com/wuxianggujun/tinaide/ui/projectlist/NotificationCenterDialog.kt)：项目首页铃铛入口升级为通知中心，支持全部/未读筛选、批量标记已读，以及从列表进入单条公告详情。
-  - 更新 [`ProjectManagerViewModel.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/ProjectManagerViewModel.kt)、[`ProjectScreen.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/main/project/ProjectScreen.kt)、[`ProjectListModels.kt`](feature/projectlist/src/main/java/com/wuxianggujun/tinaide/ui/projectlist/ProjectListModels.kt)、[`TinaServerApi.kt`](core/auth/src/main/java/com/wuxianggujun/tinaide/auth/api/TinaServerApi.kt)：公告状态改为本地持久化的通知流，补齐已读时间、过期时间、首次弹窗记录和服务端同步。
+  - 新增 `NotificationCenterDialog.kt`：项目首页铃铛入口升级为通知中心，支持全部/未读筛选、批量标记已读，以及从列表进入单条公告详情。
+  - 更新 [`ProjectManagerViewModel.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/ProjectManagerViewModel.kt)、[`ProjectScreen.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/main/project/ProjectScreen.kt)、[`ProjectListModels.kt`](feature/projectlist/src/main/java/com/wuxianggujun/tinaide/ui/projectlist/ProjectListModels.kt)、`TinaServerApi.kt`：公告状态改为本地持久化的通知流，补齐已读时间、过期时间、首次弹窗记录和服务端同步。
 - **已安装包元数据读取与版本来源展示能力**：
   - 新增 [`InstalledPackageMetadataReader.kt`](core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/InstalledPackageMetadataReader.kt)：从安装目录中的 `package.json` 读取包版本、上游版本、ABI 与主页等元数据。
   - 更新 [`PackageManagerViewModel.kt`](feature/packages/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/packages/PackageManagerViewModel.kt)、[`PackageManagerScreen.kt`](feature/packages/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/packages/PackageManagerScreen.kt)、[`PackageDetailScreen.kt`](feature/packages/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/packages/PackageDetailScreen.kt)：包卡片和详情页可直接展示安装包版本、上游库版本与修订号。
 - **Android 包维护脚本补齐**：
   - 新增 [`build-imgui-android-package.ps1`](scripts/build-imgui-android-package.ps1)、[`repair-sdl3-bundled-package.ps1`](scripts/repair-sdl3-bundled-package.ps1)、[`CMakeLists.txt`](scripts/cmake/imgui-android-gl3/CMakeLists.txt)：补齐 ImGui Android 共享库打包与 SDL3 内置包元数据修复脚本，方便维护 bundled package 资产。
 - **真实项目编译 / clangd 闭环诊断与对照测试**：
-  - 新增 [`CompilerProjectSmokeTests.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/testing/CompilerProjectSmokeTests.kt)、[`PRootRuntimeSmokeTest.kt`](app/src/androidTest/java/com/wuxianggujun/tinaide/core/proot/PRootRuntimeSmokeTest.kt)，并更新 [`CompilerDiagnosticsTestScreen.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/testing/CompilerDiagnosticsTestScreen.kt)、[`AndroidNativeToolchainSmokeTest.kt`](app/src/androidTest/java/com/wuxianggujun/tinaide/core/ndk/AndroidNativeToolchainSmokeTest.kt)：开发者工具现在可以直接跑 single-file / CMake / SDL3 真实项目闭环、PRoot 运行时校验与 Android 工具链 smoke test，对比构建耗时、diagnostics 和补全命中结果。
+  - 新增 `CompilerProjectSmokeTests.kt`、[`PRootRuntimeSmokeTest.kt`](app/src/androidTest/java/com/wuxianggujun/tinaide/core/proot/PRootRuntimeSmokeTest.kt)，并更新 `CompilerDiagnosticsTestScreen.kt`、[`AndroidNativeToolchainSmokeTest.kt`](app/src/androidTest/java/com/wuxianggujun/tinaide/core/ndk/AndroidNativeToolchainSmokeTest.kt)：开发者工具现在可以直接跑 single-file / CMake / SDL3 真实项目闭环、PRoot 运行时校验与 Android 工具链 smoke test，对比构建耗时、diagnostics 和补全命中结果。
 - **本地 `tina-exec` runtime / integration 模块纳入工程**：
   - 新增 [`external/tina-exec/runtime/`](external/tina-exec/runtime/)、[`external/tina-exec/integration/`](external/tina-exec/integration/)，并更新 [`settings.gradle.kts`](settings.gradle.kts)、[`build.gradle.kts`](build.gradle.kts)、[`core/common/build.gradle.kts`](core/common/build.gradle.kts)、[`core/proot/build.gradle.kts`](core/proot/build.gradle.kts)：将 vendored `tina-exec` 模块正式编入构建，后续原生执行、PRoot 和 rsync 可统一复用同一套 preload/runtime 能力。
 
 ### Changed
 - **公告详情改为 Markdown 友好的通知阅读体验**：
-  - 更新 [`AnnouncementDialog.kt`](feature/projectlist/src/main/java/com/wuxianggujun/tinaide/ui/projectlist/AnnouncementDialog.kt)、[`MarkdownViewer.kt`](core/designsystem/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/MarkdownViewer.kt)、[`strings.xml`](core/i18n/src/main/res/values/strings.xml)、[`strings.xml`](core/i18n/src/main/res/values-en/strings.xml)：公告详情页切换到 Markdown 渲染、统一 Material 3 视觉和更完整的国际化文案。
+  - 更新 `AnnouncementDialog.kt`、[`MarkdownViewer.kt`](core/designsystem/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/MarkdownViewer.kt)、[`strings.xml`](core/i18n/src/main/res/values/strings.xml)、[`strings.xml`](core/i18n/src/main/res/values-en/strings.xml)：公告详情页切换到 Markdown 渲染、统一 Material 3 视觉和更完整的国际化文案。
 - **包管理下载 / 内置安装链路补齐 tar 系列归档与元数据回填**：
   - 更新 [`DownloadPackageBackend.kt`](core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/backend/DownloadPackageBackend.kt)、[`BundledPackagesInstaller.kt`](core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/BundledPackagesInstaller.kt)：下载包现在支持 `zip / tar / tar.gz / tgz / tar.xz / txz / tar.zst`，同时会校验归档路径安全、自动识别归档格式，并在内置包缺少 `package.json` 时触发重装修复。
 - **编辑器补全、高亮与语义 token 链路收口到“可退化、可缓存”的状态模型**：
-  - 更新 [`CompletionProvider.kt`](core/editor-lsp/src/main/java/com/wuxianggujun/tinaide/core/editorlsp/CompletionProvider.kt)、[`LspEditorManager.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/LspEditorManager.kt)、[`TinaCodeEditorPage.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/editor/TinaCodeEditorPage.kt)、[`EditorState.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt)、[`TextRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TextRenderer.kt)：LSP completion 改为显式区分成功/瞬时失败/超时的结果模型，首屏可预热，加载中会保留上一批候选；可见区高亮缓存与语义 token 也支持增量复用，减少补全闪烁与高亮重复计算。
-  - 更新 [`EditorOverlays.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorOverlays.kt)、[`EditorKeyboardShortcuts.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorKeyboardShortcuts.kt)、历史设计稿 `Completion-Performance-Analysis.md`、[`TinaEditor-Highlight-Pipeline-Review.md`](docs/design/TinaEditor-Highlight-Pipeline-Review.md)：补全弹层、快捷键行为和设计文档统一对齐新的状态机与性能分析结论。
+  - 更新 [`CompletionProvider.kt`](core/editor-lsp/src/main/java/com/wuxianggujun/tinaide/core/editorlsp/CompletionProvider.kt)、`LspEditorManager.kt`、[`TinaCodeEditorPage.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/editor/TinaCodeEditorPage.kt)、[`EditorState.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt)、[`TextRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TextRenderer.kt)：LSP completion 改为显式区分成功/瞬时失败/超时的结果模型，首屏可预热，加载中会保留上一批候选；可见区高亮缓存与语义 token 也支持增量复用，减少补全闪烁与高亮重复计算。
+  - 更新 [`EditorOverlays.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorOverlays.kt)、[`EditorKeyboardShortcuts.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorKeyboardShortcuts.kt)、历史设计稿 `Completion-Performance-Analysis.md`、[`TinaEditor-Highlight-Pipeline-Review.md`](docs/design/TinaEditor-Highlight-Pipeline-Review.md)：补全弹层、快捷键行为和设计文档统一对齐新的状态机与性能分析结论。
 - **原生执行 / 构建 / 格式化 / rsync / PRoot 链路统一注入 `tina-exec`**：
-  - 更新 [`NativeExecutableRunner.kt`](core/common/src/main/java/com/wuxianggujun/tinaide/core/util/NativeExecutableRunner.kt)、[`AndroidElfExecutor.kt`](core/common/src/main/java/com/wuxianggujun/tinaide/core/util/AndroidElfExecutor.kt)、[`ProgramRunner.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/ProgramRunner.kt)、[`NativeMakeBuildStrategy.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/NativeMakeBuildStrategy.kt)、[`SingleFileBuildStrategy.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/SingleFileBuildStrategy.kt)、[`NativeCMakeBuildExecutor.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/cmake/NativeCMakeBuildExecutor.kt)、[`NativeCodeFormatter.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/format/NativeCodeFormatter.kt)、[`RsyncSyncProvider.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/RsyncSyncProvider.kt)：native 进程启动时会按 direct/linker 模式自动注入合适的 preload，编译、格式化和 rsync 的派生子进程行为也跟主执行链统一。
+  - 更新 [`NativeExecutableRunner.kt`](core/common/src/main/java/com/wuxianggujun/tinaide/core/util/NativeExecutableRunner.kt)、`AndroidElfExecutor.kt`、`ProgramRunner.kt`、[`NativeMakeBuildStrategy.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/NativeMakeBuildStrategy.kt)、`SingleFileBuildStrategy.kt`、[`NativeCMakeBuildExecutor.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/cmake/NativeCMakeBuildExecutor.kt)、[`NativeCodeFormatter.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/format/NativeCodeFormatter.kt)、[`RsyncSyncProvider.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/RsyncSyncProvider.kt)：native 进程启动时会按 direct/linker 模式自动注入合适的 preload，编译、格式化和 rsync 的派生子进程行为也跟主执行链统一。
 - **APK 导出模板升级为带权限引导的可执行壳**：
   - 更新 [`tools/template-native-activity/build.gradle.kts`](tools/template-native-activity/build.gradle.kts)、[`tools/template-native-activity/src/main/AndroidManifest.xml`](tools/template-native-activity/src/main/AndroidManifest.xml)、[`tools/template-native-activity/src/main/java/com/tinaide/template/nativeactivity/TemplateNativeActivity.java`](tools/template-native-activity/src/main/java/com/tinaide/template/nativeactivity/TemplateNativeActivity.java)、[`tools/template-sdl3/build.gradle.kts`](tools/template-sdl3/build.gradle.kts)、[`tools/template-sdl3/src/main/AndroidManifest.xml`](tools/template-sdl3/src/main/AndroidManifest.xml)、[`tools/template-sdl3/src/main/java/com/tinaide/template/sdl3/TemplateSDLActivity.java`](tools/template-sdl3/src/main/java/com/tinaide/template/sdl3/TemplateSDLActivity.java)、[`app/src/main/assets/apk_templates/README.md`](app/src/main/assets/apk_templates/README.md)：NativeActivity / SDL3 模板补齐 `XXPermissions` 权限引导、专用 Activity 和新版 manifest，导出的 APK 首次启动即可完成存储权限自引导。
 
 ### Fixed
 - **修复编辑器高亮优先级与 C/C++ 语义着色不准确的问题**：
-  - 更新 [`EditorColorScheme.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorColorScheme.kt)、[`TextRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TextRenderer.kt)、[`TreeSitterHighlighter.kt`](core/tree-sitter/src/main/java/com/wuxianggujun/tinaide/core/treesitter/TreeSitterHighlighter.kt)、[`highlights.scm`](core/tree-sitter/src/main/assets/tree-sitter-queries/cpp/highlights.scm)：枚举成员、布尔字面量、控制流关键字和常量的颜色归类更准确，重叠高亮的覆盖优先级也得到修正。
-  - 新增 [`EditorColorSchemeTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorColorSchemeTest.kt)、[`TreeSitterHighlighterTest.kt`](core/tree-sitter/src/test/java/com/wuxianggujun/tinaide/core/treesitter/TreeSitterHighlighterTest.kt)，并更新 [`TextRenderPlannerTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/TextRenderPlannerTest.kt)：为语义着色和覆盖优先级补齐回归测试。
+  - 更新 [`EditorColorScheme.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorColorScheme.kt)、[`TextRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TextRenderer.kt)、[`TreeSitterHighlighter.kt`](editor-kit/tree-sitter/src/main/java/com/wuxianggujun/tinaide/core/treesitter/TreeSitterHighlighter.kt)、[`highlights.scm`](editor-kit/tree-sitter/src/main/assets/tree-sitter-queries/cpp/highlights.scm)：枚举成员、布尔字面量、控制流关键字和常量的颜色归类更准确，重叠高亮的覆盖优先级也得到修正。
+  - 新增 [`EditorColorSchemeTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorColorSchemeTest.kt)、[`TreeSitterHighlighterTest.kt`](editor-kit/tree-sitter/src/test/java/com/wuxianggujun/tinaide/core/treesitter/TreeSitterHighlighterTest.kt)，并更新 [`TextRenderPlannerTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/TextRenderPlannerTest.kt)：为语义着色和覆盖优先级补齐回归测试。
 - **修复 SDL3 内置包和 APK 签名链路的兼容性与报错可读性问题**：
-  - 更新 [`sdl3.tar.xz`](app/src/main/assets/bundled_packages/sdl3.tar.xz)、[`ApkSigner.kt`](core/apk-builder/src/main/java/com/wuxianggujun/tinaide/core/apkbuilder/ApkSigner.kt)、[`ApkSignerTest.kt`](core/apk-builder/src/test/java/com/wuxianggujun/tinaide/core/apkbuilder/ApkSignerTest.kt)、[`ApkPackageDialog.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/ApkPackageDialog.kt)：SDL3 bundled package 补齐元数据，APK 签名链路收敛到 v2/v3，并在界面中区分签名失败与普通构建失败的错误提示。
+  - 更新 `sdl3.tar.xz`、[`ApkSigner.kt`](core/apk-builder/src/main/java/com/wuxianggujun/tinaide/core/apkbuilder/ApkSigner.kt)、[`ApkSignerTest.kt`](core/apk-builder/src/test/java/com/wuxianggujun/tinaide/core/apkbuilder/ApkSignerTest.kt)、[`ApkPackageDialog.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/ApkPackageDialog.kt)：SDL3 bundled package 补齐元数据，APK 签名链路收敛到 v2/v3，并在界面中区分签名失败与普通构建失败的错误提示。
 - **修复 LSP 导航服务读取旧版 `SymbolInformation` 时的 Kotlin 废弃告警**：
   - 更新 [`LspNavigationService.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/LspNavigationService.kt)：将旧版 `SymbolInformation` 转换逻辑收敛到独立兼容 helper，精确约束废弃抑制范围。
 - **修复编辑器 IME 选区同步、Shift 扩选与 UTF-16 列定位问题**：
-  - 更新 [`EditorInputConnection.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorInputConnection.kt)、[`EditorInteractionController.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorInteractionController.kt)、[`EditorInputConnectionUtils.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorInputConnectionUtils.kt)、[`LspSemanticTokenDecoderTest.kt`](app/src/test/java/com/wuxianggujun/tinaide/ui/compose/state/editor/LspSemanticTokenDecoderTest.kt)：方向键扩选、HOME/END 选区同步、代理对字符周围的 IME 选区映射和 LSP UTF-16 列偏移处理统一修正，减少中文/Emoji 场景下的光标错位。
-  - 新增 [`EditorInputConnectionImeSelectionTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorInputConnectionImeSelectionTest.kt)、[`EditorStateSemanticTokensTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorStateSemanticTokensTest.kt)、[`VisibleHighlightCacheUpdaterTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/VisibleHighlightCacheUpdaterTest.kt)：补齐 IME 选区、语义 token 增量合并和可见高亮缓存更新的回归覆盖。
+  - 更新 [`EditorInputConnection.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorInputConnection.kt)、[`EditorInteractionController.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorInteractionController.kt)、[`EditorInputConnectionUtils.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorInputConnectionUtils.kt)、`LspSemanticTokenDecoderTest.kt`：方向键扩选、HOME/END 选区同步、代理对字符周围的 IME 选区映射和 LSP UTF-16 列偏移处理统一修正，减少中文/Emoji 场景下的光标错位。
+  - 新增 [`EditorInputConnectionImeSelectionTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorInputConnectionImeSelectionTest.kt)、[`EditorStateSemanticTokensTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorStateSemanticTokensTest.kt)、`VisibleHighlightCacheUpdaterTest.kt`：补齐 IME 选区、语义 token 增量合并和可见高亮缓存更新的回归覆盖。
 - **修复 `compile_commands` 复用判断不足导致的 clangd 误报与冷启动排障困难问题**：
   - 更新 [`CompileDatabaseProvider.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/CompileDatabaseProvider.kt)、[`NativeClangdConnectionProvider.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/NativeClangdConnectionProvider.kt)、[`PRootClangdConnectionProvider.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/PRootClangdConnectionProvider.kt)：single-file 项目会按 C++ 标准和依赖指纹判断是否必须重建 `compile_commands.json`，clangd 启动前也会输出数据库摘要，减少 SDL3 / CMake 项目“明明能编过、编辑器却误报”的排查成本。
 - **修复项目内 `compile_commands.json` 与 clangd 消费副本不同步，导致 Android NDK / PRoot 解析不稳定的问题**：
   - 新增 [`CompileCommandsNormalizer.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/CompileCommandsNormalizer.kt)，并更新 [`CompileCommandsGenerator.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/CompileCommandsGenerator.kt)、[`CompileDatabaseProvider.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/CompileDatabaseProvider.kt)、[`NativeClangdConnectionProvider.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/NativeClangdConnectionProvider.kt)、[`PRootClangdConnectionProvider.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/PRootClangdConnectionProvider.kt)：项目内的 `compile_commands.json` 保持为用户可见源文件，clangd 统一改用私有构建目录里的规范化副本；同步阶段会剥离 `linker64` / `toolchain-shims` 包装，并补齐 `-resource-dir`，降低 `stdarg.h` 等系统头文件误报概率。
-  - 更新 [`LspEditorManager.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/LspEditorManager.kt)、[`CompilerProjectSmokeTests.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/testing/CompilerProjectSmokeTests.kt)：保存 `CMakeLists.txt`、`.cmake` 或项目内 `compile_commands.json` 后，会刷新 compile database 并重启 clangd，真实项目 smoke test 也同步切到新的 `compileCommandsDir` 参数。
+  - 更新 `LspEditorManager.kt`、`CompilerProjectSmokeTests.kt`：保存 `CMakeLists.txt`、`.cmake` 或项目内 `compile_commands.json` 后，会刷新 compile database 并重启 clangd，真实项目 smoke test 也同步切到新的 `compileCommandsDir` 参数。
 - **修复属性/成员捕获被错误降级为普通变量，且 `PROPERTY` 渲染分支遗漏的问题**：
-  - 更新 [`HighlightModels.kt`](core/tree-sitter/src/main/java/com/wuxianggujun/tinaide/core/treesitter/HighlightModels.kt)、[`TreeSitterHighlighter.kt`](core/tree-sitter/src/main/java/com/wuxianggujun/tinaide/core/treesitter/TreeSitterHighlighter.kt)、[`TreeSitterHighlighterTest.kt`](core/tree-sitter/src/test/java/com/wuxianggujun/tinaide/core/treesitter/TreeSitterHighlighterTest.kt)、[`EditorColorScheme.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorColorScheme.kt)、[`TextRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TextRenderer.kt)：Tree-sitter 现在会把 `property / field / member` 单独归类为 `PROPERTY`，泛化 `identifier` 回退为 `DEFAULT`，属性颜色映射与覆盖优先级也同步补齐，避免成员名被整体刷成变量色或触发 `when` 非穷尽编译错误。
-
-### Technical
-- 版本号：0.14.87 (versionCode: 1488)
-- 本次聚焦：通知中心与公告已读模型、包管理归档/元数据增强、编辑器/LSP 闭环诊断与高亮修复、`tina-exec` 原生执行链路、SDL3/APK 模板权限与打包链路整理
+  - 更新 [`HighlightModels.kt`](editor-kit/tree-sitter/src/main/java/com/wuxianggujun/tinaide/core/treesitter/HighlightModels.kt)、[`TreeSitterHighlighter.kt`](editor-kit/tree-sitter/src/main/java/com/wuxianggujun/tinaide/core/treesitter/TreeSitterHighlighter.kt)、[`TreeSitterHighlighterTest.kt`](editor-kit/tree-sitter/src/test/java/com/wuxianggujun/tinaide/core/treesitter/TreeSitterHighlighterTest.kt)、[`EditorColorScheme.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorColorScheme.kt)、[`TextRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TextRenderer.kt)：Tree-sitter 现在会把 `property / field / member` 单独归类为 `PROPERTY`，泛化 `identifier` 回退为 `DEFAULT`，属性颜色映射与覆盖优先级也同步补齐，避免成员名被整体刷成变量色或触发 `when` 非穷尽编译错误。
 
 ## [0.14.85] - 2026-03-27
 
@@ -2168,15 +1296,11 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - **修复 SDL3 导出模板仍会显示顶栏 / toolbar 的问题**：
   - 更新 [`tools/template-sdl3/src/main/AndroidManifest.xml`](tools/template-sdl3/src/main/AndroidManifest.xml)、[`TemplateSDLActivity.java`](tools/template-sdl3/src/main/java/com/tinaide/template/sdl3/TemplateSDLActivity.java)、[`tools/template-native-activity/src/main/AndroidManifest.xml`](tools/template-native-activity/src/main/AndroidManifest.xml)、[`ApkTemplate.kt`](core/apk-builder/src/main/java/com/wuxianggujun/tinaide/core/apkbuilder/ApkTemplate.kt)：模板清单统一切到无标题全屏主题，SDL3 模板新增专用 Activity 在生命周期内强制恢复沉浸式全屏，并在升级后优先从 `assets/apk_templates/` 刷新模板缓存，避免用户继续命中旧模板。
 
-### Technical
-- 版本号：0.14.85 (versionCode: 1486)
-- 本次聚焦：项目公有 / 私有目录兼容、APK 导出能力自动识别与签名安装链路、SDL3 模板全屏修复、Rootfs / 终端环境安装收口，以及 Windows 本地构建文件锁稳定性
-
 ## [0.14.84] - 2026-03-25
 
 ### Added
 - **公告弹窗支持领取 AI 福利额度**：
-  - 更新 [`TinaServerApi.kt`](core/auth/src/main/java/com/wuxianggujun/tinaide/auth/api/TinaServerApi.kt)、[`ProjectListModels.kt`](feature/projectlist/src/main/java/com/wuxianggujun/tinaide/ui/projectlist/ProjectListModels.kt)：公告接口模型新增奖励额度、领取状态、奖励过期时间与领取响应定义，App 端可以识别“可领取公告福利”。
+  - 更新 `TinaServerApi.kt`、[`ProjectListModels.kt`](feature/projectlist/src/main/java/com/wuxianggujun/tinaide/ui/projectlist/ProjectListModels.kt)：公告接口模型新增奖励额度、领取状态、奖励过期时间与领取响应定义，App 端可以识别“可领取公告福利”。
   - 更新 [`ProjectManagerViewModel.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/ProjectManagerViewModel.kt)、[`ProjectScreen.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/main/project/ProjectScreen.kt)：公告弹窗接入领取动作、成功 Toast、奖励摘要和过期时间展示，用户可直接在 App 内领取赠送额度。
 
 ### Changed
@@ -2186,12 +1310,8 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 
 ### Fixed
 - **修复书签跳转在文件行数变化后可能触发编辑器崩溃的问题**：
-  - 更新 [`BookmarksContent.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/BookmarksContent.kt)、[`MainActivityActionsViewModel.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/MainActivityActionsViewModel.kt)、[`TinaCodeEditorPage.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/editor/TinaCodeEditorPage.kt)、[`EditorState.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt)：当书签、外部导航或选区请求携带的行列位置已超过当前文档边界时，统一夹紧到有效范围，避免旧书签指向已缩短文件时把非法行号继续传入文本引擎。
-  - 更新 [`EditorStateEventTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorStateEventTest.kt)：新增越界跳转回归测试，覆盖超大行号和列号会被收敛到最后有效位置的场景。
-
-### Technical
-- 版本号：0.14.84 (versionCode: 1485)
-- 本次聚焦：修复书签/外部导航越界位置导致的编辑器崩溃，补齐公告福利领取的 App 侧交互链路与国际化文案
+  - 更新 [`BookmarksContent.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/BookmarksContent.kt)、[`MainActivityActionsViewModel.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/MainActivityActionsViewModel.kt)、[`TinaCodeEditorPage.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/editor/TinaCodeEditorPage.kt)、[`EditorState.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt)：当书签、外部导航或选区请求携带的行列位置已超过当前文档边界时，统一夹紧到有效范围，避免旧书签指向已缩短文件时把非法行号继续传入文本引擎。
+  - 更新 [`EditorStateEventTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorStateEventTest.kt)：新增越界跳转回归测试，覆盖超大行号和列号会被收敛到最后有效位置的场景。
 
 ## [0.14.83] - 2026-03-24
 
@@ -2216,13 +1336,13 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - **Windows 本地构建清理策略增强**：
   - 更新 `external/tina-android-tree-sitter/build.gradle.kts`：Windows 主机下将 tree-sitter 子项目构建输出迁移到 `LOCALAPPDATA/TinaIDE/gradle-out/...`，并在 `bundleLibCompileToJar*` 前预删旧输出目录、遇到文件锁时重试清理，降低 `classes.jar` 被索引器/杀毒/并行 Gradle 占用导致的构建失败概率。
 - **日志体系继续收口到 Timber，并清理噪音调试输出**：
-  - 更新 [`HybridUserContentRepository.kt`](core/database/src/main/java/com/wuxianggujun/tinaide/database/impl/HybridUserContentRepository.kt)、[`FavoriteSyncWorker.kt`](core/database/src/main/java/com/wuxianggujun/tinaide/database/worker/FavoriteSyncWorker.kt)、[`AiApiClient.kt`](feature/ai/src/main/java/com/wuxianggujun/tinaide/ai/api/AiApiClient.kt)、[`AiChatViewModel.kt`](feature/ai/src/main/java/com/wuxianggujun/tinaide/ai/viewmodel/AiChatViewModel.kt) 等文件：移除 `android.util.Log` 与高噪音调试日志，统一改为带 tag 的 `Timber` 输出，保留真正有诊断价值的异常和告警。
-  - 更新 [`EditorContainer.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/EditorContainer.kt)、[`EditorToolBar.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/EditorToolBar.kt)：移除编辑器工具栏与撤销/重做按钮的重复调试日志，减少开发期 logcat 噪音。
+  - 更新 [`HybridUserContentRepository.kt`](core/database/src/main/java/com/wuxianggujun/tinaide/database/impl/HybridUserContentRepository.kt)、[`FavoriteSyncWorker.kt`](core/database/src/main/java/com/wuxianggujun/tinaide/database/worker/FavoriteSyncWorker.kt)、`AiApiClient.kt`、`AiChatViewModel.kt` 等文件：移除 `android.util.Log` 与高噪音调试日志，统一改为带 tag 的 `Timber` 输出，保留真正有诊断价值的异常和告警。
+  - 更新 [`EditorContainer.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/EditorContainer.kt)、`EditorToolBar.kt`：移除编辑器工具栏与撤销/重做按钮的重复调试日志，减少开发期 logcat 噪音。
 - **Tina Server 业务调用统一改走自动鉴权客户端**：
-  - 更新 [`TinaServerApi.kt`](core/auth/src/main/java/com/wuxianggujun/tinaide/auth/api/TinaServerApi.kt)、[`TinaServerConfig.kt`](core/auth/src/main/java/com/wuxianggujun/tinaide/auth/api/TinaServerConfig.kt)、[`AuthRepositoryImpl.kt`](core/auth/src/main/java/com/wuxianggujun/tinaide/auth/AuthRepositoryImpl.kt)：用户资料、头像上传、登出、License 领取、反馈提交、AI 模型/额度/兑换码等接口不再在业务层手工传 `accessToken`，统一由鉴权客户端负责附带 Token、401 后刷新并重放。
-  - 更新 [`AiChatViewModel.kt`](feature/ai/src/main/java/com/wuxianggujun/tinaide/ai/viewmodel/AiChatViewModel.kt)、[`AiSettingsBridgeImpl.kt`](feature/ai/src/main/java/com/wuxianggujun/tinaide/ai/settings/AiSettingsBridgeImpl.kt)、[`MyPublishViewModel.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/main/market/MyPublishViewModel.kt)、[`SnippetMarketplaceApi.kt`](feature/snippet/src/main/java/com/wuxianggujun/tinaide/snippet/api/SnippetMarketplaceApi.kt)、[`FeedbackRepository.kt`](feature/help/src/main/java/com/wuxianggujun/tinaide/data/repository/FeedbackRepository.kt)、[`LicenseRepository.kt`](feature/license/src/main/java/com/wuxianggujun/tinaide/license/LicenseRepository.kt)：AI 对话长连接、模型加载、插件发布、代码片段市场、意见反馈、License 激活/领取等链路全部复用同一套鉴权会话能力，减少重复刷新 token 的分叉实现。
+  - 更新 `TinaServerApi.kt`、`TinaServerConfig.kt`、`AuthRepositoryImpl.kt`：用户资料、头像上传、登出、License 领取、反馈提交、AI 模型/额度/兑换码等接口不再在业务层手工传 `accessToken`，统一由鉴权客户端负责附带 Token、401 后刷新并重放。
+  - 更新 `AiChatViewModel.kt`、`AiSettingsBridgeImpl.kt`、`MyPublishViewModel.kt`、`SnippetMarketplaceApi.kt`、`FeedbackRepository.kt`、`LicenseRepository.kt`：AI 对话长连接、模型加载、插件发布、代码片段市场、意见反馈、License 激活/领取等链路全部复用同一套鉴权会话能力，减少重复刷新 token 的分叉实现。
 - **个人中心 AI 额度展示改为优先保留最近一次成功快照**：
-  - 更新 [`ProfileViewModel.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/main/profile/ProfileViewModel.kt)、[`ProfileScreen.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/main/profile/ProfileScreen.kt)：额度刷新中、网络失败或登录过期时会继续展示上次成功数据，并补充“刷新失败但保留缓存”与“登录过期但保留缓存”的状态文案，减少资料页数据闪空。
+  - 更新 `ProfileViewModel.kt`、[`ProfileScreen.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/main/profile/ProfileScreen.kt)：额度刷新中、网络失败或登录过期时会继续展示上次成功数据，并补充“刷新失败但保留缓存”与“登录过期但保留缓存”的状态文案，减少资料页数据闪空。
 - **新建项目入口改为统一聚合内置模板与插件模板**：
   - 更新 `PluginManager.kt`、`ProjectCreationService.kt`、`ProjectDialogs.kt`、`NewProjectWizardViewModel.kt` 等文件：项目列表和新建向导不再硬编码 SDL3 模板，而是统一读取“内置模板 + 已安装插件模板”集合。
   - 更新 `docs/plugins/README.md`：补充 `contributions.projectTemplates` 说明，明确插件可贡献项目模板资源。
@@ -2241,10 +1361,10 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - **修复 Git 同步/冲突处理链路在底层抛异常时容易遗留“正在加载”状态的问题**：
   - 更新 [`GitViewModel.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/GitViewModel.kt)：为 diff、远程同步、SSH 解锁、冲突接受/标记/继续/跳过/中止等流程补齐 `finally` 清理，确保加载与冲突处理状态可以正确复位。
 - **修复访问令牌过期后多个 Tina Server 功能容易同步失效的问题**：
-  - 更新 [`AuthRepositoryImpl.kt`](core/auth/src/main/java/com/wuxianggujun/tinaide/auth/AuthRepositoryImpl.kt)：`isLoggedIn()` 在 access token 过期但 refresh token 仍有效时改为尝试静默刷新，仅在缺少 refresh token 或后端明确拒绝时清理本地登录态，避免用户明明还能续期却被提前踢下线。
-  - 更新 [`TinaServerAuthInterceptor.kt`](core/auth/src/main/java/com/wuxianggujun/tinaide/auth/api/TinaServerAuthInterceptor.kt) 与 [`TinaServerAuthAuthenticator.kt`](core/auth/src/main/java/com/wuxianggujun/tinaide/auth/api/TinaServerAuthAuthenticator.kt)：受保护请求会自动补齐 Bearer Token，并在 401 后刷新一次会话再重放请求，修复 AI 模型加载、AI 额度查询、插件发布、Snippet 市场、反馈提交、License 领取等接口在 token 过期后需要手工重登或各处重复刷新 token 的问题。
+  - 更新 `AuthRepositoryImpl.kt`：`isLoggedIn()` 在 access token 过期但 refresh token 仍有效时改为尝试静默刷新，仅在缺少 refresh token 或后端明确拒绝时清理本地登录态，避免用户明明还能续期却被提前踢下线。
+  - 更新 `TinaServerAuthInterceptor.kt` 与 `TinaServerAuthAuthenticator.kt`：受保护请求会自动补齐 Bearer Token，并在 401 后刷新一次会话再重放请求，修复 AI 模型加载、AI 额度查询、插件发布、Snippet 市场、反馈提交、License 领取等接口在 token 过期后需要手工重登或各处重复刷新 token 的问题。
 - **修复个人中心 AI 额度在异常场景下信息不透明的问题**：
-  - 更新 [`ProfileViewModel.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/main/profile/ProfileViewModel.kt)、[`ProfileScreen.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/main/profile/ProfileScreen.kt)、[`strings.xml`](core/i18n/src/main/res/values/strings.xml)、[`strings.xml`](core/i18n/src/main/res/values-en/strings.xml)：区分普通刷新失败与登录过期两种状态，并在界面中明确提示当前显示的是最近一次成功数据。
+  - 更新 `ProfileViewModel.kt`、[`ProfileScreen.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/main/profile/ProfileScreen.kt)、[`strings.xml`](core/i18n/src/main/res/values/strings.xml)、[`strings.xml`](core/i18n/src/main/res/values-en/strings.xml)：区分普通刷新失败与登录过期两种状态，并在界面中明确提示当前显示的是最近一次成功数据。
 - **修复 GUI 模式下 CMake 构建成功却找不到正确共享库产物的问题**：
   - 更新 `BuildStrategy.kt`、`CMakeBuildStrategy.kt` 与 `CompileProjectUseCase.kt`：通过 CMake 目标元数据解析 `OUTPUT_NAME` / `LIBRARY_OUTPUT_NAME` / `RUNTIME_OUTPUT_NAME`，不再按 target 名盲猜产物文件名。
   - 修复 SDL3 GUI 项目把依赖库 `libSDL3.so` 误判为主程序产物的问题，宿主现在会正确定位并加载 `libmain.so`。
@@ -2253,26 +1373,18 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - **修复插件市场“下载后无社区互动、状态不可见”的体验断层**：
   - 更新 [`MarketScreen.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/main/market/MarketScreen.kt) 与 [`MarketScreenViewModel.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/main/market/MarketScreenViewModel.kt)：安装插件后重新打开详情页时可直接看到评分、评论和禁评状态，不再只停留在基础元数据视图。
 
-### Technical
-- 版本号：0.14.83 (versionCode: 1484)
-- 本次聚焦：release 构建稳定性、Git 操作容错、Windows tree-sitter 本地构建可靠性、Tina Server 鉴权链路统一、插件化项目模板能力、SDL3 GUI 运行链路修复，以及插件市场评分 / 评论 / 举报交互闭环
-
 ## [0.14.81] - 2026-03-24
 
 ### Changed
 - **头像显示改回基于稳定 URL 的正常缓存语义**：
-  - 更新 [`UserAvatar.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/UserAvatar.kt)：移除每次重组都附加时间戳的强制绕缓存逻辑，改为直接使用服务端返回的头像 URL；当后端头像 key 变化时，界面会自然刷新到新头像，避免无意义的重复拉图请求。
+  - 更新 `UserAvatar.kt`：移除每次重组都附加时间戳的强制绕缓存逻辑，改为直接使用服务端返回的头像 URL；当后端头像 key 变化时，界面会自然刷新到新头像，避免无意义的重复拉图请求。
 
 ### Fixed
 - **修复空头像地址被当作有效 URL 加载的问题**：
-  - 更新 [`UserPreferences.kt`](core/auth/src/main/java/com/wuxianggujun/tinaide/auth/UserPreferences.kt)：读取用户资料时把空字符串头像地址和邮箱还原为 `null`，并在保存时统一做 trim/空值归一，避免 UI 尝试加载空头像地址或展示空白邮箱行。
+  - 更新 `UserPreferences.kt`：读取用户资料时把空字符串头像地址和邮箱还原为 `null`，并在保存时统一做 trim/空值归一，避免 UI 尝试加载空头像地址或展示空白邮箱行。
 - **修复插件市场“已安装”仍可重复安装的问题**：
   - 更新 [`MarketScreen.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/main/market/MarketScreen.kt)：插件列表卡片与详情页改为按版本感知安装状态；同版本已安装时按钮真正禁用，仅在远端存在更高版本时显示“更新”。
   - 更新 [`MarketScreenViewModel.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/main/market/MarketScreenViewModel.kt)、[`PluginMarketplaceRepository.kt`](core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/marketplace/PluginMarketplaceRepository.kt)：补充 `updatablePlugins` 状态与同版本幂等保护，避免 UI 漏拦截时再次下载并重复安装同一版本插件。
-
-### Technical
-- 版本号：0.14.81 (versionCode: 1482)
-- 本次聚焦：头像刷新链路收口，消除前端无效绕缓存与空字符串资料状态，并修正插件市场安装状态与重复安装链路
 
 ## [0.14.80] - 2026-03-13
 
@@ -2323,35 +1435,31 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 
 ### Added
 - **AI 代码搜索工具集**：
-  - 新增 [`SearchTools.kt`](feature/ai/src/main/java/com/wuxianggujun/tinaide/ai/tools/search/SearchTools.kt)：实现代码搜索、符号查找、引用分析等工具，支持 AI 助手进行代码库探索与分析。
+  - 新增 `SearchTools.kt`：实现代码搜索、符号查找、引用分析等工具，支持 AI 助手进行代码库探索与分析。
 
 ### Changed
 - **编辑器文本句柄与拖拽体验向 Sora 对齐**：
-  - 更新 [`EditorCanvasLayer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCanvasLayer.kt)、[`CursorHandleDragCoordinator.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/CursorHandleDragCoordinator.kt)、[`CursorHandleLayout.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/CursorHandleLayout.kt)、[`CursorRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/CursorRenderer.kt)、[`SelectionMagnifierController.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SelectionMagnifierController.kt)：新增单光标底部拖拽句柄、拖拽放大镜、边缘自动滚动，并细化句柄圆点大小、下坠长度与跟手偏移，整体观感更贴近 Sora。
-  - 更新 [`EditorRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderer.kt)、[`EditorRenderAssembly.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderAssembly.kt)、[`EditorConfig.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorConfig.kt)：正文起始偏移改为按 Sora 风格的 divider margin 公式计算，选区句柄默认尺寸、命中区与交互范围同步放大。
+  - 更新 [`EditorCanvasLayer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCanvasLayer.kt)、[`CursorHandleDragCoordinator.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/CursorHandleDragCoordinator.kt)、[`CursorHandleLayout.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/CursorHandleLayout.kt)、[`CursorRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/CursorRenderer.kt)、[`SelectionMagnifierController.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SelectionMagnifierController.kt)：新增单光标底部拖拽句柄、拖拽放大镜、边缘自动滚动，并细化句柄圆点大小、下坠长度与跟手偏移，整体观感更贴近 Sora。
+  - 更新 [`EditorRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderer.kt)、[`EditorRenderAssembly.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderAssembly.kt)、[`EditorConfig.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorConfig.kt)：正文起始偏移改为按 Sora 风格的 divider margin 公式计算，选区句柄默认尺寸、命中区与交互范围同步放大。
 - **AI 工具集成与交互优化**：
-  - 更新 [`AiToolsIntegrationManager.kt`](app/src/main/java/com/wuxianggujun/tinaide/ai/integration/AiToolsIntegrationManager.kt)、[`EditorToolCallbacksImpl.kt`](app/src/main/java/com/wuxianggujun/tinaide/ai/integration/EditorToolCallbacksImpl.kt)、[`ExecutionCallbacksImpl.kt`](app/src/main/java/com/wuxianggujun/tinaide/ai/integration/ExecutionCallbacksImpl.kt)、[`FileSystemCallbacksImpl.kt`](app/src/main/java/com/wuxianggujun/tinaide/ai/integration/FileSystemCallbacksImpl.kt)：增强 AI 工具回调实现，优化编辑器操作、执行反馈与文件系统交互，提升 AI 助手的代码操作能力。
-  - 更新 [`ExecutionTools.kt`](feature/ai/src/main/java/com/wuxianggujun/tinaide/ai/tools/execution/ExecutionTools.kt)、[`ProjectTools.kt`](feature/ai/src/main/java/com/wuxianggujun/tinaide/ai/tools/project/ProjectTools.kt)、[`RefactorTools.kt`](feature/ai/src/main/java/com/wuxianggujun/tinaide/ai/tools/refactor/RefactorTools.kt)：重构工具实现，改进参数解析、错误处理与日志记录，提高工具执行的稳定性与可调试性。
-  - 更新 [`ToolInitializer.kt`](feature/ai/src/main/java/com/wuxianggujun/tinaide/ai/tools/ToolInitializer.kt)、[`ToolParameterParser.kt`](feature/ai/src/main/java/com/wuxianggujun/tinaide/ai/tools/ToolParameterParser.kt)：优化工具初始化流程与参数解析逻辑，支持更灵活的工具配置。
+  - 更新 `AiToolsIntegrationManager.kt`、`EditorToolCallbacksImpl.kt`、`ExecutionCallbacksImpl.kt`、`FileSystemCallbacksImpl.kt`：增强 AI 工具回调实现，优化编辑器操作、执行反馈与文件系统交互，提升 AI 助手的代码操作能力。
+  - 更新 `ExecutionTools.kt`、`ProjectTools.kt`、`RefactorTools.kt`：重构工具实现，改进参数解析、错误处理与日志记录，提高工具执行的稳定性与可调试性。
+  - 更新 `ToolInitializer.kt`、`ToolParameterParser.kt`：优化工具初始化流程与参数解析逻辑，支持更灵活的工具配置。
 - **AI 聊天界面改进**：
-  - 更新 [`DrawerAiPanel.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/DrawerAiPanel.kt)：重构 AI 面板布局，工具按类别分组展示，新增停止生成按钮，优化访问令牌管理与模型加载状态显示。
-  - 更新 [`ChatMessageBubble.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/ChatMessageBubble.kt)：改进消息气泡样式，用户消息与 AI 消息视觉区分更明显。
+  - 更新 `DrawerAiPanel.kt`：重构 AI 面板布局，工具按类别分组展示，新增停止生成按钮，优化访问令牌管理与模型加载状态显示。
+  - 更新 `ChatMessageBubble.kt`：改进消息气泡样式，用户消息与 AI 消息视觉区分更明显。
   - 更新 [`BottomPanel.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/BottomPanel.kt)、[`BottomPanelTypes.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/BottomPanelTypes.kt)：底部面板支持 AI 聊天相关操作。
-  - 更新 [`AiChatViewModel.kt`](feature/ai/src/main/java/com/wuxianggujun/tinaide/ai/viewmodel/AiChatViewModel.kt)：实现停止生成功能，允许用户中断 AI 响应。
+  - 更新 `AiChatViewModel.kt`：实现停止生成功能，允许用户中断 AI 响应。
 - **AI 设置界面增强**：
-  - 更新 [`AiSettingsSection.kt`](feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/AiSettingsSection.kt)：新增访问令牌管理、模型选择与加载状态显示，工具选项按类别分组，提升配置体验。
+  - 更新 `AiSettingsSection.kt`：新增访问令牌管理、模型选择与加载状态显示，工具选项按类别分组，提升配置体验。
 - **AI API 客户端优化**：
-  - 更新 [`AiApiClient.kt`](feature/ai/src/main/java/com/wuxianggujun/tinaide/ai/api/AiApiClient.kt)：API 密钥在使用前清理换行符和空白字符，避免因格式问题导致的认证失败。
+  - 更新 `AiApiClient.kt`：API 密钥在使用前清理换行符和空白字符，避免因格式问题导致的认证失败。
 - **国际化资源更新**：
   - 更新 [`strings.xml`](core/i18n/src/main/res/values/strings.xml)、[`strings.xml`](core/i18n/src/main/res/values-en/strings.xml)：新增 AI 工具相关的多语言字符串资源。
 
 ### Fixed
 - **长按菜单与连续扩选手势回归修复**：
-  - 更新 [`EditorCanvasLayer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCanvasLayer.kt)、[`EditorCanvasGesturePipeline.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCanvasGesturePipeline.kt)、[`EditorGestureCoordinator.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorGestureCoordinator.kt)、[`EditorGestureHandler.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorGestureHandler.kt)、[`EditorRuntimeEffects.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRuntimeEffects.kt)、[`EditorSessionGestureRuntime.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSessionGestureRuntime.kt)、[`TinaEditorScaffold.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TinaEditorScaffold.kt)、[`TinaEditorSession.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TinaEditorSession.kt)、[`TinaEditorUiState.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TinaEditorUiState.kt)：恢复长按选词/长按空白弹菜单，已有选区仍可长按拖动，并补上长按后直接拖动扩选的连续手势链路。
-
-### Technical
-- 版本号：0.14.69 (versionCode: 1470)
-- 本次聚焦：Sora 风格文本句柄、长按菜单恢复、光标/选区拖拽体验细化
+  - 更新 [`EditorCanvasLayer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCanvasLayer.kt)、[`EditorCanvasGesturePipeline.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCanvasGesturePipeline.kt)、[`EditorGestureCoordinator.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorGestureCoordinator.kt)、[`EditorGestureHandler.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorGestureHandler.kt)、[`EditorRuntimeEffects.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRuntimeEffects.kt)、[`EditorSessionGestureRuntime.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSessionGestureRuntime.kt)、[`TinaEditorScaffold.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TinaEditorScaffold.kt)、[`TinaEditorSession.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TinaEditorSession.kt)、[`TinaEditorUiState.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TinaEditorUiState.kt)：恢复长按选词/长按空白弹菜单，已有选区仍可长按拖动，并补上长按后直接拖动扩选的连续手势链路。
 
 ## [0.14.66] - 2026-03-10
 
@@ -2362,12 +1470,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 ### Fixed
 - **开发者选项关闭后的返回行为修正**：
   - 更新 [`SettingsScreen.kt`](feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/SettingsScreen.kt) 与 [`DeveloperOptionsSection.kt`](feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/DeveloperOptionsSection.kt)：关闭开发者选项后改为直接返回上一页，不再强制跳转到设置首页。
-
-### Technical
-- 版本号：0.14.66 (versionCode: 1467)
-- 本次聚焦：插件市场错误透出、安装链路日志补强、开发者设置返回逻辑修复
-
----
 
 ## [0.14.52] - 2026-03-10
 
@@ -2386,110 +1488,39 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
   - 更新 [`FavoritesScreen.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/main/profile/FavoritesScreen.kt) 与 [`FavoritesViewModel.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/main/profile/FavoritesViewModel.kt)：收藏页新增顶部栏、手动刷新、同步状态提示、取消收藏确认和跳转市场入口，并支持主动从服务端同步收藏数据。
   - 更新 [`strings.xml`](core/i18n/src/main/res/values/strings.xml) 与 [`strings.xml`](core/i18n/src/main/res/values-en/strings.xml)：补充收藏同步、下载进度、未登录收藏等中英文文案。
 - **依赖注入与应用启动流程调整**：
-  - 更新 [`TinaApplication.kt`](app/src/main/java/com/wuxianggujun/tinaide/TinaApplication.kt)、[`AppViewModelModule.kt`](app/src/main/java/com/wuxianggujun/tinaide/di/AppViewModelModule.kt)、[`AuthModule.kt`](core/auth/src/main/java/com/wuxianggujun/tinaide/auth/di/AuthModule.kt)、[`DatabaseModule.kt`](core/database/src/main/java/com/wuxianggujun/tinaide/database/di/DatabaseModule.kt)、[`build.gradle.kts`](core/database/build.gradle.kts)、[`build.gradle.kts`](core/network/build.gradle.kts)：接入新的混合仓库、网络客户端与后台 Worker 依赖，市场页 ViewModel 同步改为注入用户内容仓库。
+  - 更新 [`TinaApplication.kt`](app/src/main/java/com/wuxianggujun/tinaide/TinaApplication.kt)、[`AppViewModelModule.kt`](app/src/main/java/com/wuxianggujun/tinaide/di/AppViewModelModule.kt)、`AuthModule.kt`、[`DatabaseModule.kt`](core/database/src/main/java/com/wuxianggujun/tinaide/database/di/DatabaseModule.kt)、[`build.gradle.kts`](core/database/build.gradle.kts)、[`build.gradle.kts`](core/network/build.gradle.kts)：接入新的混合仓库、网络客户端与后台 Worker 依赖，市场页 ViewModel 同步改为注入用户内容仓库。
 - **构建链路清理**：
   - 更新 [`NativeMakeBuildStrategy.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/NativeMakeBuildStrategy.kt)、[`PRootMakeBuildStrategy.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/PRootMakeBuildStrategy.kt)、[`CMakeBuildExecutor.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/cmake/CMakeBuildExecutor.kt)、[`NativeCMakeBuildExecutor.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/cmake/NativeCMakeBuildExecutor.kt)：复用统一构建环境与链接策略，减少重复命令覆盖逻辑。
-  - 更新 [`LspEditorManager.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/LspEditorManager.kt) 与 [`make_executable.zip`](app/src/main/assets/templates/make_executable.zip)：同步调整保存后构建与模板执行细节。
+  - 更新 `LspEditorManager.kt` 与 `make_executable.zip`：同步调整保存后构建与模板执行细节。
 
 ### Fixed
 - **本地数据接口补齐**：
-  - 更新 [`UserContentRepository.kt`](core/common/src/main/java/com/wuxianggujun/tinaide/core/user/UserContentRepository.kt)、[`LocalUserContentRepository.kt`](core/database/src/main/java/com/wuxianggujun/tinaide/database/impl/LocalUserContentRepository.kt)、[`DownloadHistoryDao.kt`](core/database/src/main/java/com/wuxianggujun/tinaide/database/user/DownloadHistoryDao.kt)：补充收藏同步接口与按 ID 删除下载记录能力，完善本地 / 混合仓库兼容性。
-
-### Technical
-- 版本号：0.14.52 (versionCode: 1453)
-- 本次聚焦：收藏云端同步、市场/收藏页联动、Make/CMake 构建环境收敛、应用启动后台同步补偿
-
----
+  - 更新 [`UserContentRepository.kt`](core/common/src/main/java/com/wuxianggujun/tinaide/core/user/UserContentRepository.kt)、`LocalUserContentRepository.kt`、[`DownloadHistoryDao.kt`](core/database/src/main/java/com/wuxianggujun/tinaide/database/user/DownloadHistoryDao.kt)：补充收藏同步接口与按 ID 删除下载记录能力，完善本地 / 混合仓库兼容性。
 
 ## [0.14.51] - 2026-03-08
 
+> 合并原 2026-03-09 追加记录。账号、AI 额度和验证码属于当时版本的功能，当前开源版已移除。
+
 ### Added
-- **个人中心接入 AI 额度与兑换入口**：
-  - 更新 [`ProfileScreen.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/main/profile/ProfileScreen.kt) 与 [`ProfileViewModel.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/main/profile/ProfileViewModel.kt)：新增 AI 额度摘要、额度刷新、AI 充值码弹窗与兑换成功反馈，个人中心可直接查看并操作 AI 余额。
-  - 更新 [`TinaServerApi.kt`](core/auth/src/main/java/com/wuxianggujun/tinaide/auth/api/TinaServerApi.kt) 与 [`strings.xml`](core/i18n/src/main/res/values/strings.xml)、[`strings.xml`](core/i18n/src/main/res/values-en/strings.xml)：补充 AI 额度查询 / 兑换接口及中英文文案。
-- **编辑器 snippet 补全会话能力落地**：
-  - 新增 [`SnippetParser.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SnippetParser.kt) 与 [`SnippetSession.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SnippetSession.kt)：支持补全项 snippet 解析、占位符会话与跳转。
-  - 新增历史设计稿 `Editor-Completion-System-Design.md`：沉淀编辑器补全系统设计与 snippet 占位符处理方案。
-- **工程约定与混淆文档补充**：
-  - 新增 [`proguard-rules-reference.md`](docs/proguard-rules-reference.md)、[`project-conventions.md`](docs/project-conventions.md)、[`tina-server-ai-system-issues-analysis.md`](docs/tina-server-ai-system-issues-analysis.md)：补充混淆规则说明、项目约定与 AI 系统问题分析文档。
+
+- 当时的个人中心接入 AI 额度查询与兑换，登录、注册和重置密码接入图片验证码。
+- 编辑器新增 snippet 占位符会话与跳转；可选 PRoot 环境新增 Guest 工具链安装步骤。
 
 ### Changed
-- **主界面编辑与悬浮运行交互继续打磨**：
-  - 更新 [`MainActivity.kt`](app/src/main/java/com/wuxianggujun/tinaide/MainActivity.kt)、[`MainActivityTopBar.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/main/MainActivityTopBar.kt)、[`EditorToolBar.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/EditorToolBar.kt)、[`BottomPanel.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/BottomPanel.kt)：将保存全部与书签切换/跳转能力前移到主界面动作区，并同步精简底部工具栏职责。
-  - 更新 [`FloatingOverlay.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/FloatingOverlay.kt)、[`ExternalSdlActivity.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/sdl/ExternalSdlActivity.kt)：悬浮球在关闭日志面板时可直接触发退出确认，logcat 捕获改为按当前进程与多标签过滤，提升 SDL / 标准输出日志采集完整性。
-- **编辑器补全、快捷键与 LSP 协同继续增强**：
-  - 更新 [`EditorState.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt)、[`EditorStateEditOperations.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorStateEditOperations.kt)、[`EditorCompletionUtils.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCompletionUtils.kt)、[`EditorCompletionPopup.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCompletionPopup.kt)、[`EditorInteractionController.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorInteractionController.kt)、[`EditorKeyboardShortcuts.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorKeyboardShortcuts.kt)、[`CompletionProvider.kt`](core/editor-lsp/src/main/java/com/wuxianggujun/tinaide/core/editorlsp/CompletionProvider.kt)：接入 snippet 补全应用链路、占位符跳转、补全触发细节与键盘交互优化。
-  - 更新 [`LspClientSession.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/LspClientSession.kt)、[`LspEditorManager.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/LspEditorManager.kt)、[`EditorContainerState.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerState.kt)、[`TinaCodeEditorPage.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/editor/TinaCodeEditorPage.kt)：增强 LSP 连接日志、编辑器会话联动与页面侧补全行为。
-  - 删除 [`TinaEditorAdapter.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TinaEditorAdapter.kt)：移除旧兼容适配层，收敛到当前编辑器状态模型。
-- **PRoot 运行时边界与设置联动继续收缩**：
-  - 更新 [`PRootEnvironment.kt`](core/proot/src/main/java/com/wuxianggujun/tinaide/core/proot/PRootEnvironment.kt)、[`ToolchainPathResolver.kt`](core/proot/src/main/java/com/wuxianggujun/tinaide/core/proot/ToolchainPathResolver.kt)、[`CompileEnvironmentChecker.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/CompileEnvironmentChecker.kt)、[`PRootClangdConnectionProvider.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/PRootClangdConnectionProvider.kt)、[`DebugSessionService.kt`](core/debug/src/main/java/com/wuxianggujun/tinaide/core/debug/DebugSessionService.kt)：移除对 manifest / symlink / 旧编译兼容层的依赖，统一改为基于 rootfs 实际二进制探测可用性。
-  - 更新 [`SettingsViewModel.kt`](feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/SettingsViewModel.kt)、[`CompilerSettingsSection.kt`](feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/CompilerSettingsSection.kt)、[`LspSettingsSection.kt`](feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/LspSettingsSection.kt)、[`StorageSettingsSection.kt`](feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/StorageSettingsSection.kt)、[`TerminalSettingsSection.kt`](feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/TerminalSettingsSection.kt)、[`AboutSettingsSection.kt`](feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/AboutSettingsSection.kt)：当 Linux 环境插件关闭时隐藏 PRoot 相关入口与选项，并自动回退不再可用的终端后端设置。
-  - 更新 [`gradle.properties`](gradle.properties)：关闭 Gradle 并行执行并限制单 worker，降低当前重构阶段的资源争抢与构建不稳定性。
-- **工程稳定性与 shrink 规则整理**：
-  - 更新 [`TinaApplication.kt`](app/src/main/java/com/wuxianggujun/tinaide/TinaApplication.kt)、[`app/proguard-rules.pro`](app/proguard-rules.pro)、[`consumer-rules.pro`](core/git/consumer-rules.pro)、[`consumer-rules.pro`](core/lsp/consumer-rules.pro)、[`consumer-rules.pro`](core/network/consumer-rules.pro)、[`consumer-rules.pro`](core/plugin/consumer-rules.pro)：补充模块 consumer rules 与应用混淆保留规则，降低发布构建下功能被裁剪的风险。
-  - 更新 [`ProjectLanguage.kt`](core/model/src/main/java/com/wuxianggujun/tinaide/project/ProjectLanguage.kt)、[`ProjectMetadata.kt`](core/model/src/main/java/com/wuxianggujun/tinaide/project/ProjectMetadata.kt) 以及 [`external/tina-android-tree-sitter`](external/tina-android-tree-sitter)：同步工程语言/元数据与 Tree-sitter 依赖状态。
-- **配套设计文档同步整理**：
-  - 更新 [`backend-license-system.md`](docs/backend-license-system.md)、[`Build-Config-Consolidation-Design.md`](docs/design/Build-Config-Consolidation-Design.md)、[`LSP-Snippet-Placeholder-Handling.md`](docs/design/LSP-Snippet-Placeholder-Handling.md)、[`PRoot-Feature-Analysis.md`](docs/design/PRoot-Feature-Analysis.md)、[`PRoot-Runtime-Refactor.md`](docs/design/PRoot-Runtime-Refactor.md)、[`TinaEditor-Migration-Strategy.md`](docs/design/TinaEditor-Migration-Strategy.md)、[`TinaEditor-Module-Setup.md`](docs/design/TinaEditor-Module-Setup.md)、[`TinaEditor-README.md`](docs/design/TinaEditor-README.md)、[`TinaEditor-Rewrite-Design.md`](docs/design/TinaEditor-Rewrite-Design.md)、[`TinaEditor-Missing-Features.md`](docs/design/TinaEditor-Missing-Features.md)：同步补全系统、编辑器迁移和 PRoot 收缩方案文档。
+
+- 将保存全部和书签操作前移到主界面，优化悬浮运行退出与日志展示。
+- 接入 LSP 工作区文件监听，保存 CMake 配置后刷新编译上下文。
+- 收敛 PRoot 环境探测与设置联动，清理旧编译抽象并完善模块混淆规则。
 
 ### Fixed
-- **输入法兼容性全面补强**（[`EditorInputConnection.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorInputConnection.kt)）：
-  - **回车键在第三方输入法上无反应**：搜狗、百度、讯飞、微信等第三方输入法按回车走 `performEditorAction()` 路径，原来直接返回 `false`。现在处理 `IME_ACTION_DONE/GO/SEND/NEXT/SEARCH/UNSPECIFIED/NULL` 全部 action，统一插入换行符，所有输入法均可正常回车。
-  - **输入法工具栏方向键无效**：`BaseInputConnection` 默认不处理方向键，现在 `sendKeyEvent()` 显式处理 `KEYCODE_DPAD_LEFT/RIGHT/UP/DOWN`（调用 `EditorState.moveLeft/Right/Up/Down()`）以及 `KEYCODE_MOVE_HOME/END`，每次移动后通过 `InputMethodManager.updateSelection()` 同步光标位置给输入法。
-- **长按空白区域不弹菜单**（[`EditorGestureCoordinator.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorGestureCoordinator.kt)）：原来 `onLongPress()` 仅在 `selectWord()` 选中单词时才显示菜单，空文件/空白区域/行尾长按无菜单。现在长按始终显示菜单，空白区域至少粘贴和全选可用。
-- **输入法切换中英文时长按菜单消失**（[`EditorSelectionContextMenu.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSelectionContextMenu.kt)）：菜单 `Popup` 设置 `PopupProperties(focusable = false)`，弹出时不抢夺编辑器焦点，用户点击 IME 语言切换按钮等 IME 区域也不触发 `onDismissRequest`，从根本上消除菜单被误关闭的问题。
 
-### Technical
-- 版本号：0.14.51 (versionCode: 1452)
-- 本次聚焦：AI 额度个人中心接入、snippet 补全会话、主界面编辑动作前移、PRoot 运行时收缩与设置联动；输入法兼容性修复（回车、方向键、长按菜单）
-
----
-
-## [0.14.51] - 2026-03-09（追加）
-
-### Added
-- **图片验证码体系接入（登录/注册/重置密码全流程）**：
-  - 新增 [`CaptchaDialog.kt`](core/designsystem/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/CaptchaDialog.kt)、[`CaptchaInput.kt`](core/designsystem/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/CaptchaInput.kt)：通用验证码对话框与输入组件，支持 Base64 图片展示、一键刷新、加载态。
-  - 更新 [`AuthModels.kt`](core/auth/src/main/java/com/wuxianggujun/tinaide/auth/model/AuthModels.kt)：新增 `CaptchaData` 数据类，`LoginMethod`/`UserProfile`/`MembershipInfo`/`BoundAccount`/`AuthToken` 全部补充 `@Serializable` 注解。
-  - 更新 [`AuthRepository.kt`](core/auth/src/main/java/com/wuxianggujun/tinaide/auth/AuthRepository.kt)、[`AuthRepositoryImpl.kt`](core/auth/src/main/java/com/wuxianggujun/tinaide/auth/AuthRepositoryImpl.kt)、[`TinaServerApi.kt`](core/auth/src/main/java/com/wuxianggujun/tinaide/auth/api/TinaServerApi.kt)：新增 `getCaptcha()` 接口；`loginWithEmail`、`sendRegisterCode`、`sendPasswordResetCode` 全部增加 `captchaId`/`captchaCode` 参数，接口签名同步更新。
-  - 更新 [`LoginViewModel.kt`](feature/login/src/main/java/com/wuxianggujun/tinaide/auth/LoginViewModel.kt)、[`LoginActivity.kt`](feature/login/src/main/java/com/wuxianggujun/tinaide/ui/activity/LoginActivity.kt)：UI 层接入验证码弹窗流程（获取→展示→校验→提交），登录/注册/找回密码三个入口均支持。
-  - 更新 [`strings.xml`](core/i18n/src/main/res/values/strings.xml)、[`strings.xml`](core/i18n/src/main/res/values-en/strings.xml)：补充验证码相关中英文文案。
-- **PRoot Guest 工具链安装步骤正式引入**：
-  - 新增 [`PRootGuestToolchainInstaller.kt`](core/proot/src/main/java/com/wuxianggujun/tinaide/core/proot/PRootGuestToolchainInstaller.kt)：负责在 PRoot rootfs 内安装 Guest 工具链（独立于 Android sysroot 的 Linux 侧工具链）。
-  - 更新 [`DependencyInstallViewModel.kt`](feature/workspace/src/main/java/com/wuxianggujun/tinaide/ui/workspace/DependencyInstallViewModel.kt)：在安装流程中插入 `proot-guest-toolchain` 安装步骤，重新分配各阶段进度权重（rootfs 0.45 / guest-toolchain 0.20 / sysroot 0.175 / native-toolchain 0.175）。
-
-### Changed
-- **LSP 工作区文件监听（workspace/didChangeWatchedFiles）落地**：
-  - 更新 [`LspEditorManager.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/LspEditorManager.kt)：新增 `WorkspaceFileWatcher`（基于 `FileObserver`，API 29+ 递归模式），在 CXX LSP 会话建立后自动启动；实现 `onCapabilityRegistered`/`onCapabilityUnregistered` 以响应 clangd 动态注册的文件监听范围；新增 `onFileSaved()` 方法，CMakeLists.txt / .cmake 文件保存时自动重建 compile_commands 并重启 clangd。
-  - 更新 [`LspClientSession.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/LspClientSession.kt)：补充 `registrationConsumer`/`unregistrationConsumer` 回调，将 LSP `client/registerCapability`、`client/unregisterCapability` 事件桥接到上层管理器。
-  - 更新 [`LspNavigationService.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/LspNavigationService.kt)：小幅调整。
-- **主界面编辑动作与状态联动调整**：
-  - 更新 [`MainActivity.kt`](app/src/main/java/com/wuxianggujun/tinaide/MainActivity.kt)、[`MainActivityActionsViewModel.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/MainActivityActionsViewModel.kt)、[`MainActivityHostCommandExecutor.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/commands/MainActivityHostCommandExecutor.kt)、[`EditorContainerState.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerState.kt)：编辑器容器状态与主界面命令执行层小幅联动优化。
-- **设置模块多处细节修复**：
-  - 更新 [`ToolchainImportDialog.kt`](feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/ToolchainImportDialog.kt)、[`AiSettingsSection.kt`](feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/AiSettingsSection.kt)、[`GitSettingsSection.kt`](feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/GitSettingsSection.kt)、[`MirrorSettingsSection.kt`](feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/MirrorSettingsSection.kt)、[`TerminalSettingsSection.kt`](feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/TerminalSettingsSection.kt)：设置页各分区小幅交互与文案调整。
-- **其他模块小幅更新**：
-  - 更新 [`ToolI18n.kt`](feature/ai/src/main/java/com/wuxianggujun/tinaide/ai/tools/ToolI18n.kt)、[`BookmarkService.kt`](feature/editor/src/main/java/com/wuxianggujun/tinaide/editor/bookmark/BookmarkService.kt)、[`BookmarkDatabase.kt`](feature/editor/src/main/java/com/wuxianggujun/tinaide/editor/bookmark/db/BookmarkDatabase.kt)、[`TerminalDatabase.kt`](feature/terminal/src/main/java/com/wuxianggujun/tinaide/terminal/persistence/db/TerminalDatabase.kt)：各模块小幅调整。
-
-### Removed
-- **PRoot 旧编译抽象层清理**：
-  - 删除 `ICompilerEnvironment.kt`、`InstallProgressEvent.kt`、`PRootCompiler.kt`、`PRootLinuxEnvironment.kt`、`ToolchainInstallResult.kt`、`ToolchainManifest.kt`、`ToolchainManifestStore.kt`（`core/proot/`）以及 `toolchain/LlvmVersions.kt`、`SymlinkConfig.kt`、`SymlinkConfigStore.kt`、`SymlinkManager.kt`、`SymlinkResult.kt`：彻底移除旧版 PRoot 编译运行时抽象，统一由 `PRootEnvironment` + `PRootGuestToolchainInstaller` 替代。
-
-### Technical
-- 版本号：0.14.51 (versionCode: 1452)
-- 本次追加聚焦：图片验证码全流程接入、PRoot Guest 工具链安装步骤、LSP 工作区文件监听与 CMake 热重载、旧 PRoot 抽象层清理
-
----
+- 修复第三方输入法回车、方向键移动、空白区域长按菜单及切换输入法语言时菜单消失的问题。
 
 ## [0.14.47] - 2026-03-06
 
 ### Changed
 - **GUI 悬浮日志捕获协程异常修复**：
-  - 更新 [`FloatingOverlay.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/FloatingOverlay.kt)：将 `captureLogcat()` 包装到 [`coroutineScope`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/FloatingOverlay.kt:63) 中，并统一使用 [`isActive`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/FloatingOverlay.kt:65) 检查协程状态，修复悬浮日志面板在日志读取生命周期中的异常退出问题。
-
-### Technical
-- 版本号：0.14.47 (versionCode: 1448)
-- 本次聚焦：悬浮日志 logcat 捕获协程稳定性修复
-
----
+  - 更新 `FloatingOverlay.kt`：将 `captureLogcat()` 包装到 `coroutineScope` 中，并统一使用 `isActive` 检查协程状态，修复悬浮日志面板在日志读取生命周期中的异常退出问题。
 
 ## [0.14.46] - 2026-03-06
 
@@ -2497,344 +1528,297 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - **APK 模板打包链路与图形运行时入口补齐**：
   - 新增 [`core/apk-builder/`](core/apk-builder/) 模块及其中的 [`ApkBuilder.kt`](core/apk-builder/src/main/java/com/wuxianggujun/tinaide/core/apkbuilder/ApkBuilder.kt)：支持将用户编译产物注入模板 APK、执行 manifest 修补、zipalign 与签名，形成应用内 APK 打包能力。
   - 新增 [`ApkPackageDialog.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/ApkPackageDialog.kt) 与 [`app/src/main/assets/apk_templates/`](app/src/main/assets/apk_templates/)：在界面中提供 APK 打包配置、构建进度、安装与分享入口，并接入 native / SDL 模板资产。
-  - 新增 [`FloatingOverlay.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/FloatingOverlay.kt)：为 GUI / SDL 运行时提供悬浮退出球与可选日志面板。
+  - 新增 `FloatingOverlay.kt`：为 GUI / SDL 运行时提供悬浮退出球与可选日志面板。
 - **编辑器可视化辅助能力扩展**：
-  - 新增 [`BracketPairGuideRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/BracketPairGuideRenderer.kt)、[`WhitespaceRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/WhitespaceRenderer.kt)、[`WordOccurrenceHighlightRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/WordOccurrenceHighlightRenderer.kt)、[`MatchingBracketHighlightRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/MatchingBracketHighlightRenderer.kt)：补齐括号对引导线、空白字符可视化、光标词高亮和匹配括号提示。
+  - 新增 [`BracketPairGuideRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/BracketPairGuideRenderer.kt)、[`WhitespaceRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/WhitespaceRenderer.kt)、[`WordOccurrenceHighlightRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/WordOccurrenceHighlightRenderer.kt)、[`MatchingBracketHighlightRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/MatchingBracketHighlightRenderer.kt)：补齐括号对引导线、空白字符可视化、光标词高亮和匹配括号提示。
 - **脚本插件 API 模块化重组**：
-  - 新增 [`PluginApiModule.kt`](core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/script/api/PluginApiModule.kt) 与 [`CommandsApiModule.kt`](core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/script/api/CommandsApiModule.kt)、[`EditorApiModule.kt`](core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/script/api/EditorApiModule.kt)、[`LogApiModule.kt`](core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/script/api/LogApiModule.kt)、[`StorageApiModule.kt`](core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/script/api/StorageApiModule.kt)、[`UiApiModule.kt`](core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/script/api/UiApiModule.kt)、[`PluginApiHelpers.kt`](core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/script/api/PluginApiHelpers.kt)：将原本集中在单文件内的脚本 API 拆分为可注册的独立模块。
+  - 新增 `PluginApiModule.kt` 与 `CommandsApiModule.kt`、`EditorApiModule.kt`、`LogApiModule.kt`、`StorageApiModule.kt`、`UiApiModule.kt`、`PluginApiHelpers.kt`：将原本集中在单文件内的脚本 API 拆分为可注册的独立模块。
 
 ### Changed
 - **运行配置、GUI 启动与模板工程继续增强**：
   - 更新 [`RunConfiguration.kt`](core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/RunConfiguration.kt)、[`RunConfigDialog.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/RunConfigDialog.kt)、[`MainActivity.kt`](app/src/main/java/com/wuxianggujun/tinaide/MainActivity.kt)、[`MainActivityTopBar.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/main/MainActivityTopBar.kt)：新增 GUI 屏幕方向与悬浮日志开关，并把 APK 打包入口整合进主界面运行流程。
-  - 更新 [`GuiHostActivity.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/gui/GuiHostActivity.kt)、[`GuiRuntimeBridge.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/gui/GuiRuntimeBridge.kt)、[`ExternalSdlActivity.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/sdl/ExternalSdlActivity.kt)、[`gui_runtime_jni.cpp`](app/src/main/cpp/gui/gui_runtime_jni.cpp)：补充触摸/按键事件桥接、强制方向控制、SDL 返回键接管与悬浮层叠加逻辑，提升图形程序宿主可用性。
+  - 更新 `GuiHostActivity.kt`、`GuiRuntimeBridge.kt`、[`ExternalSdlActivity.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/sdl/ExternalSdlActivity.kt)、`gui_runtime_jni.cpp`：补充触摸/按键事件桥接、强制方向控制、SDL 返回键接管与悬浮层叠加逻辑，提升图形程序宿主可用性。
   - 更新 [`build.gradle.kts`](build.gradle.kts)、[`settings.gradle.kts`](settings.gradle.kts)、[`app/build.gradle.kts`](app/build.gradle.kts)：纳入 [`core/apk-builder/`](core/apk-builder/) 与模板工程模块，新增 [`buildApkTemplates`](build.gradle.kts) 任务用于生成并拷贝模板 APK 资源。
 - **编辑器设置、补全与输入体验补强**：
-  - 更新 [`Prefs.kt`](core/config/src/main/java/com/wuxianggujun/tinaide/core/config/Prefs.kt)、[`EditorConfig.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorConfig.kt)、[`EditorSettingsSection.kt`](feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/EditorSettingsSection.kt)、[`SettingsViewModel.kt`](feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/SettingsViewModel.kt)：新增空白字符可视化模式与 Tab 转空格设置，并把相关选项接入设置页。
-  - 更新 [`EditorColorScheme.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorColorScheme.kt)、[`EditorRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderer.kt)、[`EditorState.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt)、[`EditorStateEditOperations.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorStateEditOperations.kt)、[`EditorSmartReplacement.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSmartReplacement.kt)、[`TinaCodeEditorPage.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/editor/TinaCodeEditorPage.kt)：接入括号引导线、空白字符渲染、词高亮、自动补全排序与成对符号删除等行为优化。
-  - 更新 [`EditorCompletionPopup.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCompletionPopup.kt)、[`EditorCompletionUtils.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCompletionUtils.kt)、[`EditorInteractionController.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorInteractionController.kt)、[`EditorOverlays.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorOverlays.kt)：继续强化补全触发、候选排序、UI 信息密度与查询高亮体验。
+  - 更新 [`Prefs.kt`](core/config/src/main/java/com/wuxianggujun/tinaide/core/config/Prefs.kt)、[`EditorConfig.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorConfig.kt)、[`EditorSettingsSection.kt`](feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/EditorSettingsSection.kt)、[`SettingsViewModel.kt`](feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/SettingsViewModel.kt)：新增空白字符可视化模式与 Tab 转空格设置，并把相关选项接入设置页。
+  - 更新 [`EditorColorScheme.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorColorScheme.kt)、[`EditorRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderer.kt)、[`EditorState.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt)、[`EditorStateEditOperations.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorStateEditOperations.kt)、[`EditorSmartReplacement.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSmartReplacement.kt)、[`TinaCodeEditorPage.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/editor/TinaCodeEditorPage.kt)：接入括号引导线、空白字符渲染、词高亮、自动补全排序与成对符号删除等行为优化。
+  - 更新 [`EditorCompletionPopup.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCompletionPopup.kt)、[`EditorCompletionUtils.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCompletionUtils.kt)、[`EditorInteractionController.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorInteractionController.kt)、[`EditorOverlays.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorOverlays.kt)：继续强化补全触发、候选排序、UI 信息密度与查询高亮体验。
 - **脚本插件运行时与 Lua 引擎升级**：
-  - 更新 [`PluginRuntime.kt`](core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/script/PluginRuntime.kt)、[`ScriptPluginManager.kt`](core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/script/ScriptPluginManager.kt)、[`ClipboardApiModule.kt`](core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/script/api/ClipboardApiModule.kt)、[`DatabaseApiModule.kt`](core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/script/api/DatabaseApiModule.kt)、[`EventsApiModule.kt`](core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/script/api/EventsApiModule.kt)、[`FileApiModule.kt`](core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/script/api/FileApiModule.kt)、[`NetworkApiModule.kt`](core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/script/api/NetworkApiModule.kt)：将脚本运行时从 `LuaJ` 切换到 Lua 5.4 JNI 实现，并重构 API 注册方式、日志模块与安全沙箱细节。
-  - 删除 [`PluginApi.kt`](core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/script/api/PluginApi.kt)：原始聚合式 API 定义被拆分模块化实现替代。
+  - 更新 `PluginRuntime.kt`、[`ScriptPluginManager.kt`](core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/script/ScriptPluginManager.kt)、`ClipboardApiModule.kt`、`DatabaseApiModule.kt`、`EventsApiModule.kt`、`FileApiModule.kt`、`NetworkApiModule.kt`：将脚本运行时从 `LuaJ` 切换到 Lua 5.4 JNI 实现，并重构 API 注册方式、日志模块与安全沙箱细节。
+  - 删除 `PluginApi.kt`：原始聚合式 API 定义被拆分模块化实现替代。
 - **模板资源与示例插件整理**：
   - 删除 [`app/src/main/assets/bundled_plugins/`](app/src/main/assets/bundled_plugins/) 下的示例脚本、主题与 snippets 插件资源，收敛默认包内资产。
-
-### Technical
-- 版本号：0.14.46 (versionCode: 1447)
-- 本次聚焦：APK 模板打包、GUI/SDL 宿主增强、编辑器可视化辅助、脚本插件 API 模块化与 Lua 5.4 升级
-
----
 
 ## [0.14.41] - 2026-03-06
 
 ### Added
 - **编辑器彩虹括号与 Tree-sitter 括号/折叠查询资源落地**：
-  - 新增 [`RainbowBracketComputer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/RainbowBracketComputer.kt)：按行缓存括号嵌套深度，在大文件场景下依据配置阈值自动停用彩虹括号计算。
-  - 新增 [`brackets.scm`](app/src/main/assets/tree-sitter-queries/java/brackets.scm)、[`brackets.scm`](app/src/main/assets/tree-sitter-queries/kotlin/brackets.scm)、[`blocks.scm`](app/src/main/assets/tree-sitter-queries/java/blocks.scm)、[`blocks.scm`](app/src/main/assets/tree-sitter-queries/kotlin/blocks.scm)：为 Java / Kotlin 补齐括号配对与代码块查询资源，给折叠和括号高亮提供语言侧规则基础。
+  - 新增 [`RainbowBracketComputer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/RainbowBracketComputer.kt)：按行缓存括号嵌套深度，在大文件场景下依据配置阈值自动停用彩虹括号计算。
+  - 新增 `brackets.scm`、`brackets.scm`、`blocks.scm`、`blocks.scm`：为 Java / Kotlin 补齐括号配对与代码块查询资源，给折叠和括号高亮提供语言侧规则基础。
 
 ### Changed
 - **编辑器折叠、括号高亮与渲染链路继续增强**：
-  - 更新 [`EditorConfig.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorConfig.kt) 与 [`EditorColorScheme.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorColorScheme.kt)：新增彩虹括号开关、最大扫描行数、折叠占位色与彩虹括号调色板，并支持从主题配置解析对应颜色。
-  - 更新 [`TextRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TextRenderer.kt)、[`EditorRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderEngine.kt)、[`CursorRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/CursorRenderer.kt)：在文本绘制阶段接入彩虹括号着色、折叠占位符徽标、可见区域异步高亮缓存，以及折叠尾行的光标定位与命中检测能力。
-  - 更新 [`EditorGestureCoordinator.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorGestureCoordinator.kt)、[`EditorState.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt)、[`EditorStateEditOperations.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorStateEditOperations.kt)：点击折叠徽标即可切换折叠状态，并让光标移动、删除与文本变更在隐藏区间和折叠尾行场景下自动跳过或展开折叠区域。
-  - 更新 [`TreeSitterFoldingProvider.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TreeSitterFoldingProvider.kt)：补充折叠区间调试日志，便于校验查询命中结果与折叠边界。
-  - 更新 [`DiagnosticRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/DiagnosticRenderer.kt)、[`DiagnosticWavePathBuilder.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/DiagnosticWavePathBuilder.kt)、[`GutterRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/GutterRenderer.kt)、[`LineNumberRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/LineNumberRenderer.kt)、[`EditorCanvasLayer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCanvasLayer.kt)、[`EditorTextBufferRendererSyncEffect.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorTextBufferRendererSyncEffect.kt)：同步整理诊断波浪线、 gutter 折叠图标模板、当前行号绘制和文本缓冲同步时机，提升编辑器绘制一致性。
+  - 更新 [`EditorConfig.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorConfig.kt) 与 [`EditorColorScheme.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorColorScheme.kt)：新增彩虹括号开关、最大扫描行数、折叠占位色与彩虹括号调色板，并支持从主题配置解析对应颜色。
+  - 更新 [`TextRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TextRenderer.kt)、[`EditorRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderEngine.kt)、[`CursorRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/CursorRenderer.kt)：在文本绘制阶段接入彩虹括号着色、折叠占位符徽标、可见区域异步高亮缓存，以及折叠尾行的光标定位与命中检测能力。
+  - 更新 [`EditorGestureCoordinator.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorGestureCoordinator.kt)、[`EditorState.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt)、[`EditorStateEditOperations.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorStateEditOperations.kt)：点击折叠徽标即可切换折叠状态，并让光标移动、删除与文本变更在隐藏区间和折叠尾行场景下自动跳过或展开折叠区域。
+  - 更新 `TreeSitterFoldingProvider.kt`：补充折叠区间调试日志，便于校验查询命中结果与折叠边界。
+  - 更新 [`DiagnosticRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/DiagnosticRenderer.kt)、[`DiagnosticWavePathBuilder.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/DiagnosticWavePathBuilder.kt)、[`GutterRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/GutterRenderer.kt)、[`LineNumberRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/LineNumberRenderer.kt)、[`EditorCanvasLayer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCanvasLayer.kt)、[`EditorTextBufferRendererSyncEffect.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorTextBufferRendererSyncEffect.kt)：同步整理诊断波浪线、 gutter 折叠图标模板、当前行号绘制和文本缓冲同步时机，提升编辑器绘制一致性。
 - **补全触发与候选展示体验补强**：
-  - 更新 [`EditorCompletionUtils.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCompletionUtils.kt) 与 [`EditorInteractionController.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorInteractionController.kt)：补全自动触发从单字符扩展到 `->`、`::` 等组合触发符，并在 IME 插入后读取前导字符参与判断。
-  - 更新 [`EditorCompletionPopup.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCompletionPopup.kt) 与 [`EditorOverlays.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorOverlays.kt)：将当前补全查询串传入弹窗，对 fuzzy 匹配命中的字符做高亮强调，提升候选列表可读性与选择效率。
-
-### Technical
-- 版本号：0.14.41 (versionCode: 1442)
-- 本次聚焦：彩虹括号、折叠占位绘制、Tree-sitter 查询资源补齐、可见区域高亮缓存优化
-
----
+  - 更新 [`EditorCompletionUtils.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCompletionUtils.kt) 与 [`EditorInteractionController.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorInteractionController.kt)：补全自动触发从单字符扩展到 `->`、`::` 等组合触发符，并在 IME 插入后读取前导字符参与判断。
+  - 更新 [`EditorCompletionPopup.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCompletionPopup.kt) 与 [`EditorOverlays.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorOverlays.kt)：将当前补全查询串传入弹窗，对 fuzzy 匹配命中的字符做高亮强调，提升候选列表可读性与选择效率。
 
 ## [0.14.31] - 2026-03-06
 
 ### Added
 - **编辑器稳定性测试与许可证说明补充**：
-  - 新增 [`EditorStateSurrogatePairTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorStateSurrogatePairTest.kt)、[`EditorStateWordWrapTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorStateWordWrapTest.kt)、[`TextRenderPlannerTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/TextRenderPlannerTest.kt)：补齐 surrogate pair、自动换行和文本渲染规划的回归测试覆盖。
+  - 新增 [`EditorStateSurrogatePairTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorStateSurrogatePairTest.kt)、[`EditorStateWordWrapTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorStateWordWrapTest.kt)、[`TextRenderPlannerTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/TextRenderPlannerTest.kt)：补齐 surrogate pair、自动换行和文本渲染规划的回归测试覆盖。
   - 更新 [`OpenSourceLicensesActivity.kt`](feature/settings/src/main/java/com/wuxianggujun/tinaide/settings/OpenSourceLicensesActivity.kt) 与 [`strings.xml`](core/i18n/src/main/res/values/strings.xml)、[`strings.xml`](core/i18n/src/main/res/values-en/strings.xml)：开源许可证页面新增说明卡片，并补充随应用分发组件的展示信息。
 
 ### Changed
 - **编辑器渲染链路与文本缓冲性能继续优化**：
-  - 更新 [`EditorState.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt)：缓存 `cursorPosition` 派生结果，收敛诊断行排序与 visual line map 的失效判断，并统一 word wrap 分段来源。
-  - 更新 [`TextRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TextRenderer.kt)、[`EditorRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderer.kt)、[`EditorRenderEngine.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderEngine.kt)、[`EditorCanvasLayer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCanvasLayer.kt)：重构文本绘制规划、覆盖层拼装和渲染调用顺序，减少重复计算并提升复杂文本场景的绘制稳定性。
-  - 更新 [`DiagnosticRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/DiagnosticRenderer.kt)、[`DiagnosticWavePathBuilder.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/DiagnosticWavePathBuilder.kt)、[`GutterRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/GutterRenderer.kt)、[`LineNumberRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/LineNumberRenderer.kt)、[`SelectionRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SelectionRenderer.kt)、[`CursorRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/CursorRenderer.kt)、[`EditorScrollbarRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorScrollbarRenderer.kt)、[`EditorOverlays.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorOverlays.kt)、[`EditorRuntimeEffects.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRuntimeEffects.kt)、[`TinaEditorScaffold.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TinaEditorScaffold.kt)：同步清理诊断、光标、选区、行号和滚动条相关绘制逻辑，降低层间状态重复拼装。
-  - 更新 [`RopeTextBuffer.kt`](core/text-engine/src/main/java/com/wuxianggujun/tinaide/core/textengine/RopeTextBuffer.kt) 与 [`TextBuffer.kt`](core/text-engine/src/main/java/com/wuxianggujun/tinaide/core/textengine/TextBuffer.kt)：补充原生 `replace()` 路径与统一 `TextChange` 生成，减少替换操作的中间开销。
+  - 更新 [`EditorState.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt)：缓存 `cursorPosition` 派生结果，收敛诊断行排序与 visual line map 的失效判断，并统一 word wrap 分段来源。
+  - 更新 [`TextRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TextRenderer.kt)、[`EditorRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderer.kt)、[`EditorRenderEngine.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderEngine.kt)、[`EditorCanvasLayer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCanvasLayer.kt)：重构文本绘制规划、覆盖层拼装和渲染调用顺序，减少重复计算并提升复杂文本场景的绘制稳定性。
+  - 更新 [`DiagnosticRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/DiagnosticRenderer.kt)、[`DiagnosticWavePathBuilder.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/DiagnosticWavePathBuilder.kt)、[`GutterRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/GutterRenderer.kt)、[`LineNumberRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/LineNumberRenderer.kt)、[`SelectionRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SelectionRenderer.kt)、[`CursorRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/CursorRenderer.kt)、[`EditorScrollbarRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorScrollbarRenderer.kt)、[`EditorOverlays.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorOverlays.kt)、[`EditorRuntimeEffects.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRuntimeEffects.kt)、[`TinaEditorScaffold.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TinaEditorScaffold.kt)：同步清理诊断、光标、选区、行号和滚动条相关绘制逻辑，降低层间状态重复拼装。
+  - 更新 [`RopeTextBuffer.kt`](editor-kit/text-engine/src/main/java/com/wuxianggujun/tinaide/core/textengine/RopeTextBuffer.kt) 与 [`TextBuffer.kt`](editor-kit/text-engine/src/main/java/com/wuxianggujun/tinaide/core/textengine/TextBuffer.kt)：补充原生 `replace()` 路径与统一 `TextChange` 生成，减少替换操作的中间开销。
 - **帮助文档与工程排除配置整理**：
   - 更新 `feature/help/src/main/assets/help/*.md`：整体压缩和重写内置帮助文档内容，统一表述风格并收敛冗长说明。
-  - 更新 [`.idea/modules/TinaIDE.iml`](.idea/modules/TinaIDE.iml)：将 [`.cursor/`](.cursor/) 加入 IDE 排除目录，减少本地工具元数据对工程索引的干扰。
-
-### Technical
-- 版本号：0.14.31 (versionCode: 1432)
-- 代码统计：36 个文件修改，+1983 行，-3514 行
-- 本次聚焦：渲染链路精简、文本缓冲 replace 能力、许可证展示补全、帮助文档收敛
-
----
+  - 更新 [`.idea/modules/TinaIDE.iml`](.idea/modules/TinaIDE.iml)：将 `.cursor/` 加入 IDE 排除目录，减少本地工具元数据对工程索引的干扰。
 
 ## [0.14.28] - 2026-03-06
 
 ### Added
 - **编辑器统一偏移量选区模型文档**：
-  - 新增 [`OffsetRange.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/OffsetRange.kt)：以 `charOffset`（UTF-16 code unit）表达选区锚点与活动端，统一内部选区坐标模型。
+  - 新增 [`OffsetRange.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/OffsetRange.kt)：以 `charOffset`（UTF-16 code unit）表达选区锚点与活动端，统一内部选区坐标模型。
   - 新增 [`unified-layout-snapshot.md`](docs/design/unified-layout-snapshot.md)：沉淀“charOffset 统一布局模型”设计说明，明确 `Position(line, column)` 仅保留在 LSP 边界层做转换。
 
 ### Changed
 - **编辑器状态与手势链路切换到 offset-first 选区语义**：
-  - 更新 [`EditorState.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt)、[`EditorStateContracts.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorStateContracts.kt)、[`EditorEvent.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorEvent.kt)：将核心选区状态从 `Selection` 切换为 `selectionRange` / `OffsetRange`，并同步事件与接口定义。
-  - 更新 [`EditorStateEditOperations.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorStateEditOperations.kt)、[`EditorInputConnection.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorInputConnection.kt)、[`EditorInteractionController.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorInteractionController.kt)、[`EditorKeyboardShortcuts.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorKeyboardShortcuts.kt)：插入、删除、替换、撤销重做、IME 同步与快捷键路径统一改为按 offset 驱动。
-  - 更新 [`EditorGestureCoordinator.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorGestureCoordinator.kt)、[`EditorGestureHandler.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SelectionHandleDragCoordinator.kt)、[`SelectionHandleLayout.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SelectionHandleLayout.kt)、[`SelectionRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SelectionRenderer.kt)、[`EditorCanvasLayer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCanvasLayer.kt)、[`EditorRuntimeEffects.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRuntimeEffects.kt)、[`EditorScaleTransformCoordinator.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorScaleTransformCoordinator.kt)：手势命中、选区拖拽、句柄翻转、渲染与缩放联动统一按偏移量计算，减少 `Position ↔ offset` 来回转换。
-  - 更新 [`TinaCodeEditorPage.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/editor/TinaCodeEditorPage.kt) 与 [`TinaEditorAdapter.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TinaEditorAdapter.kt)：页面侧选择、搜索跳转、光标恢复与外部适配接口统一改为 offset-first 调用，仅在需要对接外部坐标时再转换。
+  - 更新 [`EditorState.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt)、`EditorStateContracts.kt`、[`EditorEvent.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorEvent.kt)：将核心选区状态从 `Selection` 切换为 `selectionRange` / `OffsetRange`，并同步事件与接口定义。
+  - 更新 [`EditorStateEditOperations.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorStateEditOperations.kt)、[`EditorInputConnection.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorInputConnection.kt)、[`EditorInteractionController.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorInteractionController.kt)、[`EditorKeyboardShortcuts.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorKeyboardShortcuts.kt)：插入、删除、替换、撤销重做、IME 同步与快捷键路径统一改为按 offset 驱动。
+  - 更新 [`EditorGestureCoordinator.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorGestureCoordinator.kt)、[`EditorGestureHandler.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SelectionHandleDragCoordinator.kt)、[`SelectionHandleLayout.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SelectionHandleLayout.kt)、[`SelectionRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SelectionRenderer.kt)、[`EditorCanvasLayer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCanvasLayer.kt)、[`EditorRuntimeEffects.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRuntimeEffects.kt)、[`EditorScaleTransformCoordinator.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorScaleTransformCoordinator.kt)：手势命中、选区拖拽、句柄翻转、渲染与缩放联动统一按偏移量计算，减少 `Position ↔ offset` 来回转换。
+  - 更新 [`TinaCodeEditorPage.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/editor/TinaCodeEditorPage.kt) 与 `TinaEditorAdapter.kt`：页面侧选择、搜索跳转、光标恢复与外部适配接口统一改为 offset-first 调用，仅在需要对接外部坐标时再转换。
 - **旧选区类型清理与测试同步**：
-  - 删除 [`Selection.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/Selection.kt)，避免内部继续混用基于行列的旧选区模型。
-  - 更新 [`EditorCompletionStateTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorCompletionStateTest.kt) 与 [`EditorStateEventTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorStateEventTest.kt)，校验 offset 选区事件、补全状态与状态变更行为。
-
-### Technical
-- 版本号：0.14.28 (versionCode: 1429)
-- 代码统计：21 个文件修改，+392 行，-469 行
-- 本次聚焦：选区坐标统一、编辑器内部 offset-first 重构、LSP 边界转换收敛
-
----
+  - 删除 `Selection.kt`，避免内部继续混用基于行列的旧选区模型。
+  - 更新 [`EditorCompletionStateTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorCompletionStateTest.kt) 与 [`EditorStateEventTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorStateEventTest.kt)，校验 offset 选区事件、补全状态与状态变更行为。
 
 ## [0.14.26] - 2026-03-06
 
 ### Changed
 - **缩放手势坐标系与渲染时序进一步稳定**：
-  - 更新 [`EditorCanvasLayer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCanvasLayer.kt)：
+  - 更新 [`EditorCanvasLayer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCanvasLayer.kt)：
     - 调整 `pointerInput` 与 `transformable` 的处理顺序，确保缩放焦点在同帧先更新再参与视觉缩放。
     - 明确选区拖拽与滚动手势的竞争边界，降低选区存在时滚动被抢占的概率。
-  - 更新 [`EditorScaleTransformCoordinator.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorScaleTransformCoordinator.kt)：
+  - 更新 [`EditorScaleTransformCoordinator.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorScaleTransformCoordinator.kt)：
     - 优化双指缩放流程，继续采用“手势期仅视觉缩放、结束后一次性落地字体与滚动”的路径。
     - 强化缩放结束时锚点与滚动对齐逻辑，减少缩放后文本跳变与偏移漂移。
-  - 更新 [`TinaEditorUiState.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TinaEditorUiState.kt)：
+  - 更新 [`TinaEditorUiState.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TinaEditorUiState.kt)：
     - 补充缩放焦点与视觉缩放状态字段注释，明确其在渲染重绘与诊断日志中的职责边界。
-
-### Technical
-- 版本号：0.14.26 (versionCode: 1427)
-- 本次聚焦：双指缩放稳定性、焦点锚定一致性、手势链路可维护性
-
----
 
 ## [0.14.24] - 2026-03-06
 
 ### Added
 - **编辑器折叠与查询编译能力增强**：
-  - 新增 [`TreeSitterFoldingProvider.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TreeSitterFoldingProvider.kt)：提供基于 Tree-sitter 的折叠范围计算。
-  - 新增 [`TreeSitterQueryCompiler.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TreeSitterQueryCompiler.kt)：统一查询编译与缓存逻辑。
-  - 新增 [`EditorFoldingModels.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorFoldingModels.kt)：抽离折叠领域模型。
+  - 新增 `TreeSitterFoldingProvider.kt`：提供基于 Tree-sitter 的折叠范围计算。
+  - 新增 `TreeSitterQueryCompiler.kt`：统一查询编译与缓存逻辑。
+  - 新增 `EditorFoldingModels.kt`：抽离折叠领域模型。
 - **编辑器渲染与运行时能力补齐**：
-  - 新增 [`EditorColorScheme.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorColorScheme.kt)：统一编辑器色板语义。
-  - 新增 [`EditorWordWrapLayoutCache.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorWordWrapLayoutCache.kt)：多行换行布局缓存。
-  - 新增 [`EditorSessionCoreRuntime.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSessionCoreRuntime.kt) 与 [`EditorSessionGestureRuntime.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSessionGestureRuntime.kt)：拆分会话核心运行时与手势运行时。
-  - 新增 [`EditorSmartReplacement.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSmartReplacement.kt)：补全插入/替换策略增强。
-  - 新增 [`EditorScaleTransformCoordinator.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorScaleTransformCoordinator.kt) 与 [`EditorTransformFocusTracker.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorTransformFocusTracker.kt)：双指缩放焦点追踪与变换协调。
+  - 新增 [`EditorColorScheme.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorColorScheme.kt)：统一编辑器色板语义。
+  - 新增 [`EditorWordWrapLayoutCache.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorWordWrapLayoutCache.kt)：多行换行布局缓存。
+  - 新增 [`EditorSessionCoreRuntime.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSessionCoreRuntime.kt) 与 [`EditorSessionGestureRuntime.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSessionGestureRuntime.kt)：拆分会话核心运行时与手势运行时。
+  - 新增 [`EditorSmartReplacement.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSmartReplacement.kt)：补全插入/替换策略增强。
+  - 新增 [`EditorScaleTransformCoordinator.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorScaleTransformCoordinator.kt) 与 [`EditorTransformFocusTracker.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorTransformFocusTracker.kt)：双指缩放焦点追踪与变换协调。
 - **测试与文档补充**：
-  - 新增 [`TransformGestureFocusResolverTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/TransformGestureFocusResolverTest.kt)：覆盖手势焦点解析边界场景。
-  - 新增调试文档：[`text-layout-technologies.md`](docs/debug/text-layout-technologies.md)、[`zoom-offset-issue-analysis.md`](docs/debug/zoom-offset-issue-analysis.md)、[`zoom-offset-root-cause-analysis.md`](docs/debug/zoom-offset-root-cause-analysis.md)。
+  - 新增 [`TransformGestureFocusResolverTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/TransformGestureFocusResolverTest.kt)：覆盖手势焦点解析边界场景。
+  - 新增调试文档：`text-layout-technologies.md`、`zoom-offset-issue-analysis.md`、`zoom-offset-root-cause-analysis.md`。
   - 新增历史设计稿 `smart-wrap-implementation.md`。
 
 ### Changed
 - **编辑器核心链路重构与性能优化**：
-  - 大幅重构 [`EditorState.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt)、[`TinaEditorSession.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TinaEditorSession.kt)、[`TextRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TextRenderer.kt)，提升状态一致性与渲染稳定性。
-  - 优化手势与滚动链路：[`EditorCanvasGesturePipeline.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCanvasGesturePipeline.kt)、[`EditorGestureCoordinator.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorGestureCoordinator.kt)、[`EditorScrollGestureCoordinator.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorScrollGestureCoordinator.kt)、[`EditorScrollDeltaCoordinator.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorScrollDeltaCoordinator.kt)。
-  - 优化绘制层与可视化：[`EditorRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderer.kt)、[`EditorCanvasLayer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCanvasLayer.kt)、[`GutterRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/GutterRenderer.kt)、[`LineNumberRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/LineNumberRenderer.kt)、[`SelectionRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SelectionRenderer.kt)、[`CursorRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/CursorRenderer.kt)、[`DiagnosticRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/DiagnosticRenderer.kt)。
+  - 大幅重构 [`EditorState.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt)、[`TinaEditorSession.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TinaEditorSession.kt)、[`TextRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TextRenderer.kt)，提升状态一致性与渲染稳定性。
+  - 优化手势与滚动链路：[`EditorCanvasGesturePipeline.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCanvasGesturePipeline.kt)、[`EditorGestureCoordinator.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorGestureCoordinator.kt)、[`EditorScrollGestureCoordinator.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorScrollGestureCoordinator.kt)、[`EditorScrollDeltaCoordinator.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorScrollDeltaCoordinator.kt)。
+  - 优化绘制层与可视化：[`EditorRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderer.kt)、[`EditorCanvasLayer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCanvasLayer.kt)、[`GutterRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/GutterRenderer.kt)、[`LineNumberRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/LineNumberRenderer.kt)、[`SelectionRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SelectionRenderer.kt)、[`CursorRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/CursorRenderer.kt)、[`DiagnosticRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/DiagnosticRenderer.kt)。
 - **编辑器设置与诊断能力增强**：
   - 扩展 [`Prefs.kt`](core/config/src/main/java/com/wuxianggujun/tinaide/core/config/Prefs.kt) 开发者诊断配置流，新增缩放/焦点/滚动/fling 级别日志开关。
   - 更新 [`DeveloperOptionsSection.kt`](feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/DeveloperOptionsSection.kt) 与 [`SettingsViewModel.kt`](feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/SettingsViewModel.kt)，支持诊断选项实时联动。
   - 更新 [`EditorSettingsSection.kt`](feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/EditorSettingsSection.kt)，新增编辑器主题选择对话框。
 - **编辑器页面与 LSP 集成优化**：
-  - 更新 [`TinaCodeEditorPage.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/editor/TinaCodeEditorPage.kt)、[`EditorContainerState.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerState.kt)、[`LspEditorManager.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/LspEditorManager.kt)，增强折叠驱动切换、语义 token 请求边界处理与会话联动。
+  - 更新 [`TinaCodeEditorPage.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/editor/TinaCodeEditorPage.kt)、[`EditorContainerState.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerState.kt)、`LspEditorManager.kt`，增强折叠驱动切换、语义 token 请求边界处理与会话联动。
 - **配套资源与文档更新**：
   - 更新 [`strings.xml`](core/i18n/src/main/res/values/strings.xml) 与 [`strings.xml`](core/i18n/src/main/res/values-en/strings.xml)：补充新设置项文案。
-  - 更新 [`README.md`](docs/plugins/README.md) 与 [`dracula.json`](docs/plugins/sample-theme-plugin/themes/dracula.json)：完善插件主题示例。
-
-### Technical
-- 版本号：0.14.24 (versionCode: 1425)
-- 代码统计：43 个已跟踪文件修改，+2439 行，-632 行
-- 主要方向：编辑器架构拆分、折叠与缩放稳定性、诊断可观测性、设置体验完善
-
----
+  - 更新 [`README.md`](docs/plugins/README.md) 与 `dracula.json`：完善插件主题示例。
 
 ## [0.14.12] - 2026-03-04
 
 ### Changed
 - **编辑器核心持续优化**（23 个文件修改，+854 行，-391 行）：
-  - 优化 [`CompletionPopupLayoutResolver.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/CompletionPopupLayoutResolver.kt)：
+  - 优化 [`CompletionPopupLayoutResolver.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/CompletionPopupLayoutResolver.kt)：
     - 改进补全弹窗布局解析算法
     - 优化弹窗位置计算
-  - 优化 [`DiagnosticRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/DiagnosticRenderer.kt)：
+  - 优化 [`DiagnosticRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/DiagnosticRenderer.kt)：
     - 改进诊断信息渲染性能
     - 优化波浪线绘制逻辑
-  - 优化 [`EditorCanvasLayer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCanvasLayer.kt)：
+  - 优化 [`EditorCanvasLayer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCanvasLayer.kt)：
     - 改进画布层渲染逻辑
     - 优化层级管理
-  - 优化 [`EditorConfig.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorConfig.kt)：
+  - 优化 [`EditorConfig.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorConfig.kt)：
     - 扩展配置选项
     - 改进配置验证
-  - 优化 [`EditorFontScaleCoordinator.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorFontScaleCoordinator.kt)：
+  - 优化 [`EditorFontScaleCoordinator.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorFontScaleCoordinator.kt)：
     - 改进字体缩放逻辑
     - 优化缩放动画
-  - 优化 [`EditorGestureCoordinator.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorGestureCoordinator.kt)：
+  - 优化 [`EditorGestureCoordinator.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorGestureCoordinator.kt)：
     - 改进手势协调逻辑
     - 优化手势冲突处理
-  - 优化 [`EditorGestureExclusionCoordinator.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorGestureExclusionCoordinator.kt)：
+  - 优化 [`EditorGestureExclusionCoordinator.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorGestureExclusionCoordinator.kt)：
     - 改进手势排除逻辑
     - 优化排除区域计算
-  - 优化 [`EditorGestureHandler.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorGestureHandler.kt)：
+  - 优化 [`EditorGestureHandler.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorGestureHandler.kt)：
     - 改进手势处理逻辑
     - 优化事件分发
-  - 优化 [`EditorOverlays.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorOverlays.kt)：
+  - 优化 [`EditorOverlays.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorOverlays.kt)：
     - 改进覆盖层管理
     - 优化层级渲染
-  - 优化 [`EditorRenderAssembly.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderAssembly.kt)：
+  - 优化 [`EditorRenderAssembly.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderAssembly.kt)：
     - 改进渲染装配逻辑
     - 优化渲染流程
-  - 优化 [`EditorRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderer.kt)：
+  - 优化 [`EditorRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderer.kt)：
     - 改进渲染器性能
     - 优化渲染算法
-  - 优化 [`EditorRuntimeEffects.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRuntimeEffects.kt)：
+  - 优化 [`EditorRuntimeEffects.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRuntimeEffects.kt)：
     - 改进运行时特效
     - 优化特效性能
-  - 优化 [`EditorScrollGestureCoordinator.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorScrollGestureCoordinator.kt)：
+  - 优化 [`EditorScrollGestureCoordinator.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorScrollGestureCoordinator.kt)：
     - 改进滚动手势协调
     - 优化滚动响应
-  - 优化 [`EditorScrollbarRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorScrollbarRenderer.kt)：
+  - 优化 [`EditorScrollbarRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorScrollbarRenderer.kt)：
     - 改进滚动条渲染
     - 优化滚动条交互
-  - 优化 [`EditorSelectionContextMenuCoordinator.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSelectionContextMenuCoordinator.kt)：
+  - 优化 [`EditorSelectionContextMenuCoordinator.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSelectionContextMenuCoordinator.kt)：
     - 改进上下文菜单协调
     - 优化菜单显示逻辑
-  - 优化 [`EditorState.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt)：
+  - 优化 [`EditorState.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt)：
     - 改进状态管理
     - 优化状态同步
-  - 优化 [`GutterRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/GutterRenderer.kt)：
+  - 优化 [`GutterRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/GutterRenderer.kt)：
     - 改进行号槽渲染
     - 优化渲染性能
-  - 优化 [`LineNumberRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/LineNumberRenderer.kt)：
+  - 优化 [`LineNumberRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/LineNumberRenderer.kt)：
     - 改进行号渲染
     - 优化行号显示
-  - 优化 [`ScrollbarDragCoordinator.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/ScrollbarDragCoordinator.kt)：
+  - 优化 [`ScrollbarDragCoordinator.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/ScrollbarDragCoordinator.kt)：
     - 改进滚动条拖拽
     - 优化拖拽响应
-  - 优化 [`SelectionHandleDragCoordinator.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SelectionHandleDragCoordinator.kt)：
+  - 优化 [`SelectionHandleDragCoordinator.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SelectionHandleDragCoordinator.kt)：
     - 改进选择手柄拖拽
     - 优化拖拽精度
-  - 优化 [`SelectionMagnifierController.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SelectionMagnifierController.kt)：
+  - 优化 [`SelectionMagnifierController.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SelectionMagnifierController.kt)：
     - 改进放大镜控制
     - 优化放大镜显示
-  - 优化 [`TinaEditorSession.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TinaEditorSession.kt)：
+  - 优化 [`TinaEditorSession.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TinaEditorSession.kt)：
     - 改进会话管理
     - 优化会话生命周期
-
-### Technical
-- 版本号：0.14.12 (versionCode: 1413)
-- 代码统计：+854 行，-391 行
-- 净增长：+463 行
-- 主要改进：性能优化、代码质量提升、用户体验改进
-
----
 
 ## [0.14.6] - 2026-03-04
 
 ### Added
 - **编辑器架构重大重构**：
   - 新增 30+ 个核心协调器和渲染组件
-  - 新增 [`TinaEditorScaffold.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TinaEditorScaffold.kt)：编辑器脚手架
-  - 新增 [`TinaEditorSession.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TinaEditorSession.kt)：编辑器会话管理
-  - 新增 [`TinaEditorUiState.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TinaEditorUiState.kt)：UI 状态管理
+  - 新增 [`TinaEditorScaffold.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TinaEditorScaffold.kt)：编辑器脚手架
+  - 新增 [`TinaEditorSession.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TinaEditorSession.kt)：编辑器会话管理
+  - 新增 [`TinaEditorUiState.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TinaEditorUiState.kt)：UI 状态管理
 
 - **手势处理系统**：
-  - 新增 [`EditorCanvasGesturePipeline.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCanvasGesturePipeline.kt)：手势管道
-  - 新增 [`EditorScrollGestureCoordinator.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorScrollGestureCoordinator.kt)：滚动手势协调器
-  - 新增 [`EditorScrollDeltaCoordinator.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorScrollDeltaCoordinator.kt)：滚动增量协调器
-  - 新增 [`EditorGestureExclusionCoordinator.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorGestureExclusionCoordinator.kt)：手势排除协调器
-  - 新增 [`PointerInputExtensions.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/PointerInputExtensions.kt)：指针输入扩展
+  - 新增 [`EditorCanvasGesturePipeline.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCanvasGesturePipeline.kt)：手势管道
+  - 新增 [`EditorScrollGestureCoordinator.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorScrollGestureCoordinator.kt)：滚动手势协调器
+  - 新增 [`EditorScrollDeltaCoordinator.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorScrollDeltaCoordinator.kt)：滚动增量协调器
+  - 新增 [`EditorGestureExclusionCoordinator.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorGestureExclusionCoordinator.kt)：手势排除协调器
+  - 新增 [`PointerInputExtensions.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/PointerInputExtensions.kt)：指针输入扩展
 
 - **选择和拖拽系统**：
-  - 新增 [`SelectionHandleDragCoordinator.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SelectionHandleDragCoordinator.kt)：选择手柄拖拽协调器
-  - 新增 [`SelectionHandleLayout.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SelectionHandleLayout.kt)：选择手柄布局
-  - 新增 [`SelectionMagnifierController.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SelectionMagnifierController.kt)：选择放大镜控制器
-  - 新增 [`ScrollbarDragCoordinator.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/ScrollbarDragCoordinator.kt)：滚动条拖拽协调器
-  - 新增 [`ScrollbarVisibilityCoordinator.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/ScrollbarVisibilityCoordinator.kt)：滚动条可见性协调器
+  - 新增 [`SelectionHandleDragCoordinator.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SelectionHandleDragCoordinator.kt)：选择手柄拖拽协调器
+  - 新增 [`SelectionHandleLayout.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SelectionHandleLayout.kt)：选择手柄布局
+  - 新增 [`SelectionMagnifierController.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SelectionMagnifierController.kt)：选择放大镜控制器
+  - 新增 [`ScrollbarDragCoordinator.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/ScrollbarDragCoordinator.kt)：滚动条拖拽协调器
+  - 新增 [`ScrollbarVisibilityCoordinator.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/ScrollbarVisibilityCoordinator.kt)：滚动条可见性协调器
 
 - **上下文菜单系统**：
-  - 新增 [`EditorSelectionContextMenuCoordinator.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSelectionContextMenuCoordinator.kt)：选择上下文菜单协调器
-  - 新增 [`ContextMenuLayoutResolver.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/ContextMenuLayoutResolver.kt)：上下文菜单布局解析器
-  - 新增 [`ContextMenuPopupPositionProvider.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/ContextMenuPopupPositionProvider.kt)：上下文菜单弹窗位置提供器
-  - 新增 [`CompletionPopupLayoutResolver.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/CompletionPopupLayoutResolver.kt)：补全弹窗布局解析器
+  - 新增 [`EditorSelectionContextMenuCoordinator.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSelectionContextMenuCoordinator.kt)：选择上下文菜单协调器
+  - 新增 `ContextMenuLayoutResolver.kt`：上下文菜单布局解析器
+  - 新增 [`ContextMenuPopupPositionProvider.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/ContextMenuPopupPositionProvider.kt)：上下文菜单弹窗位置提供器
+  - 新增 [`CompletionPopupLayoutResolver.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/CompletionPopupLayoutResolver.kt)：补全弹窗布局解析器
 
 - **渲染和布局系统**：
-  - 新增 [`EditorCanvasLayer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCanvasLayer.kt)：编辑器画布层
-  - 新增 [`EditorInputHostLayer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorInputHostLayer.kt)：输入宿主层
-  - 新增 [`EditorOverlays.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorOverlays.kt)：编辑器覆盖层
-  - 新增 [`EditorRenderAssembly.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderAssembly.kt)：渲染装配器
-  - 新增 [`EditorLineLayoutCache.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorLineLayoutCache.kt)：行布局缓存
+  - 新增 [`EditorCanvasLayer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCanvasLayer.kt)：编辑器画布层
+  - 新增 [`EditorInputHostLayer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorInputHostLayer.kt)：输入宿主层
+  - 新增 [`EditorOverlays.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorOverlays.kt)：编辑器覆盖层
+  - 新增 [`EditorRenderAssembly.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderAssembly.kt)：渲染装配器
+  - 新增 [`EditorLineLayoutCache.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorLineLayoutCache.kt)：行布局缓存
 
 - **剪贴板和焦点管理**：
-  - 新增 [`EditorClipboardBridge.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorClipboardBridge.kt)：剪贴板桥接
-  - 新增 [`EditorClipboardCoordinator.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorClipboardCoordinator.kt)：剪贴板协调器
-  - 新增 [`EditorFocusCoordinator.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorFocusCoordinator.kt)：焦点协调器
-  - 新增 [`EditorFontScaleCoordinator.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorFontScaleCoordinator.kt)：字体缩放协调器
+  - 新增 [`EditorClipboardBridge.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorClipboardBridge.kt)：剪贴板桥接
+  - 新增 [`EditorClipboardCoordinator.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorClipboardCoordinator.kt)：剪贴板协调器
+  - 新增 [`EditorFocusCoordinator.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorFocusCoordinator.kt)：焦点协调器
+  - 新增 [`EditorFontScaleCoordinator.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorFontScaleCoordinator.kt)：字体缩放协调器
 
 - **特效和同步**：
-  - 新增 [`EditorRuntimeEffects.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRuntimeEffects.kt)：运行时特效
-  - 新增 [`EditorTextBufferRendererSyncEffect.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorTextBufferRendererSyncEffect.kt)：文本缓冲区渲染同步特效
+  - 新增 [`EditorRuntimeEffects.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRuntimeEffects.kt)：运行时特效
+  - 新增 [`EditorTextBufferRendererSyncEffect.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorTextBufferRendererSyncEffect.kt)：文本缓冲区渲染同步特效
 
 - **调试和测试**：
-  - 新增 [`EditorTouchDiagnostics.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorTouchDiagnostics.kt)：触摸诊断
-  - 新增 [`ContextMenuLayoutResolverTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/ContextMenuLayoutResolverTest.kt)：上下文菜单布局解析器测试
-  - 新增 [`EditorScrollAxisDeciderTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorScrollAxisDeciderTest.kt)：滚动轴决策器测试
+  - 新增 [`EditorTouchDiagnostics.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorTouchDiagnostics.kt)：触摸诊断
+  - 新增 `ContextMenuLayoutResolverTest.kt`：上下文菜单布局解析器测试
+  - 新增 [`EditorScrollAxisDeciderTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorScrollAxisDeciderTest.kt)：滚动轴决策器测试
 
 ### Changed
 - **编辑器核心重构**（17 个文件修改，+765 行，-1,231 行）：
-  - 重构 [`TinaEditor.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TinaEditor.kt)：
+  - 重构 [`TinaEditor.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TinaEditor.kt)：
     - 从单体架构重构为模块化协调器架构
     - 分离手势处理、渲染、输入管理等职责
     - 改进性能和可维护性
-  - 重构 [`EditorState.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt)：
+  - 重构 [`EditorState.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt)：
     - 优化状态管理逻辑
     - 改进状态同步机制
-  - 重构 [`EditorRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderer.kt)：
+  - 重构 [`EditorRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderer.kt)：
     - 分离渲染逻辑到专门的渲染器
     - 优化渲染性能
-  - 重构 [`TextRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TextRenderer.kt)：
+  - 重构 [`TextRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TextRenderer.kt)：
     - 改进文本渲染算法
     - 优化大文件渲染性能
-  - 重构 [`SelectionRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SelectionRenderer.kt)：
+  - 重构 [`SelectionRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/SelectionRenderer.kt)：
     - 改进选择区域渲染
     - 优化选择手柄显示
-  - 重构 [`CursorRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/CursorRenderer.kt)：
+  - 重构 [`CursorRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/CursorRenderer.kt)：
     - 优化光标渲染和闪烁动画
-  - 重构 [`EditorScrollbarRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorScrollbarRenderer.kt)：
+  - 重构 [`EditorScrollbarRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorScrollbarRenderer.kt)：
     - 改进滚动条渲染逻辑
     - 优化滚动条交互
 
 - **输入处理优化**：
-  - 重构 [`EditorInputConnection.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorInputConnection.kt)：
+  - 重构 [`EditorInputConnection.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorInputConnection.kt)：
     - 改进 IME 输入处理
     - 优化输入法兼容性
-  - 重构 [`EditorInputConnectionUtils.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorInputConnectionUtils.kt)：
+  - 重构 [`EditorInputConnectionUtils.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorInputConnectionUtils.kt)：
     - 提取输入连接工具函数
-  - 重构 [`EditorInteractionController.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorInteractionController.kt)：
+  - 重构 [`EditorInteractionController.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorInteractionController.kt)：
     - 改进交互控制逻辑
 
 - **手势处理优化**：
-  - 重构 [`EditorGestureCoordinator.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorGestureCoordinator.kt)：
+  - 重构 [`EditorGestureCoordinator.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorGestureCoordinator.kt)：
     - 改进手势协调逻辑
     - 优化多点触控处理
 
 - **上下文菜单优化**：
-  - 重构 [`EditorSelectionContextMenu.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSelectionContextMenu.kt)：
+  - 重构 [`EditorSelectionContextMenu.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorSelectionContextMenu.kt)：
     - 改进上下文菜单显示逻辑
     - 优化菜单项布局
 
 - **配置扩展**：
-  - 优化 [`EditorConfig.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorConfig.kt)：
+  - 优化 [`EditorConfig.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorConfig.kt)：
     - 新增更多配置选项
     - 改进配置管理
 
 - **测试增强**：
-  - 优化 [`EditorInputConnectionUtilsTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorInputConnectionUtilsTest.kt)：
+  - 优化 [`EditorInputConnectionUtilsTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorInputConnectionUtilsTest.kt)：
     - 补充测试用例
     - 改进测试覆盖率
 
@@ -2844,22 +1828,11 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
   - 更新 [`strings.xml`](core/i18n/src/main/res/values-en/strings.xml)：
     - 同步英文翻译
 
-### Technical
-- 版本号：0.14.6 (versionCode: 1407)
-- 架构重构：从单体编辑器重构为模块化协调器架构
-- 新增文件：30+ 个（协调器、渲染器、测试）
-- 修改文件：17 个
-- 代码统计：+765 行，-1,231 行
-- 净减少：-466 行（通过重构和优化）
-- 主要改进：架构模块化、性能优化、可维护性提升
-
----
-
 ## [0.13.90] - 2026-03-03
 
 ### Added
 - **编辑器滚动条渲染器**：
-  - 新增 [`EditorScrollbarRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorScrollbarRenderer.kt)：自定义滚动条渲染
+  - 新增 [`EditorScrollbarRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorScrollbarRenderer.kt)：自定义滚动条渲染
   - 支持垂直和水平滚动条显示
   - 滚动条自动隐藏和淡入淡出动画
 
@@ -2871,7 +1844,7 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 
 ### Changed
 - **编辑器核心功能增强**：
-  - 优化 [`TinaEditor.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TinaEditor.kt)：
+  - 优化 [`TinaEditor.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TinaEditor.kt)：
     - 新增滚动条渲染支持
     - 优化触摸事件处理
     - 改进滚动性能
@@ -2882,27 +1855,27 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
     - 新增 +136 行功能代码
 
 - **诊断渲染增强**：
-  - 优化 [`DiagnosticRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/DiagnosticRenderer.kt)：
+  - 优化 [`DiagnosticRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/DiagnosticRenderer.kt)：
     - 改进诊断信息渲染逻辑
     - 优化波浪线绘制性能
     - 新增 +133 行渲染代码
-  - 优化 [`DiagnosticWavePathBuilder.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/DiagnosticWavePathBuilder.kt)：
+  - 优化 [`DiagnosticWavePathBuilder.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/DiagnosticWavePathBuilder.kt)：
     - 改进波浪线路径构建算法
 
 - **编辑器配置扩展**：
-  - 优化 [`EditorConfig.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorConfig.kt)：
+  - 优化 [`EditorConfig.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorConfig.kt)：
     - 新增滚动条配置选项
     - 扩展编辑器配置参数
 
 - **手势处理优化**：
-  - 优化 [`EditorGestureCoordinator.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorGestureCoordinator.kt)：
+  - 优化 [`EditorGestureCoordinator.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorGestureCoordinator.kt)：
     - 改进手势协调逻辑
-  - 优化 [`EditorOverScrollerFlingBehavior.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorOverScrollerFlingBehavior.kt)：
+  - 优化 [`EditorOverScrollerFlingBehavior.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorOverScrollerFlingBehavior.kt)：
     - 改进 fling 行为处理
     - 优化过度滚动效果
 
 - **LSP 管理器优化**：
-  - 优化 [`LspEditorManager.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/LspEditorManager.kt)：
+  - 优化 `LspEditorManager.kt`：
     - 改进 LSP 编辑器管理逻辑
     - 优化状态同步
 
@@ -2919,44 +1892,35 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
   - 更新 [`AndroidManifest.xml`](app/src/main/AndroidManifest.xml)：
     - 新增服务声明
 
-### Technical
-- 版本号：0.13.90 (versionCode: 1391)
-- 新增代码：+1,416 行
-- 删除代码：-136 行
-- 净增长：+1,280 行
-- 主要改进：滚动条渲染、诊断显示、手势处理、性能优化
-
----
-
 ## [0.13.75] - 2026-03-03
 
 ### Added
 - **TinaEditor 核心模块**：
-  - 新增 [`core:text-engine`](core/text-engine)：基于 Rope 数据结构的高性能文本引擎
-    - [`Rope.kt`](core/text-engine/src/main/java/com/wuxianggujun/tinaide/core/textengine/Rope.kt)：不可变 Rope 实现，支持高效的文本插入/删除/切片操作
-    - [`RopeTextBuffer.kt`](core/text-engine/src/main/java/com/wuxianggujun/tinaide/core/textengine/RopeTextBuffer.kt)：可变文本缓冲区，支持撤销/重做
-    - [`LineIndex.kt`](core/text-engine/src/main/java/com/wuxianggujun/tinaide/core/textengine/LineIndex.kt)：行索引管理，支持快速行号与偏移量转换
-    - [`EditHistory.kt`](core/text-engine/src/main/java/com/wuxianggujun/tinaide/core/textengine/EditHistory.kt)：编辑历史管理
-  - 新增 [`core:editor-view`](core/editor-view)：自定义 View 编辑器实现
-    - [`TinaEditor.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TinaEditor.kt)：核心编辑器 View，基于 Canvas 渲染
-    - [`EditorState.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt)：编辑器状态管理（光标、选区、滚动位置等）
-    - [`EditorRenderEngine.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderEngine.kt)：渲染引擎
-    - [`EditorGestureHandler.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorGestureHandler.kt)：手势处理（点击、长按、滑动、fling）
-    - [`EditorInputConnection.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorInputConnection.kt)：IME 输入处理
-    - [`TreeSitterHighlighter.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TreeSitterHighlighter.kt)：Tree-sitter 语法高亮
-    - [`DiagnosticRenderer.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/DiagnosticRenderer.kt)：诊断信息渲染（波浪线）
-    - [`EditorCompletionPopup.kt`](core/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCompletionPopup.kt)：代码补全弹窗
+  - 新增 `core:text-engine`：基于 Rope 数据结构的高性能文本引擎
+    - [`Rope.kt`](editor-kit/text-engine/src/main/java/com/wuxianggujun/tinaide/core/textengine/Rope.kt)：不可变 Rope 实现，支持高效的文本插入/删除/切片操作
+    - [`RopeTextBuffer.kt`](editor-kit/text-engine/src/main/java/com/wuxianggujun/tinaide/core/textengine/RopeTextBuffer.kt)：可变文本缓冲区，支持撤销/重做
+    - [`LineIndex.kt`](editor-kit/text-engine/src/main/java/com/wuxianggujun/tinaide/core/textengine/LineIndex.kt)：行索引管理，支持快速行号与偏移量转换
+    - [`EditHistory.kt`](editor-kit/text-engine/src/main/java/com/wuxianggujun/tinaide/core/textengine/EditHistory.kt)：编辑历史管理
+  - 新增 `core:editor-view`：自定义 View 编辑器实现
+    - [`TinaEditor.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TinaEditor.kt)：核心编辑器 View，基于 Canvas 渲染
+    - [`EditorState.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt)：编辑器状态管理（光标、选区、滚动位置等）
+    - [`EditorRenderEngine.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorRenderEngine.kt)：渲染引擎
+    - [`EditorGestureHandler.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorGestureHandler.kt)：手势处理（点击、长按、滑动、fling）
+    - [`EditorInputConnection.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorInputConnection.kt)：IME 输入处理
+    - `TreeSitterHighlighter.kt`：Tree-sitter 语法高亮
+    - [`DiagnosticRenderer.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/DiagnosticRenderer.kt)：诊断信息渲染（波浪线）
+    - [`EditorCompletionPopup.kt`](editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorCompletionPopup.kt)：代码补全弹窗
   - 新增 [`core:editor-lsp`](core/editor-lsp)：LSP 集成层
     - [`CompletionProvider.kt`](core/editor-lsp/src/main/java/com/wuxianggujun/tinaide/core/editorlsp/CompletionProvider.kt)：LSP 补全提供器
-    - [`DiagnosticsManager.kt`](core/editor-lsp/src/main/java/com/wuxianggujun/tinaide/core/editorlsp/DiagnosticsManager.kt)：诊断信息管理
-    - [`NavigationService.kt`](core/editor-lsp/src/main/java/com/wuxianggujun/tinaide/core/editorlsp/NavigationService.kt)：导航服务（跳转定义、查找引用等）
-    - [`SemanticServices.kt`](core/editor-lsp/src/main/java/com/wuxianggujun/tinaide/core/editorlsp/SemanticServices.kt)：语义服务（语义高亮、符号查询等）
+    - `DiagnosticsManager.kt`：诊断信息管理
+    - `NavigationService.kt`：导航服务（跳转定义、查找引用等）
+    - `SemanticServices.kt`：语义服务（语义高亮、符号查询等）
 
 - **TinaEditor UI 集成**：
   - 新增 [`TinaCodeEditorPage.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/editor/TinaCodeEditorPage.kt)：Compose 编辑器页面组件
   - 新增 [`TinaPluginEditorBridge.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/TinaPluginEditorBridge.kt)：插件系统桥接层
-  - 新增 [`TinaTextContentProvider.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/TinaTextContentProvider.kt)：文本内容提供器
-  - 新增 [`LspSemanticTokenDecoder.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/LspSemanticTokenDecoder.kt)：LSP 语义 Token 解码器
+  - 新增 `TinaTextContentProvider.kt`：文本内容提供器
+  - 新增 `LspSemanticTokenDecoder.kt`：LSP 语义 Token 解码器
 
 - **LSP 系统增强**：
   - 新增 [`LspClientSession.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/LspClientSession.kt)：LSP 客户端会话管理
@@ -2968,27 +1932,27 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
   - 新增 [`CodeSearchEngineTest.kt`](core/search/src/test/java/com/wuxianggujun/tinaide/search/CodeSearchEngineTest.kt)：搜索引擎单元测试
 
 - **测试覆盖**：
-  - 新增 [`LspSemanticTokenDecoderTest.kt`](app/src/test/java/com/wuxianggujun/tinaide/ui/compose/state/editor/LspSemanticTokenDecoderTest.kt)
-  - 新增 [`EditorCompletionStateTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorCompletionStateTest.kt)
-  - 新增 [`EditorGutterInteractionTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorGutterInteractionTest.kt)
-  - 新增 [`EditorInputConnectionUtilsTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorInputConnectionUtilsTest.kt)
-  - 新增 [`EditorStateEventTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorStateEventTest.kt)
-  - 新增 [`ImeDeltaMappingTest.kt`](core/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/ImeDeltaMappingTest.kt)
-  - 新增 [`LineIndexTest.kt`](core/text-engine/src/test/java/com/wuxianggujun/tinaide/core/textengine/LineIndexTest.kt)
-  - 新增 [`RopeTest.kt`](core/text-engine/src/test/java/com/wuxianggujun/tinaide/core/textengine/RopeTest.kt)
-  - 新增 [`RopeTextBufferTest.kt`](core/text-engine/src/test/java/com/wuxianggujun/tinaide/core/textengine/RopeTextBufferTest.kt)
+  - 新增 `LspSemanticTokenDecoderTest.kt`
+  - 新增 [`EditorCompletionStateTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorCompletionStateTest.kt)
+  - 新增 [`EditorGutterInteractionTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorGutterInteractionTest.kt)
+  - 新增 [`EditorInputConnectionUtilsTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorInputConnectionUtilsTest.kt)
+  - 新增 [`EditorStateEventTest.kt`](editor-kit/editor-view/src/test/java/com/wuxianggujun/tinaide/core/editorview/EditorStateEventTest.kt)
+  - 新增 `ImeDeltaMappingTest.kt`
+  - 新增 [`LineIndexTest.kt`](editor-kit/text-engine/src/test/java/com/wuxianggujun/tinaide/core/textengine/LineIndexTest.kt)
+  - 新增 [`RopeTest.kt`](editor-kit/text-engine/src/test/java/com/wuxianggujun/tinaide/core/textengine/RopeTest.kt)
+  - 新增 [`RopeTextBufferTest.kt`](editor-kit/text-engine/src/test/java/com/wuxianggujun/tinaide/core/textengine/RopeTextBufferTest.kt)
 
 - **文档完善**：
-  - 新增 [`TinaEditor-问题修复提示词.md`](docs/TinaEditor-问题修复提示词.md)：问题修复指南
-  - 新增 [`TinaEditor性能优化指南.md`](docs/TinaEditor性能优化指南.md)：性能优化指南
-  - 新增 [`TinaEditor性能优化指南-高级技术.md`](docs/TinaEditor性能优化指南-高级技术.md)：高级性能优化技术
-  - 新增 [`floating-log-window-design.md`](docs/floating-log-window-design.md)：浮动日志窗口设计
+  - 新增 `TinaEditor-问题修复提示词.md`：问题修复指南
+  - 新增 `TinaEditor性能优化指南.md`：性能优化指南
+  - 新增 `TinaEditor性能优化指南-高级技术.md`：高级性能优化技术
+  - 新增 `floating-log-window-design.md`：浮动日志窗口设计
 
 ### Changed
 - **编辑器架构重构**：
   - 移除 tina-sora-editor 子模块依赖，改用自研 TinaEditor
   - 重构 [`EditorContainerState.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorContainerState.kt)：适配 TinaEditor
-  - 重构 [`LspEditorManager.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/LspEditorManager.kt)：LSP 管理器重构
+  - 重构 `LspEditorManager.kt`：LSP 管理器重构
   - 重构 [`EditorTabManager.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorTabManager.kt)：标签页管理优化
   - 重构 [`SearchStateManager.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/SearchStateManager.kt)：搜索状态管理
 
@@ -3023,11 +1987,11 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
   - 优化 [`FloatingSearchBar.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/FloatingSearchBar.kt)：浮动搜索栏
 
 - **测试界面简化**：
-  - 简化 [`CppScrollStressTestScreen.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/testing/CppScrollStressTestScreen.kt)
-  - 简化 [`EditorScrollTestScreen.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/testing/EditorScrollTestScreen.kt)
-  - 简化 [`ThemePreviewTestScreen.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/testing/ThemePreviewTestScreen.kt)
-  - 简化 [`TreeSitterTestScreen.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/testing/TreeSitterTestScreen.kt)
-  - 新增 [`LegacyEditorScreenPlaceholder.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/testing/LegacyEditorScreenPlaceholder.kt)：旧编辑器占位符
+  - 简化 `CppScrollStressTestScreen.kt`
+  - 简化 `EditorScrollTestScreen.kt`
+  - 简化 `ThemePreviewTestScreen.kt`
+  - 简化 `TreeSitterTestScreen.kt`
+  - 新增 `LegacyEditorScreenPlaceholder.kt`：旧编辑器占位符
 
 - **构建系统优化**：
   - 更新 [`settings.gradle.kts`](settings.gradle.kts)：移除 sora-editor 模块，新增 TinaEditor 模块
@@ -3036,11 +2000,11 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
   - 更新 [`app/proguard-rules.pro`](app/proguard-rules.pro)：混淆规则更新
 
 - **文档更新**：
-  - 更新 [`TinaEditor-Migration-Strategy.md`](docs/design/TinaEditor-Migration-Strategy.md)：迁移策略
-  - 更新 [`TinaEditor-Missing-Features.md`](docs/design/TinaEditor-Missing-Features.md)：缺失功能清单
-  - 更新 [`TinaEditor-Module-Setup.md`](docs/design/TinaEditor-Module-Setup.md)：模块设置指南
-  - 更新 [`TinaEditor-Rewrite-Design.md`](docs/design/TinaEditor-Rewrite-Design.md)：重写设计文档
-  - 更新 [`代码统计指南.md`](docs/guides/代码统计指南.md)：代码统计指南
+  - 更新 `TinaEditor-Migration-Strategy.md`：迁移策略
+  - 更新 `TinaEditor-Missing-Features.md`：缺失功能清单
+  - 更新 `TinaEditor-Module-Setup.md`：模块设置指南
+  - 更新 `TinaEditor-Rewrite-Design.md`：重写设计文档
+  - 更新 `代码统计指南.md`：代码统计指南
 
 ### Removed
 - **移除 tina-sora-editor 依赖**：
@@ -3049,37 +2013,37 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
   - 移除 `:sora-editor:editor`、`:sora-editor:editor-lsp`、`:sora-editor:language-textmate`、`:sora-editor:language-treesitter`、`:sora-editor:oniguruma-native` 模块
 
 - **移除旧编辑器代码**（feature/editor）：
-  - 删除 [`BreakpointAwareCodeEditor.kt`](feature/editor/src/main/java/com/wuxianggujun/tinaide/editor/BreakpointAwareCodeEditor.kt)
-  - 删除 [`BreakpointManager.kt`](feature/editor/src/main/java/com/wuxianggujun/tinaide/editor/BreakpointManager.kt)
-  - 删除 [`TinaDarkColorScheme.kt`](feature/editor/src/main/java/com/wuxianggujun/tinaide/editor/TinaDarkColorScheme.kt)
-  - 删除 [`TinaGrayColorScheme.kt`](feature/editor/src/main/java/com/wuxianggujun/tinaide/editor/TinaGrayColorScheme.kt)
-  - 删除 [`TinaLightColorScheme.kt`](feature/editor/src/main/java/com/wuxianggujun/tinaide/editor/TinaLightColorScheme.kt)
+  - 删除 `BreakpointAwareCodeEditor.kt`
+  - 删除 `BreakpointManager.kt`
+  - 删除 `TinaDarkColorScheme.kt`
+  - 删除 `TinaGrayColorScheme.kt`
+  - 删除 `TinaLightColorScheme.kt`
   - 删除 `editor/action/` 目录（EditMenuGroup、NavigationMenuGroup、TextMenuGroup）
-  - 删除 [`BookmarkManager.kt`](feature/editor/src/main/java/com/wuxianggujun/tinaide/editor/bookmark/BookmarkManager.kt)
+  - 删除 `BookmarkManager.kt`
   - 删除 `editor/completion/` 目录（CompletionItemComparators、CxxCompletionEngine、CxxPreprocessorCompletion）
-  - 删除 [`EditorTouchDebug.kt`](feature/editor/src/main/java/com/wuxianggujun/tinaide/editor/debug/EditorTouchDebug.kt)
-  - 删除 [`MarkerLineResolver.kt`](feature/editor/src/main/java/com/wuxianggujun/tinaide/editor/gutter/MarkerLineResolver.kt)
+  - 删除 `EditorTouchDebug.kt`
+  - 删除 `MarkerLineResolver.kt`
   - 删除 `editor/language/` 目录（C/C++/CMake/Make 语言提供器）
   - 删除 `editor/navigation/` 目录（HeaderNavigationManager、HeaderNavigationTextAction）
   - 删除 `editor/performance/` 目录（性能优化相关代码）
-  - 删除 [`SoraEditorBridge.kt`](feature/editor/src/main/java/com/wuxianggujun/tinaide/editor/plugin/SoraEditorBridge.kt)
-  - 删除 [`SoraEditorTextContentProvider.kt`](feature/editor/src/main/java/com/wuxianggujun/tinaide/editor/search/SoraEditorTextContentProvider.kt)
-  - 删除 [`CodeEditorBinding.kt`](feature/editor/src/main/java/com/wuxianggujun/tinaide/editor/session/CodeEditorBinding.kt)
-  - 删除 [`SnippetCompletionItems.kt`](feature/editor/src/main/java/com/wuxianggujun/tinaide/editor/snippet/SnippetCompletionItems.kt)
-  - 删除 [`ConfigEditorColorScheme.kt`](feature/editor/src/main/java/com/wuxianggujun/tinaide/editor/theme/ConfigEditorColorScheme.kt)
-  - 删除 [`EditorTouchInterceptGuard.kt`](feature/editor/src/main/java/com/wuxianggujun/tinaide/editor/touch/EditorTouchInterceptGuard.kt)
+  - 删除 `SoraEditorBridge.kt`
+  - 删除 `SoraEditorTextContentProvider.kt`
+  - 删除 `CodeEditorBinding.kt`
+  - 删除 `SnippetCompletionItems.kt`
+  - 删除 `ConfigEditorColorScheme.kt`
+  - 删除 `EditorTouchInterceptGuard.kt`
 
 - **移除旧 UI 组件**（app）：
-  - 删除 [`CodeEditorPage.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/editor/CodeEditorPage.kt)
-  - 删除 [`FilePathBar.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/editor/FilePathBar.kt)
-  - 删除 [`CodeEditorTextContentProvider.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/CodeEditorTextContentProvider.kt)
-  - 删除 [`EditorAppearanceManager.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorAppearanceManager.kt)
-  - 删除 [`EditorCacheManager.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorCacheManager.kt)
-  - 删除 [`EditorFeatureManager.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorFeatureManager.kt)
-  - 删除 [`EditorInstanceManager.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/EditorInstanceManager.kt)
-  - 删除 [`SemanticTokensStyleProviders.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/state/editor/SemanticTokensStyleProviders.kt)
+  - 删除 `CodeEditorPage.kt`
+  - 删除 `FilePathBar.kt`
+  - 删除 `CodeEditorTextContentProvider.kt`
+  - 删除 `EditorAppearanceManager.kt`
+  - 删除 `EditorCacheManager.kt`
+  - 删除 `EditorFeatureManager.kt`
+  - 删除 `EditorInstanceManager.kt`
+  - 删除 `SemanticTokensStyleProviders.kt`
   - 删除 `editor/features/` 目录（EditorBookmarkFeature、EditorBreakpointFeature、EditorHeaderNavigationFeature、EditorLanguageLspFeature）
-  - 删除 [`JsonViewerScreen.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/viewer/JsonViewerScreen.kt)
+  - 删除 `JsonViewerScreen.kt`
 
 ### Fixed
 - **诊断系统修复**：
@@ -3087,23 +2051,13 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
   - 修复 [`LspDiagnosticsBridge.kt`](core/lsp/src/main/java/com/wuxianggujun/tinaide/core/lsp/LspDiagnosticsBridge.kt)：诊断桥接层稳定性
 
 - **C++ 文件支持修复**：
-  - 修复 [`CxxFileSupport.kt`](core/common/src/main/java/com/wuxianggujun/tinaide/core/lang/CxxFileSupport.kt)：C++ 文件类型识别
+  - 修复 `CxxFileSupport.kt`：C++ 文件类型识别
   - 修复 [`CxxFileSupportTest.kt`](core/common/src/test/java/com/wuxianggujun/tinaide/core/lang/CxxFileSupportTest.kt)：单元测试
 
 - **Tree-sitter 查询文件修复**：
-  - 修复 [`cmake/blocks.scm`](app/src/main/assets/tree-sitter-queries/cmake/blocks.scm)
-  - 修复 [`rust/blocks.scm`](app/src/main/assets/tree-sitter-queries/rust/blocks.scm)
-  - 修复 [`rust/locals.scm`](app/src/main/assets/tree-sitter-queries/rust/locals.scm)
-
-### Technical
-- 版本号：0.13.75 (versionCode: 1376)
-- 新增模块：3 个（text-engine、editor-view、editor-lsp）
-- 删除文件：100+ 个（旧编辑器相关代码）
-- 新增文件：80+ 个（TinaEditor 实现）
-- 代码统计：新增约 13,929 行，删除约 11,461 行
-- 单元测试：新增 13 个测试类
-
----
+  - 修复 `cmake/blocks.scm`
+  - 修复 `rust/blocks.scm`
+  - 修复 `rust/locals.scm`
 
 ## [0.13.52] - 2026-03-01
 
@@ -3170,24 +2124,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
   - 修复 LSP 语言服务器包装器问题
   - 改进 Hover 窗口显示逻辑
 
-### Technical
-- 版本号：0.13.52 (versionCode: 1353)
-- 子模块 tina-sora-editor 更新至最新提交
-- 新增多个单元测试：
-  - `MakeCommandOverridesTest`
-  - `NinjaCmakePathPatcherTest`
-  - `RunConfigurationManagerMigrationTest`
-  - `NativeCMakeBuildExecutorPatchGateTest`
-- 新增设计文档：
-  - `Build-Config-Consolidation-Design.md`
-  - `TinaEditor-API-Design.md`
-  - `TinaEditor-Compose-Implementation.md`
-  - `TinaEditor-Implementation-Details.md`
-  - `TinaEditor-Missing-Features.md`
-  - `TinaEditor-Rewrite-Design.md`
-
----
-
 ## [0.13.40] - 2026-02-26
 
 ### Fixed
@@ -3209,12 +2145,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
   - 覆盖 `cmake` 路径别名替换
   - 覆盖 linker64 模式幂等
   - 覆盖 shim 脚本 `/system/bin/sh` 包裹逻辑
-
-### Technical
-- 版本号：0.13.40 (versionCode: 1341)
-- 构建相关回归测试：`:core:compile:testDebugUnitTest` 通过
-
----
 
 ## [0.13.16] - 2026-02-25
 
@@ -3252,14 +2182,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - **新增故障排查文档**：
   - `docs/troubleshooting/llvm-clang-incremental-build.md`
   - `docs/troubleshooting/llvm-clang-linker64-review-bundle.md`
-
-### Technical
-- 版本号：0.13.16 (versionCode: 1317)
-- 工具链版本：v0.2.2（从 v0.2.0 升级）
-- android-sysroot 包更新
-- 包管理安装路径统一为 `installed-packages/<packageId>`
-
----
 
 ## [0.13.11] - 2026-02-24
 
@@ -3389,15 +2311,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - **删除已集成的补丁**：
   - `tools/toolchain-patches/llvm-android-linker-exec.patch`
 
-### Technical
-- 版本号：0.13.11 (versionCode: 1312)
-- 工具链版本：v0.2.0（从 v0.1.9 升级）
-- 删除重复资源文件：80+ 个
-- 模块包结构优化：配置、存储、主题管理类迁移到合理位置
-- 构建配置更新：30+ 个模块的 build.gradle.kts
-
----
-
 ## [0.12.88] - 2026-02-23
 
 ### Changed
@@ -3449,14 +2362,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
   - 新增 `.editorconfig`：统一编辑器配置
 - **新增计划文档目录**：
   - 新增 `plans/` 目录：项目计划文档
-
-### Technical
-- 版本号：0.12.88 (versionCode: 1289)
-- 工具链版本：v0.1.9
-- 新增测试模块：5 个（common、compile、config、search、security）
-- 新增 CI/CD 工作流：PR 检查
-
----
 
 ## [0.12.78] - 2026-02-22
 
@@ -3513,14 +2418,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - 删除 JNI 工具链服务相关代码（统一使用原生 ELF 工具链）
 - 删除备份文件：`UserContentApi.kt.bak`、`UserContentModels.kt.bak`、`UserContentRepository.kt.bak`、`TerminalSettingsSection.kt.bak`
 - 删除旧版本文件：`DownloadHistoryScreen.kt.old`、`FavoritesScreen.kt.old`
-
-### Technical
-- 版本号：0.12.78 (versionCode: 1279)
-- 模块化重构：核心接口抽离到 `core:common`，降低模块间耦合
-- 工具链架构：统一使用原生 ELF 可执行文件，移除 JNI 服务层
-- 数据库架构：新增 `core:database` 模块，统一数据库基础设施
-
----
 
 ## [0.11.96] - 2026-02-19
 
@@ -3582,13 +2479,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - **子模块更新**：
   - `external/tina-sora-editor` 更新到最新版本（LSP Semantic Tokens 支持、样式补丁增强）
 
-### Technical
-- 版本号：0.11.96 (versionCode: 1197)
-- 数据持久化从 JSON 文件全面迁移到 Room 数据库（编辑器会话、书签、终端状态）
-- 新增用户内容管理、AI 基础模块、Linux 环境管理等核心架构
-
----
-
 ## [0.11.32] - 2026-02-16
 
 ### Changed
@@ -3609,13 +2499,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
   - 删除 `docker/proot-build/test-progress.ps1`、`watch-build.ps1`
   - 精简 `scripts/build-and-package-android-toolchain.sh`、`tools/run-toolchain-builder.ps1`、`tools/sync-tina-toolchain-assets.ps1`
   - 更新 `docs/toolchain-build-guide.md`、`docs/proot-removal-plan.md`、`docs/design/Native-Toolchain-Integration-Design.md`
-
-### Technical
-- 版本号：0.11.32 (versionCode: 1133)
-- 编译系统从 JNI 共享库 + ELF 可执行双路径简化为仅 ELF 可执行路径
-- clangd 从依赖 APK 内 LLVM 共享库改为独立 ELF 二进制（自包含所有依赖）
-
----
 
 ## [0.11.31] - 2026-02-15
 
@@ -3671,14 +2554,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - 删除 `CxxSignatureHelpProvider`、`LocalSignatureHelpWindow`（签名帮助改由 LSP 处理）
 - 移除 Git SSH 中 OpenSSH 安装检测、ssh-agent 相关字符串资源与 UI
 
-### Technical
-- 版本号：0.11.31 (versionCode: 1132)
-- 子模块更新：`external/tina-sora-editor`（Semantic Tokens 支持）、`external/tina-android-tree-sitter`
-- 符号提取从 C++ 专用改为多语言可插拔架构（5 种语言）
-- Git 模块从 CLI + PRoot 依赖改为纯 JGit 实现
-
----
-
 ## [0.11.24] - 2026-02-13
 
 ### Added
@@ -3712,14 +2587,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - 删除 `PRootBootstrapProgressParser`、`AlpineMirrorManager`（feature:terminal 侧，已迁移到 core:proot）
 - 删除 `feature:ai` 中的 `AiAccessMode.kt`、`AiConfig.kt`、`AiProvider.kt`（已迁移到 `core:config/ai/`）
 
-### Technical
-- 版本号：0.11.24 (versionCode: 1125)
-- sora-editor fork：`LanguageServerWrapper.getServer()` 增强 KDoc，用于 clangd 扩展请求
-- `feature:settings` 新增 `koin-compose` 依赖（用于 `koinInject<AiConfigProvider>()`）
-- `feature:ai` 新增 `core:config` 依赖
-
----
-
 ## [0.11.22] - 2026-02-12
 
 ### Added
@@ -3750,12 +2617,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 ### Fixed
 - 修复编译运行的原生 ELF 二进制被注入 PRoot 终端执行，导致 `WARNING: linker: Warning: failed to find generated linker configuration from "/linkerconfig/ld.config.txt"` 的问题
 
-### Technical
-- 版本号：0.11.22 (versionCode: 1123)
-- 终端后端从全局设置改为 per-session 属性，HOST 和 PRoot 会话可同时存在
-
----
-
 ## [0.11.12] - 2026-02-11
 
 ### Added
@@ -3780,13 +2641,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - **`AndroidSysrootManager.getCompilerFlags()`**：移除 `linkType` 参数和 `-static` 标志
 - **新建项目向导**：移除链接方式选择 UI（`NewProjectWizardScreen` 中的 `LinkType` RadioButton 组）
 - **i18n 资源清理**：移除 `ndk_link_type_label`、`ndk_link_static`、`ndk_link_static_desc` 字符串（中/英）
-
-### Technical
-- 版本号：0.11.12 (versionCode: 1113)
-- tina-toolchain: v0.1.6
-- 链接方式：仅动态链接（DYNAMIC），旧配置 STATIC 自动迁移为 DYNAMIC
-
----
 
 ## [0.11.8] - 2026-02-09
 
@@ -3819,13 +2673,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - **`AiChatViewModel.sendMessage` 参数遮蔽 bug**：`context: MessageContext?` 参数遮蔽了类属性 `context: Context`，导致 `getString` 调用失败
 - **`feature:ai` 缺少 `core:i18n` 依赖**：添加显式依赖声明
 
-### Technical
-- 版本号：0.11.8 (versionCode: 1109)
-- 模块总数：37（22 core + 15 feature），app 模块 150 个 Kotlin 文件
-- DI 框架：Koin BOM 4.1.1，ServiceLocator 已完全移除
-
----
-
 ## [0.11.7] - 2026-02-07
 
 ### Fixed
@@ -3843,11 +2690,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
   - 新增 `invokeClangMain()` / `invokeLldMain()` / `invokeToolchainService()` 方法
   - 新增 `resolveCompilerRtBuiltins()` 方法：查找 compiler-rt builtins 静态库
   - 链接参数手动构造：CRT 启动文件、sysroot 库路径、标准库、PIE 标志、TLS 对齐等
-
-### Technical
-- 版本号：0.11.7 (versionCode: 1108)
-
----
 
 ## [0.10.91] - 2026-02-05
 
@@ -3873,12 +2715,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
   - `CompileProjectUseCase.kt`：编译用例增强，支持自定义工具链
   - `SingleFileBuildStrategy.kt`：单文件构建策略优化
 - **PRoot 构建脚本**：更新 `docker/proot-build/build-sysroot.sh`
-
-### Technical
-- 版本号：0.10.91 (versionCode: 1092)
-- 自定义工具链里程碑完成：M1（可编译/可链接）、M2（cmake/ninja/make 可用）、M3（分层交付）
-
----
 
 ## [0.10.88] - 2026-02-03
 
@@ -3953,14 +2789,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
   - `schema_patches/20260201_cleanup_admin_assigned_placeholder_devices.sql`
 - 删除旧的加密密钥文件 `secrets/activation_code_enc_keys.b64.enc`
 
-### Technical
-- 版本号：0.10.88 (versionCode: 1089)
-- 子模块更新：`external/tina-sora-editor`
-- 新增模块：AI 聊天（客户端）、AI Gateway（服务端）、代码片段系统
-- 国际化：新增约 100+ 条字符串资源（中英文）
-
----
-
 ## [0.10.78] - 2026-02-02
 
 ### Added
@@ -3983,13 +2811,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - **保存中继续编辑 dirty 误判**：基于版本号快照判断保存完成后是否有新修改，修复保存后立即显示"已保存"但实际内容已变化的问题。
 - **后端激活码归属校验**：修复 `SELECT 1` 在 Postgres 返回 INT4 导致 sqlx 解码为 i64 时类型不匹配的问题，改用 `SELECT EXISTS(...)`。
 - **许可证验证账号校验**：`/license/validate` 新增 token 用户与设备绑定账号一致性校验，避免"先未登录激活/换号登录"导致旧 token 仍被视为有效会员。
-
-### Technical
-- 版本号：0.10.78 (versionCode: 1079)
-- 新增文件：`EditorTouchInterceptGuard.kt`、`StoragePermissionDialog.kt`
-- 修改文件：`DocumentSession.kt`、`CodeEditorBinding.kt`、`EditorTouchDebug.kt`、`ProfileEditSection.kt`、`AuthRepositoryImpl.kt`、`ToolchainConfigActivity.kt`、`CodeEditorPage.kt`、`JsonViewerScreen.kt`、`EditorScrollTestScreen.kt`
-
----
 
 ## [0.10.76] - 2026-02-01
 
@@ -4016,12 +2837,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - **PRoot 工具链安装**：修复 apt-get 模拟安装返回非 0 退出码导致安装失败的问题。
 - **会员状态显示**：修复 `/auth/me` 返回的 `membership` 可能为空导致 App 显示"普通用户"的问题。
 
-### Technical
-- 版本号：0.10.76 (versionCode: 1077)
-- 子模块更新：`external/tina-sora-editor`
-
----
-
 ## [0.10.75] - 2026-01-31
 
 ### Added
@@ -4040,11 +2855,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - 项目页重复刷新：切换回项目视图不再重复触发首次加载刷新。
 - Kotlin 编译稳定性：降低 Kotlin compile daemon 异常导致的构建失败概率（默认 in-process 编译策略）。
 
-### Technical
-- 版本号：0.10.75 (versionCode: 1076)
-
----
-
 ## [0.10.61] - 2026-01-30
 
 ### Added
@@ -4061,13 +2871,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
   - 单文件项目和未知构建系统的项目现在显示检测到的语言标签（而非固定的 C/C++）
 - **项目元数据扩展**：`ProjectMetadata` 新增 `primaryLanguage` 字段，用于持久化存储检测到的语言类型
 - **项目模板安装器更新**：`ProjectTemplateInstaller` 创建项目时自动写入 `primaryLanguage`
-
-### Technical
-- 版本号：0.10.61 (versionCode: 1062)
-- 新增文件：`ProjectLanguage.kt`、`LanguageDetector.kt`
-- 修改文件：`ProjectListModels.kt`、`ProjectListCard.kt`、`ProjectListComponents.kt`、`ProjectDialogs.kt`、`ProjectManagerViewModel.kt`、`ProjectMetadata.kt`、`ProjectTemplateInstaller.kt`、`strings.xml`（中英文）
-
----
 
 ## [0.10.30] - 2026-01-29
 
@@ -4087,14 +2890,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
   - **提取魔法数字为常量**：为 `ProjectSymbolIndexService`、`CrashLogUploader`、`LicenseRepository` 添加带注释的常量定义
   - **标准化日志级别**：统一 ERROR/WARN/INFO/DEBUG 的使用规范
 
-### Technical
-- 版本号：0.10.30 (versionCode: 1031)
-- 新增文件：`OAuthLoginHandler.kt`
-- 修改文件：`AuthRepositoryImpl.kt`、`TinaApplication.kt`、`ProjectSymbolIndexService.kt`、`CrashLogUploader.kt`、`FeedbackRepository.kt`、`FeedbackViewModel.kt`、`AuthRepositoryImpl.kt`
-- 代码质量提升：删除重复代码 ~100 行，新增常量 6 个，修复 P0 问题 5 个
-
----
-
 ## [0.10.27] - 2026-01-29
 
 ### Added
@@ -4109,12 +2904,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 ### Removed
 - **过时设计文档清理**：移除主目录中的已完成设计文档（代码折叠、邮箱验证、图标迁移、登录配置、MessagePack、设置重构、zsh 支持等）。
 
-### Technical
-- 版本号：0.10.27 (versionCode: 1028)
-- 文档归档：15 个设计文档移至 archived 目录
-
----
-
 ## [0.10.26] - 2026-01-28
 
 ### Added
@@ -4126,12 +2915,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 ### Changed
 - **用户资料编辑优化**：`ProfileEditSection` 界面改进，支持头像上传和用户信息编辑。
 - **服务端架构增强**：License 模块集成到主服务端，统一管理用户许可证。
-
-### Technical
-- 版本号：0.10.26 (versionCode: 1027)
-- 服务端新增 License 管理模块
-
----
 
 ## [0.10.24] - 2026-01-28
 
@@ -4150,12 +2933,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - **服务端增强**：`TinaServerApi` 新增头像相关 API；`AuthRepositoryImpl` 增强认证逻辑；用户仓库新增查询能力。
 - **新建项目向导增强**：`NewProjectWizardScreen` 支持更多项目类型选择。
 - **国际化资源更新**：`strings.xml` 和 `values-en/strings.xml` 新增多条字符串资源。
-
-### Technical
-- 版本号：0.10.24 (versionCode: 1025)
-- 子模块更新：`external/tina-sora-editor`（CodeEditor 和 FoldingManager 稳定性改进）
-
----
 
 ## [0.9.89] - 2026-01-27
 
@@ -4182,12 +2959,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - **QQ 登录 401 错误**：修复 QQ 登录时因域名配置不匹配导致的 401 Unauthorized 错误。
 - **AndroidManifest 配置**：修复 QQ 登录相关的 Activity 配置问题。
 
-### Technical
-- 版本号：0.9.89 (versionCode: 990)
-- 子模块更新：`external/tina-android-tree-sitter`、`external/tina-sora-editor`
-
----
-
 ## [0.9.79] - 2026-01-27
 
 ### Added
@@ -4204,9 +2975,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - **代码折叠交互**：折叠为 `{...}` 后，点击/拖动到 `...}` 右侧可将光标稳定放到 `}` 后（不再误展开）；删除/输入会自动定位到真实闭合处并正确更新折叠状态。
 - **彩虹括号稳定性**：修复在快速编辑/Undo/Redo 等瞬态文本状态下可能触发的越界崩溃，避免括号着色丢失。
 
-### Technical
-- 版本号：0.9.79 (versionCode: 980)
-
 ## [0.9.57] - 2026-01-26
 
 ### Added
@@ -4217,9 +2985,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 
 ### Fixed
 - **代码折叠稳定性**：折叠状态下删除相邻空白行不再破坏折叠；折叠后可在闭合 `}` 后放置光标；Undo/Redo 后彩虹括号颜色不再丢失。
-
-### Technical
-- 版本号：0.9.57 (versionCode: 958)
 
 ## [0.9.36] - 2026-01-26
 
@@ -4286,13 +3051,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - 修复 `formatFile()` 方法中 host/guest 路径混淆的问题
 - 修复工作目录解析在 Windows 主机上可能失败的问题
 
-### Technical
-- 版本号：0.9.36 (versionCode: 937)
-- 服务端新增 12 个运行时配置项
-- Admin 后台新增配置预览功能
-
----
-
 ## [0.9.35] - 2026-01-25
 
 ### Changed
@@ -4312,11 +3070,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - **子模块更新**
   - `tina-android-tree-sitter`：构建脚本优化，多个 Task 类添加 `@get:Internal` 注解避免 Gradle 输入/输出警告
   - `tina-sora-editor`：`LineStyles.kt` 小修复
-
-### Technical
-- 版本号：0.9.35 (versionCode: 936)
-
----
 
 ## [0.9.30] - 2026-01-24
 
@@ -4374,10 +3127,6 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 - 修复网络请求中的连接泄漏问题
 - 修复部分界面的布局问题
 - 修复反馈系统的网络请求错误处理
-
-### Technical
-- 版本号：0.9.30 (versionCode: 931)
-- 子模块 proot-builder 更新
 
 ## [0.9.27] - 2026-01-23
 
@@ -4602,10 +3351,10 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 
 ### Added
 - **国际化（i18n）统一基础设施**
-  - 新增全局字符串入口 [`AppStrings.kt`](app/src/main/java/com/wuxianggujun/tinaide/core/i18n/AppStrings.kt)（避免到处传 `Context`）。
-  - 新增资源别名 [`ResAliases.kt`](app/src/main/java/com/wuxianggujun/tinaide/core/i18n/ResAliases.kt)（`typealias Strings = R.string` 等），减少 `import R` 噪声。
-  - 新增资源扩展 [`ResExt.kt`](app/src/main/java/com/wuxianggujun/tinaide/core/i18n/ResExt.kt)（`Strings.xxx.str()` / `strOr(context)` / `stringArray()`）。
-  - 新增异常消息统一入口 [`ExceptionMessages.kt`](app/src/main/java/com/wuxianggujun/tinaide/core/exception/ExceptionMessages.kt)。
+  - 新增全局字符串入口 `AppStrings.kt`（避免到处传 `Context`）。
+  - 新增资源别名 `ResAliases.kt`（`typealias Strings = R.string` 等），减少 `import R` 噪声。
+  - 新增资源扩展 `ResExt.kt`（`Strings.xxx.str()` / `strOr(context)` / `stringArray()`）。
+  - 新增异常消息统一入口 `ExceptionMessages.kt`。
   - 新增规范文档 [`docs/i18n.md`](docs/i18n.md) 及配套设计文档（`docs/design/I18n-*`）。
   - 新增维护脚本 `tools/i18n/**` 与 `tools/check_i18n.py`（values-en 同步、硬编码中文扫描、资源属性硬编码扫描等）。
 
@@ -4613,7 +3362,7 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
   - 新增 `res/raw/privacy_policy.md`、`res/raw/user_agreement.md` 及英文版本 `res/raw-en/*`，用于长文本多语言维护。
 
 - **安装过程 UI/体验**
-  - 新增依赖安装的分组列表组件 [`GroupedPackageList.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/workspace/components/GroupedPackageList.kt)（安装中/等待/已完成可折叠/失败分组）。
+  - 新增依赖安装的分组列表组件 `GroupedPackageList.kt`（安装中/等待/已完成可折叠/失败分组）。
   - 新增图标资源 `ic_arrow_down`、`ic_clock`。
 
 ### Changed
@@ -4623,7 +3372,7 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
   - 覆盖模块：登录/授权、编译系统、PRoot/工具链、终端、Git/SSH、编辑器、设置与工作区等。
 
 - **PRoot 安装流程稳健性**
-  - [`PRootBootstrap.kt`](app/src/main/java/com/wuxianggujun/tinaide/core/proot/PRootBootstrap.kt) 安装进度/阶段不再依赖解析本地化文本（避免因语言差异导致状态误判）。
+  - `PRootBootstrap.kt` 安装进度/阶段不再依赖解析本地化文本（避免因语言差异导致状态误判）。
   - 包清单生成改为基于 `Context` 的动态生成（便于后续多语言展示/配置扩展）。
 
 - **混淆规则完善**
@@ -4634,14 +3383,14 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
   - 修复 `strings.xml`/`values-en/strings.xml` 中导致 aapt2 报错的无效转义字符（`Invalid unicode escape sequence`）。
 
 - **运行时架构识别**
-  - 新增 [`RuntimeAbiDetector.kt`](app/src/main/java/com/wuxianggujun/tinaide/core/device/RuntimeAbiDetector.kt)，在 x86_64/arm64 兼容场景下避免仅依赖 `Build.SUPPORTED_ABIS` 造成误判。
+  - 新增 `RuntimeAbiDetector.kt`，在 x86_64/arm64 兼容场景下避免仅依赖 `Build.SUPPORTED_ABIS` 造成误判。
 
 ## [0.8.84] - 2026-01-21
 
 ### Added
 - **PRoot 日志系统**
-  - 新增 [`PRootSessionLogger.kt`](app/src/main/java/com/wuxianggujun/tinaide/core/proot/PRootSessionLogger.kt)：PRoot 会话日志记录器
-  - 新增 [`PRootLogActivity.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/workspace/PRootLogActivity.kt)：PRoot 日志查看界面
+  - 新增 `PRootSessionLogger.kt`：PRoot 会话日志记录器
+  - 新增 `PRootLogActivity.kt`：PRoot 日志查看界面
   - 日志文件存储在内部私有目录 `files/logs/proot/`，包含会话日志和错误日志
   - 支持记录命令、环境变量、stdout/stderr 输出、退出码等完整信息
   - 在设置 → 关于页面新增"查看 PRoot 日志"入口，便于排查安装与运行问题
@@ -4655,12 +3404,12 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 
 ### Improved
 - **PRoot 错误分类器增强**
-  - [`PRootErrorClassifier.kt`](app/src/main/java/com/wuxianggujun/tinaide/core/proot/PRootErrorClassifier.kt)：新增 Native 崩溃检测
+  - `PRootErrorClassifier.kt`：新增 Native 崩溃检测
   - 识别 "terminated with signal 11"、"SIGSEGV" 等典型崩溃日志
   - 改进 seccomp 相关错误识别（fork ENOSYS、syscall 兼容性）
 
 - **PRoot 日志记录完整性**
-  - [`PRootManager.kt`](app/src/main/java/com/wuxianggujun/tinaide/core/proot/PRootManager.kt)：
+  - `PRootManager.kt`：
     - `execute()` 和 `executeWithOutput()` 方法集成会话日志记录
     - 记录完整的命令、环境变量、输出、退出码、超时状态
     - 自动重试时记录重试原因和新配置
@@ -4670,7 +3419,7 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
     - 记录脚本执行的关键步骤和错误信息
 
 - **编辑器工具栏简化**
-  - [`EditorToolBar.kt`](app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/EditorToolBar.kt)：
+  - `EditorToolBar.kt`：
     - 移除"查找"、"跳转到行"按钮（功能已移至菜单）
     - 移除"Code Actions"、"Rename"按钮（LSP 功能暂未完善）
     - 保留核心编辑操作：撤销、重做、保存、书签功能
@@ -4685,12 +3434,12 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
     - 改进图标颜色（使用 `onSurfaceVariant`）
 
 - **项目路径管理**
-  - [`ProjectPaths.kt`](app/src/main/java/com/wuxianggujun/tinaide/project/ProjectPaths.kt)：
+  - `ProjectPaths.kt`：
     - 新增 `getInternalLogsRoot()`：内部日志目录（私有）
     - 新增 `getPRootLogsRoot()`：PRoot 日志目录（内部）
 
 - **日志导出增强**
-  - [`LogExportUtils.kt`](app/src/main/java/com/wuxianggujun/tinaide/core/logging/LogExportUtils.kt)：
+  - `LogExportUtils.kt`：
     - 新增 `addPRootLogsToZip()`：导出 PRoot 日志（最近7天）
     - 改进 `clearLogs()`：递归删除目录，支持清理 PRoot 日志
 
@@ -4703,8 +3452,8 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 
 ### Removed
 - **文档清理**
-  - 删除 [`docs/design/PRoot-Init-Proot-Script-Guide.md`](docs/design/PRoot-Init-Proot-Script-Guide.md)（内容已迁移到 `docs/init-proot-script.md`）
-  - 更新 [`docs/design/PRoot-Execution-Guide.md`](docs/design/PRoot-Execution-Guide.md) 和 [`docs/design/README.md`](docs/design/README.md) 中的文档引用路径
+  - 删除 `docs/design/PRoot-Init-Proot-Script-Guide.md`（内容已迁移到 `docs/init-proot-script.md`）
+  - 更新 `docs/design/PRoot-Execution-Guide.md` 和 [`docs/design/README.md`](docs/design/README.md) 中的文档引用路径
 
 ---
 
@@ -4742,17 +3491,17 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
 
 - **日志上传**
   - 修复设备信息获取不完整的问题
-    - 创建统一的 [`DeviceInfoProvider.kt`](app/src/main/java/com/wuxianggujun/tinaide/core/device/DeviceInfoProvider.kt) 工具类
+    - 创建统一的 `DeviceInfoProvider.kt` 工具类
     - 所有设备信息字段添加空值保护，确保百分百有值
     - 使用 `takeIf { it.isNotBlank() } ?: "Unknown"` 模式处理所有字段
     - 统一管理设备信息获取逻辑，避免重复代码
   - 更新日志上传接口
-    - 在 [`TinaServerConfig.kt`](app/src/main/java/com/wuxianggujun/tinaide/auth/api/TinaServerConfig.kt) 中添加解析好的设备字段
+    - 在 `TinaServerConfig.kt` 中添加解析好的设备字段
     - 新增 `deviceModel`、`deviceBrand`、`androidVersion` 字段
     - 后端可直接使用这些字段，无需解析 JSON
     - 保留完整的 `deviceInfo` JSON 以保持完整信息
   - 更新日志导出工具
-    - 在 [`LogExportUtils.kt`](app/src/main/java/com/wuxianggujun/tinaide/utils/LogExportUtils.kt) 中使用新的 `DeviceInfoProvider`
+    - 在 `LogExportUtils.kt` 中使用新的 `DeviceInfoProvider`
     - 确保本地导出和服务器上传使用相同的设备信息获取逻辑
 
 - **管理后台日志查看**
@@ -4763,7 +3512,7 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
     - 增强复制功能的错误处理
     - 添加空内容检查，避免复制空值
     - 改进错误提示信息，提示用户检查浏览器权限
-  - 创建日志文件说明文档 [`Log-Files-Explanation.md`](docs/design/Log-Files-Explanation.md)
+  - 创建日志文件说明文档 `Log-Files-Explanation.md`
     - 说明各个日志文件的内容和用途
     - 解释日志系统的架构和设计
     - 提供诊断问题时的查看顺序建议
@@ -4780,11 +3529,11 @@ X server 只搬像素和输入；宿主也没有在跑 PulseAudio daemon。`puls
     - 移除 TinaTimber 中的 BottomLogTree 注册
     - 移除日志导出中的 bottom_panel.txt
   - 原因：IDE 没有底部日志面板 UI，该系统完全未使用
-  - 详见：[`BottomLog-Removal-Summary.md`](docs/design/BottomLog-Removal-Summary.md)
+  - 详见：`BottomLog-Removal-Summary.md`
 
 ### Added
 - **编辑器调试工具**
-  - 新增 [`EditorTouchDebug.kt`](app/src/main/java/com/wuxianggujun/tinaide/editor/debug/EditorTouchDebug.kt) 触摸事件调试工具
+  - 新增 `EditorTouchDebug.kt` 触摸事件调试工具
     - 记录触摸事件的详细信息（ACTION_DOWN、ACTION_MOVE、ACTION_UP 等）
     - 计算和显示滑动速度
     - 帮助调试编辑器触摸交互问题
