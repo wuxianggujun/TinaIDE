@@ -31,19 +31,36 @@
 
 ## [Unreleased]
 
-> 下一发布候选：**0.19.0**（versionCode **1901**），尚未创建对应 Tag / Release。
-> 新功能提升 minor，patch 从 0 开始；PR 中未发布的 `0.19.40` 编号统一归并至此候选版本。
+暂无未发布更新。
+
+## [0.19.0] - 2026-11-08
+
+> 本次正式发布覆盖 [v0.18.36](https://github.com/wuxianggujun/TinaIDE/releases/tag/v0.18.36) 之后的变化。
+> `0.18.37` / `0.18.38` / `0.18.39` 本地验收候选，以及 PR 中未发布的 `0.19.40`，统一归档至本版。
+> 基础 versionCode 为 **1901**；ARM64 APK 为 **19012**，x86_64 APK 为 **19011**。
 
 ### Added
 
 - **项目资源导出**：把项目根下的 `assets/` 递归打进导出 APK 的 `assets/` 根，默认额外生成
   `assets/assets/` 兼容镜像；`ApkBuildConfig.assetDirectories` 将资源目录传入导出流程。
   SDL 资源重定向新增 `<项目根>/assets/<相对路径>` 候选，覆盖资源集中放在 `assets/` 的工程。
+- **原生 LLDB 调试入口**：native tina-toolchain 与可选 PRoot 环境复用 LLDB 对话协议，
+  按运行模式选择调试后端；调试会话设有超时，已超时的会话不再复用。
+- **崩溃草稿恢复**：编辑会话保存未写回磁盘的草稿检查点，崩溃重启后可恢复未保存内容，
+  并在会话状态中展示恢复结果和错误；分屏会话同步接入草稿与生命周期管理。
 - **SDL 原生版本探测**：引入 `SdlNativeCompat`，按 `nativeGetVersion()` 选择部分新旧 JNI 调用。
   多版本兼容尚有已知缺口，具体范围见下方限制，不作为完整支持矩阵的验收结论。
 
 ### Fixed
 
+- **编辑器外部修改误报**：对文件事件防抖，并以内容指纹复核；自身保存延迟事件、
+  相同内容重写和仅时间戳变化不再误判为内容冲突。保存前仍检查真实外部内容变化，避免覆盖他人修改。
+- **编辑器生命周期与高亮**：最后一个分屏页面退出后才关闭共享编辑状态，统一高亮订阅的所有权；
+  异步代码块高亮正确使用 LF / UTF-16 行索引，补齐 CRLF、Unicode、取消和打开失败边界。
+- **LSP 诊断与语义高亮**：诊断发布调度不再随编辑会话频繁重建；
+  `semanticTokens/range` 请求遵守服务端能力声明，不支持时回退到完整语义高亮。
+- **Release 模型选择页崩溃**：隔离 ARSCLib 桌面 JAR 中的 Android/XML 平台桩类，
+  防止 R8 将 Compose Vector XML 解析错误优化为无条件异常；保留资源压缩和正常 APK 导出能力。
 - **raylib 重复运行黑屏**：raylib 6.0 revision 3 在收到销毁请求后退出事件轮询，
   修复手势返回后旧 native 线程未结束、再次运行复用残留进程的问题；窗口尚未创建时也允许取消。
 - **重复启动与停止竞态**：从保存文件开始锁定编译/运行请求，快速连点不排队；停止会撤销旧结果与启动票据。
@@ -55,59 +72,56 @@
 - **SDL3 模板**：1.0.4 在创建窗口时设置 `SDL_WINDOW_RESIZABLE`，避免启动时方向往返和部分画面未覆盖窗口。
 - **多 ABI 打包**：Tree-sitter、RikkaHub workspace 和 Xlorie 正确识别宿主 `AllAbi` 请求，
   单 ABI 模式尊重显式覆盖与 Android Studio 设备 ABI；发布前检查必需原生库及 ELF 架构，防止漏库 APK 上传。
+- **SSH 密钥文件更新**：采用同目录独立暂存文件和原子发布，失败时保留已提交的文件，
+  显式上报写入、同步及清理错误，避免凭据更新悄悄丢失。
+- **自定义包源与远程 LSP**：自定义注册源不再被追加 GitHub 镜像请求；UNC 文档路径在 URI
+  规范化前正确识别。Git 与远程 LSP 复用加密偏好初始化和恢复逻辑。
+- **Android sysroot 编译数据库**：回退生成的 `compile_commands.json` 正确识别 Android NDK
+  的目标架构，修复 x86_64 环境误用 AArch64 参数而出现系统头文件错误标记的问题。
+- **首页与新建项目向导**：权限提示可在本次会话中暂时关闭；创建按钮不再被软键盘遮挡，
+  空项目名会展示既有校验错误；运行按钮补齐无障碍描述。
 
 ### Changed
 
+- **RikkaHub 分发许可**：回移官方纯 AGPL-3.0 许可提交，解除原非商业和用户数附加限制，
+  保留现有 AI 功能与宿主适配，不是整体升级到 3.x。应用内补齐 AGPL / GPL 全文及源码入口，
+  纠正 Termux Terminal 的许可展示；发布门禁继续校验实际许可证、随包全文与源码链接。
 - 只支持修复后的 raylib r3；安装、运行和导出均拒绝旧 r1/r2，包管理器能够发现同版本的新 revision。
   清理重复旧归档，保留用户项目源码。
 - 图形游戏没有新增总运行时限；2 秒保护仅用于明确退出，Home 和普通后台暂停不触发退出保护。
-- 0.18.39 候选的模拟器、导出壳、自动化与最终制品记录分别保存在
-  [Release 验收清单](docs/testing/release-0.18.39-manual-checklist.md)，不把独立夹具或历史 APK 的结果混作最终验收。
 - vendored SDL3 Android Java 桥更新到新的 3.5 基线；同时保留 TinaIDE 的生命周期隔离补丁
   （`mNativeInitializationSkipped`、预测性返回手势收敛、decor fits system windows）。
 - SDL 悬浮日志面板增加 `SdlAssetRedirect` 标签过滤；资源目录、安装结果和 native 重定向命中信息
   进入同一诊断通道，便于排查资源路径问题。
+- 重新构建 NativeActivity / SDL3 导出模板，并更新源码输入校验清单；
+  正式打包沿用 `checkApkTemplatesSync` 门禁，不跳过模板同步校验。
+- 保留 RikkaHub 的 WebP 占位图、现用模型图标、网页预览依赖及 HTML 净化更新，
+  去除未使用字体和图片，不恢复已裁剪的大资源。
+- 简化「我的」页，移除重复的开源说明卡片及对应中英文文案；关于页、许可证全文和源码入口保留。
+- GitHub Release 附精确提交及递归检出指令，确保可获取含子模块的对应源码；
+  普通 GitHub source ZIP 不代表完整源码。
 
 ### Tests
 
 - 新增 `ProjectAssetsTest`：覆盖资源映射、兼容镜像、缺失目录、条目冲突、重复目录和遍历顺序。
 - 新增 `SdlAssetRedirectTest`：覆盖空白项目根拒绝路径；不把它视为 native hook 命中或安装失败的验证。
+- 补齐草稿恢复、文件内容指纹、分屏释放、高亮更新、SSH 原子发布与调试会话回归测试，
+  纳入编辑器、编译器、存储和安全等核心 CI 检查。
+- 历史候选的验收记录保留在 [0.18.38 清单](docs/testing/release-0.18.38-manual-checklist.md) 和
+  [0.18.39 清单](docs/testing/release-0.18.39-manual-checklist.md)；历史 APK、独立夹具和模拟器结果
+  不等于本版最终制品已通过真机验收。
 
 ### Known limitations
 
 - SDL 3.2 的 `nativeSetupJNI` 返回签名与当前桥接层不同；SDL 3.4 的旧双参数手柄回调声明尚未补齐。
   本次按原代码合并，不宣称 SDL 3.2/3.4/3.5 全部运行链路已经兼容或通过真机验收。
-- PR 的代码、导出模板和模板校验值保持原样；后续 JNI 修复与多 ABI、设备验证独立跟进。
-- 按根构建脚本的输入哈希规则复核，两个模板的源码输入均与提交的校验清单不一致。
-  正式构建前需重新执行 `buildApkTemplates checkApkTemplatesSync`；本次没有修改模板或校验门禁。
+- X11 / XFCE 图形桌面尚未完成真机验收，不作为已验证的交付功能；JNI 兼容修复与设备回测独立跟进。
 
 ### Contributors
 
 - 感谢 [GavinJiang（@JIANGJIAYI0）](https://github.com/JIANGJIAYI0) 通过
   [PR #15](https://github.com/wuxianggujun/TinaIDE/pull/15) 贡献项目资源导出、SDL Android 桥接层更新及资源诊断日志。
   原始贡献提交保留在合并历史中。
-
-## [0.18.38] - 2026-11-01
-
-> 本地 Release 验收版本，尚未创建公开 Release / tag；真机验收见 `docs/testing/release-0.18.38-manual-checklist.md`。
-
-### Fixed
-
-- **Release 模型选择页崩溃**：隔离 ARSCLib 桌面 JAR 中的 Android/XML 平台桩类，
-  防止 R8 将 Compose Vector XML 解析错误优化为无条件异常；保留资源压缩和正常 APK 导出能力。
-  增加运行时依赖回归，并接入核心 CI。
-- **RikkaHub 分发许可阻塞**：回移官方纯 AGPL-3.0 许可提交，解除原非商业和用户数附加限制，
-  保留现有 AI 功能与宿主适配，不是整体升级到 3.x。应用内补齐 AGPL / GPL 全文及源码入口，
-  纠正 Termux Terminal 的许可展示；发布门禁继续校验实际许可证、随包全文与源码链接。
-- **raylib 排障口径**：补充实际 EGL window surface、渲染线程和包修订号的验证步骤。
-  Android 的 `GetWindowHandle() == 0` 不等于没有窗口；ARM64 用户黑屏仍需使用 r2 库包清理重编后真机回测。
-
-### Changed
-
-- 保留上一轮 RikkaHub 资源更新：WebP 占位图、现用模型图标、网页预览依赖及 HTML 净化，
-  去除未使用字体/图片；不恢复已裁剪的大资源。
-- 公开 Release 工作流在 APK 旁附精确提交及递归检出指令，确保能获得含子模块的对应源码；
-  普通 GitHub source ZIP 不代表完整源码。
 
 ## [0.18.36] - 2026-10-12
 

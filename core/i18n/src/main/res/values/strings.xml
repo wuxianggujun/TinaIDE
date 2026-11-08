@@ -4637,8 +4637,6 @@ kept=%3$d bytes
   <string name="onboarding_complete_dismiss">知道了</string>
 
   <!-- Profile Screen -->
-  <string name="profile_open_source_title">TinaIDE 开源版</string>
-  <string name="profile_open_source_desc">私有身份与商业功能已迁出；日志、插件、包下载、收藏和下载历史保留。</string>
   <string name="profile_version_format">版本 %1$s</string>
   <string name="profile_settings">设置</string>
   <string name="profile_about">关于</string>

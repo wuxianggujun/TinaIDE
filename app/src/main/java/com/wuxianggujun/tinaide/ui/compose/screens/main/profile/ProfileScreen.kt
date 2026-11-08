@@ -69,10 +69,6 @@ fun ProfileScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
-                OpenSourceProfileCard()
-            }
-
-            item {
                 SectionHeader(title = stringResource(Strings.profile_section_my_content))
             }
 
@@ -100,38 +96,6 @@ fun ProfileScreen(
             item {
                 Spacer(modifier = Modifier.height(16.dp))
                 VersionInfo()
-            }
-        }
-    }
-}
-
-@Composable
-private fun OpenSourceProfileCard() {
-    TinaCard(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Default.Info,
-                contentDescription = null,
-                modifier = Modifier.size(42.dp),
-                tint = MaterialTheme.colorScheme.primary
-            )
-            Spacer(modifier = Modifier.width(14.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    text = stringResource(Strings.profile_open_source_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = stringResource(Strings.profile_open_source_desc),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         }
     }

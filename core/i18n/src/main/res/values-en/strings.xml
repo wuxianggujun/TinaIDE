@@ -4495,8 +4495,6 @@ kept=%3$d bytes
   <string name="onboarding_complete_dismiss">Got it</string>
 
   <!-- Profile Screen -->
-  <string name="profile_open_source_title">TinaIDE Open Source</string>
-  <string name="profile_open_source_desc">Private identity and commercial features have been moved out. Logs, plugins, package downloads, favorites, and download history remain available.</string>
   <string name="profile_version_format">Version %1$s</string>
   <string name="profile_settings">Settings</string>
   <string name="profile_about">About</string>
