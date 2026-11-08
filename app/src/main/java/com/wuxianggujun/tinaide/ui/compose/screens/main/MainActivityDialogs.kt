@@ -660,7 +660,7 @@ internal fun MainActivityApkPackageDialog(
 
     LaunchedEffect(state.showApkPackageDialog) {
         if (!state.showApkPackageDialog) return@LaunchedEffect
-        packageManager.getAvailablePackages(pageSize = 200)
+        packageManager.getAllAvailablePackages()
             .onSuccess { availablePackages = it }
             .onFailure { availablePackages = emptyList() }
     }

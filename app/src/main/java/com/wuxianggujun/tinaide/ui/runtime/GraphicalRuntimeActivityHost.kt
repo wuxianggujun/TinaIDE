@@ -2,15 +2,23 @@ package com.wuxianggujun.tinaide.ui.runtime
 
 import android.app.Activity
 import android.content.Intent
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
+import android.widget.PopupWindow
 import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.unit.IntSize
+import androidx.core.view.doOnAttach
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
@@ -47,6 +55,9 @@ internal class GraphicalRuntimeActivityHost(
     private var prepared = false
     private var overlayAttached = false
     private var overlayView: ComposeView? = null
+    private var overlayPopup: PopupWindow? = null
+    private var overlayContainer: ViewGroup? = null
+    private var overlayLayoutListener: View.OnLayoutChangeListener? = null
     private var backCallback: OnBackInvokedCallback? = null
 
     @Volatile
@@ -92,33 +103,71 @@ internal class GraphicalRuntimeActivityHost(
         check(prepared) { "Graphical runtime host must be prepared before attaching its overlay" }
         check(!overlayAttached) { "Graphical runtime overlay was attached more than once" }
 
-        activity.window.decorView.let { decorView ->
-            decorView.setViewTreeLifecycleOwner(viewTreeOwner)
-            decorView.setViewTreeViewModelStoreOwner(viewTreeOwner)
-            decorView.setViewTreeSavedStateRegistryOwner(viewTreeOwner)
-        }
         viewTreeOwner.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
 
+        fun bounds(): IntSize = IntSize(
+            container.rootView.width.takeIf { it > 0 } ?: activity.resources.displayMetrics.widthPixels,
+            container.rootView.height.takeIf { it > 0 } ?: activity.resources.displayMetrics.heightPixels,
+        )
+        val windowBounds = mutableStateOf(bounds())
+        var positionX = 16
+        var positionY = (windowBounds.value.height * 0.2f).toInt()
+        val popup = PopupWindow(activity).apply {
+            width = ViewGroup.LayoutParams.WRAP_CONTENT
+            height = ViewGroup.LayoutParams.WRAP_CONTENT
+            isFocusable = false
+            isTouchable = true
+            isOutsideTouchable = false
+            isClippingEnabled = true
+            inputMethodMode = PopupWindow.INPUT_METHOD_NOT_NEEDED
+            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        }
+        fun updatePosition() {
+            positionX = positionX.coerceIn(0, (windowBounds.value.width - (overlayView?.width ?: 0)).coerceAtLeast(0))
+            positionY = positionY.coerceIn(0, (windowBounds.value.height - (overlayView?.height ?: 0)).coerceAtLeast(0))
+            if (popup.isShowing) popup.update(positionX, positionY, -1, -1)
+        }
+
         val composeView = ComposeView(activity).apply {
+            setViewTreeLifecycleOwner(viewTreeOwner)
+            setViewTreeViewModelStoreOwner(viewTreeOwner)
+            setViewTreeSavedStateRegistryOwner(viewTreeOwner)
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setContent {
                 TinaIDETheme {
                     GraphicalRuntimeOverlay(
                         enableFloatingLog = enableFloatingLog,
                         onExit = onExit,
+                        windowBounds = windowBounds.value,
+                        onDragWindow = { delta ->
+                            positionX += delta.x.toInt()
+                            positionY += delta.y.toInt()
+                            updatePosition()
+                        },
                     )
                 }
             }
         }
-        container.addView(
-            composeView,
-            ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT,
-            ),
-        )
+        // NativeActivity gives the main window surface to the engine. A child view
+        // shares that surface and can be overwritten; an attached popup owns a
+        // separate window above it, without SYSTEM_ALERT_WINDOW or full-screen touch capture.
+        popup.contentView = composeView
         overlayView = composeView
+        overlayPopup = popup
+        overlayContainer = container
         overlayAttached = true
+        composeView.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> updatePosition() }
+        overlayLayoutListener = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            windowBounds.value = bounds()
+            updatePosition()
+        }.also(container::addOnLayoutChangeListener)
+        container.doOnAttach {
+            container.post {
+                if (overlayAttached && container.isAttachedToWindow && !activity.isFinishing && !activity.isDestroyed) {
+                    popup.showAtLocation(container, Gravity.TOP or Gravity.START, positionX, positionY)
+                }
+            }
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             val callback = OnBackInvokedCallback { onBack() }
             activity.onBackInvokedDispatcher.registerOnBackInvokedCallback(
@@ -195,6 +244,11 @@ internal class GraphicalRuntimeActivityHost(
     fun onDestroy() {
         try {
             if (overlayAttached) {
+                overlayLayoutListener?.let { overlayContainer?.removeOnLayoutChangeListener(it) }
+                overlayLayoutListener = null
+                overlayContainer = null
+                overlayPopup?.dismiss()
+                overlayPopup = null
                 viewTreeOwner.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
                 overlayView = null
                 overlayAttached = false

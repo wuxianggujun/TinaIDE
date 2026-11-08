@@ -23,6 +23,7 @@ REQUIRED_LIBRARIES = frozenset({
     "libandroid-tree-sitter.so", "libc++_shared.so", "libXlorie.so", "libworkspace.so",
     "libtina_native.so", "libtina_text_engine.so", "libtina_pty.so",
     "libtina_native_activity_host.so", "libtina_sdl_asset_redirect.so", "libtina_log_redirect.so",
+    "libtina_sdl_probe.so",
     *(f"libtree-sitter-{grammar}.so" for grammar in GRAMMARS),
 })
 

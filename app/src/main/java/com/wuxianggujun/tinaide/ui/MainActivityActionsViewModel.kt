@@ -42,6 +42,8 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.eclipse.lsp4j.WorkspaceEdit
 import timber.log.Timber
 
@@ -81,6 +83,7 @@ class MainActivityActionsViewModel(
         val tabId: String,
         val edits: List<TextEditOperation>,
         val originalText: String,
+        val updatedText: String,
         val documentVersion: Long?,
         val expectedLspVersion: Int?
     )
@@ -93,6 +96,7 @@ class MainActivityActionsViewModel(
     )
 
     private val uiEventsChannel = Channel<UiEvent>(capacity = Channel.BUFFERED)
+    private val workspaceEditMutex = Mutex()
     val uiEvents = uiEventsChannel.receiveAsFlow()
 
     private val context: Context get() = getApplication()
@@ -462,6 +466,14 @@ class MainActivityActionsViewModel(
         editorContainerState: EditorContainerState,
         edit: WorkspaceEdit,
         confirmMultiFileEdit: suspend (WorkspaceEditPreview) -> Boolean = { true },
+    ): Boolean = workspaceEditMutex.withLock {
+        applyWorkspaceEditLocked(editorContainerState, edit, confirmMultiFileEdit)
+    }
+
+    private suspend fun applyWorkspaceEditLocked(
+        editorContainerState: EditorContainerState,
+        edit: WorkspaceEdit,
+        confirmMultiFileEdit: suspend (WorkspaceEditPreview) -> Boolean,
     ): Boolean {
         val projectRoot = projectContext.getCurrentProject()?.rootPath?.let(::File) ?: return false
         val parsedEdit = WorkspaceEditParser.parse(
@@ -503,6 +515,7 @@ class MainActivityActionsViewModel(
                         tabId = tabId,
                         edits = emptyList(),
                         originalText = originalText,
+                        updatedText = updatedText,
                         documentVersion = editorContainerState.readTabDocumentVersion(tabId),
                         expectedLspVersion = fileEdits.expectedVersion
                     )
@@ -511,6 +524,7 @@ class MainActivityActionsViewModel(
                         tabId = tabId,
                         edits = mappedEdits,
                         originalText = originalText,
+                        updatedText = updatedText,
                         documentVersion = editorContainerState.readTabDocumentVersion(tabId),
                         expectedLspVersion = fileEdits.expectedVersion
                     )
@@ -521,8 +535,8 @@ class MainActivityActionsViewModel(
                 val plan = withContext(Dispatchers.IO) {
                     runCatching {
                         if (!file.isFile) return@runCatching null
-                        val charset = FileCharsetDetector.detect(file)
-                        val originalText = file.readText(charset)
+                        val charset = FileCharsetDetector.detectForEditing(file)
+                        val originalText = FileCharsetDetector.readTextStrict(file, charset)
                         val updatedText = WorkspaceTextEditApplier.apply(originalText, fileEdits.edits)
                             ?: return@runCatching null
                         ClosedWorkspaceEditPlan(file, originalText, updatedText, charset)
@@ -536,75 +550,61 @@ class MainActivityActionsViewModel(
             return true
         }
 
-        val writtenClosedPlans = mutableListOf<ClosedWorkspaceEditPlan>()
-        closedPlans.filter { it.originalText != it.updatedText }.forEach { plan ->
-            val written = withContext(Dispatchers.IO) {
-                runCatching {
-                    if (!plan.file.isFile || plan.file.readText(plan.charset) != plan.originalText) {
-                        return@runCatching false
+        val steps = closedPlans.filter { it.originalText != it.updatedText }.map { plan ->
+            WorkspaceEditTransaction.Step(
+                apply = { markApplied ->
+                    withContext(Dispatchers.IO) {
+                        if (!plan.file.isFile || FileCharsetDetector.readTextStrict(plan.file, plan.charset) != plan.originalText) {
+                            false
+                        } else {
+                            AtomicTextFileWriter.write(plan.file, plan.updatedText, plan.charset)
+                            markApplied()
+                            true
+                        }
                     }
-                    AtomicTextFileWriter.write(plan.file, plan.updatedText, plan.charset)
-                    true
-                }
-                    .onFailure { Timber.tag("WorkspaceEdit").w(it, "Failed to update %s", plan.file.absolutePath) }
-                    .getOrDefault(false)
-            }
-            if (!written) {
-                rollbackClosedWorkspaceEdits(writtenClosedPlans)
-                return false
-            }
-            writtenClosedPlans += plan
+                },
+                rollback = { rollbackClosedWorkspaceEdit(plan) },
+            )
+        } + openPlans.filter { it.edits.isNotEmpty() }.map { plan ->
+            WorkspaceEditTransaction.Step(
+                apply = { markApplied ->
+                    withContext(Dispatchers.Main.immediate) {
+                        val localVersionCurrent = plan.documentVersion == null ||
+                            editorContainerState.readTabDocumentVersion(plan.tabId) == plan.documentVersion
+                        val lspVersionCurrent = plan.expectedLspVersion == null ||
+                            editorContainerState.isLspDocumentVersionCurrent(plan.tabId, plan.expectedLspVersion)
+                        val applied = localVersionCurrent && lspVersionCurrent &&
+                            editorContainerState.applyTextEditsInTab(plan.tabId, plan.edits)
+                        if (applied) markApplied()
+                        applied
+                    }
+                },
+                rollback = { rollbackOpenWorkspaceEdit(editorContainerState, plan) },
+            )
         }
-
-        val appliedOpenPlans = mutableListOf<OpenWorkspaceEditPlan>()
-        openPlans.filter { it.edits.isNotEmpty() }.forEach { plan ->
-            val applied = withContext(Dispatchers.Main.immediate) {
-                val localVersionCurrent = plan.documentVersion == null ||
-                    editorContainerState.readTabDocumentVersion(plan.tabId) == plan.documentVersion
-                val lspVersionCurrent = plan.expectedLspVersion == null ||
-                    editorContainerState.isLspDocumentVersionCurrent(plan.tabId, plan.expectedLspVersion)
-                localVersionCurrent && lspVersionCurrent &&
-                    editorContainerState.applyTextEditsInTab(plan.tabId, plan.edits)
-            }
-            if (!applied) {
-                rollbackOpenWorkspaceEdits(editorContainerState, appliedOpenPlans)
-                rollbackClosedWorkspaceEdits(writtenClosedPlans)
-                return false
-            }
-            appliedOpenPlans += plan
+        return WorkspaceEditTransaction.execute(steps) { failures ->
+            showToast(Strings.workspace_edit_rollback_failed.strOr(context, failures), ToastType.ERROR)
         }
-
-        return true
     }
 
-    private suspend fun rollbackOpenWorkspaceEdits(
+    private suspend fun rollbackOpenWorkspaceEdit(
         editorContainerState: EditorContainerState,
-        plans: List<OpenWorkspaceEditPlan>
-    ) {
-        withContext(Dispatchers.Main.immediate) {
-            plans.asReversed().forEach { plan ->
-                val restored = runCatching {
-                    editorContainerState.replaceTextInTab(plan.tabId, plan.originalText)
-                }.onFailure {
-                    Timber.tag("WorkspaceEdit").e(it, "Failed to roll back tab %s", plan.tabId)
-                }.getOrDefault(false)
-                if (!restored) {
-                    Timber.tag("WorkspaceEdit").e("Editor rejected rollback for tab %s", plan.tabId)
-                }
-            }
-        }
+        plan: OpenWorkspaceEditPlan,
+    ): Boolean = withContext(Dispatchers.Main.immediate) {
+        if (editorContainerState.readTextFromTab(plan.tabId) == plan.originalText) return@withContext true
+        val restored = editorContainerState.replaceTextInTabIfUnchanged(plan.tabId, plan.updatedText, plan.originalText)
+        restored == ConditionalEditorTextReplaceResult.REPLACED || restored == ConditionalEditorTextReplaceResult.UNCHANGED
     }
 
-    private suspend fun rollbackClosedWorkspaceEdits(plans: List<ClosedWorkspaceEditPlan>) {
-        withContext(Dispatchers.IO) {
-            plans.asReversed().forEach { plan ->
-                runCatching {
-                    if (plan.file.isFile && plan.file.readText(plan.charset) == plan.updatedText) {
-                        AtomicTextFileWriter.write(plan.file, plan.originalText, plan.charset)
-                    }
-                }
-                    .onFailure { Timber.tag("WorkspaceEdit").e(it, "Failed to roll back %s", plan.file.absolutePath) }
+    private suspend fun rollbackClosedWorkspaceEdit(plan: ClosedWorkspaceEditPlan): Boolean = withContext(Dispatchers.IO) {
+        if (!plan.file.isFile) return@withContext false
+        when (FileCharsetDetector.readTextStrict(plan.file, plan.charset)) {
+            plan.originalText -> true
+            plan.updatedText -> {
+                AtomicTextFileWriter.write(plan.file, plan.originalText, plan.charset)
+                true
             }
+            else -> false // Preserve concurrent external edits and report incomplete rollback.
         }
     }
 

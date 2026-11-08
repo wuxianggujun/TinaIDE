@@ -868,6 +868,7 @@ class CompileProjectUseCase(
             projectRoot = projectRoot,
             launchEnvironment = launchEnvironment,
             nativeRuntimeIdentity = nativeRuntimeIdentity,
+            runtimeArtifactDir = File(descriptor.artifact.absolutePath).parentFile,
         )
         return when (descriptor) {
             is LaunchDescriptor.Sdl -> LaunchSpec.Sdl(
@@ -1031,10 +1032,11 @@ class CompileProjectUseCase(
         projectRoot: File,
         launchEnvironment: Map<String, String>,
         nativeRuntimeIdentity: NativeRuntimeIdentity,
+        runtimeArtifactDir: File?,
     ): Map<String, String> {
         val normalized = LaunchEnvironment.sanitized(launchEnvironment)
 
-        val packagePaths = InstalledPackagePathResolver.resolve(appContext, projectRoot)
+        val packagePaths = InstalledPackagePathResolver.resolve(appContext, projectRoot, runtimeArtifactDir)
         val sysrootRuntimeDirs = NativeRuntimeLibraryPaths.sysrootRuntimeDirs(
             context = appContext,
             sysrootProfileId = nativeRuntimeIdentity.sysrootProfileId,

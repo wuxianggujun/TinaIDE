@@ -72,7 +72,7 @@ class TerminalCommandBuilder(context: Context) {
         // 仅在 sysroot 中存在 libc++_shared.so 时设置 LD_LIBRARY_PATH(供 C++ 程序使用)。
         // 不能把整个 sysroot lib 目录加入 LD_LIBRARY_PATH,因为其中包含 NDK stub 库
         // (libc.so 等),这些 stub 没有实际代码,运行时加载会导致 SIGSEGV。
-        val packagePaths = InstalledPackagePathResolver.resolve(appContext, projectRoot)
+        val packagePaths = InstalledPackagePathResolver.resolve(appContext, projectRoot, outputFile.parentFile)
         val runtimeLibPaths = buildList {
             outputFile.parentFile?.absolutePath?.takeIf { it.isNotBlank() }?.let(::add)
             addAll(

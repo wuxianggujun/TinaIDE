@@ -38,8 +38,24 @@ interface PackageManager {
 
     suspend fun clearCache()
 
-    suspend fun checkForUpdates(): Map<String, UpdateInfo>
+    suspend fun checkForUpdates(): Map<PackagePlatformKey, UpdateInfo>
+
+    /** Complete catalog for screens that search locally. */
+    suspend fun getAllAvailablePackages(): Result<List<GUIPackage>> {
+        val packages = linkedMapOf<String, GUIPackage>()
+        var page = 1
+        val pageSize = 100
+        while (true) {
+            val batch = getAvailablePackages(page = page++, pageSize = pageSize).getOrElse { return Result.failure(it) }
+            val previousSize = packages.size
+            batch.forEach { packages[it.id] = it }
+            if (batch.size < pageSize) return Result.success(packages.values.toList())
+            if (packages.size == previousSize) return Result.failure(IllegalStateException("Package pagination made no progress"))
+        }
+    }
 }
+
+data class PackagePlatformKey(val packageId: String, val platform: Platform)
 
 data class InstalledPackageInfo(
     val packageId: String,

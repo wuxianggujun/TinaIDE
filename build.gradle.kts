@@ -106,7 +106,7 @@ fun computeTemplateChecksums(): Map<String, String> {
         ),
         "template-sdl3.apk" to hashInputs(
             templateModuleInputs("template-sdl3") + common +
-                listOf(file("app/src/main/java/org/libsdl/app")),
+                listOf(file("app/src/main/java/org/libsdl/app"), file("app/src/main/cpp/sdl_probe")),
         ),
     )
 }

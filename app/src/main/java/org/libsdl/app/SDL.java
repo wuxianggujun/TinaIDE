@@ -104,6 +104,14 @@ public class SDL {
             throw new NullPointerException("No library name provided.");
         }
 
+        if ("SDL3".equals(libraryName)) {
+            int version = SdlNativeLibraryProbe.readVersion("libSDL3.so");
+            if (!SdlNativeLibraryProbe.isSupported(version)) {
+                throw new UnsatisfiedLinkError("Unsupported SDL JNI ABI: " +
+                    SdlNativeLibraryProbe.formatVersion(version) + "; supported: SDL 3.4 / 3.5");
+            }
+        }
+
         try {
             // Let's see if we have ReLinker available in the project.  This is necessary for
             // some projects that have huge numbers of local libraries bundled, and thus may

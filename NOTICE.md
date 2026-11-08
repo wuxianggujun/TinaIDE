@@ -100,3 +100,10 @@ Release 页附精确提交与递归检出命令；GitHub 自动 source ZIP 不�
 [`docs/licensing/rikkahub-agpl-review.md`](docs/licensing/rikkahub-agpl-review.md)。
 `tools/checks/check_distribution.py` 继续 fail closed，校验源码 LICENSE 和随 APK 展示的全文/源码链接，
 不是无条件放行；不满足源码交付或设备验收条件的构建仍不能宣称已完成公开发布。
+
+## 可选 vcpkg 工具
+
+项目新增 vcpkg 接入和 Android CLI 构建脚本，未将第三方 CLI 或 ports 打入 APK。
+[vcpkg](https://github.com/microsoft/vcpkg) 与 [vcpkg-tool](https://github.com/microsoft/vcpkg-tool)
+采用 MIT 许可，与 GPL-3.0 兼容；构建脚本随输出保留上游 LICENSE.txt。用户通过 ports 安装的库各有许可证，
+分发这些库或导出 APK 时应按实际依赖保留对应声明与源码义务，不能把 vcpkg 的 MIT 许可视为所有库的许可。

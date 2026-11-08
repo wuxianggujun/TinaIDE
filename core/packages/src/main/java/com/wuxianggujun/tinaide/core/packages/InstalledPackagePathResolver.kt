@@ -5,6 +5,7 @@ import android.os.Build
 import com.wuxianggujun.tinaide.core.packages.model.Platform
 import com.wuxianggujun.tinaide.core.packages.store.LocalInstallStateStore
 import com.wuxianggujun.tinaide.project.ProjectMetadataStore
+import com.wuxianggujun.tinaide.project.VcpkgProjectSettings
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -67,7 +68,11 @@ object InstalledPackagePathResolver {
     /**
      * 扫描 installed-packages 目录，返回所有有效的 include/lib 路径。
      */
-    suspend fun resolve(context: Context, projectRoot: File? = null): PackagePaths = withContext(Dispatchers.IO) {
+    suspend fun resolve(
+        context: Context,
+        projectRoot: File? = null,
+        runtimeArtifactDir: File? = null,
+    ): PackagePaths = withContext(Dispatchers.IO) {
         val deviceAbi = PackageAbiCompatibility.currentAppAbi(
             nativeLibraryDir = context.applicationInfo.nativeLibraryDir,
             supportedAbis = Build.SUPPORTED_ABIS,
@@ -85,6 +90,7 @@ object InstalledPackagePathResolver {
         val prefixDirs = linkedSetOf<File>()
         val pkgConfigDirs = linkedSetOf<File>()
         val runtimeLibDirs = linkedSetOf<File>()
+        val vcpkgRuntimeLibDirs = linkedSetOf<File>()
         val librariesByName = linkedMapOf<String, LibraryKind>()
 
         for (pkgDir in packageDirs) {
@@ -152,6 +158,27 @@ object InstalledPackagePathResolver {
         }
         runtimeLibDirs += projectDependencyDirs.runtimeDirs
 
+        // vcpkg targets are linked explicitly with find_package/target_link_libraries.
+        // Expose runtime directories for launch/export without auto-linking every installed port.
+        if (projectRoot != null) {
+            val config = VcpkgProjectSettings.from(ProjectMetadataStore.read(projectRoot)?.normalizedNativeCMakeArgs().orEmpty())
+            if (config.enabled && config.root.isNotBlank()) {
+                fun resolvePath(path: String): File = File(path).let { if (it.isAbsolute) it else File(projectRoot, path) }
+                val installed = when {
+                    config.installedDir.isNotBlank() -> resolvePath(config.installedDir)
+                    config.mode == VcpkgProjectSettings.MANIFEST -> File(projectRoot, "vcpkg_installed")
+                    else -> File(resolvePath(config.root), "installed")
+                }
+                val prefix = File(installed, config.targetTriplet(deviceAbi))
+                val runtimeSubdirs = if (isDebugCMakeArtifact(runtimeArtifactDir, projectRoot)) {
+                    listOf("debug/lib", "debug/bin", "lib", "bin")
+                } else {
+                    listOf("lib", "bin")
+                }
+                runtimeSubdirs.map { File(prefix, it) }.filterTo(vcpkgRuntimeLibDirs) { it.isDirectory }
+            }
+        }
+
         val linkLibraries = librariesByName.keys.toList()
 
         Timber.tag(TAG).d(
@@ -174,8 +201,26 @@ object InstalledPackagePathResolver {
             prefixDirs = prefixDirs.toList(),
             pkgConfigDirs = pkgConfigDirs.toList(),
             linkLibraries = linkLibraries,
-            runtimeLibDirs = runtimeLibDirs.toList()
+            runtimeLibDirs = (vcpkgRuntimeLibDirs + runtimeLibDirs).toList()
         )
+    }
+
+    /** Use the artifact's actual CMake configuration, which may differ from the current run settings. */
+    internal fun isDebugCMakeArtifact(artifactDir: File?, projectRoot: File): Boolean {
+        val root = projectRoot.canonicalFile
+        var directory = artifactDir?.canonicalFile
+        while (directory != null && directory.toPath().startsWith(root.toPath())) {
+            val cache = File(directory, "CMakeCache.txt")
+            if (cache.isFile) {
+                return cache.useLines(Charsets.UTF_8) { lines ->
+                    lines.firstOrNull { it.startsWith("CMAKE_BUILD_TYPE:") }
+                        ?.substringAfter('=')?.trim().equals("Debug", ignoreCase = true)
+                }
+            }
+            if (directory == root) break
+            directory = directory.parentFile
+        }
+        return false
     }
 
     private suspend fun resolveProjectDependencyDirs(projectRoot: File?): ProjectDependencyDirs {

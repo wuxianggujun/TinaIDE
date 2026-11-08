@@ -25,6 +25,7 @@ import com.wuxianggujun.tinaide.core.compile.artifact.BuildFingerprint
 import com.wuxianggujun.tinaide.core.compile.artifact.FingerprintCalculator
 import com.wuxianggujun.tinaide.core.compile.artifact.SourceRef
 import com.wuxianggujun.tinaide.core.compile.artifact.TrackedInputCollector
+import com.wuxianggujun.tinaide.core.compile.artifact.VcpkgBuildInputs
 import com.wuxianggujun.tinaide.core.compile.cmake.CMakeBuildExecutor
 import com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutor
 import com.wuxianggujun.tinaide.core.compile.event.BuildEvent
@@ -138,7 +139,7 @@ class CMakeStrategy(
             targetNames = targetClosure,
             targetSources = sourceFiles,
         )
-        val reconfigureInputs = TrackedInputCollector.collectCMakeReconfigureInputs(ctx.projectRoot)
+        val reconfigureInputs = collectReconfigureInputs(ctx)
 
         val spec = ArtifactSpec(
             id = ArtifactId(
@@ -295,6 +296,9 @@ class CMakeStrategy(
         buildDir: File,
         options: BuildOptions,
     ): ConfigureResult {
+        if (com.wuxianggujun.tinaide.project.VcpkgProjectSettings.from(options.nativeCMakeArgs).enabled) {
+            return ConfigureResult.Error(Strings.vcpkg_native_only.strOr(context))
+        }
         val (cCompiler, cxxCompiler) = try {
             resolveCompilerPaths(options)
         } catch (e: IllegalArgumentException) {
@@ -401,6 +405,9 @@ class CMakeStrategy(
     private fun needsReconfigure(projectRoot: File, buildDir: File, options: BuildOptions): Boolean {
         val cacheFile = File(buildDir, "CMakeCache.txt")
         if (!cacheFile.exists()) return true
+        if (listOf("vcpkg.json", "vcpkg-configuration.json").any {
+            File(projectRoot, it).let { file -> file.isFile && file.lastModified() > cacheFile.lastModified() }
+        }) return true
 
         val cmakeListsFile = File(projectRoot, "CMakeLists.txt")
         if (cmakeListsFile.exists() && cmakeListsFile.lastModified() > cacheFile.lastModified()) return true
@@ -585,11 +592,8 @@ class CMakeStrategy(
             return ExecutionOutcome.Failure(reason)
         }
         val refreshedSpec = refreshTrackedInputSpec(ctx, spec)
-        val refreshedFingerprint = if (refreshedSpec == spec) {
-            fingerprint
-        } else {
-            FingerprintCalculator().compute(ctx, refreshedSpec)
-        }
+        // Configure may install new library contents under unchanged paths.
+        val refreshedFingerprint = FingerprintCalculator().compute(ctx, refreshedSpec)
         val artifact = Artifact(
             id = refreshedSpec.id,
             absolutePath = artifactFile.absolutePath,
@@ -624,6 +628,17 @@ class CMakeStrategy(
         )
     }
 
+    private fun collectReconfigureInputs(ctx: BuildContext): List<File> {
+        val projectInputs = TrackedInputCollector.collectCMakeReconfigureInputs(ctx.projectRoot)
+        if (!isNativeMode(ctx.options.resolvedRunMode)) return projectInputs
+        return projectInputs + VcpkgBuildInputs.collect(
+            project = ctx.projectRoot,
+            arguments = ctx.options.nativeCMakeArgs,
+            androidAbi = PackageAbiCompatibility.currentAppAbi(context.applicationInfo.nativeLibraryDir, Build.SUPPORTED_ABIS),
+            debug = ctx.options.cmakeBuildType == CMakeBuildTypeOption.DEBUG,
+        )
+    }
+
     private suspend fun refreshTrackedInputSpec(ctx: BuildContext, spec: ArtifactSpec): ArtifactSpec {
         val all = loadTargets(ctx.projectRoot, ctx.buildDir)
         val selected = all.firstOrNull { it.name == spec.id.targetName } ?: run {
@@ -642,7 +657,7 @@ class CMakeStrategy(
             targetNames = targetClosure,
             targetSources = sourceFiles,
         )
-        val reconfigureInputs = TrackedInputCollector.collectCMakeReconfigureInputs(ctx.projectRoot)
+        val reconfigureInputs = collectReconfigureInputs(ctx)
         BuildDiagnosticsLog.i {
             "cmake refresh tracked inputs target=${selected.name} targetClosure=${targetClosure.sorted().joinToString("|")} " +
                 "oldCompileInputs=${spec.sources.size} newCompileInputs=${compileInputs.size} " +

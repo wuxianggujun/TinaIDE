@@ -13,6 +13,7 @@ class BuildProcessRunnerTest {
     fun `run returns timedOut and terminates process`() = runBlocking {
         val command = timeoutCommand()
         assumeTrue("No supported shell for timeout test", command.isNotEmpty())
+        var terminated = false
 
         val result = BuildProcessRunner.run(
             processBuilder = ProcessBuilder(command).redirectErrorStream(true),
@@ -20,10 +21,12 @@ class BuildProcessRunnerTest {
             timeoutMs = 250L,
             forceKillGraceMs = 100L,
             readerJoinTimeoutMs = 500L,
+            onTerminate = { terminated = true },
         )
 
         assertThat(result.timedOut).isTrue()
         assertThat(result.exitCode).isEqualTo(-1)
+        assertThat(terminated).isTrue()
     }
 
     @Test
@@ -43,6 +46,20 @@ class BuildProcessRunnerTest {
         assertThat(result.timedOut).isFalse()
         assertThat(result.exitCode).isEqualTo(0)
         assertThat(result.output).contains("formatter input")
+    }
+
+    @Test
+    fun `bounded output retains the final diagnostic without stopping the reader`() = runBlocking {
+        val result = BuildProcessRunner.run(
+            processBuilder = ProcessBuilder(stdinEchoCommand()).redirectErrorStream(true),
+            commandLabel = "bounded-output-test",
+            timeoutMs = 10_000L,
+            stdin = "x".repeat(4096) + "\nFINAL_DIAGNOSTIC\n",
+            maxOutputChars = 64,
+        )
+        assertThat(result.exitCode).isEqualTo(0)
+        assertThat(result.output.length).isAtMost(64)
+        assertThat(result.output).contains("FINAL_DIAGNOSTIC")
     }
 
     @Test

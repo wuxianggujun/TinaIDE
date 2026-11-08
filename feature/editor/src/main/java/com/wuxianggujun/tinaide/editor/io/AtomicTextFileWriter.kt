@@ -6,6 +6,7 @@ import java.io.IOException
 import java.io.OutputStream
 import java.io.OutputStreamWriter
 import java.nio.charset.Charset
+import java.nio.charset.CodingErrorAction
 import java.nio.channels.Channels
 import java.nio.channels.FileChannel
 import java.nio.file.AtomicMoveNotSupportedException
@@ -40,7 +41,10 @@ object AtomicTextFileWriter {
                 StandardOpenOption.TRUNCATE_EXISTING,
             ).use { channel ->
                 val output = FlushOnlyOutputStream(Channels.newOutputStream(channel))
-                OutputStreamWriter(output, charset).buffered().use { writer ->
+                val encoder = charset.newEncoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT)
+                OutputStreamWriter(output, encoder).buffered().use { writer ->
                     writer.write(content)
                 }
                 channel.force(true)

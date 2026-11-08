@@ -854,12 +854,10 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     /**
      * TinaIDE 定制：判断原生 SDL 版本是否与 Java 桥接层兼容。
      *
-     * 默认要求版本完全一致；图形运行宿主会重写它，改为"主版本一致"，
-     * 这样同一个桥接层可以配合 3.2/3.4/3.5 等不同小版本的原生库运行
-     * （与 {@link SdlNativeCompat} 的能力探测配合使用）。
+     * JNI 注册前由 SdlNativeLibraryProbe 限定 3.4/3.5，调用点按小版本选择签名。
      */
     protected boolean isNativeVersionCompatible(String version) {
-        return getExpectedSdlVersion().equals(version);
+        return version != null && (version.startsWith("3.4.") || version.startsWith("3.5."));
     }
 
     /** TinaIDE 定制：加载失败时提示框的标题（可本地化）。 */
@@ -1823,11 +1821,11 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         if (SDL.isControllerManagerReady() && SDLControllerManager.isDeviceSDLJoystick(device)) {
             // Note that we process events with specific key codes here
             if (event.getAction() == KeyEvent.ACTION_DOWN) {
-                if (SDLControllerManager.onNativePadDown(deviceId, keyCode, event.getScanCode())) {
+                if (SDLControllerManager.dispatchNativePadDown(deviceId, keyCode, event.getScanCode())) {
                     return true;
                 }
             } else if (event.getAction() == KeyEvent.ACTION_UP) {
-                if (SDLControllerManager.onNativePadUp(deviceId, keyCode, event.getScanCode())) {
+                if (SDLControllerManager.dispatchNativePadUp(deviceId, keyCode, event.getScanCode())) {
                     return true;
                 }
             }

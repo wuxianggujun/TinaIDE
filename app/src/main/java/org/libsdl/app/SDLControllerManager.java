@@ -58,6 +58,20 @@ public class SDLControllerManager
     static native void nativeRemoveHaptic(int device_id);
     static public native boolean onNativePadDown(int device_id, int keycode, int scancode);
     static public native boolean onNativePadUp(int device_id, int keycode, int scancode);
+    static public native boolean onNativePadDown(int device_id, int keycode);
+    static public native boolean onNativePadUp(int device_id, int keycode);
+
+    static boolean dispatchNativePadDown(int deviceId, int keyCode, int scanCode) {
+        return SdlNativeCompat.isAtLeast(3, 5)
+            ? onNativePadDown(deviceId, keyCode, scanCode)
+            : onNativePadDown(deviceId, keyCode);
+    }
+
+    static boolean dispatchNativePadUp(int deviceId, int keyCode, int scanCode) {
+        return SdlNativeCompat.isAtLeast(3, 5)
+            ? onNativePadUp(deviceId, keyCode, scanCode)
+            : onNativePadUp(deviceId, keyCode);
+    }
     static native void onNativeJoy(int device_id, int axis,
                                           float value);
     static native void onNativeHat(int device_id, int hat_id,

@@ -14,6 +14,7 @@ import com.wuxianggujun.tinaide.core.compile.CompilerType
 import com.wuxianggujun.tinaide.core.compile.ConfigureResult
 import com.wuxianggujun.tinaide.core.compile.MakeCommandOverrides
 import com.wuxianggujun.tinaide.core.compile.NativeRuntimeIdentity
+import com.wuxianggujun.tinaide.core.compile.NativeBuildProcessGroup
 import com.wuxianggujun.tinaide.core.compile.NativeSysrootPreparer
 import com.wuxianggujun.tinaide.core.compile.toolchain.ToolchainLinker64ShimManager
 import com.wuxianggujun.tinaide.core.i18n.Strings
@@ -22,9 +23,11 @@ import com.wuxianggujun.tinaide.core.ndk.AndroidNativeToolchainManager
 import com.wuxianggujun.tinaide.core.ndk.AndroidSysrootManager
 import com.wuxianggujun.tinaide.core.packages.InstalledPackagePathResolver
 import com.wuxianggujun.tinaide.core.packages.PackageAbiCompatibility
+import com.wuxianggujun.tinaide.core.packages.vcpkgUserMessage
 import com.wuxianggujun.tinaide.core.util.AndroidSystemLinker
 import com.wuxianggujun.tinaide.core.util.DiagnosticLogFormatter
 import com.wuxianggujun.tinaide.core.util.NativeExecutableRunner
+import com.wuxianggujun.tinaide.project.VcpkgProjectSettings
 import java.io.File
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
@@ -1083,7 +1086,7 @@ class NativeCMakeBuildExecutor(
                 add("-D$key=$value")
             }
 
-            addAll(combinedExtraCMakeArgs)
+            addAll(VcpkgProjectSettings.stripManagedArguments(combinedExtraCMakeArgs))
             cmakeIdentity.asCMakeCacheEntries().forEach { (key, value) ->
                 add("-D$key:STRING=$value")
             }
@@ -1091,15 +1094,46 @@ class NativeCMakeBuildExecutor(
             add("-DCMAKE_BUILD_TYPE=${options.buildType.cmakeValue}")
         }
 
+        val vcpkg = try {
+            VcpkgCMakeIntegration.prepare(projectDir, buildDir, combinedExtraCMakeArgs, androidAbi, command)
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            Timber.tag(TAG).w(error, "Invalid project vcpkg configuration")
+            return ConfigureResult.Error(Strings.vcpkg_configuration_failed.str(error.vcpkgUserMessage(appContext)))
+        }
+        if (vcpkg != null && vcpkg.installCommand.isNotEmpty()) {
+            options.onProgress?.invoke(Strings.vcpkg_installing.str())
+            val installed = executeNativeCommand(
+                command = vcpkg.installCommand,
+                workingDir = projectDir,
+                timeout = TimeUnit.MINUTES.toMillis(30),
+                toolchainId = options.toolchainId,
+                extraEnvironment = vcpkg.environment,
+                onOutputLine = options.onProgress,
+                useToolchainShimEnvironment = true,
+                useRecommendedTinaExec = true,
+                maxOutputChars = 256 * 1024,
+                terminateProcessGroup = true,
+            )
+            if (installed.exitCode != 0) {
+                return ConfigureResult.Error(Strings.vcpkg_install_failed.str(installed.output.takeLast(MAX_CMAKE_DIAGNOSTIC_CHARS)))
+            }
+        }
+        val hadVcpkgIntegration = File(buildDir, "CMakeCache.txt").takeIf { it.isFile }
+            ?.useLines { lines -> lines.any { it.startsWith("TINA_VCPKG_INTEGRATION:") && it.endsWith("=ON") } } == true
+        // A changed/removed toolchain must not keep the previous compiler system state.
+        val configureCommand = command + vcpkg?.arguments.orEmpty() +
+            if (vcpkg != null || hadVcpkgIntegration) listOf("--fresh") else emptyList()
+
         Timber.tag(TAG).i("Configuring CMake project: ${projectDir.name}")
         Timber.tag(TAG).d("Command: ${command.joinToString(" ")}")
 
         val configureEnvironment = buildCMakeExtraEnvironment(
-            packageEnvironment = packageEnvironment,
+            packageEnvironment = packageEnvironment + vcpkg?.environment.orEmpty(),
             traceToolchainShim = options.traceToolchainShim
         )
         val result = executeNativeCommand(
-            command = command,
+            command = configureCommand,
             workingDir = buildDir,
             timeout = timeoutConfig.getCMakeConfigTimeout(),
             toolchainId = options.toolchainId,
@@ -1119,7 +1153,7 @@ class NativeCMakeBuildExecutor(
         ) {
             // 部分 Android 9 真机 ROM 可能禁止 app 私有目录里的 shell 脚本被 CMake 直接执行。
             // 只在 direct shim configure 失败时回退真实构建工具，避免影响正常成功路径。
-            val retryCommand = command.map { argument ->
+            val retryCommand = configureCommand.map { argument ->
                 if (argument.startsWith("-DCMAKE_MAKE_PROGRAM=")) {
                     "-DCMAKE_MAKE_PROGRAM=${buildToolBinary.absolutePath}"
                 } else {
@@ -1530,7 +1564,9 @@ class NativeCMakeBuildExecutor(
         extraEnvironment: Map<String, String> = emptyMap(),
         onOutputLine: ((String) -> Unit)? = null,
         useToolchainShimEnvironment: Boolean = true,
-        useRecommendedTinaExec: Boolean = true
+        useRecommendedTinaExec: Boolean = true,
+        maxOutputChars: Int = Int.MAX_VALUE,
+        terminateProcessGroup: Boolean = false,
     ): CommandResult {
         val commandTempDir = BuildResourceCleaner.createCommandTempDir(appContext.cacheDir, "native-cmake")
         return try {
@@ -1542,7 +1578,8 @@ class NativeCMakeBuildExecutor(
             args = args
         )
 
-        val processBuilder = ProcessBuilder(fullCommand).apply {
+        val processGroup = if (terminateProcessGroup) NativeBuildProcessGroup(fullCommand, commandTempDir) else null
+        val processBuilder = ProcessBuilder(processGroup?.command ?: fullCommand).apply {
             directory(workingDir)
             com.wuxianggujun.tinaide.core.util.NativeExecutableRunner.configureEnvironment(
                 this,
@@ -1593,6 +1630,8 @@ class NativeCMakeBuildExecutor(
             processBuilder = processBuilder,
             commandLabel = "native-cmake:${File(executable).name}",
             timeoutMs = timeout,
+            maxOutputChars = maxOutputChars,
+            onTerminate = processGroup?.let { group -> { group.terminate() } },
             onOutputLine = { line ->
                 onOutputLine?.invoke(line)
                 Timber.tag(TAG).v(line)

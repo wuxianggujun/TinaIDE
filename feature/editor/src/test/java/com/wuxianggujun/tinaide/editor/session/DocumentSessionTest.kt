@@ -148,6 +148,30 @@ class DocumentSessionTest {
     }
 
     @Test
+    fun save_shouldPreserveUnsavedContentWhenGbkCannotEncodeIt() = runTest {
+        val gbk = Charset.forName("GBK")
+        val file = Files.createTempFile("document-session-encoding", ".txt").toFile()
+        file.writeText("旧内容", gbk)
+        val original = file.readBytes()
+        val session = createSession(file, this)
+        val binding = FakeEditorBinding(text = "旧内容", canUndo = false, canRedo = false)
+        try {
+            session.attachEditor(binding)
+            binding.setText("中文🙂")
+            session.notifyEditorContentChanged(canUndo = true, canRedo = false, changeCausedByUndoManager = false)
+            val result = session.save(SaveReason.MANUAL)
+            assertThat(result).isInstanceOf(SaveResult.Failure::class.java)
+            assertThat(file.readBytes()).isEqualTo(original)
+            assertThat(session.state.value.isDirty).isTrue()
+            assertThat(session.state.value.isSaving).isFalse()
+            assertThat(binding.readText()).isEqualTo("中文🙂")
+        } finally {
+            session.stopFileWatcher()
+            file.delete()
+        }
+    }
+
+    @Test
     fun delayedDeleteEventFromAtomicSave_shouldNotReportExternalModification() = runTest {
         val file = Files.createTempFile("document-session-atomic-save", ".txt").toFile()
         file.writeText("old")

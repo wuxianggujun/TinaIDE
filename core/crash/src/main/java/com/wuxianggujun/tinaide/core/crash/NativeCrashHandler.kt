@@ -167,8 +167,8 @@ object NativeCrashHandler {
             val logFile = File(logPath)
             if (logFile.exists() && logFile.canRead()) {
                 return buildString {
-                    appendLine("===== Full Log =====")
-                    append(logFile.readText())
+                    appendLine("===== Log Preview =====")
+                    append(CrashReportFiles.readPreview(logFile))
                 }
             }
             return buildString {

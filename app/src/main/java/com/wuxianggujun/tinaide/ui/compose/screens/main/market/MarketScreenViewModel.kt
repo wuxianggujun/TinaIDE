@@ -127,7 +127,7 @@ class MarketScreenViewModel(
         viewModelScope.launch {
             _packageState.update { it.copy(isLoading = true, error = null) }
 
-            packageManager.getAvailablePackages().onSuccess { packages ->
+            packageManager.getAllAvailablePackages().onSuccess { packages ->
                 val installStates = packages.associate { pkg ->
                     pkg.id to packageManager.getInstallState(pkg.id)
                 }

@@ -667,9 +667,9 @@ fun TinaCodeEditorPage(
                 return@withLock
             }
 
-            val detectedCharset = FileEncodingDetector.detectCharset(tab.file)
-            binding.withSuppressed { buffer.loadFromFile(tab.file, detectedCharset) }
-                .onSuccess {
+            FileEncodingDetector.load(tab.file) { charset ->
+                binding.withSuppressed { buffer.loadFromFile(tab.file, charset) }
+            }.onSuccess { detectedCharset ->
                     ensureTreeSitterPrepared(
                         runtime = runtime,
                         editorState = editorState,
@@ -688,7 +688,9 @@ fun TinaCodeEditorPage(
                     loading = false
                 }
                 .onFailure { error ->
-                    loadError = error.message ?: Strings.editor_load_failed.strOr(context)
+                    loadError = if (error is java.nio.charset.CharacterCodingException) {
+                        Strings.editor_error_decoding_failed.strOr(context)
+                    } else error.message ?: Strings.editor_load_failed.strOr(context)
                     loading = false
                 }
         }
@@ -1052,9 +1054,9 @@ fun TinaCodeEditorPage(
                                         loading = false
                                         return@withLock
                                     }
-                                    val detectedCharset = FileEncodingDetector.detectCharset(tab.file)
-                                    binding.withSuppressed { buffer.loadFromFile(tab.file, detectedCharset) }
-                                        .onSuccess {
+                                    FileEncodingDetector.load(tab.file) { charset ->
+                                        binding.withSuppressed { buffer.loadFromFile(tab.file, charset) }
+                                    }.onSuccess { detectedCharset ->
                                             runtime.isTreeSitterSnapshotReady = false
                                             ensureTreeSitterPrepared(
                                                 runtime = runtime,
@@ -1073,8 +1075,10 @@ fun TinaCodeEditorPage(
                                             state.markCodeEditorRuntimeLoaded(tab.id)
                                             loading = false
                                         }
-                                        .onFailure {
-                                            loadError = it.message ?: Strings.editor_load_failed.strOr(context)
+                                        .onFailure { error ->
+                                            loadError = if (error is java.nio.charset.CharacterCodingException) {
+                                                Strings.editor_error_decoding_failed.strOr(context)
+                                            } else error.message ?: Strings.editor_load_failed.strOr(context)
                                             loading = false
                                         }
                                 }

@@ -15,7 +15,8 @@ class PackageCacheManager(
 ) {
     companion object {
         private const val TAG = "PackageCacheManager"
-        private const val PACKAGES_CACHE_FILE = "packages.json"
+        // Old packages.json may contain only the first page; never treat it as a complete catalog.
+        private const val PACKAGES_CACHE_FILE = "catalog-v2.json"
         private const val CATEGORIES_CACHE_FILE = "categories.json"
         private const val CACHE_META_FILE = "cache_meta.json"
     }

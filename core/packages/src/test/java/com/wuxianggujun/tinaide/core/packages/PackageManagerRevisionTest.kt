@@ -26,6 +26,39 @@ class PackageManagerRevisionTest {
     @get:Rule val temporary = TemporaryFolder()
 
     @Test
+    fun `same package keeps independent updates for Android and Linux`() = runTest {
+        val api = mockk<PackageApiClient>(relaxed = true)
+        val cache = mockk<PackageCacheManager>(relaxed = true)
+        val store = mockk<LocalInstallStateStore>(relaxed = true)
+        every { store.getAllInstalledPackages() } returns Platform.entries.map {
+            InstalledPackageInfo("fmt", "fmt", it, "1.0", 0L, InstallType.DOWNLOAD)
+        }
+        coEvery { api.getPackageDetail("fmt") } returns ApiResult.Success(GUIPackage("fmt", "fmt",
+            android = PlatformPackage(version = "2.0", installType = InstallType.DOWNLOAD),
+            linux = PlatformPackage(version = "3.0", installType = InstallType.APT)))
+        val manager = PackageManagerImpl(context(), api, store, cache, ioDispatcher = StandardTestDispatcher(testScheduler))
+        val updates = manager.checkForUpdates()
+        assertThat(updates.keys).containsExactly(PackagePlatformKey("fmt", Platform.ANDROID), PackagePlatformKey("fmt", Platform.LINUX))
+        verify { store.setUpdateAvailable("fmt", Platform.ANDROID, "1.0", "2.0") }
+        verify { store.setUpdateAvailable("fmt", Platform.LINUX, "1.0", "3.0") }
+    }
+
+    @Test
+    fun `complete catalog and filtered pages include entries after the first hundred`() = runTest {
+        val api = mockk<PackageApiClient>(relaxed = true)
+        val cache = mockk<PackageCacheManager>(relaxed = true)
+        val store = mockk<LocalInstallStateStore>(relaxed = true)
+        val catalog = (1..151).map { GUIPackage("library-$it", "Library $it") }
+        every { cache.getPackages() } returns null
+        coEvery { api.getCatalog() } returns ApiResult.Success(catalog)
+        val manager = PackageManagerImpl(context(), api, store, cache, ioDispatcher = StandardTestDispatcher(testScheduler))
+        assertThat(manager.getAllAvailablePackages().getOrThrow()).hasSize(151)
+        assertThat(manager.getAvailablePackages(page = 2, pageSize = 100).getOrThrow()).hasSize(51)
+        assertThat(manager.getAvailablePackages(search = "library-151").getOrThrow().map { it.id }).containsExactly("library-151")
+        verify { cache.savePackages(catalog) }
+    }
+
+    @Test
     fun `same upstream version with a new revision updates state and cached detail`() = runTest {
         writeInstalledRevision(2)
         val api = mockk<PackageApiClient>(relaxed = true)
@@ -40,7 +73,7 @@ class PackageManagerRevisionTest {
 
         val updates = manager.checkForUpdates()
 
-        assertThat(updates.keys).containsExactly("raylib")
+        assertThat(updates.keys).containsExactly(PackagePlatformKey("raylib", Platform.ANDROID))
         coVerify(exactly = 1) { api.invalidateCache() }
         verify { cache.savePackageDetail(latest) }
         verify { store.setUpdateAvailable("raylib", Platform.ANDROID, "6.0", "6.0") }

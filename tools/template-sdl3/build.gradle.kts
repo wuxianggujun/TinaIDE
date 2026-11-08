@@ -33,6 +33,13 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    externalNativeBuild {
+        cmake {
+            path = rootProject.file("app/src/main/cpp/sdl_probe/CMakeLists.txt")
+            version = "3.22.1"
+        }
+    }
+
     sourceSets {
         getByName("main") {
             // AGP 9 disallows Provider-backed source directories on SourceSet APIs.

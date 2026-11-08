@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.22)
+project(tina_sdl_probe C)
+add_library(tina_sdl_probe SHARED sdl_probe.c)
+target_link_libraries(tina_sdl_probe PRIVATE dl)
+target_link_options(tina_sdl_probe PRIVATE "-Wl,-z,max-page-size=16384")

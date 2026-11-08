@@ -1,7 +1,12 @@
 package com.wuxianggujun.tinaide.editor.io
 
 import java.io.File
+import java.io.InputStreamReader
+import java.nio.charset.CharacterCodingException
+import java.nio.ByteBuffer
+import java.nio.CharBuffer
 import java.nio.charset.Charset
+import java.nio.charset.CodingErrorAction
 
 /**
  * 文件编码检测工具。
@@ -15,6 +20,53 @@ object FileCharsetDetector {
 
     private const val SAMPLE_SIZE_BYTES = 8192
 
+    /** Validate the complete file before editing; ASCII-only prefixes do not identify the encoding. */
+    fun detectForEditing(file: File): Charset {
+        val bom = file.inputStream().use { stream ->
+            val prefix = ByteArray(4)
+            var length = 0
+            while (length < prefix.size) {
+                val count = stream.read(prefix, length, prefix.size - length)
+                if (count < 0) break
+                length += count
+            }
+            detectBom(prefix, length)
+        }
+        if (bom != null) {
+            validate(file, bom)
+            return bom
+        }
+        val candidate = detect(file)
+        try {
+            validate(file, candidate)
+            return candidate
+        } catch (invalid: CharacterCodingException) {
+            if (candidate != Charsets.UTF_8) throw invalid
+            // The first non-ASCII bytes may occur after the initial sample.
+            val gbk = Charset.forName("GBK")
+            validate(file, gbk)
+            return gbk
+        }
+    }
+
+    fun strictReader(file: File, charset: Charset): InputStreamReader = InputStreamReader(
+        file.inputStream(),
+        charset.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT),
+    )
+
+    fun readTextStrict(file: File, charset: Charset): String = strictReader(file, charset).use { it.readText() }
+
+    private fun validate(file: File, charset: Charset) {
+        strictReader(file, charset).use { reader ->
+            val buffer = CharArray(SAMPLE_SIZE_BYTES)
+            while (reader.read(buffer) >= 0) {
+                if (Thread.currentThread().isInterrupted) throw java.io.InterruptedIOException("Text validation interrupted")
+            }
+        }
+    }
+
     fun detect(file: File): Charset {
         if (!file.exists() || !file.isFile) {
             return Charsets.UTF_8
@@ -23,12 +75,18 @@ object FileCharsetDetector {
         return try {
             file.inputStream().use { stream ->
                 val buffer = ByteArray(SAMPLE_SIZE_BYTES)
-                val bytesRead = stream.read(buffer)
+                var bytesRead = 0
+                while (bytesRead < buffer.size) {
+                    val count = stream.read(buffer, bytesRead, buffer.size - bytesRead)
+                    if (count < 0) break
+                    bytesRead += count
+                }
                 if (bytesRead <= 0) {
                     return Charsets.UTF_8
                 }
 
-                detectBom(buffer, bytesRead) ?: detectHeuristic(buffer, bytesRead)
+                val reachedEnd = stream.read() == -1
+                detectBom(buffer, bytesRead) ?: detectHeuristic(buffer, bytesRead, reachedEnd)
             }
         } catch (_: Exception) {
             Charsets.UTF_8
@@ -67,64 +125,18 @@ object FileCharsetDetector {
         else -> null
     }
 
-    private fun detectHeuristic(buffer: ByteArray, bytesRead: Int): Charset {
-        var utf8Score = 0
-        var gbkScore = 0
-        var index = 0
-
-        while (index < bytesRead) {
-            val byte = buffer[index].toInt() and 0xFF
-            if (byte < 0x80) {
-                index++
-                continue
-            }
-
-            if (byte and 0xE0 == 0xC0 && index + 1 < bytesRead) {
-                val byte2 = buffer[index + 1].toInt() and 0xFF
-                if (byte2 and 0xC0 == 0x80) {
-                    utf8Score += 2
-                    index += 2
-                    continue
-                }
-            } else if (byte and 0xF0 == 0xE0 && index + 2 < bytesRead) {
-                val byte2 = buffer[index + 1].toInt() and 0xFF
-                val byte3 = buffer[index + 2].toInt() and 0xFF
-                if (byte2 and 0xC0 == 0x80 && byte3 and 0xC0 == 0x80) {
-                    utf8Score += 3
-                    index += 3
-                    continue
-                }
-            } else if (byte and 0xF8 == 0xF0 && index + 3 < bytesRead) {
-                val byte2 = buffer[index + 1].toInt() and 0xFF
-                val byte3 = buffer[index + 2].toInt() and 0xFF
-                val byte4 = buffer[index + 3].toInt() and 0xFF
-                if (
-                    byte2 and 0xC0 == 0x80 &&
-                    byte3 and 0xC0 == 0x80 &&
-                    byte4 and 0xC0 == 0x80
-                ) {
-                    utf8Score += 4
-                    index += 4
-                    continue
-                }
-            }
-
-            if (byte in 0x81..0xFE && index + 1 < bytesRead) {
-                val byte2 = buffer[index + 1].toInt() and 0xFF
-                if (byte2 in 0x40..0x7E || byte2 in 0x80..0xFE) {
-                    gbkScore += 2
-                    index += 2
-                    continue
-                }
-            }
-
-            index++
-        }
-
-        return when {
-            utf8Score > gbkScore -> Charsets.UTF_8
-            gbkScore > utf8Score -> Charset.forName("GBK")
-            else -> Charsets.UTF_8
-        }
+    private fun detectHeuristic(buffer: ByteArray, bytesRead: Int, reachedEnd: Boolean): Charset {
+        // A sample may end in the middle of a valid character. Only treat an incomplete
+        // sequence as malformed when it is also the actual end of the file.
+        if (canDecodeSample(Charsets.UTF_8, buffer, bytesRead, reachedEnd)) return Charsets.UTF_8
+        val gbk = Charset.forName("GBK")
+        return if (canDecodeSample(gbk, buffer, bytesRead, reachedEnd)) gbk else Charsets.UTF_8
     }
+
+    private fun canDecodeSample(charset: Charset, buffer: ByteArray, bytesRead: Int, reachedEnd: Boolean): Boolean =
+        !charset.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT)
+            .decode(ByteBuffer.wrap(buffer, 0, bytesRead), CharBuffer.allocate(bytesRead), reachedEnd)
+            .isError
 }

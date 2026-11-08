@@ -57,6 +57,8 @@ import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.lifecycleScope
 import com.wuxianggujun.tinaide.core.crash.CrashLogAutoUploader
+import com.wuxianggujun.tinaide.core.crash.CrashReportFiles
+import com.wuxianggujun.tinaide.core.crash.NativeCrashHandler
 import com.wuxianggujun.tinaide.core.crash.CrashUploadState
 import com.wuxianggujun.tinaide.core.crash.CrashUploadStatusTextResolver
 import com.wuxianggujun.tinaide.core.crash.CrashUploadStatusTextSpec
@@ -74,6 +76,9 @@ import java.util.Date
 import java.util.Locale
 import kotlin.system.exitProcess
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * 崩溃信息展示页面（纯 Compose 实现）
@@ -172,27 +177,35 @@ class CrashActivity : ComponentActivity() {
     }
 
     private fun shareCrashReport() {
-        try {
-            val shareDir = File(cacheDir, "crash_reports").apply { mkdirs() }
-            val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-            val fileName = if (crashSource == SOURCE_USER_NATIVE) {
-                "user_native_crash_$timestamp.txt"
-            } else {
-                "tinaide_crash_$timestamp.txt"
+        lifecycleScope.launch {
+            try {
+                val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(Date())
+                val fileName = if (crashSource == SOURCE_USER_NATIVE) {
+                    "user_native_crash_$timestamp.txt"
+                } else {
+                    "tinaide_crash_$timestamp.txt"
+                }
+                val crashFile = withContext(Dispatchers.IO) {
+                    CrashReportFiles.export(
+                        tombstoneRoot = NativeCrashHandler.getTombstoneDir(this@CrashActivity),
+                        fileName = crashLogFileName,
+                        fallbackReport = crashReport,
+                        destination = File(File(cacheDir, "crash_reports"), fileName),
+                    )
+                }
+                val uri = ExternalFileIntents.getShareableUri(this@CrashActivity, crashFile)
+                val intent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    putExtra(Intent.EXTRA_SUBJECT, Strings.crash_share_subject.strOr(this@CrashActivity))
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                startActivity(Intent.createChooser(intent, Strings.crash_share_chooser_title.strOr(this@CrashActivity)))
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (e: Exception) {
+                Toast.makeText(this@CrashActivity, Strings.crash_share_failed.strOr(this@CrashActivity, e.message ?: ""), Toast.LENGTH_SHORT).show()
             }
-            val crashFile = File(shareDir, fileName).apply {
-                writeText(crashReport, Charsets.UTF_8)
-            }
-            val uri = ExternalFileIntents.getShareableUri(this, crashFile)
-            val intent = Intent(Intent.ACTION_SEND).apply {
-                type = "text/plain"
-                putExtra(Intent.EXTRA_STREAM, uri)
-                putExtra(Intent.EXTRA_SUBJECT, Strings.crash_share_subject.strOr(this@CrashActivity))
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            startActivity(Intent.createChooser(intent, Strings.crash_share_chooser_title.strOr(this)))
-        } catch (e: Exception) {
-            Toast.makeText(this, Strings.crash_share_failed.strOr(this, e.message ?: ""), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -211,7 +224,7 @@ class CrashActivity : ComponentActivity() {
         private const val EXTRA_CRASH_LOG_FILE_NAME = "extra_crash_log_file_name"
         const val SOURCE_APP = "app"
         const val SOURCE_USER_NATIVE = "user_native"
-        private const val MAX_CRASH_REPORT_EXTRA_CHARS = 120_000
+        private const val MAX_CRASH_REPORT_EXTRA_CHARS = CrashReportFiles.MAX_PREVIEW_CHARS
 
         fun start(
             context: Context,
@@ -283,7 +296,7 @@ private fun CrashScreen(
         }
     }
     val truncatedSuffix = stringResource(Strings.crash_log_truncated)
-    // 限制显示长度，避免 UI 卡顿（完整内容仍可复制）
+    // 预览与剪贴板均有长度限制；完整原始文件通过分享导出。
     val displayText = remember(crashReport, truncatedSuffix) {
         if (crashReport.length > 50000) {
             crashReport.take(50000) + truncatedSuffix

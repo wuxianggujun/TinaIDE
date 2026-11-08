@@ -279,6 +279,15 @@ class ExternalSdlActivity : SDLActivity() {
         @SuppressLint("UnsafeDynamicallyLoadedCode")
         fun loadAbsolutePath(path: String) {
             if (path.isBlank() || !loadedPaths.add(path)) return
+            if (path == sdlLibraryPath) {
+                val version = org.libsdl.app.SdlNativeLibraryProbe.readVersion(path)
+                if (!org.libsdl.app.SdlNativeLibraryProbe.isSupported(version)) {
+                    throw UnsatisfiedLinkError(Strings.sdl_runtime_unsupported_version.strOr(
+                        this,
+                        org.libsdl.app.SdlNativeLibraryProbe.formatVersion(version),
+                    ))
+                }
+            }
             Timber.tag(TAG).d("System.load: %s", path)
             System.load(path)
         }
@@ -370,8 +379,7 @@ class ExternalSdlActivity : SDLActivity() {
     }
 
     override fun isNativeVersionCompatible(version: String): Boolean {
-        val nativeMajor = version.substringBefore('.').toIntOrNull() ?: return false
-        return nativeMajor == requiredSdlMajor
+        return requiredSdlMajor == 3 && super.isNativeVersionCompatible(version)
     }
 
     // endregion

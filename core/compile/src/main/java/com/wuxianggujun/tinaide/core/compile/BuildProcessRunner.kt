@@ -32,6 +32,8 @@ internal object BuildProcessRunner {
         onOutputLine: ((String) -> Unit)? = null,
         forceKillGraceMs: Long = DEFAULT_FORCE_KILL_GRACE_MS,
         readerJoinTimeoutMs: Long = DEFAULT_READER_JOIN_TIMEOUT_MS,
+        maxOutputChars: Int = Int.MAX_VALUE,
+        onTerminate: (() -> Unit)? = null,
     ): Result = runInterruptible(Dispatchers.IO) {
         runBlocking(
             processBuilder = processBuilder,
@@ -41,6 +43,8 @@ internal object BuildProcessRunner {
             onOutputLine = onOutputLine,
             forceKillGraceMs = forceKillGraceMs,
             readerJoinTimeoutMs = readerJoinTimeoutMs,
+            maxOutputChars = maxOutputChars,
+            onTerminate = onTerminate,
         )
     }
 
@@ -52,7 +56,10 @@ internal object BuildProcessRunner {
         onOutputLine: ((String) -> Unit)?,
         forceKillGraceMs: Long,
         readerJoinTimeoutMs: Long,
+        maxOutputChars: Int,
+        onTerminate: (() -> Unit)?,
     ): Result {
+        require(maxOutputChars > 0) { "maxOutputChars must be positive" }
         var process: Process? = null
         val startedAt = System.currentTimeMillis()
         val output = StringBuilder()
@@ -90,10 +97,11 @@ internal object BuildProcessRunner {
                 isDaemon = true,
             ) {
                 try {
-                    runningProcess.inputStream.bufferedReader().use { reader ->
+                    runningProcess.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
                         reader.lineSequence().forEach { line ->
                             synchronized(outputLock) {
                                 output.appendLine(line)
+                                if (output.length > maxOutputChars) output.delete(0, output.length - maxOutputChars)
                             }
                             onOutputLine?.invoke(line)
                         }
@@ -109,7 +117,7 @@ internal object BuildProcessRunner {
             val exitCode = if (finished) {
                 runningProcess.exitValue()
             } else {
-                terminate(runningProcess, forceKillGraceMs)
+                terminate(runningProcess, forceKillGraceMs, onTerminate)
                 -1
             }
 
@@ -148,20 +156,21 @@ internal object BuildProcessRunner {
             }
             return result
         } catch (e: InterruptedException) {
-            process?.let { terminate(it, forceKillGraceMs) }
+            process?.let { terminate(it, forceKillGraceMs, onTerminate) }
             Thread.currentThread().interrupt()
             throw e
         } finally {
             process?.let { runningProcess ->
                 if (runningProcess.isAlive) {
-                    terminate(runningProcess, forceKillGraceMs)
+                    terminate(runningProcess, forceKillGraceMs, onTerminate)
                 }
                 closeProcessStreams(runningProcess)
             }
         }
     }
 
-    private fun terminate(process: Process, forceKillGraceMs: Long) {
+    private fun terminate(process: Process, forceKillGraceMs: Long, onTerminate: (() -> Unit)?) {
+        onTerminate?.invoke()
         if (!process.isAlive) return
         runCatching { process.destroy() }
         if (runCatching { process.waitFor(forceKillGraceMs, TimeUnit.MILLISECONDS) }.getOrDefault(false)) {

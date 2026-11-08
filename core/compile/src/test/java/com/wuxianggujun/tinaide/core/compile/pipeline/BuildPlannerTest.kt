@@ -19,6 +19,8 @@ import com.wuxianggujun.tinaide.core.compile.artifact.ArtifactStore
 import com.wuxianggujun.tinaide.core.compile.artifact.BuildFingerprint
 import com.wuxianggujun.tinaide.core.compile.artifact.FingerprintCalculator
 import com.wuxianggujun.tinaide.core.compile.artifact.SourceRef
+import com.wuxianggujun.tinaide.core.compile.artifact.VcpkgBuildInputs
+import com.wuxianggujun.tinaide.project.VcpkgProjectSettings
 import com.wuxianggujun.tinaide.core.compile.event.BuildEventEmitter
 import com.wuxianggujun.tinaide.core.compile.strategy.BuildContext
 import com.wuxianggujun.tinaide.core.compile.strategy.BuildStrategy
@@ -267,6 +269,28 @@ class BuildPlannerTest {
         )
         assertThat(plan).isInstanceOf(BuildPlan.CleanOnly::class.java)
         assertThat((plan as BuildPlan.CleanOnly).reconfigure).isTrue()
+    }
+
+    @Test
+    fun `replaced vcpkg static library forces configure and build with unchanged sources`() = runTest {
+        val root = tempFolder.newFolder("vcpkg-root")
+        val library = File(root, "installed/arm64-android/lib/libfmt.a").apply {
+            parentFile.mkdirs(); writeText("old")
+        }
+        val source = File(projectRoot, "main.c").apply { writeText("int main() { return 0; }") }
+        val arguments = VcpkgProjectSettings(VcpkgProjectSettings.PREBUILT, root.path).applyTo(emptyList())
+        fun spec() = defaultSpec(listOf(source)).copy(reconfigureSources =
+            VcpkgBuildInputs.collect(projectRoot, arguments, "arm64-v8a", false))
+        strategy.describeOutputOverride = { spec() }
+        store.put(newArtifact(fingerprint = calculator.compute(newContext(), spec()), sources = listOf(sourceRefOf(source))))
+        val request = CompileRequest(BuildIntent.IfNeeded, LaunchIntent.None)
+        assertThat(planner.plan(request, newContext())).isInstanceOf(BuildPlan.Skip::class.java)
+        val timestamp = library.lastModified()
+        library.writeText("new")
+        library.setLastModified(timestamp)
+        val plan = planner.plan(request, newContext()) as BuildPlan.Build
+        assertThat(plan.reason).contains("reconfigureInputsHash")
+        assertThat(com.wuxianggujun.tinaide.core.compile.strategy.CMakeStrategy.shouldForceReconfigureForReason(plan.reason)).isTrue()
     }
 
     @Test

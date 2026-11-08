@@ -1,10 +1,5 @@
 package com.wuxianggujun.tinaide.ui.compose.components
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -12,11 +7,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -38,10 +33,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,60 +45,41 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import java.io.BufferedReader
 import java.io.InputStreamReader
-import kotlin.math.roundToInt
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive
+import timber.log.Timber
 
 /**
  * Shared controls displayed over every fullscreen graphical runtime.
  *
  * 提供：
  * - 可拖拽的半透明小球（始终显示）
- * - 点击小球展开控制面板：退出按钮 + 日志面板
- * - 日志面板实时捕获 logcat 的 TINA_USER_OUTPUT 标签输出
+ * - 开启悬浮日志时默认展开，可手动折叠
+ * - 日志面板捕获当前图形进程的全部日志标签
  */
 @Composable
 fun GraphicalRuntimeOverlay(
     enableFloatingLog: Boolean,
     onExit: () -> Unit,
-    modifier: Modifier = Modifier
+    windowBounds: IntSize,
+    onDragWindow: (Offset) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    val density = LocalDensity.current
-    val windowSize = LocalWindowInfo.current.containerSize
-    val ballSizePx = with(density) { FloatingControlSize.toPx() }
-    val controlsHeightPx = with(density) {
-        if (enableFloatingLog) {
-            (FloatingControlSize * 2 + FloatingControlGap).toPx()
-        } else {
-            FloatingControlSize.toPx()
-        }
-    }
-    val screenWidthPx = windowSize.width.toFloat().coerceAtLeast(ballSizePx)
-    val screenHeightPx = windowSize.height.toFloat().coerceAtLeast(controlsHeightPx)
-    val maxOffsetX = (screenWidthPx - ballSizePx).coerceAtLeast(0f)
-    val maxOffsetY = (screenHeightPx - controlsHeightPx).coerceAtLeast(0f)
-
-    var offsetX by remember { mutableFloatStateOf(screenWidthPx - with(density) { 60.dp.toPx() }) }
-    var offsetY by remember { mutableFloatStateOf(screenHeightPx * 0.3f) }
-    var expanded by remember { mutableStateOf(false) }
+    var expanded by rememberSaveable(enableFloatingLog) { mutableStateOf(enableFloatingLog) }
     var showExitDialog by remember { mutableStateOf(false) }
-
-    LaunchedEffect(maxOffsetX, maxOffsetY) {
-        offsetX = offsetX.coerceIn(0f, maxOffsetX)
-        offsetY = offsetY.coerceIn(0f, maxOffsetY)
-    }
 
     val logLines = remember { mutableStateListOf<LogEntry>() }
     val listState = rememberLazyListState()
@@ -122,47 +99,33 @@ fun GraphicalRuntimeOverlay(
         }
     }
 
-    Box(modifier = modifier.fillMaxSize()) {
-        // 展开的日志面板（仅在开启悬浮日志时可展开）
-        AnimatedVisibility(
-            visible = expanded && enableFloatingLog,
-            enter = fadeIn() + scaleIn(initialScale = 0.8f),
-            exit = fadeOut() + scaleOut(targetScale = 0.8f),
-            modifier = Modifier.align(Alignment.Center)
-        ) {
-            FloatingLogPanel(
-                logLines = logLines,
-                listState = listState,
-                onClearLog = { logLines.clear() },
-                onClose = { expanded = false },
-                onExit = { showExitDialog = true }
-            )
-        }
-
-        // 返回和日志职责独立，避免启用日志后改变返回按钮的行为。
-        val onDrag: (androidx.compose.ui.geometry.Offset) -> Unit = { dragAmount ->
-            offsetX = (offsetX + dragAmount.x).coerceIn(0f, maxOffsetX)
-            offsetY = (offsetY + dragAmount.y).coerceIn(0f, maxOffsetY)
-        }
-        Column(
-            modifier = Modifier.offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) },
-            verticalArrangement = Arrangement.spacedBy(FloatingControlGap),
-        ) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(FloatingControlGap)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(FloatingControlGap)) {
             FloatingControlButton(
                 icon = Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = stringResource(Strings.floating_overlay_ball_desc),
                 onTap = { showExitDialog = true },
-                onDrag = onDrag,
+                onDrag = onDragWindow,
             )
             if (enableFloatingLog) {
                 FloatingControlButton(
                     icon = Icons.Default.Terminal,
                     contentDescription = stringResource(Strings.floating_overlay_log_title),
-                    active = logLines.isNotEmpty(),
+                    active = expanded,
                     onTap = { expanded = !expanded },
-                    onDrag = onDrag,
+                    onDrag = onDragWindow,
                 )
             }
+        }
+        if (expanded && enableFloatingLog) {
+            FloatingLogPanel(
+                logLines = logLines,
+                listState = listState,
+                onClearLog = { logLines.clear() },
+                onClose = { expanded = false },
+                onExit = { showExitDialog = true },
+                windowBounds = windowBounds,
+            )
         }
     }
 
@@ -186,10 +149,12 @@ private fun FloatingControlButton(
     icon: ImageVector,
     contentDescription: String,
     onTap: () -> Unit,
-    onDrag: (androidx.compose.ui.geometry.Offset) -> Unit,
+    onDrag: (Offset) -> Unit,
     active: Boolean = false,
     modifier: Modifier = Modifier
 ) {
+    val currentOnTap by rememberUpdatedState(onTap)
+    val currentOnDrag by rememberUpdatedState(onDrag)
     Surface(
         modifier = modifier
             .size(FloatingControlSize)
@@ -198,11 +163,11 @@ private fun FloatingControlButton(
             .pointerInput(Unit) {
                 detectDragGestures { change, dragAmount ->
                     change.consume()
-                    onDrag(dragAmount)
+                    currentOnDrag(dragAmount)
                 }
             }
             .pointerInput(Unit) {
-                detectTapGestures(onTap = { onTap() })
+                detectTapGestures(onTap = { currentOnTap() })
             },
         shape = CircleShape,
         color = if (active) {
@@ -233,12 +198,16 @@ private fun FloatingLogPanel(
     onClearLog: () -> Unit,
     onClose: () -> Unit,
     onExit: () -> Unit,
-    modifier: Modifier = Modifier
+    windowBounds: IntSize,
+    modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
-    val windowSize = LocalWindowInfo.current.containerSize
+    val windowSize = windowBounds
     val panelWidth = with(density) { (windowSize.width * FLOATING_LOG_PANEL_WIDTH_FRACTION).toDp() }
-    val expandedLogHeight = with(density) { (windowSize.height * FLOATING_LOG_PANEL_HEIGHT_FRACTION).toDp() }
+    val expandedLogHeight = with(density) {
+        (windowSize.height * FLOATING_LOG_PANEL_HEIGHT_FRACTION).toDp()
+            .coerceAtMost((windowSize.height.toDp() - 200.dp).coerceAtLeast(48.dp))
+    }
     val logPanelHeight = if (logLines.isEmpty()) {
         FloatingLogPanelEmptyHeight.coerceAtMost(expandedLogHeight)
     } else {
@@ -414,6 +383,7 @@ data class LogEntry(
 )
 
 private const val MAX_LOG_LINES = 500
+private const val MAX_LOG_LINE_CHARS = 8_192
 private const val LOGCAT_INITIAL_LINE_COUNT = 200
 private const val FLOATING_LOG_PANEL_WIDTH_FRACTION = 0.85f
 private const val FLOATING_LOG_PANEL_HEIGHT_FRACTION = 0.60f
@@ -422,27 +392,16 @@ private val FloatingControlGap = 8.dp
 private val FloatingLogPanelEmptyHeight = 112.dp
 
 /**
- * 捕获的 logcat 标签列表。
- *
- * - TINA_USER_OUTPUT: 原生 log redirect 库重定向的 stdout/stderr
- * - SDL: SDL_Log 系列输出
- * - System.out / System.err: Java 标准输出
- * - SdlAssetRedirect: 项目资源重定向（环境变量缺失 / hook 安装失败 / 命中重定向）
- *   属于"用户看不出来就必然踩坑"的诊断信息，必须能在这里看到。
+ * Keep engine-specific and user-defined log tags, bounded to the current graphical process.
  */
-private val LOG_TAGS = listOf(
-    "TINA_USER_OUTPUT",
-    "SDL",
-    "System.out",
-    "System.err",
-    "SdlAssetRedirect"
+internal fun graphicalRuntimeLogcatCommand(processId: Int): List<String> = listOf(
+    "logcat", "--pid=$processId", "-v", "brief", "-T", LOGCAT_INITIAL_LINE_COUNT.toString(), "*:V",
 )
 
 /**
- * 通过 logcat 捕获用户程序的 stdout/stderr 及 SDL 日志。
+ * 捕获隔离图形进程的全部标签，包括 stdout/stderr、SDL、raylib 和用户自定义 Android 日志。
  *
- * 使用 `--pid` 限制为当前进程，`-T 1` 从启动时刻开始读取（忽略历史），
- * `-s` 只保留 [LOG_TAGS] 中列出的标签。
+ * 使用 `--pid` 限制为当前进程，保留启动初期的有限历史，不依赖引擎标签白名单。
  * 当行数超过 [MAX_LOG_LINES] 时移除最早的条目。
  */
 private suspend fun captureLogcat(
@@ -450,28 +409,29 @@ private suspend fun captureLogcat(
     failureMessage: String,
 ) = coroutineScope {
     val pid = android.os.Process.myPid()
-    val tagFilters = LOG_TAGS.map { "$it:*" }
-    val cmd = mutableListOf(
-        "logcat",
-        "--pid=$pid",
-        "-v",
-        "brief",
-        "-T",
-        LOGCAT_INITIAL_LINE_COUNT.toString(),
-        "-s"
-    ).apply { addAll(tagFilters) }
+    val cmd = graphicalRuntimeLogcatCommand(pid)
 
     val process = try {
         ProcessBuilder(cmd)
             .redirectErrorStream(true)
             .start()
     } catch (e: Exception) {
-        logLines.add(LogEntry('E', failureMessage))
+        Timber.tag("GraphicalRuntimeOverlay").w(e, "Unable to start graphical log capture")
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
+            logLines.add(LogEntry('E', failureMessage))
+        }
         return@coroutineScope
     }
 
+    val cancellationCloser = launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+        try {
+            kotlinx.coroutines.awaitCancellation()
+        } finally {
+            process.destroy()
+        }
+    }
     try {
-        val reader = BufferedReader(InputStreamReader(process.inputStream))
+        val reader = BufferedReader(InputStreamReader(process.inputStream, Charsets.UTF_8))
         var line: String?
         while (isActive) {
             line = reader.readLine() ?: break
@@ -481,16 +441,29 @@ private suspend fun captureLogcat(
                 line.isNotEmpty() && line[0] in "VDIWEF" -> line[0]
                 else -> 'I'
             }
-            val message = line.substringAfter("): ", line)
+            val message = line.substringAfter("): ", line).take(MAX_LOG_LINE_CHARS)
 
-            logLines.add(LogEntry(level, message))
-            while (logLines.size > MAX_LOG_LINES) {
-                logLines.removeAt(0)
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
+                logLines.add(LogEntry(level, message))
+                while (logLines.size > MAX_LOG_LINES) {
+                    logLines.removeAt(0)
+                }
             }
         }
-    } catch (_: Exception) {
-        // reader closed
+    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+        throw cancelled
+    } catch (error: Exception) {
+        if (isActive) Timber.tag("GraphicalRuntimeOverlay").w(error, "Graphical log capture failed")
+        if (isActive) kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
+            logLines.add(LogEntry('E', failureMessage))
+        }
     } finally {
+        cancellationCloser.cancel()
         process.destroy()
+        listOf(process.inputStream, process.errorStream, process.outputStream).forEach { stream ->
+            runCatching { stream.close() }.onFailure { error ->
+                Timber.tag("GraphicalRuntimeOverlay").d(error, "Log capture stream already closed")
+            }
+        }
     }
 }

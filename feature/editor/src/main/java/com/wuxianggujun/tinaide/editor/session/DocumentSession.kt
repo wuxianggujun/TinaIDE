@@ -12,6 +12,7 @@ import com.wuxianggujun.tinaide.storage.ProjectPaths
 import java.io.File
 import java.io.IOException
 import java.nio.charset.Charset
+import java.nio.charset.CharacterCodingException
 import java.nio.file.Files
 import java.nio.file.attribute.BasicFileAttributes
 import java.util.concurrent.atomic.AtomicReference
@@ -326,7 +327,7 @@ class DocumentSession(
             try {
                 val draft = draftStore.read(file) ?: return@withLock null
                 val charset = Charset.forName(draft.charsetName)
-                val diskFingerprint = readDiskTextFingerprint(file, FileCharsetDetector.detect(file))
+                val diskFingerprint = readDiskTextFingerprint(file, FileCharsetDetector.detectForEditing(file))
                 if (diskFingerprint == null) {
                     recoveryDiscarded = true
                     _state.update { it.copy(recoveryError = Strings.editor_recovery_failed.strOr(context)) }
@@ -763,6 +764,10 @@ class DocumentSession(
                 _state.update { it.copy(isSaving = false) }
             }
             throw cancellation
+        } catch (e: CharacterCodingException) {
+            val message = Strings.editor_error_encoding_loss.strOr(context, fileCharset.name())
+            _state.update { it.copy(isSaving = false, lastError = message) }
+            SaveResult.Failure(message)
         } catch (e: Exception) {
             _state.update { it.copy(isSaving = false, lastError = e.message) }
             SaveResult.Failure(e.message ?: Strings.editor_error_save_failed.strOr(context))
@@ -855,11 +860,11 @@ class DocumentSession(
         try {
             val binding = editorBinding.get() ?: return@withLock false
             val charset = withContext(Dispatchers.IO) {
-                FileCharsetDetector.detect(file)
+                FileCharsetDetector.detectForEditing(file)
             }
             val streamingReload = binding.reloadFromFile(file, charset)
             if (streamingReload == null) {
-                val newContent = withContext(Dispatchers.IO) { file.readText(charset) }
+                val newContent = withContext(Dispatchers.IO) { FileCharsetDetector.readTextStrict(file, charset) }
                 binding.setText(newContent)
             } else {
                 streamingReload.getOrThrow()
@@ -900,6 +905,9 @@ class DocumentSession(
             true
         } catch (cancellation: CancellationException) {
             throw cancellation
+        } catch (error: CharacterCodingException) {
+            _state.update { it.copy(lastError = Strings.editor_error_decoding_failed.strOr(context)) }
+            false
         } catch (e: Exception) {
             _state.update { it.copy(lastError = e.message) }
             false
@@ -947,7 +955,7 @@ class DocumentSession(
      * 不物化整份文本，两条路径的结果可直接互相比较。读取失败返回 null。
      */
     private fun readDiskTextFingerprint(targetFile: File, charset: Charset): TextFingerprint? = try {
-        targetFile.reader(charset).use { reader ->
+        FileCharsetDetector.strictReader(targetFile, charset).use { reader ->
             var length = 0
             var hash = -0x340d631b8c4675d9L
             val buffer = CharArray(8192)

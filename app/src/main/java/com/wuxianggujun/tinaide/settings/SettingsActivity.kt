@@ -8,11 +8,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.lifecycleScope
 import com.gyf.immersionbar.ktx.immersionBar
 import com.wuxianggujun.tinaide.core.config.IConfigManager
 import com.wuxianggujun.tinaide.core.config.Prefs
@@ -32,10 +31,7 @@ import com.wuxianggujun.tinaide.ui.theme.TinaIDETheme
 import com.wuxianggujun.tinaide.ui.wizard.NewProjectWizardActivity
 import com.wuxianggujun.tinaide.ui.workspace.DependencyInstallActivity
 import com.wuxianggujun.tinaide.ui.workspace.PRootLogActivity
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import me.rerere.rikkahub.RikkaHubEmbeddedSettingsPane
-import me.rerere.rikkahub.RikkaHubEmbeddedWarmup
 import org.koin.androidx.viewmodel.ext.android.viewModel as koinViewModel
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.get
@@ -124,6 +120,16 @@ internal data class SettingsBackNavigationResult(
 )
 
 internal object SettingsActivityNavigationSupport {
+    val stateSaver = listSaver<SettingsNavigationState, String>(
+        save = { state -> listOf(state.currentRoute.route) + state.routeStack.map(SettingsRoute::route) },
+        restore = { routes ->
+            SettingsNavigationState(
+                currentRoute = SettingsActivitySupport.resolveInitialRoute(routes.firstOrNull()),
+                routeStack = routes.drop(1).map(SettingsActivitySupport::resolveInitialRoute),
+            )
+        },
+    )
+
     fun navigateTo(
         currentRoute: SettingsRoute,
         routeStack: List<SettingsRoute>,
@@ -164,6 +170,7 @@ class SettingsActivity :
         const val EXTRA_INITIAL_HELP_DOCUMENT_ID = "extra_initial_help_document_id"
         const val EXTRA_INITIAL_PLUGIN_DETAIL_ID = "extra_initial_plugin_detail_id"
         const val EXTRA_INITIAL_PACKAGE_SEARCH_QUERY = "extra_initial_package_search_query"
+        const val EXTRA_INSTALLED_PACKAGES_ONLY = "extra_installed_packages_only"
         const val EXTRA_PROJECT_ROOT = "extra_project_root"
 
         fun start(
@@ -200,6 +207,13 @@ class SettingsActivity :
             )
         }
 
+        fun startInstalledPackages(context: Context) {
+            context.startActivity(
+                SettingsActivitySupport.buildStartIntent(context, SettingsRoute.Packages)
+                    .putExtra(EXTRA_INSTALLED_PACKAGES_ONLY, true)
+            )
+        }
+
         /**
          * 从项目列表菜单进入"指定项目"的项目设置页。
          *
@@ -229,7 +243,6 @@ class SettingsActivity :
             navigationBarColor(android.R.color.transparent)
             navigationBarDarkIcon(!Prefs.useDarkMode)
         }
-        warmUpRikkaHubSettings()
 
         // 若从项目列表菜单进入，绑定目标项目根路径；否则走默认（使用当前会话项目）
         val targetProjectRoot = intent.getStringExtra(EXTRA_PROJECT_ROOT)?.takeUnless { it.isBlank() }
@@ -255,16 +268,31 @@ class SettingsActivity :
         setContent {
             TinaIDETheme {
                 val initialRoute = SettingsActivitySupport.resolveInitialRoute(intent)
-                var currentRoute by remember { mutableStateOf<SettingsRoute>(initialRoute) }
-                val routeStack = remember { mutableStateListOf<SettingsRoute>() }
+                var navigationState by rememberSaveable(stateSaver = SettingsActivityNavigationSupport.stateSaver) {
+                    mutableStateOf(SettingsNavigationState(initialRoute, emptyList()))
+                }
+                val currentRoute = navigationState.currentRoute
+                val navigateBack: () -> Unit = {
+                    val result = SettingsActivityNavigationSupport.navigateBack(navigationState.routeStack)
+                    if (result.shouldFinish) {
+                        finish()
+                    } else {
+                        navigationState = SettingsNavigationState(
+                            currentRoute = checkNotNull(result.currentRoute),
+                            routeStack = result.routeStack,
+                        )
+                    }
+                }
+                val navigateTo: (SettingsRoute) -> Unit = { route ->
+                    navigationState = SettingsActivityNavigationSupport.navigateTo(
+                        currentRoute = navigationState.currentRoute,
+                        routeStack = navigationState.routeStack,
+                        targetRoute = route,
+                    )
+                }
 
                 // 处理系统返回手势
-                BackHandler(enabled = routeStack.isNotEmpty()) {
-                    val backResult = SettingsActivityNavigationSupport.navigateBack(routeStack)
-                    routeStack.clear()
-                    routeStack.addAll(backResult.routeStack)
-                    backResult.currentRoute?.let { currentRoute = it }
-                }
+                BackHandler(enabled = navigationState.routeStack.isNotEmpty(), onBack = navigateBack)
 
                 SettingsScreen(
                     currentRoute = currentRoute,
@@ -273,26 +301,8 @@ class SettingsActivity :
                     themeRegistry = themeRegistry,
                     lspPluginManager = lspPluginManager,
                     initialPluginIdForDetail = initialPluginDetailId,
-                    onNavigateBack = {
-                        val backResult = SettingsActivityNavigationSupport.navigateBack(routeStack)
-                        routeStack.clear()
-                        routeStack.addAll(backResult.routeStack)
-                        if (backResult.shouldFinish) {
-                            finish()
-                        } else {
-                            backResult.currentRoute?.let { currentRoute = it }
-                        }
-                    },
-                    onNavigateTo = { route ->
-                        val nextState = SettingsActivityNavigationSupport.navigateTo(
-                            currentRoute = currentRoute,
-                            routeStack = routeStack,
-                            targetRoute = route
-                        )
-                        routeStack.clear()
-                        routeStack.addAll(nextState.routeStack)
-                        currentRoute = nextState.currentRoute
-                    },
+                    onNavigateBack = navigateBack,
+                    onNavigateTo = navigateTo,
                     helpContent = { onBack ->
                         HelpScreen(
                             viewModel = helpViewModel,
@@ -303,21 +313,15 @@ class SettingsActivity :
                                 )
                             },
                             onOpenPluginSettings = {
-                                val nextState = SettingsActivityNavigationSupport.navigateTo(
-                                    currentRoute = currentRoute,
-                                    routeStack = routeStack,
-                                    targetRoute = SettingsRoute.Plugins,
-                                )
-                                routeStack.clear()
-                                routeStack.addAll(nextState.routeStack)
-                                currentRoute = nextState.currentRoute
+                                navigateTo(SettingsRoute.Plugins)
                             },
                         )
                     },
                     packagesContent = { onBack ->
                         PackageManagerScreen(
                             onNavigateBack = onBack,
-                            initialSearchQuery = initialPackageSearchQuery
+                            initialSearchQuery = initialPackageSearchQuery,
+                            installedOnly = intent.getBooleanExtra(EXTRA_INSTALLED_PACKAGES_ONLY, false),
                         )
                     },
                     aiSettingsContent = { onBack ->
@@ -339,13 +343,4 @@ class SettingsActivity :
         }
     }
 
-    private fun warmUpRikkaHubSettings() {
-        lifecycleScope.launch(Dispatchers.Default) {
-            runCatching {
-                RikkaHubEmbeddedWarmup.warmup(application)
-            }.onFailure { error ->
-                Timber.tag(TAG).w(error, "RikkaHub embedded warmup failed")
-            }
-        }
-    }
 }

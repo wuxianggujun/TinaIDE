@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.22)
+project(tina_vcpkg_example LANGUAGES CXX)
+find_package(fmt CONFIG REQUIRED)
+add_executable(tina_vcpkg_example main.cpp)
+target_link_libraries(tina_vcpkg_example PRIVATE fmt::fmt)
+target_compile_features(tina_vcpkg_example PRIVATE cxx_std_17)

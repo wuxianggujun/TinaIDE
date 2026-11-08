@@ -64,7 +64,12 @@ For difficult incremental-build issues, enable build diagnostics under **Setting
 
 ## Where runtime output appears
 
-Console program output opens in the separate **Terminal**, while graphical programs use **SDL**. No current component writes to the bottom-panel Run Output model, so its empty tab remains hidden.
+Console output opens in the separate **Terminal**. Graphical programs use SDL2, SDL3 or NativeActivity (raylib).
+Enable **Graphical options → Floating log** in the selected run configuration, then run again: the log panel opens immediately for all three hosts.
+It captures stdout, stderr and Android log tags from the graphical process. Drag either control to move the window; use the log button to collapse or reopen it. The program remains interactive outside the window.
+Disabling floating logs keeps the return control visible. The bottom-panel Run Output tab remains hidden when empty.
+
+The SDL3 bridge supports 3.4 / 3.5. SDL 3.2 and unknown JNI interface versions are rejected before loading.
 
 ## Process and temporary-resource cleanup
 

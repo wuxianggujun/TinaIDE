@@ -103,7 +103,7 @@ class MainPortalActivity :
                         onNavigateToDonation = { SettingsActivity.start(this, SettingsRoute.Donation) },
                         onNavigateToAbout = { SettingsActivity.start(this, SettingsRoute.About) },
                         onNavigateToPlugins = { SettingsActivity.start(this, SettingsRoute.Plugins) },
-                        onNavigateToPackages = { SettingsActivity.start(this, SettingsRoute.Packages) },
+                        onNavigateToPackages = { SettingsActivity.startInstalledPackages(this) },
                         onNavigateToFavorites = {
                             startActivity(
                                 Intent(this, UserContentActivity::class.java).apply {

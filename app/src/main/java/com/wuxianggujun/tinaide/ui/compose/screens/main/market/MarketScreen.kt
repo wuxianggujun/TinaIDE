@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -101,7 +102,7 @@ fun MarketScreen(
     val context = LocalContext.current
     val permissionDeniedText = stringResource(Strings.toast_plugins_permission_denied)
     // 默认「插件」；包管理为第二 Tab，不抢首屏
-    var selectedTab by remember { mutableIntStateOf(0) }
+    var selectedTab by androidx.compose.runtime.saveable.rememberSaveable { mutableIntStateOf(0) }
     val pluginState by viewModel.pluginState.collectAsState()
     val packageState by viewModel.packageState.collectAsState()
     val closePluginDetails = viewModel::closePluginDetails
@@ -202,6 +203,12 @@ fun MarketScreen(
                     text = { Text(stringResource(Strings.market_tab_packages)) },
                     icon = { Icon(Icons.Default.Inventory, contentDescription = null) }
                 )
+                Tab(
+                    selected = selectedTab == 2,
+                    onClick = { selectedTab = 2 },
+                    text = { Text(stringResource(Strings.market_tab_vcpkg)) },
+                    icon = { Icon(Icons.Default.Build, contentDescription = null) },
+                )
             }
 
             Box(
@@ -234,6 +241,7 @@ fun MarketScreen(
                         onCancel = viewModel::cancelPackageInstall,
                         onRefresh = viewModel::retryLoadPackages
                     )
+                    2 -> VcpkgMarketHost()
                 }
             }
         }

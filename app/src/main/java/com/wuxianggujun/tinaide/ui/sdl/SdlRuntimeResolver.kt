@@ -113,7 +113,8 @@ object SdlRuntimeResolver {
             ?.major
         val packagePaths = InstalledPackagePathResolver.resolve(
             context = context.applicationContext,
-            projectRoot = projectRoot
+            projectRoot = projectRoot,
+            runtimeArtifactDir = mainLibrary.parentFile,
         )
         val configuredRuntimeDirs = normalizeRuntimeDirs(
             extraRuntimeLibDirs + packagePaths.runtimeLibDirs

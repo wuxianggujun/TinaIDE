@@ -7,6 +7,7 @@ import com.wuxianggujun.tinaide.core.packages.model.*
 import com.wuxianggujun.tinaide.core.serialization.JsonSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
+import timber.log.Timber
 
 class LocalInstallStateStore(context: Context) {
 
@@ -14,6 +15,8 @@ class LocalInstallStateStore(context: Context) {
     private val json = JsonSerializer.default
 
     companion object {
+        // Multiple screens and the bundled installer use separate store instances.
+        private val stateLock = Any()
         private const val PREFS_NAME = "package_install_state"
         private const val KEY_INSTALLED_PACKAGES = "installed_packages"
         private const val KEY_UPDATE_AVAILABLE = "update_available"
@@ -39,16 +42,20 @@ class LocalInstallStateStore(context: Context) {
         val newVersion: String
     )
 
-    fun getInstallState(packageId: String): PackageInstallState {
+    fun getInstallState(packageId: String): PackageInstallState = synchronized(stateLock) {
         val installedPackages = getStoredPackages()
         val updateInfos = getStoredUpdates()
 
         val linuxInfo = installedPackages.find { it.packageId == packageId && it.platform == "linux" }
         val androidInfo = installedPackages.find { it.packageId == packageId && it.platform == "android" }
-        val linuxUpdate = updateInfos.find { it.packageId == packageId && it.platform == "linux" }
-        val androidUpdate = updateInfos.find { it.packageId == packageId && it.platform == "android" }
+        val linuxUpdate = linuxInfo?.let { installed -> updateInfos.find {
+            it.packageId == packageId && it.platform == "linux" && it.currentVersion == installed.version
+        } }
+        val androidUpdate = androidInfo?.let { installed -> updateInfos.find {
+            it.packageId == packageId && it.platform == "android" && it.currentVersion == installed.version
+        } }
 
-        return PackageInstallState(
+        PackageInstallState(
             linux = when {
                 linuxUpdate != null -> PlatformInstallState.UpdateAvailable(linuxUpdate.currentVersion, linuxUpdate.newVersion)
                 linuxInfo != null -> PlatformInstallState.Installed(linuxInfo.version, linuxInfo.installedAt)
@@ -70,8 +77,8 @@ class LocalInstallStateStore(context: Context) {
         installType: InstallType = InstallType.APT,
         size: Long? = null,
         isBundled: Boolean = false
-    ) {
-        val installedPackages = getStoredPackages().toMutableList()
+    ) = synchronized(stateLock) {
+        val installedPackages = getStoredPackages(strict = true).toMutableList()
 
         installedPackages.removeAll { it.packageId == packageId && it.platform == platform.name.lowercase() }
 
@@ -88,16 +95,20 @@ class LocalInstallStateStore(context: Context) {
             )
         )
 
-        saveStoredPackages(installedPackages)
+        saveState(installedPackages, getStoredUpdates(strict = true).filterNot {
+            it.packageId == packageId && it.platform == platform.name.lowercase()
+        })
     }
 
-    fun setUninstalled(packageId: String, platform: Platform) {
-        val installedPackages = getStoredPackages().toMutableList()
+    fun setUninstalled(packageId: String, platform: Platform) = synchronized(stateLock) {
+        val installedPackages = getStoredPackages(strict = true).toMutableList()
         installedPackages.removeAll { it.packageId == packageId && it.platform == platform.name.lowercase() }
-        saveStoredPackages(installedPackages)
+        saveState(installedPackages, getStoredUpdates(strict = true).filterNot {
+            it.packageId == packageId && it.platform == platform.name.lowercase()
+        })
     }
 
-    fun getAllInstalledPackages(): List<InstalledPackageInfo> = getStoredPackages().map { stored ->
+    fun getAllInstalledPackages(): List<InstalledPackageInfo> = synchronized(stateLock) { getStoredPackages().map { stored ->
         InstalledPackageInfo(
             packageId = stored.packageId,
             packageName = stored.packageName,
@@ -107,27 +118,29 @@ class LocalInstallStateStore(context: Context) {
             installType = InstallType.valueOf(stored.installType.uppercase()),
             size = stored.size
         )
-    }
+    } }
 
-    fun isInstalled(packageId: String, platform: Platform): Boolean = getStoredPackages().any {
+    fun isInstalled(packageId: String, platform: Platform): Boolean = synchronized(stateLock) { getStoredPackages().any {
         it.packageId == packageId && it.platform == platform.name.lowercase()
-    }
+    } }
 
-    fun getInstalledVersion(packageId: String, platform: Platform): String? = getStoredPackages().find {
+    fun getInstalledVersion(packageId: String, platform: Platform): String? = synchronized(stateLock) { getStoredPackages().find {
         it.packageId == packageId && it.platform == platform.name.lowercase()
-    }?.version
+    }?.version }
 
-    fun isBundledPackage(packageId: String): Boolean = getStoredPackages().any {
+    fun isBundledPackage(packageId: String): Boolean = synchronized(stateLock) { getStoredPackages().any {
         it.packageId == packageId && it.isBundled
-    }
+    } }
 
     fun setUpdateAvailable(
         packageId: String,
         platform: Platform,
         currentVersion: String,
         newVersion: String
-    ) {
-        val updates = getStoredUpdates().toMutableList()
+    ) = synchronized(stateLock) {
+        // A late update response must not resurrect an uninstalled or replaced package.
+        if (getInstalledVersion(packageId, platform) != currentVersion) return@synchronized
+        val updates = getStoredUpdates(strict = true).toMutableList()
         updates.removeAll { it.packageId == packageId && it.platform == platform.name.lowercase() }
         updates.add(
             StoredUpdateInfo(
@@ -140,35 +153,41 @@ class LocalInstallStateStore(context: Context) {
         saveStoredUpdates(updates)
     }
 
-    fun clearUpdateAvailable(packageId: String, platform: Platform) {
-        val updates = getStoredUpdates().toMutableList()
+    fun clearUpdateAvailable(packageId: String, platform: Platform) = synchronized(stateLock) {
+        val updates = getStoredUpdates(strict = true).toMutableList()
         updates.removeAll { it.packageId == packageId && it.platform == platform.name.lowercase() }
         saveStoredUpdates(updates)
     }
 
-    fun clear() {
+    fun clear() = synchronized(stateLock) {
         prefs.edit().clear().apply()
     }
 
-    private fun getStoredPackages(): List<StoredInstallInfo> {
+    private fun getStoredPackages(strict: Boolean = false): List<StoredInstallInfo> {
         val jsonString = prefs.getString(KEY_INSTALLED_PACKAGES, null) ?: return emptyList()
         return try {
             json.decodeFromString<List<StoredInstallInfo>>(jsonString)
         } catch (e: Exception) {
+            Timber.tag("LocalInstallStateStore").e(e, "Cannot decode installed package records")
+            if (strict) throw IllegalStateException("Cannot decode installed package records", e)
             emptyList()
         }
     }
 
-    private fun saveStoredPackages(packages: List<StoredInstallInfo>) {
-        val jsonString = json.encodeToString(packages)
-        prefs.edit().putString(KEY_INSTALLED_PACKAGES, jsonString).apply()
+    private fun saveState(packages: List<StoredInstallInfo>, updates: List<StoredUpdateInfo>) {
+        prefs.edit()
+            .putString(KEY_INSTALLED_PACKAGES, json.encodeToString(packages))
+            .putString(KEY_UPDATE_AVAILABLE, json.encodeToString(updates))
+            .apply()
     }
 
-    private fun getStoredUpdates(): List<StoredUpdateInfo> {
+    private fun getStoredUpdates(strict: Boolean = false): List<StoredUpdateInfo> {
         val jsonString = prefs.getString(KEY_UPDATE_AVAILABLE, null) ?: return emptyList()
         return try {
             json.decodeFromString<List<StoredUpdateInfo>>(jsonString)
         } catch (e: Exception) {
+            Timber.tag("LocalInstallStateStore").e(e, "Cannot decode package update records")
+            if (strict) throw IllegalStateException("Cannot decode package update records", e)
             emptyList()
         }
     }

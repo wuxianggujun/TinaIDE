@@ -21,6 +21,22 @@ class InstalledPackagePathResolverTest {
     private val installRoot = File(context.filesDir, "installed-packages")
     private val installStateStore = LocalInstallStateStore(context)
 
+    @Test
+    fun `runtime lookup uses the nearest artifact cache instead of another build variant`() {
+        val project = kotlin.io.path.createTempDirectory("vcpkg-runtime").toFile()
+        try {
+            val debug = File(project, "build/debug").apply { mkdirs() }
+            val release = File(project, "build/release").apply { mkdirs() }
+            File(debug, "CMakeCache.txt").writeText("CMAKE_BUILD_TYPE:STRING=Debug\n")
+            File(release, "CMakeCache.txt").writeText("CMAKE_BUILD_TYPE:STRING=RelWithDebInfo\n")
+            assertThat(InstalledPackagePathResolver.isDebugCMakeArtifact(File(debug, "lib"), project)).isTrue()
+            assertThat(InstalledPackagePathResolver.isDebugCMakeArtifact(release, project)).isFalse()
+            assertThat(InstalledPackagePathResolver.isDebugCMakeArtifact(null, project)).isFalse()
+        } finally {
+            project.deleteRecursively()
+        }
+    }
+
     @Before
     fun setUp() {
         installRoot.deleteRecursively()

@@ -135,6 +135,10 @@ class PackageApiClient private constructor(
         )
     }
 
+    suspend fun getCatalog(): ApiResult<List<GUIPackage>> = withIndex { index ->
+        index.packages.sortedBy { it.name.lowercase() }
+    }
+
     suspend fun getCategories(): ApiResult<List<PackageCategory>> = withIndex { index ->
         index.categories.takeIf { it.isNotEmpty() } ?: deriveCategories(index.packages)
     }

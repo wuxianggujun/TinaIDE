@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 project(tina_native)
+add_subdirectory(sdl_probe)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

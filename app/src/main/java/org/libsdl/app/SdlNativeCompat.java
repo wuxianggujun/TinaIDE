@@ -16,8 +16,8 @@ import android.util.Log;
  *   <li>反过来，Java 调用原生库里不存在的方法会抛 {@code UnsatisfiedLinkError}。</li>
  * </ul>
  *
- * TinaIDE 需要同时运行不同小版本的 SDL3 原生库（包管理器装的 3.2.x、用户自己编译的
- * 3.4/3.5.x）。做法是：
+ * TinaIDE 支持 3.4/3.5 两种已核对的 SDL3 JNI 接口。3.2 的初始化返回类型不同，
+ * 由 SdlNativeLibraryProbe 在注册前拒绝。做法是：
  * <ol>
  *   <li>Java 侧声明<b>新旧两套签名</b>（旧签名以 native 重载形式保留，见
  *       {@link SDLActivity} 末尾的兼容声明），这样两代原生库都能注册成功；</li>
