@@ -6,8 +6,8 @@
 ## vcpkg catalog
 
 **Marketplace → vcpkg** manages dependencies for a selected CMake project. Built-in packages usually provide prebuilt artifacts; vcpkg offers more ports, but on-device installation may compile source code.
-Select a project and configure its vcpkg root and mode. Search local ports, add or remove manifest dependencies, then install and configure the project. Installed badges come from that project and ABI, independently of manifest declarations.
-On-device installation requires Android-native vcpkg, git, curl, zip, unzip, pkg-config and the TinaIDE toolchain. These helper executables are not bundled in the APK.
+Browse and search the offline catalog immediately. **Download / update catalog** retrieves new ports and keeps the old list if cancelled or unsuccessful. Select a CMake project when adding a dependency; the app enables on-device mode and updates vcpkg.json. Installed badges come from that project and ABI, independently of manifest declarations.
+The APK includes Android-native vcpkg. Supporting tools such as git, curl, zip, unzip and pkg-config download automatically with checksum validation on first use. The app manages tool paths and isolates installed dependencies in a private workspace for each project.
 Alternatively, import libraries exported from a computer using the Android NDK. Linux/PRoot libraries cannot replace Android libraries, and some ports do not support Android.
 The new integration has not yet completed compilation or device acceptance.
 

@@ -628,7 +628,7 @@ class CMakeStrategy(
         )
     }
 
-    private fun collectReconfigureInputs(ctx: BuildContext): List<File> {
+    private suspend fun collectReconfigureInputs(ctx: BuildContext): List<File> {
         val projectInputs = TrackedInputCollector.collectCMakeReconfigureInputs(ctx.projectRoot)
         if (!isNativeMode(ctx.options.resolvedRunMode)) return projectInputs
         return projectInputs + VcpkgBuildInputs.collect(
@@ -636,6 +636,8 @@ class CMakeStrategy(
             arguments = ctx.options.nativeCMakeArgs,
             androidAbi = PackageAbiCompatibility.currentAppAbi(context.applicationInfo.nativeLibraryDir, Build.SUPPORTED_ABIS),
             debug = ctx.options.cmakeBuildType == CMakeBuildTypeOption.DEBUG,
+            managedInstallationRoot = com.wuxianggujun.tinaide.core.packages.VcpkgManagedPaths.installed(
+                context, ctx.projectRoot, com.wuxianggujun.tinaide.project.VcpkgProjectSettings.from(ctx.options.nativeCMakeArgs)),
         )
     }
 

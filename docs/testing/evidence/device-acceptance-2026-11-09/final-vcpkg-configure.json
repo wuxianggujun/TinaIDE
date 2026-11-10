@@ -1,0 +1,7 @@
+{
+  "phase": "configure",
+  "result": "Success(message=Not searching for unused variables given on the command line.\n-- The CXX compiler identification is Clang 22.1.0\n-- Check for working CXX compiler: \/system\/bin\/sh - skipped\n-- Detecting CXX compile features\n-- Detecting CXX compile features - done\n-- Configuring done (0.2s)\n-- Generating done (0.0s)\n-- Build files have been written to: \/data\/user\/0\/com.wuxianggujun.tinaide\/files\/device-acceptance\/project\/build\/acceptance\n, compileCommandsPath=\/data\/user\/0\/com.wuxianggujun.tinaide\/files\/device-acceptance\/project\/build\/acceptance\/compile_commands.json)",
+  "systemShellWithoutAlias": true,
+  "installedFmt": "12.2.0",
+  "passed": true
+}

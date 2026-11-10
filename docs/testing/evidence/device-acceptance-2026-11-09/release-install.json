@@ -1,0 +1,51 @@
+{
+  "versionName": "0.19.1",
+  "versionCode": 19022,
+  "apk": "app\\build\\outputs\\apk\\arm64\\release\\TinaIDE-0.19.1-arm64-v8a-release.apk",
+  "bytes": 153699465,
+  "sha256": "b4785ad75f00fffc409f7e9e5bf84a9178397332954953c04882f32ffb7015b7",
+  "serial": "192.168.2.185:1164",
+  "checks": {
+    "native-libraries": {
+      "exitCode": 0
+    },
+    "distribution": {
+      "exitCode": 0
+    },
+    "signature": {
+      "exitCode": 0
+    },
+    "device-state": {
+      "exitCode": 0
+    },
+    "device-abi": {
+      "exitCode": 0
+    },
+    "install": {
+      "exitCode": 0
+    },
+    "installed-package": {
+      "exitCode": 0
+    },
+    "startup": {
+      "exitCode": 0
+    },
+    "pid": {
+      "exitCode": 0
+    }
+  },
+  "installed": true,
+  "pid": "4040",
+  "dataPreserved": "adb install -r; no clear or uninstall",
+  "postStartup": {
+    "pid": "4040",
+    "sameProcess": true,
+    "crashBufferEmpty": true,
+    "scope": "Install and portal startup; locked phone UI interaction not exercised"
+  },
+  "mapping": {
+    "path": "app\\mappings\\0.19.1-bdd488b0ff-20261110021823\\arm64Release\\mapping.txt",
+    "bytes": 285813469,
+    "sha256": "54c8cccb88f625a5914b44fbd3db8d3563ea0c62643ce2cacdd373202ef5d789"
+  }
+}

@@ -1,16 +1,29 @@
 package com.wuxianggujun.tinaide.ui.compose.components
 
-import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.error
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.unit.dp
 import com.wuxianggujun.tinaide.core.i18n.Strings
 
 /**
@@ -72,16 +85,99 @@ fun TinaTextField(
     trailingIcon: @Composable (() -> Unit)? = null,
     textStyle: androidx.compose.ui.text.TextStyle = LocalTextStyle.current
 ) {
-    // 在 Composable 上下文中计算动态提示
-    val dynamicHintText = if (!isError) dynamicHint?.invoke(value) else null
+    var input by remember { mutableStateOf(TextFieldValue(value)) }
+    // Preserve selection/composition on ordinary edits; external changes only clamp
+    // the existing caret. The value overload below is used by variable completion.
+    val displayed = if (input.text == value) input else input.copy(
+        text = value,
+        selection = TextRange(input.selection.start.coerceAtMost(value.length), input.selection.end.coerceAtMost(value.length)),
+        composition = null,
+    )
+    SideEffect { input = displayed }
+    TinaTextField(
+        value = displayed,
+        onValueChange = { updated ->
+            input = updated
+            if (updated.text != value) onValueChange(updated.text)
+        },
+        modifier = modifier, label = label, placeholder = placeholder, hint = hint,
+        dynamicHint = dynamicHint, supportingText = supportingText, isError = isError,
+        errorText = errorText, singleLine = singleLine, maxLines = maxLines, minLines = minLines,
+        readOnly = readOnly, enabled = enabled, visualTransformation = visualTransformation,
+        keyboardOptions = keyboardOptions, keyboardActions = keyboardActions,
+        leadingIcon = leadingIcon, trailingIcon = trailingIcon, textStyle = textStyle,
+    )
+}
 
-    OutlinedTextField(
+@Composable
+fun TinaTextField(
+    value: TextFieldValue,
+    onValueChange: (TextFieldValue) -> Unit,
+    modifier: Modifier = Modifier,
+    label: String? = null,
+    placeholder: String? = null,
+    hint: String? = null,
+    dynamicHint: @Composable ((String) -> String?)? = null,
+    supportingText: (@Composable () -> Unit)? = null,
+    isError: Boolean = false,
+    errorText: String? = null,
+    singleLine: Boolean = true,
+    maxLines: Int = if (singleLine) 1 else Int.MAX_VALUE,
+    minLines: Int = 1,
+    readOnly: Boolean = false,
+    enabled: Boolean = true,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
+    leadingIcon: @Composable (() -> Unit)? = null,
+    trailingIcon: @Composable (() -> Unit)? = null,
+    textStyle: androidx.compose.ui.text.TextStyle = LocalTextStyle.current,
+) {
+    // 在 Composable 上下文中计算动态提示
+    val dynamicHintText = if (!isError) dynamicHint?.invoke(value.text) else null
+    val interaction = remember { MutableInteractionSource() }
+    val focused by interaction.collectIsFocusedAsState()
+    val colors = MaterialTheme.colorScheme
+    val foreground = colors.onSurface.copy(alpha = if (enabled) 1f else 0.38f)
+    val border = when {
+        isError -> colors.error
+        focused -> colors.primary
+        else -> colors.outlineVariant
+    }
+    val shape = RoundedCornerShape(TinaShapes.TextFieldCorner)
+
+    BasicTextField(
         value = value,
         onValueChange = onValueChange,
-        modifier = modifier.fillMaxWidth(),
-        label = label?.let { { Text(it) } },
-        placeholder = placeholder?.let { { Text(it) } },
-        supportingText = when {
+        modifier = modifier.fillMaxWidth().semantics {
+            if (label != null) contentDescription = label
+            if (isError && errorText != null) error(errorText)
+        },
+        interactionSource = interaction,
+        cursorBrush = SolidColor(colors.primary),
+        decorationBox = { innerTextField ->
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (label != null) Text(label, style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
+                Row(
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)
+                        .background(colors.surfaceContainerLow, shape)
+                        .border(1.dp, border, shape).padding(horizontal = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    CompositionLocalProvider(LocalContentColor provides foreground) {
+                        leadingIcon?.invoke()
+                        Box(Modifier.weight(1f).padding(vertical = 6.dp)) {
+                            if (value.text.isEmpty() && placeholder != null) Text(
+                                placeholder, style = textStyle, color = colors.onSurfaceVariant,
+                                maxLines = if (singleLine) 1 else maxLines,
+                            )
+                            innerTextField()
+                        }
+                        trailingIcon?.invoke()
+                    }
+                }
+                val support: (@Composable () -> Unit)? = when {
             isError && errorText != null -> {
                 { Text(errorText, color = MaterialTheme.colorScheme.error) }
             }
@@ -105,8 +201,12 @@ fun TinaTextField(
                 }
             }
             else -> null
+                }
+                CompositionLocalProvider(LocalContentColor provides colors.onSurfaceVariant) {
+                    ProvideTextStyle(MaterialTheme.typography.bodySmall) { support?.invoke() }
+                }
+            }
         },
-        isError = isError,
         singleLine = singleLine,
         maxLines = maxLines,
         minLines = minLines,
@@ -115,10 +215,7 @@ fun TinaTextField(
         visualTransformation = visualTransformation,
         keyboardOptions = keyboardOptions,
         keyboardActions = keyboardActions,
-        leadingIcon = leadingIcon,
-        trailingIcon = trailingIcon,
-        textStyle = textStyle,
-        shape = RoundedCornerShape(TinaShapes.TextFieldCorner)
+        textStyle = textStyle.copy(color = foreground),
     )
 }
 
@@ -145,11 +242,11 @@ fun TinaSearchField(
     onClearClick: (() -> Unit)? = null,
     enabled: Boolean = true
 ) {
-    OutlinedTextField(
+    TinaTextField(
         value = value,
         onValueChange = onValueChange,
         modifier = modifier.fillMaxWidth(),
-        placeholder = { Text(placeholder) },
+        placeholder = placeholder,
         singleLine = true,
         enabled = enabled,
         leadingIcon = leadingIcon,
@@ -165,6 +262,5 @@ fun TinaSearchField(
         } else {
             trailingIcon
         },
-        shape = RoundedCornerShape(TinaShapes.ButtonCorner)
     )
 }

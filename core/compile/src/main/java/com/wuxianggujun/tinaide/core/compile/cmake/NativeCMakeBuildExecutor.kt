@@ -24,6 +24,8 @@ import com.wuxianggujun.tinaide.core.ndk.AndroidSysrootManager
 import com.wuxianggujun.tinaide.core.packages.InstalledPackagePathResolver
 import com.wuxianggujun.tinaide.core.packages.PackageAbiCompatibility
 import com.wuxianggujun.tinaide.core.packages.vcpkgUserMessage
+import com.wuxianggujun.tinaide.core.packages.VcpkgRuntimeManager
+import com.wuxianggujun.tinaide.core.packages.VcpkgManagedPaths
 import com.wuxianggujun.tinaide.core.util.AndroidSystemLinker
 import com.wuxianggujun.tinaide.core.util.DiagnosticLogFormatter
 import com.wuxianggujun.tinaide.core.util.NativeExecutableRunner
@@ -1095,7 +1097,30 @@ class NativeCMakeBuildExecutor(
         }
 
         val vcpkg = try {
-            VcpkgCMakeIntegration.prepare(projectDir, buildDir, combinedExtraCMakeArgs, androidAbi, command)
+            val settings = VcpkgProjectSettings.from(combinedExtraCMakeArgs)
+            val managed = if (settings.mode == VcpkgProjectSettings.MANIFEST) {
+                if (!File(projectDir, "vcpkg.json").isFile) {
+                    throw com.wuxianggujun.tinaide.core.packages.VcpkgException(Strings.vcpkg_manifest_required)
+                }
+                options.onProgress?.invoke(Strings.vcpkg_preparing_tools.str())
+                VcpkgRuntimeManager(appContext).prepare(androidAbi)
+            } else null
+            if (managed != null) {
+                VcpkgGitBootstrap.prepare(managed, projectDir) { gitCommand ->
+                    val gitResult = executeNativeCommand(gitCommand, managed.root, TimeUnit.MINUTES.toMillis(5),
+                        toolchainId = options.toolchainId, extraEnvironment = managed.environment +
+                            mapOf("TINA_PREFIX" to "/system", "GIT_TERMINAL_PROMPT" to "0"),
+                        onOutputLine = options.onProgress, maxOutputChars = 64 * 1024, terminateProcessGroup = true)
+                    if (gitResult.exitCode != 0) throw com.wuxianggujun.tinaide.core.packages.VcpkgException(Strings.vcpkg_update_failed)
+                }
+            }
+            val arguments = if (managed != null) settings.copy(root = managed.root.absolutePath, installedDir = "")
+                .applyTo(combinedExtraCMakeArgs) else combinedExtraCMakeArgs
+            VcpkgCMakeIntegration.prepare(
+                projectDir, buildDir, arguments, androidAbi, command,
+                parallelJobs = options.parallelJobs,
+                managedInstallationRoot = if (managed != null) VcpkgManagedPaths.installed(appContext, projectDir, settings) else null,
+            )?.let { plan -> plan.copy(environment = plan.environment + managed?.environment.orEmpty()) }
         } catch (error: Exception) {
             if (error is CancellationException) throw error
             Timber.tag(TAG).w(error, "Invalid project vcpkg configuration")
@@ -1602,7 +1627,7 @@ class NativeCMakeBuildExecutor(
             if (useToolchainShimEnvironment) {
                 applyToolchainShimEnvironment(environment(), toolchainId)
             }
-            applyExtraEnvironment(environment(), extraEnvironment)
+            applyNativeCMakeEnvironment(environment(), extraEnvironment)
             redirectErrorStream(true)
         }
         Timber.tag(TAG).d(
@@ -1688,24 +1713,19 @@ class NativeCMakeBuildExecutor(
     }
     }
 
-    private fun applyExtraEnvironment(
-        environment: MutableMap<String, String>,
-        extraEnvironment: Map<String, String>
-    ) {
-        if (extraEnvironment.isEmpty()) return
-        extraEnvironment.forEach { (key, value) ->
-            if (value.isBlank()) return@forEach
-            val existing = environment[key].orEmpty()
-            environment[key] = if (existing.isBlank()) {
-                value
-            } else {
-                "$value:$existing"
-            }
-        }
-    }
-
     private data class CommandResult(
         val exitCode: Int,
         val output: String
     )
+}
+
+internal fun applyNativeCMakeEnvironment(environment: MutableMap<String, String>, overrides: Map<String, String>) {
+    val pathLists = setOf("PATH", "LD_LIBRARY_PATH", "CPATH", "C_INCLUDE_PATH", "CPLUS_INCLUDE_PATH", "LIBRARY_PATH", "PKG_CONFIG_PATH")
+    for ((key, value) in overrides) {
+        if (value.isBlank()) continue
+        val existing = environment[key].orEmpty()
+        // Flags, scalar settings and the single tina-exec prefix must replace
+        // inherited values. A colon would turn them into invalid paths/numbers.
+        environment[key] = if (key in pathLists && existing.isNotBlank()) "$value:$existing" else value
+    }
 }

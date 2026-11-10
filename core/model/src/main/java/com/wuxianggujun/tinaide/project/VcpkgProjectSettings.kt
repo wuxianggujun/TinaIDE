@@ -1,5 +1,7 @@
 package com.wuxianggujun.tinaide.project
 
+import java.io.File
+
 /** Stored in the existing project CMake arguments, without a second preferences store. */
 data class VcpkgProjectSettings(
     val mode: String = DISABLED,
@@ -7,6 +9,16 @@ data class VcpkgProjectSettings(
     val installedDir: String = "",
 ) {
     val enabled: Boolean get() = mode != DISABLED
+
+    /** The host supplies the private workspace; standalone callers may use a project-local fixture. */
+    fun installationRoot(project: File, managedRoot: File? = null): File {
+        fun resolve(value: String) = File(value).let { if (it.isAbsolute) it else File(project, value) }
+        return when {
+            mode == MANIFEST -> managedRoot ?: File(project, "vcpkg_installed")
+            installedDir.isNotBlank() -> resolve(installedDir)
+            else -> File(resolve(root), "installed")
+        }
+    }
 
     fun targetTriplet(androidAbi: String): String {
         val arch = when (androidAbi) {

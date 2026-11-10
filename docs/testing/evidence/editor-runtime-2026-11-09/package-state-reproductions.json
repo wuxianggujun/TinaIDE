@@ -1,0 +1,36 @@
+{
+  "logSha256": "db0615b5b8ab7724d0c81da01a589b4865ed67b7db13afd5c5d2c77a7eec05aa",
+  "failures": [
+    {
+      "test": "DownloadPackageBackendTest > uninstallUsesTheInstalledBackendWhenRegistryChangesItsInstallType",
+      "excerpt": [
+        "DownloadPackageBackendTest > uninstallUsesTheInstalledBackendWhenRegistryChangesItsInstallType FAILED",
+        "    expected instance of: com.wuxianggujun.tinaide.core.packages.model.UninstallResult$Success",
+        "    but was instance of : com.wuxianggujun.tinaide.core.packages.model.UninstallResult$Failure",
+        "    with value          : Failure(packageId=demo, error=UnknownError(message=Remote script packages are disabled because registry scripts are not signed))"
+      ],
+      "finalResult": "PASS"
+    },
+    {
+      "test": "DownloadPackageBackendTest > uninstallFromAnotherPageWaitsForThePublishedInstallToBeRecorded",
+      "excerpt": [
+        "DownloadPackageBackendTest > uninstallFromAnotherPageWaitsForThePublishedInstallToBeRecorded FAILED",
+        "    expected: null",
+        "    but was : Success(packageId=demo, platform=ANDROID, freedSpace=72)",
+        "        at com.wuxianggujun.tinaide.core.packages.backend.DownloadPackageBackendTest$uninstallFromAnotherPageWaitsForThePublishedInstallToBeRecorded$1.invokeSuspend(DownloadPackageBackendTest.kt:230)"
+      ],
+      "finalResult": "PASS"
+    },
+    {
+      "test": "LocalInstallStateStoreTest > unknownRecordValuesDoNotCrashOrBecomeUsableInstallations",
+      "excerpt": [
+        "LocalInstallStateStoreTest > unknownRecordValuesDoNotCrashOrBecomeUsableInstallations FAILED",
+        "    java.lang.IllegalArgumentException: No enum constant com.wuxianggujun.tinaide.core.packages.model.Platform.FUTURE",
+        "        at java.base/java.lang.Enum.valueOf(Enum.java:273)",
+        "        at com.wuxianggujun.tinaide.core.packages.model.Platform.valueOf(PackageModels.kt)"
+      ],
+      "finalResult": "PASS"
+    }
+  ],
+  "finalEvidence": "package-state-unit-tests.json"
+}

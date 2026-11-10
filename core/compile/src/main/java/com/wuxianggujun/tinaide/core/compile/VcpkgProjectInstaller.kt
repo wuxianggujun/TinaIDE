@@ -7,6 +7,8 @@ import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.core.linux.LinuxRunModePolicy
 import com.wuxianggujun.tinaide.project.VcpkgProjectSettings
+import com.wuxianggujun.tinaide.core.packages.VcpkgManagedPaths
+import com.wuxianggujun.tinaide.storage.ProjectPaths
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -29,7 +31,7 @@ class VcpkgProjectInstaller(private val context: Context) {
         }
         NativeCMakeBuildExecutor(context).configure(
             projectDir = project,
-            buildDir = File(project, "build/vcpkg-manager"),
+            buildDir = File(ProjectPaths.getProjectBuildDir(VcpkgManagedPaths.workspace(context, project)), "vcpkg-manager"),
             options = NativeCMakeBuildExecutor.Options(
                 buildType = NativeCMakeBuildExecutor.CMakeBuildType.valueOf(effective.cmakeBuildType.name),
                 generator = NativeCMakeBuildExecutor.CMakeGenerator.valueOf(effective.cmakeGenerator.name),

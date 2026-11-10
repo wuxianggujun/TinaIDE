@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.wuxianggujun.tinaide.core.editorview.EditorFindAndHoverThemeTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-11-08T14:51:57.726Z" hostname="DESKTOP-9KUJPVG" time="26.188">
+  <properties/>
+  <testcase name="replacementEnterAndImeAction_replaceWhileFocusedButtonsKeepTheirOwnEnterAction" classname="com.wuxianggujun.tinaide.core.editorview.EditorFindAndHoverThemeTest" time="24.239"/>
+  <testcase name="constrainedHeight_keepsCloseVisibleAndReplacementReachableWithoutHidingCode" classname="com.wuxianggujun.tinaide.core.editorview.EditorFindAndHoverThemeTest" time="1.197"/>
+  <testcase name="editingQueryThenClosingPanel_restoresTheFullOriginalReverseSelection" classname="com.wuxianggujun.tinaide.core.editorview.EditorFindAndHoverThemeTest" time="0.358"/>
+  <testcase name="findAndInjectedHoverContent_followEditorThemeEvenWhenHostThemeIsOpposite" classname="com.wuxianggujun.tinaide.core.editorview.EditorFindAndHoverThemeTest" time="0.39"/>
+  <system-out><![CDATA[FocusRelatedWarning:
+   FocusRequester is not initialized. Here are some possible fixes:
+
+   1. Remember the FocusRequester: val focusRequester = remember { FocusRequester() }
+   2. Did you forget to add a Modifier.focusRequester() ?
+   3. Are you attempting to request focus during composition? Focus requests should be made in
+   response to some event. Eg Modifier.clickable { focusRequester.requestFocus() }
+
+FocusRelatedWarning:
+   FocusRequester is not initialized. Here are some possible fixes:
+
+   1. Remember the FocusRequester: val focusRequester = remember { FocusRequester() }
+   2. Did you forget to add a Modifier.focusRequester() ?
+   3. Are you attempting to request focus during composition? Focus requests should be made in
+   response to some event. Eg Modifier.clickable { focusRequester.requestFocus() }
+
+FocusRelatedWarning:
+   FocusRequester is not initialized. Here are some possible fixes:
+
+   1. Remember the FocusRequester: val focusRequester = remember { FocusRequester() }
+   2. Did you forget to add a Modifier.focusRequester() ?
+   3. Are you attempting to request focus during composition? Focus requests should be made in
+   response to some event. Eg Modifier.clickable { focusRequester.requestFocus() }
+
+FocusRelatedWarning:
+   FocusRequester is not initialized. Here are some possible fixes:
+
+   1. Remember the FocusRequester: val focusRequester = remember { FocusRequester() }
+   2. Did you forget to add a Modifier.focusRequester() ?
+   3. Are you attempting to request focus during composition? Focus requests should be made in
+   response to some event. Eg Modifier.clickable { focusRequester.requestFocus() }
+
+]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

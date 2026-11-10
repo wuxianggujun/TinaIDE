@@ -15,7 +15,13 @@ internal object PackageInstallCoordinator {
 
     private const val INSTALL_LOCK_FILE_NAME = ".package-install.lock"
     private const val UUID_TEXT_LENGTH = 36
+    private val mutationMutex = Mutex()
     private val mutex = Mutex()
+
+    // Keep the whole public operation (dependency plan, filesystem and state) in
+    // order across manager instances and the bundled installer. Acquire this
+    // before download-cache/directory locks; it must not be entered recursively.
+    suspend fun <T> withMutation(action: suspend () -> T): T = mutationMutex.withLock { action() }
 
     suspend fun <T> withExclusiveAccess(installDir: File, action: () -> T): T = mutex.withLock {
         val lockFile = File(installDir, INSTALL_LOCK_FILE_NAME)

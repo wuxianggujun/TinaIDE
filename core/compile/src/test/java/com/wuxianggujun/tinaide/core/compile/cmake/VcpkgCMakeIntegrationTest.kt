@@ -26,15 +26,19 @@ class VcpkgCMakeIntegrationTest {
             this[18] = 183.toByte()
         })
         File(project, "vcpkg.json").writeText("{\"dependencies\":[\"fmt\"]}")
-        val config = VcpkgProjectSettings(VcpkgProjectSettings.MANIFEST, root.path)
+        val config = VcpkgProjectSettings(VcpkgProjectSettings.MANIFEST, root.path, "/ignored/legacy/path")
         val build = File(project, "build")
+        val installed = temporary.newFolder("private-workspace-install")
         val plan = checkNotNull(VcpkgCMakeIntegration.prepare(
             project, build, config.applyTo(emptyList()), "arm64-v8a",
             listOf("-DCMAKE_C_COMPILER=/system/bin/sh", "-DCMAKE_C_COMPILER_ARG1=/private/tool chain/clang", "-DCMAKE_SYSTEM_VERSION=28",
                 "-DCMAKE_MAKE_PROGRAM=/project/make", "-DCMAKE_PREFIX_PATH=/other/registry"),
+            managedInstallationRoot = installed,
         ))
         assertThat(plan.installCommand).contains("--triplet=arm64-tina-android")
         assertThat(plan.installCommand).contains("--x-manifest-root=${project.canonicalPath}")
+        assertThat(plan.installCommand).contains("--x-install-root=${installed.canonicalPath}")
+        assertThat(plan.installCommand).contains("--x-wait-for-lock")
         assertThat(plan.arguments).contains("-DVCPKG_MANIFEST_INSTALL=OFF")
         assertThat(plan.environment["VCPKG_FORCE_SYSTEM_BINARIES"]).isEqualTo("1")
         assertThat(File(build, "tina-vcpkg/native-toolchain.cmake").readText())
@@ -52,6 +56,39 @@ class VcpkgCMakeIntegrationTest {
         val plan = checkNotNull(VcpkgCMakeIntegration.prepare(project, File(project, "build"), config.applyTo(emptyList()), "x86_64", emptyList()))
         assertThat(plan.installCommand).isEmpty()
         assertThat(plan.arguments).contains("-DVCPKG_TARGET_TRIPLET=x64-android")
+    }
+
+    @Test
+    fun parallelJobsAreForwardedAndClampedToOne() {
+        val project = temporary.newFolder()
+        val root = vcpkgRoot()
+        File(root, "installed/x64-android").mkdirs()
+        val settings = VcpkgProjectSettings(VcpkgProjectSettings.PREBUILT, root.path)
+        val build = File(project, "build")
+        for ((requested, expected) in listOf(2 to "2", 0 to "1", -1 to "1")) {
+            val plan = checkNotNull(VcpkgCMakeIntegration.prepare(project, build, settings.applyTo(emptyList()),
+                "x86_64", emptyList(), parallelJobs = requested))
+            assertThat(plan.environment["VCPKG_MAX_CONCURRENCY"]).isEqualTo(expected)
+            assertThat(plan.environment["TINA_PREFIX"]).isEqualTo("/system")
+        }
+    }
+
+    @Test
+    fun longProjectPathsUseExistingAndroidShellWithoutWritingAliases() {
+        val project = temporary.newFolder("project with spaces and a long name exceeding the native prefix limit")
+        val root = vcpkgRoot()
+        File(root, "installed/x64-android").mkdirs()
+        val settings = VcpkgProjectSettings(VcpkgProjectSettings.PREBUILT, root.path)
+        val build = File(project, "build")
+        val shell = File(build, "tina-vcpkg/runtime/bin/sh").apply {
+            checkNotNull(parentFile).mkdirs()
+            writeText("existing content")
+        }
+        assertThat(build.absolutePath.length).isGreaterThan(90)
+        val plan = checkNotNull(VcpkgCMakeIntegration.prepare(project, build, settings.applyTo(emptyList()),
+            "x86_64", emptyList()))
+        assertThat(plan.environment["TINA_PREFIX"]).isEqualTo("/system")
+        assertThat(shell.readText()).isEqualTo("existing content")
     }
 
     @Test

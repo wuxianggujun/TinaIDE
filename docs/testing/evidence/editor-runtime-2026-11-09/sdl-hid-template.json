@@ -1,0 +1,84 @@
+{
+  "scope": "Shared SDL Java bridge unit tests plus export-template build; USB/Bluetooth hardware and updated IDE device validation not performed",
+  "result": "BUILD SUCCESSFUL in 2m 24s",
+  "templateSync": "PASS",
+  "suite": {
+    "name": "org.libsdl.app.SdlHidInitializationTest",
+    "tests": "5",
+    "skipped": "0",
+    "failures": "0",
+    "errors": "0",
+    "timestamp": "2026-11-09T02:11:34.259Z",
+    "hostname": "DESKTOP-9KUJPVG",
+    "time": "0.012",
+    "cases": [
+      {
+        "name": "partialSnapshotWithMissingHidQueryUsesTheLegacyBridge",
+        "classname": "org.libsdl.app.SdlHidInitializationTest",
+        "time": "0.004"
+      },
+      {
+        "name": "explicitNativeDisablementSkipsInitialization",
+        "classname": "org.libsdl.app.SdlHidInitializationTest",
+        "time": "0.0"
+      },
+      {
+        "name": "unrelatedFailuresAreNotMisclassifiedAsMissingNativeQueries",
+        "classname": "org.libsdl.app.SdlHidInitializationTest",
+        "time": "0.001"
+      },
+      {
+        "name": "modernBridgeUsesTheNativeEnablementResult",
+        "classname": "org.libsdl.app.SdlHidInitializationTest",
+        "time": "0.001"
+      },
+      {
+        "name": "legacyBridgeInitializesWithoutCallingTheMissingQuery",
+        "classname": "org.libsdl.app.SdlHidInitializationTest",
+        "time": "0.0"
+      }
+    ]
+  },
+  "sources": [
+    {
+      "path": "app/src/main/java/org/libsdl/app/SdlNativeCompat.java",
+      "sha256": "06422a9e55333aa65dbc17f32a0e1f71316ef5106e25a1b0e1e8a11bfa31d4c4"
+    },
+    {
+      "path": "app/src/main/java/org/libsdl/app/SDLActivity.java",
+      "sha256": "c442873f4ca81ae57e5bbfec14f07849c2a3316395d5540426b1a5f62e0c8305"
+    },
+    {
+      "path": "tools/template-sdl3/build.gradle.kts",
+      "sha256": "bcd601a7a20a032af51e682d97166ce81268ffe13ead46a0e3eccd060fa89a56"
+    },
+    {
+      "path": "tools/template-sdl3/src/test/java/com/tinaide/template/sdl3/SdlHidInitializationTest.java",
+      "sha256": "6655fc5b39b24fd947fd0ab45f29a6eb90bdbef19a72b6e43edab6d07b0001f0"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "app/src/main/assets/apk_templates/template-sdl3.apk",
+      "bytes": 6214694,
+      "sha256": "d5d1071c99d8f262906a33c45a5ca4a0e436e1103d6c2976b5c36b22985587fd",
+      "probeAbis": [
+        "arm64-v8a",
+        "armeabi-v7a",
+        "x86",
+        "x86_64"
+      ]
+    },
+    {
+      "path": "app/src/main/assets/apk_templates/template-native-activity.apk",
+      "bytes": 5116810,
+      "sha256": "2ea4c4432073e63d75536b392366275ad80e980321c35a7d29497ef385ed24c1"
+    }
+  ],
+  "reference": {
+    "url": "https://raw.githubusercontent.com/libsdl-org/SDL/f600c74c80360eaaf8675da7d4ec69dc1670ac57/android-project/app/src/main/java/org/libsdl/app/SDLActivity.java",
+    "line": 455,
+    "source": "mHIDDeviceManager = HIDDeviceManager.acquire(this);",
+    "sha256": "bfe3c84cb1384abcd205d60fe773f2a8e71511910838e55ca8514f25f5fdede9"
+  }
+}

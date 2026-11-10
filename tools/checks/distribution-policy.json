@@ -16,6 +16,38 @@
         "licenseId": "AGPL-3.0-only",
         "sourceUrl": "https://github.com/wuxianggujun/rikkahub"
       }
+    },
+    {
+      "name": "vcpkg Android CLI",
+      "dependency": "microsoft:vcpkg-tool-android",
+      "status": "reviewed",
+      "evidence": "docs/licensing/vcpkg-runtime-review.md",
+      "license": {
+        "path": "app/src/arm64/assets/vcpkg/LICENSE.txt",
+        "sha256": "16e3c9cdb4fa14a8627bc4b5ef0237773a79c3ad1d012c288f37e29573e116cc"
+      },
+      "notice": {
+        "path": "feature/settings/src/main/res/raw/aboutlibraries.json",
+        "libraryId": "microsoft:vcpkg-tool-android",
+        "licenseId": "microsoft:vcpkg-tool-android-MIT",
+        "sourceUrl": "https://github.com/microsoft/vcpkg-tool"
+      }
+    },
+    {
+      "name": "vcpkg ports catalog",
+      "dependency": "microsoft:vcpkg-ports",
+      "status": "reviewed",
+      "evidence": "docs/licensing/vcpkg-runtime-review.md",
+      "license": {
+        "path": "core/packages/src/main/assets/vcpkg/ports-LICENSE.txt",
+        "sha256": "1ee376fc340e0aa6ad6a3581c94126e741468705096ac92263048a21daa86460"
+      },
+      "notice": {
+        "path": "feature/settings/src/main/res/raw/aboutlibraries.json",
+        "libraryId": "microsoft:vcpkg-ports",
+        "licenseId": "microsoft:vcpkg-ports-MIT",
+        "sourceUrl": "https://github.com/microsoft/vcpkg"
+      }
     }
   ]
 }

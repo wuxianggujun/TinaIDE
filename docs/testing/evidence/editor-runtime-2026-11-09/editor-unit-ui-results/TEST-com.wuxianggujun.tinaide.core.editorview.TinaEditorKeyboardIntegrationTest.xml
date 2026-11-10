@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.wuxianggujun.tinaide.core.editorview.TinaEditorKeyboardIntegrationTest" tests="2" skipped="0" failures="0" errors="0" timestamp="2026-11-08T14:52:42.722Z" hostname="DESKTOP-9KUJPVG" time="0.374">
+  <properties/>
+  <testcase name="closingFind_restoresSelectionAndInputHostFocusAfterRemovingTheField" classname="com.wuxianggujun.tinaide.core.editorview.TinaEditorKeyboardIntegrationTest" time="0.239"/>
+  <testcase name="tinaEditorScaffold_shouldRouteCtrlSlashThroughHardwareInputHost" classname="com.wuxianggujun.tinaide.core.editorview.TinaEditorKeyboardIntegrationTest" time="0.135"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

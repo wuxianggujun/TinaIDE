@@ -14,6 +14,21 @@ class TarExtractorTest {
     val tempFolder = TemporaryFolder()
 
     @Test
+    fun streamingMetadataDoesNotExtractFilesAndValidatesSkippedEntries() {
+        val bytes = createTarWithRootDirectoryPlaceholder("metadata".toByteArray())
+        val archive = tempFolder.newFile("source.tar").apply { writeBytes(bytes) }
+        val entries = mutableMapOf<String, String>()
+        TarExtractor.visitRegularFiles(archive, TEST_LIMITS, include = { it == "bin/sh" }) { name, content ->
+            entries[name] = content.toString(Charsets.UTF_8)
+        }
+        assertThat(entries).containsExactly("bin/sh", "metadata")
+        assertThat(File(tempFolder.root, "bin").exists()).isFalse()
+        org.junit.Assert.assertThrows(ArchiveLimitException::class.java) {
+            TarExtractor.visitRegularFiles(archive, TEST_LIMITS.copy(maxExpandedBytes = 1), include = { false }) { _, _ -> }
+        }
+    }
+
+    @Test
     fun `extract skips root directory placeholder and extracts descendants`() {
         val script = "#!/bin/sh\necho ok\n".toByteArray()
         val archive = createTarWithRootDirectoryPlaceholder(script)

@@ -1,6 +1,7 @@
 package com.wuxianggujun.tinaide.core.apkbuilder
 
 import java.io.File
+import java.nio.file.Files
 
 /**
  * 把项目的资源目录映射成 APK 的 `assets/` 条目。
@@ -60,10 +61,14 @@ internal object ProjectAssets {
 
         directories.asSequence()
             .filter { it.isDirectory }
-            .filter { seenRoots.add(it.absolutePath) }
+            .filter { seenRoots.add(it.canonicalPath) }
             .forEach { directory ->
+                val rootPath = directory.canonicalFile.toPath()
                 val files = directory.walkTopDown()
-                    .filter { it.isFile }
+                    // Do not follow directory symlinks (including cycles), or leak
+                    // files outside a selected resource directory into the APK.
+                    .onEnter { it == directory || !Files.isSymbolicLink(it.toPath()) }
+                    .filter { it.isFile && it.canonicalFile.toPath().startsWith(rootPath) }
                     .sortedBy { it.relativeTo(directory).invariantSeparatorsPath }
                 files.forEach { file ->
                     val relative = file.relativeTo(directory).invariantSeparatorsPath

@@ -103,7 +103,8 @@ Release 页附精确提交与递归检出命令；GitHub 自动 source ZIP 不�
 
 ## 可选 vcpkg 工具
 
-项目新增 vcpkg 接入和 Android CLI 构建脚本，未将第三方 CLI 或 ports 打入 APK。
+APK 包含按 ABI 编译的 Android 原生 vcpkg CLI 和可离线浏览的 ports 元数据目录；完整 ports 源码和配套工具按需下载。
 [vcpkg](https://github.com/microsoft/vcpkg) 与 [vcpkg-tool](https://github.com/microsoft/vcpkg-tool)
-采用 MIT 许可，与 GPL-3.0 兼容；构建脚本随输出保留上游 LICENSE.txt。用户通过 ports 安装的库各有许可证，
+采用 MIT 许可，与 GPL-3.0 兼容；构建脚本随输出保留上游 LICENSE.txt、NOTICE.txt 与对应源码提交。
+Termux 辅助工具从官方仓库按固定 SHA-256 下载，保留随包许可；来源和范围见 [vcpkg 运行时许可记录](docs/licensing/vcpkg-runtime-review.md)。用户通过 ports 安装的库各有许可证，
 分发这些库或导出 APK 时应按实际依赖保留对应声明与源码义务，不能把 vcpkg 的 MIT 许可视为所有库的许可。

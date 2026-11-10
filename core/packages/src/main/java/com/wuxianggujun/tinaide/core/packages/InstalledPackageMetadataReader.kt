@@ -2,9 +2,12 @@ package com.wuxianggujun.tinaide.core.packages
 
 import android.content.Context
 import com.wuxianggujun.tinaide.core.common.registry.RegistryPackageId
+import com.wuxianggujun.tinaide.core.i18n.Strings
+import com.wuxianggujun.tinaide.core.i18n.str
 import com.wuxianggujun.tinaide.core.serialization.JsonSerializer
 import java.io.File
 import kotlinx.serialization.Serializable
+import timber.log.Timber
 
 /**
  * 读取已安装包目录中的 package.json，供 UI 或业务层查询库自身版本。
@@ -13,15 +16,29 @@ object InstalledPackageMetadataReader {
 
     private const val INSTALL_DIR_NAME = "installed-packages"
     private const val PACKAGE_METADATA_FILE_NAME = "package.json"
+    internal const val MAX_METADATA_BYTES = 1024 * 1024
 
     fun read(context: Context, packageId: String): InstalledPackageMetadata? {
         if (!RegistryPackageId.isValid(packageId)) return null
         val metadataFile = resolveMetadataFile(context, packageId)
         if (!metadataFile.isFile) return null
-        return JsonSerializer.decodeFromFileOrNull<InstalledPackageMetadata>(metadataFile)
+        return runCatching { readFile(metadataFile) }.getOrNull()
             ?.takeIf { metadata ->
                 metadata.id == packageId && metadata.name.isNotBlank() && metadata.version.isNotBlank()
             }
+    }
+
+    /** Archive limits cover libraries, not the memory needed to decode one metadata record. */
+    internal fun readFile(file: File): InstalledPackageMetadata {
+        try {
+            val bytes = PackageMetadataFiles.readBytes(file, MAX_METADATA_BYTES)
+            val text = PackageMetadataFiles.decodeUtf8(bytes)
+            return JsonSerializer.decode(text)
+        } catch (error: Exception) {
+            // Serialization errors may quote the input. Keep arbitrary package data out of logs.
+            Timber.tag("PackageMetadata").w("Rejected package metadata %s: %s", file.name, error.javaClass.simpleName)
+            throw IllegalArgumentException(Strings.pkg_manager_error_invalid_metadata.str())
+        }
     }
 
     fun readVersion(context: Context, packageId: String): String? = read(context, packageId)?.version

@@ -12,6 +12,20 @@ class ArchivePathSafetyTest {
     val tempFolder = TemporaryFolder()
 
     @Test
+    fun absoluteArchiveLinksAreRebasedWithoutPermittingTraversal() {
+        val root = tempFolder.newFolder().canonicalFile
+        val link = File(root, "data/data/com.termux/files/usr/bin/zipinfo")
+        assertThat(ArchivePathSafety.relocateArchiveSymlink(root, link,
+            "/data/data/com.termux/files/usr/bin/unzip")).isEqualTo("unzip")
+        assertThrows(IllegalArgumentException::class.java) {
+            ArchivePathSafety.relocateArchiveSymlink(root, link, "/../../outside")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            ArchivePathSafety.relocateArchiveSymlink(root, File(root, "bin/tool"), "../../outside")
+        }
+    }
+
+    @Test
     fun resolveEntryFile_rejectsTraversalAbsoluteAndDrivePaths() {
         val targetDir = tempFolder.newFolder("target")
 

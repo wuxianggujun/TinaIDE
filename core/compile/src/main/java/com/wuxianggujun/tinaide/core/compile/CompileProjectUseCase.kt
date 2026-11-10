@@ -69,6 +69,7 @@ class CompileProjectUseCase(
          * 该字面量必须与 native 侧 sdl_asset_redirect hook 读取的名字保持一致。
          */
         const val RUNTIME_ASSET_ROOT_ENV = "TINAIDE_SDL_ASSET_ROOT"
+        const val RUNTIME_ASSET_DIR_ENV = "TINAIDE_SDL_ASSET_DIR"
     }
 
     // ---------- 嵌套类型(保持外部 API 稳定) ----------
@@ -870,17 +871,21 @@ class CompileProjectUseCase(
             nativeRuntimeIdentity = nativeRuntimeIdentity,
             runtimeArtifactDir = File(descriptor.artifact.absolutePath).parentFile,
         )
+        val graphicalEnvironment = if (descriptor is LaunchDescriptor.Sdl) {
+            resolvedLaunchEnvironment + (RUNTIME_ASSET_DIR_ENV to
+                resolveRuntimeAssetDirectory(projectRoot, config.runtimeAssetDirectory, buildContext).absolutePath)
+        } else resolvedLaunchEnvironment
         return when (descriptor) {
             is LaunchDescriptor.Sdl -> LaunchSpec.Sdl(
                 libraryPath = descriptor.libraryPath,
-                environment = resolvedLaunchEnvironment,
+                environment = graphicalEnvironment,
                 preferredSdlMajor = config.sdlVersion?.major,
                 orientation = config.sdlOrientation,
                 enableFloatingLog = config.enableFloatingLog,
             )
             is LaunchDescriptor.NativeActivity -> LaunchSpec.NativeActivity(
                 libraryPath = descriptor.libraryPath,
-                environment = resolvedLaunchEnvironment,
+                environment = graphicalEnvironment,
                 enableFloatingLog = config.enableFloatingLog,
             )
             is LaunchDescriptor.Debug -> LaunchSpec.Debug(

@@ -211,7 +211,8 @@ class ExternalSdl2Activity : SDLActivity() {
             CompileProjectUseCase.RUNTIME_ASSET_ROOT_ENV
         ].orEmpty()
         if (projectRoot.isBlank()) return
-        SdlAssetRedirect.install(this, projectRoot)
+        SdlAssetRedirect.install(this, projectRoot,
+            NativeLaunchEnvironment.readFromIntent(intent)[CompileProjectUseCase.RUNTIME_ASSET_DIR_ENV].orEmpty())
     }
 
     override fun getBrokenLibrariesErrorTitle(): String = Strings.sdl_host_title.strOr(this)

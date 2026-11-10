@@ -1,12 +1,29 @@
 import java.io.File
 import java.security.MessageDigest
+import java.util.zip.ZipFile
 import org.gradle.api.tasks.bundling.Zip
+import com.android.build.api.artifact.SingleArtifact
+import com.android.build.api.variant.ApplicationAndroidComponentsExtension
 
 // Top-level build file where you can add configuration options common to all sub-projects/modules.
 
 plugins {
     alias(libs.plugins.android.application) apply false
     alias(libs.plugins.android.library) apply false
+}
+
+// AGP owns the APK output path (AGP 9 may use intermediates/apk). Never copy a
+// stale outputs/apk file left by an earlier build and then stamp new checksums.
+val templateApkDirectories = mutableMapOf<String, Provider<Directory>>()
+subprojects {
+    if (path in setOf(":tools:template-native-activity", ":tools:template-sdl3")) {
+        val templateModuleName = name
+        plugins.withId("com.android.application") {
+            extensions.getByType<ApplicationAndroidComponentsExtension>().onVariants(
+                extensions.getByType<ApplicationAndroidComponentsExtension>().selector().withBuildType("release")
+            ) { variant -> templateApkDirectories[templateModuleName] = variant.artifacts.get(SingleArtifact.APK) }
+        }
+    }
 }
 
 tasks.register("buildApkTemplates") {
@@ -20,15 +37,20 @@ tasks.register("buildApkTemplates") {
         val targetDir = file("app/src/main/assets/apk_templates")
         targetDir.mkdirs()
 
-        copy {
-            from(file("tools/template-native-activity/build/outputs/apk/release/template-native-activity-release-unsigned.apk"))
-            into(targetDir)
-            rename { "template-native-activity.apk" }
-        }
-        copy {
-            from(file("tools/template-sdl3/build/outputs/apk/release/template-sdl3-release-unsigned.apk"))
-            into(targetDir)
-            rename { "template-sdl3.apk" }
+        for (module in listOf("template-native-activity", "template-sdl3")) {
+            val directory = templateApkDirectories.getValue(module).get().asFile
+            val apk = directory.listFiles()?.singleOrNull { it.extension == "apk" }
+                ?: throw GradleException("Expected one freshly built template APK in $directory")
+            if (module == "template-sdl3") {
+                ZipFile(apk).use { zip ->
+                    val missing = listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
+                        .filter { zip.getEntry("lib/$it/libtina_sdl_probe.so") == null }
+                    if (missing.isNotEmpty()) throw GradleException(
+                        "SDL export template is missing ABIs: $missing. Build templates without android.injected.build.abi."
+                    )
+                }
+            }
+            apk.copyTo(File(targetDir, "$module.apk"), overwrite = true)
         }
         writeTemplateChecksums(targetDir)
         println("Template APKs copied to: ${targetDir.absolutePath}")

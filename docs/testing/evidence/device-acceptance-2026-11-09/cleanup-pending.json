@@ -1,0 +1,19 @@
+{
+  "status": "resolved with native build tool clean target",
+  "reason": "blocked by policy",
+  "files": [
+    {
+      "path": "tools\\vcpkg\\build\\x86_64\\vcpkg",
+      "bytes": 65363120
+    },
+    {
+      "path": "tools\\vcpkg\\build\\x86_64\\CMakeFiles\\vcpkglib.dir\\cmake_pch.hxx.pch",
+      "bytes": 14379900
+    }
+  ],
+  "command": "cmake --build tools/vcpkg/build/x86_64 --target clean",
+  "cleanedBuildFiles": 155,
+  "bytesBefore": 273131815,
+  "bytesAfter": 30067763,
+  "bytesRemoved": 243064052
+}

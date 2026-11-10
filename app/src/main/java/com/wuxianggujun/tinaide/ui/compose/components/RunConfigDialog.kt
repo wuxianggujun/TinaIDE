@@ -207,6 +207,7 @@ fun RunConfigDialog(
     var sdlVersion by remember { mutableStateOf(config.sdlVersion) }
     var sdlOrientation by remember { mutableStateOf(config.sdlOrientation) }
     var enableFloatingLog by remember { mutableStateOf(config.enableFloatingLog) }
+    var runtimeAssetDirectory by remember { mutableStateOf(config.runtimeAssetDirectory) }
     var showVariablesHelp by remember { mutableStateOf(false) }
 
     // 目标过滤：图形运行只加载共享库，终端模式只运行可执行文件。
@@ -325,7 +326,8 @@ fun RunConfigDialog(
                                         .normalizeSingleFileCppStandard(singleFileCppStandard),
                                     sdlVersion = sdlVersion,
                                     sdlOrientation = sdlOrientation,
-                                    enableFloatingLog = enableFloatingLog
+                                    enableFloatingLog = enableFloatingLog,
+                                    runtimeAssetDirectory = runtimeAssetDirectory.trim(),
                                 )
                             )
                         }
@@ -345,11 +347,11 @@ fun RunConfigDialog(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // 配置名称
-            OutlinedTextField(
+            TinaTextField(
                 value = name,
                 onValueChange = { name = it },
-                label = { Text(stringResource(Strings.run_config_name_label)) },
-                placeholder = { Text(stringResource(Strings.run_config_name_placeholder)) },
+                label = stringResource(Strings.run_config_name_label),
+                placeholder = stringResource(Strings.run_config_name_placeholder),
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
@@ -369,7 +371,7 @@ fun RunConfigDialog(
                 expanded = compilerDropdownExpanded,
                 onExpandedChange = { compilerDropdownExpanded = it }
             ) {
-                OutlinedTextField(
+                TinaTextField(
                     value = when (compilerType) {
                         CompilerType.CUSTOM -> if (customCCompiler.isNotBlank()) {
                             stringResource(Strings.run_config_compiler_custom_desc) + " (${customCCompiler.substringAfterLast('/')})"
@@ -379,7 +381,7 @@ fun RunConfigDialog(
                         else -> compilerType.getDisplayName(context)
                     },
                     onValueChange = {},
-                    label = { Text(stringResource(Strings.run_config_compiler_label)) },
+                    label = stringResource(Strings.run_config_compiler_label),
                     readOnly = true,
                     singleLine = true,
                     supportingText = {
@@ -447,7 +449,7 @@ fun RunConfigDialog(
                     expanded = toolchainDropdownExpanded,
                     onExpandedChange = { toolchainDropdownExpanded = it }
                 ) {
-                    OutlinedTextField(
+                    TinaTextField(
                         value = run {
                             if (toolchainId == null) {
                                 stringResource(Strings.run_config_toolchain_default)
@@ -459,7 +461,7 @@ fun RunConfigDialog(
                         },
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text(stringResource(Strings.run_config_toolchain)) },
+                        label = stringResource(Strings.run_config_toolchain),
                         supportingText = {
                             Text(
                                 text = stringResource(Strings.run_config_toolchain_desc),
@@ -527,7 +529,7 @@ fun RunConfigDialog(
                     expanded = sysrootProfileDropdownExpanded,
                     onExpandedChange = { sysrootProfileDropdownExpanded = it }
                 ) {
-                    OutlinedTextField(
+                    TinaTextField(
                         value = sysrootProfileId
                             ?.let { selectedId ->
                                 sysrootProfiles.firstOrNull { it.id == selectedId }?.displayLabel(context)
@@ -536,7 +538,7 @@ fun RunConfigDialog(
                             ?: stringResource(Strings.run_config_sysroot_profile_global),
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text(stringResource(Strings.run_config_sysroot_profile_label)) },
+                        label = stringResource(Strings.run_config_sysroot_profile_label),
                         supportingText = {
                             Text(
                                 text = stringResource(Strings.run_config_sysroot_profile_desc),
@@ -605,11 +607,11 @@ fun RunConfigDialog(
                 val isCustomCInvalid = customCCompiler.isBlank()
                 val isCustomCppInvalid = customCppCompiler.isBlank()
 
-                OutlinedTextField(
+                TinaTextField(
                     value = customCCompiler,
                     onValueChange = { customCCompiler = it },
-                    label = { Text(stringResource(Strings.run_config_custom_c_compiler_label)) },
-                    placeholder = { Text(stringResource(Strings.run_config_custom_c_compiler_placeholder)) },
+                    label = stringResource(Strings.run_config_custom_c_compiler_label),
+                    placeholder = stringResource(Strings.run_config_custom_c_compiler_placeholder),
                     supportingText = {
                         Text(
                             text = if (isCustomCInvalid) stringResource(Strings.run_config_custom_compiler_error_empty) else stringResource(Strings.run_config_custom_compiler_hint),
@@ -621,11 +623,11 @@ fun RunConfigDialog(
                     singleLine = true
                 )
 
-                OutlinedTextField(
+                TinaTextField(
                     value = customCppCompiler,
                     onValueChange = { customCppCompiler = it },
-                    label = { Text(stringResource(Strings.run_config_custom_cpp_compiler_label)) },
-                    placeholder = { Text(stringResource(Strings.run_config_custom_cpp_compiler_placeholder)) },
+                    label = stringResource(Strings.run_config_custom_cpp_compiler_label),
+                    placeholder = stringResource(Strings.run_config_custom_cpp_compiler_placeholder),
                     supportingText = {
                         Text(
                             text = if (isCustomCppInvalid) stringResource(Strings.run_config_custom_compiler_error_empty) else stringResource(Strings.run_config_custom_compiler_hint),
@@ -652,10 +654,10 @@ fun RunConfigDialog(
                     expanded = targetDropdownExpanded,
                     onExpandedChange = { targetDropdownExpanded = it }
                 ) {
-                    OutlinedTextField(
+                    TinaTextField(
                         value = if (targetName.isBlank()) stringResource(Strings.run_config_default_target) else targetName,
                         onValueChange = {},
-                        label = { Text(stringResource(Strings.run_config_build_target)) },
+                        label = stringResource(Strings.run_config_build_target),
                         readOnly = true,
                         singleLine = true,
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = targetDropdownExpanded) },
@@ -827,10 +829,10 @@ fun RunConfigDialog(
                             expanded = sourceFileDropdownExpanded,
                             onExpandedChange = { sourceFileDropdownExpanded = it }
                         ) {
-                            OutlinedTextField(
+                            TinaTextField(
                                 value = sourceFilePath.ifBlank { stringResource(Strings.run_config_select_source_file) },
                                 onValueChange = { sourceFilePath = it },
-                                label = { Text(stringResource(Strings.run_config_source_file_path)) },
+                                label = stringResource(Strings.run_config_source_file_path),
                                 singleLine = true,
                                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = sourceFileDropdownExpanded) },
                                 modifier = Modifier
@@ -859,11 +861,11 @@ fun RunConfigDialog(
                         }
                     } else {
                         // 没有可用源文件时显示手动输入
-                        OutlinedTextField(
+                        TinaTextField(
                             value = sourceFilePath,
                             onValueChange = { sourceFilePath = it },
-                            label = { Text(stringResource(Strings.run_config_source_file_path)) },
-                            placeholder = { Text(stringResource(Strings.run_config_source_file_path_hint)) },
+                            label = stringResource(Strings.run_config_source_file_path),
+                            placeholder = stringResource(Strings.run_config_source_file_path_hint),
                             supportingText = { Text(stringResource(Strings.run_config_source_file_path_support)) },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true
@@ -875,14 +877,12 @@ fun RunConfigDialog(
                     expanded = singleFileCppStandardDropdownExpanded,
                     onExpandedChange = { singleFileCppStandardDropdownExpanded = it }
                 ) {
-                    OutlinedTextField(
+                    TinaTextField(
                         value = selectedSingleFileCppStandard?.getDisplayName(context)
                             ?: stringResource(Strings.run_config_single_file_cpp_standard_project_default),
                         onValueChange = {},
                         readOnly = true,
-                        label = {
-                            Text(stringResource(Strings.run_config_single_file_cpp_standard_label))
-                        },
+                        label = stringResource(Strings.run_config_single_file_cpp_standard_label),
                         supportingText = {
                             Text(stringResource(Strings.run_config_single_file_cpp_standard_desc))
                         },
@@ -951,25 +951,17 @@ fun RunConfigDialog(
             }
 
             if (isNativeBuildSystem) {
-                OutlinedTextField(
+                TinaTextField(
                     value = sysrootApiLevelInput,
                     onValueChange = { input ->
                         sysrootApiLevelInput = input.filter { it.isDigit() }.take(2)
                     },
-                    label = {
-                        Text(
-                            stringResource(
+                    label = stringResource(
                                 com.wuxianggujun.tinaide.core.i18n.R.string.run_config_sysroot_api_level_label
-                            )
-                        )
-                    },
-                    placeholder = {
-                        Text(
-                            stringResource(
+                            ),
+                    placeholder = stringResource(
                                 com.wuxianggujun.tinaide.core.i18n.R.string.run_config_sysroot_api_level_placeholder
-                            )
-                        )
-                    },
+                            ),
                     supportingText = {
                         if (isSysrootApiLevelValid) {
                             Text(
@@ -1114,6 +1106,14 @@ fun RunConfigDialog(
                 RunConfigSectionCard(
                     title = stringResource(Strings.run_config_graphical_options)
                 ) {
+                    if (outputMode.isSdlGraphical()) TinaTextField(
+                        value = runtimeAssetDirectory,
+                        onValueChange = { runtimeAssetDirectory = it },
+                        label = stringResource(Strings.run_config_assets_label),
+                        placeholder = stringResource(Strings.run_config_assets_placeholder),
+                        hint = stringResource(Strings.run_config_assets_hint),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                     RunConfigSwitchRow(
                         checked = enableFloatingLog,
                         onCheckedChange = { enableFloatingLog = it },

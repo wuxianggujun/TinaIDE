@@ -2,14 +2,23 @@ package com.wuxianggujun.tinaide.core.apkbuilder
 
 import com.google.common.truth.Truth.assertThat
 import java.io.File
-import java.nio.file.Files
 import org.junit.Test
+import org.junit.Rule
+import org.junit.rules.TemporaryFolder
 
 class ProjectAssetsTest {
-
-    private fun tempDir(): File = Files.createTempDirectory("project-assets-test").toFile().apply {
-        deleteOnExit()
+    @get:Rule val temporary = TemporaryFolder()
+    @Test
+    fun `collect resolves equivalent paths before deduplicating`() {
+        val directory = tempDir()
+        File(directory, "child").mkdir()
+        writeFile(directory, "asset.txt")
+        val plan = ProjectAssets.collect(listOf(directory, File(directory, "child/..")), false)
+        assertThat(plan.entries.keys).containsExactly("assets/asset.txt")
+        assertThat(plan.conflicts).isEmpty()
     }
+
+    private fun tempDir(): File = temporary.newFolder()
 
     private fun writeFile(root: File, relative: String, content: String = "x"): File =
         File(root, relative).apply {

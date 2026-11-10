@@ -1,0 +1,161 @@
+{
+  "verifiedAtUtc": "2026-11-08T23:39:15.739798Z",
+  "avdPath": "C:\\Users\\wuxianggujun\\.android\\avd\\tina_editor_ui_api34.avd",
+  "avdDeleted": true,
+  "avdLogicalBytes": 5551197522,
+  "cFreeBeforeAvdDeletion": 17782726656,
+  "cFreeAfterAvdDeletion": 23275347968,
+  "avdDeletionFreeSpaceIncreaseBytes": 5492621312,
+  "workspaceOriginalLogicalBytes": 905744599,
+  "workspaceDeletedLogicalBytes": 905902525,
+  "workspaceTargetFilesDeleted": true,
+  "remainingWorkspaceFiles": 0,
+  "remainingWorkspaceLogicalBytes": 0,
+  "emptyDirectoriesRetained": true,
+  "measurementNote": "Workspace byte count is the logical size of removed files, not a claim about physical disk free-space change. Logs grew after the original inventory.",
+  "cleanupMethod": "Checked workspace containment, links and tracked files. Deleted only files; retained directory structure. Diagnostic cleanup was narrowed to generated formats and separately reviewed exact filenames.",
+  "reviewHistory": "Earlier whole-directory and broad diagnostic cleanup requests were rejected with blocked by policy. Narrower artifact-only deletion and explicit reviewed temporary-file deletion succeeded; no blocked target files remain.",
+  "deletedApks": [
+    {
+      "path": "app/build/outputs/apk/x86_64/debug/TinaIDE-0.19.0-x86_64-debug.apk",
+      "bytes": 311635897,
+      "sha256": "860ec05eeba1ee57b94280d34bb9d2971d8e7cf841d16e0626a317f9e548d0ba"
+    },
+    {
+      "path": "app/build/outputs/apk/androidTest/x86_64/debug/app-x86_64-debug-androidTest.apk",
+      "bytes": 2670937,
+      "sha256": "798a1a4e0807e93a22e2d8e84d388aa390001d15281bba5eaeba8445903d00be"
+    }
+  ],
+  "deletedArchivedLogBytes": 68797,
+  "temporaryDiagnosticDeletedLogicalBytes": 22901668,
+  "workspaceTargets": [
+    {
+      "path": ".tmp/editor-ui-validation",
+      "originalLogicalBytes": 22743742,
+      "remainingFiles": 0,
+      "remainingLogicalBytes": 0
+    },
+    {
+      "path": "app/build/reports/runtime-regression",
+      "originalLogicalBytes": 11633773,
+      "remainingFiles": 0,
+      "remainingLogicalBytes": 0
+    },
+    {
+      "path": "app/build/outputs/apk/x86_64/debug",
+      "originalLogicalBytes": 311636334,
+      "remainingFiles": 0,
+      "remainingLogicalBytes": 0
+    },
+    {
+      "path": "app/build/outputs/apk/androidTest/x86_64/debug",
+      "originalLogicalBytes": 2671381,
+      "remainingFiles": 0,
+      "remainingLogicalBytes": 0
+    },
+    {
+      "path": "app/build/intermediates/apk/androidTest/x86_64/debug",
+      "originalLogicalBytes": 2687106,
+      "remainingFiles": 0,
+      "remainingLogicalBytes": 0
+    },
+    {
+      "path": "app/build/intermediates/incremental/packageX86_64Debug",
+      "originalLogicalBytes": 257058,
+      "remainingFiles": 0,
+      "remainingLogicalBytes": 0
+    },
+    {
+      "path": "app/build/intermediates/incremental/packageX86_64DebugAndroidTest",
+      "originalLogicalBytes": 12196,
+      "remainingFiles": 0,
+      "remainingLogicalBytes": 0
+    },
+    {
+      "path": "app/build/intermediates/assets/x86_64Debug",
+      "originalLogicalBytes": 109278607,
+      "remainingFiles": 0,
+      "remainingLogicalBytes": 0
+    },
+    {
+      "path": "app/build/intermediates/compressed_assets/x86_64Debug",
+      "originalLogicalBytes": 98853294,
+      "remainingFiles": 0,
+      "remainingLogicalBytes": 0
+    },
+    {
+      "path": "app/build/intermediates/merged_native_libs/x86_64Debug",
+      "originalLogicalBytes": 101807664,
+      "remainingFiles": 0,
+      "remainingLogicalBytes": 0
+    },
+    {
+      "path": "app/build/intermediates/stripped_native_libs/x86_64Debug",
+      "originalLogicalBytes": 48009488,
+      "remainingFiles": 0,
+      "remainingLogicalBytes": 0
+    },
+    {
+      "path": "editor-kit/editor-view/build/intermediates/apk/androidTest",
+      "originalLogicalBytes": 69826132,
+      "remainingFiles": 0,
+      "remainingLogicalBytes": 0
+    },
+    {
+      "path": "editor-kit/editor-view/build/outputs/apk/androidTest",
+      "originalLogicalBytes": 73413709,
+      "remainingFiles": 0,
+      "remainingLogicalBytes": 0
+    },
+    {
+      "path": "tools/template-sdl3/build",
+      "originalLogicalBytes": 35732197,
+      "remainingFiles": 0,
+      "remainingLogicalBytes": 0
+    },
+    {
+      "path": "tools/template-sdl3/.cxx",
+      "originalLogicalBytes": 769247,
+      "remainingFiles": 0,
+      "remainingLogicalBytes": 0
+    },
+    {
+      "path": "tools/template-native-activity/build",
+      "originalLogicalBytes": 16412671,
+      "remainingFiles": 0,
+      "remainingLogicalBytes": 0
+    }
+  ],
+  "preserved": [
+    "Release APKs",
+    "Production source files",
+    "app/src/main/assets/apk_templates",
+    "Global Gradle caches",
+    "Other tasks AVDs",
+    "Compact evidence under docs/testing/evidence/editor-runtime-2026-11-09"
+  ],
+  "followupCleanupPasses": [
+    {
+      "evidence": "cleanup-debug-dex-pass.json",
+      "deletedFiles": 1919,
+      "deletedLogicalBytes": 216477935
+    },
+    {
+      "evidence": "cleanup-hid-template-pass.json",
+      "deletedFiles": 1496,
+      "deletedLogicalBytes": 54493567
+    },
+    {
+      "evidence": "cleanup-package-state-temp.json",
+      "deletedFiles": 6,
+      "deletedLogicalBytes": 195721
+    },
+    {
+      "evidence": "cleanup-vcpkg-temp.json",
+      "deletedFiles": 6,
+      "deletedLogicalBytes": 180194
+    }
+  ],
+  "workspaceDeletedLogicalBytesIncludingFollowup": 1177249942
+}

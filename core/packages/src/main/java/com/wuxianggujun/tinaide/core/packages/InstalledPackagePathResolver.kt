@@ -162,13 +162,8 @@ object InstalledPackagePathResolver {
         // Expose runtime directories for launch/export without auto-linking every installed port.
         if (projectRoot != null) {
             val config = VcpkgProjectSettings.from(ProjectMetadataStore.read(projectRoot)?.normalizedNativeCMakeArgs().orEmpty())
-            if (config.enabled && config.root.isNotBlank()) {
-                fun resolvePath(path: String): File = File(path).let { if (it.isAbsolute) it else File(projectRoot, path) }
-                val installed = when {
-                    config.installedDir.isNotBlank() -> resolvePath(config.installedDir)
-                    config.mode == VcpkgProjectSettings.MANIFEST -> File(projectRoot, "vcpkg_installed")
-                    else -> File(resolvePath(config.root), "installed")
-                }
+            if (config.enabled) {
+                val installed = VcpkgManagedPaths.installed(context, projectRoot, config)
                 val prefix = File(installed, config.targetTriplet(deviceAbi))
                 val runtimeSubdirs = if (isDebugCMakeArtifact(runtimeArtifactDir, projectRoot)) {
                     listOf("debug/lib", "debug/bin", "lib", "bin")

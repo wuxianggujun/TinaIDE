@@ -1,0 +1,32 @@
+[
+  {
+    "Name": "after.log",
+    "Bytes": 27742,
+    "Sha256": "584d02f1dfd264ba25e02563606a1bf6220ebdfd153686b547a10b8f96510f20"
+  },
+  {
+    "Name": "before.log",
+    "Bytes": 30277,
+    "Sha256": "db0615b5b8ab7724d0c81da01a589b4865ed67b7db13afd5c5d2c77a7eec05aa"
+  },
+  {
+    "Name": "final.log",
+    "Bytes": 27740,
+    "Sha256": "3dba4646e5ddc077d19b3e24be709c886737b8da90f706135692c6d60e0a3167"
+  },
+  {
+    "Name": "sdl-hid-template.log",
+    "Bytes": 24588,
+    "Sha256": "1398ce88999a81d549a74e79fc2a35b15b2b51da06a7155bf2a858cf07b4c562"
+  },
+  {
+    "Name": "SDLActivity-reference.java",
+    "Bytes": 84460,
+    "Sha256": "bfe3c84cb1384abcd205d60fe773f2a8e71511910838e55ca8514f25f5fdede9"
+  },
+  {
+    "Name": "stale-record-before.log",
+    "Bytes": 914,
+    "Sha256": "de309e0cb7557bb555d5698b343648421b4cbaa80f5ba6ec5837f4800a1c940f"
+  }
+]

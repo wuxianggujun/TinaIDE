@@ -1,0 +1,42 @@
+[
+  {
+    "name": "host-theme",
+    "selector": "com.wuxianggujun.tinaide.ui.compose.editor.EditorHostInteractionInstrumentationTest#hostMarkdownAndSearch_remainReadableAndPreserveSelectionAcrossOppositeThemes",
+    "extras": {},
+    "serial": "emulator-5564",
+    "orientation": "portrait",
+    "seconds": 14.21,
+    "passed": true,
+    "timed_out": false
+  },
+  {
+    "name": "compact-input",
+    "selector": "com.wuxianggujun.tinaide.ui.compose.editor.CompactInputInstrumentationTest#compactField_preservesMiddleSelectionAndExternalUpdates",
+    "extras": {},
+    "serial": "emulator-5564",
+    "orientation": "portrait",
+    "seconds": 5.85,
+    "passed": true,
+    "timed_out": false
+  },
+  {
+    "name": "variable-caret",
+    "selector": "com.wuxianggujun.tinaide.ui.compose.editor.CompactInputInstrumentationTest#variableCompletion_usesActualCaretAndKeepsSuffix",
+    "extras": {},
+    "serial": "emulator-5564",
+    "orientation": "portrait",
+    "seconds": 9.61,
+    "passed": true,
+    "timed_out": false
+  },
+  {
+    "name": "large-cpp",
+    "selector": "com.wuxianggujun.tinaide.ui.compose.editor.EditorLargeFileInstrumentationTest#realCppHighlighter_largeFileScrollAndEdit_remainConsistent",
+    "extras": {},
+    "serial": "emulator-5564",
+    "orientation": "portrait",
+    "seconds": 9.44,
+    "passed": true,
+    "timed_out": false
+  }
+]

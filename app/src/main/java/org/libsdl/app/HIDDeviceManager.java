@@ -370,7 +370,7 @@ public class HIDDeviceManager {
                     HIDDeviceUSB device = new HIDDeviceUSB(this, usbDevice, interface_index);
                     int id = device.getId();
                     mDevicesById.put(id, device);
-                    HIDDeviceConnected(id, device.getIdentifier(), device.getVendorId(), device.getProductId(), device.getSerialNumber(), device.getVersion(), device.getManufacturerName(), device.getProductName(), usbInterface.getId(), usbInterface.getInterfaceClass(), usbInterface.getInterfaceSubclass(), usbInterface.getInterfaceProtocol(), false, 0);
+                    dispatchHIDDeviceConnected(id, device.getIdentifier(), device.getVendorId(), device.getProductId(), device.getSerialNumber(), device.getVersion(), device.getManufacturerName(), device.getProductName(), usbInterface.getId(), usbInterface.getInterfaceClass(), usbInterface.getInterfaceSubclass(), usbInterface.getInterfaceProtocol(), false, 0);
                 }
             }
         }
@@ -698,6 +698,40 @@ public class HIDDeviceManager {
     private native void HIDDeviceReleaseCallback();
 
     native void HIDDeviceConnected(int deviceID, String identifier, int vendorId, int productId, String serial_number, int release_number, String manufacturer_string, String product_string, int interface_number, int interface_class, int interface_subclass, int interface_protocol, boolean bBluetooth, int reportID);
+    // SDL 3.5 development snapshots share a version number but register different
+    // HID signatures. All supported signatures must exist before JNI_OnLoad.
+    native void HIDDeviceConnected(int deviceID, String identifier, int vendorId, int productId, String serial_number, int release_number, String manufacturer_string, String product_string, int interface_number, int interface_class, int interface_subclass, int interface_protocol, boolean bBluetooth);
+    native void HIDDeviceConnected(int deviceID, String identifier, int vendorId, int productId, String serial_number, int release_number, String manufacturer_string, String product_string, int interface_number, int interface_class, int interface_subclass, int interface_protocol);
+
+    private int connectedSignature = 14;
+
+    void dispatchHIDDeviceConnected(int deviceID, String identifier, int vendorId, int productId,
+            String serialNumber, int releaseNumber, String manufacturer, String product,
+            int interfaceNumber, int interfaceClass, int interfaceSubclass, int interfaceProtocol,
+            boolean bluetooth, int reportID) {
+        if (connectedSignature == 14) {
+            try {
+                HIDDeviceConnected(deviceID, identifier, vendorId, productId, serialNumber, releaseNumber,
+                        manufacturer, product, interfaceNumber, interfaceClass, interfaceSubclass, interfaceProtocol, bluetooth, reportID);
+                return;
+            } catch (UnsatisfiedLinkError missingSignature) {
+                connectedSignature = 13;
+                Log.i(TAG, "SDL HID report-ID callback unavailable; using compatible signature");
+            }
+        }
+        if (connectedSignature == 13) {
+            try {
+                HIDDeviceConnected(deviceID, identifier, vendorId, productId, serialNumber, releaseNumber,
+                        manufacturer, product, interfaceNumber, interfaceClass, interfaceSubclass, interfaceProtocol, bluetooth);
+                return;
+            } catch (UnsatisfiedLinkError missingSignature) {
+                connectedSignature = 12;
+                Log.i(TAG, "SDL HID transport callback unavailable; using legacy signature");
+            }
+        }
+        HIDDeviceConnected(deviceID, identifier, vendorId, productId, serialNumber, releaseNumber,
+                manufacturer, product, interfaceNumber, interfaceClass, interfaceSubclass, interfaceProtocol);
+    }
     native void HIDDeviceOpenPending(int deviceID);
     native void HIDDeviceOpenResult(int deviceID, boolean opened);
     native void HIDDeviceDisconnected(int deviceID);

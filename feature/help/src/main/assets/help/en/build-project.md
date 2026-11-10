@@ -34,6 +34,14 @@ The default terminal run may select the test executable. To run the shared-libra
 
 The first build configures the project, creates or updates the build directory, and produces compile_commands.json. Completion, navigation, and diagnostics usually become more accurate after this step.
 
+### Using vcpkg libraries
+
+Open **Market → vcpkg** to browse and search immediately. No project or tool path is required. **Download / update catalog** retrieves the latest catalog; the existing list remains available offline.
+
+Tap **Add to project** and select a CMake project. The app enables on-device installation and updates `vcpkg.json`. **Install dependencies and configure project** prepares Android helper tools and sources on first use. The app manages tool paths and keeps dependencies in a private workspace for each project, including projects stored in public directories.
+
+vcpkg libraries compile on your phone, and not every port supports Android. Read the build output for specific failures. Cancelling preserves completed dependencies. For computer-built libraries, select prebuilt mode in project settings and choose a complete export containing `scripts` and `installed`.
+
 ## Run configurations
 
 Each run configuration owns its build type. CMake configurations support Debug, Release, RelWithDebInfo, and MinSizeRel; Make and single-file configurations support Debug and Release. This lets one project keep separate Debug and Release configurations.
@@ -41,6 +49,14 @@ Each run configuration owns its build type. CMake configurations support Debug, 
 Project Settings paths, compiler/linker flags, and CMake arguments remain shared by every run configuration in the project. Check the selected build type, target, arguments, environment variables, and working directory when a program builds but does not run as expected.
 
 The output mode of a shared library must match its entry contract: SDL projects export `SDL_main`, while raylib projects keep a plain `main` and use NativeActivity. Switching the mode alone never rewrites your entry point. Note that SDL3's `<SDL3/SDL.h>` does not include `SDL_main.h` automatically (SDL2's does). Without it the project still compiles, but the graphical run flashes and exits immediately. TinaIDE detects this before launch and asks you to add `#include <SDL3/SDL_main.h>`; if the program exits right after startup, the runtime screen shows its exit code and program output in a dialog.
+
+## SDL resource directories
+
+Place images, fonts and shaders in the project's `assets/` directory. In **Run configuration → Graphical options → Resource directory**, you can choose another directory inside the project, for example `resources` or `$ProjectDir$/resources`. Unicode and emoji paths are supported.
+
+SDL2/SDL3 read-only relative opens first preserve existing files in the app's private storage, then search the selected resource directory, then the project root. Leaving the setting empty uses `assets/`, or the project root if `assets/` does not exist. Write, append and read/write modes never redirect into source assets. Traversal and escaping symlinks are rejected.
+
+APK export puts the selected resource directory's contents at the APK assets root. The default exports `assets/` only; it never implicitly includes the entire project. Use `SDL_IOFromFile("font.ttf", "rb")` (SDL3) or `SDL_RWFromFile("font.ttf", "rb")` (SDL2) for the same path in the IDE and exported APK. Direct `fopen` calls in other libraries need their own absolute paths.
 
 ## Debugging
 

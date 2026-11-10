@@ -510,10 +510,16 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
             mClipboardHandler = new SDLClipboardHandler();
         }
 
-        // TinaIDE 定制：nativeIsHIDAPIEnabled() 是 SDL 3.5 才注册的 JNI 方法，
-        // 配合 3.2/3.4 的原生库直接调用会抛 UnsatisfiedLinkError，因此先探测能力。
-        if (SdlNativeCompat.supportsHidapiQuery() && nativeIsHIDAPIEnabled()) {
-            mHIDDeviceManager = HIDDeviceManager.acquire(this);
+        // Legacy bridges have HID callbacks without the newer capability query.
+        // Preserve their initialization; HID itself remains optional for builds
+        // that do not register its native callbacks.
+        try {
+            if (SdlNativeCompat.shouldInitializeHidapi(SDLActivity::nativeIsHIDAPIEnabled)) {
+                mHIDDeviceManager = HIDDeviceManager.acquire(this);
+            }
+        } catch (UnsatisfiedLinkError unavailable) {
+            Log.w(TAG, "SDL HID bridge is unavailable; continuing without HIDAPI", unavailable);
+            mHIDDeviceManager = null;
         }
 
         // Set up the surface
@@ -2433,6 +2439,13 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     /**
      * This method is called by SDL using JNI.
      */
+    // Older 3.4/3.5 libraries look up this callback during nativeSetupJNI.
+    public static boolean showFileDialog(String[] filters, boolean allowMultiple,
+        boolean forWrite, int requestCode) {
+        return showFileDialog(filters, allowMultiple,
+            forWrite ? SDL_FILEDIALOG_SAVEFILE : SDL_FILEDIALOG_OPENFILE, null, requestCode);
+    }
+
     public static boolean showFileDialog(String[] filters, boolean allowMultiple,
         int type, String initialPath, int requestCode) {
         if (mSingleton == null) {

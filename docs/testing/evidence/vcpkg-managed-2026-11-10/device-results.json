@@ -1,0 +1,192 @@
+[
+  {
+    "name": "catalog",
+    "selector": "com.wuxianggujun.tinaide.core.compile.VcpkgManagedDeviceTest#managedCatalogAndRuntime",
+    "extras": {
+      "vcpkgManagedPhase": "catalog"
+    },
+    "serial": "emulator-5556",
+    "orientation": "portrait",
+    "seconds": 23.14,
+    "passed": true,
+    "timed_out": false,
+    "returncode": 0,
+    "runId": "398bd866d96042219372d4fe854e160d",
+    "evidenceFile": "catalog-398bd866d96042219372d4fe854e160d-metrics.json",
+    "caseDirectory": "catalog"
+  },
+  {
+    "name": "market-ui",
+    "selector": "com.wuxianggujun.tinaide.ui.compose.editor.VcpkgMarketInstrumentationTest#noProjectStillShowsCatalogAndSupportsSearch",
+    "extras": {},
+    "serial": "emulator-5556",
+    "orientation": "portrait",
+    "seconds": 13.97,
+    "passed": true,
+    "timed_out": false,
+    "returncode": 0,
+    "runId": "134b093d2a4c48f59cd8d64f722d560e",
+    "evidenceFile": null,
+    "caseDirectory": "market-ui-final"
+  },
+  {
+    "name": "update",
+    "selector": "com.wuxianggujun.tinaide.core.compile.VcpkgManagedDeviceTest#managedCatalogAndRuntime",
+    "extras": {
+      "vcpkgManagedPhase": "update"
+    },
+    "serial": "emulator-5556",
+    "orientation": "portrait",
+    "seconds": 41.81,
+    "passed": true,
+    "timed_out": false,
+    "returncode": 0,
+    "runId": "16e8b8ab4876496fa8649c40d143adc6",
+    "evidenceFile": "update-16e8b8ab4876496fa8649c40d143adc6-metrics.json",
+    "caseDirectory": "update-streaming"
+  },
+  {
+    "name": "runtime",
+    "selector": "com.wuxianggujun.tinaide.core.compile.VcpkgManagedDeviceTest#managedCatalogAndRuntime",
+    "extras": {
+      "vcpkgManagedPhase": "runtime"
+    },
+    "serial": "emulator-5556",
+    "orientation": "portrait",
+    "seconds": 31.1,
+    "passed": true,
+    "timed_out": false,
+    "returncode": 0,
+    "runId": "5aa268c53863406fbd62374b19f34a7f",
+    "evidenceFile": "runtime-5aa268c53863406fbd62374b19f34a7f-metrics.json",
+    "caseDirectory": "runtime-retry"
+  },
+  {
+    "name": "configure",
+    "selector": "com.wuxianggujun.tinaide.core.compile.VcpkgManagedDeviceTest#managedCatalogAndRuntime",
+    "extras": {
+      "vcpkgManagedPhase": "configure"
+    },
+    "serial": "emulator-5556",
+    "orientation": "portrait",
+    "seconds": 37.91,
+    "passed": true,
+    "timed_out": false,
+    "returncode": 0,
+    "runId": "85e4f3c5aa87460391490a85304df379",
+    "evidenceFile": "configure-85e4f3c5aa87460391490a85304df379-metrics.json",
+    "caseDirectory": "configure"
+  },
+  {
+    "name": "build",
+    "selector": "com.wuxianggujun.tinaide.core.compile.VcpkgManagedDeviceTest#managedCatalogAndRuntime",
+    "extras": {
+      "vcpkgManagedPhase": "build"
+    },
+    "serial": "emulator-5556",
+    "orientation": "portrait",
+    "seconds": 5.07,
+    "passed": true,
+    "timed_out": false,
+    "returncode": 0,
+    "runId": "017b4b34859a480dadf486f3282e2bae",
+    "evidenceFile": "build-017b4b34859a480dadf486f3282e2bae-metrics.json",
+    "caseDirectory": "build"
+  },
+  {
+    "name": "run",
+    "selector": "com.wuxianggujun.tinaide.core.compile.VcpkgManagedDeviceTest#managedCatalogAndRuntime",
+    "extras": {
+      "vcpkgManagedPhase": "run"
+    },
+    "serial": "emulator-5556",
+    "orientation": "portrait",
+    "seconds": 2.76,
+    "passed": true,
+    "timed_out": false,
+    "returncode": 0,
+    "runId": "f49b97f7cc0d4b1087a6d3e1046db7ae",
+    "evidenceFile": "run-f49b97f7cc0d4b1087a6d3e1046db7ae-metrics.json",
+    "caseDirectory": "run"
+  },
+  {
+    "name": "repeat",
+    "selector": "com.wuxianggujun.tinaide.core.compile.VcpkgManagedDeviceTest#managedCatalogAndRuntime",
+    "extras": {
+      "vcpkgManagedPhase": "repeat"
+    },
+    "serial": "emulator-5556",
+    "orientation": "portrait",
+    "seconds": 5.2,
+    "passed": true,
+    "timed_out": false,
+    "returncode": 0,
+    "runId": "bf075aec3eb64e7886fe5da5ce75300c",
+    "evidenceFile": "repeat-bf075aec3eb64e7886fe5da5ce75300c-metrics.json",
+    "caseDirectory": "repeat"
+  },
+  {
+    "name": "external",
+    "selector": "com.wuxianggujun.tinaide.core.compile.VcpkgManagedDeviceTest#managedCatalogAndRuntime",
+    "extras": {
+      "vcpkgManagedPhase": "external"
+    },
+    "serial": "emulator-5556",
+    "orientation": "portrait",
+    "seconds": 17.52,
+    "passed": true,
+    "timed_out": false,
+    "returncode": 0,
+    "runId": "e30fd558fe1542c7b750f0eaf6292edb",
+    "evidenceFile": "external-e30fd558fe1542c7b750f0eaf6292edb-metrics.json",
+    "caseDirectory": "external"
+  },
+  {
+    "name": "update",
+    "selector": "com.wuxianggujun.tinaide.core.compile.VcpkgManagedDeviceTest#managedCatalogAndRuntime",
+    "extras": {
+      "vcpkgManagedPhase": "update"
+    },
+    "serial": "emulator-5556",
+    "orientation": "portrait",
+    "seconds": 5.76,
+    "passed": true,
+    "timed_out": false,
+    "returncode": 0,
+    "runId": "baf4564694ee4a4aa23153f8e52c53da",
+    "evidenceFile": "update-baf4564694ee4a4aa23153f8e52c53da-metrics.json",
+    "caseDirectory": "update-repeat"
+  },
+  {
+    "name": "catalog",
+    "selector": "com.wuxianggujun.tinaide.core.compile.VcpkgManagedDeviceTest#managedCatalogAndRuntime",
+    "extras": {
+      "vcpkgManagedPhase": "catalog"
+    },
+    "serial": "emulator-5556",
+    "orientation": "portrait",
+    "seconds": 3.42,
+    "passed": true,
+    "timed_out": false,
+    "returncode": 0,
+    "runId": "a6e2b4b6488841c792dd4f94e8885ba6",
+    "evidenceFile": "catalog-a6e2b4b6488841c792dd4f94e8885ba6-metrics.json",
+    "caseDirectory": "offline/catalog"
+  },
+  {
+    "name": "repeat",
+    "selector": "com.wuxianggujun.tinaide.core.compile.VcpkgManagedDeviceTest#managedCatalogAndRuntime",
+    "extras": {
+      "vcpkgManagedPhase": "repeat"
+    },
+    "serial": "emulator-5556",
+    "orientation": "portrait",
+    "seconds": 5.12,
+    "passed": true,
+    "timed_out": false,
+    "returncode": 0,
+    "runId": "f3d7bedba2ce4cc581910a035304ac1c",
+    "evidenceFile": "repeat-f3d7bedba2ce4cc581910a035304ac1c-metrics.json",
+    "caseDirectory": "offline/repeat"
+  }
+]

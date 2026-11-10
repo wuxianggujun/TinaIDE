@@ -323,8 +323,9 @@ class ExternalSdlActivity : SDLActivity() {
             return
         }
 
-        val installed = SdlAssetRedirect.install(this, projectRoot)
-        val projectAssetsDir = File(projectRoot, "assets")
+        val configuredAssets = NativeLaunchEnvironment.readFromIntent(intent)[CompileProjectUseCase.RUNTIME_ASSET_DIR_ENV].orEmpty()
+        val installed = SdlAssetRedirect.install(this, projectRoot, configuredAssets)
+        val projectAssetsDir = configuredAssets.takeIf { it.isNotBlank() }?.let(::File) ?: File(projectRoot, "assets")
         val assetSample = runCatching {
             projectAssetsDir.listFiles()?.take(ASSET_DIAGNOSTIC_SAMPLE_LIMIT)?.joinToString(",") { it.name }
         }.getOrNull()

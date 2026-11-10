@@ -1,0 +1,153 @@
+[
+  {
+    "name": "sdl3-return-customFalse",
+    "selector": "com.wuxianggujun.tinaide.ui.runtime.SdlRuntimeIsolationInstrumentationTest#realSdlAssetsAndNativeFailure_leaveIdeProcessAlive",
+    "extras": {
+      "sdlMajor": "3",
+      "nativeAction": "return",
+      "customAssets": "false"
+    },
+    "serial": "emulator-5564",
+    "orientation": "portrait",
+    "seconds": 36.32,
+    "passed": true,
+    "timed_out": false
+  },
+  {
+    "name": "sdl3-return-customTrue",
+    "selector": "com.wuxianggujun.tinaide.ui.runtime.SdlRuntimeIsolationInstrumentationTest#realSdlAssetsAndNativeFailure_leaveIdeProcessAlive",
+    "extras": {
+      "sdlMajor": "3",
+      "nativeAction": "return",
+      "customAssets": "true"
+    },
+    "serial": "emulator-5564",
+    "orientation": "portrait",
+    "seconds": 22.87,
+    "passed": true,
+    "timed_out": false
+  },
+  {
+    "name": "sdl3-abort-customTrue",
+    "selector": "com.wuxianggujun.tinaide.ui.runtime.SdlRuntimeIsolationInstrumentationTest#realSdlAssetsAndNativeFailure_leaveIdeProcessAlive",
+    "extras": {
+      "sdlMajor": "3",
+      "nativeAction": "abort",
+      "customAssets": "true"
+    },
+    "serial": "emulator-5564",
+    "orientation": "portrait",
+    "seconds": 17.36,
+    "passed": true,
+    "timed_out": false
+  },
+  {
+    "name": "sdl3-exit-customFalse",
+    "selector": "com.wuxianggujun.tinaide.ui.runtime.SdlRuntimeIsolationInstrumentationTest#realSdlAssetsAndNativeFailure_leaveIdeProcessAlive",
+    "extras": {
+      "sdlMajor": "3",
+      "nativeAction": "exit",
+      "customAssets": "false"
+    },
+    "serial": "emulator-5564",
+    "orientation": "portrait",
+    "seconds": 20.75,
+    "passed": true,
+    "timed_out": false
+  },
+  {
+    "name": "sdl2-return-customFalse",
+    "selector": "com.wuxianggujun.tinaide.ui.runtime.SdlRuntimeIsolationInstrumentationTest#realSdlAssetsAndNativeFailure_leaveIdeProcessAlive",
+    "extras": {
+      "sdlMajor": "2",
+      "nativeAction": "return",
+      "customAssets": "false"
+    },
+    "serial": "emulator-5564",
+    "orientation": "portrait",
+    "seconds": 18.64,
+    "passed": true,
+    "timed_out": false
+  },
+  {
+    "name": "sdl2-return-customTrue",
+    "selector": "com.wuxianggujun.tinaide.ui.runtime.SdlRuntimeIsolationInstrumentationTest#realSdlAssetsAndNativeFailure_leaveIdeProcessAlive",
+    "extras": {
+      "sdlMajor": "2",
+      "nativeAction": "return",
+      "customAssets": "true"
+    },
+    "serial": "emulator-5564",
+    "orientation": "portrait",
+    "seconds": 10.03,
+    "passed": true,
+    "timed_out": false
+  },
+  {
+    "name": "sdl2-abort-customTrue",
+    "selector": "com.wuxianggujun.tinaide.ui.runtime.SdlRuntimeIsolationInstrumentationTest#realSdlAssetsAndNativeFailure_leaveIdeProcessAlive",
+    "extras": {
+      "sdlMajor": "2",
+      "nativeAction": "abort",
+      "customAssets": "true"
+    },
+    "serial": "emulator-5564",
+    "orientation": "portrait",
+    "seconds": 8.4,
+    "passed": true,
+    "timed_out": false
+  },
+  {
+    "name": "sdl2-exit-customFalse",
+    "selector": "com.wuxianggujun.tinaide.ui.runtime.SdlRuntimeIsolationInstrumentationTest#realSdlAssetsAndNativeFailure_leaveIdeProcessAlive",
+    "extras": {
+      "sdlMajor": "2",
+      "nativeAction": "exit",
+      "customAssets": "false"
+    },
+    "serial": "emulator-5564",
+    "orientation": "portrait",
+    "seconds": 10.01,
+    "passed": true,
+    "timed_out": false
+  },
+  {
+    "name": "raylib-return",
+    "selector": "com.wuxianggujun.tinaide.ui.runtime.SdlRuntimeIsolationInstrumentationTest#realSdlAssetsAndNativeFailure_leaveIdeProcessAlive",
+    "extras": {
+      "nativeHost": "raylib",
+      "nativeAction": "return"
+    },
+    "serial": "emulator-5564",
+    "orientation": "portrait",
+    "seconds": 9.05,
+    "passed": true,
+    "timed_out": false
+  },
+  {
+    "name": "raylib-abort",
+    "selector": "com.wuxianggujun.tinaide.ui.runtime.SdlRuntimeIsolationInstrumentationTest#realSdlAssetsAndNativeFailure_leaveIdeProcessAlive",
+    "extras": {
+      "nativeHost": "raylib",
+      "nativeAction": "abort"
+    },
+    "serial": "emulator-5564",
+    "orientation": "portrait",
+    "seconds": 7.5,
+    "passed": true,
+    "timed_out": false
+  },
+  {
+    "name": "raylib-exit",
+    "selector": "com.wuxianggujun.tinaide.ui.runtime.SdlRuntimeIsolationInstrumentationTest#realSdlAssetsAndNativeFailure_leaveIdeProcessAlive",
+    "extras": {
+      "nativeHost": "raylib",
+      "nativeAction": "exit"
+    },
+    "serial": "emulator-5564",
+    "orientation": "portrait",
+    "seconds": 8.09,
+    "passed": true,
+    "timed_out": false
+  }
+]

@@ -12,6 +12,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.PopupWindow
+import android.widget.FrameLayout
 import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
 import androidx.compose.ui.platform.ComposeView
@@ -151,7 +152,17 @@ internal class GraphicalRuntimeActivityHost(
         // NativeActivity gives the main window surface to the engine. A child view
         // shares that surface and can be overwritten; an attached popup owns a
         // separate window above it, without SYSTEM_ALERT_WINDOW or full-screen touch capture.
-        popup.contentView = composeView
+        // PopupWindow inserts its own decor root. Compose resolves the window
+        // recomposer from that root, not from the inner ComposeView. Install the
+        // owners before ViewGroup dispatches attachment to its Compose child.
+        popup.contentView = object : FrameLayout(activity) {
+            override fun onAttachedToWindow() {
+                rootView.setViewTreeLifecycleOwner(viewTreeOwner)
+                rootView.setViewTreeViewModelStoreOwner(viewTreeOwner)
+                rootView.setViewTreeSavedStateRegistryOwner(viewTreeOwner)
+                super.onAttachedToWindow()
+            }
+        }.apply { addView(composeView) }
         overlayView = composeView
         overlayPopup = popup
         overlayContainer = container

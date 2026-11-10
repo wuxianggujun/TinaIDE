@@ -28,6 +28,44 @@ import org.apache.commons.compress.compressors.zstandard.ZstdCompressorInputStre
  */
 object TarExtractor {
 
+    /** Stream metadata without creating thousands of files. Also validates all skipped members. */
+    fun visitRegularFiles(
+        archiveFile: File,
+        limits: ArchiveExtractionLimits,
+        ensureActive: () -> Unit = {},
+        include: (String) -> Boolean,
+        onFile: (String, ByteArray) -> Unit,
+    ) {
+        require(archiveFile.length() <= limits.maxArchiveBytes)
+        val budget = ArchiveExtractionBudget(limits, archiveFile.length())
+        BufferedInputStream(archiveFile.inputStream()).use { input ->
+            wrapWithDecompressor(input, detectCompressionType(input)).use { tar ->
+                while (true) {
+                    ensureActive()
+                    val entry = tar.nextEntry ?: break
+                    require(entry.isDirectory || (entry.isFile && !entry.isLink && !entry.isSymbolicLink)) {
+                        "Source archives must contain only regular files and directories"
+                    }
+                    budget.beginEntry(entry.name, entry.size, entry.isDirectory)
+                    val name = ArchivePathSafety.sanitizeRelativePath(entry.name)
+                    val selected = include(name)
+                    if (entry.isDirectory) continue
+                    if (selected) {
+                        java.io.ByteArrayOutputStream().use { output ->
+                            budget.copyEntry(tar, output, name, ensureActive)
+                            onFile(name, output.toByteArray())
+                        }
+                    } else {
+                        budget.copyEntry(tar, object : java.io.OutputStream() {
+                            override fun write(value: Int) = Unit
+                            override fun write(buffer: ByteArray, offset: Int, length: Int) = Unit
+                        }, name, ensureActive)
+                    }
+                }
+            }
+        }
+    }
+
     private const val BUFFER_SIZE = 8192
 
     // Magic bytes
@@ -56,6 +94,7 @@ object TarExtractor {
 
     enum class SymlinkPolicy {
         RESTRICT_TO_TARGET_DIR,
+        RELOCATE_ABSOLUTE_INSIDE_ARCHIVE,
         PRESERVE_ARCHIVE_TARGETS,
         REJECT_LINKS,
     }
@@ -283,6 +322,8 @@ object TarExtractor {
                                 linkTarget = entry.linkName,
                                 source = "tar symlink target"
                             )
+                        SymlinkPolicy.RELOCATE_ABSOLUTE_INSIDE_ARCHIVE ->
+                            ArchivePathSafety.relocateArchiveSymlink(targetDir, outputFile, entry.linkName)
                         SymlinkPolicy.PRESERVE_ARCHIVE_TARGETS -> entry.linkName
                         SymlinkPolicy.REJECT_LINKS -> error("Unreachable link policy")
                     }

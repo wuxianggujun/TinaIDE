@@ -1,0 +1,3 @@
+idePid=4523
+pid=4595 video=1 window=1
+action=exit

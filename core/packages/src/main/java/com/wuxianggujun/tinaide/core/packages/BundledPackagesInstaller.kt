@@ -45,8 +45,10 @@ class BundledPackagesInstaller(
      * @param forceReinstall 是否强制重新安装（删除已有目录）
      */
     suspend fun installBundledPackages(forceReinstall: Boolean = false) = withContext(Dispatchers.IO) {
-        PackageInstallCoordinator.withExclusiveAccess(installDir) {
-            installBundledPackagesLocked(forceReinstall)
+        PackageInstallCoordinator.withMutation {
+            PackageInstallCoordinator.withExclusiveAccess(installDir) {
+                installBundledPackagesLocked(forceReinstall)
+            }
         }
     }
 

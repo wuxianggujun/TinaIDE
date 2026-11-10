@@ -206,7 +206,14 @@ fun VariableTextField(
     maxLines: Int = 1
 ) {
     var showSuggestions by remember { mutableStateOf(false) }
-    var cursorPosition by remember { mutableIntStateOf(0) }
+    var input by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(value)) }
+    val displayedInput = if (input.text == value) input else input.copy(
+        text = value,
+        selection = androidx.compose.ui.text.TextRange(input.selection.end.coerceAtMost(value.length)),
+        composition = null,
+    )
+    androidx.compose.runtime.SideEffect { input = displayedInput }
+    val cursorPosition = displayedInput.selection.end
 
     // 检查是否应该显示变量建议
     // 当光标前面有 $ 且后面没有完整的变量时显示
@@ -215,6 +222,7 @@ fun VariableTextField(
 
         // 查找光标前最近的 $
         val beforeCursor = value.take(cursorPosition.coerceAtMost(value.length))
+        if (beforeCursor.count { it == '$' } % 2 == 0) return@remember false
         val lastDollar = beforeCursor.lastIndexOf('$')
 
         if (lastDollar == -1) return@remember false
@@ -251,16 +259,16 @@ fun VariableTextField(
     }
 
     Box(modifier = modifier) {
-        OutlinedTextField(
-            value = value,
+        TinaTextField(
+            value = displayedInput,
             onValueChange = { newValue ->
-                onValueChange(newValue)
-                // 简单估算光标位置（实际上 Compose 的 TextField 不直接暴露光标位置）
-                cursorPosition = newValue.length
-                showSuggestions = newValue.contains("$") && !newValue.endsWith("$")
+                input = newValue
+                if (newValue.text != value) onValueChange(newValue.text)
+                showSuggestions = newValue.selection.collapsed &&
+                    newValue.text.take(newValue.selection.end).contains("$")
             },
-            label = { Text(label) },
-            placeholder = { Text(placeholder) },
+            label = label,
+            placeholder = placeholder,
             supportingText = {
                 Text(stringResource(Strings.run_config_variable_hint))
             },
@@ -315,13 +323,21 @@ fun VariableTextField(
                         val lastDollar = beforeCursor.lastIndexOf('$')
 
                         val newValue = if (lastDollar != -1) {
-                            // 替换从 $ 开始的部分
-                            value.substring(0, lastDollar) + variable.name + value.substring(cursorPosition.coerceAtMost(value.length))
+                            // When editing inside an existing token, replace its suffix too.
+                            val cursor = cursorPosition.coerceAtMost(value.length)
+                            val closing = value.indexOf('$', cursor).takeIf { end ->
+                                end >= cursor && value.substring(cursor, end).all { it.isLetterOrDigit() || it == '_' }
+                            }
+                            value.substring(0, lastDollar) + variable.name + value.substring(closing?.plus(1) ?: cursor)
                         } else {
                             // 直接插入
                             value + variable.name
                         }
 
+                        input = androidx.compose.ui.text.input.TextFieldValue(
+                            newValue,
+                            androidx.compose.ui.text.TextRange((if (lastDollar != -1) lastDollar else value.length) + variable.name.length),
+                        )
                         onValueChange(newValue)
                         showSuggestions = false
                     }

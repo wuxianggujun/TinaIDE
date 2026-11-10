@@ -1,0 +1,30 @@
+{
+  "app/build/outputs/apk/x86_64/debug/TinaIDE-0.19.0-x86_64-debug.apk": {
+    "bytes": 314683326,
+    "sha256": "b7af5187474147d6fe16abeb1a233e32ebdb350c33d4d7d9b7b8fb0433ee4546"
+  },
+  "app/build/outputs/apk/androidTest/x86_64/debug/app-x86_64-debug-androidTest.apk": {
+    "bytes": 2729240,
+    "sha256": "df841dc629502719ebc32b06f87314ec12467a034fa2679e0ed03369bc998b1d"
+  },
+  "core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/cmake/VcpkgCMakeIntegration.kt": {
+    "bytes": 8755,
+    "sha256": "365081d95a5053bcc5d76fa567abd67dd424566bdea71189c78d4d22f337e32d"
+  },
+  "core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/store/LocalInstallStateStore.kt": {
+    "bytes": 9873,
+    "sha256": "5480ebf8f01ed65e81ff232dcf49661c380d01f70b0648bf48575e5df7340000"
+  },
+  "app/src/androidTest/java/com/wuxianggujun/tinaide/core/compile/VcpkgAcceptanceDeviceTest.kt": {
+    "bytes": 4682,
+    "sha256": "64547387336759c4e7e1ebf9a0dfe242ef2a95dd8e6518952af59b860a1d1300"
+  },
+  "app/src/androidTest/java/com/wuxianggujun/tinaide/core/packages/RegistryInstallDeviceTest.kt": {
+    "bytes": 6608,
+    "sha256": "3381c8987f01e2f6ddbcfad0d4df70396c85e5bef1654376584486c36f6f903b"
+  },
+  "app/src/androidTest/java/com/wuxianggujun/tinaide/ui/compose/editor/EditorLargeFileInstrumentationTest.kt": {
+    "bytes": 8905,
+    "sha256": "d7cdfc50cc1dd30ddc14cc8052ba0d6aefa2f77aafa8462a870061e5db72ad60"
+  }
+}

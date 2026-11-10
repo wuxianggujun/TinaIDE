@@ -1,0 +1,56 @@
+[
+  {
+    "name": "com.wuxianggujun.tinaide.core.common.io.TarExtractorTest",
+    "tests": "2",
+    "skipped": "0",
+    "failures": "0",
+    "errors": "0",
+    "timestamp": "2026-11-10T05:09:25.587Z",
+    "time": "0.151"
+  },
+  {
+    "name": "com.wuxianggujun.tinaide.core.common.io.ArchivePathSafetyTest",
+    "tests": "5",
+    "skipped": "0",
+    "failures": "0",
+    "errors": "0",
+    "timestamp": "2026-11-10T05:09:25.396Z",
+    "time": "0.186"
+  },
+  {
+    "name": "com.wuxianggujun.tinaide.core.packages.VcpkgCatalogStoreTest",
+    "tests": "6",
+    "skipped": "0",
+    "failures": "0",
+    "errors": "0",
+    "timestamp": "2026-11-10T05:14:49.694Z",
+    "time": "8.501"
+  },
+  {
+    "name": "com.wuxianggujun.tinaide.core.packages.VcpkgRepositoryTest",
+    "tests": "15",
+    "skipped": "0",
+    "failures": "0",
+    "errors": "0",
+    "timestamp": "2026-11-10T05:14:58.385Z",
+    "time": "2.762"
+  },
+  {
+    "name": "com.wuxianggujun.tinaide.core.compile.artifact.VcpkgBuildInputsTest",
+    "tests": "2",
+    "skipped": "0",
+    "failures": "0",
+    "errors": "0",
+    "timestamp": "2026-11-10T05:16:57.674Z",
+    "time": "0.169"
+  },
+  {
+    "name": "com.wuxianggujun.tinaide.core.compile.cmake.VcpkgCMakeIntegrationTest",
+    "tests": "7",
+    "skipped": "0",
+    "failures": "0",
+    "errors": "0",
+    "timestamp": "2026-11-10T05:16:57.865Z",
+    "time": "0.384"
+  }
+]

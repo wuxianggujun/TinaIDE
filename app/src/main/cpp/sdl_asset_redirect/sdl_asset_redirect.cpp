@@ -16,20 +16,20 @@
 //   1) 打开模式是只读（mode 以 'r' 开头）；
 //   2) 路径落在 getFilesDir() 前缀下；
 //   3) 该路径在 filesDir 下实际不存在；
-//   4) 把前缀换成项目根后，文件在项目根下存在（先试 `<项目根>/<rel>`，
-//      再试 `<项目根>/assets/<rel>`）；
-// 才把打开目标重定向回项目根。写入 / 追加（'w' / 'a' / 'r+' 之外的写模式）一律
+//   4) 文件在配置的资源目录或项目根下存在，规范路径仍在允许目录内；
+// 才把打开目标重定向回项目。写入 / 追加（包括 'r+'）一律
 // 放行，存档仍留在 getFilesDir()，符合 Android 应用私有存储语义。
 //
 // 两个候选目录的意义：
-//   - `<项目根>/<rel>`：资源与源码平铺的工程（老行为，保持兼容）；
-//   - `<项目根>/assets/<rel>`：项目把资源放在 assets/ 目录里。导出 APK 时这些资源
+//   - `<资源目录>/<rel>`：默认 assets/，运行配置可指定项目内的其他目录。导出 APK 时这些资源
 //     会映射到 APK 的 assets 根，因此 `SDL_IOFromFile("font.ttf")` 在 APK 里命中
 //     `assets/font.ttf`；IDE 直接运行时由这条候选把它接回项目目录，
 //     于是同一条相对路径在两种运行方式下都成立。
+//   - `<项目根>/<rel>`：兼容显式 assets/... 与源码平铺的工程。
 
 #include <android/log.h>
 #include <bytehook.h>
+#include "asset_path_policy.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -49,6 +49,7 @@ namespace {
 // 因此无需加锁。用普通 std::string 持有，进程存活期间不释放。
 std::string g_files_dir;      // getFilesDir().getCanonicalPath()，无尾部 '/'
 std::string g_project_root;   // 项目根绝对/规范路径，无尾部 '/'
+std::string g_asset_dir;
 bool g_installed = false;
 bytehook_stub_t g_stub_fopen = nullptr;
 bytehook_stub_t g_stub_fopen64 = nullptr;
@@ -61,45 +62,9 @@ std::string strip_trailing_slash(const char *value) {
     return result;
 }
 
-// 判断 mode 是否为纯读取语义（要求文件已存在）。
-// SDL 加载资源用 "rb"；"r"/"rb"/"r+"... 首字符都是 'r'，都要求文件存在，
-// 重定向到项目里已存在的同名文件是安全的。'w'/'a' 创建或追加，绝不重定向。
-bool is_read_mode(const char *mode) {
-    return mode != nullptr && (mode[0] == 'r' || mode[0] == 'R');
-}
-
-// 若 path 命中重定向条件，返回重定向后的绝对路径；否则返回空串（放行原路径）。
-// 该函数不做任何 I/O 副作用（只用 access 检查存在性），逻辑与 hook 解耦，便于推理。
+// Read-only resolution; traversal, symlink escapes and write modes never redirect.
 std::string resolve_redirect(const char *path, const char *mode) {
-    if (path == nullptr || path[0] == '\0') return {};
-    if (g_files_dir.empty() || g_project_root.empty()) return {};
-    if (!is_read_mode(mode)) return {};
-
-    const size_t prefix_len = g_files_dir.size();
-    // 必须是 "<filesDir>/<rel>" 形式：前缀相等且紧跟 '/'。
-    if (strncmp(path, g_files_dir.c_str(), prefix_len) != 0) return {};
-    if (path[prefix_len] != '/') return {};
-
-    const char *relative = path + prefix_len + 1;
-    if (relative[0] == '\0') return {};
-
-    // 只有当 filesDir 下确实不存在、才考虑重定向，避免遮蔽用户真实写入的存档。
-    if (access(path, F_OK) == 0) return {};
-
-    // 候选顺序与 Kotlin 侧文档保持一致：
-    //   1) <项目根>/<rel>          —— 资源与源码平铺
-    //   2) <项目根>/assets/<rel>   —— 项目 assets 目录（与导出 APK 的 assets 根对齐）
-    std::string primary = g_project_root;
-    primary.push_back('/');
-    primary.append(relative);
-    if (access(primary.c_str(), F_OK) == 0) return primary;
-
-    std::string assets_candidate = g_project_root;
-    assets_candidate.append("/assets/");
-    assets_candidate.append(relative);
-    if (access(assets_candidate.c_str(), F_OK) == 0) return assets_candidate;
-
-    return {};
+    return tina::sdl_assets::resolve(g_files_dir, g_project_root, g_asset_dir, path, mode);
 }
 
 FILE *proxy_fopen(const char *path, const char *mode) {
@@ -149,20 +114,21 @@ void on_hooked(bytehook_stub_t task_stub, int status_code, const char *caller_pa
 // 因此 JNI 第二参是 jobject（INSTANCE），不是 jclass。
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_wuxianggujun_tinaide_ui_sdl_SdlAssetRedirect_nativeInstall(
-    JNIEnv *env, jobject thiz, jstring files_dir, jstring project_root) {
+    JNIEnv *env, jobject thiz, jbyteArray files_dir, jbyteArray project_root, jbyteArray asset_dir) {
     (void)thiz;
     if (g_installed) return JNI_TRUE;
 
-    const char *files_dir_utf = files_dir == nullptr ? nullptr
-                                                     : env->GetStringUTFChars(files_dir, nullptr);
-    const char *project_root_utf =
-        project_root == nullptr ? nullptr : env->GetStringUTFChars(project_root, nullptr);
-
-    g_files_dir = strip_trailing_slash(files_dir_utf);
-    g_project_root = strip_trailing_slash(project_root_utf);
-
-    if (files_dir_utf != nullptr) env->ReleaseStringUTFChars(files_dir, files_dir_utf);
-    if (project_root_utf != nullptr) env->ReleaseStringUTFChars(project_root, project_root_utf);
+    auto utf8_path = [env](jbyteArray bytes) -> std::string {
+        if (!bytes) return {};
+        std::string value(env->GetArrayLength(bytes), '\0');
+        env->GetByteArrayRegion(bytes, 0, static_cast<jsize>(value.size()), reinterpret_cast<jbyte *>(value.data()));
+        if (env->ExceptionCheck() || value.find('\0') != std::string::npos) return {};
+        return strip_trailing_slash(value.c_str());
+    };
+    g_files_dir = utf8_path(files_dir);
+    g_project_root = utf8_path(project_root);
+    g_asset_dir = utf8_path(asset_dir);
+    if (env->ExceptionCheck()) return JNI_FALSE;
 
     if (g_files_dir.empty() || g_project_root.empty()) {
         LOGW("install skipped: filesDir='%s' projectRoot='%s'", g_files_dir.c_str(),

@@ -28,6 +28,8 @@ internal object VcpkgCMakeIntegration {
         arguments: List<String>,
         androidAbi: String,
         nativeCMakeArguments: List<String>,
+        parallelJobs: Int = 1,
+        managedInstallationRoot: File? = null,
     ): Plan? {
         val config = VcpkgProjectSettings.from(arguments)
         if (!config.enabled) return null
@@ -40,9 +42,7 @@ internal object VcpkgCMakeIntegration {
         val toolchain = File(root, "scripts/buildsystems/vcpkg.cmake")
         if (!toolchain.isFile) throw VcpkgException(Strings.vcpkg_toolchain_missing)
         val manifestMode = config.mode == VcpkgProjectSettings.MANIFEST
-        val installed = if (config.installedDir.isNotBlank()) resolvePath(projectDir, config.installedDir) else {
-            if (manifestMode) File(projectDir, "vcpkg_installed") else File(root, "installed")
-        }.canonicalFile
+        val installed = resolvePath(projectDir, config.installationRoot(projectDir, managedInstallationRoot).absolutePath)
         val triplet = config.targetTriplet(androidAbi)
         val passthrough = VcpkgProjectSettings.stripManagedArguments(arguments)
         if (passthrough.any { argument ->
@@ -79,12 +79,15 @@ internal object VcpkgCMakeIntegration {
                 appendLine("set(VCPKG_LIBRARY_LINKAGE static)")
                 appendLine("set(VCPKG_CHAINLOAD_TOOLCHAIN_FILE ${quote(nativeToolchain.absolutePath)})")
                 // Per-command TMPDIR and launcher state must not invalidate every cached package ABI.
-                appendLine("set(VCPKG_ENV_PASSTHROUGH_UNTRACKED PATH LD_LIBRARY_PATH LD_PRELOAD TMPDIR HOME)")
+                appendLine("set(VCPKG_ENV_PASSTHROUGH_UNTRACKED PATH LD_LIBRARY_PATH LD_PRELOAD TMPDIR HOME " +
+                    "GIT_EXEC_PATH GIT_SSL_CAINFO CURL_CA_BUNDLE SSL_CERT_FILE http_proxy https_proxy HTTP_PROXY HTTPS_PROXY)")
             })
             listOf(
                 executable.absolutePath, "install", "--triplet=$triplet", "--host-triplet=$triplet",
                 "--x-manifest-root=${projectDir.canonicalPath}", "--x-install-root=${installed.absolutePath}",
                 "--overlay-triplets=${integrationDir.absolutePath}", "--disable-metrics",
+                "--clean-buildtrees-after-build", "--clean-packages-after-build",
+                "--x-wait-for-lock",
             )
         } else {
             if (!File(installed, triplet).isDirectory) throw VcpkgException(Strings.vcpkg_prebuilt_missing)
@@ -107,6 +110,11 @@ internal object VcpkgCMakeIntegration {
                 "VCPKG_ROOT" to root.absolutePath,
                 "VCPKG_FORCE_SYSTEM_BINARIES" to "1",
                 "VCPKG_DISABLE_METRICS" to "1",
+                "VCPKG_MAX_CONCURRENCY" to parallelJobs.coerceAtLeast(1).toString(),
+                // Map /bin/sh requested by Ninja to Android's existing /system/bin/sh.
+                // A project-local prefix can exceed tina-exec's 90-byte limit and
+                // silently fall back to files/usr. No writable alias is necessary.
+                "TINA_PREFIX" to "/system",
             ),
         )
     }

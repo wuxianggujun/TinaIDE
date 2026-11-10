@@ -122,7 +122,9 @@ object ZipArchiveValidator {
     fun validate(
         zipFile: File,
         limits: ArchiveExtractionLimits,
+        ensureActive: () -> Unit = {},
     ): ZipArchiveSummary {
+        ensureActive()
         require(zipFile.isFile) { "Archive file does not exist: ${zipFile.absolutePath}" }
         if (zipFile.length() > limits.maxArchiveBytes) {
             throw ArchiveLimitException("Archive is larger than the allowed size")
@@ -135,6 +137,7 @@ object ZipArchiveValidator {
         ZipFile(zipFile).use { archive ->
             val entries = archive.entries()
             while (entries.hasMoreElements()) {
+                ensureActive()
                 val entry = entries.nextElement()
                 entryCount += 1
                 if (entryCount > limits.maxEntryCount) {

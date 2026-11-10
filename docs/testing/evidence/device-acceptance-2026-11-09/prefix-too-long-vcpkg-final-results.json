@@ -1,0 +1,50 @@
+[
+  {
+    "name": "configure",
+    "selector": "com.wuxianggujun.tinaide.core.compile.VcpkgAcceptanceDeviceTest#realFmtProject_configuresBuildsOrRuns",
+    "extras": {
+      "vcpkgPhase": "configure"
+    },
+    "serial": "emulator-5556",
+    "orientation": "portrait",
+    "seconds": 15.93,
+    "passed": false,
+    "timed_out": false
+  },
+  {
+    "name": "build",
+    "selector": "com.wuxianggujun.tinaide.core.compile.VcpkgAcceptanceDeviceTest#realFmtProject_configuresBuildsOrRuns",
+    "extras": {
+      "vcpkgPhase": "build"
+    },
+    "serial": "emulator-5556",
+    "orientation": "portrait",
+    "seconds": 6.32,
+    "passed": false,
+    "timed_out": false
+  },
+  {
+    "name": "run",
+    "selector": "com.wuxianggujun.tinaide.core.compile.VcpkgAcceptanceDeviceTest#realFmtProject_configuresBuildsOrRuns",
+    "extras": {
+      "vcpkgPhase": "run"
+    },
+    "serial": "emulator-5556",
+    "orientation": "portrait",
+    "seconds": 5.54,
+    "passed": false,
+    "timed_out": false
+  },
+  {
+    "name": "repeat",
+    "selector": "com.wuxianggujun.tinaide.core.compile.VcpkgAcceptanceDeviceTest#realFmtProject_configuresBuildsOrRuns",
+    "extras": {
+      "vcpkgPhase": "repeat"
+    },
+    "serial": "emulator-5556",
+    "orientation": "portrait",
+    "seconds": 14.83,
+    "passed": false,
+    "timed_out": false
+  }
+]

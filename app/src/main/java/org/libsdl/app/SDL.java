@@ -38,9 +38,7 @@ public class SDL {
         // TinaIDE 定制：nativeGetCompiledSubsystems() 是 SDL 3.5 才注册的 JNI 方法。
         // 老原生库（3.2/3.4）没有它，直接调用会抛 UnsatisfiedLinkError；老桥接层的语义
         // 等价于"所有子系统都编译过"，因此这里按其原始行为回退。
-        mCompiledSubsystems = SdlNativeCompat.supportsSubsystemQuery()
-                ? SDLActivity.nativeGetCompiledSubsystems()
-                : SDL_INIT_EVERYTHING;
+        mCompiledSubsystems = SdlNativeCompat.compiledSubsystems();
         mInitializedSubsystems = (subsystems & mCompiledSubsystems);
 
         if (isSubsystemCompiled(SDL_INIT_AUDIO)) {

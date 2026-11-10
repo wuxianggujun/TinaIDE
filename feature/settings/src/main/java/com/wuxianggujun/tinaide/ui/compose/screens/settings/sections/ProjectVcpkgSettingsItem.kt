@@ -42,7 +42,6 @@ internal fun ProjectVcpkgSettingsItem(arguments: List<String>, onSave: (List<Str
     if (editing) {
         var mode by rememberSaveable { mutableStateOf(current.mode) }
         var root by rememberSaveable { mutableStateOf(current.root) }
-        var installedDir by rememberSaveable { mutableStateOf(current.installedDir) }
         var invalid by rememberSaveable { mutableStateOf(false) }
         TinaAlertDialog(
             onDismissRequest = { editing = false },
@@ -61,22 +60,18 @@ internal fun ProjectVcpkgSettingsItem(arguments: List<String>, onSave: (List<Str
                             Text(stringResource(modeTitle(option)))
                         }
                     }
-                    if (mode != VcpkgProjectSettings.DISABLED) {
+                    if (mode == VcpkgProjectSettings.PREBUILT) {
                         OutlinedTextField(
                             value = root,
                             onValueChange = { root = it; invalid = false },
-                            label = { Text(stringResource(Strings.vcpkg_root)) },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        OutlinedTextField(
-                            value = installedDir,
-                            onValueChange = { installedDir = it; invalid = false },
-                            label = { Text(stringResource(Strings.vcpkg_installed_dir)) },
+                            label = { Text(stringResource(Strings.vcpkg_import_source)) },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
                         )
                         Text(stringResource(Strings.vcpkg_setup_hint), style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (mode == VcpkgProjectSettings.MANIFEST) {
+                        Text(stringResource(Strings.vcpkg_managed_paths), style = MaterialTheme.typography.bodySmall)
                     }
                     if (invalid) Text(stringResource(Strings.vcpkg_root_required), color = MaterialTheme.colorScheme.error)
                 }
@@ -85,10 +80,10 @@ internal fun ProjectVcpkgSettingsItem(arguments: List<String>, onSave: (List<Str
                 TinaPrimaryButton(
                     text = stringResource(Strings.btn_save),
                     onClick = {
-                        invalid = mode != VcpkgProjectSettings.DISABLED &&
-                            (root.isBlank() || (root + installedDir).any { it in "\u0000\r\n;" })
+                        invalid = mode == VcpkgProjectSettings.PREBUILT &&
+                            (root.isBlank() || root.any { it in "\u0000\r\n;" })
                         if (!invalid) {
-                            onSave(VcpkgProjectSettings(mode, root, installedDir).applyTo(arguments))
+                            onSave(VcpkgProjectSettings(mode, if (mode == VcpkgProjectSettings.PREBUILT) root else "").applyTo(arguments))
                             editing = false
                         }
                     },

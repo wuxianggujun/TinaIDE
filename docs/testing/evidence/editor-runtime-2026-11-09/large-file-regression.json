@@ -1,0 +1,9 @@
+{
+  "initialLines": 10000,
+  "finalLines": 10001,
+  "bytes": 367779,
+  "openMs": 61,
+  "firstHighlightWithMountMs": 1729,
+  "renderer": "EditorRenderPerformanceSnapshot(totalRenderedFrames=21, slowRenderedFrames=18, lastRenderDurationMs=8, lastVisibleLineCount=20, lastFrameCacheHits=20, lastFrameCacheMisses=0, totalCacheHits=743, totalCacheMisses=0, totalCacheHitRatePercent=100.0, textLineCacheSize=59, textScanCacheSize=59, lineLayoutCacheEntryCount=59, lineLayoutCacheFloatCount=1653, renderPlanCacheEntryCount=59, renderPlanCacheCharCount=1594, renderPlanCacheElementCount=828, totalRenderPlanBuilds=59, totalRenderPlanCacheHits=528)",
+  "scope": "debug emulator smoke, no baseline comparison"
+}

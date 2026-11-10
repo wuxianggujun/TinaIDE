@@ -18,9 +18,9 @@
 ## vcpkg 包目录
 
 **市场 → vcpkg** 按项目管理依赖。内置包通常提供预编译制品，vcpkg 提供更多上游库，但本机安装可能需要下载源码并编译。
-先选择 CMake 项目，点击 **配置 vcpkg** 设置根目录和模式；准备好根目录后可以搜索 ports，添加或移出 `vcpkg.json` 的依赖。
+打开即可浏览和搜索离线包列表；点击 **下载 / 更新包列表** 获取最新目录，失败或取消时保留原列表。点击 **添加到项目** 时再选择 CMake 项目，应用自动启用本机模式并修改 `vcpkg.json`。
 「已安装」来自所选项目和 ABI 的实际 vcpkg 安装状态，不等同于「已添加到清单」。修改清单后点击 **安装依赖并配置项目**，查看进度或取消。
-本机安装需要 Android 原生 vcpkg、git、curl、zip、unzip、pkg-config 及 TinaIDE native 工具链；这些辅助程序目前不随 APK 提供。
+Android 原生 vcpkg 随 APK 提供；git、curl、zip、unzip、pkg-config 等配套工具首次使用时自动下载并校验。工具和依赖目录由应用管理，依赖存放在按项目隔离的私有工作区，不需要用户配置安装路径。
 也可在电脑使用 Android NDK 构建并导出库，再选择预编译模式。PRoot/Linux 与 Android 库不能混用，不是所有上游 port 都支持 Android。
 本轮实现尚未完成编译与手机验收。
 

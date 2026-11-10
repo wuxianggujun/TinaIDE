@@ -1,6 +1,7 @@
 package org.libsdl.app;
 
 import android.util.Log;
+import java.util.function.BooleanSupplier;
 
 /**
  * TinaIDE 定制：原生 SDL 能力探测。
@@ -24,8 +25,8 @@ import android.util.Log;
  *   <li>调用点按本类探测到的能力选择新旧签名，避免调用对方不存在的方法。</li>
  * </ol>
  *
- * 探测基准是 {@link SDLActivity#nativeGetVersion()}——它在所有 SDL3 版本里都存在。
- * 探测失败时一律按"老版本"处理：少用功能好过直接崩溃。
+ * 3.5 开发快照的版本号相同但 JNI 能力不同。版本只决定是否尝试无副作用的子系统查询，
+ * 查询入口实际存在后才启用新版接口；缺少入口时保留旧接口调用。
  */
 final class SdlNativeCompat {
 
@@ -39,6 +40,8 @@ final class SdlNativeCompat {
     private static int sMajorVersion;
     private static int sMinorVersion;
     private static String sRawVersion = "";
+    private static boolean sModernBridge;
+    private static int sCompiledSubsystems = SDL.SDL_INIT_EVERYTHING;
 
     private SdlNativeCompat() {
     }
@@ -60,6 +63,14 @@ final class SdlNativeCompat {
             if (parts.length >= 2) {
                 sMinorVersion = Integer.parseInt(parts[1].trim());
             }
+            if (sMajorVersion == CAPABILITY_MAJOR && sMinorVersion >= CAPABILITY_MINOR) {
+                try {
+                    sCompiledSubsystems = SDLActivity.nativeGetCompiledSubsystems();
+                    sModernBridge = true;
+                } catch (UnsatisfiedLinkError unavailable) {
+                    Log.i(TAG, "SDL snapshot has no subsystem query; using compatible JNI callbacks");
+                }
+            }
         } catch (Throwable error) {
             // 原生库没加载成功或版本串异常：按老版本处理。
             Log.w(TAG, "nativeGetVersion() unavailable: " + error);
@@ -80,7 +91,13 @@ final class SdlNativeCompat {
     }
 
     private static boolean hasCapabilities() {
-        return isAtLeast(CAPABILITY_MAJOR, CAPABILITY_MINOR);
+        resolve();
+        return sModernBridge;
+    }
+
+    static int compiledSubsystems() {
+        resolve();
+        return sCompiledSubsystems;
     }
 
     /** {@code nativeGetCompiledSubsystems()} 是否存在（3.5+）。 */
@@ -91,6 +108,20 @@ final class SdlNativeCompat {
     /** {@code nativeIsHIDAPIEnabled()} 是否存在（3.5+）。 */
     static boolean supportsHidapiQuery() {
         return hasCapabilities();
+    }
+
+    /** A missing optional query does not mean the legacy HID bridge is disabled. */
+    static boolean shouldInitializeHidapi(BooleanSupplier enabledQuery) {
+        if (!supportsHidapiQuery()) {
+            return true;
+        }
+        try {
+            return enabledQuery.getAsBoolean();
+        } catch (UnsatisfiedLinkError unavailable) {
+            // Development snapshots can add the subsystem query before the HID
+            // query. Fall back to acquiring the legacy bridge in that case too.
+            return true;
+        }
     }
 
     /** {@code nativeSetScreenHDRHeadroom(float)} 是否存在（3.5+）。 */

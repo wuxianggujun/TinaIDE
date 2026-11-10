@@ -62,13 +62,13 @@ public class SDLControllerManager
     static public native boolean onNativePadUp(int device_id, int keycode);
 
     static boolean dispatchNativePadDown(int deviceId, int keyCode, int scanCode) {
-        return SdlNativeCompat.isAtLeast(3, 5)
+        return SdlNativeCompat.joystickReportsSensors()
             ? onNativePadDown(deviceId, keyCode, scanCode)
             : onNativePadDown(deviceId, keyCode);
     }
 
     static boolean dispatchNativePadUp(int deviceId, int keyCode, int scanCode) {
-        return SdlNativeCompat.isAtLeast(3, 5)
+        return SdlNativeCompat.joystickReportsSensors()
             ? onNativePadUp(deviceId, keyCode, scanCode)
             : onNativePadUp(deviceId, keyCode);
     }
@@ -127,6 +127,15 @@ public class SDLControllerManager
      */
     static void detectDevices() {
         mJoystickHandler.detectDevices();
+    }
+
+    // JNI callbacks in shipped SDL 3.4/3.5 packages, before device-listener naming.
+    static public void pollInputDevices() {
+        if (mJoystickHandler != null) detectDevices();
+    }
+
+    static public void pollHapticDevices() {
+        detectHapticDevices();
     }
 
     /**

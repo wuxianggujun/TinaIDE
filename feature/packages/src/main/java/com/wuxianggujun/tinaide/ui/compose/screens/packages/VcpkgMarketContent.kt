@@ -14,7 +14,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.remember
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -39,8 +40,9 @@ import org.koin.androidx.compose.koinViewModel
 @Composable
 fun VcpkgMarketContent(projects: List<ProjectListItem>, onConfigureProject: (String) -> Unit) {
     val viewModel: VcpkgMarketViewModel = koinViewModel()
-    val state by viewModel.state.collectAsState()
+    val state by viewModel.state.collectAsStateWithLifecycle()
     var chooseProject by rememberSaveable { mutableStateOf(false) }
+    var pendingDependency by rememberSaveable { mutableStateOf<String?>(null) }
     val owner = LocalLifecycleOwner.current
     DisposableEffect(owner, viewModel) {
         val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) viewModel.refresh() }
@@ -49,8 +51,10 @@ fun VcpkgMarketContent(projects: List<ProjectListItem>, onConfigureProject: (Str
         onDispose { owner.lifecycle.removeObserver(observer) }
     }
     val catalog = state.catalog
-    val ports = catalog?.ports.orEmpty().filter {
-        state.query.isBlank() || it.name.contains(state.query, true) || it.description.contains(state.query, true)
+    val ports = remember(state.available, catalog, state.query) {
+        (state.available?.ports.orEmpty() + catalog?.ports.orEmpty()).distinctBy { it.name }.filter {
+            state.query.isBlank() || it.name.contains(state.query, true) || it.description.contains(state.query, true)
+        }
     }
     LazyColumn(
         modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp),
@@ -58,29 +62,38 @@ fun VcpkgMarketContent(projects: List<ProjectListItem>, onConfigureProject: (Str
     ) {
         item {
             Text(stringResource(Strings.vcpkg_market_description), style = MaterialTheme.typography.bodyMedium)
+            TinaTextButton(text = stringResource(Strings.vcpkg_update_catalog), onClick = viewModel::updateCatalog,
+                enabled = !state.busy)
+            state.available?.let { Text(stringResource(Strings.vcpkg_catalog_count, it.ports.size), style = MaterialTheme.typography.bodySmall) }
             TinaOutlinedButton(
                 text = projects.firstOrNull { it.dir.absolutePath == state.projectPath }?.displayName
                     ?: stringResource(Strings.vcpkg_select_project),
                 onClick = { chooseProject = true },
-                enabled = !state.installing && !state.loading,
+                enabled = !state.busy && projects.isNotEmpty(),
             )
+            if (projects.isEmpty()) Text(stringResource(Strings.vcpkg_no_projects), style = MaterialTheme.typography.bodySmall)
+            if (state.updating) {
+                state.downloadProgress?.let { progress -> LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth()) }
+                    ?: LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                TinaTextButton(text = stringResource(Strings.btn_cancel), onClick = viewModel::cancelInstall)
+            }
         }
         if (state.projectPath.isNotBlank()) {
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TinaTextButton(text = stringResource(Strings.vcpkg_configure),
-                        enabled = !state.installing && !state.loading,
+                        enabled = !state.busy,
                         onClick = { onConfigureProject(state.projectPath) })
                     TinaTextButton(text = stringResource(Strings.vcpkg_refresh), onClick = viewModel::refresh,
-                        enabled = !state.installing && !state.loading)
+                        enabled = !state.busy)
                 }
-                Text(stringResource(if (catalog?.cliPresent == true) Strings.vcpkg_cli_present else Strings.vcpkg_cli_missing))
+                Text(stringResource(Strings.vcpkg_managed_paths), style = MaterialTheme.typography.bodySmall)
                 if (state.installing) {
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                     TinaOutlinedButton(text = stringResource(Strings.btn_cancel_install), onClick = viewModel::cancelInstall)
-                } else if (catalog?.settings?.mode == VcpkgProjectSettings.MANIFEST && catalog.cliPresent) {
+                } else if (catalog?.settings?.mode == VcpkgProjectSettings.MANIFEST) {
                     TinaPrimaryButton(text = stringResource(Strings.vcpkg_install_project), onClick = viewModel::install,
-                        enabled = !state.loading)
+                        enabled = !state.busy && (catalog.declared.isNotEmpty() || catalog.installed.isNotEmpty()))
                 }
                 Text(stringResource(Strings.vcpkg_declared_summary, catalog?.declared.orEmpty().sorted().joinToString(", ")))
             }
@@ -109,8 +122,13 @@ fun VcpkgMarketContent(projects: List<ProjectListItem>, onConfigureProject: (Str
                     val declared = port.name in catalog?.declared.orEmpty()
                     TinaTextButton(
                         text = stringResource(if (declared) Strings.vcpkg_remove_dependency else Strings.vcpkg_add_dependency),
-                        onClick = { viewModel.toggleDependency(port.name, !declared) },
-                        enabled = !state.installing && !state.loading && catalog?.settings?.mode == VcpkgProjectSettings.MANIFEST,
+                        onClick = {
+                            if (state.projectPath.isBlank()) {
+                                pendingDependency = port.name
+                                chooseProject = true
+                            } else viewModel.toggleDependency(port.name, !declared)
+                        },
+                        enabled = !state.busy && projects.isNotEmpty() && catalog?.settings?.mode != VcpkgProjectSettings.PREBUILT,
                     )
                 }
             }
@@ -121,8 +139,8 @@ fun VcpkgMarketContent(projects: List<ProjectListItem>, onConfigureProject: (Str
             title = stringResource(Strings.vcpkg_select_project),
             options = projects.map { it.dir.absolutePath to it.displayName },
             selectedValue = state.projectPath,
-            onSelected = { path -> viewModel.selectProject(path); chooseProject = false },
-            onDismiss = { chooseProject = false },
+            onSelected = { path -> viewModel.selectProject(path, pendingDependency); pendingDependency = null; chooseProject = false },
+            onDismiss = { pendingDependency = null; chooseProject = false },
         )
     }
 }

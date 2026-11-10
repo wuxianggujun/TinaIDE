@@ -1,0 +1,92 @@
+[
+  {
+    "Path": "app/build/reports/runtime-regression",
+    "DeletedFiles": 163,
+    "DeletedLogicalBytes": 11633773,
+    "RemainingFiles": 0
+  },
+  {
+    "Path": "app/build/outputs/apk/x86_64/debug",
+    "DeletedFiles": 1,
+    "DeletedLogicalBytes": 437,
+    "RemainingFiles": 0
+  },
+  {
+    "Path": "app/build/outputs/apk/androidTest/x86_64/debug",
+    "DeletedFiles": 1,
+    "DeletedLogicalBytes": 444,
+    "RemainingFiles": 0
+  },
+  {
+    "Path": "app/build/intermediates/apk/androidTest/x86_64/debug",
+    "DeletedFiles": 2,
+    "DeletedLogicalBytes": 2687106,
+    "RemainingFiles": 0
+  },
+  {
+    "Path": "app/build/intermediates/incremental/packageX86_64Debug",
+    "DeletedFiles": 3,
+    "DeletedLogicalBytes": 257058,
+    "RemainingFiles": 0
+  },
+  {
+    "Path": "app/build/intermediates/incremental/packageX86_64DebugAndroidTest",
+    "DeletedFiles": 3,
+    "DeletedLogicalBytes": 12196,
+    "RemainingFiles": 0
+  },
+  {
+    "Path": "app/build/intermediates/assets/x86_64Debug",
+    "DeletedFiles": 324,
+    "DeletedLogicalBytes": 109278607,
+    "RemainingFiles": 0
+  },
+  {
+    "Path": "app/build/intermediates/compressed_assets/x86_64Debug",
+    "DeletedFiles": 324,
+    "DeletedLogicalBytes": 98853294,
+    "RemainingFiles": 0
+  },
+  {
+    "Path": "app/build/intermediates/merged_native_libs/x86_64Debug",
+    "DeletedFiles": 74,
+    "DeletedLogicalBytes": 101807664,
+    "RemainingFiles": 0
+  },
+  {
+    "Path": "app/build/intermediates/stripped_native_libs/x86_64Debug",
+    "DeletedFiles": 74,
+    "DeletedLogicalBytes": 48009488,
+    "RemainingFiles": 0
+  },
+  {
+    "Path": "editor-kit/editor-view/build/intermediates/apk/androidTest",
+    "DeletedFiles": 2,
+    "DeletedLogicalBytes": 69826132,
+    "RemainingFiles": 0
+  },
+  {
+    "Path": "editor-kit/editor-view/build/outputs/apk/androidTest",
+    "DeletedFiles": 2,
+    "DeletedLogicalBytes": 73413709,
+    "RemainingFiles": 0
+  },
+  {
+    "Path": "tools/template-sdl3/build",
+    "DeletedFiles": 650,
+    "DeletedLogicalBytes": 35732197,
+    "RemainingFiles": 0
+  },
+  {
+    "Path": "tools/template-sdl3/.cxx",
+    "DeletedFiles": 141,
+    "DeletedLogicalBytes": 769247,
+    "RemainingFiles": 0
+  },
+  {
+    "Path": "tools/template-native-activity/build",
+    "DeletedFiles": 383,
+    "DeletedLogicalBytes": 16412671,
+    "RemainingFiles": 0
+  }
+]

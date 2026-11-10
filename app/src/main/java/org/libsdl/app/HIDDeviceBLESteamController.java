@@ -605,7 +605,7 @@ class HIDDeviceBLESteamController extends BluetoothGattCallback implements HIDDe
             // Only register controller with the native side once it has been fully configured
             if (!isRegistered()) {
                 Log.v(TAG, "Registering Steam Controller with ID: " + getId());
-                mManager.HIDDeviceConnected(getId(), getIdentifier(), getVendorId(), getProductId(), getSerialNumber(), getVersion(), getManufacturerName(), getProductName(), 0, 0, 0, 0, true, mReportId);
+                mManager.dispatchHIDDeviceConnected(getId(), getIdentifier(), getVendorId(), getProductId(), getSerialNumber(), getVersion(), getManufacturerName(), getProductName(), 0, 0, 0, 0, true, mReportId);
                 setRegistered();
             }
         }
@@ -640,7 +640,7 @@ class HIDDeviceBLESteamController extends BluetoothGattCallback implements HIDDe
             if (getProductId() == TRITON_BLE_PID) {
                 // For Triton we just mark things registered.
                 Log.v(TAG, "Registering Triton Steam Controller with ID: " + getId());
-                mManager.HIDDeviceConnected(getId(), getIdentifier(), getVendorId(), getProductId(), getSerialNumber(), getVersion(), getManufacturerName(), getProductName(), 0, 0, 0, 0, true, mReportId);
+                mManager.dispatchHIDDeviceConnected(getId(), getIdentifier(), getVendorId(), getProductId(), getSerialNumber(), getVersion(), getManufacturerName(), getProductName(), 0, 0, 0, 0, true, mReportId);
                 setRegistered();
             } else {
                 // For the original controller, we need to manually enter Valve mode.

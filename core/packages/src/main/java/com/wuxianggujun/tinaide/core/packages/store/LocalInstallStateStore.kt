@@ -2,9 +2,11 @@ package com.wuxianggujun.tinaide.core.packages.store
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.wuxianggujun.tinaide.core.common.registry.RegistryPackageId
 import com.wuxianggujun.tinaide.core.packages.InstalledPackageInfo
 import com.wuxianggujun.tinaide.core.packages.model.*
 import com.wuxianggujun.tinaide.core.serialization.JsonSerializer
+import java.io.IOException
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import timber.log.Timber
@@ -160,13 +162,28 @@ class LocalInstallStateStore(context: Context) {
     }
 
     fun clear() = synchronized(stateLock) {
-        prefs.edit().clear().apply()
+        prefs.edit().clear().commitState()
     }
 
     private fun getStoredPackages(strict: Boolean = false): List<StoredInstallInfo> {
         val jsonString = prefs.getString(KEY_INSTALLED_PACKAGES, null) ?: return emptyList()
         return try {
-            json.decodeFromString<List<StoredInstallInfo>>(jsonString)
+            val records = json.decodeFromString<List<StoredInstallInfo>>(jsonString)
+            // Writers retain unfamiliar records so updating one known package
+            // never discards data created by another version. Readers expose
+            // only records that all state/list APIs can interpret consistently.
+            if (strict) records else records.filter { record ->
+                RegistryPackageId.isValid(record.packageId) &&
+                    record.version.isNotBlank() &&
+                    Platform.entries.any { it.name.lowercase() == record.platform } &&
+                    InstallType.entries.any { it.name.lowercase() == record.installType }
+            }.also { readable ->
+                if (readable.size != records.size) {
+                    Timber.tag("LocalInstallStateStore").w(
+                        "Ignoring %d unsupported installed package record(s)", records.size - readable.size,
+                    )
+                }
+            }
         } catch (e: Exception) {
             Timber.tag("LocalInstallStateStore").e(e, "Cannot decode installed package records")
             if (strict) throw IllegalStateException("Cannot decode installed package records", e)
@@ -175,10 +192,12 @@ class LocalInstallStateStore(context: Context) {
     }
 
     private fun saveState(packages: List<StoredInstallInfo>, updates: List<StoredUpdateInfo>) {
+        // Installation completion can be followed immediately by process death.
+        // apply() only changes the in-process cache; callers already mutate on IO.
         prefs.edit()
             .putString(KEY_INSTALLED_PACKAGES, json.encodeToString(packages))
             .putString(KEY_UPDATE_AVAILABLE, json.encodeToString(updates))
-            .apply()
+            .commitState()
     }
 
     private fun getStoredUpdates(strict: Boolean = false): List<StoredUpdateInfo> {
@@ -194,6 +213,10 @@ class LocalInstallStateStore(context: Context) {
 
     private fun saveStoredUpdates(updates: List<StoredUpdateInfo>) {
         val jsonString = json.encodeToString(updates)
-        prefs.edit().putString(KEY_UPDATE_AVAILABLE, jsonString).apply()
+        prefs.edit().putString(KEY_UPDATE_AVAILABLE, jsonString).commitState()
+    }
+
+    private fun SharedPreferences.Editor.commitState() {
+        if (!commit()) throw IOException("Could not persist package installation state")
     }
 }

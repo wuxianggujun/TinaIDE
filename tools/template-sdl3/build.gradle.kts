@@ -56,6 +56,7 @@ dependencies {
     implementation(project.dependencies.project(":tools:template-common"))
     // The shared SDL bridge uses ContextCompat.registerReceiver's API 33 flags.
     implementation(libs.androidx.core)
+    testImplementation(libs.junit)
 }
 
 // 生成目录里的 Java 源码来自 app 的 SDL 桥接层，因此所有编译任务都必须先跑 copySDLSources。

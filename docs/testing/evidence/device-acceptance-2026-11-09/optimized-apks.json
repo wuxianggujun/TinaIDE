@@ -1,0 +1,10 @@
+{
+  "app/build/outputs/apk/x86_64/debug/TinaIDE-0.19.0-x86_64-debug.apk": {
+    "sha256": "3ba86775ce79746a015da499345c0c7d0cb0bd678f1b7158f8788b248e2b1d24",
+    "bytes": 317098282
+  },
+  "app/build/outputs/apk/androidTest/x86_64/debug/app-x86_64-debug-androidTest.apk": {
+    "sha256": "0c97b3c76d624cdd735357b6b9b41e7dd55c02dc80da4389378d68afe662f278",
+    "bytes": 2729240
+  }
+}

@@ -146,6 +146,9 @@ object ProjectPaths {
     fun getProjectWorkspaceDir(context: Context, projectId: String): File =
         File(getWorkspaceRoot(context), ProjectIdentity.requireValid(projectId))
 
+    fun getProjectVcpkgInstalledDir(context: Context, projectId: String): File =
+        File(getProjectWorkspaceDir(context, projectId), "vcpkg_installed")
+
     // ============ 4. 项目构建目录 ============
 
     /**
@@ -185,6 +188,9 @@ object ProjectPaths {
      * 用途：C/C++ 运行时库包（用于 NativeActivity/SDL 运行时依赖解析）。
      */
     fun getInstalledPackagesRoot(context: Context): File = File(context.filesDir, "installed-packages")
+
+    /** Application-owned vcpkg catalogs, sources and native helper tools. */
+    fun getVcpkgRoot(context: Context): File = File(context.filesDir, "vcpkg")
 
     /**
      * 同步元数据目录（私有）

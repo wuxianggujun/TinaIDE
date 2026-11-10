@@ -183,7 +183,9 @@ class PackageManagerImpl(
         platform: Platform,
         progress: (InstallProgressEvent) -> Unit
     ): InstallResult = withContext(ioDispatcher) {
-        installOnIo(packageId, platform, progress)
+        PackageInstallCoordinator.withMutation {
+            installOnIo(packageId, platform, progress)
+        }
     }
 
     private suspend fun installOnIo(
@@ -215,7 +217,11 @@ class PackageManagerImpl(
                 progress(InstallProgressEvent.Preparing(message))
             }
 
-            when (val result = installResolvedPackage(descriptor, progress)) {
+            // A backend finishes one archive, not the whole dependency plan. Keep
+            // the operation cancellable in the UI until every install is recorded.
+            when (val result = installResolvedPackage(descriptor) { event ->
+                if (event !is InstallProgressEvent.Completed) progress(event)
+            }) {
                 is InstallResult.Success -> {
                     if (descriptor.packageId == packageId) {
                         rootResult = result
@@ -225,11 +231,13 @@ class PackageManagerImpl(
             }
         }
 
-        return rootResult ?: InstallResult.Success(
+        val result = rootResult ?: InstallResult.Success(
             packageId = packageId,
             version = plan.lastOrNull { it.packageId == packageId }?.platformPackage?.version.orEmpty(),
             platform = platform
         )
+        progress(InstallProgressEvent.Completed(result))
+        return result
     }
 
     private suspend fun resolveInstallPlan(
@@ -325,7 +333,7 @@ class PackageManagerImpl(
 
         when (result) {
             is InstallResult.Success -> {
-                installStateStore.clearUpdateAvailable(packageId, platform)
+                // setInstalled updates the record and removes its stale update atomically.
                 installStateStore.setInstalled(
                     packageId = packageId,
                     platform = platform,
@@ -483,7 +491,9 @@ class PackageManagerImpl(
 
     override suspend fun uninstall(packageId: String, platform: Platform): UninstallResult =
         withContext(ioDispatcher) {
-            uninstallOnIo(packageId, platform)
+            PackageInstallCoordinator.withMutation {
+                uninstallOnIo(packageId, platform)
+            }
         }
 
     private suspend fun uninstallOnIo(packageId: String, platform: Platform): UninstallResult {
@@ -500,18 +510,21 @@ class PackageManagerImpl(
             return UninstallResult.Failure(packageId, UninstallError.PackageNotFound(packageId))
         }
 
-        val packageResult = getPackageDetail(packageId)
-        val pkg = packageResult.getOrNull()
+        val installed = installStateStore.getAllInstalledPackages()
+            .find { it.packageId == packageId && it.platform == platform }
+        // The registry describes the next install; only local provenance can
+        // choose how to remove this one. Downloads can be removed fully offline.
+        val pkg = if (installed == null || installed.installType == InstallType.APT) {
+            getPackageDetail(packageId).getOrNull()
+        } else {
+            null
+        }
         val platformPkg = when (platform) {
             Platform.LINUX -> pkg?.linux
             Platform.ANDROID -> pkg?.android
         }
 
-        // 确定安装类型：优先使用 API 返回的，如果 API 不可用则从本地存储回退
-        val effectiveInstallType = platformPkg?.installType
-            ?: installStateStore.getAllInstalledPackages()
-                .find { it.packageId == packageId && it.platform == platform }
-                ?.installType
+        val effectiveInstallType = installed?.installType ?: platformPkg?.installType
 
         val result = when (effectiveInstallType) {
             InstallType.APT -> {
@@ -526,12 +539,7 @@ class PackageManagerImpl(
                 packageId,
                 UninstallError.UnknownError("Remote script packages are disabled because registry scripts are not signed"),
             )
-            null -> {
-                // 安装类型未知（API 和本地都没有记录），尝试清理下载文件作为兜底
-                Timber.tag(TAG).w("Unknown install type for $packageId, attempting download file cleanup")
-                cleanupDownloadFiles(packageId)
-                UninstallResult.Success(packageId, platform, 0)
-            }
+            null -> UninstallResult.Failure(packageId, UninstallError.PackageNotFound(packageId))
         }
 
         val uninstalledVersion = when (platformState) {
@@ -555,23 +563,6 @@ class PackageManagerImpl(
         }
 
         return result
-    }
-
-    /**
-     * 清理下载类型包的解压文件。
-     * 作为兜底机制，确保卸载时文件被实际删除。
-     */
-    private fun cleanupDownloadFiles(packageId: String) {
-        try {
-            val installPath = downloadBackend.getInstallPath(packageId)
-            if (installPath.exists()) {
-                val freedSpace = installPath.walkTopDown().sumOf { it.length() }
-                installPath.deleteRecursively()
-                Timber.tag(TAG).d("Cleaned up download files for $packageId, freed $freedSpace bytes")
-            }
-        } catch (e: Exception) {
-            Timber.tag(TAG).w(e, "Failed to cleanup download files for $packageId")
-        }
     }
 
     override suspend fun getInstalledPackages(): List<InstalledPackageInfo> = installStateStore.getAllInstalledPackages()

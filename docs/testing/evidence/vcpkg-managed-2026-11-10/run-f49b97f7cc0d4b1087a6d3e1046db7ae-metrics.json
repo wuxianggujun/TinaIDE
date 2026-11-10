@@ -1,0 +1,6 @@
+{
+  "phase": "run",
+  "passed": true,
+  "runId": "f49b97f7cc0d4b1087a6d3e1046db7ae",
+  "output": "managed vcpkg: 42"
+}

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.wuxianggujun.tinaide.core.editorview.EditorScaleGestureLifecycleTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-11-08T14:52:30.925Z" hostname="DESKTOP-9KUJPVG" time="11.099">
+  <properties/>
+  <testcase name="cancelledTransform_settlesTheLastPreviewAndReleasesTheWrapFreeze" classname="com.wuxianggujun.tinaide.core.editorview.EditorScaleGestureLifecycleTest" time="10.887"/>
+  <testcase name="transformThatStartsAndEndsBetweenCompositions_commitsBeforeReturning" classname="com.wuxianggujun.tinaide.core.editorview.EditorScaleGestureLifecycleTest" time="0.102"/>
+  <testcase name="nativeFontMetrics_matchTheLastPreviewAndRemainStableOnTheNextMeasurement" classname="com.wuxianggujun.tinaide.core.editorview.EditorScaleGestureLifecycleTest" time="0.11"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

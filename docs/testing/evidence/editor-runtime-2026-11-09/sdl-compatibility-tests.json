@@ -1,0 +1,22 @@
+[
+  {
+    "name": "com.wuxianggujun.tinaide.ui.sdl.SdlAndroidBridgeContractTest",
+    "tests": "5",
+    "skipped": "0",
+    "failures": "0",
+    "errors": "0",
+    "timestamp": "2026-11-08T18:20:48.675Z",
+    "hostname": "DESKTOP-9KUJPVG",
+    "time": "0.29"
+  },
+  {
+    "name": "org.libsdl.app.SdlNativeCompatTest",
+    "tests": "1",
+    "skipped": "0",
+    "failures": "0",
+    "errors": "0",
+    "timestamp": "2026-11-08T18:20:49.339Z",
+    "hostname": "DESKTOP-9KUJPVG",
+    "time": "0.003"
+  }
+]

@@ -1,0 +1,6 @@
+{
+  "Path": ".tmp/editor-ui-validation",
+  "Scope": "Generated png/log/json/txt/xml only, each <= 1 MiB",
+  "DeletedFiles": 480,
+  "DeletedLogicalBytes": 21520718
+}

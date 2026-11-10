@@ -7,15 +7,10 @@ import java.nio.file.Files
 
 /** Tracks installed inputs, never vcpkg downloads/buildtrees or every available port. */
 internal object VcpkgBuildInputs {
-    fun collect(project: File, arguments: List<String>, androidAbi: String, debug: Boolean): List<File> {
+    fun collect(project: File, arguments: List<String>, androidAbi: String, debug: Boolean, managedInstallationRoot: File? = null): List<File> {
         val config = VcpkgProjectSettings.from(arguments)
-        if (!config.enabled || config.root.isBlank()) return emptyList()
-        fun resolve(path: String) = File(path).let { if (it.isAbsolute) it else File(project, path) }.canonicalFile
-        val installed = when {
-            config.installedDir.isNotBlank() -> resolve(config.installedDir)
-            config.mode == VcpkgProjectSettings.MANIFEST -> File(project, "vcpkg_installed")
-            else -> File(resolve(config.root), "installed")
-        }
+        if (!config.enabled) return emptyList()
+        val installed = config.installationRoot(project, managedInstallationRoot)
         val prefix = File(installed, config.targetTriplet(androidAbi))
         val directories = listOf("include", "share", "lib", "bin") + if (debug) listOf("debug/lib", "debug/bin") else emptyList()
         return buildList {

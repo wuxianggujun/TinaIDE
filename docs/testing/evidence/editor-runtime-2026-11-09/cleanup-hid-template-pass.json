@@ -1,0 +1,20 @@
+[
+  {
+    "Path": "tools/template-sdl3/build",
+    "DeletedFiles": 961,
+    "DeletedLogicalBytes": 37334889,
+    "RemainingFiles": 0
+  },
+  {
+    "Path": "tools/template-sdl3/.cxx",
+    "DeletedFiles": 141,
+    "DeletedLogicalBytes": 769249,
+    "RemainingFiles": 0
+  },
+  {
+    "Path": "tools/template-native-activity/build",
+    "DeletedFiles": 394,
+    "DeletedLogicalBytes": 16389429,
+    "RemainingFiles": 0
+  }
+]

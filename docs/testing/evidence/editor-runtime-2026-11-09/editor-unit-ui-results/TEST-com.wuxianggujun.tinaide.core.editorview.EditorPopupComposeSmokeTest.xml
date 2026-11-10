@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.wuxianggujun.tinaide.core.editorview.EditorPopupComposeSmokeTest" tests="13" skipped="0" failures="0" errors="0" timestamp="2026-11-08T14:52:27.169Z" hostname="DESKTOP-9KUJPVG" time="3.565">
+  <properties/>
+  <testcase name="editorCompletionPopup_shouldExposeStableTagsForPopupRowsAndKindIcons" classname="com.wuxianggujun.tinaide.core.editorview.EditorPopupComposeSmokeTest" time="0.583"/>
+  <testcase name="editorCompletionPopup_shouldRemainInteractiveWhenColorSchemeChanges" classname="com.wuxianggujun.tinaide.core.editorview.EditorPopupComposeSmokeTest" time="0.196"/>
+  <testcase name="editorCompletionPopup_shouldScrollSelectedItemIntoView" classname="com.wuxianggujun.tinaide.core.editorview.EditorPopupComposeSmokeTest" time="0.399"/>
+  <testcase name="editorSignatureHelpPopup_shouldRenderSelectedPreviewAndDispatchActions" classname="com.wuxianggujun.tinaide.core.editorview.EditorPopupComposeSmokeTest" time="0.275"/>
+  <testcase name="editorSelectionContextMenu_shouldOpenMoreMenuForKeyboardSelectedCodeAction" classname="com.wuxianggujun.tinaide.core.editorview.EditorPopupComposeSmokeTest" time="0.265"/>
+  <testcase name="editorSignatureHelpPopup_shouldExposeOverflowIndicatorsAndJumpAcrossHiddenSlices" classname="com.wuxianggujun.tinaide.core.editorview.EditorPopupComposeSmokeTest" time="0.145"/>
+  <testcase name="editorSignatureHelpPopup_shouldRemainInteractiveWhenOffsetChanges" classname="com.wuxianggujun.tinaide.core.editorview.EditorPopupComposeSmokeTest" time="0.225"/>
+  <testcase name="editorCompletionPopup_shouldRemainInteractiveWhenOffsetChanges" classname="com.wuxianggujun.tinaide.core.editorview.EditorPopupComposeSmokeTest" time="0.258"/>
+  <testcase name="editorCompletionPopup_shouldRenderItemsAndDispatchSelectionCallbacks" classname="com.wuxianggujun.tinaide.core.editorview.EditorPopupComposeSmokeTest" time="0.225"/>
+  <testcase name="editorSelectionContextMenu_shouldExposePrimaryActionsWithoutMovingWhenMoreOpens" classname="com.wuxianggujun.tinaide.core.editorview.EditorPopupComposeSmokeTest" time="0.228"/>
+  <testcase name="editorSelectionContextMenu_shouldKeepSelectAllInPrimaryRowForKeyboardNavigation" classname="com.wuxianggujun.tinaide.core.editorview.EditorPopupComposeSmokeTest" time="0.148"/>
+  <testcase name="editorSelectionContextMenu_shouldKeepMoreMenuCollapsedOnInitialLongPress" classname="com.wuxianggujun.tinaide.core.editorview.EditorPopupComposeSmokeTest" time="0.42"/>
+  <testcase name="editorSignatureHelpPopup_shouldRemainInteractiveWhenDensityChanges" classname="com.wuxianggujun.tinaide.core.editorview.EditorPopupComposeSmokeTest" time="0.196"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

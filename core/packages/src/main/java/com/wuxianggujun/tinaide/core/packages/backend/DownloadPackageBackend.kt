@@ -1,5 +1,9 @@
 package com.wuxianggujun.tinaide.core.packages.backend
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+
 import android.content.Context
 import android.os.Build
 import com.wuxianggujun.tinaide.core.common.io.TarExtractor
@@ -9,6 +13,7 @@ import com.wuxianggujun.tinaide.core.i18n.str
 import com.wuxianggujun.tinaide.core.network.ApiResult
 import com.wuxianggujun.tinaide.core.network.registry.GitHubRegistryHttpClientFactory
 import com.wuxianggujun.tinaide.core.packages.InstalledPackageMetadata
+import com.wuxianggujun.tinaide.core.packages.InstalledPackageMetadataReader
 import com.wuxianggujun.tinaide.core.packages.PackageAbiCompatibility
 import com.wuxianggujun.tinaide.core.packages.PackageArchivePolicy
 import com.wuxianggujun.tinaide.core.packages.PackageDownloadSourceSelector
@@ -19,12 +24,12 @@ import com.wuxianggujun.tinaide.core.packages.download.DownloadError
 import com.wuxianggujun.tinaide.core.packages.download.DownloadResult
 import com.wuxianggujun.tinaide.core.packages.download.ResumableDownloader
 import com.wuxianggujun.tinaide.core.packages.model.*
-import com.wuxianggujun.tinaide.core.serialization.JsonSerializer
 import java.io.File
 import java.io.FileInputStream
 import java.net.URI
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import timber.log.Timber
@@ -36,6 +41,10 @@ class DownloadPackageBackend(
     companion object {
         private const val TAG = "DownloadPackageBackend"
         private const val INSTALL_DIR_NAME = "installed-packages"
+        // Package managers are factories used by several screens. Stable download
+        // paths must remain protected through extraction and cache deletion across
+        // all those instances, not just while the HTTP request is running.
+        private val downloadCacheMutex = Mutex()
     }
 
     private enum class ArchiveFormat {
@@ -62,8 +71,6 @@ class DownloadPackageBackend(
             client = GitHubRegistryHttpClientFactory.download(context.applicationContext),
         )
     }
-
-    private val downloadCacheMutex = Mutex()
 
     suspend fun install(
         packageId: String,
@@ -107,11 +114,6 @@ class DownloadPackageBackend(
             return InstallResult.Failure(packageId, error)
         }
         val checksum = downloadInfo.checksum
-        if (checksum == null || !checksum.matches(Regex("(?i)^sha256:[0-9a-f]{64}$"))) {
-            val error = InstallError.UnknownError("Package download requires a valid SHA-256 checksum")
-            progress(InstallProgressEvent.Failed(error))
-            return InstallResult.Failure(packageId, error)
-        }
         val targetAbi = PackageAbiCompatibility.currentAppAbi(
             nativeLibraryDir = context.applicationInfo.nativeLibraryDir,
             supportedAbis = Build.SUPPORTED_ABIS,
@@ -127,12 +129,17 @@ class DownloadPackageBackend(
         var lastError: DownloadError? = null
 
         for (source in sortedSources) {
+            val sourceChecksum = resolvePackageDownloadChecksum(source.checksum, checksum)
+            if (sourceChecksum == null) {
+                lastError = DownloadError.IOError("Package download requires a valid SHA-256 checksum")
+                continue
+            }
             val archiveTarget = buildArchiveTarget(
                 packageId,
                 version,
                 source.abi,
                 source.url,
-                PackageInstallCoordinator.createOperationId(),
+                sourceChecksum,
             )
             Timber.tag(TAG).d("Trying source: ${source.name}, abi=${source.abi ?: "legacy"}")
             progress(InstallProgressEvent.Preparing("Downloading from ${source.name}..."))
@@ -140,7 +147,7 @@ class DownloadPackageBackend(
             val downloadResult = downloader.download(
                 url = source.url,
                 targetFile = archiveTarget.file,
-                checksum = source.checksum ?: downloadInfo.checksum,
+                checksum = sourceChecksum,
                 expectedSize = source.size ?: downloadInfo.size,
                 supportsRange = source.supportsRange
             ) { downloaded, total, speed ->
@@ -148,12 +155,11 @@ class DownloadPackageBackend(
             }
 
             when (downloadResult) {
-                is DownloadResult.Success -> {
+                is DownloadResult.Success -> try {
                     val archiveFormat = detectArchiveFormat(downloadResult.file, archiveTarget.formatHint)
                     if (archiveFormat == null) {
                         lastError = DownloadError.IOError("Unsupported package archive format")
                         Timber.tag(TAG).w("Unsupported archive file: ${downloadResult.file.name}")
-                        downloadResult.file.delete()
                         continue
                     }
 
@@ -166,7 +172,6 @@ class DownloadPackageBackend(
                         expectedVersion = version,
                         progress = progress
                     )
-                    downloadResult.file.delete()
 
                     if (extractResult.isSuccess) {
                         progress(
@@ -181,6 +186,10 @@ class DownloadPackageBackend(
                         )
                         progress(InstallProgressEvent.Failed(error))
                         return InstallResult.Failure(packageId, error)
+                    }
+                } finally {
+                    if (downloadResult.file.exists() && !downloadResult.file.delete()) {
+                        Timber.tag(TAG).w("Failed to remove package archive after installation: %s", packageId)
                     }
                 }
                 is DownloadResult.Failed -> {
@@ -215,6 +224,8 @@ class DownloadPackageBackend(
         expectedVersion: String,
         progress: (InstallProgressEvent) -> Unit
     ): Result<Unit> = runCatching {
+        val extractionContext = currentCoroutineContext()
+        extractionContext.ensureActive()
         PackageInstallCoordinator.withExclusiveAccess(installDir) {
             cleanupInterruptedInstallDirectories()
             val operationId = PackageInstallCoordinator.createOperationId()
@@ -229,13 +240,16 @@ class DownloadPackageBackend(
             check(stagingDir.mkdirs()) { "Failed to create package staging directory" }
             try {
                 when (archiveFormat) {
-                    ArchiveFormat.ZIP -> PackageArchivePolicy.extractZip(archiveFile, stagingDir) { pct ->
+                    ArchiveFormat.ZIP -> PackageArchivePolicy.extractZip(
+                        archiveFile, stagingDir, ensureActive = extractionContext::ensureActive,
+                    ) { pct ->
                         progress(InstallProgressEvent.Extracting(pct))
                     }
                     ArchiveFormat.TAR -> {
                         TarExtractor.extract(
                             archiveFile,
                             stagingDir,
+                            ensureActive = extractionContext::ensureActive,
                             limits = PackageArchivePolicy.limits,
                         ) { pct ->
                             progress(InstallProgressEvent.Extracting(pct))
@@ -243,7 +257,9 @@ class DownloadPackageBackend(
                     }
                 }
 
+                extractionContext.ensureActive()
                 requireValidPackageMetadata(stagingDir, packageId, expectedVersion)
+                extractionContext.ensureActive()
                 replaceDirectoryAtomically(stagingDir, targetDir, packageId, operationId)
                 Timber.tag(TAG).d("Published package to ${targetDir.absolutePath}")
             } finally {
@@ -251,6 +267,7 @@ class DownloadPackageBackend(
             }
         }
     }.onFailure { error ->
+        if (error is CancellationException) throw error
         Timber.tag(TAG).e(error, "Extraction failed for %s", packageId)
     }
 
@@ -259,7 +276,7 @@ class DownloadPackageBackend(
         version: String,
         abi: String?,
         url: String,
-        operationId: String,
+        checksum: String,
     ): ArchiveTarget {
         val rawPath = runCatching { URI(url).path }.getOrNull().orEmpty()
         val decodedPath = runCatching {
@@ -278,17 +295,12 @@ class DownloadPackageBackend(
             else -> ".pkg" to null
         }
 
-        val abiSuffix = abi
-            ?.trim()
-            ?.lowercase()
-            ?.replace(Regex("[^a-z0-9._-]"), "-")
-            ?.takeIf { it.isNotBlank() }
-            ?.let { "-$it" }
-            .orEmpty()
         return ArchiveTarget(
             file = File(
                 downloadDir,
-                "$packageId-${sanitizeFileComponent(version)}$abiSuffix-$operationId${suffixAndFormat.first}",
+                // URL suffixes differ between equivalent mirrors; content identity
+                // owns the cache key. Bound the readable prefix below NAME_MAX.
+                "${sanitizeFileComponent(packageId).take(48)}-${packageDownloadIdentity(packageId, version, abi, checksum)}.pkg",
             ),
             formatHint = suffixAndFormat.second
         )
@@ -375,10 +387,14 @@ class DownloadPackageBackend(
                     Timber.tag(TAG).d("Uninstalled $packageId, freed $freedSpace bytes")
                     UninstallResult.Success(packageId, Platform.ANDROID, freedSpace)
                 } else {
-                    UninstallResult.Failure(packageId, UninstallError.PackageNotFound(packageId))
+                    // Files may already be absent after external cleanup or an
+                    // interrupted uninstall. Let the manager remove the stale
+                    // install/update record; the requested end state is reached.
+                    UninstallResult.Success(packageId, Platform.ANDROID, 0)
                 }
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Timber.tag(TAG).e(e, "Uninstall failed")
             UninstallResult.Failure(packageId, UninstallError.UnknownError(e.message ?: "Unknown error"))
         }
@@ -411,7 +427,7 @@ class DownloadPackageBackend(
     ): InstalledPackageMetadata {
         val metadataFile = File(packageDir, "package.json")
         require(metadataFile.isFile) { "Downloaded package is missing package.json" }
-        val metadata = JsonSerializer.decodeFromFile<InstalledPackageMetadata>(metadataFile)
+        val metadata = InstalledPackageMetadataReader.readFile(metadataFile)
         require(metadata.id == expectedPackageId) { "Downloaded package id does not match the request" }
         require(metadata.version == expectedVersion) { "Downloaded package version does not match the request" }
         require(metadata.name.isNotBlank()) { "Downloaded package name is empty" }
@@ -460,7 +476,7 @@ class DownloadPackageBackend(
         val metadata = runCatching {
             val metadataFile = File(backupDir, "package.json")
             metadataFile.takeIf(File::isFile)
-                ?.let { JsonSerializer.decodeFromFile<InstalledPackageMetadata>(it) }
+                ?.let(InstalledPackageMetadataReader::readFile)
         }.getOrNull()
         if (targetDir != null && !targetDir.exists() && metadata?.id == packageId) {
             if (backupDir.renameTo(targetDir)) {
@@ -479,3 +495,13 @@ class DownloadPackageBackend(
         }
     }
 }
+
+/** Per-ABI sources may carry the digest without a version-wide fallback. */
+internal fun resolvePackageDownloadChecksum(sourceChecksum: String?, versionChecksum: String?): String? =
+    (sourceChecksum ?: versionChecksum)?.takeIf { it.matches(Regex("(?i)^sha256:[0-9a-f]{64}$")) }
+
+/** A retry or an equivalent mirror must reuse its verified-content partial file. */
+internal fun packageDownloadIdentity(packageId: String, version: String, abi: String?, checksum: String): String =
+    MessageDigest.getInstance("SHA-256")
+        .digest(listOf(packageId, version, abi.orEmpty(), checksum.lowercase()).joinToString("\u0000").toByteArray(Charsets.UTF_8))
+        .joinToString("") { "%02x".format(it) }

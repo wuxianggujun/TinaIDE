@@ -1,0 +1,233 @@
+{
+  "abi": "x86_64",
+  "cliSha256": "048779680dc8c518068bb34bf1a485bf894d569d3ec4663ea0f3b9ae1980e32d",
+  "cliVersion": "2026-10-29",
+  "repository": "https://packages.termux.dev/apt/termux-main",
+  "indexSha256": "ae9c53040b1561e25361e2fd9f293bd8da0265f82fa6b1c200dcc1106421ed90",
+  "packages": [
+    {
+      "Package": "ca-certificates",
+      "Version": "1:2026.11.05",
+      "Filename": "pool/main/c/ca-certificates/ca-certificates_1:2026.11.05_all.deb",
+      "SHA256": "4cf292d604e14ed2878847eec2acea7c24ba10f598a5c5cd75dfc5e3750717da",
+      "Size": "110160"
+    },
+    {
+      "Package": "curl",
+      "Version": "8.23.0",
+      "Filename": "pool/main/c/curl/curl_8.23.0_x86_64.deb",
+      "SHA256": "03a68c5393759f6802a2b256891c2bca93d633d4915cdcb50e6d643c12f84fff",
+      "Size": "254292"
+    },
+    {
+      "Package": "gdbm",
+      "Version": "1.26-1",
+      "Filename": "pool/main/g/gdbm/gdbm_1.26-1_x86_64.deb",
+      "SHA256": "af6c89b403d42a98898c665fc2c48da59a7d20e6e26f651a654790661844001f",
+      "Size": "155484"
+    },
+    {
+      "Package": "git",
+      "Version": "2.56.0",
+      "Filename": "pool/main/g/git/git_2.56.0_x86_64.deb",
+      "SHA256": "9af296495286bffe22f8abda910c29fd09e561ddc668c2d45c94785b91cbb129",
+      "Size": "4656948"
+    },
+    {
+      "Package": "glib",
+      "Version": "2.90.1",
+      "Filename": "pool/main/g/glib/glib_2.90.1_x86_64.deb",
+      "SHA256": "fb663e2222c3f7c7fb5c98b4694426665a719160adff0a6aec509b8285b63de4",
+      "Size": "2639456"
+    },
+    {
+      "Package": "less",
+      "Version": "710",
+      "Filename": "pool/main/l/less/less_710_x86_64.deb",
+      "SHA256": "7aa5f3d98f849e810f61b7b5b3a26d9ef763461470fe6331848013aea15eb5a3",
+      "Size": "149868"
+    },
+    {
+      "Package": "libandroid-posix-semaphore",
+      "Version": "0.1-4",
+      "Filename": "pool/main/liba/libandroid-posix-semaphore/libandroid-posix-semaphore_0.1-4_x86_64.deb",
+      "SHA256": "4bde3f8bc00fa59761544593f0606a05e4b449801f1c79038c42ce66988d0eb0",
+      "Size": "3984"
+    },
+    {
+      "Package": "libandroid-support",
+      "Version": "29-1",
+      "Filename": "pool/main/liba/libandroid-support/libandroid-support_29-1_x86_64.deb",
+      "SHA256": "665900760c05959ec076082a0941f05bd452f301e5a70bdfa7383fd3404d44d5",
+      "Size": "10968"
+    },
+    {
+      "Package": "libbz2",
+      "Version": "1.0.8-8",
+      "Filename": "pool/main/libb/libbz2/libbz2_1.0.8-8_x86_64.deb",
+      "SHA256": "f6f81d38a40c1626202da1e87727e5a3e6de296b1c0eb252af8948646b164ca0",
+      "Size": "27564"
+    },
+    {
+      "Package": "libcrypt",
+      "Version": "0.2-6",
+      "Filename": "pool/main/libc/libcrypt/libcrypt_0.2-6_x86_64.deb",
+      "SHA256": "c424f96ce977cf2e8aa44925a852fd4c6c63564490a100cc44f63b71afd943e2",
+      "Size": "8808"
+    },
+    {
+      "Package": "libcurl",
+      "Version": "8.23.0",
+      "Filename": "pool/main/libc/libcurl/libcurl_8.23.0_x86_64.deb",
+      "SHA256": "fa71ce8eca3d0aa48a748fc60e4519351fc9c4d51b20cac5722190cb002cfd1c",
+      "Size": "1084840"
+    },
+    {
+      "Package": "libexpat",
+      "Version": "2.10.0",
+      "Filename": "pool/main/libe/libexpat/libexpat_2.10.0_x86_64.deb",
+      "SHA256": "2e0f6f7d54ef7d8a732148f0a2ff53594b1a8d410a707f480f143861313a0ecd",
+      "Size": "108260"
+    },
+    {
+      "Package": "libffi",
+      "Version": "3.8.0",
+      "Filename": "pool/main/libf/libffi/libffi_3.8.0_x86_64.deb",
+      "SHA256": "59121ca4bc5f5735d7bb603bd99548983064e8fde97d236e97122cb87d3452a3",
+      "Size": "40568"
+    },
+    {
+      "Package": "libiconv",
+      "Version": "1.19.1",
+      "Filename": "pool/main/libi/libiconv/libiconv_1.19.1_x86_64.deb",
+      "SHA256": "3eb0c454676ad24d26c79601721b2eb3f9485c611ad0179fb86b17229344f46d",
+      "Size": "564832"
+    },
+    {
+      "Package": "liblzma",
+      "Version": "5.8.4",
+      "Filename": "pool/main/libl/liblzma/liblzma_5.8.4_x86_64.deb",
+      "SHA256": "100ea7503a0b9ecffa45e1f168d035651f2eb7aedbebe71dd21fc0da4a84ef16",
+      "Size": "199316"
+    },
+    {
+      "Package": "libnghttp2",
+      "Version": "1.71.0",
+      "Filename": "pool/main/libn/libnghttp2/libnghttp2_1.71.0_x86_64.deb",
+      "SHA256": "9bc1791438de6380038835cbd10c9cede716212cc32e37eb54407cd24f6605d6",
+      "Size": "98824"
+    },
+    {
+      "Package": "libnghttp3",
+      "Version": "1.19.0",
+      "Filename": "pool/main/libn/libnghttp3/libnghttp3_1.19.0_x86_64.deb",
+      "SHA256": "b3fa3f6117a8d2c1e5c6535f733282c077d39760b79bd08eac4ffba8da7bc0e6",
+      "Size": "73208"
+    },
+    {
+      "Package": "libngtcp2",
+      "Version": "1.26.0",
+      "Filename": "pool/main/libn/libngtcp2/libngtcp2_1.26.0_x86_64.deb",
+      "SHA256": "9a4ba347834cf4593cd80df9c9ad4caaf0486946ac0e1a812d10f0d712b5eae2",
+      "Size": "192756"
+    },
+    {
+      "Package": "libsqlite",
+      "Version": "3.54.1-1",
+      "Filename": "pool/main/libs/libsqlite/libsqlite_3.54.1-1_x86_64.deb",
+      "SHA256": "497471806378934fec8a6f3b5db70cf52a3652828786a241e2e37eebc19112b0",
+      "Size": "815224"
+    },
+    {
+      "Package": "libssh2",
+      "Version": "1.11.1-2",
+      "Filename": "pool/main/libs/libssh2/libssh2_1.11.1-2_x86_64.deb",
+      "SHA256": "00db1c1497e8703281efded7f1f2a63824b145c980d9ec309ae0ab7ccb9ce1c5",
+      "Size": "223300"
+    },
+    {
+      "Package": "ncurses",
+      "Version": "6.6.20260307+really6.5.20250830",
+      "Filename": "pool/main/n/ncurses/ncurses_6.6.20260307+really6.5.20250830_x86_64.deb",
+      "SHA256": "3f30f53c6a41c8450d146d4d42611a44be6ba0a8de1e8bb4dc903109a5fc3ff1",
+      "Size": "570036"
+    },
+    {
+      "Package": "ncurses-ui-libs",
+      "Version": "6.6.20260307+really6.5.20250830",
+      "Filename": "pool/main/n/ncurses-ui-libs/ncurses-ui-libs_6.6.20260307+really6.5.20250830_x86_64.deb",
+      "SHA256": "1193618e18f579eb86064e00648d80648eaec5da70c0a5b944ac1315d209d16e",
+      "Size": "35564"
+    },
+    {
+      "Package": "openssl",
+      "Version": "1:3.6.5",
+      "Filename": "pool/main/o/openssl/openssl_1:3.6.5_x86_64.deb",
+      "SHA256": "540f144592d23d35672976e175ede1b5d8cf464f153f646df5d4e6dcd8491a15",
+      "Size": "2164136"
+    },
+    {
+      "Package": "pcre2",
+      "Version": "10.49",
+      "Filename": "pool/main/p/pcre2/pcre2_10.49_x86_64.deb",
+      "SHA256": "4a6f66ac12565342897ce9b5cd11ba8ce6fce1fd1a91ae679c3468d7fc2ee541",
+      "Size": "1061556"
+    },
+    {
+      "Package": "pkg-config",
+      "Version": "0.29.2-3",
+      "Filename": "pool/main/p/pkg-config/pkg-config_0.29.2-3_x86_64.deb",
+      "SHA256": "b7ae218e6f5e43b30827074db27532de982b7c051460cfcccaa0332743ae9417",
+      "Size": "33452"
+    },
+    {
+      "Package": "python",
+      "Version": "3.14.10",
+      "Filename": "pool/main/p/python/python_3.14.10_x86_64.deb",
+      "SHA256": "61e29ea9fb1b2e2f8eed7f9e7f86e4d0c16ec2941242f895ed9983fde8e1d11c",
+      "Size": "5148652"
+    },
+    {
+      "Package": "readline",
+      "Version": "8.3.6",
+      "Filename": "pool/main/r/readline/readline_8.3.6_x86_64.deb",
+      "SHA256": "e9684798d13ede05f785315f68d3ff739563db2abef0e73db4dc9b8e17ded368",
+      "Size": "302176"
+    },
+    {
+      "Package": "resolv-conf",
+      "Version": "1.3",
+      "Filename": "pool/main/r/resolv-conf/resolv-conf_1.3_x86_64.deb",
+      "SHA256": "0fcf8c5447bc5fbb0d411a47dc5c67d2aced861227e09052fc423220291a22c7",
+      "Size": "986"
+    },
+    {
+      "Package": "unzip",
+      "Version": "6.0-10",
+      "Filename": "pool/main/u/unzip/unzip_6.0-10_x86_64.deb",
+      "SHA256": "59a6a4a2738feba0e0120671769301df8453416ec6c7694f2100cc9474c850b3",
+      "Size": "117636"
+    },
+    {
+      "Package": "zip",
+      "Version": "3.0-7",
+      "Filename": "pool/main/z/zip/zip_3.0-7_x86_64.deb",
+      "SHA256": "7d59776ff48d15e049e5046922945eddd3e6bb95ec96bc15c7b3b3b481e8a3d8",
+      "Size": "156052"
+    },
+    {
+      "Package": "zlib",
+      "Version": "1.4",
+      "Filename": "pool/main/z/zlib/zlib_1.4_x86_64.deb",
+      "SHA256": "55ab8f16e492d6ed03c2e2bf701af52cf54a313442dd7adedd3d6f3e3eba2e4f",
+      "Size": "74188"
+    },
+    {
+      "Package": "zstd",
+      "Version": "1.5.7-1",
+      "Filename": "pool/main/z/zstd/zstd_1.5.7-1_x86_64.deb",
+      "SHA256": "a76ba6c3d8742819bf4fff7780eb2e022269412700fc8f4471f530cc0d81833f",
+      "Size": "450320"
+    }
+  ]
+}

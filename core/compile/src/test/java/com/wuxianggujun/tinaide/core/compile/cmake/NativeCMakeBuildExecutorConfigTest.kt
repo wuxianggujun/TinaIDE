@@ -16,6 +16,19 @@ import org.junit.Test
 class NativeCMakeBuildExecutorConfigTest {
 
     @Test
+    fun `project scalar environment replaces inherited values while search paths are preserved`() {
+        val environment = mutableMapOf("TINA_PREFIX" to "/old/prefix", "VCPKG_MAX_CONCURRENCY" to "8",
+            "VCPKG_ROOT" to "/old/vcpkg", "PATH" to "/system/bin", "CPATH" to "/existing/include")
+        applyNativeCMakeEnvironment(environment, mapOf("TINA_PREFIX" to "/build/runtime", "VCPKG_MAX_CONCURRENCY" to "1",
+            "VCPKG_ROOT" to "/project/vcpkg", "PATH" to "/toolchain/bin", "CPATH" to "/packages/include"))
+        assertThat(environment["TINA_PREFIX"]).isEqualTo("/build/runtime")
+        assertThat(environment["VCPKG_MAX_CONCURRENCY"]).isEqualTo("1")
+        assertThat(environment["VCPKG_ROOT"]).isEqualTo("/project/vcpkg")
+        assertThat(environment["PATH"]).isEqualTo("/toolchain/bin:/system/bin")
+        assertThat(environment["CPATH"]).isEqualTo("/packages/include:/existing/include")
+    }
+
+    @Test
     fun `resolveConfiguredCompilerPath falls back for blank value`() {
         val resolved = NativeCMakeBuildExecutor.resolveConfiguredCompilerPath(
             configuredPath = "   ",

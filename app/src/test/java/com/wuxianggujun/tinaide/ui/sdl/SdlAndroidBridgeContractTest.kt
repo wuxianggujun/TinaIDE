@@ -2,10 +2,36 @@ package com.wuxianggujun.tinaide.ui.sdl
 
 import com.google.common.truth.Truth.assertThat
 import java.io.File
+import java.lang.reflect.Modifier
 import javax.xml.parsers.DocumentBuilderFactory
 import org.junit.Test
 
 class SdlAndroidBridgeContractTest {
+    @Test
+    fun `SDL retains native-to-Java callbacks from shipped packages`() {
+        val activity = Class.forName("org.libsdl.app.SDLActivity", false, javaClass.classLoader)
+        val dialog = activity.getDeclaredMethod("showFileDialog", Array<String>::class.java,
+            Boolean::class.javaPrimitiveType, Boolean::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+        assertThat(Modifier.isStatic(dialog.modifiers)).isTrue()
+        assertThat(dialog.returnType).isEqualTo(Boolean::class.javaPrimitiveType)
+        val controller = Class.forName("org.libsdl.app.SDLControllerManager", false, javaClass.classLoader)
+        for (name in listOf("pollInputDevices", "pollHapticDevices")) {
+            val callback = controller.getDeclaredMethod(name)
+            assertThat(Modifier.isStatic(callback.modifiers)).isTrue()
+            assertThat(callback.returnType).isEqualTo(Void.TYPE)
+        }
+    }
+    @Test
+    fun `SDL HID keeps all supported native registration signatures`() {
+        val manager = Class.forName("org.libsdl.app.HIDDeviceManager", false, javaClass.classLoader)
+        val methods = manager.declaredMethods.filter { it.name == "HIDDeviceConnected" }
+        assertThat(methods.map { it.parameterCount }).containsExactly(12, 13, 14)
+        assertThat(methods.all { Modifier.isNative(it.modifiers) }).isTrue()
+        val bluetooth = methods.single { it.parameterCount == 13 }
+        assertThat(bluetooth.parameterTypes.last()).isEqualTo(Boolean::class.javaPrimitiveType)
+        val report = methods.single { it.parameterCount == 14 }
+        assertThat(report.parameterTypes.last()).isEqualTo(Int::class.javaPrimitiveType)
+    }
 
     @Test
     fun `routes SDL2 and SDL3 to different host activities`() {

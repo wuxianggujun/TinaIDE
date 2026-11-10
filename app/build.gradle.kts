@@ -409,6 +409,8 @@ dependencies {
     debugImplementation(libs.compose.ui.tooling)
     testImplementation(platform(libs.compose.bom))
     testImplementation(libs.compose.ui.test.junit4)
+    androidTestImplementation(platform(libs.compose.bom))
+    androidTestImplementation(libs.compose.ui.test.junit4)
     debugImplementation(libs.compose.ui.test.manifest)
     implementation(libs.activity.compose)
 

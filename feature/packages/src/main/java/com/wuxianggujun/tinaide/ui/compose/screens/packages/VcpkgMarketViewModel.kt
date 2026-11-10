@@ -12,6 +12,8 @@ import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.core.packages.PackageAbiCompatibility
 import com.wuxianggujun.tinaide.core.packages.VcpkgProjectCatalog
 import com.wuxianggujun.tinaide.core.packages.VcpkgRepository
+import com.wuxianggujun.tinaide.core.packages.VcpkgCatalogStore
+import com.wuxianggujun.tinaide.core.packages.VcpkgCatalogSnapshot
 import com.wuxianggujun.tinaide.core.packages.vcpkgUserMessage
 import com.wuxianggujun.tinaide.project.VcpkgProjectSettings
 import java.io.File
@@ -30,37 +32,46 @@ import timber.log.Timber
 data class VcpkgMarketState(
     val projectPath: String = "",
     val catalog: VcpkgProjectCatalog? = null,
+    val available: VcpkgCatalogSnapshot? = null,
     val query: String = "",
     val loading: Boolean = false,
     val installing: Boolean = false,
+    val updating: Boolean = false,
+    val downloadProgress: Float? = null,
     val error: String? = null,
     val output: List<String> = emptyList(),
-)
+) {
+    val busy: Boolean get() = loading || installing || updating
+}
 
 class VcpkgMarketViewModel(application: Application, private val savedState: SavedStateHandle) : AndroidViewModel(application) {
-    private val repository = VcpkgRepository()
+    private val repository = VcpkgRepository(application)
     private val installer = VcpkgProjectInstaller(application)
+    private val catalogs = VcpkgCatalogStore(application)
     private val abi = PackageAbiCompatibility.currentAppAbi(application.applicationInfo.nativeLibraryDir, Build.SUPPORTED_ABIS)
     private val _state = MutableStateFlow(VcpkgMarketState(projectPath = savedState[PROJECT_PATH] ?: ""))
     val state = _state.asStateFlow()
     private var operation: Job? = null
 
-    fun selectProject(path: String) {
-        if (_state.value.installing || _state.value.loading) return
+    fun selectProject(path: String, dependency: String? = null) {
+        if (_state.value.busy) return
         savedState[PROJECT_PATH] = path
         _state.update { it.copy(projectPath = path, catalog = null, output = emptyList()) }
-        refresh()
+        if (dependency == null) refresh() else toggleDependency(dependency, true)
     }
 
     fun search(query: String) { _state.update { it.copy(query = query) } }
 
     fun refresh() {
-        if (_state.value.installing || _state.value.loading || _state.value.projectPath.isBlank()) return
+        if (_state.value.busy) return
         val path = _state.value.projectPath
         operation = viewModelScope.launch {
             _state.update { it.copy(loading = true, error = null) }
             try {
-                val catalog = repository.read(File(path), abi)
+                val available = catalogs.readLocal()
+                // Render the offline index before reading project metadata.
+                _state.update { it.copy(available = available) }
+                val catalog = if (path.isNotBlank()) repository.read(File(path), abi, available.ports) else null
                 _state.update { it.copy(catalog = catalog, loading = false) }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -72,15 +83,40 @@ class VcpkgMarketViewModel(application: Application, private val savedState: Sav
         }
     }
 
+    fun updateCatalog() {
+        if (_state.value.busy) return
+        operation = viewModelScope.launch {
+            _state.update { it.copy(updating = true, downloadProgress = null, error = null) }
+            try {
+                val available = catalogs.update { downloaded, total ->
+                    _state.update { it.copy(downloadProgress = if (total > 0) (downloaded.toFloat() / total).coerceIn(0f, 1f) else null) }
+                }
+                _state.update { it.copy(available = available) }
+                val path = _state.value.projectPath
+                if (path.isNotBlank()) {
+                    val catalog = repository.read(File(path), abi, available.ports)
+                    _state.update { it.copy(catalog = catalog) }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                reportFailure(error)
+            } finally {
+                _state.update { it.copy(updating = false, downloadProgress = null) }
+            }
+        }
+    }
+
     fun toggleDependency(name: String, enabled: Boolean) {
-        if (_state.value.installing || _state.value.loading) return
+        if (_state.value.busy) return
         val path = _state.value.projectPath
         if (path.isBlank()) return
         operation = viewModelScope.launch {
             _state.update { it.copy(loading = true, error = null) }
             try {
+                repository.enableManagedManifest(File(path))
                 repository.setDependency(File(path), name, enabled)
-                val catalog = repository.read(File(path), abi)
+                val catalog = repository.read(File(path), abi, _state.value.available?.ports)
                 _state.update { it.copy(catalog = catalog, loading = false) }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -94,7 +130,7 @@ class VcpkgMarketViewModel(application: Application, private val savedState: Sav
 
     fun install() {
         val path = _state.value.projectPath
-        if (path.isBlank() || _state.value.installing || _state.value.loading) return
+        if (path.isBlank() || _state.value.busy) return
         if (_state.value.catalog?.settings?.mode != VcpkgProjectSettings.MANIFEST) return
         operation = viewModelScope.launch {
             _state.update { it.copy(installing = true, error = null, output = emptyList()) }
@@ -105,7 +141,7 @@ class VcpkgMarketViewModel(application: Application, private val savedState: Sav
                         _state.update { it.copy(output = (it.output + line.take(MAX_LINE_CHARS)).takeLast(MAX_LOG_LINES)) }
                     }
                 }
-                val catalog = repository.read(File(path), abi)
+                val catalog = repository.read(File(path), abi, _state.value.available?.ports)
                 _state.update {
                     it.copy(catalog = catalog, error = (result as? ConfigureResult.Error)?.message,
                         output = (it.output + if (result is ConfigureResult.Error) emptyList() else
@@ -115,7 +151,7 @@ class VcpkgMarketViewModel(application: Application, private val savedState: Sav
                 // vcpkg can install some ports before cancellation; reload the actual status database.
                 withContext(NonCancellable) {
                     try {
-                        val catalog = repository.read(File(path), abi)
+                        val catalog = repository.read(File(path), abi, _state.value.available?.ports)
                         _state.update { it.copy(catalog = catalog) }
                     } catch (error: Exception) {
                         reportFailure(error)
@@ -131,7 +167,7 @@ class VcpkgMarketViewModel(application: Application, private val savedState: Sav
         }
     }
 
-    fun cancelInstall() { if (_state.value.installing) operation?.cancel() }
+    fun cancelInstall() { if (_state.value.installing || _state.value.updating) operation?.cancel() }
 
     private fun reportFailure(error: Exception) {
         Timber.tag("VcpkgMarket").w(error, "vcpkg project operation failed")
