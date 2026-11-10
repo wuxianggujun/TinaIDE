@@ -6,6 +6,7 @@ import com.wuxianggujun.tinaide.core.compile.BuildOptions
 import com.wuxianggujun.tinaide.core.compile.BuildSystem
 import com.wuxianggujun.tinaide.core.compile.artifact.ArtifactKind
 import io.mockk.mockk
+import io.mockk.verify
 import java.io.File
 import kotlinx.coroutines.test.runTest
 import org.junit.Rule
@@ -28,10 +29,13 @@ class CMakeStrategyTargetSelectionTest {
             add_library(app_core SHARED src/core.cpp)
             """.trimIndent()
         )
-        val spec = strategy().describeOutput(newContext(projectRoot, BuildOptions()))
+        val context = mockk<Context>(relaxed = true)
+        val spec = CMakeStrategy(context).describeOutput(newContext(projectRoot, BuildOptions()))
 
         assertThat(spec?.id?.targetName).isEqualTo("app")
         assertThat(spec?.kind).isEqualTo(ArtifactKind.EXECUTABLE)
+        verify(exactly = 0) { context.applicationInfo }
+        verify(exactly = 0) { context.filesDir }
     }
 
     @Test

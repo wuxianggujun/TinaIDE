@@ -631,13 +631,15 @@ class CMakeStrategy(
     private suspend fun collectReconfigureInputs(ctx: BuildContext): List<File> {
         val projectInputs = TrackedInputCollector.collectCMakeReconfigureInputs(ctx.projectRoot)
         if (!isNativeMode(ctx.options.resolvedRunMode)) return projectInputs
+        val vcpkgSettings = com.wuxianggujun.tinaide.project.VcpkgProjectSettings.from(ctx.options.nativeCMakeArgs)
+        if (!vcpkgSettings.enabled) return projectInputs
         return projectInputs + VcpkgBuildInputs.collect(
             project = ctx.projectRoot,
             arguments = ctx.options.nativeCMakeArgs,
             androidAbi = PackageAbiCompatibility.currentAppAbi(context.applicationInfo.nativeLibraryDir, Build.SUPPORTED_ABIS),
             debug = ctx.options.cmakeBuildType == CMakeBuildTypeOption.DEBUG,
             managedInstallationRoot = com.wuxianggujun.tinaide.core.packages.VcpkgManagedPaths.installed(
-                context, ctx.projectRoot, com.wuxianggujun.tinaide.project.VcpkgProjectSettings.from(ctx.options.nativeCMakeArgs)),
+                context, ctx.projectRoot, vcpkgSettings),
         )
     }
 
