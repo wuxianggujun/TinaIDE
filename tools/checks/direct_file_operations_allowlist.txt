@@ -23,10 +23,12 @@ core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/NativeMakeBuild
 core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/PRootMakeBuildStrategy.kt | deleteRecursively=1 | Build directory cleanup.
 core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/RunStagingCleaner.kt | delete=1 | Bounded cleanup of app-private staged executables and stale stderr FIFOs.
 core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/artifact/JsonArtifactStore.kt | deleteRecursively=1,delete=1 | Build artifact store cleanup.
+core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/cmake/VcpkgCMakeIntegration.kt | delete=1 | Remove the generated toolchain temporary file after same-directory publication; project sources are not deleted.
 core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/strategy/CMakeStrategy.kt | deleteRecursively=1,delete=1 | CMake build cache cleanup.
 core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/strategy/SingleFileStrategy.kt | deleteRecursively=1,delete=3 | Single-file build diagnostic artifact cleanup.
 core/compile/src/main/java/com/wuxianggujun/tinaide/core/format/ClangFormatConfigManager.kt | delete=1 | Generated clang-format config cleanup.
 core/crash/src/main/java/com/wuxianggujun/tinaide/core/crash/NativeCrashHandler.kt | delete=1 | Native crash marker cleanup.
+core/crash/src/main/java/com/wuxianggujun/tinaide/core/crash/CrashReportFiles.kt | delete=1 | Remove the temporary crash-export copy after publication; the validated original tombstone is preserved.
 core/git/src/main/java/com/wuxianggujun/tinaide/core/git/GitService.kt | delete=1 | Git service temporary file cleanup.
 core/git/src/main/java/com/wuxianggujun/tinaide/core/git/ssh/GitAtomicFileIo.kt | delete=1 | App-private SSH key/metadata staging cleanup after failed same-directory atomic replacement; committed files are never pre-deleted.
 core/git/src/main/java/com/wuxianggujun/tinaide/core/git/ssh/GitSshManager.kt | delete=3 | SSH key replacement and explicit private/public key cleanup.
@@ -44,10 +46,12 @@ core/ndk/src/main/java/com/wuxianggujun/tinaide/core/ndk/SysrootProfileConfig.kt
 core/network/src/main/java/com/wuxianggujun/tinaide/core/network/api/UserContentApiClient.kt | delete=1 | HTTP DELETE request builder call, not filesystem.
 core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/BundledPackagesInstaller.kt | deleteRecursively=2,renameTo=1,delete=1 | Locked staging, interrupted install recovery, and bundled package temp cleanup.
 core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/PackageInstallCoordinator.kt | deleteRecursively=1,renameTo=3 | Shared app-private package staging publication, backup cleanup, and rollback.
-core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/PackageManagerImpl.kt | deleteRecursively=1 | Package install path cleanup.
-core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/backend/DownloadPackageBackend.kt | deleteRecursively=3,renameTo=1,delete=3 | Package download/extraction cleanup and interrupted install backup recovery.
+core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/VcpkgCatalogStore.kt | deleteRecursively=3 | Mutex-protected source/catalog staging and abandoned staging cleanup below the application-owned vcpkg root; published snapshots are retained.
+core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/VcpkgRepository.kt | delete=1 | Remove only the uniquely created manifest temporary file after atomic publication or cancellation; the project manifest is preserved on failure.
+core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/VcpkgRuntimeManager.kt | deleteRecursively=2,delete=1 | Clean application-owned helper staging and verified download cache after successful publication, plus the temporary CLI copy; cancelled downloads remain resumable.
+core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/backend/DownloadPackageBackend.kt | deleteRecursively=3,renameTo=1,delete=2 | Package download/extraction cleanup and interrupted install backup recovery; archive cleanup is centralized in finally.
 core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/cache/PackageCacheManager.kt | delete=4 | Package cache cleanup.
-core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/download/ResumableDownloader.kt | renameTo=4,delete=17 | Download validation, same-directory atomic publication, interrupted replacement recovery, and bounded temp cleanup.
+core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/download/ResumableDownloader.kt | renameTo=4,delete=18 | Download validation, rejection of stale HTTP 416 partials, same-directory atomic publication, interrupted replacement recovery, and bounded temp cleanup.
 core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/BundledPluginsInstaller.kt | deleteRecursively=1,delete=1 | Bundled plugin install staging cleanup.
 core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/PluginLogManager.kt | delete=2 | Plugin log cleanup.
 core/plugin/src/main/java/com/wuxianggujun/tinaide/plugin/PluginManager.kt | deleteRecursively=12,renameTo=2,delete=3 | Plugin-private same-filesystem staging, atomic install journal, rollback, and interrupted transaction cleanup.

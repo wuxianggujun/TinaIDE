@@ -52,6 +52,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--apk", type=Path, help="Also verify the exact runtime, catalog and notices packaged in an APK")
+    parser.add_argument("--bundled-only", action="store_true", help="Verify bundled CLI/assets without downloading optional helper packages")
     parser.add_argument("--cache", type=Path, default=Path(".tmp/vcpkg-managed/packages"))
     args = parser.parse_args()
     args.cache.mkdir(parents=True, exist_ok=True)
@@ -69,6 +70,10 @@ def main() -> None:
             for name in ('catalog.json', 'ports-LICENSE.txt'):
                 if apk.read('assets/vcpkg/' + name) != (Path('core/packages/src/main/assets/vcpkg') / name).read_bytes():
                     raise ValueError('APK catalog asset differs from verified input: ' + name)
+    if args.bundled_only:
+        print(json.dumps({"abi": manifest["abi"], "cliSha256": manifest["cliSha256"],
+                          "bundledOnly": True, "apkVerified": args.apk is not None, "validated": True}, indent=2))
+        return
     available = {'libc.so', 'libm.so', 'libdl.so', 'liblog.so', 'libandroid.so', 'libz.so'}
     records = []
     for package in manifest["packages"]:

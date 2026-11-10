@@ -133,6 +133,7 @@ jobs:
           for apk in app/build/outputs/apk/arm64/debug/*.apk; do
             python3 tools/checks/check_distribution.py --apk "$apk"
             python3 tools/checks/check_apk_native_libs.py --apk "$apk" --abi arm64-v8a
+            python3 tools/vcpkg/verify_runtime.py --manifest app/src/arm64/assets/vcpkg/runtime.json --bundled-only --apk "$apk"
           done
 
       - name: Upload debug APK artifact
@@ -403,6 +404,7 @@ jobs:
           APK="app/build/outputs/apk/release/TinaIDE-${{ steps.version.outputs.name }}-${{ matrix.abi }}.apk"
           python3 tools/checks/check_distribution.py --apk "$APK"
           python3 tools/checks/check_apk_native_libs.py --apk "$APK" --abi "${{ matrix.abi }}"
+          python3 tools/vcpkg/verify_runtime.py --manifest "app/src/${{ matrix.flavor }}/assets/vcpkg/runtime.json" --bundled-only --apk "$APK"
 
       - name: Upload release APK artifact
         uses: actions/upload-artifact@v7
