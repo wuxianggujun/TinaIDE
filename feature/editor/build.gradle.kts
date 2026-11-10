@@ -6,6 +6,7 @@ plugins {
 
 android {
     namespace = "com.wuxianggujun.tinaide.feature.editor"
+    testOptions.unitTests.isIncludeAndroidResources = true
 }
 
 kapt {
