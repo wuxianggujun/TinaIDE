@@ -69,6 +69,7 @@
 - [Clang Android 执行权限修复](clang-android-exec-fix.md)
 - [Toolchain 构建与同步指南](toolchain-build-guide.md)
 - [ProGuard / R8 规则参考](proguard-rules-reference.md)
+- [遥测与自托管上报（AegisHub）](telemetry.md)：上报内容、配置项、自建实例与排查入口
 - [自研 Linux 发行版运行时](linux-distro-self-hosted-runtime.md)
 - [X11 图形桌面模块说明](../core/linux-desktop/README.md)：`:x11` 进程边界、socket 布局、已知问题（尚未在真机验证）
 - [游戏引擎插件图形运行（SDL / NativeActivity）](game-engine-plugin-sdl.md)

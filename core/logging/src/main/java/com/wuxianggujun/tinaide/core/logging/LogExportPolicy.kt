@@ -3,13 +3,15 @@ package com.wuxianggujun.tinaide.core.logging
 /**
  * 日志导出场景。
  *
- * 本地导出由用户主动分享，可包含完整诊断数据。
- * 服务器上传仅用于设置页的手动问题反馈：用户确认后可包含构建、PRoot/rootfs 等诊断日志；
- * 自动崩溃上传不走这个 profile，仍只上传 TinaIDE 主进程崩溃日志。
+ * - [LOCAL_EXPORT]：用户主动分享，可包含完整诊断数据。
+ * - [SERVER_UPLOAD]：设置页手动反馈，用户确认后可包含构建、PRoot/rootfs 等诊断日志。
+ * - [CRASH_UPLOAD]：崩溃后自动上报。只包含 IDE 自身诊断（Timber、logcat、安装日志、
+ *   墓碑等），不包含需要显式授权的用户项目/运行时数据。
  */
 enum class LogExportProfile {
     LOCAL_EXPORT,
     SERVER_UPLOAD,
+    CRASH_UPLOAD,
 }
 
 internal enum class LogExportPrivacyClass {
@@ -154,6 +156,9 @@ internal enum class LogBundleSource(
     fun includedIn(profile: LogExportProfile): Boolean = when (profile) {
         LogExportProfile.LOCAL_EXPORT -> includedInLocalExport
         LogExportProfile.SERVER_UPLOAD -> includedInServerUpload
+        // 崩溃自动上报没有用户逐次确认，必须排除需要显式授权的用户项目/运行时数据。
+        LogExportProfile.CRASH_UPLOAD ->
+            includedInServerUpload && privacyClass !in serverUploadConsentRequiredPrivacyClasses
     }
 
     fun manifestEntryName(logcatEntryName: String): String = if (this == LOGCAT) logcatEntryName else entryName
@@ -161,6 +166,12 @@ internal enum class LogBundleSource(
     fun reasonFor(profile: LogExportProfile): String = when (profile) {
         LogExportProfile.LOCAL_EXPORT -> localExportReason
         LogExportProfile.SERVER_UPLOAD -> if (includedInServerUpload) serverUploadReason else serverExcludedReason
+        LogExportProfile.CRASH_UPLOAD -> when {
+            !includedInServerUpload -> serverExcludedReason
+            privacyClass in serverUploadConsentRequiredPrivacyClasses ->
+                "Excluded from automatic crash upload because this source requires explicit user consent."
+            else -> serverUploadReason
+        }
     }
 }
 
@@ -169,10 +180,14 @@ internal data class LogExportPolicy(
     val logcatEntryName: String,
     val allowGlobalLogcatFallback: Boolean,
     val includeUserRuntimeTombstones: Boolean,
+    /** Include persisted pids of processes that already exited (for example the crashed host). */
+    val includeRecentHostLogcat: Boolean,
+    /** Include the package-filtered Android crash buffer. */
+    val includeCrashBuffer: Boolean,
     val sources: Set<LogBundleSource>,
 ) {
     init {
-        if (profile == LogExportProfile.SERVER_UPLOAD) {
+        if (profile != LogExportProfile.LOCAL_EXPORT) {
             check(!allowGlobalLogcatFallback) {
                 "Server upload policy must not use global logcat fallback."
             }
@@ -182,6 +197,14 @@ internal data class LogExportPolicy(
             val disallowedSources = sources.filterNot { it.privacyClass in serverUploadAllowedPrivacyClasses }
             check(disallowedSources.isEmpty()) {
                 "Server upload policy includes disallowed sources: ${disallowedSources.joinToString { it.name }}"
+            }
+            if (profile == LogExportProfile.CRASH_UPLOAD) {
+                val consentSources = sources.filter {
+                    it.privacyClass in serverUploadConsentRequiredPrivacyClasses
+                }
+                check(consentSources.isEmpty()) {
+                    "Crash upload policy includes consent-required sources: ${consentSources.joinToString { it.name }}"
+                }
             }
         }
     }
@@ -195,13 +218,17 @@ internal data class LogExportPolicy(
                 logcatEntryName = "logcat.txt",
                 allowGlobalLogcatFallback = true,
                 includeUserRuntimeTombstones = true,
+                includeRecentHostLogcat = false,
+                includeCrashBuffer = false,
                 sources = resolveSources(profile),
             )
-            LogExportProfile.SERVER_UPLOAD -> LogExportPolicy(
+            LogExportProfile.SERVER_UPLOAD, LogExportProfile.CRASH_UPLOAD -> LogExportPolicy(
                 profile = profile,
                 logcatEntryName = "app_process_logcat.txt",
                 allowGlobalLogcatFallback = false,
                 includeUserRuntimeTombstones = false,
+                includeRecentHostLogcat = true,
+                includeCrashBuffer = true,
                 sources = resolveSources(profile),
             )
         }
@@ -226,12 +253,16 @@ internal object LogExportManifestBuilder {
             appendLine("generated_at=$generatedAt")
             appendLine("logcat_entry=${policy.logcatEntryName}")
             appendLine("global_logcat_fallback=${policy.allowGlobalLogcatFallback}")
+            appendLine("recent_host_logcat=${policy.includeRecentHostLogcat}")
+            appendLine("crash_buffer_logcat=${policy.includeCrashBuffer}")
+            appendLine("text_sanitized_on_upload=${policy.profile != LogExportProfile.LOCAL_EXPORT}")
             appendLine("include_user_runtime_tombstones=${policy.includeUserRuntimeTombstones}")
             appendLine("included_sources=${includedSources.joinToString(", ") { it.name }}")
             appendLine("excluded_sources=${excludedSources.joinToString(", ") { it.name }.ifBlank { "NONE" }}")
             appendLine()
             appendLine("[server_upload_privacy_gate]")
             appendLine("requires_explicit_user_consent=${policy.profile == LogExportProfile.SERVER_UPLOAD}")
+            appendLine("automatic_crash_upload=${policy.profile == LogExportProfile.CRASH_UPLOAD}")
             appendLine("allowed_privacy_classes=${serverUploadAllowedPrivacyClasses.joinToString(", ") { it.name }}")
             appendLine("consent_required_privacy_classes=${serverUploadConsentRequiredPrivacyClasses.joinToString(", ") { it.name }}")
             appendLine("excluded_privacy_classes=${excludedPrivacyClasses.joinToString(", ") { it.name }.ifBlank { "NONE" }}")

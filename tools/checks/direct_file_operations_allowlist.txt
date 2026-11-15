@@ -43,7 +43,6 @@ core/ndk/src/main/java/com/wuxianggujun/tinaide/core/ndk/AndroidNativeToolchainM
 core/ndk/src/main/java/com/wuxianggujun/tinaide/core/ndk/AndroidSysrootManager.kt | deleteRecursively=7,renameTo=2 | Sysroot install staging and rollback.
 core/ndk/src/main/java/com/wuxianggujun/tinaide/core/ndk/InstalledToolchainConfig.kt | deleteRecursively=1 | Toolchain config cleanup.
 core/ndk/src/main/java/com/wuxianggujun/tinaide/core/ndk/SysrootProfileConfig.kt | deleteRecursively=1 | Sysroot profile cleanup.
-core/network/src/main/java/com/wuxianggujun/tinaide/core/network/api/UserContentApiClient.kt | delete=1 | HTTP DELETE request builder call, not filesystem.
 core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/BundledPackagesInstaller.kt | deleteRecursively=2,renameTo=1,delete=1 | Locked staging, interrupted install recovery, and bundled package temp cleanup.
 core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/PackageInstallCoordinator.kt | deleteRecursively=1,renameTo=3 | Shared app-private package staging publication, backup cleanup, and rollback.
 core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/VcpkgCatalogStore.kt | deleteRecursively=3 | Mutex-protected source/catalog staging and abandoned staging cleanup below the application-owned vcpkg root; published snapshots are retained.
@@ -87,3 +86,7 @@ feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/setti
 feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/TerminalSettingsHelpers.kt | delete=1 | Terminal settings temp file cleanup.
 feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/UserProjectTemplateManager.kt | renameTo=5,delete=6 | User project template install and rollback.
 feature/workspace/src/main/java/com/wuxianggujun/tinaide/ui/workspace/PRootLogActivity.kt | delete=1 | PRoot log entry cleanup.
+core/crash/src/main/java/com/wuxianggujun/tinaide/core/crash/CrashLogUploader.kt | delete=5 | App-private crash bundle and tombstone cleanup after AegisHub upload or deduplication.
+feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/AboutSettingsSection.kt | delete=2 | App-private exported log archive temporary file cleanup.
+feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/FeedbackDialog.kt | delete=5 | App-private feedback attachment archive temporary file cleanup.
+feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/LogArchiveUpload.kt | delete=2,renameTo=1 | App-private copied log archive atomic replacement and failed staged copy cleanup.

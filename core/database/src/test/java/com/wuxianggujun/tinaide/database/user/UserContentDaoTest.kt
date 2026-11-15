@@ -29,7 +29,7 @@ class UserContentDaoTest {
     }
 
     @Test
-    fun favoriteDao_shouldReplaceByPrimaryKeyAndQueryUnsyncedRows() = runBlocking {
+    fun favoriteDao_shouldReplaceByPrimaryKey() = runBlocking {
         val dao = database.favoriteDao()
         dao.insertFavorite(favorite(id = "fav-1", pluginId = "plugin-a", name = "Old", synced = false))
         dao.insertFavorite(favorite(id = "fav-1", pluginId = "plugin-a", name = "New", synced = true))
@@ -37,11 +37,6 @@ class UserContentDaoTest {
 
         assertThat(dao.getFavoritesCount()).isEqualTo(2)
         assertThat(dao.getFavoriteByPluginId("plugin-a")!!.name).isEqualTo("New")
-        assertThat(dao.getUnsyncedFavorites().map { it.pluginId }).containsExactly("plugin-b")
-
-        dao.markAsSynced("fav-2")
-
-        assertThat(dao.getUnsyncedFavorites()).isEmpty()
     }
 
     @Test

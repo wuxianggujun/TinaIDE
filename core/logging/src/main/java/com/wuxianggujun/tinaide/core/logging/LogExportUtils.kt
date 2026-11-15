@@ -33,6 +33,26 @@ object LogExportUtils {
     private const val TAG = "LogExportUtils"
     private const val USER_RUNTIME_TOMBSTONE_SCAN_BYTES = 64 * 1024
 
+    /**
+     * 单个上传附件的原始输入预算。
+     *
+     * AegisHub 对单个附件限制 10MB；ZIP deflate 最坏情况只比输入大约 0.03%，
+     * 因此 8MB 输入可以保证最终 ZIP 低于上限。“保证可上传”比“整包丢弃”更重要。
+     */
+    const val UPLOAD_MAX_INPUT_BYTES = 8L * 1024 * 1024
+
+    /** AegisHub 单个附件字节上限。 */
+    const val MAX_UPLOAD_ATTACHMENT_BYTES = 10L * 1024 * 1024
+
+    /** Logcat 数量无上限，只能占用剩余预算的一半，避免挤掉 Timber/墓碑。 */
+    private const val LOGCAT_BUDGET_SHARE = 0.5
+
+    /** Timber 是多文件历史，同样单独限流，保证构建/安装日志仍有空间。 */
+    private const val TIMBER_BUDGET_SHARE = 0.7
+
+    /** 共享 crash buffer 的读取上限（字符），过滤后最多保留 512KB。 */
+    private const val MAX_CRASH_BUFFER_READ_CHARS = 4 * 1024 * 1024
+
     @Volatile
     private var installLogTextProvider: (() -> String?)? = null
 
@@ -47,11 +67,15 @@ object LogExportUtils {
      * 导出日志到ZIP文件
      *
      * @param context 上下文
+     * @param profile 导出场景；决定包含哪些来源、是否允许全局 logcat 回退
+     * @param maxInputBytes 写入 ZIP 的原始字节上限。自动上报用它保证制品可上传，
+     *        而不是在超限时整包丢弃：超出后按“保留最新数据”的方式停止写入。
      * @return 导出的ZIP文件，失败返回null
      */
     suspend fun exportLogs(
         context: Context,
-        profile: LogExportProfile = LogExportProfile.LOCAL_EXPORT
+        profile: LogExportProfile = LogExportProfile.LOCAL_EXPORT,
+        maxInputBytes: Long = Long.MAX_VALUE
     ): File? = withContext(Dispatchers.IO) {
         try {
             // 创建导出目录
@@ -66,13 +90,20 @@ object LogExportUtils {
             val zipFile = File(exportDir, fileName)
 
             val policy = LogExportPolicy.from(profile)
+            val budget = LogExportBudget(maxInputBytes.coerceAtLeast(1L))
 
             // 创建ZIP文件
             ZipOutputStream(FileOutputStream(zipFile)).use { zipOut ->
-                addLogBundleSources(context, zipOut, policy)
+                addLogBundleSources(context, zipOut, policy, budget)
             }
 
-            Timber.tag(TAG).d("Logs exported to: %s", zipFile.absolutePath)
+            Timber.tag(TAG).d(
+                "Logs exported to: %s (profile=%s, inputBudget=%d, truncated=%s)",
+                zipFile.absolutePath,
+                profile,
+                maxInputBytes,
+                budget.truncated
+            )
             zipFile
         } catch (e: Exception) {
             Timber.tag(TAG).e(e, "Failed to export logs")
@@ -80,40 +111,71 @@ object LogExportUtils {
         }
     }
 
-    private fun addLogBundleSources(context: Context, zipOut: ZipOutputStream, policy: LogExportPolicy) {
+    private fun addLogBundleSources(
+        context: Context,
+        zipOut: ZipOutputStream,
+        policy: LogExportPolicy,
+        budget: LogExportBudget
+    ) {
+        // A local export is a user-controlled file. Anything that leaves the device
+        // (manual feedback or automatic crash upload) is sanitized because the user
+        // does not review every line before it is uploaded.
+        val sanitize = policy.profile != LogExportProfile.LOCAL_EXPORT
+        val packageName = context.packageName
         if (policy.includes(LogBundleSource.EXPORT_MANIFEST)) {
             addExportManifestToZip(zipOut, policy)
         }
 
-        if (policy.includes(LogBundleSource.LOGCAT)) {
-            // 服务器上传只按 TinaIDE 相关进程 pid 收集，不回退到全局 logcat。
-            addLogcatToZip(
-                context = context,
-                zipOut = zipOut,
-                fileName = policy.logcatEntryName,
-                allowGlobalFallback = policy.allowGlobalLogcatFallback
-            )
-        }
+        // Small, deterministic entries first: a huge logcat/Timber history must not be
+        // able to consume the whole budget before the high-value entries are written.
         if (policy.includes(LogBundleSource.APP_INFO)) addAppInfoToZip(context, zipOut, "app_info.txt")
         if (policy.includes(LogBundleSource.DEVICE_INFO)) addDeviceInfoToZip(zipOut, "device_info.txt")
-        if (policy.includes(LogBundleSource.CRASH_LOGS)) addCrashLogsToZip(context, zipOut)
-        if (policy.includes(LogBundleSource.BUILD_LOGS)) addBuildLogsToZip(context, zipOut)
-        if (policy.includes(LogBundleSource.INSTALL_LOGS)) addInstallLogsToZip(context, zipOut)
+        if (policy.includes(LogBundleSource.INSTALL_LOGS)) {
+            addInstallLogsToZip(context, zipOut, packageName, sanitize, budget)
+        }
         if (policy.includes(LogBundleSource.INSTALL_LOG_SNAPSHOT)) {
-            addInstallLogSnapshotToZip(zipOut, "install_log_snapshot.txt")
+            addInstallLogSnapshotToZip(zipOut, "install_log_snapshot.txt", packageName, sanitize, budget)
         }
-        if (policy.includes(LogBundleSource.ROOTFS_PACKAGE_MANAGER_LOGS)) {
-            addRootfsPackageManagerLogsToZip(context, zipOut)
+        if (policy.includes(LogBundleSource.CRASH_LOGS)) {
+            addCrashLogsToZip(context, zipOut, packageName, sanitize, budget)
         }
-        if (policy.includes(LogBundleSource.PROOT_LOGS)) addPRootLogsToZip(context, zipOut)
         if (policy.includes(LogBundleSource.TOMBSTONES)) {
             addTombstoneLogsToZip(
                 context = context,
                 zipOut = zipOut,
-                includeUserRuntimeTombstones = policy.includeUserRuntimeTombstones
+                includeUserRuntimeTombstones = policy.includeUserRuntimeTombstones,
+                sanitize = sanitize,
+                budget = budget
             )
         }
-        if (policy.includes(LogBundleSource.TIMBER_LOGS)) addTimberLogsToZip(zipOut)
+        if (policy.includes(LogBundleSource.BUILD_LOGS)) {
+            // Build/install diagnostics answer most user reports; they must not be
+            // starved by the unbounded logcat dump, so they are written first.
+            addBuildLogsToZip(context, zipOut, packageName, sanitize, budget)
+        }
+        if (policy.includes(LogBundleSource.LOGCAT)) {
+            // 服务器上传只按 TinaIDE 相关进程 pid 收集，不回退到全局 logcat。
+            // Logcat is unbounded, so it only gets a slice of the remaining budget.
+            addLogcatToZip(
+                context = context,
+                zipOut = zipOut,
+                fileName = policy.logcatEntryName,
+                allowGlobalFallback = policy.allowGlobalLogcatFallback,
+                includeRecentHost = policy.includeRecentHostLogcat,
+                includeCrashBuffer = policy.includeCrashBuffer,
+                sanitize = sanitize,
+                budget = budget.reserve(LOGCAT_BUDGET_SHARE)
+            )
+        }
+        if (policy.includes(LogBundleSource.ROOTFS_PACKAGE_MANAGER_LOGS)) {
+            addRootfsPackageManagerLogsToZip(context, zipOut, budget)
+        }
+        if (policy.includes(LogBundleSource.PROOT_LOGS)) {
+            addPRootLogsToZip(context, zipOut, budget)
+        }
+        if (policy.includes(LogBundleSource.TIMBER_LOGS)) {
+            addTimberLogsToZip(zipOut, packageName, sanitize, budget.reserve(TIMBER_BUDGET_SHARE))
+        }
     }
 
     private fun addExportManifestToZip(zipOut: ZipOutputStream, policy: LogExportPolicy) {
@@ -189,76 +251,152 @@ object LogExportUtils {
 
     /**
      * 添加 Logcat 日志到 ZIP。
+     *
+     * 服务器上传/崩溃自动上报只采集 TinaIDE 进程的 pid，并额外采集
+     * 已退出进程（例如刚崩溃的宿主进程）的 pid 记录与包名过滤后的 crash buffer，
+     * 这样崩溃现场不会因为进程消失而丢失。
      */
     private fun addLogcatToZip(
         context: Context,
         zipOut: ZipOutputStream,
         fileName: String,
-        allowGlobalFallback: Boolean
+        allowGlobalFallback: Boolean,
+        includeRecentHost: Boolean,
+        includeCrashBuffer: Boolean,
+        sanitize: Boolean,
+        budget: LogExportBudget
     ) {
+        // The crash buffer is the only source that survives the death of the crashing
+        // process, so it is written before the voluminous per-pid logcat dump.
+        if (includeCrashBuffer) {
+            addCrashBufferToZip(context, zipOut, sanitize, budget)
+        }
+
+        val packageName = context.packageName
+        var entryOpen = false
         try {
             val entry = ZipEntry(fileName)
             zipOut.putNextEntry(entry)
+            entryOpen = true
 
-            zipOut.write("=== Logcat Dump ===\n".toByteArray(Charsets.UTF_8))
+            fun emit(text: String): Boolean =
+                budget.writeText(
+                    zipOut,
+                    if (sanitize) LogTextSanitizer.sanitize(text, packageName) else text
+                )
+
+            emit("=== Logcat Dump ===\n")
 
             var wroteLines = 0
 
             fun dump(command: List<String>): Int {
                 var commandLines = 0
+                if (budget.exhausted()) {
+                    emit("(log bundle input budget exhausted before this command)\n")
+                    return 0
+                }
                 val process = runCatching {
                     ProcessBuilder(command)
                         .redirectErrorStream(true)
                         .start()
                 }.getOrElse { throwable ->
-                    zipOut.write(
+                    emit(
                         "(failed to start logcat: ${throwable.message ?: throwable.javaClass.simpleName})\n"
-                            .toByteArray(Charsets.UTF_8)
                     )
                     return 0
                 }
                 BufferedReader(InputStreamReader(process.inputStream, Charsets.UTF_8)).use { reader ->
                     var line: String?
                     while (reader.readLine().also { line = it } != null) {
-                        zipOut.write((line + "\n").toByteArray(Charsets.UTF_8))
+                        if (!emit(line + "\n")) break
                         wroteLines++
                         commandLines++
                     }
                 }
                 val exitCode = runCatching { process.waitFor() }.getOrNull()
                 if (exitCode != null && exitCode != 0) {
-                    zipOut.write("(logcat exited with code $exitCode)\n".toByteArray(Charsets.UTF_8))
+                    emit("(logcat exited with code $exitCode)\n")
                 }
                 return commandLines
             }
 
             val commands = LogcatDumpPlanner.buildCommands(
-                LogcatDumpPlanner.collectTargets(context)
+                LogcatDumpPlanner.collectTargets(context, includeRecentHost = includeRecentHost)
             )
             if (commands.isEmpty()) {
-                zipOut.write(
-                    "\n=== no TinaIDE process pid available for logcat collection ===\n"
-                        .toByteArray(Charsets.UTF_8)
-                )
+                emit("\n=== no TinaIDE process pid available for logcat collection ===\n")
             }
 
             commands.forEach { plan ->
-                zipOut.write("\n=== ${plan.label} ===\n".toByteArray(Charsets.UTF_8))
+                emit("\n=== ${plan.label} ===\n")
                 if (dump(plan.command) == 0) {
-                    zipOut.write("(no logcat output for this process)\n".toByteArray(Charsets.UTF_8))
+                    emit("(no logcat output for this process)\n")
                 }
             }
 
             if (wroteLines == 0 && allowGlobalFallback) {
-                zipOut.write("\n=== logcat --pid produced no output, falling back to global dump ===\n".toByteArray(Charsets.UTF_8))
+                emit("\n=== logcat --pid produced no output, falling back to global dump ===\n")
                 dump(listOf("logcat", "-d", "-t", "10000", "-v", "threadtime"))
             } else if (wroteLines == 0) {
-                zipOut.write("\n=== TinaIDE process logcat produced no output; global dump skipped for privacy ===\n".toByteArray(Charsets.UTF_8))
+                emit("\n=== TinaIDE process logcat produced no output; global dump skipped for privacy ===\n")
             }
 
             zipOut.closeEntry()
+            entryOpen = false
         } catch (e: Exception) {
             Timber.tag(TAG).e(e, "Failed to add logcat to zip")
+        } finally {
+            // Leaving a half-written entry open would corrupt every later entry.
+            if (entryOpen) runCatching { zipOut.closeEntry() }
+        }
+    }
+
+    /**
+     * Android `crash` 缓冲区是所有进程共享的，因此只保留包含本应用包名的崩溃块。
+     */
+    private fun addCrashBufferToZip(
+        context: Context,
+        zipOut: ZipOutputStream,
+        sanitize: Boolean,
+        budget: LogExportBudget
+    ) {
+        try {
+            val process = runCatching {
+                ProcessBuilder(listOf("logcat", "-d", "-b", "crash", "-v", "threadtime"))
+                    .redirectErrorStream(true)
+                    .start()
+            }.getOrNull() ?: return
+            // The shared crash buffer is normally small; cap the read so a device with
+            // a pathological buffer cannot exhaust memory in the crash upload path.
+            val raw = process.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
+                val buffer = StringBuilder()
+                val chunk = CharArray(8 * 1024)
+                while (buffer.length < MAX_CRASH_BUFFER_READ_CHARS) {
+                    val read = reader.read(chunk)
+                    if (read <= 0) break
+                    buffer.append(chunk, 0, read)
+                }
+                buffer.toString()
+            }
+            runCatching { process.waitFor() }
+
+            val filtered = LogcatCrashBuffer.filter(raw, context.packageName)
+            val text = if (filtered.isEmpty()) {
+                "(no crash-buffer entries matched ${context.packageName})\n"
+            } else {
+                filtered
+            }
+            zipOut.putNextEntry(ZipEntry("crash_buffer_logcat.txt"))
+            try {
+                budget.writeText(
+                    zipOut,
+                    if (sanitize) LogTextSanitizer.sanitize(text, context.packageName) else text
+                )
+            } finally {
+                zipOut.closeEntry()
+            }
+        } catch (e: Exception) {
+            Timber.tag(TAG).e(e, "Failed to add crash buffer to zip")
         }
     }
 
@@ -315,20 +453,30 @@ object LogExportUtils {
     /**
      * 添加崩溃日志到ZIP
      */
-    private fun addCrashLogsToZip(context: Context, zipOut: ZipOutputStream) {
+    private fun addCrashLogsToZip(
+        context: Context,
+        zipOut: ZipOutputStream,
+        packageName: String,
+        sanitize: Boolean,
+        budget: LogExportBudget
+    ) {
         try {
             val crashDir = File(context.filesDir, "crashes")
             if (crashDir.exists() && crashDir.isDirectory) {
-                crashDir.listFiles()?.forEach { crashFile ->
-                    if (crashFile.isFile && crashFile.name.endsWith(".log")) {
-                        val entry = ZipEntry("crashes/${crashFile.name}")
-                        zipOut.putNextEntry(entry)
-                        crashFile.inputStream().use { input ->
-                            input.copyTo(zipOut)
-                        }
-                        zipOut.closeEntry()
+                crashDir.listFiles()
+                    ?.filter { it.isFile && it.name.endsWith(".log") }
+                    ?.sortedByDescending { it.lastModified() }
+                    ?.forEach { crashFile ->
+                        addFileToZipWithTailLimit(
+                            zipOut = zipOut,
+                            entryName = "crashes/${crashFile.name}",
+                            file = crashFile,
+                            maxBytes = 2_000_000L,
+                            budget = budget,
+                            packageName = packageName,
+                            sanitize = sanitize
+                        )
                     }
-                }
             }
         } catch (e: Exception) {
             Timber.tag(TAG).e(e, "Failed to add crash logs to zip")
@@ -338,20 +486,30 @@ object LogExportUtils {
     /**
      * 添加构建日志到ZIP
      */
-    private fun addBuildLogsToZip(context: Context, zipOut: ZipOutputStream) {
+    private fun addBuildLogsToZip(
+        context: Context,
+        zipOut: ZipOutputStream,
+        packageName: String,
+        sanitize: Boolean,
+        budget: LogExportBudget
+    ) {
         try {
             val buildLogDir = File(context.filesDir, "build_logs")
             if (buildLogDir.exists() && buildLogDir.isDirectory) {
-                buildLogDir.listFiles()?.forEach { logFile ->
-                    if (logFile.isFile && logFile.name.endsWith(".log")) {
-                        val entry = ZipEntry("build_logs/${logFile.name}")
-                        zipOut.putNextEntry(entry)
-                        logFile.inputStream().use { input ->
-                            input.copyTo(zipOut)
-                        }
-                        zipOut.closeEntry()
+                buildLogDir.listFiles()
+                    ?.filter { it.isFile && it.name.endsWith(".log") }
+                    ?.sortedByDescending { it.lastModified() }
+                    ?.forEach { logFile ->
+                        addFileToZipWithTailLimit(
+                            zipOut = zipOut,
+                            entryName = "build_logs/${logFile.name}",
+                            file = logFile,
+                            maxBytes = 2_000_000L,
+                            budget = budget,
+                            packageName = packageName,
+                            sanitize = sanitize
+                        )
                     }
-                }
             }
         } catch (e: Exception) {
             Timber.tag(TAG).e(e, "Failed to add build logs to zip")
@@ -363,31 +521,46 @@ object LogExportUtils {
      *
      * 使用 ProjectPaths.getInstallLogsRoot() 获取安装日志目录
      */
-    private fun addInstallLogsToZip(context: Context, zipOut: ZipOutputStream) {
+    private fun addInstallLogsToZip(
+        context: Context,
+        zipOut: ZipOutputStream,
+        packageName: String,
+        sanitize: Boolean,
+        budget: LogExportBudget
+    ) {
         try {
             val installLogDir = ProjectPaths.getInstallLogsRoot(context)
             if (installLogDir.exists() && installLogDir.isDirectory) {
-                installLogDir.listFiles()?.forEach { logFile ->
-                    if (logFile.isFile && (logFile.name.endsWith(".log") || logFile.name.endsWith(".txt"))) {
-                        val entry = ZipEntry("install_logs/${logFile.name}")
-                        zipOut.putNextEntry(entry)
-                        logFile.inputStream().use { input ->
-                            input.copyTo(zipOut)
-                        }
-                        zipOut.closeEntry()
+                installLogDir.listFiles()
+                    ?.filter {
+                        it.isFile && (it.name.endsWith(".log") || it.name.endsWith(".txt"))
                     }
-                }
+                    ?.sortedByDescending { it.lastModified() }
+                    ?.forEach { logFile ->
+                        addFileToZipWithTailLimit(
+                            zipOut = zipOut,
+                            entryName = "install_logs/${logFile.name}",
+                            file = logFile,
+                            maxBytes = 1_000_000L,
+                            budget = budget,
+                            packageName = packageName,
+                            sanitize = sanitize
+                        )
+                    }
             }
         } catch (e: Exception) {
             Timber.tag(TAG).e(e, "Failed to add install logs to zip")
         }
     }
 
-    private fun addInstallLogSnapshotToZip(zipOut: ZipOutputStream, fileName: String) {
+    private fun addInstallLogSnapshotToZip(
+        zipOut: ZipOutputStream,
+        fileName: String,
+        packageName: String,
+        sanitize: Boolean,
+        budget: LogExportBudget
+    ) {
         try {
-            val entry = ZipEntry(fileName)
-            zipOut.putNextEntry(entry)
-
             val content = buildString {
                 appendLine("=== TinaIDE Install Log Snapshot ===")
                 appendLine("This file is a snapshot generated at export time.")
@@ -400,14 +573,25 @@ object LogExportUtils {
                 appendLine("--- End of Snapshot ---")
             }
 
-            zipOut.write(content.toByteArray(Charsets.UTF_8))
-            zipOut.closeEntry()
+            zipOut.putNextEntry(ZipEntry(fileName))
+            try {
+                budget.writeText(
+                    zipOut,
+                    if (sanitize) LogTextSanitizer.sanitize(content, packageName) else content
+                )
+            } finally {
+                zipOut.closeEntry()
+            }
         } catch (e: Exception) {
             Timber.tag(TAG).e(e, "Failed to add install log snapshot to zip")
         }
     }
 
-    private fun addRootfsPackageManagerLogsToZip(context: Context, zipOut: ZipOutputStream) {
+    private fun addRootfsPackageManagerLogsToZip(
+        context: Context,
+        zipOut: ZipOutputStream,
+        budget: LogExportBudget
+    ) {
         try {
             val rootfsDir = runCatching { File(PRootBootstrap.getActiveRootfsPath(context)) }
                 .getOrNull()
@@ -429,7 +613,8 @@ object LogExportUtils {
                     zipOut = zipOut,
                     entryName = "rootfs_logs/$relative",
                     file = file,
-                    maxBytes = 1_000_000L
+                    maxBytes = 1_000_000L,
+                    budget = budget
                 )
             }
         } catch (e: Exception) {
@@ -437,7 +622,11 @@ object LogExportUtils {
         }
     }
 
-    private fun addPRootLogsToZip(context: Context, zipOut: ZipOutputStream) {
+    private fun addPRootLogsToZip(
+        context: Context,
+        zipOut: ZipOutputStream,
+        budget: LogExportBudget
+    ) {
         try {
             val prootLogDir = ProjectPaths.getPRootLogsRoot(context)
             if (!prootLogDir.exists() || !prootLogDir.isDirectory) return
@@ -452,7 +641,8 @@ object LogExportUtils {
                     zipOut = zipOut,
                     entryName = "proot_logs/${logFile.name}",
                     file = logFile,
-                    maxBytes = 2_000_000L
+                    maxBytes = 2_000_000L,
+                    budget = budget
                 )
             }
         } catch (e: Exception) {
@@ -464,32 +654,63 @@ object LogExportUtils {
         zipOut: ZipOutputStream,
         entryName: String,
         file: File,
-        maxBytes: Long
+        maxBytes: Long,
+        budget: LogExportBudget,
+        packageName: String = "",
+        sanitize: Boolean = false
     ) {
         val safeMaxBytes = maxBytes.coerceAtLeast(1L)
         val len = file.length()
-        val entry = ZipEntry(entryName)
-        zipOut.putNextEntry(entry)
+        zipOut.putNextEntry(ZipEntry(entryName))
 
         try {
-            if (len <= safeMaxBytes) {
-                file.inputStream().use { it.copyTo(zipOut) }
-            } else {
-                val header = "=== File truncated (tail only) ===\npath=${file.absolutePath}\nsize=$len bytes\nkept=$safeMaxBytes bytes\n\n"
-                zipOut.write(header.toByteArray(Charsets.UTF_8))
+            if (budget.exhausted()) {
+                budget.writeText(zipOut, "(skipped: log bundle input budget exhausted)\n")
+                return
+            }
+            // Never read more than the remaining budget: a multi-MB tail would be thrown
+            // away anyway, and reading it first risks an OOM on low-memory devices.
+            val keep = minOf(len, safeMaxBytes, budget.remaining())
+            val start = (len - keep).coerceAtLeast(0L)
 
-                val start = (len - safeMaxBytes).coerceAtLeast(0L)
+            if (sanitize) {
+                // Only the tail is read, and text is sanitized before it reaches the ZIP.
+                val bytes = ByteArray(keep.toInt())
                 java.io.RandomAccessFile(file, "r").use { raf ->
                     raf.seek(start)
-                    val buf = ByteArray(16 * 1024)
-                    var remaining = safeMaxBytes
-                    while (remaining > 0) {
-                        val toRead = minOf(buf.size.toLong(), remaining).toInt()
-                        val read = raf.read(buf, 0, toRead)
+                    var offset = 0
+                    while (offset < bytes.size) {
+                        val read = raf.read(bytes, offset, bytes.size - offset)
                         if (read <= 0) break
-                        zipOut.write(buf, 0, read)
-                        remaining -= read.toLong()
+                        offset += read
                     }
+                }
+                val text = if (start > 0L) {
+                    "=== File truncated (tail only) ===\nsize=$len bytes\nkept=$keep bytes\n\n" +
+                        String(bytes, Charsets.UTF_8)
+                } else {
+                    String(bytes, Charsets.UTF_8)
+                }
+                budget.writeText(zipOut, LogTextSanitizer.sanitize(text, packageName))
+                return
+            }
+
+            if (start > 0L) {
+                budget.writeText(
+                    zipOut,
+                    "=== File truncated (tail only) ===\nsize=$len bytes\nkept=$keep bytes\n\n"
+                )
+            }
+            java.io.RandomAccessFile(file, "r").use { raf ->
+                raf.seek(start)
+                val buf = ByteArray(16 * 1024)
+                var remaining = keep
+                while (remaining > 0 && !budget.exhausted()) {
+                    val toRead = minOf(buf.size.toLong(), remaining).toInt()
+                    val read = raf.read(buf, 0, toRead)
+                    if (read <= 0) break
+                    budget.write(zipOut, buf.copyOf(read))
+                    remaining -= read.toLong()
                 }
             }
         } finally {
@@ -505,21 +726,30 @@ object LogExportUtils {
     private fun addTombstoneLogsToZip(
         context: Context,
         zipOut: ZipOutputStream,
-        includeUserRuntimeTombstones: Boolean
+        includeUserRuntimeTombstones: Boolean,
+        sanitize: Boolean,
+        budget: LogExportBudget
     ) {
         try {
             val tombstoneDir = ProjectPaths.getTombstonesRoot(context)
             if (tombstoneDir.exists() && tombstoneDir.isDirectory) {
-                tombstoneDir.listFiles()?.forEach { logFile ->
-                    if (logFile.isFile && (includeUserRuntimeTombstones || !isUserRuntimeTombstone(context, logFile))) {
-                        val entry = ZipEntry("tombstones/${logFile.name}")
-                        zipOut.putNextEntry(entry)
-                        logFile.inputStream().use { input ->
-                            input.copyTo(zipOut)
-                        }
-                        zipOut.closeEntry()
+                tombstoneDir.listFiles()
+                    ?.filter { it.isFile }
+                    ?.filter {
+                        includeUserRuntimeTombstones || !isUserRuntimeTombstone(context, it)
                     }
-                }
+                    ?.sortedByDescending { it.lastModified() }
+                    ?.forEach { logFile ->
+                        addFileToZipWithTailLimit(
+                            zipOut = zipOut,
+                            entryName = "tombstones/${logFile.name}",
+                            file = logFile,
+                            maxBytes = 1_000_000L,
+                            budget = budget,
+                            packageName = context.packageName,
+                            sanitize = sanitize
+                        )
+                    }
             }
         } catch (e: Exception) {
             Timber.tag(TAG).e(e, "Failed to add tombstone logs to zip")
@@ -548,7 +778,12 @@ object LogExportUtils {
      * Timber 日志文件格式：tinaide_2025-01-08.log
      * 存放位置：/sdcard/Android/data/<package>/files/logs/
      */
-    private fun addTimberLogsToZip(zipOut: ZipOutputStream) {
+    private fun addTimberLogsToZip(
+        zipOut: ZipOutputStream,
+        packageName: String,
+        sanitize: Boolean,
+        budget: LogExportBudget
+    ) {
         try {
             val logFiles = TinaTimber.getAllLogFiles()
             if (logFiles.isEmpty()) {
@@ -556,15 +791,19 @@ object LogExportUtils {
                 return
             }
 
-            for (logFile in logFiles) {
-                if (logFile.isFile && logFile.exists()) {
-                    val entry = ZipEntry("timber_logs/${logFile.name}")
-                    zipOut.putNextEntry(entry)
-                    logFile.inputStream().use { input ->
-                        input.copyTo(zipOut)
-                    }
-                    zipOut.closeEntry()
-                }
+            // Newest first: when the budget runs out the remaining files are the oldest.
+            for (logFile in logFiles.sortedByDescending { it.lastModified() }) {
+                if (!logFile.isFile || !logFile.exists()) continue
+                addFileToZipWithTailLimit(
+                    zipOut = zipOut,
+                    entryName = "timber_logs/${logFile.name}",
+                    file = logFile,
+                    maxBytes = 1_000_000L,
+                    budget = budget,
+                    packageName = packageName,
+                    sanitize = sanitize
+                )
+                if (budget.exhausted()) break
             }
             Timber.tag(TAG).d("Added %d Timber log files to zip", logFiles.size)
         } catch (e: Exception) {
@@ -585,7 +824,10 @@ internal object LogcatDumpPlanner {
         "libc:*"
     )
 
-    fun collectTargets(context: Context): List<LogcatDumpTarget> {
+    fun collectTargets(
+        context: Context,
+        includeRecentHost: Boolean = false
+    ): List<LogcatDumpTarget> {
         val packageName = context.packageName
         val currentProcessName = Application.getProcessName().orEmpty()
             .takeIf { it.isNotBlank() }
@@ -610,17 +852,22 @@ internal object LogcatDumpPlanner {
                 )
             }
 
+        // A crashed HOST process is gone by the time the next launch uploads its
+        // tombstone. The persisted pid registry is the only way to still ask logcat
+        // for that process instead of losing its output entirely.
         LogProcessRegistry.loadRecentRecords(context).forEach { record ->
-            if (CrashLogPrivacyClassifier.isUserRuntimeProcess(packageName, record.processName)) {
+            val isUserRuntime =
+                CrashLogPrivacyClassifier.isUserRuntimeProcess(packageName, record.processName)
+            if (isUserRuntime || includeRecentHost) {
                 targets += LogcatDumpTarget(
                     pid = record.pid,
                     processName = record.processName,
-                    source = "recent-runtime"
+                    source = if (isUserRuntime) "recent-runtime" else "recent-host"
                 )
             }
         }
 
-        return normalizeTargets(packageName, targets)
+        return normalizeTargets(packageName, targets, includeRecentHost)
     }
 
     fun buildCommands(
@@ -653,13 +900,14 @@ internal object LogcatDumpPlanner {
 
     internal fun normalizeTargets(
         packageName: String,
-        targets: List<LogcatDumpTarget>
+        targets: List<LogcatDumpTarget>,
+        includeRecentHost: Boolean = false
     ): List<LogcatDumpTarget> {
         val merged = linkedMapOf<Int, LogcatDumpTarget>()
         for (target in targets) {
             if (target.pid <= 0 || !isTinaProcess(packageName, target.processName)) continue
             val isUserRuntime = CrashLogPrivacyClassifier.isUserRuntimeProcess(packageName, target.processName)
-            if (target.source == "recent-runtime" && !isUserRuntime) continue
+            if (target.source.startsWith("recent") && !isUserRuntime && !includeRecentHost) continue
             val normalized = target.copy(
                 isUserRuntime = target.isUserRuntime || isUserRuntime
             )

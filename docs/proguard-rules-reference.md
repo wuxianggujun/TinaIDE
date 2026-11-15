@@ -70,7 +70,7 @@ R8 对代码执行三项操作：
 | 模块 | 有效规则 | 保护对象 |
 |------|----------|----------|
 | `core:lsp` | lsp4j 字段名 + 服务接口 + jsonrpc 框架 | Gson 反射序列化 + 动态代理 |
-| `core:network` | msgpack buffer 类 | `Class.forName()` 动态加载 |
+| `core:network` | 空（AegisHub 上报使用标准 JSON） | - |
 | `core:git` | JGit NLS + ServiceLoader + SSHD 警告抑制；BouncyCastle Ed25519 provider | 反射加载 ResourceBundle + Transport；Android 9-12 的 Ed25519 兼容生成 |
 | `core:tree-sitter` | grammar TSLanguage 子类 | `Class.forName()` 加载语法绑定 |
 | `core:plugin` | LuaJava JNI + 回调接口 | JNI native 方法 + Lua↔Java 互调 |
@@ -105,7 +105,6 @@ R8 对代码执行三项操作：
 | 库 | 版本 | 反射机制 | 规则位置 | 规则类型 |
 |----|------|----------|----------|----------|
 | **lsp4j** | 0.24.0 | Gson 反射序列化 + 动态代理 + `@JsonRequest` 注解路由 | `core:lsp/consumer-rules.pro` | `-keepclassmembers` 字段 + `-keep interface` 服务接口 + `-keep class` jsonrpc/launch 框架 |
-| **msgpack-core** | 0.9.8 | `Class.forName("MessageBufferU")` 动态加载 buffer 实现 | `core:network/consumer-rules.pro` | `-keep class` buffer 包所有类 |
 | **android-tree-sitter** | 4.3.2 | JNI 硬编码字段名（`TSNode.context0` 等）+ 工厂反射 | `external/.../consumer-rules.pro` | `-keep class` 全部 + `-keepclassmembers` JNI 字段 |
 | **JGit** | 7.1.0 | NLS 反射 (`TranslationBundle.lookupBundle(Class)`) + ServiceLoader transport | `core:git/consumer-rules.pro` | `-keep class` bundle 子类字段/构造器 + `-keep class` transport |
 | **JGit SSH Apache** | 7.1.0 | SSHD 引用桌面 JDK API（`javax.management` 等） | `core:git/consumer-rules.pro` | `-dontwarn` |
@@ -176,7 +175,6 @@ R8 对代码执行三项操作：
 
 **解法**：`-keep class` 保留完整类名
 
-**案例**：msgpack `MessageBufferU` — `Class.forName("org.msgpack.core.buffer.MessageBufferU")` 但该类被 R8 删除
 
 ### 4.3 NoSuchFieldError / NoSuchMethodError
 
@@ -328,7 +326,7 @@ rg -n "com.example.library|关键反射模型" app/build/outputs/mapping/arm64Re
 | 日期 | 问题 | 根因 | 修复 |
 |------|------|------|------|
 | 2026-03-07 | `ClassCastException` in LspClientSession.connect | lsp4j 响应模型类（`InitializeResult`、`ServerCapabilities` 等）被 R8 删除。`-keepclassmembers` 只保留字段名不阻止类删除；仅通过 Gson 反射实例化的类被 R8 判定为死代码 | `core:lsp/consumer-rules.pro` 从 `-keepclassmembers` 改为 `-keep class org.eclipse.lsp4j.** { <fields>; }` 阻止类删除 |
-| 2026-03-07 | `ClassNotFoundException: MessageBufferU` | msgpack `MessageBuffer.<clinit>` 通过 `Class.forName()` 加载 `MessageBufferU`，R8 将其当死代码删除 | `core:network/consumer-rules.pro` 添加 `-keep class org.msgpack.core.buffer.** { *; }` |
+| 2026-03-07 | `ClassNotFoundException: MessageBufferU` | msgpack `MessageBuffer.<clinit>` 通过 `Class.forName()` 加载 `MessageBufferU`，R8 将其当死代码删除 | `core:network/consumer-rules.pro` 添加 `-keep class org.msgpack.core.buffer.** { *; }`（MessagePack 依赖已于 2026-11 移除，相关规则同步删除） |
 | 2026-03-07 | Tree-sitter `TSParser$Native.newParser()` JNI 解析失败 | Tree-sitter JNI 字段名被混淆 | 添加 `external/tina-android-tree-sitter/android-tree-sitter/consumer-rules.pro`（完整 JNI 规则）|
 | 2026-03-24 | `R8: Missing class com.google.re2j.Matcher/Pattern` | Jsoup 1.22.1 引用了可选的 `re2j` 正则实现；Android app 未打入该依赖，release 混淆阶段触发缺失类检查 | `app/proguard-rules.pro` 添加 `-dontwarn com.google.re2j.**` |
 | 2026-03-07 | `UnsatisfiedLinkError: TSParser$Native.newParser()` native library 未加载 | external 模块 `build.gradle.kts` 缺少 `consumerProguardFiles` 声明，consumer-rules.pro 从未被 AGP 合并；R8 将 `TreeSitter` 类（含 `System.loadLibrary` 调用）标记为 `REMOVED`，native library 永远不会被加载 | 1) 在 `external/.../build.gradle.kts` 添加 `consumerProguardFiles("consumer-rules.pro")`；2) 在 `app/proguard-rules.pro` 添加安全网 `-keep class com.itsaky.androidide.treesitter.** { *; }` |

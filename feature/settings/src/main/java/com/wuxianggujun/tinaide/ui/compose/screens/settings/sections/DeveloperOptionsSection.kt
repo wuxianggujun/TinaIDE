@@ -1,24 +1,12 @@
 package com.wuxianggujun.tinaide.ui.compose.screens.settings.sections
 
-import android.content.Context
 import android.widget.Toast
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -28,22 +16,10 @@ import com.wuxianggujun.tinaide.core.config.Prefs
 import com.wuxianggujun.tinaide.core.i18n.Drawables
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
-import com.wuxianggujun.tinaide.core.network.server.TinaServerConfig
-import com.wuxianggujun.tinaide.ui.compose.components.TinaAlertDialog
-import com.wuxianggujun.tinaide.ui.compose.components.TinaDialogCard
-import com.wuxianggujun.tinaide.ui.compose.components.TinaDialogContentColumn
-import com.wuxianggujun.tinaide.ui.compose.components.TinaDialogMessageCard
-import com.wuxianggujun.tinaide.ui.compose.components.TinaDialogTitleText
-import com.wuxianggujun.tinaide.ui.compose.components.TinaPrimaryButton
-import com.wuxianggujun.tinaide.ui.compose.components.TinaTextButton
 import com.wuxianggujun.tinaide.ui.compose.screens.settings.components.SettingsCard
 import com.wuxianggujun.tinaide.ui.compose.screens.settings.components.SettingsCategoryTitle
 import com.wuxianggujun.tinaide.ui.compose.screens.settings.components.SettingsMenuItemWithIcon
 import com.wuxianggujun.tinaide.ui.compose.screens.settings.components.SettingsSwitchItem
-import kotlinx.coroutines.launch
-
-// 图标颜色
-private val TestIconColor = Color(0xFF2196F3)
 
 /**
  * 开发者选项页面
@@ -55,13 +31,6 @@ internal fun DeveloperOptionsSection(
     onNavigateBack: () -> Unit
 ) {
     val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
-    val serverConfig = remember { TinaServerConfig.getInstance(context) }
-
-    var showServerUrlDialog by remember { mutableStateOf(false) }
-    var serverUrlText by remember { mutableStateOf("") }
-    var serverUrlFeedback by remember { mutableStateOf<DeveloperServerUrlFeedback?>(null) }
-    var showServerConfigDialog by remember { mutableStateOf(false) }
 
     val diagnosticsSettings by Prefs.devDiagnosticsSettingsFlow.collectAsState()
     val diagnosticsEnabled = diagnosticsSettings.diagnosticsEnabled
@@ -82,99 +51,6 @@ internal fun DeveloperOptionsSection(
         DeveloperOptionsSectionSupport.resolveDiagnosticsControlsState(
             diagnosticsEnabled = diagnosticsEnabled,
             editorTouchDiagnosticsEnabled = editorTouchDiagnosticsEnabled
-        )
-    }
-    val serverUrlStatusText = DeveloperOptionsSectionSupport
-        .resolveServerUrlFeedbackMessage(serverUrlFeedback)
-        ?.resolve(context)
-
-    if (showServerUrlDialog) {
-        LaunchedEffect(Unit) {
-            val dialogState = DeveloperOptionsSectionSupport.createServerUrlDialogState(
-                serverConfig.getServerUrl()
-            )
-            serverUrlText = dialogState.urlText
-            serverUrlFeedback = dialogState.feedback
-        }
-
-        TinaAlertDialog(
-            onDismissRequest = { showServerUrlDialog = false },
-            title = { TinaDialogTitleText(stringResource(Strings.dialog_title_tina_server_url)) },
-            text = {
-                TinaDialogContentColumn {
-                    OutlinedTextField(
-                        modifier = Modifier.fillMaxWidth(),
-                        value = serverUrlText,
-                        onValueChange = { serverUrlText = it },
-                        label = { Text(stringResource(Strings.label_tina_server_url)) },
-                        singleLine = true,
-                    )
-                    serverUrlStatusText?.let {
-                        TinaDialogMessageCard(message = it)
-                    }
-                }
-            },
-            confirmButton = {
-                TinaPrimaryButton(
-                    text = stringResource(Strings.btn_save_and_test),
-                    onClick = {
-                        coroutineScope.launch {
-                            serverUrlFeedback = null
-                            val url = DeveloperOptionsSectionSupport.normalizeServerUrlInput(
-                                serverUrlText
-                            )
-                            if (!DeveloperOptionsSectionSupport.isServerUrlValid(url)) {
-                                serverUrlFeedback = DeveloperServerUrlFeedback.Invalid
-                                DeveloperOptionsSectionSupport
-                                    .resolveServerUrlFeedbackMessage(serverUrlFeedback)
-                                    ?.let { message ->
-                                        DeveloperToastSpec(message = message).show(context)
-                                    }
-                                return@launch
-                            }
-                            serverConfig.setServerUrl(url)
-                            val ok = serverConfig.checkServerConnection()
-                            val dialogState = DeveloperOptionsSectionSupport.resolveServerUrlSaveResult(
-                                persistedServerUrl = serverConfig.getServerUrl(),
-                                connectionOk = ok
-                            )
-                            serverUrlText = dialogState.urlText
-                            serverUrlFeedback = dialogState.feedback
-                            DeveloperOptionsSectionSupport
-                                .resolveServerUrlFeedbackMessage(dialogState.feedback)
-                                ?.let { message ->
-                                    DeveloperToastSpec(message = message).show(context)
-                                }
-                        }
-                    }
-                )
-            },
-            dismissButton = {
-                Row {
-                    TinaTextButton(
-                        text = stringResource(Strings.btn_cancel),
-                        onClick = { showServerUrlDialog = false }
-                    )
-                    TinaTextButton(
-                        text = stringResource(Strings.btn_restore_default),
-                        onClick = {
-                            coroutineScope.launch {
-                                serverConfig.setServerUrl(null)
-                                val dialogState = DeveloperOptionsSectionSupport.resolveServerUrlRestoreResult(
-                                    serverConfig.getServerUrl()
-                                )
-                                serverUrlText = dialogState.urlText
-                                serverUrlFeedback = dialogState.feedback
-                                DeveloperOptionsSectionSupport
-                                    .resolveServerUrlFeedbackMessage(dialogState.feedback)
-                                    ?.let { message ->
-                                        DeveloperToastSpec(message = message).show(context)
-                                    }
-                            }
-                        }
-                    )
-                }
-            }
         )
     }
 
@@ -333,29 +209,6 @@ internal fun DeveloperOptionsSection(
 
     Spacer(modifier = Modifier.height(16.dp))
 
-    SettingsCategoryTitle(stringResource(Strings.dev_options_backend))
-    SettingsCard {
-        SettingsMenuItemWithIcon(
-            iconRes = Drawables.ic_settings_developer,
-            iconBackgroundColor = TestIconColor,
-            title = stringResource(Strings.dev_options_tina_server_url),
-            subtitle = stringResource(Strings.dev_options_tina_server_url_desc),
-            onClick = { showServerUrlDialog = true },
-            showDivider = true
-        )
-
-        SettingsMenuItemWithIcon(
-            iconRes = Drawables.ic_settings_developer,
-            iconBackgroundColor = TestIconColor,
-            title = stringResource(Strings.dev_options_view_server_config),
-            subtitle = stringResource(Strings.dev_options_view_server_config_desc),
-            onClick = { showServerConfigDialog = true },
-            showDivider = false
-        )
-    }
-
-    Spacer(modifier = Modifier.height(16.dp))
-
     // 测试工具（统一入口）
     SettingsCategoryTitle(stringResource(Strings.dev_options_runtime_tools))
     SettingsCard {
@@ -381,79 +234,4 @@ internal fun DeveloperOptionsSection(
     }
 
     Spacer(modifier = Modifier.height(16.dp))
-
-    // 服务器配置预览对话框
-    if (showServerConfigDialog) {
-        val configPreview = remember(showServerConfigDialog) {
-            DeveloperOptionsSectionSupport.resolveServerConfigPreview(
-                com.wuxianggujun.tinaide.core.config.ServerConfigManager.getCurrentConfig()
-            )
-        }
-
-        val yesNo: @Composable (Boolean) -> String = { value ->
-            stringResource(if (value) Strings.common_yes else Strings.common_no)
-        }
-        TinaAlertDialog(
-            onDismissRequest = { showServerConfigDialog = false },
-            title = { TinaDialogTitleText(stringResource(Strings.dev_options_server_config_title)) },
-            text = {
-                TinaDialogContentColumn(
-                    modifier = Modifier
-                        .verticalScroll(rememberScrollState())
-                ) {
-                    TinaDialogCard(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(stringResource(Strings.dev_options_config_version, configPreview.version))
-                        Text(
-                            stringResource(
-                                Strings.dev_options_config_updated_at,
-                                configPreview.updatedAt
-                                    ?: stringResource(Strings.dev_options_config_unknown)
-                            )
-                        )
-                        Text(
-                            stringResource(
-                                Strings.dev_options_config_refresh_interval,
-                                configPreview.configRefreshIntervalSecs
-                            )
-                        )
-                    }
-
-                    TinaDialogCard(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(stringResource(Strings.dev_options_config_features), fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-                        Text(stringResource(Strings.dev_options_config_plugin_market, yesNo(configPreview.pluginMarketEnabled)))
-                        Text(stringResource(Strings.dev_options_config_package_manager, yesNo(configPreview.packageManagerEnabled)))
-                        Text(stringResource(Strings.dev_options_config_developer_options, yesNo(configPreview.developerOptionsEnabled)))
-                    }
-
-                    TinaDialogCard(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(stringResource(Strings.dev_options_config_client), fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-                        Text(stringResource(Strings.dev_options_config_min_version, configPreview.minClientVersion))
-                        Text(stringResource(Strings.dev_options_config_recommended_version, configPreview.recommendedClientVersion))
-                        Text(stringResource(Strings.dev_options_config_force_update, yesNo(configPreview.forceUpdate)))
-                    }
-                }
-            },
-            confirmButton = {
-                TinaTextButton(
-                    text = stringResource(Strings.btn_ok),
-                    onClick = { showServerConfigDialog = false }
-                )
-            }
-        )
-    }
-}
-
-private fun DeveloperMessageSpec.resolve(context: Context): String = messageRes.strOr(context, *formatArgs.toTypedArray())
-
-private fun DeveloperToastSpec.show(context: Context) {
-    Toast.makeText(
-        context,
-        message.resolve(context),
-        duration.toPlatformToastDuration()
-    ).show()
-}
-
-private fun DeveloperToastDuration.toPlatformToastDuration(): Int = when (this) {
-    DeveloperToastDuration.Short -> Toast.LENGTH_SHORT
-    DeveloperToastDuration.Long -> Toast.LENGTH_LONG
 }

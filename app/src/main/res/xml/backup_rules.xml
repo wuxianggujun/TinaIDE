@@ -4,7 +4,9 @@
 
     <exclude domain="sharedpref" path="git_credentials.xml" />
     <exclude domain="sharedpref" path="plugin_permissions.xml" />
-    <exclude domain="sharedpref" path="tina_server_config.xml" />
+    <exclude domain="sharedpref" path="server_config.xml" />
+    <exclude domain="sharedpref" path="aegis_identity.xml" />
+    <exclude domain="sharedpref" path="aegis_session.xml" />
     <exclude domain="sharedpref" path="tinaide_config.xml" />
     <exclude domain="sharedpref" path="plugin_storage.xml" />
     <exclude domain="sharedpref" path="tina_plugin_configuration.xml" />

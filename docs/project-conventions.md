@@ -70,7 +70,7 @@ Release 构建启用 `isMinifyEnabled = true`。**新增第三方库必须评估
 | 库的特征 | 需要的规则 | 示例 |
 |----------|------------|------|
 | Gson/反射序列化 | `-keepclassmembers { <fields>; }` | lsp4j |
-| `Class.forName()` 动态加载 | `-keep class` | msgpack |
+| `Class.forName()` 动态加载 | `-keep class` | 动态加载的第三方库 |
 | JNI native 方法 | 全局规则已覆盖，通常无需 | zstd-jni |
 | 动态代理接口 | `-keep interface` | lsp4j services |
 | 自带 consumer-rules | 无需额外处理 | OkHttp, Koin, Coil |

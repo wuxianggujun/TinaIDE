@@ -1,9 +1,9 @@
-package com.wuxianggujun.tinaide.core.crash
+package com.wuxianggujun.tinaide.core.logging
 
 import com.google.common.truth.Truth.assertThat
 import org.junit.Test
 
-class CrashLogUploadSanitizerTest {
+class LogTextSanitizerTest {
     private val packageName = "com.example.tinaide"
 
     @Test
@@ -19,7 +19,7 @@ class CrashLogUploadSanitizerTest {
             cache=/data/user/0/$packageName/files/workspace/secret-project/CMakeLists.txt
         """.trimIndent()
 
-        val sanitized = CrashLogUploadSanitizer.sanitize(crashText, packageName)
+        val sanitized = LogTextSanitizer.sanitize(crashText, packageName)
 
         assertThat(sanitized).doesNotContain("query-secret")
         assertThat(sanitized).doesNotContain("user:password")
@@ -41,7 +41,7 @@ class CrashLogUploadSanitizerTest {
             #00 pc 0000000000021c90 /data/app/~~abc/$packageName/lib/arm64/libtinaide.so
         """.trimIndent()
 
-        val sanitized = CrashLogUploadSanitizer.sanitize(crashText, packageName)
+        val sanitized = LogTextSanitizer.sanitize(crashText, packageName)
 
         assertThat(sanitized).contains(">>> $packageName <<<")
         assertThat(sanitized).contains("signal 11 (SIGSEGV)")

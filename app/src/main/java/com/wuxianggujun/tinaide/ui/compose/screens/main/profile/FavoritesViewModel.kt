@@ -17,15 +17,15 @@ import kotlinx.coroutines.launch
 data class FavoritesUiState(
     val favorites: List<FavoritePlugin> = emptyList(),
     val isLoading: Boolean = false,
-    val isSyncing: Boolean = false,
     val error: String? = null,
-    val syncError: String? = null,
     val hasMore: Boolean = false,
     val currentPage: Int = 1,
 )
 
 /**
  * 收藏界面 ViewModel
+ *
+ * 收藏数据只来自本地 Room 数据库，不再与任何服务器同步。
  */
 class FavoritesViewModel(
     private val repository: UserContentRepository
@@ -34,18 +34,7 @@ class FavoritesViewModel(
     val uiState: StateFlow<FavoritesUiState> = _uiState.asStateFlow()
 
     init {
-        // 首次加载时先从服务器同步，再加载本地数据
-        viewModelScope.launch {
-            try {
-                // 先尝试从服务器同步（静默同步，不显示加载状态）
-                repository.syncFavoritesFromServer()
-                // 然后加载本地数据
-                loadFavorites()
-            } catch (e: Exception) {
-                // 同步失败也继续加载本地数据
-                loadFavorites()
-            }
-        }
+        loadFavorites()
     }
 
     fun loadFavorites(refresh: Boolean = false) {
@@ -109,38 +98,6 @@ class FavoritesViewModel(
     }
 
     fun refresh() {
-        viewModelScope.launch {
-            // 先从服务器同步
-            syncFromServer()
-            // 再加载本地数据
-            loadFavorites(refresh = true)
-        }
-    }
-
-    /**
-     * 从服务器同步收藏
-     */
-    fun syncFromServer() {
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isSyncing = true, syncError = null)
-
-            repository.syncFavoritesFromServer().fold(
-                onSuccess = {
-                    _uiState.value = _uiState.value.copy(isSyncing = false)
-                    // 同步成功后重新加载本地数据
-                    loadFavorites(refresh = true)
-                },
-                onFailure = { error ->
-                    _uiState.value = _uiState.value.copy(
-                        isSyncing = false,
-                        syncError = error.message ?: Strings.favorites_sync_failed.str()
-                    )
-                }
-            )
-        }
-    }
-
-    fun clearSyncError() {
-        _uiState.value = _uiState.value.copy(syncError = null)
+        loadFavorites(refresh = true)
     }
 }

@@ -58,18 +58,6 @@ interface FavoriteDao {
     suspend fun deleteAllFavorites()
 
     /**
-     * 获取未同步的收藏
-     */
-    @Query("SELECT * FROM favorites WHERE synced = 0")
-    suspend fun getUnsyncedFavorites(): List<FavoriteEntity>
-
-    /**
-     * 标记为已同步
-     */
-    @Query("UPDATE favorites SET synced = 1 WHERE id = :id")
-    suspend fun markAsSynced(id: String)
-
-    /**
      * 获取收藏总数
      */
     @Query("SELECT COUNT(*) FROM favorites")

@@ -247,6 +247,9 @@ jobs:
           TINAIDE_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.TINAIDE_RELEASE_KEYSTORE_PASSWORD }}
           TINAIDE_RELEASE_KEY_ALIAS: ${{ secrets.TINAIDE_RELEASE_KEY_ALIAS }}
           TINAIDE_RELEASE_KEY_PASSWORD: ${{ secrets.TINAIDE_RELEASE_KEY_PASSWORD }}
+          AEGISHUB_BASE_URL: ${{ secrets.AEGISHUB_BASE_URL }}
+          AEGISHUB_APP_ID: ${{ secrets.AEGISHUB_APP_ID }}
+          AEGISHUB_INGEST_KEY: ${{ secrets.AEGISHUB_INGEST_KEY }}
         run: |
           set -euo pipefail
 
@@ -267,6 +270,11 @@ jobs:
             printf 'storePassword=%s\n' "$TINAIDE_RELEASE_KEYSTORE_PASSWORD"
             printf 'keyAlias=%s\n' "$TINAIDE_RELEASE_KEY_ALIAS"
             printf 'keyPassword=%s\n' "$TINAIDE_RELEASE_KEY_PASSWORD"
+            # Optional runtime secrets. Empty values are valid: AegisHub reporting
+            # stays disabled instead of falling back to any legacy endpoint.
+            printf 'AEGISHUB_BASE_URL=%s\n' "${AEGISHUB_BASE_URL:-}"
+            printf 'AEGISHUB_APP_ID=%s\n' "${AEGISHUB_APP_ID:-}"
+            printf 'AEGISHUB_INGEST_KEY=%s\n' "${AEGISHUB_INGEST_KEY:-}"
           } > keystore.properties
 
           echo "Release signing assets are ready."

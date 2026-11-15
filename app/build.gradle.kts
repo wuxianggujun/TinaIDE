@@ -53,11 +53,21 @@ android {
         targetSdk = 36
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // /api/server-config（MessagePack）签名密钥：建议仅放在本地 keystore.properties 或环境变量中
-        val serverConfigHmacSecret = keystoreProps.getProperty("SERVER_CONFIG_HMAC_SECRET")
-            ?: System.getenv("SERVER_CONFIG_HMAC_SECRET")
+        // AegisHub 是日志/崩溃/反馈的唯一上报后端；留空时上报整体跳过，不回退任何旧接口。
+        fun quotedConfigValue(value: String): String =
+            "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+        val aegisHubBaseUrl = keystoreProps.getProperty("AEGISHUB_BASE_URL")
+            ?: System.getenv("AEGISHUB_BASE_URL")
             ?: ""
-        buildConfigField("String", "SERVER_CONFIG_HMAC_SECRET", "\"$serverConfigHmacSecret\"")
+        val aegisHubAppId = keystoreProps.getProperty("AEGISHUB_APP_ID")
+            ?: System.getenv("AEGISHUB_APP_ID")
+            ?: ""
+        val aegisHubIngestKey = keystoreProps.getProperty("AEGISHUB_INGEST_KEY")
+            ?: System.getenv("AEGISHUB_INGEST_KEY")
+            ?: ""
+        buildConfigField("String", "AEGISHUB_BASE_URL", quotedConfigValue(aegisHubBaseUrl))
+        buildConfigField("String", "AEGISHUB_APP_ID", quotedConfigValue(aegisHubAppId))
+        buildConfigField("String", "AEGISHUB_INGEST_KEY", quotedConfigValue(aegisHubIngestKey))
 
         // 构建标识：与 R8 mapping 归档目录名同源，崩溃墓碑据此定位唯一可反查的 mapping。
         buildConfigField("String", "BUILD_ID", "\"$appBuildId\"")
@@ -99,11 +109,7 @@ android {
     }
 
     buildTypes {
-        debug {
-            buildConfigField("boolean", "SERVER_CONFIG_SIGNATURE_REQUIRED", "false")
-        }
         release {
-            buildConfigField("boolean", "SERVER_CONFIG_SIGNATURE_REQUIRED", "true")
             // 启用代码压缩和混淆
             isMinifyEnabled = true
             // 启用资源压缩（移除未使用的资源）
@@ -425,7 +431,7 @@ dependencies {
     // 详见：docs/design/16KB-Page-Alignment-Fix.md
     // implementation("com.nerdoftheherd:android-rsync:3.4.1")
 
-    // WorkManager - 后台任务调度（服务器配置同步等）
+    // 升级迁移：取消旧服务遗留的周期任务，避免系统继续尝试实例化已删除的 Worker。
     implementation(libs.work.runtime)
 
     // Timber - 日志框架（支持文件日志）

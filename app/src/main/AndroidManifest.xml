@@ -131,6 +131,8 @@
             android:exported="false"
             android:label="@string/crash_activity_title"
             android:theme="@style/Theme.TinaIDE"
+            android:taskAffinity="${applicationId}.crash"
+            android:excludeFromRecents="true"
             android:process=":crash" />
 
         <service

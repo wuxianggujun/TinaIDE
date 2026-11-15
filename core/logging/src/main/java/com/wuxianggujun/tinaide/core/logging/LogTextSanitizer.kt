@@ -1,7 +1,13 @@
-package com.wuxianggujun.tinaide.core.crash
+package com.wuxianggujun.tinaide.core.logging
 
-/** Removes credentials and user-owned paths before an automatic crash upload. */
-internal object CrashLogUploadSanitizer {
+/**
+ * Removes credentials and user-owned paths before an upload that the user did not
+ * review line by line.
+ *
+ * Used by the automatic crash upload both for the structured tombstone text and for
+ * every text entry inside the crash log bundle (Timber, logcat, install logs...).
+ */
+object LogTextSanitizer {
     private const val REDACTED = "<redacted>"
     private const val PRIVATE_PATH = "<private-path>"
     private const val PRIVATE_URI = "<private-uri>"
@@ -23,10 +29,10 @@ internal object CrashLogUploadSanitizer {
         """(?i)(?:/storage/emulated/\d+|/sdcard|/mnt/media_rw/[^/\s]+)(?:/[^\s:(),\[\]]+)*"""
     )
 
-    fun sanitize(crashText: String, packageName: String): String {
-        if (crashText.isBlank()) return crashText
+    fun sanitize(text: String, packageName: String): String {
+        if (text.isBlank()) return text
 
-        var sanitized = urlWithUserInfo.replace(crashText, "<redacted-url>")
+        var sanitized = urlWithUserInfo.replace(text, "<redacted-url>")
         sanitized = urlWithQueryOrFragment.replace(sanitized) { match ->
             "${match.groupValues[1]}?$REDACTED"
         }

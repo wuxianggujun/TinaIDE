@@ -86,9 +86,6 @@
   <string name="settings_desc_developer">测试工具、调试功能</string>
 
   <!-- Developer Options -->
-  <string name="dev_options_backend">后端服务</string>
-  <string name="dev_options_tina_server_url">TinaServer 地址</string>
-  <string name="dev_options_tina_server_url_desc">切换后端服务地址并测试连通性</string>
   <string name="dev_options_diagnostics">诊断日志</string>
   <string name="dev_options_diagnostics_enabled">启用诊断日志</string>
   <string name="dev_options_diagnostics_enabled_desc">总开关：关闭后不会输出额外诊断日志（用于减少性能开销/日志量）</string>
@@ -118,13 +115,6 @@
   <string name="dev_options_builtin_cmake_lsp_enabled">内置 CMake LSP</string>
   <string name="dev_options_builtin_cmake_lsp_enabled_desc">关闭后不附加内置 CMake 语义补全/语义高亮，便于单测 CMake 的 Tree-sitter 表现</string>
 
-  <string name="dialog_title_tina_server_url">TinaServer 地址</string>
-  <string name="label_tina_server_url">服务器基础 URL</string>
-  <string name="btn_save_and_test">保存并测试</string>
-  <string name="toast_tina_server_test_ok">连接成功</string>
-  <string name="toast_tina_server_test_failed">连接失败</string>
-  <string name="toast_tina_server_url_invalid">地址无效；远程服务器必须使用 HTTPS，本机调试可使用 localhost 或 127.0.0.1 的 HTTP 地址</string>
-  <string name="toast_tina_server_restored_default">已恢复默认地址</string>
 
   <!-- Plugin Database Test Screen -->
 
@@ -2763,10 +2753,10 @@
   <string name="crash_no_info">无崩溃信息</string>
   <string name="crash_copied">已复制到剪贴板</string>
   <string name="crash_copy_failed">复制失败: %1$s</string>
-  <string name="crash_title">应用崩溃了</string>
-  <string name="crash_title_user_native">用户程序崩溃了</string>
-  <string name="crash_hint">以下是崩溃信息，点击复制按钮可复制完整日志</string>
-  <string name="crash_hint_user_native">用户运行的 SDL/Native/NDK 程序已在独立进程中崩溃，TinaIDE 主界面不应受影响。以下是崩溃信息，点击复制按钮可复制完整日志。</string>
+  <string name="crash_title">TinaIDE 异常退出</string>
+  <string name="crash_title_user_native">程序异常退出</string>
+  <string name="crash_hint">可以重新打开 IDE。</string>
+  <string name="crash_hint_user_native">返回编辑器继续工作。</string>
   <string name="crash_user_native_privacy_note">这是用户项目/运行程序的崩溃日志，不会上传到 TinaIDE 服务器。你可以复制或分享给项目作者自行排查。</string>
   <string name="crash_upload_status_title">崩溃日志上传状态</string>
   <string name="crash_upload_status_none">尚未检测到上传状态。重启应用后会再次检查崩溃日志。</string>
@@ -3860,7 +3850,6 @@ kept=%3$d bytes
   <!-- About Settings Section -->
   <string name="about_developer_options_enabled">开发者选项已启用</string>
   <string name="about_developer_options_enabled_long">开发者选项已启用！</string>
-  <string name="about_developer_options_disabled_by_server">开发者选项已被服务器禁用</string>
   <string name="about_enable_developer_hint">再点击 %1$d 次即可启用开发者选项</string>
   <string name="about_error_unknown">未知错误</string>
   <string name="about_export_logs_failed">导出日志失败</string>
@@ -4724,21 +4713,6 @@ kept=%3$d bytes
   <string name="text_action_group_navigation">导航</string>
 
   <!-- Developer Options: Server Config Dialog -->
-  <string name="dev_options_view_server_config">查看服务器配置</string>
-  <string name="dev_options_view_server_config_desc">查看当前从服务器同步的配置信息</string>
-  <string name="dev_options_server_config_title">服务器配置</string>
-  <string name="dev_options_config_version">配置版本: %1$s</string>
-  <string name="dev_options_config_updated_at">更新时间: %1$s</string>
-  <string name="dev_options_config_refresh_interval">刷新间隔: %1$d秒</string>
-  <string name="dev_options_config_unknown">未知</string>
-  <string name="dev_options_config_features">功能开关:</string>
-  <string name="dev_options_config_plugin_market">• 插件市场: %1$s</string>
-  <string name="dev_options_config_package_manager">• 包管理器: %1$s</string>
-  <string name="dev_options_config_developer_options">• 开发者选项: %1$s</string>
-  <string name="dev_options_config_client">客户端配置:</string>
-  <string name="dev_options_config_min_version">• 最低版本: %1$s</string>
-  <string name="dev_options_config_recommended_version">• 推荐版本: %1$s</string>
-  <string name="dev_options_config_force_update">• 强制更新: %1$s</string>
   <string name="common_yes">是</string>
   <string name="common_no">否</string>
 
@@ -4789,8 +4763,6 @@ kept=%3$d bytes
   <string name="favorites_remove">移除收藏</string>
   <string name="favorites_remove_confirm">确定要取消收藏「%1$s」吗？</string>
   <string name="favorites_remove_confirm_title">取消收藏</string>
-  <string name="favorites_sync_failed">同步失败，请检查网络</string>
-  <string name="favorites_not_synced">未同步</string>
 <string name="favorites_empty_hint">还没有收藏任何插件</string>
   <string name="favorites_go_to_market">去市场逛逛</string>
   <string name="download_history_empty">暂无下载记录</string>
@@ -5239,4 +5211,47 @@ kept=%3$d bytes
   <string name="run_config_assets_hint">留空时优先读取 assets，兼容项目根目录。可指定项目内的相对路径，例如 resources；写入的存档仍保存在应用私有目录。</string>
   <string name="run_config_assets_invalid">资源目录必须是项目内已存在的文件夹</string>
   <string name="pkg_manager_error_invalid_metadata">无法读取有效的包信息：package.json 必须使用 UTF-8，且大小不超过 1 MiB。</string>
+  <string name="settings_feedback">意见反馈</string>
+  <string name="settings_feedback_desc">把问题或建议直接发送给开发者</string>
+  <string name="feedback_dialog_title">意见反馈</string>
+  <string name="feedback_message_label">问题或建议</string>
+  <string name="feedback_message_placeholder">请描述你遇到的问题、复现步骤或希望新增的功能</string>
+  <string name="feedback_contact_label">联系方式（可选）</string>
+  <string name="feedback_contact_placeholder">邮箱 / QQ，便于进一步沟通</string>
+  <string name="feedback_attach_logs">附带日志与设备信息</string>
+  <string name="feedback_attach_logs_desc">自动附加脱敏后的运行日志，可加快定位问题</string>
+  <string name="feedback_attach_archive">附带自己的日志压缩包</string>
+  <string name="feedback_attach_archive_desc">支持 zip / tar / gz / tgz，不超过 10MB</string>
+  <string name="feedback_attach_archive_pick">选择文件</string>
+  <string name="feedback_attach_archive_remove">移除</string>
+  <string name="feedback_attach_archive_selected">已选择：%1$s</string>
+  <string name="feedback_submit">提交反馈</string>
+  <string name="feedback_submitting">正在提交反馈...</string>
+  <string name="feedback_submitted">反馈已提交，感谢！</string>
+  <string name="feedback_submitted_with_log_warning">反馈已提交，但日志附件上传失败：%1$s</string>
+  <string name="feedback_failed">反馈提交失败：%1$s</string>
+  <string name="feedback_empty_message">请先填写反馈内容</string>
+  <string name="aegis_not_configured">此版本未配置诊断上报服务，暂时无法上传</string>
+  <string name="aegis_report_encode_failed">无法编码上报内容</string>
+  <string name="aegis_report_failed">上报失败，请稍后重试</string>
+  <string name="aegis_attachment_empty">附件不存在或为空</string>
+  <string name="aegis_attachment_too_large">附件超过 10MB 上限，无法上传</string>
+  <string name="aegis_invalid_report_id">报告编号无效，请重新提交</string>
+  <string name="crash_title_component">运行组件异常退出</string>
+  <string name="crash_hint_component">关闭此页返回 IDE。</string>
+  <string name="crash_btn_return_editor">返回编辑器</string>
+  <string name="crash_btn_close">关闭</string>
+  <string name="crash_btn_show_details">查看日志</string>
+  <string name="crash_btn_hide_details">收起日志</string>
+  <string name="settings_upload_log_archive">上传日志压缩包</string>
+  <string name="settings_upload_log_archive_desc">选择设备上的 zip / tar / gz / tgz 日志包上传（不超过 10MB）</string>
+  <string name="toast_uploading_log_archive">正在上传日志压缩包...</string>
+  <string name="toast_log_archive_uploaded">日志压缩包上传成功（ID=%1$s）</string>
+  <string name="toast_upload_log_archive_failed">上传日志压缩包失败: %1$s</string>
+  <string name="toast_log_archive_too_large">日志压缩包大小约 %1$dMB，超过 10MB 上限，无法上传</string>
+  <string name="toast_log_archive_unsupported">仅支持 zip、tar、gz、tgz 格式的日志压缩包</string>
+  <string name="toast_log_archive_empty">日志压缩包为空或无法读取</string>
+  <string name="log_upload_report_message">用户手动上传的 TinaIDE 运行日志：%1$s</string>
+  <string name="log_archive_report_message">用户手动上传的 TinaIDE 日志压缩包：%1$s（格式 %2$s，%3$d 字节）</string>
+  <string name="log_upload_attachment_failed">报告已提交（%1$s），但日志附件上传失败：%2$s</string>
 </resources>

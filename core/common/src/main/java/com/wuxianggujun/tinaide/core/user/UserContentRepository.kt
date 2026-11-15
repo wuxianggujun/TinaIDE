@@ -5,7 +5,7 @@ import kotlinx.coroutines.flow.Flow
 /**
  * 用户内容仓库接口
  *
- * 管理用户的收藏、下载历史等内容
+ * 管理用户的收藏、下载历史等纯本地内容
  */
 interface UserContentRepository {
 
@@ -46,13 +46,6 @@ interface UserContentRepository {
      * @return 是否已收藏
      */
     suspend fun isFavorite(pluginId: String): Boolean
-
-    /**
-     * 从服务器同步收藏到本地
-     *
-     * @return 操作结果
-     */
-    suspend fun syncFavoritesFromServer(): Result<Unit>
 
     /**
      * 获取下载历史

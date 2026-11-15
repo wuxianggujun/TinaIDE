@@ -2,7 +2,7 @@
 
 > 最后人工核验：2026-09-09
 
-TinaIDE 开源版的插件市场、依赖包市场与 Linux distro manifest 不再从 TinaServer 读取元数据。
+TinaIDE 开源版的插件市场、依赖包市场与 Linux distro manifest 不再从旧私有服务器读取元数据。
 客户端默认读取公开仓库：
 
 ```text

@@ -33,8 +33,7 @@ description: TinaIDE 数据层、安全、权限、路径、敏感信息和文�
 - 项目、日志、PRoot、模板等路径应优先通过 `ProjectPaths` 获取。
 - 路径输入校验优先复用 `PathValidator` 和相关 validator。
 - RikkaHub API Key 不应在 TinaIDE 主仓库新增镜像存储；如需修改密钥逻辑，应在 `external/rikkahub` 内按其数据层和安全策略处理。
-- `TinaServerEnvironment.initialize()` 会 trim `SERVER_CONFIG_HMAC_SECRET`。
-- `TinaServerApi` 使用 `ServerConfigHmacVerifier` 校验 server config；空 secret 会跳过并 warning。
+- AegisHub 是唯一上报后端；`AEGISHUB_BASE_URL`、`AEGISHUB_APP_ID`、`AEGISHUB_INGEST_KEY` 留空时直接跳过上报，不回退旧接口。
 - `CrashLogPrivacyClassifier` 区分 host/user runtime process，主进程 crash 才上传。
 - 外部文件分享统一用 `TinaFileProvider` / `ExternalFileIntents` 生成 `content://` URI。
 - Manifest 当前 `allowBackup=true` 且备份规则包含 `sharedpref`；不要把密钥类字段放入普通 SharedPreferences。

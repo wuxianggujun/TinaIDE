@@ -64,18 +64,6 @@ interface DownloadHistoryDao {
     suspend fun deleteAllDownloads()
 
     /**
-     * 获取未同步的下载历史
-     */
-    @Query("SELECT * FROM download_history WHERE synced = 0")
-    suspend fun getUnsyncedDownloads(): List<DownloadHistoryEntity>
-
-    /**
-     * 标记为已同步
-     */
-    @Query("UPDATE download_history SET synced = 1 WHERE id = :id")
-    suspend fun markAsSynced(id: String)
-
-    /**
      * 获取下载历史总数
      */
     @Query("SELECT COUNT(*) FROM download_history")
