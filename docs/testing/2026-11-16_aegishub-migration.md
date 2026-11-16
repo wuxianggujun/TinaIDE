@@ -24,9 +24,11 @@
 
 ## Device state
 
-The previous wireless ADB connection to the physical `PMS110` at `192.168.2.185:39375` disappeared before installation. Subsequent `adb devices` snapshots showed only an x86_64 emulator, and TCP connectivity to the remembered wireless ADB port failed. The emulator advertises `x86_64,arm64-v8a`, but installation of the signed ARM64 APK was rejected because the existing TinaIDE package has a different signing certificate (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`). It was not uninstalled, preserving emulator app data. The APK was therefore not installed on, or verified on, the physical phone; keep this as an explicit acceptance gap.
+On 2026-11-16 (Asia/Shanghai), the physical `PMS110` reconnected through wireless ADB on a new port. `adb install -r` successfully updated the existing installation without uninstalling the app or clearing its data. Android package metadata confirmed `0.19.4` / `19052`, ARM64, on Android 17. The installed APK hash matches the artifact below. `MainPortalActivity` started successfully, and the app process remained alive throughout the UI review. No new post-install crash/ANR exit was present in the inspected process-exit history.
 
-An ARM64 AVD cannot run on this x86_64 host. The existing x86_64 AVD advertises `x86_64,arm64-v8a`, so the conflicting emulator-only TinaIDE install was uninstalled and the release APK installed successfully. The app process remained alive with `DependencyInstallActivity` resumed; package metadata reported version `0.19.4` / code `19052`. This emulator reinstall cleared that AVD's prior TinaIDE app data. This is emulator startup coverage only, not physical-device acceptance.
+The physical-device review covered the portal, marketplace, profile, About, feedback form, keyboard, and screen rotation. It found feedback draft loss on rotation and an unusably short marketplace list area in landscape; see the [device UI review](2026-11-16_pms110-ui-review.md). Automatic rotation was restored after testing. This pass did not execute connected instrumentation, compile/run a project, deliberately crash the app, inspect private migration preferences, or submit/upload a new device report. The earlier synthetic backend checks are separate from this device startup/UI acceptance.
+
+An earlier emulator smoke test also installed the same artifact successfully after removing an incompatible emulator-only installation. That operation cleared that emulator's previous TinaIDE data; it did not affect the physical phone.
 
 ## Release artifact
 
