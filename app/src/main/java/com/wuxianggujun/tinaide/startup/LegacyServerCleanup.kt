@@ -22,7 +22,7 @@ internal object LegacyServerCleanup {
             }
             // Local favorites/download history are Room data and are preserved.
             listOf("tina_server_config", "server_config").forEach { name ->
-                check(context.deleteSharedPreferences(name)) { "Failed to remove legacy preferences: $name" }
+                removeLegacyPreferences(context, name)
             }
             check(prefs.edit().putBoolean(KEY_COMPLETED, true).commit()) {
                 "Failed to persist legacy server cleanup"
@@ -33,5 +33,11 @@ internal object LegacyServerCleanup {
         } catch (e: Exception) {
             Timber.tag("LegacyServerCleanup").w(e, "Legacy server cleanup deferred until next startup")
         }
+    }
+
+    internal fun removeLegacyPreferences(context: Context, name: String) {
+        val preferences = context.getSharedPreferences(name, Context.MODE_PRIVATE)
+        if (preferences.all.isEmpty()) return
+        check(context.deleteSharedPreferences(name)) { "Failed to remove legacy preferences: $name" }
     }
 }
