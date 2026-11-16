@@ -360,7 +360,6 @@ class MarketScreenViewModel(
                     version = plugin.latestVersion,
                     downloadedAt = System.currentTimeMillis().toString(),
                     fileSize = null,
-                    synced = false
                 )
             )
         }
@@ -389,7 +388,6 @@ class MarketScreenViewModel(
                 tags = plugin?.tags,
                 latestVersion = plugin?.latestVersion,
                 addedAt = System.currentTimeMillis().toString(),
-                synced = false
             )
             userContentRepository.addFavorite(favorite).onFailure { error ->
                 _pluginState.update {
@@ -591,7 +589,6 @@ class MarketScreenViewModel(
                     version = version,
                     downloadedAt = System.currentTimeMillis().toString(),
                     fileSize = null,
-                    synced = false
                 )
             )
         }
