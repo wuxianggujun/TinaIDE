@@ -26,6 +26,8 @@
 
 The previous wireless ADB connection to the physical `PMS110` at `192.168.2.185:39375` disappeared before installation. Subsequent `adb devices` snapshots showed only an x86_64 emulator, and TCP connectivity to the remembered wireless ADB port failed. The emulator advertises `x86_64,arm64-v8a`, but installation of the signed ARM64 APK was rejected because the existing TinaIDE package has a different signing certificate (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`). It was not uninstalled, preserving emulator app data. The APK was therefore not installed on, or verified on, the physical phone; keep this as an explicit acceptance gap.
 
+An ARM64 AVD cannot run on this x86_64 host. The existing x86_64 AVD advertises `x86_64,arm64-v8a`, so the conflicting emulator-only TinaIDE install was uninstalled and the release APK installed successfully. The app process remained alive with `DependencyInstallActivity` resumed; package metadata reported version `0.19.4` / code `19052`. This emulator reinstall cleared that AVD's prior TinaIDE app data. This is emulator startup coverage only, not physical-device acceptance.
+
 ## Release artifact
 
 - `app/build/outputs/apk/arm64/release/TinaIDE-0.19.4-arm64-v8a-release.apk`
