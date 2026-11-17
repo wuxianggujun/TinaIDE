@@ -35,6 +35,13 @@ class VcpkgManagedDeviceTest {
         val report = JSONObject().put("phase", phase).put("passed", false)
             .put("runId", InstrumentationRegistry.getArguments().getString("regressionRunId", "manual"))
         val output = StringBuilder()
+        val started = android.os.SystemClock.elapsedRealtime()
+        val progress: (Long, Long) -> Unit = { downloaded, total ->
+            val elapsed = android.os.SystemClock.elapsedRealtime() - started
+            report.put("downloadedBytes", downloaded).put("expectedBytes", total)
+                .put("lastProgressMs", elapsed)
+            output.appendLine("${report.optString("stage")}: $downloaded/$total bytes after $elapsed ms")
+        }
         try {
             withTimeout(50_000) {
                 when (phase) {
@@ -45,10 +52,20 @@ class VcpkgManagedDeviceTest {
                         report.put("ports", catalog.ports.size).put("revision", catalog.revision)
                     }
                     "update" -> {
-                        val catalog = VcpkgCatalogStore(context).update()
+                        report.put("stage", "catalog-update")
+                        val catalog = VcpkgCatalogStore(context).update(progress)
                         assertTrue(catalog.ports.size > 2000)
-                        assertTrue(File(VcpkgCatalogStore(context).ensureSources(), "scripts/buildsystems/vcpkg.cmake").isFile)
                         report.put("ports", catalog.ports.size).put("revision", catalog.revision)
+                            .put("stage", "catalog-ready")
+                    }
+                    "sources" -> {
+                        report.put("stage", "source-preparation")
+                        val store = VcpkgCatalogStore(context)
+                        val catalog = store.readLocal()
+                        val sources = store.ensureSources(progress)
+                        assertTrue(File(sources, "scripts/buildsystems/vcpkg.cmake").isFile)
+                        assertEquals(catalog.revision, File(sources, ".tina-source-ready").readText(Charsets.UTF_8))
+                        report.put("revision", catalog.revision).put("stage", "sources-ready")
                     }
                     "offline-update" -> {
                         val store = VcpkgCatalogStore(context)
@@ -166,7 +183,11 @@ class VcpkgManagedDeviceTest {
                 }
             }
             report.put("passed", true)
+        } catch (error: Throwable) {
+            report.put("failureType", error.javaClass.simpleName)
+            throw error
         } finally {
+            report.put("elapsedMs", android.os.SystemClock.elapsedRealtime() - started)
             val evidence = regressionEvidenceDirectory(context)
             File(evidence, "vcpkg-managed-$phase.json").writeText(report.toString(2), Charsets.UTF_8)
             File(evidence, "vcpkg-managed-$phase.log").writeText(output.toString(), Charsets.UTF_8)

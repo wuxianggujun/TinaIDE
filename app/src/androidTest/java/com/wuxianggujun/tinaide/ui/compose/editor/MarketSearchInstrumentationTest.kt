@@ -5,6 +5,7 @@ import android.content.res.Configuration
 import android.graphics.Bitmap
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
@@ -70,6 +71,14 @@ class MarketSearchInstrumentationTest {
             composeRule.onAllNodes(hasText("fmt $version")).fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.onNodeWithText("fmt $version").performScrollTo().assertIsDisplayed()
+        // Exercise the real top-level routes, including the scrollable short-window rail.
+        for (destination in listOf(Strings.nav_project, Strings.nav_tutorial, Strings.nav_profile, Strings.nav_market)) {
+            val navigation = composeRule.onNodeWithContentDescription(context.getString(destination))
+            if (landscape) navigation.performScrollTo()
+            navigation.performClick().assertIsSelected()
+        }
+        composeRule.onNode(hasSetTextAction()).assertTextContains(" FMT ")
+        composeRule.onNodeWithText(context.getString(Strings.market_tab_vcpkg)).assertIsSelected()
         composeRule.onNodeWithText(context.getString(Strings.market_tab_packages)).performClick()
         composeRule.onNode(hasSetTextAction()).assertTextContains(" FMT ")
         restoration.emulateSavedInstanceStateRestore()
@@ -97,6 +106,7 @@ class MarketSearchInstrumentationTest {
                 .put("runId", arguments.getString("regressionRunId", "manual"))
                 .put("passed", true).put("width", bitmap.width).put("height", bitmap.height)
                 .put("listHeightPx", listHeight).put("density", composeRule.density.density)
+                .put("navigationDestinations", 4)
                 .put("landscape", landscape).toString(2), Charsets.UTF_8)
         } finally {
             bitmap.recycle()
