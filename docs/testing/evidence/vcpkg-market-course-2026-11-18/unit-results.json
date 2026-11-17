@@ -1,0 +1,81 @@
+{
+  "sourceCommit": "2b8a08749daf7843509776f9deab0c93cdf2d1f5",
+  "modules": [
+    {
+      "module": "core:packages",
+      "suites": 28,
+      "tests": 157,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "core:network",
+      "suites": 9,
+      "tests": 38,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "core:compile",
+      "suites": 48,
+      "tests": 276,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "core:project",
+      "suites": 9,
+      "tests": 74,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "feature:help",
+      "suites": 5,
+      "tests": 23,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "feature:packages",
+      "suites": 4,
+      "tests": 21,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "feature:settings",
+      "suites": 19,
+      "tests": 143,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "feature:tutorial",
+      "suites": 4,
+      "tests": 10,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "feature:wizard",
+      "suites": 5,
+      "tests": 30,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  ],
+  "totalTests": 772,
+  "passed": true,
+  "freshExecution": true,
+  "perTestTaskDeadlineSeconds": 60
+}
