@@ -25,9 +25,10 @@ EDITOR_CASES = (
 
 
 def instrumentation_passed(output: str, returncode: int, timed_out: bool) -> bool:
-    """One selected test must complete; an empty selection or process error is not a pass."""
+    """One selected test must complete; failures and ignored/assumption skips are not passes."""
     return (not timed_out and returncode == 0 and
             re.search(r"(?m)^OK \(1 test\)\s*$", output) is not None and
+            re.search(r"(?m)^INSTRUMENTATION_STATUS_CODE:[ \t]*-[1-4][ \t\r]*$", output) is None and
             not re.search(r"FAILURES!!!|INSTRUMENTATION_FAILED|INSTRUMENTATION_ABORTED|TestTimedOutException", output))
 
 
