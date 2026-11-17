@@ -37,7 +37,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SuggestionChip
-import androidx.compose.material3.Tab
+import androidx.compose.material3.LeadingIconTab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -247,19 +247,19 @@ fun MarketScreen(
                 containerColor = MaterialTheme.colorScheme.surface,
                 contentColor = MaterialTheme.colorScheme.primary
             ) {
-                Tab(
+                LeadingIconTab(
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
                     text = { Text(stringResource(Strings.market_tab_plugins)) },
                     icon = { Icon(Icons.Default.Extension, contentDescription = null) }
                 )
-                Tab(
+                LeadingIconTab(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
                     text = { Text(stringResource(Strings.market_tab_packages)) },
                     icon = { Icon(Icons.Default.Inventory, contentDescription = null) }
                 )
-                Tab(
+                LeadingIconTab(
                     selected = selectedTab == 2,
                     onClick = { selectedTab = 2 },
                     text = { Text(stringResource(Strings.market_tab_vcpkg)) },

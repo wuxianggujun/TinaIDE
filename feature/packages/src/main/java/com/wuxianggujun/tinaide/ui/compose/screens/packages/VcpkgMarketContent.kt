@@ -3,6 +3,7 @@ package com.wuxianggujun.tinaide.ui.compose.screens.packages
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -18,6 +19,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Inventory
+import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
@@ -38,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -66,6 +70,8 @@ import com.wuxianggujun.tinaide.ui.compose.components.TinaPullToRefreshBox
 import com.wuxianggujun.tinaide.ui.compose.components.TinaSingleChoiceDialog
 import com.wuxianggujun.tinaide.ui.compose.components.TinaTextButton
 import org.koin.androidx.compose.koinViewModel
+
+private val CompactVcpkgMaxHeight = 360.dp
 
 /**
  * vcpkg market: a fixed toolbar (catalog status, project selector, refresh/update) over a scrolling
@@ -134,44 +140,49 @@ fun VcpkgMarketContent(projects: List<ProjectListItem>, onOpenGuide: () -> Unit,
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        VcpkgMarketHeader(
-            state = state,
-            catalog = catalog,
-            projectName = currentProject?.displayName,
-            projectCount = projects.size,
-            onOpenGuide = onOpenGuide,
-            onChooseProject = { chooseProject = true },
-            onRefreshCatalog = viewModel::refreshCatalog,
-            onUpdateCatalog = viewModel::updateCatalog,
-            onCancelOperation = viewModel::cancelOperation,
-        )
-        VcpkgMarketBody(
-            state = state,
-            catalog = catalog,
-            result = result,
-            sharedLibrary = sharedLibrary,
-            canModify = canModify,
-            onRefresh = viewModel::refresh,
-            onRefreshCatalog = viewModel::refreshCatalog,
-            onClearError = viewModel::clearError,
-            onToggleDependency = ::toggleDependency,
-            onOpenDetail = { detailPortName = it.name },
-            onCopy = { copier(it.name) },
-            modifier = Modifier.weight(1f),
-        )
-        VcpkgMarketFooter(
-            state = state,
-            catalog = catalog,
-            onInstall = viewModel::install,
-            onInstallToShared = { confirmShared = true },
-            onCancelOperation = viewModel::cancelOperation,
-            onUseManaged = {
-                if (catalog?.settings?.mode == VcpkgProjectSettings.SHARED) confirmManaged = true
-                else viewModel.useManagedInstallation()
-            },
-            onOpenLog = { showLog = true },
-        )
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val compact = maxHeight < CompactVcpkgMaxHeight
+        Column(modifier = Modifier.fillMaxSize()) {
+            VcpkgMarketHeader(
+                compact = compact,
+                state = state,
+                catalog = catalog,
+                projectName = currentProject?.displayName,
+                projectCount = projects.size,
+                onOpenGuide = onOpenGuide,
+                onChooseProject = { chooseProject = true },
+                onRefreshCatalog = viewModel::refreshCatalog,
+                onUpdateCatalog = viewModel::updateCatalog,
+                onCancelOperation = viewModel::cancelOperation,
+            )
+            VcpkgMarketBody(
+                state = state,
+                catalog = catalog,
+                result = result,
+                sharedLibrary = sharedLibrary,
+                canModify = canModify,
+                onRefresh = viewModel::refresh,
+                onRefreshCatalog = viewModel::refreshCatalog,
+                onClearError = viewModel::clearError,
+                onToggleDependency = ::toggleDependency,
+                onOpenDetail = { detailPortName = it.name },
+                onCopy = { copier(it.name) },
+                modifier = Modifier.weight(1f),
+            )
+            VcpkgMarketFooter(
+                compact = compact,
+                state = state,
+                catalog = catalog,
+                onInstall = viewModel::install,
+                onInstallToShared = { confirmShared = true },
+                onCancelOperation = viewModel::cancelOperation,
+                onUseManaged = {
+                    if (catalog?.settings?.mode == VcpkgProjectSettings.SHARED) confirmManaged = true
+                    else viewModel.useManagedInstallation()
+                },
+                onOpenLog = { showLog = true },
+            )
+        }
     }
 
     if (chooseProject) {
@@ -263,6 +274,7 @@ fun VcpkgMarketContent(projects: List<ProjectListItem>, onOpenGuide: () -> Unit,
 
 @Composable
 private fun VcpkgMarketHeader(
+    compact: Boolean,
     state: VcpkgMarketState,
     catalog: VcpkgProjectCatalog?,
     projectName: String?,
@@ -278,21 +290,30 @@ private fun VcpkgMarketHeader(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                state.androidCatalog?.let { android ->
-                    Text(
-                        text = stringResource(Strings.vcpkg_catalog_count, android.ports.size, android.androidAbi),
-                        style = MaterialTheme.typography.titleSmall,
-                    )
-                    val hidden = android.totalCount - android.ports.size
-                    if (hidden > 0) {
+            if (compact) {
+                VcpkgProjectChooser(
+                    projectName = projectName,
+                    enabled = projectCount > 0 && !state.busy,
+                    onChooseProject = onChooseProject,
+                    modifier = Modifier.weight(1f),
+                )
+            } else {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    state.androidCatalog?.let { android ->
                         Text(
-                            text = stringResource(Strings.vcpkg_filter_hidden_hint, android.androidAbi, hidden),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+                            text = stringResource(Strings.vcpkg_catalog_count, android.ports.size, android.androidAbi),
+                            style = MaterialTheme.typography.titleSmall,
                         )
+                        val hidden = android.totalCount - android.ports.size
+                        if (hidden > 0) {
+                            Text(
+                                text = stringResource(Strings.vcpkg_filter_hidden_hint, android.androidAbi, hidden),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     }
                 }
             }
@@ -310,15 +331,17 @@ private fun VcpkgMarketHeader(
                     modifier = Modifier.size(20.dp),
                 )
             }
-            TinaTextButton(text = stringResource(Strings.vcpkg_open_guide), onClick = onOpenGuide)
+            if (compact) {
+                IconButton(onClick = onOpenGuide) {
+                    Icon(Icons.Default.MenuBook, contentDescription = stringResource(Strings.vcpkg_open_guide))
+                }
+            } else {
+                TinaTextButton(text = stringResource(Strings.vcpkg_open_guide), onClick = onOpenGuide)
+            }
         }
-        TinaOutlinedButton(
-            text = projectName ?: stringResource(Strings.vcpkg_select_project),
-            onClick = onChooseProject,
-            enabled = projectCount > 0 && !state.busy,
-            modifier = Modifier.fillMaxWidth(),
-            leadingIcon = Icons.Default.FolderOpen,
-        )
+        if (!compact) {
+            VcpkgProjectChooser(projectName, projectCount > 0 && !state.busy, onChooseProject, Modifier.fillMaxWidth())
+        }
         if (state.projectMissing) {
             Text(
                 text = stringResource(Strings.vcpkg_project_missing),
@@ -351,6 +374,17 @@ private fun VcpkgMarketHeader(
 }
 
 @Composable
+private fun VcpkgProjectChooser(projectName: String?, enabled: Boolean, onChooseProject: () -> Unit, modifier: Modifier) {
+    TinaOutlinedButton(
+        text = projectName ?: stringResource(Strings.vcpkg_select_project),
+        onClick = onChooseProject,
+        enabled = enabled,
+        modifier = modifier,
+        leadingIcon = Icons.Default.FolderOpen,
+    )
+}
+
+@Composable
 private fun VcpkgMarketBody(
     state: VcpkgMarketState,
     catalog: VcpkgProjectCatalog?,
@@ -365,7 +399,7 @@ private fun VcpkgMarketBody(
     onCopy: (VcpkgPort) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Box(modifier = modifier.fillMaxWidth()) {
+    Box(modifier = modifier.fillMaxWidth().testTag("vcpkg-market-list")) {
         when {
             state.androidCatalog != null -> TinaPullToRefreshBox(
                 isRefreshing = state.loading,
@@ -492,6 +526,7 @@ private fun VcpkgEmptyContent(
 
 @Composable
 private fun VcpkgMarketFooter(
+    compact: Boolean,
     state: VcpkgMarketState,
     catalog: VcpkgProjectCatalog?,
     onInstall: () -> Unit,
@@ -502,12 +537,14 @@ private fun VcpkgMarketFooter(
 ) {
     val mode = catalog?.settings?.mode
     val declaredOrInstalled = catalog != null && (catalog.declared.isNotEmpty() || catalog.installed.isNotEmpty())
+    val hasActions = state.installing || mode == VcpkgProjectSettings.SHARED || declaredOrInstalled || state.output.isNotEmpty()
+    if (compact && !hasActions) return
     Surface(tonalElevation = 3.dp) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = if (compact) 4.dp else 10.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            if (state.output.isNotEmpty()) {
+            if (state.output.isNotEmpty() && !compact) {
                 Row(modifier = Modifier.fillMaxWidth()) {
                     TinaTextButton(text = stringResource(Strings.vcpkg_install_log_open), onClick = onOpenLog)
                 }
@@ -517,6 +554,11 @@ private fun VcpkgMarketFooter(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                if (state.output.isNotEmpty() && compact) {
+                    IconButton(onClick = onOpenLog) {
+                        Icon(Icons.Default.Terminal, contentDescription = stringResource(Strings.vcpkg_install_log_open))
+                    }
+                }
                 when {
                     state.installing -> {
                         LinearProgressIndicator(modifier = Modifier.weight(1f))

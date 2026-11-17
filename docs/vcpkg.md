@@ -42,6 +42,7 @@ vcpkg 已内置于应用，用于 native CMake 项目；工具、源码和依赖
 - `VcpkgPortCard.kt` / `VcpkgPortDetailDialog.kt`：卡片徽标、复制库名、项目状态与兼容性详情。
 - `VcpkgInstallLogDialog.kt`：安装输出独立对话框，自动滚动并支持复制。
 - 空态和错误态复用 `core:designsystem` 的 `TinaEmptyState` / `TinaErrorState`，插件市场与 vcpkg 共用。两者按可用高度自适应：高度不足时隐藏 96 dp 图标并收紧间距，错误态改为可滚动，避免固定头部加底栏后标题、说明或重试按钮被挤出可视区域。
+- 短窗口使用单行项目/刷新/更新/教程工具栏，隐藏仅作重复提示的无操作底栏；有安装、取消、切换模式或日志操作时仍显示入口。横屏门户共享原有导航项与 Spotlight 目标的侧栏，不改变页面状态持有者或缩小点击区域。
 
 Android 原生 vcpkg CLI 在手机上读取项目的 `vcpkg.json`，使用当前 tina-toolchain、Android sysroot、API Level 和 ABI 构建依赖。
 
