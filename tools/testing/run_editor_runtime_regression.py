@@ -52,12 +52,18 @@ def main():
     parser.add_argument("--adb", default="adb")
     parser.add_argument("--serial", required=True)
     parser.add_argument("--suite", choices=("editor", "host", "runtime", "packages", "vcpkg", "vcpkg-managed", "course", "graphics-course", "performance"), required=True)
+    parser.add_argument("--build-type", choices=("debug", "release"), default="debug", help="Select the App instrumentation package")
+    parser.add_argument("--root-evidence", action="store_true", help="Read only this suite's private evidence on an explicitly rooted emulator")
     parser.add_argument("--package-id", default="fmt", help="Market package used by the packages suite")
     parser.add_argument("--orientation", choices=("portrait", "landscape"), default="portrait")
     parser.add_argument("--output", type=Path, default=ROOT / "app/build/reports/editor-runtime-regression")
     parser.add_argument("--case", help="Run one named case from the suite")
     parser.add_argument("--profile", action="store_true", help="Sample Java methods during the performance suite")
     args = parser.parse_args()
+    if args.build_type == "release" and args.suite == "editor":
+        parser.error("--build-type release applies only to App suites")
+    if args.root_evidence and not args.serial.startswith("emulator-"):
+        parser.error("--root-evidence requires an emulator serial")
     if args.profile and args.suite != "performance":
         parser.error("--profile requires --suite performance")
     args.output.mkdir(parents=True, exist_ok=True)
@@ -66,7 +72,7 @@ def main():
         cases = [(name, "com.wuxianggujun.tinaide.core.editorview.EditorFindAndScaleInstrumentationTest#" + name, {})
                  for name in EDITOR_CASES]
     else:
-        package = "com.wuxianggujun.tinaide.test"
+        package = "com.wuxianggujun.tinaide.release.test" if args.build_type == "release" else "com.wuxianggujun.tinaide.test"
         if args.suite == "host":
             cases = [(name, "com.wuxianggujun.tinaide.ui.compose.editor." + selector, {}) for name, selector in (
                 ("host-theme", "EditorHostInteractionInstrumentationTest#hostMarkdownAndSearch_remainReadableAndPreserveSelectionAcrossOppositeThemes"),
@@ -118,7 +124,7 @@ def main():
     reports = []
     for name, selector, extras in cases:
         run_id = uuid.uuid4().hex
-        target = "com.wuxianggujun.tinaide" if package == "com.wuxianggujun.tinaide.test" else package
+        target = "com.wuxianggujun.tinaide" if package in ("com.wuxianggujun.tinaide.test", "com.wuxianggujun.tinaide.release.test") else package
         command = [args.adb, "-s", args.serial, "shell", "am", "instrument", "-w", "-r",
                    "-e", "timeout_msec", "55000" if args.suite in ("vcpkg-managed", "course", "graphics-course") else "45000", "-e", "editorOrientation", args.orientation,
                    "-e", "regressionRunId", run_id, "-e", "class", selector]
@@ -143,9 +149,12 @@ def main():
                             else f"course-{extras['courseLanguage']}-{extras['courseLesson']}.json" if args.suite == "course"
                             else f"graphics-course-{extras['courseLanguage']}-{extras['graphicsLibrary']}.json" if args.suite == "graphics-course"
                             else f"vcpkg-managed-{name}.json")
-                evidence = subprocess.check_output(
-                    [args.adb, "-s", args.serial, "exec-out", "run-as", target,
-                     "cat", "files/test-regression-evidence/" + filename], stderr=subprocess.PIPE, timeout=10)
+                evidence_command = ([args.adb, "-s", args.serial, "exec-out", "cat",
+                                     f"/data/user/0/{target}/files/test-regression-evidence/{filename}"]
+                                    if args.root_evidence else
+                                    [args.adb, "-s", args.serial, "exec-out", "run-as", target,
+                                     "cat", "files/test-regression-evidence/" + filename])
+                evidence = subprocess.check_output(evidence_command, stderr=subprocess.PIPE, timeout=10)
                 report = json.loads(evidence)
                 if not isinstance(report, dict):
                     raise ValueError("Expected a performance report object")
@@ -184,7 +193,7 @@ def main():
                     output += f"\nFORCE_STOP_ERROR: {error}\n"
         (args.output / f"{name}.log").write_text(output, encoding="utf-8")
         reports.append(dict(name=name, selector=selector, extras=extras, serial=args.serial,
-                            orientation=args.orientation, seconds=round(time.monotonic() - started, 2),
+                            orientation=args.orientation, buildType=args.build_type, seconds=round(time.monotonic() - started, 2),
                             passed=passed, timed_out=timed_out, returncode=returncode, runId=run_id,
                             evidenceFile=evidence_file))
         print(("PASS " if passed else "FAIL ") + name, flush=True)
