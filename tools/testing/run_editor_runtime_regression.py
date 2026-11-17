@@ -69,7 +69,8 @@ def validate_market_evidence(report: dict, run_id: str, orientation: str) -> byt
     """Validate this invocation's viewport and bounded inline PNG without private-file access."""
     landscape = orientation == "landscape"
     if (report.get("runId") != run_id or report.get("passed") is not True or
-            report.get("landscape") != landscape or report.get("navigationDestinations") != 4):
+            report.get("landscape") != landscape or report.get("navigationDestinations") != 4 or
+            report.get("tabLabelsSingleLine") is not True):
         raise ValueError("Incomplete or stale main-market evidence")
     width, height = report.get("width"), report.get("height")
     density, list_height = report.get("density"), report.get("listHeightPx")

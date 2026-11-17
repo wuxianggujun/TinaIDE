@@ -54,6 +54,7 @@ class MarketEvidenceTest(unittest.TestCase):
         png = b"\x89PNG\r\n\x1a\n" + b"\0" * 8 + struct.pack(">II", 1200, 600)
         return dict(runId="current", passed=True, landscape=True, width=1200, height=600,
                     density=2.0, listHeightPx=240.0, navigationDestinations=4,
+                    tabLabelsSingleLine=True,
                     screenshotPng=base64.b64encode(png).decode("ascii"))
 
     def test_current_landscape_report_is_read_without_root(self):
@@ -82,6 +83,12 @@ class MarketEvidenceTest(unittest.TestCase):
     def test_missing_screenshot_is_rejected(self):
         report = self.report()
         report.pop("screenshotPng")
+        with self.assertRaises(ValueError):
+            validate_market_evidence(report, "current", "landscape")
+
+    def test_missing_tab_layout_evidence_is_rejected(self):
+        report = self.report()
+        report.pop("tabLabelsSingleLine")
         with self.assertRaises(ValueError):
             validate_market_evidence(report, "current", "landscape")
 

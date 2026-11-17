@@ -17,6 +17,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -30,6 +31,8 @@ import com.wuxianggujun.tinaide.tutorial.TutorialViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.text.TextLayoutResult
 import com.wuxianggujun.tinaide.ui.theme.TinaIDETheme
 import java.io.File
 import kotlinx.coroutines.runBlocking
@@ -77,6 +80,13 @@ class MarketSearchInstrumentationTest {
             composeRule.onAllNodes(hasText("fmt $version")).fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.onNodeWithText("fmt $version").performScrollTo().assertIsDisplayed()
+        for (label in listOf(Strings.market_tab_plugins, Strings.market_tab_packages, Strings.market_tab_vcpkg)) {
+            val layouts = mutableListOf<TextLayoutResult>()
+            composeRule.onNodeWithText(context.getString(label), useUnmergedTree = true)
+                .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+            assertTrue("Market tab labels must fit on one line", layouts.size == 1 &&
+                layouts.single().lineCount == 1 && !layouts.single().hasVisualOverflow)
+        }
         // Exercise the real top-level routes, including the scrollable short-window rail.
         for (destination in listOf("project", "tutorial", "profile", "market")) {
             val item = navigation(destination)
@@ -114,6 +124,7 @@ class MarketSearchInstrumentationTest {
                 .put("passed", true).put("width", bitmap.width).put("height", bitmap.height)
                 .put("listHeightPx", listHeight).put("density", composeRule.density.density)
                 .put("navigationDestinations", 4)
+                .put("tabLabelsSingleLine", true)
                 .put("landscape", landscape)
             if (arguments.getString("regressionInlineScreenshot") == "true") {
                 val png = screenshot.readBytes()

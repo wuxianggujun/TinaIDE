@@ -5,6 +5,7 @@ package com.wuxianggujun.tinaide.ui.compose.screens.main.market
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -38,6 +39,7 @@ import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.LeadingIconTab
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -87,6 +89,8 @@ import com.wuxianggujun.tinaide.ui.compose.components.TinaTopBar
 import com.wuxianggujun.tinaide.ui.compose.components.tinaBackAction
 import com.wuxianggujun.tinaide.ui.compose.screens.settings.sections.GitHubRegistryProxyDialog
 import org.koin.androidx.compose.koinViewModel
+
+private val LeadingMarketTabsMinWidth = 480.dp
 
 /**
  * 市场主屏幕
@@ -242,29 +246,30 @@ fun MarketScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            PrimaryTabRow(
-                selectedTabIndex = selectedTab,
-                containerColor = MaterialTheme.colorScheme.surface,
-                contentColor = MaterialTheme.colorScheme.primary
-            ) {
-                LeadingIconTab(
-                    selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
-                    text = { Text(stringResource(Strings.market_tab_plugins)) },
-                    icon = { Icon(Icons.Default.Extension, contentDescription = null) }
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                val leadingIcons = maxWidth >= LeadingMarketTabsMinWidth
+                val destinations = listOf(
+                    Strings.market_tab_plugins to Icons.Default.Extension,
+                    Strings.market_tab_packages to Icons.Default.Inventory,
+                    Strings.market_tab_vcpkg to Icons.Default.Build,
                 )
-                LeadingIconTab(
-                    selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
-                    text = { Text(stringResource(Strings.market_tab_packages)) },
-                    icon = { Icon(Icons.Default.Inventory, contentDescription = null) }
-                )
-                LeadingIconTab(
-                    selected = selectedTab == 2,
-                    onClick = { selectedTab = 2 },
-                    text = { Text(stringResource(Strings.market_tab_vcpkg)) },
-                    icon = { Icon(Icons.Default.Build, contentDescription = null) },
-                )
+                PrimaryTabRow(
+                    selectedTabIndex = selectedTab,
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    contentColor = MaterialTheme.colorScheme.primary,
+                ) {
+                    destinations.forEachIndexed { index, (label, imageVector) ->
+                        val text: @Composable () -> Unit = {
+                            Text(stringResource(label), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        val icon: @Composable () -> Unit = { Icon(imageVector, contentDescription = null) }
+                        if (leadingIcons) {
+                            LeadingIconTab(selected = selectedTab == index, onClick = { selectedTab = index }, text = text, icon = icon)
+                        } else {
+                            Tab(selected = selectedTab == index, onClick = { selectedTab = index }, text = text, icon = icon)
+                        }
+                    }
+                }
             }
 
             Box(
