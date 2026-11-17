@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
+import math
 from pathlib import Path
 import re
+import struct
 import subprocess
 import time
 import uuid
@@ -22,6 +25,7 @@ EDITOR_CASES = (
     "narrowPane_keepsQueryReplacementAndPrimaryActionsReachable",
     "foldGutterHitTargets_followFontGeometryAfterPinch",
 )
+MAX_MARKET_SCREENSHOT_BYTES = 512 * 1024
 
 
 def instrumentation_passed(output: str, returncode: int, timed_out: bool) -> bool:
@@ -61,11 +65,35 @@ def validate_performance_evidence(report: dict, run_id: str, extras: dict) -> No
         raise ValueError("Incomplete renderer samples")
 
 
+def validate_market_evidence(report: dict, run_id: str, orientation: str) -> bytes:
+    """Validate this invocation's viewport and bounded inline PNG without private-file access."""
+    landscape = orientation == "landscape"
+    if (report.get("runId") != run_id or report.get("passed") is not True or
+            report.get("landscape") != landscape or report.get("navigationDestinations") != 4):
+        raise ValueError("Incomplete or stale main-market evidence")
+    width, height = report.get("width"), report.get("height")
+    density, list_height = report.get("density"), report.get("listHeightPx")
+    if (type(width) is not int or type(height) is not int or width <= 0 or height <= 0 or
+            (width > height) != landscape or
+            type(density) not in (int, float) or not math.isfinite(density) or density <= 0 or
+            type(list_height) not in (int, float) or not math.isfinite(list_height) or list_height <= 0 or
+            landscape and list_height / density < 120):
+        raise ValueError("Invalid or unusable market viewport")
+    encoded = report.get("screenshotPng")
+    if not isinstance(encoded, str) or not encoded or len(encoded) > (MAX_MARKET_SCREENSHOT_BYTES + 2) // 3 * 4:
+        raise ValueError("Missing or oversized market screenshot")
+    png = base64.b64decode(encoded, validate=True)
+    if (not 24 <= len(png) <= MAX_MARKET_SCREENSHOT_BYTES or png[:8] != b"\x89PNG\r\n\x1a\n" or
+            struct.unpack_from(">II", png, 16) != (width, height)):
+        raise ValueError("Market screenshot does not match the active viewport")
+    return png
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--adb", default="adb")
     parser.add_argument("--serial", required=True)
-    parser.add_argument("--suite", choices=("editor", "host", "runtime", "packages", "vcpkg", "vcpkg-managed", "course", "graphics-course", "performance"), required=True)
+    parser.add_argument("--suite", choices=("editor", "host", "runtime", "packages", "vcpkg", "vcpkg-managed", "course", "graphics-course", "performance", "market-layout"), required=True)
     parser.add_argument("--build-type", choices=("debug", "release"), default="debug", help="Select the App instrumentation package")
     parser.add_argument("--root-evidence", action="store_true", help="Read only this suite's private evidence on an explicitly rooted emulator")
     parser.add_argument("--package-id", default="fmt", help="Market package used by the packages suite")
@@ -94,6 +122,9 @@ def main():
                 ("variable-caret", "CompactInputInstrumentationTest#variableCompletion_usesActualCaretAndKeepsSuffix"),
                 ("large-cpp", "EditorLargeFileInstrumentationTest#realCppHighlighter_largeFileScrollAndEdit_remainConsistent"),
             )]
+        elif args.suite == "market-layout":
+            selector = "com.wuxianggujun.tinaide.ui.compose.editor.MarketSearchInstrumentationTest#searchSurvivesTabSwitchAndStateRestorationAndCanBeClosed"
+            cases = [(f"market-{args.orientation}", selector, {"regressionInlineScreenshot": "true"})]
         elif args.suite == "packages":
             selector = "com.wuxianggujun.tinaide.core.packages.RegistryInstallDeviceTest#downloadCancelRetryAndUninstall_keepFilesAndRecordsConsistent"
             cases = [(phase, selector, {"packagePhase": phase, "packageId": args.package_id})
@@ -149,6 +180,7 @@ def main():
         timed_out = False
         returncode = -1
         evidence_file = None
+        evidence_image = None
         try:
             result = subprocess.run(command, capture_output=True, timeout=60)
             output = (result.stdout + result.stderr).decode("utf-8", errors="replace")
@@ -157,11 +189,12 @@ def main():
             output = (error.stdout or b"").decode("utf-8", errors="replace") + "\nHOST_TIMEOUT_60_SECONDS\n"
             timed_out = True
         passed = instrumentation_passed(output, returncode, timed_out)
-        if args.suite in ("performance", "vcpkg-managed", "course", "graphics-course") and name != "market-ui":
+        if args.suite in ("performance", "vcpkg-managed", "course", "graphics-course", "market-layout") and name != "market-ui":
             try:
                 filename = (f"warm-cpp-scroll-{extras['performanceHighlight']}.json" if args.suite == "performance"
                             else f"course-{extras['courseLanguage']}-{extras['courseLesson']}.json" if args.suite == "course"
                             else f"graphics-course-{extras['courseLanguage']}-{extras['graphicsLibrary']}.json" if args.suite == "graphics-course"
+                            else f"market-search-{args.orientation}.json" if args.suite == "market-layout"
                             else f"vcpkg-managed-{name}.json")
                 evidence_command = ([args.adb, "-s", args.serial, "exec-out", "cat",
                                      f"/data/user/0/{target}/files/test-regression-evidence/{filename}"]
@@ -183,6 +216,12 @@ def main():
                 if passed:
                     if args.suite == "performance":
                         validate_performance_evidence(report, run_id, extras)
+                    elif args.suite == "market-layout":
+                        png = validate_market_evidence(report, run_id, args.orientation)
+                        evidence_image = f"{name}-{run_id}.png"
+                        (args.output / evidence_image).write_bytes(png)
+                        report.pop("screenshotPng")
+                        (args.output / evidence_file).write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
                     elif args.suite == "graphics-course":
                         if (report.get("runId") != run_id or report.get("passed") is not True or
                                 report.get("library") != extras["graphicsLibrary"] or
@@ -214,6 +253,8 @@ def main():
                             orientation=args.orientation, buildType=args.build_type, seconds=round(time.monotonic() - started, 2),
                             passed=passed, timed_out=timed_out, returncode=returncode, runId=run_id,
                             evidenceFile=evidence_file))
+        if evidence_image:
+            reports[-1]["evidenceImage"] = evidence_image
         print(("PASS " if passed else "FAIL ") + name, flush=True)
         (args.output / "results.json").write_text(json.dumps(reports, ensure_ascii=False, indent=2), encoding="utf-8")
         if timed_out or (not passed and args.suite in ("packages", "vcpkg", "vcpkg-managed", "course", "graphics-course")):

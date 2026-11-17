@@ -19,7 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Inventory
-import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
@@ -333,7 +333,7 @@ private fun VcpkgMarketHeader(
             }
             if (compact) {
                 IconButton(onClick = onOpenGuide) {
-                    Icon(Icons.Default.MenuBook, contentDescription = stringResource(Strings.vcpkg_open_guide))
+                    Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = stringResource(Strings.vcpkg_open_guide))
                 }
             } else {
                 TinaTextButton(text = stringResource(Strings.vcpkg_open_guide), onClick = onOpenGuide)

@@ -39,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -70,7 +71,9 @@ data class BottomNavItem(
     val contentDescriptionResId: Int,
     /** Spotlight 引导目标 ID */
     val spotlightTargetId: String? = null
-)
+) {
+    val testTag: String get() = "main-nav-$route"
+}
 
 /**
  * 底部导航栏
@@ -109,7 +112,7 @@ fun TinaBottomBar(
                 NavigationBarItem(
                     selected = selected,
                     onClick = { onItemSelected(index) },
-                    modifier = itemModifier,
+                    modifier = itemModifier.testTag(item.testTag),
                     icon = {
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
@@ -183,7 +186,7 @@ fun TinaNavigationRail(
                 NavigationRailItem(
                     selected = selected,
                     onClick = { onItemSelected(index) },
-                    modifier = target.height(NavigationRailItemHeight),
+                    modifier = target.height(NavigationRailItemHeight).testTag(item.testTag),
                     icon = {
                         Icon(
                             imageVector = if (selected) item.selectedIcon else item.unselectedIcon,

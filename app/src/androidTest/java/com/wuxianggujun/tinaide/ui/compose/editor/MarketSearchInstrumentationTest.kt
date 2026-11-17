@@ -3,6 +3,7 @@ package com.wuxianggujun.tinaide.ui.compose.editor
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.Bitmap
+import android.util.Base64
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
@@ -22,7 +23,9 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.packages.VcpkgCatalogStore
 import com.wuxianggujun.tinaide.ui.regressionEvidenceDirectory
+import com.wuxianggujun.tinaide.ui.emitRegressionReport
 import com.wuxianggujun.tinaide.ui.compose.screens.main.MainScreen
+import com.wuxianggujun.tinaide.ui.compose.components.MainBottomNavItems
 import com.wuxianggujun.tinaide.tutorial.TutorialViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.runtime.LaunchedEffect
@@ -37,11 +40,14 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 private val MinimumLandscapeMarketListHeight = 120.dp
+private const val MaximumInlineScreenshotBytes = 512 * 1024
 
 /** Exercises the actual shared search bar, tab handoff and saved state, rather than a controlled query fixture. */
 @RunWith(AndroidJUnit4::class)
 class MarketSearchInstrumentationTest {
     @get:Rule val composeRule = createAndroidComposeRule<ComponentActivity>()
+
+    private fun navigation(route: String) = composeRule.onNodeWithTag(MainBottomNavItems.single { it.route == route }.testTag)
 
     @Test fun searchSurvivesTabSwitchAndStateRestorationAndCanBeClosed() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -63,7 +69,7 @@ class MarketSearchInstrumentationTest {
             LaunchedEffect(tutorial) { tutorial.skipOnboarding() }
             TinaIDETheme { MainScreen() }
         }
-        composeRule.onNodeWithContentDescription(context.getString(Strings.nav_market)).performClick()
+        navigation("market").performClick()
         composeRule.onNodeWithContentDescription(context.getString(Strings.market_search_action)).performClick()
         composeRule.onNode(hasSetTextAction()).performTextInput(" FMT ")
         composeRule.onNodeWithText(context.getString(Strings.market_tab_vcpkg)).performClick()
@@ -72,10 +78,10 @@ class MarketSearchInstrumentationTest {
         }
         composeRule.onNodeWithText("fmt $version").performScrollTo().assertIsDisplayed()
         // Exercise the real top-level routes, including the scrollable short-window rail.
-        for (destination in listOf(Strings.nav_project, Strings.nav_tutorial, Strings.nav_profile, Strings.nav_market)) {
-            val navigation = composeRule.onNodeWithContentDescription(context.getString(destination))
-            if (landscape) navigation.performScrollTo()
-            navigation.performClick().assertIsSelected()
+        for (destination in listOf("project", "tutorial", "profile", "market")) {
+            val item = navigation(destination)
+            if (landscape) item.performScrollTo()
+            item.performClick().assertIsSelected()
         }
         composeRule.onNode(hasSetTextAction()).assertTextContains(" FMT ")
         composeRule.onNodeWithText(context.getString(Strings.market_tab_vcpkg)).assertIsSelected()
@@ -101,13 +107,21 @@ class MarketSearchInstrumentationTest {
             assertTrue("The active test viewport must match the requested orientation", (bitmap.width > bitmap.height) == landscape)
             val evidence = regressionEvidenceDirectory(context)
             val name = "market-search-${if (landscape) "landscape" else "portrait"}"
-            File(evidence, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-            File(evidence, "$name.json").writeText(JSONObject()
+            val screenshot = File(evidence, "$name.png")
+            screenshot.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            val report = JSONObject()
                 .put("runId", arguments.getString("regressionRunId", "manual"))
                 .put("passed", true).put("width", bitmap.width).put("height", bitmap.height)
                 .put("listHeightPx", listHeight).put("density", composeRule.density.density)
                 .put("navigationDestinations", 4)
-                .put("landscape", landscape).toString(2), Charsets.UTF_8)
+                .put("landscape", landscape)
+            if (arguments.getString("regressionInlineScreenshot") == "true") {
+                val png = screenshot.readBytes()
+                check(png.size <= MaximumInlineScreenshotBytes) { "Screenshot exceeds the instrumentation evidence limit" }
+                report.put("screenshotPng", Base64.encodeToString(png, Base64.NO_WRAP))
+            }
+            File(evidence, "$name.json").writeText(report.toString(2), Charsets.UTF_8)
+            emitRegressionReport(report)
         } finally {
             bitmap.recycle()
         }

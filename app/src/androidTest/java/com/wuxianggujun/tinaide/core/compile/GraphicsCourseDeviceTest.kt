@@ -124,8 +124,9 @@ class GraphicsCourseDeviceTest {
                             if (b > 50 && b > red * 2 && b > green) blue++
                         }
                         colorsVerified = orange > 40 && blue > 200
-                        if (colorsVerified) {
-                            report.put("orangeSamples", orange).put("blueSamples", blue)
+                        report.put("orangeSamples", orange).put("blueSamples", blue)
+                        // Keep the final failing sample too; startup success alone is not render evidence.
+                        if (colorsVerified || SystemClock.elapsedRealtime() + 300 >= deadline) {
                             File(evidence, "$name.png").outputStream().use {
                                 bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
                             }
