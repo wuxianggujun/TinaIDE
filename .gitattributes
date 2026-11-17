@@ -14,3 +14,6 @@ tools/template-*/build.gradle.kts text eol=lf
 tools/template-*/**/*.java text eol=lf
 tools/template-*/**/*.xml text eol=lf
 app/src/main/java/org/libsdl/app/*.java text eol=lf
+
+# Preserve bundled third-party license text, including upstream trailing spaces.
+core/packages/src/main/assets/vcpkg/helpers-NOTICE.txt text eol=lf whitespace=-blank-at-eol,-blank-at-eof
