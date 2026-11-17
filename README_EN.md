@@ -77,6 +77,16 @@ Basic C/C++ build, run, and clangd completion no longer require PRoot.
 | Build Modes | Single-file, Make, and CMake project flows |
 | Optional PRoot Path | Available only when the Linux distro / PRoot environment is installed |
 
+### Built-in vcpkg
+
+Enable **Use built-in vcpkg** when creating a CMake project, or add dependencies to an existing project through **Market → vcpkg**. The app manages directories and filters libraries for the Android architecture. Declare CMake linkage and build the libraries on your device.
+
+Follow the complete [fmt tutorial](feature/help/src/main/assets/help/en/vcpkg-guide.md), also available from Tutorials and the vcpkg market.
+
+### Practical learning path
+
+The offline [learning path](feature/help/src/main/assets/help/en/getting-started.md) covers IDE operation, C++ basics and ownership, CMake, vcpkg, SDL3 graphics, and mock AI collaboration. Learn provides ordered exercises; Help provides reference material. Examples use the native Android toolchain. AI lessons use static mock data; real requests use the provider, API, and key configured by the user in RikkaHub.
+
 ### LSP Language Services
 
 | Feature | Description |
@@ -111,8 +121,9 @@ Basic C/C++ build, run, and clangd completion no longer require PRoot.
 | Tab | Function |
 |-----|----------|
 | Build Log | Display compilation output and error messages |
-| Log | General application logs |
 | Diagnostics | LSP diagnostic list, click to jump to location |
+
+Outline, Symbols, Bookmarks and Git are available from the panel overflow menu. Program output appears in the terminal or graphics runtime; application logs are available through the logging tools.
 
 ### Debugging (LLDB)
 

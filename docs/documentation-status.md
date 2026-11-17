@@ -31,6 +31,7 @@
    - `docs/registry/GitHub-Registry.md`
    - `docs/toolchain-build-guide.md`
    - `docs/proguard-rules-reference.md`
+   - `docs/vcpkg.md`（集成与维护；用户教程复用应用内 `help/vcpkg-guide.md` 中英正文）
    - `docs/guides/MT-Data-Files-Provider.md`
    - `core/linux-desktop/README.md`（X11 桌面模块的当前实现说明）
 4. 当前专题文档
@@ -62,12 +63,14 @@
 - 编辑器 LSP 编排：`LspEditorManager`、内建 CMake / Make 会话和语义 token 解码已位于 `core:editor-lsp`，不再位于 `app` 状态包。
 - Linux distro manifest：启动和普通列表只读缓存或内置 asset；显式刷新可读取 Registry，按“新鲜缓存 → 远程多端点 → 过期缓存 → 内置 asset”回落，并支持下载镜像规则。
 - Android SDK 口径：`minSdk=28`、`targetSdk=36`、`compileSdk=37`，以 `app/build.gradle.kts` 为准。注意这三个值只描述 `:app`；`core:*` / `feature:*` 等 library 模块由 `TinaVersions` 决定，其中 `COMPILE_SDK` 常量当前是 **36**，与 `:app` 的 37 不一致。引用编译期 SDK 时必须说明是哪一侧，只写一个数字会写错另一半。`editor-kit/` 下的 library 模块（含 `language-support`、`tree-sitter-grammars`）的 `compileSdk` 在 kit 构建脚本里统一为 **36**，不走 `TinaVersions`；示例 consumer 仍单独使用 37。
-- 模块清单只以 `settings.gradle.kts` 为准，本文与其他文档不维护副本。当前为 32 个 `core:*` 与 11 个 `feature:*`。`feature/` 下曾残留的 `license`、`login`、`membership` 三个空目录已在 0.18.35 清理删除。
+- 模块清单以 `settings.gradle.kts` 为准，本文不复制容易随模块调整而过期的数量。`feature/` 下曾残留的 `license`、`login`、`membership` 三个空目录已在 0.18.35 清理删除。
 - 编辑器内核（`:core:editor-api` / `:core:language-support` / `:core:text-engine` / `:core:tree-sitter` / `:core:tree-sitter-grammars` / `:core:editor-view`）的唯一源码位于 `editor-kit/`。主工程通过 `settings.gradle.kts` 的 `projectDir` 映射消费这份源码，不在 `core/` 下保留副本。`editor-kit/` 同时是一个自带 Gradle wrapper、version catalog 与 `external/tina-android-tree-sitter` 复合构建的独立工程，可单独构建，也可被其他项目以 `includeBuild` 按坐标 `io.github.tinaide.editor:*:0.1.0-SNAPSHOT` 消费（`examples/consumer`）。**六个模块的构建脚本被两个构建根共用**：只能引用两套 `libs.versions.toml` 中都存在的别名，改动前必须同时考虑宿主 `tina` 约定插件与 kit 裸 AGP 配置的等价性。
-- 版本口径：当前 `versionName=0.18.35`、`versionCode=1836`，以 `version.properties` 为准。
+- 版本口径：以 `version.properties` 为准；发布记录见 `CHANGELOG.md`，本文不复制易过期的版本数字。
 - 进程边界：除主进程外还有 `:x11`（X server 与桌面渲染）、`:sdl`、`:sdl2`、`:gui`、`:crash`；初始化逻辑不能混用，见 `TinaApplication` 的多进程分流。
 - RikkaHub：TinaIDE 主仓库不再维护自研 `feature:ai`；AI 聊天、模型、渠道、MCP 和 API Key 配置由内嵌 RikkaHub 维护。
 - App 内帮助：中文正文位于 `feature/help/src/main/assets/help/*.md`，英文正文位于 `feature/help/src/main/assets/help/en/*.md`；英文缺失或加载失败时回落到中文。
+- vcpkg：Android CLI、离线目录和固定校验的辅助工具快照随应用提供，首次工具准备不依赖 Termux 滚动仓库。只支持关闭、项目清单和设备共享库模式，不读取旧手动工具 / 安装目录。库源码和 Git 对象仍按需下载。
+- 教程：IDE 操作 → C++ 变量、函数、多文件、容器、RAII → CMake → vcpkg → SDL3 → AI 协作模拟，使用 Android 原生链路；中英文正文与帮助索引共享，帮助保留速查。AI 示例是静态模拟，不发送模型请求；真实服务与 Key 仅由 RikkaHub 管理。文档缺失返回明确失败，不再生成占位页冒充完整课程。
 - 远程 LSP：默认使用 WSS 且 Bearer Token 必需，WS 仅允许回环地址；Token 加密保存并排除备份。内置项目同步要求 `tina/syncProject`、`tina/syncProjectStart` 和每个 `tina/syncProjectChunk` 按 JSON-RPC `id` 返回 ACK。当前仓库不内置 PC 代理实现。
 - Release 构建：可能递增 `version.properties` 并备份 R8 mapping；mapping 文件仅由公开构建逻辑做本地归档。
 - Registry：当前 Android 主干读取插件 `plugins/index.v3.json`、依赖包 `packages/index.v2.json` 与内置 `linux-distro/manifest.v1.json`；插件 `plugins/index.v2.json` 仅作为旧宿主兼容视图保留。Registry 资源只接受 HTTPS；插件与 DOWNLOAD 依赖包必须提供有效 SHA-256，下载和解包都有硬性预算。远程 Linux distro manifest 在具备签名验证前保持禁用。

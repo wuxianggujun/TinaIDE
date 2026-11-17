@@ -54,6 +54,9 @@
 - [快速开始](快速开始.md)
 - [开发指南](开发指南.md)
 - [国际化规范](i18n.md)
+- [CMake 使用 vcpkg 教程](../feature/help/src/main/assets/help/vcpkg-guide.md)：创建项目、添加依赖、链接和运行；与应用内教程共用正文
+- [vcpkg 集成与维护](vcpkg.md)：内置运行时、工具快照、目录更新和应用管理的项目 / 共享模式
+- [实践学习路线](../feature/help/src/main/assets/help/getting-started.md)：IDE、C++、CMake、vcpkg、图形与 AI 模拟练习；帮助页补充速查
 - [项目约定](project-conventions.md)
 
 ### 架构与设计
@@ -69,8 +72,8 @@
 - [Clang Android 执行权限修复](clang-android-exec-fix.md)
 - [Toolchain 构建与同步指南](toolchain-build-guide.md)
 - [ProGuard / R8 规则参考](proguard-rules-reference.md)
-- [遥测与自托管上报（AegisHub）](telemetry.md)：上报内容、配置项、自建实例与排查入口
 - [自研 Linux 发行版运行时](linux-distro-self-hosted-runtime.md)
+- [遥测与自托管上报（AegisHub）](telemetry.md)：上报内容、配置项、自建实例与排查入口
 - [X11 图形桌面模块说明](../core/linux-desktop/README.md)：`:x11` 进程边界、socket 布局、已知问题（尚未在真机验证）
 - [游戏引擎插件图形运行（SDL / NativeActivity）](game-engine-plugin-sdl.md)
 
@@ -106,7 +109,7 @@
 - 编辑器语言服务不是单一路径：C/C++ 走 `clangd`，CMake / Make 走内建语言服务，其他语言可走插件 LSP。
 - App 首次启动默认只安装内置运行资产；只有显式进入 Linux 环境相关流程时，才会通过自研 Linux 发行版管理器安装 rootfs 与 guest toolchain。
 - X11 图形桌面代码路径完整，但**尚未在真机验证 XFCE 桌面**；它跑在 `:x11` 独立进程，不要按已交付功能对待。
-- 项目以 GPL-3.0-or-later 分发；`NOTICE.md` 记录的 RikkaHub 冲突未解决前，包含它的构建产物不得对外分发。
+- 项目以 GPL-3.0-or-later 分发；RikkaHub 已同步纯 AGPL-3.0，旧附加限制已解除。分发仍需许可全文和对应源码，依据见 [许可审查](licensing/rikkahub-agpl-review.md)。
 - 设计、规划、Docker 与工具脚本文档的可信层级，以 [文档状态与生命周期](documentation-status.md) 为准。
 
 ## 说明

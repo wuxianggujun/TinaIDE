@@ -19,7 +19,7 @@ Build type is configured by the selected run configuration in the project worksp
 
 ## Formatting
 
-Format Style chooses the clang-format preset. Check this value before assuming the formatter is broken.
+Format Style chooses the base clang-format layout style. Project or ancestor `.clang-format` / `_clang-format` files take priority. Without one, indentation width, tab display width, and the spaces/tabs policy are shared with Editor Behavior instead of being silently replaced by the preset defaults.
 
 ## Toolchain management
 

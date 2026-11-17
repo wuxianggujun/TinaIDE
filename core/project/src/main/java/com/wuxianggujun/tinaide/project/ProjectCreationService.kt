@@ -19,7 +19,8 @@ object ProjectCreationService {
         templateSpec: ProjectTemplateSpec.Zip,
         cppStandard: CppStandard = CppStandard.DEFAULT,
         ndkApiLevel: AndroidApiLevel? = null,
-        authorName: String = ""
+        authorName: String = "",
+        useVcpkg: Boolean = false,
     ): ProjectCreationResult {
         val normalizedName = projectName.trim()
         if (normalizedName.isBlank()) {
@@ -31,6 +32,10 @@ object ProjectCreationService {
                 reason = ProjectCreationFailure.INVALID_NAME,
                 detail = normalizedName
             )
+        }
+
+        if (useVcpkg && templateSpec.buildSystem != ProjectBuildSystem.CMAKE) {
+            return ProjectCreationResult.Failure(ProjectCreationFailure.VCPKG_SETUP_FAILED)
         }
 
         if (projectRoot.path.isBlank()) {
@@ -108,7 +113,33 @@ object ProjectCreationService {
             )
         }
 
+        if (useVcpkg) {
+            try {
+                initializeVcpkg(projectDir)
+            } catch (error: Exception) {
+                Timber.tag(TAG).e(error, "Failed to initialize managed vcpkg for new project: %s", normalizedName)
+                cleanupFailedProject(projectDir, safeRoot)
+                return ProjectCreationResult.Failure(ProjectCreationFailure.VCPKG_SETUP_FAILED)
+            }
+        }
+
         return ProjectCreationResult.Success(projectDir)
+    }
+
+    /** Only used inside the new-project transaction; never replaces a template's dependency declarations. */
+    private fun initializeVcpkg(projectDir: File) {
+        check(File(projectDir, "CMakeLists.txt").isFile) { "CMake template is missing CMakeLists.txt" }
+        val manifest = File(projectDir, "vcpkg.json")
+        if (manifest.exists()) {
+            check(manifest.isFile) { "vcpkg.json must be a regular file" }
+        } else {
+            manifest.writeText("{\n  \"dependencies\": []\n}\n", Charsets.UTF_8)
+        }
+        val metadata = checkNotNull(ProjectMetadataStore.readMetadata(projectDir))
+        check(ProjectMetadataStore.writeMetadata(projectDir, metadata.copy(
+            nativeCMakeArgs = VcpkgProjectSettings(VcpkgProjectSettings.MANIFEST)
+                .applyTo(metadata.normalizedNativeCMakeArgs()),
+        ))) { "Failed to persist managed vcpkg configuration" }
     }
 
     fun isValidProjectName(projectName: String): Boolean {
@@ -147,5 +178,6 @@ enum class ProjectCreationFailure {
     PROJECT_ROOT_UNAVAILABLE,
     ALREADY_EXISTS,
     CREATE_DIRECTORY_FAILED,
-    TEMPLATE_INSTALL_FAILED
+    TEMPLATE_INSTALL_FAILED,
+    VCPKG_SETUP_FAILED,
 }

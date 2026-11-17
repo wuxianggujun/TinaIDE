@@ -26,7 +26,7 @@ class VcpkgCMakeIntegrationTest {
             this[18] = 183.toByte()
         })
         File(project, "vcpkg.json").writeText("{\"dependencies\":[\"fmt\"]}")
-        val config = VcpkgProjectSettings(VcpkgProjectSettings.MANIFEST, root.path, "/ignored/legacy/path")
+        val config = VcpkgProjectSettings(VcpkgProjectSettings.MANIFEST)
         val build = File(project, "build")
         val installed = temporary.newFolder("private-workspace-install")
         val plan = checkNotNull(VcpkgCMakeIntegration.prepare(
@@ -34,6 +34,7 @@ class VcpkgCMakeIntegrationTest {
             listOf("-DCMAKE_C_COMPILER=/system/bin/sh", "-DCMAKE_C_COMPILER_ARG1=/private/tool chain/clang", "-DCMAKE_SYSTEM_VERSION=28",
                 "-DCMAKE_MAKE_PROGRAM=/project/make", "-DCMAKE_PREFIX_PATH=/other/registry"),
             managedInstallationRoot = installed,
+            runtimeRoot = root,
         ))
         assertThat(plan.installCommand).contains("--triplet=arm64-tina-android")
         assertThat(plan.installCommand).contains("--x-manifest-root=${project.canonicalPath}")
@@ -45,15 +46,20 @@ class VcpkgCMakeIntegrationTest {
             .contains("set(CMAKE_C_COMPILER_ARG1 [[/private/tool chain/clang]] CACHE STRING \"\" FORCE)")
         assertThat(File(build, "tina-vcpkg/native-toolchain.cmake").readText()).doesNotContain("CMAKE_MAKE_PROGRAM")
         assertThat(File(build, "tina-vcpkg/native-toolchain.cmake").readText()).doesNotContain("CMAKE_PREFIX_PATH")
+        val triplet = File(build, "tina-vcpkg/arm64-tina-android.cmake").readText(Charsets.UTF_8)
+        assertThat(triplet).contains("TINA_GITHUB_MIRROR X_VCPKG_ASSET_SOURCES")
+        assertThat(triplet).contains("http_proxy https_proxy HTTP_PROXY HTTPS_PROXY")
+        assertThat(triplet).contains("VCPKG_ENV_PASSTHROUGH_UNTRACKED")
     }
 
     @Test
-    fun prebuilt_shouldUseAndroidTripletAndNeverInvokeCli() {
+    fun shared_shouldUseAndroidTripletAndNeverInvokeCli() {
         val project = temporary.newFolder()
         val root = vcpkgRoot()
         File(root, "installed/x64-android").mkdirs()
-        val config = VcpkgProjectSettings(VcpkgProjectSettings.PREBUILT, root.path)
-        val plan = checkNotNull(VcpkgCMakeIntegration.prepare(project, File(project, "build"), config.applyTo(emptyList()), "x86_64", emptyList()))
+        val config = VcpkgProjectSettings(VcpkgProjectSettings.SHARED)
+        val plan = checkNotNull(VcpkgCMakeIntegration.prepare(project, File(project, "build"), config.applyTo(emptyList()), "x86_64", emptyList(),
+            runtimeRoot = root, managedInstallationRoot = File(root, "installed")))
         assertThat(plan.installCommand).isEmpty()
         assertThat(plan.arguments).contains("-DVCPKG_TARGET_TRIPLET=x64-android")
     }
@@ -63,11 +69,11 @@ class VcpkgCMakeIntegrationTest {
         val project = temporary.newFolder()
         val root = vcpkgRoot()
         File(root, "installed/x64-android").mkdirs()
-        val settings = VcpkgProjectSettings(VcpkgProjectSettings.PREBUILT, root.path)
+        val settings = VcpkgProjectSettings(VcpkgProjectSettings.SHARED)
         val build = File(project, "build")
         for ((requested, expected) in listOf(2 to "2", 0 to "1", -1 to "1")) {
             val plan = checkNotNull(VcpkgCMakeIntegration.prepare(project, build, settings.applyTo(emptyList()),
-                "x86_64", emptyList(), parallelJobs = requested))
+                "x86_64", emptyList(), parallelJobs = requested, runtimeRoot = root, managedInstallationRoot = File(root, "installed")))
             assertThat(plan.environment["VCPKG_MAX_CONCURRENCY"]).isEqualTo(expected)
             assertThat(plan.environment["TINA_PREFIX"]).isEqualTo("/system")
         }
@@ -78,7 +84,7 @@ class VcpkgCMakeIntegrationTest {
         val project = temporary.newFolder("project with spaces and a long name exceeding the native prefix limit")
         val root = vcpkgRoot()
         File(root, "installed/x64-android").mkdirs()
-        val settings = VcpkgProjectSettings(VcpkgProjectSettings.PREBUILT, root.path)
+        val settings = VcpkgProjectSettings(VcpkgProjectSettings.SHARED)
         val build = File(project, "build")
         val shell = File(build, "tina-vcpkg/runtime/bin/sh").apply {
             checkNotNull(parentFile).mkdirs()
@@ -86,7 +92,7 @@ class VcpkgCMakeIntegrationTest {
         }
         assertThat(build.absolutePath.length).isGreaterThan(90)
         val plan = checkNotNull(VcpkgCMakeIntegration.prepare(project, build, settings.applyTo(emptyList()),
-            "x86_64", emptyList()))
+            "x86_64", emptyList(), runtimeRoot = root, managedInstallationRoot = File(root, "installed")))
         assertThat(plan.environment["TINA_PREFIX"]).isEqualTo("/system")
         assertThat(shell.readText()).isEqualTo("existing content")
     }
@@ -96,14 +102,15 @@ class VcpkgCMakeIntegrationTest {
         val project = temporary.newFolder()
         File(project, "vcpkg.json").writeText("{\"dependencies\":[\"fmt\"]}")
         val root = vcpkgRoot()
-        val config = VcpkgProjectSettings(VcpkgProjectSettings.MANIFEST, root.path)
+        val config = VcpkgProjectSettings(VcpkgProjectSettings.MANIFEST)
         listOf("MZ desktop executable".toByteArray(), ByteArray(20).apply {
             byteArrayOf(0x7f, 0x45, 0x4c, 0x46, 2, 1).copyInto(this)
             this[18] = 62
         }).forEach { executable ->
             File(root, "vcpkg").writeBytes(executable)
             assertThat(runCatching {
-                VcpkgCMakeIntegration.prepare(project, File(project, "build"), config.applyTo(emptyList()), "arm64-v8a", emptyList())
+                VcpkgCMakeIntegration.prepare(project, File(project, "build"), config.applyTo(emptyList()), "arm64-v8a", emptyList(),
+                    runtimeRoot = root, managedInstallationRoot = File(root, "installed"))
             }.exceptionOrNull()).isInstanceOf(IllegalArgumentException::class.java)
         }
     }
@@ -111,10 +118,12 @@ class VcpkgCMakeIntegrationTest {
     @Test
     fun enabled_shouldRejectConflictingToolchainsAndMissingManifest() {
         val project = temporary.newFolder()
-        val config = VcpkgProjectSettings(VcpkgProjectSettings.MANIFEST, vcpkgRoot().path)
+        val root = vcpkgRoot()
+        val config = VcpkgProjectSettings(VcpkgProjectSettings.MANIFEST)
         for (args in listOf(emptyList(), listOf("-DCMAKE_TOOLCHAIN_FILE:FILEPATH=/another/toolchain.cmake"))) {
             assertThat(runCatching {
-                VcpkgCMakeIntegration.prepare(project, File(project, "build"), config.applyTo(args), "arm64-v8a", emptyList())
+                VcpkgCMakeIntegration.prepare(project, File(project, "build"), config.applyTo(args), "arm64-v8a", emptyList(),
+                    runtimeRoot = root, managedInstallationRoot = File(root, "installed"))
             }.exceptionOrNull()).isInstanceOf(IllegalArgumentException::class.java)
         }
     }

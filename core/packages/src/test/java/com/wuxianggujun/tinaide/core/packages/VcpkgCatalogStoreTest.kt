@@ -4,6 +4,7 @@ import android.app.Application
 import com.google.common.truth.Truth.assertThat
 import java.io.ByteArrayInputStream
 import java.io.File
+import java.security.MessageDigest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import org.junit.Rule
@@ -89,6 +90,9 @@ class VcpkgCatalogStoreTest {
         assertThat(File(root, "catalog.json").exists()).isFalse()
         assertThat(File(root.parentFile, "escaped").exists()).isFalse()
         assertThat(root.listFiles()!!.none { it.name.startsWith(".catalog-") }).isTrue()
+        assertThat(File(root, "archives/$newRevision.tar.gz").exists()).isFalse()
+        source.archive = "valid.tar.gz"
+        assertThat(store.update().revision).isEqualTo(newRevision)
     }
 
     @Test fun corruptCacheFallsBackToBundledCatalog() = runTest {
@@ -96,5 +100,32 @@ class VcpkgCatalogStoreTest {
         File(root, "catalog.json").writeBytes(byteArrayOf(0x80.toByte()))
         val store = VcpkgCatalogStore(root, { ByteArrayInputStream(seed) }, Source(newRevision))
         assertThat(store.readLocal().ports.single().name).isEqualTo("fmt")
+    }
+
+    @Test fun corruptSourceArchiveIsDownloadedAgainInsteadOfPoisoningEveryRetry() = runTest {
+        val root = temporary.newFolder()
+        File(root, "archives").mkdirs()
+        File(root, "archives/$newRevision.tar.gz").writeText("corrupt download")
+        val source = Source(newRevision)
+        val store = VcpkgCatalogStore(root, { ByteArrayInputStream(seed) }, source)
+        assertThat(store.update().ports.single().version).isEqualTo("2")
+        assertThat(source.calls).isEqualTo(2)
+    }
+
+    @Test fun updateRepairsCorruptCatalogEvenWhenBundledRevisionIsAlreadyLatest() = runTest {
+        val root = temporary.newFolder()
+        val cache = File(root, "catalog.json").apply { writeText("{broken", Charsets.UTF_8) }
+        val archive = javaClass.getResourceAsStream("/vcpkg/valid.tar.gz")!!.use { it.readBytes() }
+        val checksum = MessageDigest.getInstance("SHA-256").digest(archive).joinToString("") { "%02x".format(it) }
+        val bundled = VcpkgCatalogStore.encode(VcpkgCatalogSnapshot(newRevision, checksum,
+            listOf(VcpkgPort("fmt", "2", "Format library", "")))).toByteArray(Charsets.UTF_8)
+        val source = Source(newRevision)
+        val store = VcpkgCatalogStore(root, { bundled.inputStream() }, source)
+
+        assertThat(store.update().revision).isEqualTo(newRevision)
+
+        assertThat(source.calls).isEqualTo(2)
+        assertThat(VcpkgCatalogStore.decode(cache.readBytes()).revision).isEqualTo(newRevision)
+        assertThat(store.readLocal().ports.single().version).isEqualTo("2")
     }
 }

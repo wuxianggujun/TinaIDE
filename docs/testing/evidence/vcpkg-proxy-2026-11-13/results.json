@@ -1,0 +1,384 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-13",
+  "timezone": "Asia/Shanghai",
+  "scope": "续接 01a1d04c-c296-7891-aa06-53b53804ffd3：vcpkg 市场代理、下载回退、缓存与包市场取消回归",
+  "baseCommit": "46c59a2a7186e2bb9d5bfc55bdb941280956cf6c",
+  "branch": "dev",
+  "environment": {
+    "jdk": "17.0.13",
+    "os": "Windows 11",
+    "gradle": "9.6.0",
+    "robolectricSdk": 34,
+    "testTaskTimeoutSeconds": 60,
+    "maxWorkers": 1,
+    "onlineRequestsInTests": false
+  },
+  "repro": {
+    "catalogAndGit": {
+      "phase": "before-fix",
+      "counts": {
+        "tests": 18,
+        "failures": 4,
+        "errors": 0,
+        "skipped": 0
+      },
+      "suites": [
+        {
+          "class": "com.wuxianggujun.tinaide.core.packages.VcpkgCatalogSourceTest",
+          "tests": 6,
+          "failures": 2,
+          "errors": 0,
+          "skipped": 0,
+          "sha256": "a269b516fd999892c6129aeb34b17c4682ef76d34fb6631d34e70dc5933ee7d1",
+          "failedTests": [
+            "truncatedGzipMirrorFallsBackBeforePublishingArchiveOrCatalog",
+            "checksumMismatchAtMirrorFallsBackToTrustedSourceArchive"
+          ]
+        },
+        {
+          "class": "com.wuxianggujun.tinaide.core.packages.VcpkgCatalogStoreTest",
+          "tests": 8,
+          "failures": 1,
+          "errors": 0,
+          "skipped": 0,
+          "sha256": "05bef6b466cc37f6755c96796fdaed092c7aa713a484a249547d03ab9d0446e1",
+          "failedTests": [
+            "updateRepairsCorruptCatalogEvenWhenBundledRevisionIsAlreadyLatest"
+          ]
+        },
+        {
+          "class": "com.wuxianggujun.tinaide.core.packages.VcpkgToolScriptsTest",
+          "tests": 4,
+          "failures": 1,
+          "errors": 0,
+          "skipped": 0,
+          "sha256": "342011a9d064788d5f69f310536ba5038840c28486100104701053460c84aa6a",
+          "failedTests": [
+            "gitWrapperDoesNotRetryLocalFailureOrMistakeConfigValueForSubcommand"
+          ]
+        }
+      ],
+      "log": {
+        "path": ".tmp/vcpkg-continuation-repro-boundaries.log",
+        "sha256": "d52f61f1b949e8e3bece034e9adeddd9dcfef40a455de9bfa66e4fa6caab77b5"
+      }
+    },
+    "batchCancellation": {
+      "phase": "before-batch-fix",
+      "counts": {
+        "tests": 9,
+        "failures": 3,
+        "errors": 0,
+        "skipped": 0
+      },
+      "failedTests": [
+        "batch uninstall cancellation keeps its summary and remaining installations",
+        "batch update cancellation keeps its summary and unfinished updates",
+        "batch cancellation preserves successes and does not start remaining packages"
+      ],
+      "xmlSha256": "e346bf0ccad8079f45af66e8454be45a0cf87899833059df8beec30c1f5c449b",
+      "log": {
+        "path": ".tmp/vcpkg-continuation-batch-repro.log",
+        "sha256": "2e375a202664cc393685b795f4e685d347c1afe7c82fe40e536df0825e5c9fcd"
+      }
+    }
+  },
+  "verification": {
+    "totals": {
+      "tests": 118,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "suites": [
+      {
+        "module": ":core:network",
+        "class": "com.wuxianggujun.tinaide.core.network.OkHttpCancellationTest",
+        "tests": 3,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSha256": "184f713d69428fa7378055f905b074ff358776f5a56682cf8c8eca501525535a"
+      },
+      {
+        "module": ":core:network",
+        "class": "com.wuxianggujun.tinaide.core.network.registry.GitHubRegistryConfigTest",
+        "tests": 7,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSha256": "ffca3b138e53ac911243c5fbb10656994fc84eeb1ae32d78a0bdd3d987211c04"
+      },
+      {
+        "module": ":core:network",
+        "class": "com.wuxianggujun.tinaide.core.network.registry.GitHubRegistryProxyConfigTest",
+        "tests": 3,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSha256": "28aca3c9e1379b477f46ab816e7d9430dfd0bf94850e16eb8e922858b5e099cb"
+      },
+      {
+        "module": ":core:packages",
+        "class": "com.wuxianggujun.tinaide.core.packages.api.PackageRegistryProtocolTest",
+        "tests": 8,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSha256": "9c824e7ea76abf634cc8a06370611a6cf853342956e22a87c20f67aca3be3999"
+      },
+      {
+        "module": ":core:packages",
+        "class": "com.wuxianggujun.tinaide.core.packages.VcpkgAndroidCatalogTest",
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSha256": "3b79cb3f1212a8f0175a48a1257ed66378239ed21f8da04edfc7f368c570b557"
+      },
+      {
+        "module": ":core:packages",
+        "class": "com.wuxianggujun.tinaide.core.packages.VcpkgAndroidSupportTest",
+        "tests": 9,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSha256": "c81e5da120932fce07a5da9e6ed1a35267863c6ec606009c1298b19503a15ccc"
+      },
+      {
+        "module": ":core:packages",
+        "class": "com.wuxianggujun.tinaide.core.packages.VcpkgCatalogSourceTest",
+        "tests": 9,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSha256": "c921fd9bfda22531cfd1ed179426998e51182432b5c76d52c0917063a5abb5dc"
+      },
+      {
+        "module": ":core:packages",
+        "class": "com.wuxianggujun.tinaide.core.packages.VcpkgCatalogStoreTest",
+        "tests": 8,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSha256": "8ba8185c20695c2eae13e1c01b2f1d8340d25aea4e849599e90bae4f0728b10b"
+      },
+      {
+        "module": ":core:packages",
+        "class": "com.wuxianggujun.tinaide.core.packages.VcpkgRepositoryTest",
+        "tests": 20,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSha256": "72a7aecef901250711f3d6d0f11fe0889c8df7e7ae79d22e73e2008f34e8c6b7"
+      },
+      {
+        "module": ":core:packages",
+        "class": "com.wuxianggujun.tinaide.core.packages.VcpkgToolScriptsTest",
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSha256": "fe76f2711415fa3da212e4d2f92fcfc8ead98d8dbac4714a3a9739545dea91e7"
+      },
+      {
+        "module": ":core:compile",
+        "class": "com.wuxianggujun.tinaide.core.compile.artifact.VcpkgBuildInputsTest",
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSha256": "a8d9970a7c172921f44dfef7c217626d74f448c442786956960f11fc51fe73e8"
+      },
+      {
+        "module": ":core:compile",
+        "class": "com.wuxianggujun.tinaide.core.compile.BuildProcessRunnerTest",
+        "tests": 6,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSha256": "a72a7156bd67d9da8ce3551b9c8c5d76f4237029359203ab0b26e11f81b223d6"
+      },
+      {
+        "module": ":core:compile",
+        "class": "com.wuxianggujun.tinaide.core.compile.cmake.VcpkgCMakeIntegrationTest",
+        "tests": 7,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSha256": "daac6184908cdfb013e4d9efbd4b6c5e72d502783f92be78d4ad063f2cf7bb33"
+      },
+      {
+        "module": ":feature:packages",
+        "class": "com.wuxianggujun.tinaide.ui.compose.screens.packages.PackageDialogStateTest",
+        "tests": 3,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSha256": "0e3a491fa06d256305d41991c90f6a60f75ab24795c960d73a7ea37bd14b6efd"
+      },
+      {
+        "module": ":feature:packages",
+        "class": "com.wuxianggujun.tinaide.ui.compose.screens.packages.PackageFilterStateTest",
+        "tests": 3,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSha256": "dd2abeb8d38f445b25957bf499f3a202830265e2660a62af85ef60743796a2b3"
+      },
+      {
+        "module": ":feature:packages",
+        "class": "com.wuxianggujun.tinaide.ui.compose.screens.packages.PackageManagerStateTest",
+        "tests": 5,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSha256": "24852b5daedd7c13cfe0183216b46829d50a8cf87805c7fe4c1b86fa6f942300"
+      },
+      {
+        "module": ":feature:packages",
+        "class": "com.wuxianggujun.tinaide.ui.compose.screens.packages.PackageManagerViewModelTest",
+        "tests": 10,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSha256": "06f79d6089750ef9d873552ecaa90f35fa4831f2584c3649494297e8ff2908a8"
+      },
+      {
+        "module": ":feature:settings",
+        "class": "com.wuxianggujun.tinaide.ui.compose.screens.settings.sections.GitSettingsSectionSupportTest",
+        "tests": 7,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSha256": "3cf8da546410023556d3670a9a74ed5790220ad156273e081bdaae7a7c098298"
+      }
+    ],
+    "sources": [
+      {
+        "path": "core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/VcpkgCatalogSource.kt",
+        "sha256": "136c6ce1b9cfb7e3fea2e05ea6aad3ea0fdef77b769b22949aa7a937b5ff42d3",
+        "encoding": "UTF-8 without BOM"
+      },
+      {
+        "path": "core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/VcpkgCatalogStore.kt",
+        "sha256": "be3fbd936fae00bd240eeb042a8bb1855245b43448effc71abdaf6a140df8621",
+        "encoding": "UTF-8 without BOM"
+      },
+      {
+        "path": "core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/VcpkgToolScripts.kt",
+        "sha256": "f6a8ec4c24ee6b25486a0683d48444d45f9a5788809783aab3aa1dd1e829a586",
+        "encoding": "UTF-8 without BOM"
+      },
+      {
+        "path": "core/packages/src/test/java/com/wuxianggujun/tinaide/core/packages/VcpkgCatalogSourceTest.kt",
+        "sha256": "d9c4f1839350da346d971749b42fe99550d7e8efa1d682bcac425cc458128639",
+        "encoding": "UTF-8 without BOM"
+      },
+      {
+        "path": "core/packages/src/test/java/com/wuxianggujun/tinaide/core/packages/VcpkgCatalogStoreTest.kt",
+        "sha256": "1fb7b524fb815bc4ad6ff1d1637668952f0da89857ca479aefc3b2b3e3cdc115",
+        "encoding": "UTF-8 without BOM"
+      },
+      {
+        "path": "core/packages/src/test/java/com/wuxianggujun/tinaide/core/packages/VcpkgToolScriptsTest.kt",
+        "sha256": "2cfd4c0e7df5747337261727044b68382c64df5df00b0d46a2cb2a0a4c895866",
+        "encoding": "UTF-8 without BOM"
+      },
+      {
+        "path": "core/network/src/test/java/com/wuxianggujun/tinaide/core/network/registry/GitHubRegistryProxyConfigTest.kt",
+        "sha256": "ba4561ebf0ca0c77ece108ff4c61cc823befa9f21f666fd22e3a76bd43aaf365",
+        "encoding": "UTF-8 without BOM"
+      },
+      {
+        "path": "core/compile/src/test/java/com/wuxianggujun/tinaide/core/compile/cmake/VcpkgCMakeIntegrationTest.kt",
+        "sha256": "1a190159884747b13b939665601545a2701586cfed7b62a254482eb934f11a40",
+        "encoding": "UTF-8 without BOM"
+      },
+      {
+        "path": "feature/packages/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/packages/PackageManagerViewModel.kt",
+        "sha256": "cfa826cd21c5435e9a8c17273dbb4df3df0120f8aca61236607967d73460e1c5",
+        "encoding": "UTF-8 without BOM"
+      },
+      {
+        "path": "feature/packages/src/test/java/com/wuxianggujun/tinaide/ui/compose/screens/packages/PackageManagerViewModelTest.kt",
+        "sha256": "17a055c338447c366057764b3a8b47f6e7d3950bb6e4788011c6ba589e79d016",
+        "encoding": "UTF-8 without BOM"
+      }
+    ],
+    "logs": [
+      {
+        "phase": "baseline",
+        "path": ".tmp/vcpkg-continuation-baseline.log",
+        "sha256": "8b001c70092f2a05b61f9d468e34cf3639b7ee215b26f2be86d12b0586e822e8",
+        "build": "SUCCESSFUL",
+        "duration": "2m 58s"
+      },
+      {
+        "phase": "repro-boundaries",
+        "path": ".tmp/vcpkg-continuation-repro-boundaries.log",
+        "sha256": "d52f61f1b949e8e3bece034e9adeddd9dcfef40a455de9bfa66e4fa6caab77b5",
+        "build": "FAILED",
+        "duration": "1m 37s"
+      },
+      {
+        "phase": "regression",
+        "path": ".tmp/vcpkg-continuation-regression.log",
+        "sha256": "479f3ad83f87adf10a0528959c78b831d69475cf5add3c498111d99582756f64",
+        "build": "SUCCESSFUL",
+        "duration": "1m 49s"
+      },
+      {
+        "phase": "integration",
+        "path": ".tmp/vcpkg-continuation-integration.log",
+        "sha256": "9c1a251c79b6c270583b2cbd1f148cc308eabc83f46d5147fbd60c3ac28fcb81",
+        "build": "FAILED",
+        "duration": "4m 24s"
+      },
+      {
+        "phase": "batch-repro",
+        "path": ".tmp/vcpkg-continuation-batch-repro.log",
+        "sha256": "2e375a202664cc393685b795f4e685d347c1afe7c82fe40e536df0825e5c9fcd",
+        "build": "FAILED",
+        "duration": "1m 56s"
+      },
+      {
+        "phase": "final",
+        "path": ".tmp/vcpkg-continuation-final.log",
+        "sha256": "d65fa6c8ee54c777c9124b2b9687482e665dc1a2591bf71088979bbe9f3813cf",
+        "build": "SUCCESSFUL",
+        "duration": "5m 46s"
+      },
+      {
+        "phase": "proxy-final",
+        "path": ".tmp/vcpkg-continuation-proxy-final.log",
+        "sha256": "f9db2bc4c26ecc72949b7305388adcf9268ca82692a461913ff623dcd9d52428",
+        "build": "SUCCESSFUL",
+        "duration": "1m 35s"
+      }
+    ]
+  },
+  "compile": {
+    "appArm64DebugKotlin": true,
+    "appArm64DebugAndroidTestKotlin": true
+  },
+  "checks": {
+    "i18n": true,
+    "documentation": true,
+    "utf8WithoutBomForChangedSources": true,
+    "gitDiffCheck": true
+  },
+  "deviceTestsExecuted": false,
+  "adbDevices": [],
+  "apkBuilt": false,
+  "releaseBuilt": false,
+  "versionChanged": false,
+  "submodulePointersChanged": false,
+  "residualChecks": [
+    "ARM64 真机首次 fmt 安装、编译、运行",
+    "同一 APK 的市场代理切换、取消/重试 UI 交互",
+    "Release/R8",
+    "其他 ports 与 features 的构建兼容性"
+  ]
+}

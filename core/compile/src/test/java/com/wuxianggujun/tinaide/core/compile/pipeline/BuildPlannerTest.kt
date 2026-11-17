@@ -278,9 +278,9 @@ class BuildPlannerTest {
             parentFile.mkdirs(); writeText("old")
         }
         val source = File(projectRoot, "main.c").apply { writeText("int main() { return 0; }") }
-        val arguments = VcpkgProjectSettings(VcpkgProjectSettings.PREBUILT, root.path).applyTo(emptyList())
+        val arguments = VcpkgProjectSettings(VcpkgProjectSettings.SHARED).applyTo(emptyList())
         fun spec() = defaultSpec(listOf(source)).copy(reconfigureSources =
-            VcpkgBuildInputs.collect(projectRoot, arguments, "arm64-v8a", false))
+            VcpkgBuildInputs.collect(projectRoot, arguments, "arm64-v8a", false, File(root, "installed")))
         strategy.describeOutputOverride = { spec() }
         store.put(newArtifact(fingerprint = calculator.compute(newContext(), spec()), sources = listOf(sourceRefOf(source))))
         val request = CompileRequest(BuildIntent.IfNeeded, LaunchIntent.None)

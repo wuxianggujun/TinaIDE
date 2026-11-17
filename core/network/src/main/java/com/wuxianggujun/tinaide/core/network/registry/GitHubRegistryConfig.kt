@@ -32,17 +32,16 @@ object GitHubRegistryConfig {
     val REGISTRY_ENDPOINTS: List<RegistryEndpoint> = registryEndpoints()
 
     fun registryEndpoints(customProxyPrefix: String? = null): List<RegistryEndpoint> = buildList {
+        val preferred = normalizeGitHubProxyPrefix(customProxyPrefix)
+        fun proxyEndpoint(prefix: String) = RegistryEndpoint(
+            name = "GitHub Raw proxy ${prefix.removePrefix("https://").trimEnd('/')}",
+            baseUrl = prefix + GITHUB_RAW_BASE_URL,
+            urlPrefix = prefix,
+        )
+        preferred?.let { add(proxyEndpoint(it)) }
         add(RegistryEndpoint(name = "GitHub Raw", baseUrl = GITHUB_RAW_BASE_URL))
         add(RegistryEndpoint(name = "jsDelivr CDN", baseUrl = JSDELIVR_BASE_URL))
-        gitHubProxyPrefixes(customProxyPrefix).forEach { prefix ->
-            add(
-                RegistryEndpoint(
-                    name = "GitHub Raw proxy ${prefix.removePrefix("https://").trimEnd('/')}",
-                    baseUrl = prefix + GITHUB_RAW_BASE_URL,
-                    urlPrefix = prefix,
-                )
-            )
-        }
+        PUBLIC_GITHUB_PROXY_PREFIXES.filterNot { it == preferred }.forEach { add(proxyEndpoint(it)) }
     }
 
     fun pluginIndexV2Urls(customProxyPrefix: String? = null): List<RegistryUrl> = indexUrls(
@@ -98,7 +97,8 @@ object GitHubRegistryConfig {
         } else {
             resolveRawUrl(value, GITHUB_RAW_BASE_URL)
         }
-        return (listOf(primaryUrl) + gitHubUrlCandidates(rawGitHubUrl, customProxyPrefix))
+        val preferredUrl = normalizeGitHubProxyPrefix(customProxyPrefix)?.let { rewriteGitHubUrl(rawGitHubUrl, it) }
+        return (listOfNotNull(preferredUrl, primaryUrl) + gitHubUrlCandidates(rawGitHubUrl, customProxyPrefix))
             .filter(::isHttpsUrl)
             .distinct()
     }
@@ -121,6 +121,7 @@ object GitHubRegistryConfig {
         if (!isGitHubUrl(originalGitHubUrl)) return listOf(normalizedUrl)
 
         return buildList {
+            normalizeGitHubProxyPrefix(customProxyPrefix)?.let { add(it + originalGitHubUrl) }
             add(normalizedUrl)
             if (normalizedUrl != originalGitHubUrl) add(originalGitHubUrl)
             gitHubProxyPrefixes(customProxyPrefix).forEach { prefix ->
@@ -138,18 +139,24 @@ object GitHubRegistryConfig {
         val trimmed = value?.trim().orEmpty()
         if (trimmed.isBlank()) return null
         val withScheme = if (trimmed.contains("://")) trimmed else "https://$trimmed"
-        val withoutQuery = withScheme.substringBefore('?').substringBefore('#')
-        val uri = runCatching { URI(withoutQuery) }.getOrNull() ?: return null
+        val uri = runCatching { URI(withScheme) }.getOrNull() ?: return null
         if (!uri.scheme.equals("https", ignoreCase = true)) return null
         if (uri.host.isNullOrBlank()) return null
-        if (uri.userInfo != null) return null
-        return withoutQuery.trimEnd('/') + "/"
+        if (uri.userInfo != null || uri.rawQuery != null || uri.rawFragment != null) return null
+        if (uri.port != -1 && uri.port !in 1..65535) return null
+        // A mirror field is a prefix, not an already proxied GitHub download URL.
+        if (uri.rawPath.orEmpty().contains("://")) return null
+        return "https://" + uri.rawAuthority.lowercase() + uri.rawPath.orEmpty().trimEnd('/') + "/"
     }
 
-    fun isGitHubUrl(url: String): Boolean = url.startsWith("https://github.com/") ||
-        url.startsWith("https://api.github.com/") ||
-        url.startsWith("https://raw.githubusercontent.com/") ||
-        url.startsWith("https://objects.githubusercontent.com/")
+    fun isGitHubUrl(url: String): Boolean = runCatching {
+        val uri = URI(url)
+        uri.scheme.equals("https", ignoreCase = true) && uri.userInfo == null &&
+            uri.port in setOf(-1, 443) && uri.host?.lowercase() in GITHUB_HOSTS
+    }.getOrDefault(false)
+
+    private val GITHUB_HOSTS = setOf("github.com", "api.github.com", "raw.githubusercontent.com",
+        "objects.githubusercontent.com", "codeload.github.com", "release-assets.githubusercontent.com")
 
     private fun isHttpsUrl(url: String): Boolean = runCatching {
         URI(url).let { uri ->

@@ -40,6 +40,8 @@ data class NewProjectWizardState(
     val isCreating: Boolean = false,
     val isNdkTemplate: Boolean = false,
     val showsCppStandard: Boolean = true,
+    val canUseVcpkg: Boolean = false,
+    val useVcpkg: Boolean = false,
     val userTemplateOptions: List<ProjectTemplateOption> = emptyList(),
 )
 
@@ -107,6 +109,8 @@ class NewProjectWizardViewModel(
                 selectedTemplateId = template.id,
                 isNdkTemplate = template.spec.isNdkTemplate,
                 showsCppStandard = NewProjectWizardSupport.shouldShowCppStandard(template),
+                canUseVcpkg = NewProjectWizardSupport.canUseVcpkg(template),
+                useVcpkg = it.useVcpkg && NewProjectWizardSupport.canUseVcpkg(template),
             )
         }
     }
@@ -140,6 +144,10 @@ class NewProjectWizardViewModel(
         _state.update { it.copy(ndkApiLevel = apiLevel) }
     }
 
+    fun setUseVcpkg(enabled: Boolean) {
+        _state.update { it.copy(useVcpkg = enabled && it.canUseVcpkg) }
+    }
+
     fun nextStep() {
         _state.update {
             it.copy(currentStep = (it.currentStep + 1).coerceAtMost(1))
@@ -161,6 +169,7 @@ class NewProjectWizardViewModel(
         onMissingPackages: (List<String>) -> Unit = {},
     ) {
         val currentState = _state.value
+        if (currentState.isCreating) return
 
         if (currentState.projectName.isBlank()) {
             _state.update {
@@ -212,7 +221,8 @@ class NewProjectWizardViewModel(
                     templateSpec = selectedTemplate.spec,
                     cppStandard = currentState.cppStandard,
                     ndkApiLevel = if (currentState.isNdkTemplate) currentState.ndkApiLevel else null,
-                    authorName = currentState.authorName.trim()
+                    authorName = currentState.authorName.trim(),
+                    useVcpkg = currentState.useVcpkg && NewProjectWizardSupport.canUseVcpkg(selectedTemplate),
                 )
             }
 
@@ -252,6 +262,7 @@ class NewProjectWizardViewModel(
                         ProjectCreationFailure.PROJECT_ROOT_UNAVAILABLE,
                         ProjectCreationFailure.CREATE_DIRECTORY_FAILED -> Strings.error_create_project_dir.strOr(context)
                         ProjectCreationFailure.TEMPLATE_INSTALL_FAILED -> Strings.toast_create_project_failed.strOr(context)
+                        ProjectCreationFailure.VCPKG_SETUP_FAILED -> Strings.wizard_vcpkg_setup_failed.strOr(context)
                     }
                     onError(message)
                 }

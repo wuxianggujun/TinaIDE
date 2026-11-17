@@ -10,7 +10,7 @@ internal object VcpkgBuildInputs {
     fun collect(project: File, arguments: List<String>, androidAbi: String, debug: Boolean, managedInstallationRoot: File? = null): List<File> {
         val config = VcpkgProjectSettings.from(arguments)
         if (!config.enabled) return emptyList()
-        val installed = config.installationRoot(project, managedInstallationRoot)
+        val installed = requireNotNull(managedInstallationRoot) { "vcpkg inputs require an application-managed installation directory" }
         val prefix = File(installed, config.targetTriplet(androidAbi))
         val directories = listOf("include", "share", "lib", "bin") + if (debug) listOf("debug/lib", "debug/bin") else emptyList()
         return buildList {

@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -53,7 +54,7 @@ internal fun AboutSettingsSection(
     var isClearingLogs by remember { mutableStateOf(false) }
     var isUploadingLogs by remember { mutableStateOf(false) }
     var crashAutoUploadEnabled by remember { mutableStateOf(Prefs.crashAutoUploadEnabled) }
-    var showFeedbackDialog by remember { mutableStateOf(false) }
+    var showFeedbackDialog by rememberSaveable { mutableStateOf(false) }
     var crashUploadSnapshot by remember {
         mutableStateOf(CrashUploadState.getLastUploadSnapshot(context.applicationContext))
     }

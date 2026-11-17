@@ -3,11 +3,10 @@ package com.wuxianggujun.tinaide.core.packages
 import android.content.Context
 import com.wuxianggujun.tinaide.core.common.io.ArchiveExtractionLimits
 import com.wuxianggujun.tinaide.core.common.io.DebDataExtractor
+import com.wuxianggujun.tinaide.core.common.io.TarExtractor
 import com.wuxianggujun.tinaide.core.i18n.Strings
-import com.wuxianggujun.tinaide.core.network.registry.GitHubRegistryHttpClientFactory
 import com.wuxianggujun.tinaide.core.network.registry.GitHubRegistryProxyConfig
-import com.wuxianggujun.tinaide.core.packages.download.DownloadResult
-import com.wuxianggujun.tinaide.core.packages.download.ResumableDownloader
+import com.wuxianggujun.tinaide.core.network.registry.GitHubRegistryProxySettings
 import com.wuxianggujun.tinaide.storage.ProjectPaths
 import java.io.File
 import java.nio.file.Files
@@ -43,32 +42,43 @@ class VcpkgRuntimeManager(private val context: Context) {
                 check(runtime.parentFile!!.isDirectory || runtime.parentFile!!.mkdirs())
                 val staging = Files.createTempDirectory(runtime.parentFile!!.toPath(), ".runtime-").toFile()
                 try {
-                    // Keep verified downloads/partial ranges across cancellation, then remove them after publication.
-                    val downloads = File(ProjectPaths.getDownloadCacheRoot(context), "vcpkg/$manifestId").apply { mkdirs() }
-                    val downloader = ResumableDownloader(downloads, GitHubRegistryHttpClientFactory.download(context))
+                    val downloads = File(staging, "packages")
+                    val helpersHash = manifest.getString("helpersArchiveSha256")
+                    require(helpersHash.matches(Regex("[0-9a-f]{64}")))
+                    val bundled = File(staging, "helpers.tar")
+                    context.assets.open("vcpkg/helpers.tar").use { input ->
+                        bundled.outputStream().use { output ->
+                            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                            var totalBytes = 0L
+                            while (true) {
+                                operation.ensureActive()
+                                val count = input.read(buffer)
+                                if (count < 0) break
+                                totalBytes += count
+                                if (totalBytes > HELPER_ARCHIVE_LIMITS.maxArchiveBytes) throw VcpkgException(Strings.vcpkg_download_invalid)
+                                output.write(buffer, 0, count)
+                            }
+                        }
+                    }
+                    if (sha256(bundled.readBytes()) != helpersHash) throw VcpkgException(Strings.vcpkg_download_invalid)
+                    TarExtractor.extract(bundled, downloads, symlinkPolicy = TarExtractor.SymlinkPolicy.REJECT_LINKS,
+                        ensureActive = operation::ensureActive, limits = HELPER_ARCHIVE_LIMITS)
                     val packages = manifest.getJSONArray("packages")
                     require(packages.length() in 1..64)
-                    val repository = manifest.getString("repository")
-                    require(repository == "https://packages.termux.dev/apt/termux-main")
                     val total = (0 until packages.length()).sumOf { packages.getJSONObject(it).getLong("Size") }
                     var completed = 0L
                     for (index in 0 until packages.length()) {
                         operation.ensureActive()
                         val record = packages.getJSONObject(index)
-                        val path = record.getString("Filename")
-                        require(path.matches(Regex("pool/[A-Za-z0-9_+.:/~-]+\\.deb")) && path.split('/').none { it == ".." })
                         val checksum = record.getString("SHA256")
                         require(checksum.matches(Regex("[0-9a-f]{64}")))
                         val archive = File(downloads, "$checksum.deb")
                         if (!archive.isFile || archive.length() != record.getLong("Size") || sha256(archive.readBytes()) != checksum) {
-                            val result = downloader.download("$repository/$path", archive,
-                                "sha256:$checksum", expectedSize = record.getLong("Size")) { downloaded, _, _ ->
-                                progress(completed + downloaded, total)
-                            }
-                            if (result !is DownloadResult.Success) throw VcpkgException(Strings.vcpkg_update_failed)
+                            throw VcpkgException(Strings.vcpkg_download_invalid)
                         }
                         DebDataExtractor.extract(archive, File(staging, "unpacked"), HELPER_LIMITS, operation::ensureActive)
                         completed += record.getLong("Size")
+                        progress(completed, total)
                     }
                     val prefix = File(staging, "unpacked/data/data/com.termux/files/usr")
                     if (!REQUIRED.all { File(prefix, "bin/$it").isFile }) throw VcpkgException(Strings.vcpkg_download_invalid)
@@ -79,26 +89,16 @@ class VcpkgRuntimeManager(private val context: Context) {
                     require(sha256(executable.readBytes()) == manifest.getString("cliSha256"))
                     requireExecutable(executable, abi)
                     REQUIRED.forEach { requireExecutable(File(prepared, "bin/$it"), abi) }
-                    File(prepared, "wrappers").mkdirs()
-                    REQUIRED.forEach { name ->
-                        File(prepared, "wrappers/$name").apply {
-                            writeText("#!/system/bin/sh\nexport LD_LIBRARY_PATH=${shellQuote(File(runtime, "lib").absolutePath + ":/system/lib64")}\n" +
-                                "export GIT_EXEC_PATH=${shellQuote(File(runtime, "libexec/git-core").absolutePath)}\n" +
-                                "export GIT_SSL_CAINFO=${shellQuote(File(runtime, "etc/tls/cert.pem").absolutePath)}\n" +
-                                "export CURL_CA_BUNDLE=${shellQuote(File(runtime, "etc/tls/cert.pem").absolutePath)}\n" +
-                                "export SSL_CERT_FILE=${shellQuote(File(runtime, "etc/tls/cert.pem").absolutePath)}\n" +
-                                "exec /system/bin/linker64 ${shellQuote(File(runtime, "bin/$name").absolutePath)} \"\$@\"\n", Charsets.UTF_8)
-                            check(setExecutable(true, true))
-                        }
-                    }
+                    VcpkgToolScripts.write(prepared, runtime, REQUIRED)
                     File(prepared, ".complete").writeText(revision, Charsets.UTF_8)
                     operation.ensureActive()
                     Files.move(prepared.toPath(), runtime.toPath())
-                    if (!downloads.deleteRecursively()) Timber.tag("VcpkgRuntime").w("Could not remove completed runtime downloads")
                 } finally {
                     if (!staging.deleteRecursively()) Timber.tag("VcpkgRuntime").w("Could not remove runtime staging directory")
                 }
             }
+            // Upgrade scripts in existing verified runtimes without downloading the tools again.
+            VcpkgToolScripts.write(runtime, runtime, REQUIRED)
             val root = VcpkgCatalogStore(context).ensureSources(progress)
             val cli = File(root, "vcpkg")
             val expectedHash = manifest.getString("cliSha256")
@@ -110,6 +110,7 @@ class VcpkgRuntimeManager(private val context: Context) {
                     VcpkgCatalogStore.atomicReplace(next, cli)
                 } finally { next.delete() }
             }
+            val networkSettings = GitHubRegistryProxyConfig.load(context)
             VcpkgRuntime(root, mapOf(
                 "PATH" to File(runtime, "wrappers").absolutePath,
                 "GIT_EXEC_PATH" to File(runtime, "libexec/git-core").absolutePath,
@@ -118,12 +119,11 @@ class VcpkgRuntimeManager(private val context: Context) {
                 "CURL_CA_BUNDLE" to File(runtime, "etc/tls/cert.pem").absolutePath,
                 "SSL_CERT_FILE" to File(runtime, "etc/tls/cert.pem").absolutePath,
                 "VCPKG_DOWNLOADS" to File(base, "downloads").apply { mkdirs() }.absolutePath,
-            ) + proxyEnvironment())
+            ) + proxyEnvironment(networkSettings) + VcpkgToolScripts.environment(runtime, networkSettings))
         }
     }
 
-    private fun proxyEnvironment(): Map<String, String> {
-        val settings = GitHubRegistryProxyConfig.load(context)
+    private fun proxyEnvironment(settings: GitHubRegistryProxySettings): Map<String, String> {
         val endpoint = if (settings.isUsable) InetSocketAddress.createUnresolved(settings.host, settings.port)
             else ProxySelector.getDefault()?.select(URI("https://github.com"))
                 ?.firstOrNull { it.type() == Proxy.Type.HTTP }?.address() as? InetSocketAddress
@@ -135,10 +135,11 @@ class VcpkgRuntimeManager(private val context: Context) {
     private companion object {
         val mutex = Mutex()
         val REQUIRED = listOf("git", "curl", "zip", "unzip", "pkg-config")
+        val HELPER_ARCHIVE_LIMITS = ArchiveExtractionLimits(32L * 1024 * 1024, 32L * 1024 * 1024,
+            16L * 1024 * 1024, 64, 128, 2)
         val HELPER_LIMITS = ArchiveExtractionLimits(64L * 1024 * 1024, 256L * 1024 * 1024,
             64L * 1024 * 1024, 30_000, 300, 32)
         fun sha256(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
-        fun shellQuote(value: String) = "'" + value.replace("'", "'\\''") + "'"
         fun requireExecutable(file: File, abi: String) {
             val header = file.inputStream().use { input -> ByteArray(20).also { require(input.read(it) == it.size) } }
             val machine = (header[18].toInt() and 255) or ((header[19].toInt() and 255) shl 8)

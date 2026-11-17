@@ -126,6 +126,16 @@ pwsh ./tools/build-apk.ps1 -Variant release -AllAbi
 
 详细说明见 [docs/快速开始.md](docs/快速开始.md)。
 
+### 4. 在 CMake 项目中使用 vcpkg
+
+新建 CMake 项目时可勾选 **使用内置 vcpkg**，已有项目也可从 **市场 → vcpkg** 添加依赖时自动启用。工具与安装目录由应用管理，市场按 Android 架构筛选库；依赖需在 CMake 中声明链接并在手机上编译。
+
+完整 `fmt` 示例见 [使用教程](feature/help/src/main/assets/help/vcpkg-guide.md)，应用内的 **教程** 和 vcpkg 市场也可直接打开。
+
+### 5. 按实践路线学习
+
+应用内 **教程** 提供[完整学习路线](feature/help/src/main/assets/help/getting-started.md)：IDE 操作、C++ 基础与多文件、标准库与 RAII、CMake、vcpkg、SDL3 图形、AI 协作模拟练习。课程使用 Android 原生工具链，中英文正文离线提供；帮助页保留参数速查和排错。AI 练习使用静态模拟数据，真实服务由用户在 RikkaHub 中配置自己的 API 和 Key。
+
 ## 当前运行时模型
 
 ### 默认开发链路

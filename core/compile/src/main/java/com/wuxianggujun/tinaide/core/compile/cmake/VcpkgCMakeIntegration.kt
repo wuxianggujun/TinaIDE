@@ -30,19 +30,19 @@ internal object VcpkgCMakeIntegration {
         nativeCMakeArguments: List<String>,
         parallelJobs: Int = 1,
         managedInstallationRoot: File? = null,
+        runtimeRoot: File? = null,
     ): Plan? {
         val config = VcpkgProjectSettings.from(arguments)
         if (!config.enabled) return null
-        if (config.mode !in setOf(VcpkgProjectSettings.MANIFEST, VcpkgProjectSettings.PREBUILT)) {
+        if (config.mode !in setOf(VcpkgProjectSettings.MANIFEST, VcpkgProjectSettings.SHARED)) {
             throw VcpkgException(Strings.vcpkg_invalid_mode)
         }
         if (androidAbi !in setOf("arm64-v8a", "x86_64")) throw VcpkgException(Strings.vcpkg_invalid_cli)
-        if (config.root.isBlank()) throw VcpkgException(Strings.vcpkg_root_required)
-        val root = resolvePath(projectDir, config.root)
+        val root = runtimeRoot?.canonicalFile ?: throw VcpkgException(Strings.vcpkg_root_required)
         val toolchain = File(root, "scripts/buildsystems/vcpkg.cmake")
         if (!toolchain.isFile) throw VcpkgException(Strings.vcpkg_toolchain_missing)
         val manifestMode = config.mode == VcpkgProjectSettings.MANIFEST
-        val installed = resolvePath(projectDir, config.installationRoot(projectDir, managedInstallationRoot).absolutePath)
+        val installed = managedInstallationRoot?.canonicalFile ?: throw VcpkgException(Strings.vcpkg_root_required)
         val triplet = config.targetTriplet(androidAbi)
         val passthrough = VcpkgProjectSettings.stripManagedArguments(arguments)
         if (passthrough.any { argument ->
@@ -80,7 +80,8 @@ internal object VcpkgCMakeIntegration {
                 appendLine("set(VCPKG_CHAINLOAD_TOOLCHAIN_FILE ${quote(nativeToolchain.absolutePath)})")
                 // Per-command TMPDIR and launcher state must not invalidate every cached package ABI.
                 appendLine("set(VCPKG_ENV_PASSTHROUGH_UNTRACKED PATH LD_LIBRARY_PATH LD_PRELOAD TMPDIR HOME " +
-                    "GIT_EXEC_PATH GIT_SSL_CAINFO CURL_CA_BUNDLE SSL_CERT_FILE http_proxy https_proxy HTTP_PROXY HTTPS_PROXY)")
+                    "GIT_EXEC_PATH GIT_SSL_CAINFO CURL_CA_BUNDLE SSL_CERT_FILE http_proxy https_proxy HTTP_PROXY HTTPS_PROXY " +
+                    "TINA_GITHUB_MIRROR X_VCPKG_ASSET_SOURCES)")
             })
             listOf(
                 executable.absolutePath, "install", "--triplet=$triplet", "--host-triplet=$triplet",
@@ -117,12 +118,6 @@ internal object VcpkgCMakeIntegration {
                 "TINA_PREFIX" to "/system",
             ),
         )
-    }
-
-    private fun resolvePath(projectDir: File, value: String): File {
-        if (value.any { it == '\u0000' || it == '\n' || it == '\r' || it == ';' }) throw VcpkgException(Strings.vcpkg_invalid_path)
-        val file = File(value)
-        return (if (file.isAbsolute) file else File(projectDir, value)).canonicalFile
     }
 
     private fun validateExecutable(file: File, androidAbi: String) {

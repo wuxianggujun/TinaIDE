@@ -9,7 +9,9 @@ import com.wuxianggujun.tinaide.core.i18n.strOr
 class VcpkgException(
     @StringRes val messageResource: Int,
     cause: Throwable? = null,
+    val messageArguments: List<Any> = emptyList(),
 ) : IllegalArgumentException("vcpkg validation failed (resource=$messageResource)", cause)
 
 fun Throwable.vcpkgUserMessage(context: Context): String =
-    ((this as? VcpkgException)?.messageResource ?: Strings.vcpkg_operation_failed).strOr(context)
+    if (this is VcpkgException) messageResource.strOr(context, *messageArguments.toTypedArray())
+    else Strings.vcpkg_operation_failed.strOr(context)

@@ -14,11 +14,11 @@ class VcpkgBuildInputsTest {
     fun replacingLibraryAtSamePathWithSameSizeAndTimestampChangesFingerprint() {
         val project = temporary.newFolder()
         val root = temporary.newFolder()
-        val config = VcpkgProjectSettings(VcpkgProjectSettings.PREBUILT, root.path)
+        val config = VcpkgProjectSettings(VcpkgProjectSettings.SHARED)
         val library = File(root, "installed/arm64-android/lib/libfmt.a").apply {
             parentFile.mkdirs(); writeText("old library")
         }
-        fun hash() = TrackedInputHasher.hashFiles(VcpkgBuildInputs.collect(project, config.applyTo(emptyList()), "arm64-v8a", false), project)
+        fun hash() = TrackedInputHasher.hashFiles(VcpkgBuildInputs.collect(project, config.applyTo(emptyList()), "arm64-v8a", false, File(root, "installed")), project)
         val before = hash()
         val timestamp = library.lastModified()
         library.writeText("new library")
@@ -32,7 +32,7 @@ class VcpkgBuildInputsTest {
     @Test
     fun manifestTracksOnlySelectedAbiAndConfigurationAlongWithStatusAndHeaders() {
         val project = temporary.newFolder()
-        val config = VcpkgProjectSettings(VcpkgProjectSettings.MANIFEST, "tools/vcpkg")
+        val config = VcpkgProjectSettings(VcpkgProjectSettings.MANIFEST)
         fun file(path: String) = File(project, path).apply { parentFile.mkdirs(); writeText(path) }
         val header = file("vcpkg_installed/arm64-tina-android/include/fmt/core.h")
         val debug = file("vcpkg_installed/arm64-tina-android/debug/lib/libfmt.a")
@@ -40,9 +40,9 @@ class VcpkgBuildInputsTest {
         val status = file("vcpkg_installed/vcpkg/status")
         file("vcpkg_installed/x64-tina-android/lib/libother.a")
         file("tools/vcpkg/buildtrees/fmt/unrelated.cpp")
-        assertThat(VcpkgBuildInputs.collect(project, config.applyTo(emptyList()), "arm64-v8a", true))
+        assertThat(VcpkgBuildInputs.collect(project, config.applyTo(emptyList()), "arm64-v8a", true, File(project, "vcpkg_installed")))
             .containsExactly(header, debug, release, status)
-        assertThat(VcpkgBuildInputs.collect(project, config.applyTo(emptyList()), "arm64-v8a", false))
+        assertThat(VcpkgBuildInputs.collect(project, config.applyTo(emptyList()), "arm64-v8a", false, File(project, "vcpkg_installed")))
             .containsExactly(header, release, status)
         assertThat(VcpkgBuildInputs.collect(project, emptyList(), "arm64-v8a", true)).isEmpty()
     }

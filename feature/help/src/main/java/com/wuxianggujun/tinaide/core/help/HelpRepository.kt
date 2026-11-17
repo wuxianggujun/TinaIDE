@@ -6,9 +6,12 @@ import com.wuxianggujun.tinaide.core.i18n.Arrays
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
 import java.io.IOException
+import java.nio.ByteBuffer
+import java.nio.charset.CodingErrorAction
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import timber.log.Timber
 
 /**
  * 帮助文档仓库
@@ -21,18 +24,8 @@ class HelpRepository(private val context: Context) {
 
     private fun keywords(@ArrayRes resId: Int): List<String> = context.resources.getStringArray(resId).toList()
 
-    /**
-     * 清理帮助文档中偶发的“`n+”伪换行标记，避免 Markdown 渲染异常。
-     *
-     * 这些标记通常来自生成/拷贝过程中的转义问题，优先在渲染/搜索前做一次兜底修复。
-     */
-    private fun sanitizeHelpMarkdown(raw: String): String = raw
-        .replace("`n+- ", "`\n- ")
-        .replace("`n+-", "`\n- ")
-        .replace("`n+", "`\n")
-
     // 预定义的帮助文档列表
-    private val documents: List<HelpDocument> = listOf(
+    private val documents: List<HelpDocument> = practiceDocuments() + listOf(
         // 快速开始
         HelpDocument(
             id = "getting-started",
@@ -154,6 +147,16 @@ class HelpRepository(private val context: Context) {
             fileName = "package-manager.md",
             summary = Strings.help_doc_package_manager_summary.strOr(context),
             order = 3
+        ),
+
+        HelpDocument(
+            id = "vcpkg-guide",
+            title = Strings.help_doc_vcpkg_guide_title.strOr(context),
+            category = HelpCategory.COMPILER,
+            keywords = keywords(Arrays.help_keywords_vcpkg_guide),
+            fileName = "vcpkg-guide.md",
+            summary = Strings.help_doc_vcpkg_guide_summary.strOr(context),
+            order = 4,
         ),
 
         // 语言服务器
@@ -358,6 +361,24 @@ class HelpRepository(private val context: Context) {
         )
     )
 
+    private fun practiceDocuments(): List<HelpDocument> {
+        fun lab(fileName: String, title: Int, summary: Int, order: Int) = HelpDocument(
+            id = fileName.removeSuffix(".md"), title = title.strOr(context), summary = summary.strOr(context),
+            category = HelpCategory.GETTING_STARTED, fileName = fileName, order = order,
+            keywords = listOf(fileName.substringBefore('-'), "TinaIDE"),
+        )
+        return listOf(
+            lab(fileName = "ide-workflow.md", Strings.course_ide_title, Strings.course_ide_desc, 10),
+            lab(fileName = "cpp-basics.md", Strings.course_cpp_basics_title, Strings.course_cpp_basics_desc, 11),
+            lab(fileName = "cpp-functions.md", Strings.course_cpp_functions_title, Strings.course_cpp_functions_desc, 12),
+            lab(fileName = "cpp-collections.md", Strings.course_cpp_collections_title, Strings.course_cpp_collections_desc, 13),
+            lab(fileName = "cpp-raii.md", Strings.course_cpp_raii_title, Strings.course_cpp_raii_desc, 14),
+            lab(fileName = "cmake-practice.md", Strings.course_cmake_title, Strings.course_cmake_desc, 15),
+            lab(fileName = "graphics-sdl3.md", Strings.course_graphics_title, Strings.course_graphics_desc, 16),
+            lab(fileName = "ai-practice.md", Strings.course_ai_title, Strings.course_ai_desc, 17),
+        )
+    }
+
     /**
      * 获取所有文档
      */
@@ -419,13 +440,12 @@ class HelpRepository(private val context: Context) {
         }
 
         try {
-            val sanitized = readLocalizedMarkdown(document)
-            contentCache[cacheKey] = sanitized
-            Result.success(sanitized)
+            val content = readLocalizedMarkdown(document)
+            contentCache[cacheKey] = content
+            Result.success(content)
         } catch (e: IOException) {
-            // 如果 assets 中没有，尝试返回占位内容
-            val placeholder = sanitizeHelpMarkdown(generatePlaceholderContent(document))
-            Result.success(placeholder)
+            Timber.tag("HelpRepository").w("Could not load help asset %s: %s", document.id, e.javaClass.simpleName)
+            Result.failure(e)
         }
     }
 
@@ -511,8 +531,8 @@ class HelpRepository(private val context: Context) {
             if (!contentCache.containsKey(cacheKey)) {
                 try {
                     contentCache[cacheKey] = readLocalizedMarkdown(doc)
-                } catch (_: IOException) {
-                    // 忽略加载失败的文档
+                } catch (error: IOException) {
+                    Timber.tag("HelpRepository").w("Could not preload help asset %s: %s", doc.id, error.javaClass.simpleName)
                 }
             }
         }
@@ -538,10 +558,13 @@ class HelpRepository(private val context: Context) {
         var lastError: IOException? = null
         HelpAssetPathResolver.candidatePaths(document.fileName, currentLanguageCode()).forEach { assetPath ->
             try {
-                val content = context.assets.open(assetPath)
-                    .bufferedReader(Charsets.UTF_8)
-                    .use { reader -> reader.readText() }
-                return sanitizeHelpMarkdown(content)
+                val bytes = context.assets.open(assetPath).use { it.readBytes() }
+                val content = Charsets.UTF_8.newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT)
+                    .decode(ByteBuffer.wrap(bytes)).toString()
+                if (content.isBlank()) throw IOException("Empty help asset: $assetPath")
+                return content
             } catch (error: IOException) {
                 lastError = error
             }
@@ -571,31 +594,4 @@ class HelpRepository(private val context: Context) {
         return path.takeIf { it.endsWith(".md", ignoreCase = true) }
     }
 
-    /**
-     * 生成占位内容（当文档文件不存在时）
-     */
-    private fun generatePlaceholderContent(document: HelpDocument): String {
-        val tipLabel = Strings.help_placeholder_tip_label.strOr(context)
-        val tipBody = Strings.help_placeholder_tip_body.strOr(context)
-        val tipContact = Strings.help_placeholder_tip_contact.strOr(context)
-        val relatedTitle = Strings.help_placeholder_related_topics_title.strOr(context)
-
-        return """
-# ${document.title}
-
-${document.summary}
-
----
-
-> **$tipLabel**：$tipBody
->
-> $tipContact
-
-## $relatedTitle
-
-${documents.filter { it.category == document.category && it.id != document.id }
-            .take(3)
-            .joinToString("\n") { "- ${it.title}" }}
-        """.trimIndent()
-    }
 }

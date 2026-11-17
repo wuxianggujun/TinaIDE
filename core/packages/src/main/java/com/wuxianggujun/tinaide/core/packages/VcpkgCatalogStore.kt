@@ -37,25 +37,31 @@ class VcpkgCatalogStore internal constructor(
     private val cache get() = File(directory, "catalog.json")
 
     suspend fun readLocal(): VcpkgCatalogSnapshot = withContext(Dispatchers.IO) {
-        if (cache.isFile) {
-            try {
-                return@withContext decode(PackageMetadataFiles.readBytes(cache, MAX_CATALOG_BYTES))
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Exception) {
-                Timber.tag("VcpkgCatalog").w("Discarding unreadable catalog cache: %s", error.javaClass.simpleName)
-            }
-        }
-        bundledCatalog().use { decode(it.readBytesBounded(MAX_CATALOG_BYTES)) }
+        readCached() ?: readBundled()
     }
+
+    private fun readCached(): VcpkgCatalogSnapshot? {
+        if (!cache.isFile) return null
+        return try {
+            decode(PackageMetadataFiles.readBytes(cache, MAX_CATALOG_BYTES))
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            Timber.tag("VcpkgCatalog").w("Discarding unreadable catalog cache: %s", error.javaClass.simpleName)
+            null
+        }
+    }
+
+    private fun readBundled(): VcpkgCatalogSnapshot = bundledCatalog().use { decode(it.readBytesBounded(MAX_CATALOG_BYTES)) }
 
     suspend fun update(onProgress: (Long, Long) -> Unit = { _, _ -> }): VcpkgCatalogSnapshot = withContext(Dispatchers.IO) {
         mutex.withLock {
             removeAbandonedStaging()
-            val previous = readLocal()
+            val cached = readCached()
+            val previous = cached ?: readBundled()
             val revision = source.latestRevision()
             requireRevision(revision)
-            if (revision == previous.revision && cache.isFile) return@withLock previous
+            if (revision == cached?.revision) return@withLock previous
             prepareRevision(revision, previous.archiveSha256.takeIf { revision == previous.revision }, onProgress)
         }
     }
@@ -71,7 +77,6 @@ class VcpkgCatalogStore internal constructor(
                 val staging = Files.createTempDirectory(directory.toPath(), ".sources-").toFile()
                 try {
                     val (archive, _) = obtainArchive(catalog.revision, catalog.archiveSha256, staging, onProgress)
-                    validateArchive(archive, catalog.revision)
                     val extracted = File(staging, "extracted")
                     extractSources(archive, extracted, staging)
                     val prepared = File(extracted, "vcpkg-${catalog.revision}")
@@ -104,8 +109,7 @@ class VcpkgCatalogStore internal constructor(
         check(directory.isDirectory || directory.mkdirs())
         val staging = Files.createTempDirectory(directory.toPath(), ".catalog-").toFile()
         try {
-            val (archive, hash) = obtainArchive(revision, expectedHash, staging, progress)
-            val ports = validateArchive(archive, revision, collectPorts = true)
+            val (_, hash, ports) = obtainArchive(revision, expectedHash, staging, progress, collectPorts = true)
             val snapshot = VcpkgCatalogSnapshot(revision, hash, ports)
             // Only metadata is materialized while browsing. Full source extraction happens at installation.
             val next = File(staging, "catalog.json").apply { writeText(encode(snapshot), Charsets.UTF_8) }
@@ -117,20 +121,37 @@ class VcpkgCatalogStore internal constructor(
         }
     }
 
-    private suspend fun obtainArchive(revision: String, expectedHash: String?, staging: File, progress: (Long, Long) -> Unit): Pair<File, String> {
+    private data class VerifiedArchive(val file: File, val hash: String, val ports: List<VcpkgPort>)
+
+    private suspend fun obtainArchive(revision: String, expectedHash: String?, staging: File,
+        progress: (Long, Long) -> Unit, collectPorts: Boolean = false): VerifiedArchive {
         val archive = File(directory, "archives/$revision.tar.gz")
         if (archive.isFile) {
-            val hash = hashArchive(archive)
-            if (expectedHash == null || hash == expectedHash) return archive to hash
+            try {
+                val hash = hashArchive(archive)
+                if (expectedHash == null || hash == expectedHash) {
+                    val ports = validateArchive(archive, revision, collectPorts)
+                    return VerifiedArchive(archive, hash, ports)
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                Timber.tag("VcpkgCatalog").w("Replacing invalid cached archive: %s", error.javaClass.simpleName)
+            }
         }
         val next = File(staging, "source.tar.gz")
-        source.download(revision, next, progress)
-        val hash = hashArchive(next)
-        if (expectedHash != null && hash != expectedHash) throw VcpkgException(Strings.vcpkg_download_invalid)
+        lateinit var verified: VerifiedArchive
+        source.download(revision, next, progress) { downloaded ->
+            val hash = hashArchive(downloaded)
+            if (expectedHash != null && hash != expectedHash) throw VcpkgException(Strings.vcpkg_download_invalid)
+            // Keep validation in the endpoint retry loop, and never cache a rejected candidate.
+            val ports = validateArchive(downloaded, revision, collectPorts)
+            verified = VerifiedArchive(archive, hash, ports)
+        }
         check(archive.parentFile!!.isDirectory || archive.parentFile!!.mkdirs())
         currentCoroutineContext().ensureActive()
         atomicReplace(next, archive)
-        return archive to hash
+        return verified
     }
 
     private suspend fun hashArchive(archive: File): String {

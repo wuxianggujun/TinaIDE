@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -40,9 +39,7 @@ internal fun ProjectVcpkgSettingsItem(arguments: List<String>, onSave: (List<Str
         showDivider = false,
     )
     if (editing) {
-        var mode by rememberSaveable { mutableStateOf(current.mode) }
-        var root by rememberSaveable { mutableStateOf(current.root) }
-        var invalid by rememberSaveable { mutableStateOf(false) }
+        var mode by rememberSaveable(current) { mutableStateOf(current.mode) }
         TinaAlertDialog(
             onDismissRequest = { editing = false },
             title = { TinaDialogTitleText(stringResource(Strings.vcpkg_title)) },
@@ -51,7 +48,8 @@ internal fun ProjectVcpkgSettingsItem(arguments: List<String>, onSave: (List<Str
                     modifier = Modifier.verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    listOf(VcpkgProjectSettings.DISABLED, VcpkgProjectSettings.MANIFEST, VcpkgProjectSettings.PREBUILT).forEach { option ->
+                    val modes = listOf(VcpkgProjectSettings.DISABLED, VcpkgProjectSettings.MANIFEST, VcpkgProjectSettings.SHARED)
+                    modes.forEach { option ->
                         Row(
                             modifier = Modifier.fillMaxWidth().clickable { mode = option },
                             verticalAlignment = Alignment.CenterVertically,
@@ -60,32 +58,16 @@ internal fun ProjectVcpkgSettingsItem(arguments: List<String>, onSave: (List<Str
                             Text(stringResource(modeTitle(option)))
                         }
                     }
-                    if (mode == VcpkgProjectSettings.PREBUILT) {
-                        OutlinedTextField(
-                            value = root,
-                            onValueChange = { root = it; invalid = false },
-                            label = { Text(stringResource(Strings.vcpkg_import_source)) },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        Text(stringResource(Strings.vcpkg_setup_hint), style = MaterialTheme.typography.bodySmall)
-                    }
-                    if (mode == VcpkgProjectSettings.MANIFEST) {
-                        Text(stringResource(Strings.vcpkg_managed_paths), style = MaterialTheme.typography.bodySmall)
-                    }
-                    if (invalid) Text(stringResource(Strings.vcpkg_root_required), color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(Strings.vcpkg_managed_paths), style = MaterialTheme.typography.bodySmall)
                 }
             },
             confirmButton = {
                 TinaPrimaryButton(
                     text = stringResource(Strings.btn_save),
                     onClick = {
-                        invalid = mode == VcpkgProjectSettings.PREBUILT &&
-                            (root.isBlank() || root.any { it in "\u0000\r\n;" })
-                        if (!invalid) {
-                            onSave(VcpkgProjectSettings(mode, if (mode == VcpkgProjectSettings.PREBUILT) root else "").applyTo(arguments))
-                            editing = false
-                        }
+                        val updated = VcpkgProjectSettings(mode)
+                        onSave(updated.applyTo(arguments))
+                        editing = false
                     },
                 )
             },
@@ -96,6 +78,6 @@ internal fun ProjectVcpkgSettingsItem(arguments: List<String>, onSave: (List<Str
 
 private fun modeTitle(mode: String): Int = when (mode) {
     VcpkgProjectSettings.MANIFEST -> Strings.vcpkg_manifest
-    VcpkgProjectSettings.PREBUILT -> Strings.vcpkg_prebuilt
+    VcpkgProjectSettings.SHARED -> Strings.vcpkg_shared_mode
     else -> Strings.vcpkg_disabled
 }

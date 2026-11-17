@@ -26,6 +26,8 @@ class TutorialRepositoryTest {
 
         assertThat(repository.resolveTutorialByLinkTarget("build-project.md")?.id)
             .isEqualTo("build_project")
+        assertThat(repository.resolveTutorialByLinkTarget("help/vcpkg-guide.md")?.id)
+            .isEqualTo("vcpkg_guide")
         assertThat(repository.resolveTutorialByLinkTarget("./getting-started.md#overview")?.id)
             .isEqualTo("getting_started")
         assertThat(repository.resolveTutorialByLinkTarget("create-project.md")?.id)
@@ -59,6 +61,8 @@ class TutorialRepositoryTest {
         assertThat(tutorials.map { it.id }).containsNoDuplicates()
         assertThat(articles.mapNotNull { it.contentUrl }).hasSize(articles.size)
         assertThat(articles.mapNotNull { it.contentUrl }).containsNoDuplicates()
+        assertThat(tutorials.map { it.id }).containsAtLeast("ide_workflow", "cpp_basics", "cpp_functions",
+            "cpp_collections", "cpp_raii", "cmake_practice", "vcpkg_guide", "graphics_sdl3", "ai_practice")
         articles.forEach { tutorial ->
             assertThat(repository.resolveTutorialByLinkTarget(tutorial.contentUrl!!)?.id)
                 .isEqualTo(tutorial.id)

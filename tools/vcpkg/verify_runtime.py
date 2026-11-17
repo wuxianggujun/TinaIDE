@@ -62,11 +62,30 @@ def main() -> None:
     if hashlib.sha256(cli).hexdigest() != manifest['cliSha256']:
         raise ValueError('CLI checksum mismatch')
     dependencies = {'vcpkg': elf_dependencies(cli, machine)}
+    bundled_helpers = {}
+    if not manifest.get('helpersArchiveSha256'):
+        raise ValueError('Runtime manifest must pin its bundled helper archive')
+    if manifest.get('helpersArchiveSha256'):
+        helper_archive = args.manifest.with_name('helpers.tar').read_bytes()
+        if hashlib.sha256(helper_archive).hexdigest() != manifest['helpersArchiveSha256']:
+            raise ValueError('Bundled helper archive checksum mismatch')
+        with tarfile.open(fileobj=io.BytesIO(helper_archive)) as archive:
+            expected = {package['SHA256'] + '.deb' for package in manifest['packages']}
+            members = archive.getmembers()
+            if len(members) != len(expected) or {entry.name for entry in members} != expected or any(not entry.isfile() for entry in members):
+                raise ValueError('Unexpected bundled helper archive members')
+            for package in manifest['packages']:
+                blob = archive.extractfile(package['SHA256'] + '.deb').read()
+                if len(blob) != int(package['Size']) or hashlib.sha256(blob).hexdigest() != package['SHA256']:
+                    raise ValueError('Bundled helper package checksum mismatch: ' + package['Package'])
+                bundled_helpers[package['SHA256']] = blob
     if args.apk:
         with ZipFile(args.apk) as apk:
             for name in ('vcpkg', 'runtime.json', 'vcpkg-build.json', 'LICENSE.txt', 'NOTICE.txt'):
                 if apk.read('assets/vcpkg/' + name) != args.manifest.with_name(name).read_bytes():
                     raise ValueError('APK runtime asset differs from verified input: ' + name)
+            if bundled_helpers and apk.read('assets/vcpkg/helpers.tar') != helper_archive:
+                raise ValueError('APK helper archive differs from verified input')
             for name in ('catalog.json', 'ports-LICENSE.txt'):
                 if apk.read('assets/vcpkg/' + name) != (Path('core/packages/src/main/assets/vcpkg') / name).read_bytes():
                     raise ValueError('APK catalog asset differs from verified input: ' + name)
@@ -79,10 +98,14 @@ def main() -> None:
     for package in manifest["packages"]:
         digest = package["SHA256"]
         destination = args.cache / (digest + ".deb")
-        if not destination.is_file():
+        if digest in bundled_helpers:
+            blob = bundled_helpers[digest]
+        elif not destination.is_file():
             with urllib.request.urlopen(manifest["repository"] + "/" + package["Filename"], timeout=45) as response:
                 destination.write_bytes(response.read())
-        blob = destination.read_bytes()
+            blob = destination.read_bytes()
+        else:
+            blob = destination.read_bytes()
         if len(blob) != int(package["Size"]) or hashlib.sha256(blob).hexdigest() != digest:
             raise ValueError("Package checksum mismatch: " + package["Package"])
         with tarfile.open(fileobj=io.BytesIO(data_archive(blob))) as archive:

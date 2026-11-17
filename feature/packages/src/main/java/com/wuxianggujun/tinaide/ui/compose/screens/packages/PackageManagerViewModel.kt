@@ -221,10 +221,14 @@ class PackageManagerViewModel(
      * 关闭对话框，用户可在网络恢复后重新点击下载。
      */
     fun cancelInstall() {
-        installJob?.cancel(CancellationException("Package install cancelled by user"))
-        if (_dialogState.value !is PackageDialogState.BatchInstalling &&
-            _dialogState.value !is PackageDialogState.BatchUpdating &&
-            _dialogState.value !is PackageDialogState.BatchUninstalling) _dialogState.value = null
+        val activeOperation = installJob?.takeUnless { it.isCompleted } ?: return
+        // Main.immediate can publish BatchComplete inside cancel(); inspect the state before cancelling.
+        val dialogBeforeCancellation = _dialogState.value
+        val preserveBatchSummary = dialogBeforeCancellation is PackageDialogState.BatchInstalling ||
+            dialogBeforeCancellation is PackageDialogState.BatchUpdating ||
+            dialogBeforeCancellation is PackageDialogState.BatchUninstalling
+        activeOperation.cancel(CancellationException("Package install cancelled by user"))
+        if (!preserveBatchSummary) _dialogState.value = null
     }
 
     private suspend fun startInstall(pkg: GUIPackage, installPlatform: Platform) {

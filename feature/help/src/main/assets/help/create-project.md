@@ -22,6 +22,9 @@
 - 项目名称
 - C++ 标准版本
 - NDK API Level（仅 NDK 模板）
+- **使用内置 vcpkg**（仅 CMake 模板，默认关闭）
+
+启用 vcpkg 后，向导创建空的 `vcpkg.json` 并启用内置管理；模板已有清单会保留。创建过程不联网安装库，之后到 **市场 → vcpkg** 添加依赖并修改 CMake 链接。已有项目也可在市场添加依赖时自动启用。完整示例见 [CMake 使用 vcpkg](vcpkg-guide.md)。
 
 ## 源码保存位置与文件权限
 
@@ -174,3 +177,4 @@
 - 阅读 [编译项目](build-project.md)
 - 阅读 [代码补全](code-completion.md)
 - 阅读 [CMake 配置指南](cmake-guide.md)
+- 阅读 [CMake 使用 vcpkg](vcpkg-guide.md)

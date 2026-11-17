@@ -88,6 +88,61 @@ class PackageManagerViewModelTest {
     }
 
     @Test
+    fun `batch update cancellation keeps its summary and unfinished updates`() = runTest {
+        val keys = listOf("a", "b", "c").map { PackagePlatformKey(it, Platform.ANDROID) }
+        val updates = keys.associateWith { UpdateInfo(it.packageId, it.packageId, it.platform, "1.0", "2.0") }
+        val manager = FakePackageManager(keys.map { guiPackage(it.packageId) }, updates = updates, blockingPackage = "b")
+        val viewModel = PackageManagerViewModel(testStringContext(), manager)
+        viewModel.checkForUpdates()
+        viewModel.updateAllPackages()
+
+        viewModel.cancelInstall()
+        advanceUntilIdle()
+
+        val complete = viewModel.dialogState.value as PackageDialogState.BatchComplete
+        assertThat(complete.operation).isEqualTo(PackageBatchOperation.UPDATE)
+        assertThat(complete.result.cancelled).isTrue()
+        assertThat(complete.result.succeeded).isEqualTo(1)
+        assertThat(complete.result.unfinished).isEqualTo(2)
+        assertThat(manager.installCalls.map { it.first }).containsExactly("a", "b").inOrder()
+        assertThat(viewModel.uiState.value.availableUpdates.keys).containsExactly(keys[1], keys[2])
+    }
+
+    @Test
+    fun `batch uninstall cancellation keeps its summary and remaining installations`() = runTest {
+        val records = listOf("a", "b", "c").map { InstalledPackageInfo(it, it, Platform.ANDROID, "1.0", 1L, InstallType.DOWNLOAD) }
+        val manager = FakePackageManager(records.map { guiPackage(it.packageId) }, installedPackages = records, blockingPackage = "b")
+        val viewModel = PackageManagerViewModel(testStringContext(), manager)
+        viewModel.selectAll()
+        viewModel.batchUninstall(Platform.ANDROID)
+
+        viewModel.cancelInstall()
+        advanceUntilIdle()
+
+        val complete = viewModel.dialogState.value as PackageDialogState.BatchComplete
+        assertThat(complete.operation).isEqualTo(PackageBatchOperation.UNINSTALL)
+        assertThat(complete.result.cancelled).isTrue()
+        assertThat(complete.result.succeeded).isEqualTo(1)
+        assertThat(complete.result.unfinished).isEqualTo(2)
+        assertThat(manager.uninstallCalls.map { it.first }).containsExactly("a", "b").inOrder()
+        assertThat(manager.getInstalledPackages().map { it.packageId }).containsExactly("b", "c").inOrder()
+    }
+
+    @Test
+    fun `late cancel event does not dismiss a completed batch summary`() = runTest {
+        val manager = FakePackageManager(listOf("a", "b").map(::guiPackage))
+        val viewModel = PackageManagerViewModel(testStringContext(), manager)
+        viewModel.selectAll()
+        viewModel.batchInstall(Platform.ANDROID)
+        val summary = viewModel.dialogState.value as PackageDialogState.BatchComplete
+
+        viewModel.cancelInstall()
+
+        assertThat(viewModel.dialogState.value).isSameInstanceAs(summary)
+        assertThat(summary.result.succeeded).isEqualTo(2)
+    }
+
+    @Test
     fun `my packages does not request the remote catalog`() = runTest {
         val manager = FakePackageManager(availablePackages = listOf(guiPackage("not-installed")))
         val viewModel = PackageManagerViewModel(testStringContext(), manager, installedOnly = true)
@@ -258,6 +313,7 @@ private class FakePackageManager(
     private val installed = installedPackages.toMutableList()
     private val pendingUpdates = updates.toMutableMap()
     val installCalls = mutableListOf<Pair<String, Platform>>()
+    val uninstallCalls = mutableListOf<Pair<String, Platform>>()
     var catalogRequests = 0
 
     override suspend fun getAvailablePackages(
@@ -323,6 +379,8 @@ private class FakePackageManager(
         packageId: String,
         platform: Platform
     ): UninstallResult {
+        uninstallCalls += packageId to platform
+        if (packageId == blockingPackage) awaitCancellation()
         installed.removeAll { it.packageId == packageId && it.platform == platform }
         pendingUpdates.remove(PackagePlatformKey(packageId, platform))
         return UninstallResult.Success(packageId, platform)

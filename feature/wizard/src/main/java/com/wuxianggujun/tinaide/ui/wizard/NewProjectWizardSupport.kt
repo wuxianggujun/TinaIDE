@@ -96,6 +96,8 @@ internal object NewProjectWizardSupport {
         return language == ProjectLanguage.C || language == ProjectLanguage.CPP
     }
 
+    fun canUseVcpkg(option: ProjectTemplateOption?): Boolean = option?.spec?.buildSystem == ProjectBuildSystem.CMAKE
+
     @StringRes
     fun resolveTemplateBadgeRes(option: ProjectTemplateOption?): Int? = when {
         isPluginTemplate(option) -> Strings.wizard_plugin_template_badge

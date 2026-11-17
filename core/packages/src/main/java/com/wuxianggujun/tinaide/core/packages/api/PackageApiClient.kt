@@ -25,6 +25,10 @@ import com.wuxianggujun.tinaide.core.serialization.JsonSerializer
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import com.wuxianggujun.tinaide.core.network.executeCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -245,20 +249,21 @@ class PackageApiClient private constructor(
         }
     }
 
-    private fun loadIndexFromUrls(
+    private suspend fun loadIndexFromUrls(
         urls: List<RegistryUrl>,
         schemaLabel: String,
         decode: (body: String, registryUrl: RegistryUrl) -> LoadedPackageRegistryCatalog,
     ): ApiResult<LoadedPackageRegistryCatalog> {
         var lastError: ApiResult<LoadedPackageRegistryCatalog>? = null
         for (registryUrl in urls) {
+            currentCoroutineContext().ensureActive()
             try {
                 val response = indexClient.newCall(
                     Request.Builder()
                         .url(registryUrl.url)
                         .get()
                         .build()
-                ).execute()
+                ).executeCancellable()
                 response.use { resp ->
                     if (!resp.isSuccessful) {
                         lastError = ApiResult.Error(
@@ -280,10 +285,13 @@ class PackageApiClient private constructor(
                     )
                     return ApiResult.Success(index)
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: ResponseBodyTooLargeException) {
                 Timber.tag(TAG).w("Package registry %s response exceeded size limit via %s", schemaLabel, registryUrl.endpoint.name)
                 lastError = ApiResult.Error(-1, Strings.error_response_parse_failed.str())
             } catch (e: IOException) {
+                currentCoroutineContext().ensureActive()
                 Timber.tag(TAG).w(e, "Load package registry %s failed via %s", schemaLabel, registryUrl.endpoint.name)
                 lastError = ApiResult.NetworkError(e.message ?: Strings.error_network_connection_failed.str())
             } catch (e: Exception) {
@@ -314,13 +322,14 @@ class PackageApiClient private constructor(
                 endpoint = index.endpoint,
                 customProxyPrefix = proxySettings.customMirrorPrefix,
             )) {
+                currentCoroutineContext().ensureActive()
                 try {
                     val response = indexClient.newCall(
                         Request.Builder()
                             .url(candidateUrl)
                             .get()
                             .build()
-                    ).execute()
+                    ).executeCancellable()
                     response.use { resp ->
                         if (!resp.isSuccessful) {
                             lastError = ApiResult.Error(
@@ -344,10 +353,13 @@ class PackageApiClient private constructor(
                         cachedDetails[entry.id] = CachedDetail(index, detail)
                         return@withLock ApiResult.Success(detail)
                     }
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: ResponseBodyTooLargeException) {
                     Timber.tag(TAG).w("Package detail response exceeded size limit: %s", packageId)
                     lastError = ApiResult.Error(-1, Strings.error_response_parse_failed.str())
                 } catch (e: IOException) {
+                    currentCoroutineContext().ensureActive()
                     Timber.tag(TAG).w(e, "Load package detail failed: %s", packageId)
                     lastError = ApiResult.NetworkError(e.message ?: Strings.error_network_connection_failed.str())
                 } catch (e: Exception) {

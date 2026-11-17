@@ -19,6 +19,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -59,9 +60,9 @@ internal fun FeedbackDialog(
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
 
-    var message by remember { mutableStateOf("") }
-    var contact by remember { mutableStateOf("") }
-    var attachLogs by remember { mutableStateOf(true) }
+    var message by rememberSaveable { mutableStateOf("") }
+    var contact by rememberSaveable { mutableStateOf("") }
+    var attachLogs by rememberSaveable { mutableStateOf(true) }
     var isSubmitting by remember { mutableStateOf(false) }
     var errorText by remember { mutableStateOf<String?>(null) }
     var submitError by remember { mutableStateOf<String?>(null) }

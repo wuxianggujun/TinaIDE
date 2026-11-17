@@ -1,0 +1,112 @@
+{
+  "date": "2026-11-11",
+  "scope": "CMake optional vcpkg creation and bundled Chinese/English tutorial",
+  "tests": [
+    {
+      "module": "core/project",
+      "name": "com.wuxianggujun.tinaide.project.ProjectCreationServiceTest",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "core/project",
+      "name": "com.wuxianggujun.tinaide.project.ProjectCreationVcpkgTest",
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "feature/wizard",
+      "name": "com.wuxianggujun.tinaide.ui.wizard.NewProjectWizardActivityIntentTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "feature/wizard",
+      "name": "com.wuxianggujun.tinaide.ui.wizard.NewProjectWizardCppVisibilityTest",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "feature/wizard",
+      "name": "com.wuxianggujun.tinaide.ui.wizard.NewProjectWizardSupportTest",
+      "tests": 15,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "feature/wizard",
+      "name": "com.wuxianggujun.tinaide.ui.wizard.NewProjectWizardViewModelTest",
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "feature/help",
+      "name": "com.wuxianggujun.tinaide.core.help.HelpRepositoryCatalogTest",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "feature/help",
+      "name": "com.wuxianggujun.tinaide.core.help.HelpRepositoryTest",
+      "tests": 11,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "feature/tutorial",
+      "name": "com.wuxianggujun.tinaide.tutorial.repository.TutorialRepositoryTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  ],
+  "totalTests": 55,
+  "compileTasks": [
+    ":feature:wizard:compileDebugKotlin",
+    ":feature:help:compileDebugKotlin",
+    ":feature:tutorial:compileDebugKotlin",
+    ":feature:packages:compileDebugKotlin",
+    ":app:compileArm64DebugKotlin",
+    ":app:compileArm64DebugAndroidTestKotlin"
+  ],
+  "compilePassed": true,
+  "staticChecks": [
+    "documentation",
+    "i18n",
+    "direct-file-operations",
+    "git diff --check",
+    "tutorial example matches tools/vcpkg/example"
+  ],
+  "logs": [
+    {
+      "name": "project-tests.log",
+      "bytes": 38192,
+      "sha256": "6f2eaa5e6daa9dab4790b853a4f0dd1ba815097524b61c71d68c05476cb84bed",
+      "result": "BUILD SUCCESSFUL in 10m 7s"
+    },
+    {
+      "name": "help-integration.log",
+      "bytes": 97562,
+      "sha256": "ede56f7cd2b27d4d83423bd6499d9e5c455019642593e23d83eb7ccd3625bed8",
+      "result": "BUILD SUCCESSFUL in 16m 40s"
+    }
+  ],
+  "temporaryLogCleanup": "Automatic approval rejected deletion with blocked by policy; both logs preserved (135754 bytes).",
+  "deviceTestsExecuted": false,
+  "apkBuilt": false
+}

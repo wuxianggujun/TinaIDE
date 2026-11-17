@@ -51,7 +51,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--adb", default="adb")
     parser.add_argument("--serial", required=True)
-    parser.add_argument("--suite", choices=("editor", "host", "runtime", "packages", "vcpkg", "vcpkg-managed", "performance"), required=True)
+    parser.add_argument("--suite", choices=("editor", "host", "runtime", "packages", "vcpkg", "vcpkg-managed", "course", "graphics-course", "performance"), required=True)
+    parser.add_argument("--package-id", default="fmt", help="Market package used by the packages suite")
     parser.add_argument("--orientation", choices=("portrait", "landscape"), default="portrait")
     parser.add_argument("--output", type=Path, default=ROOT / "app/build/reports/editor-runtime-regression")
     parser.add_argument("--case", help="Run one named case from the suite")
@@ -75,15 +76,29 @@ def main():
             )]
         elif args.suite == "packages":
             selector = "com.wuxianggujun.tinaide.core.packages.RegistryInstallDeviceTest#downloadCancelRetryAndUninstall_keepFilesAndRecordsConsistent"
-            cases = [(phase, selector, {"packagePhase": phase}) for phase in ("cancel", "install", "uninstall", "verify-uninstalled")]
+            cases = [(phase, selector, {"packagePhase": phase, "packageId": args.package_id})
+                     for phase in ("cancel", "install", "uninstall", "verify-uninstalled")]
         elif args.suite == "vcpkg":
             selector = "com.wuxianggujun.tinaide.core.compile.VcpkgAcceptanceDeviceTest#realFmtProject_configuresBuildsOrRuns"
             cases = [(phase, selector, {"vcpkgPhase": phase}) for phase in ("configure", "build", "run", "repeat")]
         elif args.suite == "vcpkg-managed":
             selector = "com.wuxianggujun.tinaide.core.compile.VcpkgManagedDeviceTest#managedCatalogAndRuntime"
             cases = [(phase, selector, {"vcpkgManagedPhase": phase}) for phase in
-                     ("catalog", "update", "runtime", "configure", "build", "run", "repeat", "external")]
+                     ("catalog", "update", "cancel-runtime", "runtime", "configure", "build", "run", "repeat", "external", "shared", "cancel-shared")]
             cases.insert(1, ("market-ui", "com.wuxianggujun.tinaide.ui.compose.editor.VcpkgMarketInstrumentationTest#noProjectStillShowsCatalogAndSupportsSearch", {}))
+            # These cases require the caller to disable networking explicitly; the default suite stays online.
+            if args.case in ("offline-update", "runtime-offline"):
+                cases.append((args.case, selector, {"vcpkgManagedPhase": args.case}))
+        elif args.suite == "course":
+            selector = "com.wuxianggujun.tinaide.core.compile.NativeCourseDeviceTest#lessonBuildsAndProducesItsExpectedOutput"
+            cases = [(f"{language}-{lesson}", selector, {"courseLesson": lesson, "courseLanguage": language})
+                     for language in ("zh", "en") for lesson in
+                     ("ide-workflow", "cpp-basics", "cpp-functions", "cpp-collections", "cpp-raii", "cmake-practice")]
+            cases.append(("recover-compile-error", selector, {"courseLesson": "ide-workflow", "courseLanguage": "en", "courseRecovery": "true"}))
+        elif args.suite == "graphics-course":
+            selector = "com.wuxianggujun.tinaide.core.compile.GraphicsCourseDeviceTest#lessonBuildsAndDrawsThroughProductionHost"
+            cases = [(f"{language}-{library}", selector, {"courseLanguage": language, "graphicsLibrary": library})
+                     for language in ("zh", "en") for library in ("sdl3", "raylib")]
         elif args.suite == "performance":
             selector = "com.wuxianggujun.tinaide.ui.compose.editor.EditorScrollPerformanceInstrumentationTest#warmCppScroll_recordsEnoughRendererSamples"
             cases = [(f"warm-cpp-{highlight}", selector,
@@ -105,7 +120,7 @@ def main():
         run_id = uuid.uuid4().hex
         target = "com.wuxianggujun.tinaide" if package == "com.wuxianggujun.tinaide.test" else package
         command = [args.adb, "-s", args.serial, "shell", "am", "instrument", "-w", "-r",
-                   "-e", "timeout_msec", "55000" if args.suite == "vcpkg-managed" else "45000", "-e", "editorOrientation", args.orientation,
+                   "-e", "timeout_msec", "55000" if args.suite in ("vcpkg-managed", "course", "graphics-course") else "45000", "-e", "editorOrientation", args.orientation,
                    "-e", "regressionRunId", run_id, "-e", "class", selector]
         for key, value in extras.items():
             command += ["-e", key, value]
@@ -122,9 +137,11 @@ def main():
             output = (error.stdout or b"").decode("utf-8", errors="replace") + "\nHOST_TIMEOUT_60_SECONDS\n"
             timed_out = True
         passed = instrumentation_passed(output, returncode, timed_out)
-        if args.suite in ("performance", "vcpkg-managed") and name != "market-ui":
+        if args.suite in ("performance", "vcpkg-managed", "course", "graphics-course") and name != "market-ui":
             try:
                 filename = (f"warm-cpp-scroll-{extras['performanceHighlight']}.json" if args.suite == "performance"
+                            else f"course-{extras['courseLanguage']}-{extras['courseLesson']}.json" if args.suite == "course"
+                            else f"graphics-course-{extras['courseLanguage']}-{extras['graphicsLibrary']}.json" if args.suite == "graphics-course"
                             else f"vcpkg-managed-{name}.json")
                 evidence = subprocess.check_output(
                     [args.adb, "-s", args.serial, "exec-out", "run-as", target,
@@ -139,6 +156,17 @@ def main():
                 if passed:
                     if args.suite == "performance":
                         validate_performance_evidence(report, run_id, extras)
+                    elif args.suite == "graphics-course":
+                        if (report.get("runId") != run_id or report.get("passed") is not True or
+                                report.get("library") != extras["graphicsLibrary"] or
+                                report.get("language") != extras["courseLanguage"] or
+                                report.get("orangeSamples", 0) <= 40 or report.get("blueSamples", 0) <= 200):
+                            raise ValueError("Incomplete or stale graphical course evidence")
+                    elif args.suite == "course":
+                        if (report.get("runId") != run_id or report.get("passed") is not True or
+                                report.get("lesson") != extras["courseLesson"] or report.get("language") != extras["courseLanguage"] or
+                                extras.get("courseRecovery") == "true" and report.get("recoveredFromCompileError") is not True):
+                            raise ValueError("Incomplete or stale course execution evidence")
                     elif report.get("runId") != run_id or report.get("passed") is not True or report.get("phase") != name:
                         raise ValueError("Incomplete or stale managed vcpkg evidence")
             except (subprocess.SubprocessError, ValueError, OSError) as error:
@@ -161,7 +189,7 @@ def main():
                             evidenceFile=evidence_file))
         print(("PASS " if passed else "FAIL ") + name, flush=True)
         (args.output / "results.json").write_text(json.dumps(reports, ensure_ascii=False, indent=2), encoding="utf-8")
-        if timed_out or (not passed and args.suite in ("packages", "vcpkg", "vcpkg-managed")):
+        if timed_out or (not passed and args.suite in ("packages", "vcpkg", "vcpkg-managed", "course", "graphics-course")):
             break
     return 0 if all(report["passed"] for report in reports) and len(reports) == len(cases) else 1
 

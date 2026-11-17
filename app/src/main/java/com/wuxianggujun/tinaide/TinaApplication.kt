@@ -106,6 +106,7 @@ class TinaApplication : Application() {
                         crashReport = crashReport,
                         source = crashSource,
                         crashLogFileName = crashLogFileName,
+                        processName = processName,
                     )
                 }
             } else {

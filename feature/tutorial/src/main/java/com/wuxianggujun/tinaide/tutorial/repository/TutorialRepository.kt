@@ -83,7 +83,7 @@ class TutorialRepository(
     /**
      * 获取所有内置教程
      */
-    private fun getBuiltInTutorials(): List<Tutorial> = listOf(
+    private fun getBuiltInTutorials(): List<Tutorial> = practiceTutorials() + listOf(
         // 新手引导（交互式）
         createOnboardingTutorial(),
         // 创建第一个项目（交互式）
@@ -94,6 +94,7 @@ class TutorialRepository(
         createEditorBasicsTutorial(),
         // 构建项目
         createBuildProjectTutorial(),
+        createVcpkgTutorial(),
         // Git 基础
         createGitBasicsTutorial(),
         // 插件开发快速开始
@@ -108,6 +109,25 @@ class TutorialRepository(
         createPluginLspTroubleshootingTutorial(),
         // 测试、自愈与发布前检查
         createPluginTestingRecoveryTutorial()
+    )
+
+    private fun practiceTutorials(): List<Tutorial> = listOf(
+        Tutorial("ide_workflow", Strings.course_ide_title, Strings.course_ide_desc,
+            TutorialCategory.GETTING_STARTED, TutorialType.ARTICLE, estimatedMinutes = 15, order = 3, contentUrl = "help/ide-workflow.md"),
+        Tutorial("cpp_basics", Strings.course_cpp_basics_title, Strings.course_cpp_basics_desc,
+            TutorialCategory.BUILD, TutorialType.ARTICLE, estimatedMinutes = 25, order = -5, contentUrl = "help/cpp-basics.md"),
+        Tutorial("cpp_functions", Strings.course_cpp_functions_title, Strings.course_cpp_functions_desc,
+            TutorialCategory.BUILD, TutorialType.ARTICLE, estimatedMinutes = 25, order = -4, contentUrl = "help/cpp-functions.md"),
+        Tutorial("cpp_collections", Strings.course_cpp_collections_title, Strings.course_cpp_collections_desc,
+            TutorialCategory.BUILD, TutorialType.ARTICLE, estimatedMinutes = 25, order = -3, contentUrl = "help/cpp-collections.md"),
+        Tutorial("cpp_raii", Strings.course_cpp_raii_title, Strings.course_cpp_raii_desc,
+            TutorialCategory.BUILD, TutorialType.ARTICLE, estimatedMinutes = 30, order = -2, contentUrl = "help/cpp-raii.md"),
+        Tutorial("cmake_practice", Strings.course_cmake_title, Strings.course_cmake_desc,
+            TutorialCategory.BUILD, TutorialType.ARTICLE, estimatedMinutes = 25, order = -1, contentUrl = "help/cmake-practice.md"),
+        Tutorial("graphics_sdl3", Strings.course_graphics_title, Strings.course_graphics_desc,
+            TutorialCategory.BUILD, TutorialType.ARTICLE, estimatedMinutes = 30, order = 6, contentUrl = "help/graphics-sdl3.md"),
+        Tutorial("ai_practice", Strings.course_ai_title, Strings.course_ai_desc,
+            TutorialCategory.ADVANCED, TutorialType.ARTICLE, estimatedMinutes = 20, order = -1, contentUrl = "help/ai-practice.md"),
     )
 
     /**
@@ -263,6 +283,17 @@ class TutorialRepository(
         estimatedMinutes = 20,
         order = 4,
         contentUrl = "help/build-project.md"
+    )
+
+    private fun createVcpkgTutorial(): Tutorial = Tutorial(
+        id = "vcpkg_guide",
+        titleRes = Strings.help_doc_vcpkg_guide_title,
+        descriptionRes = Strings.help_doc_vcpkg_guide_summary,
+        category = TutorialCategory.BUILD,
+        type = TutorialType.ARTICLE,
+        estimatedMinutes = 10,
+        order = 5,
+        contentUrl = "help/vcpkg-guide.md",
     )
 
     /**

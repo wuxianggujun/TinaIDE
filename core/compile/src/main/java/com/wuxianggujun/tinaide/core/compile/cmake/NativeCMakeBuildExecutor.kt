@@ -1098,28 +1098,37 @@ class NativeCMakeBuildExecutor(
 
         val vcpkg = try {
             val settings = VcpkgProjectSettings.from(combinedExtraCMakeArgs)
-            val managed = if (settings.mode == VcpkgProjectSettings.MANIFEST) {
-                if (!File(projectDir, "vcpkg.json").isFile) {
+            val managed = if (settings.enabled) {
+                if (settings.mode == VcpkgProjectSettings.MANIFEST && !File(projectDir, "vcpkg.json").isFile) {
                     throw com.wuxianggujun.tinaide.core.packages.VcpkgException(Strings.vcpkg_manifest_required)
                 }
                 options.onProgress?.invoke(Strings.vcpkg_preparing_tools.str())
-                VcpkgRuntimeManager(appContext).prepare(androidAbi)
+                var lastPercentage = -1
+                VcpkgRuntimeManager(appContext).prepare(androidAbi) { downloaded, total ->
+                    if (total > 0) {
+                        val percentage = (downloaded.toDouble() / total * 100).toInt().coerceIn(0, 100)
+                        if (percentage != lastPercentage) {
+                            lastPercentage = percentage
+                            options.onProgress?.invoke(Strings.vcpkg_preparing_download.str(percentage))
+                        }
+                    }
+                }
             } else null
-            if (managed != null) {
+            if (managed != null && settings.mode == VcpkgProjectSettings.MANIFEST) {
                 VcpkgGitBootstrap.prepare(managed, projectDir) { gitCommand ->
                     val gitResult = executeNativeCommand(gitCommand, managed.root, TimeUnit.MINUTES.toMillis(5),
                         toolchainId = options.toolchainId, extraEnvironment = managed.environment +
                             mapOf("TINA_PREFIX" to "/system", "GIT_TERMINAL_PROMPT" to "0"),
                         onOutputLine = options.onProgress, maxOutputChars = 64 * 1024, terminateProcessGroup = true)
-                    if (gitResult.exitCode != 0) throw com.wuxianggujun.tinaide.core.packages.VcpkgException(Strings.vcpkg_update_failed)
+                    if (gitResult.exitCode != 0) throw com.wuxianggujun.tinaide.core.packages.VcpkgException(
+                        Strings.vcpkg_git_failed, messageArguments = listOf(gitResult.exitCode))
                 }
             }
-            val arguments = if (managed != null) settings.copy(root = managed.root.absolutePath, installedDir = "")
-                .applyTo(combinedExtraCMakeArgs) else combinedExtraCMakeArgs
             VcpkgCMakeIntegration.prepare(
-                projectDir, buildDir, arguments, androidAbi, command,
+                projectDir, buildDir, combinedExtraCMakeArgs, androidAbi, command,
                 parallelJobs = options.parallelJobs,
                 managedInstallationRoot = if (managed != null) VcpkgManagedPaths.installed(appContext, projectDir, settings) else null,
+                runtimeRoot = managed?.root,
             )?.let { plan -> plan.copy(environment = plan.environment + managed?.environment.orEmpty()) }
         } catch (error: Exception) {
             if (error is CancellationException) throw error

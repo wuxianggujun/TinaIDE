@@ -1,5 +1,7 @@
 # vcpkg、包管理与编辑器设备验收（2026-11-09）
 
+> 历史验收记录：本文中的手工准备 CLI/工具说明仅适用于当时的测试夹具。当前内置管理流程见 [vcpkg 集成](../vcpkg.md) 与 [2026-11-10 自动管理验收](vcpkg-managed-2026-11-10.md)。
+
 本轮继续此前未完成的设备验收。设备为专用 Android 14 / API 34 x86_64 模拟器，720×1280、280 dpi、
 SwiftShader、禁用 Vulkan；使用 Debug APK。证据保存在
 [device-acceptance-2026-11-09](evidence/device-acceptance-2026-11-09)。

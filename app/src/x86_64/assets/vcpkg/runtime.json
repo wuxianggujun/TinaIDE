@@ -3,14 +3,14 @@
   "cliSha256": "048779680dc8c518068bb34bf1a485bf894d569d3ec4663ea0f3b9ae1980e32d",
   "cliVersion": "2026-10-29",
   "repository": "https://packages.termux.dev/apt/termux-main",
-  "indexSha256": "ae9c53040b1561e25361e2fd9f293bd8da0265f82fa6b1c200dcc1106421ed90",
+  "indexSha256": "f6a02786441c55e8b20e6b7abcac48cbd43cf84b0dfb625ff96bf54b36a03d33",
   "packages": [
     {
       "Package": "ca-certificates",
-      "Version": "1:2026.11.05",
-      "Filename": "pool/main/c/ca-certificates/ca-certificates_1:2026.11.05_all.deb",
-      "SHA256": "4cf292d604e14ed2878847eec2acea7c24ba10f598a5c5cd75dfc5e3750717da",
-      "Size": "110160"
+      "Version": "1:2026.11.05-1",
+      "Filename": "pool/main/c/ca-certificates/ca-certificates_1:2026.11.05-1_all.deb",
+      "SHA256": "12fc350fc5ad638338b06b04835bce897615f8c93f96d30ac396cdb39b850c6b",
+      "Size": "110148"
     },
     {
       "Package": "curl",
@@ -28,10 +28,10 @@
     },
     {
       "Package": "git",
-      "Version": "2.56.0",
-      "Filename": "pool/main/g/git/git_2.56.0_x86_64.deb",
-      "SHA256": "9af296495286bffe22f8abda910c29fd09e561ddc668c2d45c94785b91cbb129",
-      "Size": "4656948"
+      "Version": "2.56.1",
+      "Filename": "pool/main/g/git/git_2.56.1_x86_64.deb",
+      "SHA256": "c2b2e63b090c979ebedfb8610a06b87f052a9ce0477dd0a3a9d5bb9171c4550b",
+      "Size": "4655400"
     },
     {
       "Package": "glib",
@@ -229,5 +229,6 @@
       "SHA256": "a76ba6c3d8742819bf4fff7780eb2e022269412700fc8f4471f530cc0d81833f",
       "Size": "450320"
     }
-  ]
+  ],
+  "helpersArchiveSha256": "0ed8721d8843d730150cc1fca9a0e4356ca756b5164085387965e90c4a686add"
 }

@@ -12,6 +12,6 @@ object VcpkgManagedPaths {
         ProjectPaths.getProjectWorkspaceDir(context, ProjectMetadataStore.ensure(project).id)
 
     suspend fun installed(context: Context, project: File, settings: VcpkgProjectSettings): File =
-        settings.installationRoot(project, if (settings.mode == VcpkgProjectSettings.MANIFEST)
-            ProjectPaths.getProjectVcpkgInstalledDir(context, ProjectMetadataStore.ensure(project).id) else null)
+        if (settings.mode == VcpkgProjectSettings.SHARED) ProjectPaths.getSharedVcpkgInstalledDir(context)
+        else ProjectPaths.getProjectVcpkgInstalledDir(context, ProjectMetadataStore.ensure(project).id)
 }

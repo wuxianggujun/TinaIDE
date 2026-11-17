@@ -47,11 +47,20 @@ android {
     namespace = "com.wuxianggujun.tinaide"
     compileSdk = 37
 
+    // Opt-in real-device acceptance against the signed, minified Release APK.
+    testBuildType = providers.gradleProperty("tina.instrumentationBuildType").getOrElse("debug")
+    require(testBuildType in setOf("debug", "release")) {
+        "tina.instrumentationBuildType must be debug or release"
+    }
+
     defaultConfig {
         applicationId = "com.wuxianggujun.tinaide"
         minSdk = 28
         targetSdk = 36
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        if (testBuildType == "release") {
+            testApplicationId = "com.wuxianggujun.tinaide.release.test"
+        }
 
         // AegisHub 是日志/崩溃/反馈的唯一上报后端；留空时上报整体跳过，不回退任何旧接口。
         fun quotedConfigValue(value: String): String =

@@ -2,6 +2,7 @@ package com.wuxianggujun.tinaide.ui.compose.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.*
@@ -11,10 +12,12 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -23,6 +26,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.wuxianggujun.tinaide.core.i18n.Strings
 
@@ -261,6 +265,90 @@ fun TinaSearchField(
             }
         } else {
             trailingIcon
+        },
+    )
+}
+
+/**
+ * 顶栏内联搜索条
+ *
+ * 与 [TinaSearchField] 的区别：更矮（40dp）、无描边、全圆角胶囊、填充底色，专供 TopAppBar
+ * 标题槽使用，避免在顶栏里出现「框中框」。
+ *
+ * @param value 输入值
+ * @param onValueChange 值变化回调
+ * @param modifier 修饰符
+ * @param placeholder 占位符文本
+ * @param onClearClick 清除按钮点击回调（当有值时自动显示清除按钮）
+ * @param enabled 是否启用
+ */
+@Composable
+fun TinaInlineSearchField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    placeholder: String = stringResource(Strings.tina_search_placeholder),
+    onClearClick: (() -> Unit)? = null,
+    enabled: Boolean = true,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val focused by interaction.collectIsFocusedAsState()
+    val colors = MaterialTheme.colorScheme
+    val textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.onSurface)
+    BasicTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 40.dp)
+            .clip(RoundedCornerShape(percent = 50))
+            .background(if (focused) colors.surfaceContainerHighest else colors.surfaceContainerLow),
+        enabled = enabled,
+        singleLine = true,
+        interactionSource = interaction,
+        cursorBrush = SolidColor(colors.primary),
+        textStyle = textStyle,
+        decorationBox = { innerTextField ->
+            Row(
+                modifier = Modifier.fillMaxWidth().heightIn(min = 40.dp).padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Search,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = colors.onSurfaceVariant,
+                )
+                Box(modifier = Modifier.weight(1f)) {
+                    if (value.isEmpty()) {
+                        Text(
+                            text = placeholder,
+                            style = textStyle,
+                            color = colors.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    innerTextField()
+                }
+                if (value.isNotEmpty() && onClearClick != null) {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(RoundedCornerShape(percent = 50))
+                            .clickable(onClick = onClearClick),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Clear,
+                            contentDescription = stringResource(Strings.content_desc_clear_input),
+                            modifier = Modifier.size(18.dp),
+                            tint = colors.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
         },
     )
 }

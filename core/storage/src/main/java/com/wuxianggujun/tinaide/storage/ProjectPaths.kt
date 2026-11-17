@@ -149,6 +149,14 @@ object ProjectPaths {
     fun getProjectVcpkgInstalledDir(context: Context, projectId: String): File =
         File(getProjectWorkspaceDir(context, projectId), "vcpkg_installed")
 
+    /**
+     * 设备级共享 vcpkg 依赖库目录（典型路径：<filesDir>/vcpkg/shared-installed）。
+     *
+     * 项目可导出到这里供其他项目复用；每个 Android ABI 仍按 triplet 分子目录。
+     */
+    fun getSharedVcpkgInstalledDir(context: Context): File =
+        File(getVcpkgRoot(context), "shared-installed")
+
     // ============ 4. 项目构建目录 ============
 
     /**

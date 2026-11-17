@@ -11,6 +11,7 @@ import java.nio.file.StandardCopyOption
 import java.nio.file.AtomicMoveNotSupportedException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
@@ -21,59 +22,30 @@ import org.json.JSONObject
 import timber.log.Timber
 
 data class VcpkgPort(val name: String, val version: String, val description: String, val supports: String)
-data class VcpkgPortIndex(val ports: List<VcpkgPort>, val skippedPorts: Int)
 data class VcpkgProjectCatalog(
     val settings: VcpkgProjectSettings,
     val ports: List<VcpkgPort>,
     val declared: Set<String>,
     val installed: Map<String, String>,
-    val cliPresent: Boolean,
-    val skippedPorts: Int = 0,
 )
 
 class VcpkgRepository(private val context: Context? = null) {
     suspend fun read(project: File, androidAbi: String, availablePorts: List<VcpkgPort>? = null): VcpkgProjectCatalog = withContext(Dispatchers.IO) {
         val settings = VcpkgProjectSettings.from(ProjectMetadataStore.read(project)?.normalizedNativeCMakeArgs().orEmpty())
-        val root = resolve(project, settings.root)
-        val index = if (availablePorts != null) VcpkgPortIndex(availablePorts, 0)
-            else if (settings.root.isBlank()) VcpkgPortIndex(emptyList(), 0) else readPorts(root)
+        val ports = availablePorts ?: context?.let { VcpkgCatalogStore(it).readLocal().ports }.orEmpty()
         val manifest = File(project, "vcpkg.json")
         val declared = if (manifest.exists()) dependencyNames(readJson(manifest)) else emptySet()
-        val installedRoot = context?.let { VcpkgManagedPaths.installed(it, project, settings) } ?: settings.installationRoot(project)
+        val installedRoot = context?.let { VcpkgManagedPaths.installed(it, project, settings) }
         val installed = linkedMapOf<String, String>()
-        val status = File(installedRoot, "vcpkg/status")
-        if (settings.enabled && status.isFile) {
+        val status = installedRoot?.let { File(it, "vcpkg/status") }
+        if (settings.enabled && status?.isFile == true) {
             readInstalledStatus(status, settings.targetTriplet(androidAbi), installed)
         }
-        val catalog = index.ports.associateByTo(linkedMapOf()) { it.name }
+        val catalog = ports.associateByTo(linkedMapOf()) { it.name }
         (declared + installed.keys).filter { PORT_NAME.matches(it) }.forEach { name ->
             catalog.putIfAbsent(name, VcpkgPort(name, installed[name].orEmpty(), "", ""))
         }
-        VcpkgProjectCatalog(settings, catalog.values.sortedBy { it.name }, declared, installed,
-            settings.root.isNotBlank() && File(root, "vcpkg").isFile, index.skippedPorts)
-    }
-
-    suspend fun readPorts(root: File): VcpkgPortIndex = withContext(Dispatchers.IO) {
-        var skippedPorts = 0
-        val ports = File(root, "ports").listFiles().orEmpty()
-            .filter { it.isDirectory && PORT_NAME.matches(it.name) }
-            .mapNotNull { directory ->
-                val manifest = File(directory, "vcpkg.json")
-                if (!manifest.isFile) return@mapNotNull null
-                currentCoroutineContext().ensureActive()
-                val json = try {
-                    readJson(manifest)
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (error: Exception) {
-                    skippedPorts++
-                    // JSON exceptions can contain arbitrary package text. Log only the error type.
-                    Timber.tag("VcpkgRepository").w("Ignoring unreadable vcpkg port %s: %s", directory.name, error.javaClass.simpleName)
-                    return@mapNotNull null
-                }
-                portFromJson(directory.name, json)
-            }.sortedBy { it.name }
-        VcpkgPortIndex(ports, skippedPorts)
+        VcpkgProjectCatalog(settings, catalog.values.sortedBy { it.name }, declared, installed)
     }
 
     suspend fun setDependency(project: File, portName: String, enabled: Boolean) = withContext(Dispatchers.IO) {
@@ -83,15 +55,66 @@ class VcpkgRepository(private val context: Context? = null) {
         manifestMutex.withLock { editDependency(project, portName, enabled) }
     }
 
+    suspend fun setMarketDependency(project: File, portName: String, enabled: Boolean, catalog: VcpkgAndroidCatalog) = withContext(Dispatchers.IO) {
+        manifestMutex.withLock {
+            if (!enabled) {
+                // Removing a stale dependency must not re-enable a disabled project.
+                editDependency(project, portName, false)
+                return@withLock
+            }
+            if (catalog.support(portName) != VcpkgPlatformSupport.SUPPORTED) {
+                throw VcpkgException(Strings.vcpkg_package_not_supported)
+            }
+            if (!File(project, "CMakeLists.txt").isFile) throw VcpkgException(Strings.vcpkg_cmake_required)
+            val manifest = File(project, "vcpkg.json")
+            requireManifestLocation(project, manifest)
+            if (manifest.exists()) dependencyNames(readJson(manifest))
+            val previous = ProjectMetadataStore.ensure(project)
+            val arguments = previous.normalizedNativeCMakeArgs()
+            if (VcpkgProjectSettings.from(arguments).mode == VcpkgProjectSettings.SHARED) {
+                throw VcpkgException(Strings.vcpkg_manifest_mode_required)
+            }
+            val managed = previous.copy(nativeCMakeArgs = VcpkgProjectSettings(VcpkgProjectSettings.MANIFEST).applyTo(arguments))
+            try {
+                if (managed != previous && !ProjectMetadataStore.write(project, managed)) {
+                    throw VcpkgException(Strings.vcpkg_write_failed)
+                }
+                editDependency(project, portName, true)
+            } catch (error: Exception) {
+                withContext(NonCancellable) {
+                    // Only undo our own metadata write; preserve concurrent edits made by another screen.
+                    if (managed != previous && ProjectMetadataStore.read(project) == managed &&
+                        !ProjectMetadataStore.write(project, previous)) {
+                        Timber.tag("VcpkgRepository").e("Failed to restore project settings after manifest edit failed")
+                        error.addSuppressed(VcpkgException(Strings.vcpkg_write_failed))
+                    }
+                }
+                throw error
+            }
+        }
+    }
+
     suspend fun enableManagedManifest(project: File) = withContext(Dispatchers.IO) {
         manifestMutex.withLock {
             if (!File(project, "CMakeLists.txt").isFile) throw VcpkgException(Strings.vcpkg_cmake_required)
             val metadata = ProjectMetadataStore.ensure(project)
             val arguments = metadata.normalizedNativeCMakeArgs()
-            val settings = VcpkgProjectSettings.from(arguments)
-            if (settings.mode == VcpkgProjectSettings.PREBUILT) throw VcpkgException(Strings.vcpkg_manifest_mode_required)
             if (!ProjectMetadataStore.write(project, metadata.copy(nativeCMakeArgs =
                     VcpkgProjectSettings(VcpkgProjectSettings.MANIFEST).applyTo(arguments)))) {
+                throw VcpkgException(Strings.vcpkg_write_failed)
+            }
+        }
+    }
+
+    /**
+     * 项目仅保存共享模式；共享库和工具位置统一由应用管理。
+     */
+    suspend fun enableSharedLibrary(project: File) = withContext(Dispatchers.IO) {
+        manifestMutex.withLock {
+            val metadata = ProjectMetadataStore.ensure(project)
+            val arguments = metadata.normalizedNativeCMakeArgs()
+            val shared = VcpkgProjectSettings(VcpkgProjectSettings.SHARED)
+            if (!ProjectMetadataStore.write(project, metadata.copy(nativeCMakeArgs = shared.applyTo(arguments)))) {
                 throw VcpkgException(Strings.vcpkg_write_failed)
             }
         }
@@ -211,7 +234,6 @@ class VcpkgRepository(private val context: Context? = null) {
         }
     }
 
-    private fun resolve(project: File, value: String): File = File(value).let { if (it.isAbsolute) it else File(project, value) }
 
     internal companion object {
         fun portFromJson(name: String, json: JSONObject): VcpkgPort {

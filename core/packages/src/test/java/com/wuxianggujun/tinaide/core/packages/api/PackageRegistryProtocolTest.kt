@@ -420,6 +420,36 @@ class PackageRegistryProtocolTest {
         }
     }
 
+    @Test
+    fun cancelRegistryLoadClosesTheCallWithoutTryingAnotherMirror() = runBlocking {
+        val entered = CompletableDeferred<Unit>()
+        val cancelled = CountDownLatch(1)
+        val requests = java.util.concurrent.atomic.AtomicInteger()
+        val client = OkHttpClient.Builder()
+            .eventListener(object : okhttp3.EventListener() {
+                override fun canceled(call: okhttp3.Call) { cancelled.countDown() }
+            })
+            .addInterceptor {
+                requests.incrementAndGet()
+                entered.complete(Unit)
+                check(cancelled.await(3, TimeUnit.SECONDS)) { "Network call was not cancelled" }
+                throw java.io.IOException("cancelled")
+            }.build()
+        val api = packageApi(listOf(registryUrl("https://first.test", "index.json"),
+            registryUrl("https://second.test", "index.json")), client)
+        val loading = async(Dispatchers.IO) { api.getCatalog() }
+        try {
+            withTimeout(3_000) { entered.await() }
+            loading.cancel()
+            withTimeout(3_000) { loading.join() }
+            assertThat(cancelled.count).isEqualTo(0)
+            assertThat(requests.get()).isEqualTo(1)
+        } finally {
+            cancelled.countDown()
+            loading.cancel()
+        }
+    }
+
     private fun raylibIndex() = """
         {"schema_version":2,"packages":[
           {"id":"raylib","name":"raylib","detail_url":"packages/raylib/package.json"}
