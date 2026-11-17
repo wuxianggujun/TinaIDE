@@ -5,6 +5,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutor
 import com.wuxianggujun.tinaide.core.ndk.AndroidElfExecutor
 import com.wuxianggujun.tinaide.ui.regressionEvidenceDirectory
+import com.wuxianggujun.tinaide.ui.emitRegressionReport
 import java.io.File
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -79,6 +80,7 @@ class NativeCourseDeviceTest {
             val evidence = regressionEvidenceDirectory(context)
             File(evidence, "course-$language-$lesson.json").writeText(report.toString(2), Charsets.UTF_8)
             File(evidence, "course-$language-$lesson.log").writeText(output.toString(), Charsets.UTF_8)
+            emitRegressionReport(report)
         }
     }
 }

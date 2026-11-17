@@ -32,6 +32,19 @@ def instrumentation_passed(output: str, returncode: int, timed_out: bool) -> boo
             not re.search(r"FAILURES!!!|INSTRUMENTATION_FAILED|INSTRUMENTATION_ABORTED|TestTimedOutException", output))
 
 
+def instrumentation_report(output: str) -> dict | None:
+    """Read this invocation's explicit report without accessing private Release files."""
+    matches = re.findall(r"(?m)^INSTRUMENTATION_STATUS: tina_regression_report=(.+)\r?$", output)
+    if not matches:
+        return None
+    if len(matches) != 1:
+        raise ValueError("Expected exactly one instrumentation evidence report")
+    report = json.loads(matches[0])
+    if not isinstance(report, dict):
+        raise ValueError("Expected an instrumentation report object")
+    return report
+
+
 def validate_performance_evidence(report: dict, run_id: str, extras: dict) -> None:
     if not isinstance(report, dict):
         raise ValueError("Expected a performance report object")
@@ -155,8 +168,12 @@ def main():
                                     if args.root_evidence else
                                     [args.adb, "-s", args.serial, "exec-out", "run-as", target,
                                      "cat", "files/test-regression-evidence/" + filename])
-                evidence = subprocess.check_output(evidence_command, stderr=subprocess.PIPE, timeout=10)
-                report = json.loads(evidence)
+                report = instrumentation_report(output)
+                if report is None:
+                    evidence = subprocess.check_output(evidence_command, stderr=subprocess.PIPE, timeout=10)
+                    report = json.loads(evidence)
+                else:
+                    evidence = json.dumps(report, ensure_ascii=False, indent=2).encode("utf-8")
                 if not isinstance(report, dict):
                     raise ValueError("Expected a performance report object")
                 # Preserve current partial evidence for debugging, never a prior run's file.

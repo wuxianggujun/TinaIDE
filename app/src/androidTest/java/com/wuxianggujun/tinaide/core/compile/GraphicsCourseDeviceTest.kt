@@ -13,6 +13,7 @@ import com.wuxianggujun.tinaide.settings.SettingsActivity
 import com.wuxianggujun.tinaide.ui.ContextCompileNativeActivityLauncher
 import com.wuxianggujun.tinaide.ui.ContextCompileSdlLauncher
 import com.wuxianggujun.tinaide.ui.regressionEvidenceDirectory
+import com.wuxianggujun.tinaide.ui.emitRegressionReport
 import com.wuxianggujun.tinaide.ui.runtime.GraphicalRuntimeLaunchRequest
 import com.wuxianggujun.tinaide.ui.runtime.GraphicalRuntimeLaunchSignal
 import java.io.File
@@ -142,6 +143,7 @@ class GraphicsCourseDeviceTest {
         } finally {
             File(evidence, "$name.json").writeText(report.toString(2), Charsets.UTF_8)
             File(evidence, "$name.log").writeText(output.toString(), Charsets.UTF_8)
+            emitRegressionReport(report)
         }
     }
 }

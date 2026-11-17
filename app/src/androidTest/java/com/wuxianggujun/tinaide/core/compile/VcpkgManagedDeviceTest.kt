@@ -12,6 +12,7 @@ import com.wuxianggujun.tinaide.core.packages.VcpkgManagedPaths
 import com.wuxianggujun.tinaide.project.ProjectMetadataStore
 import com.wuxianggujun.tinaide.project.VcpkgProjectSettings
 import com.wuxianggujun.tinaide.ui.regressionEvidenceDirectory
+import com.wuxianggujun.tinaide.ui.emitRegressionReport
 import java.io.File
 import java.security.MessageDigest
 import kotlinx.coroutines.CancellationException
@@ -169,6 +170,7 @@ class VcpkgManagedDeviceTest {
             val evidence = regressionEvidenceDirectory(context)
             File(evidence, "vcpkg-managed-$phase.json").writeText(report.toString(2), Charsets.UTF_8)
             File(evidence, "vcpkg-managed-$phase.log").writeText(output.toString(), Charsets.UTF_8)
+            emitRegressionReport(report)
         }
     }
 
