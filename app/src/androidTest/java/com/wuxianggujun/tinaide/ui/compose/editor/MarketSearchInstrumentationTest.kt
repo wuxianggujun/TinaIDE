@@ -84,7 +84,8 @@ class MarketSearchInstrumentationTest {
             val layouts = mutableListOf<TextLayoutResult>()
             composeRule.onNodeWithText(context.getString(label), useUnmergedTree = true)
                 .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
-            assertTrue("Market tab labels must fit on one line", layouts.size == 1 &&
+            assertTrue("Market tab ${context.getString(label)} must fit: " +
+                layouts.joinToString { "lines=${it.lineCount}, overflow=${it.hasVisualOverflow}, size=${it.size}" }, layouts.size == 1 &&
                 layouts.single().lineCount == 1 && !layouts.single().hasVisualOverflow)
         }
         // Exercise the real top-level routes, including the scrollable short-window rail.

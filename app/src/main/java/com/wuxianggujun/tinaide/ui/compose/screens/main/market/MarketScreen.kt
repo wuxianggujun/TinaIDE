@@ -260,7 +260,8 @@ fun MarketScreen(
                 ) {
                     destinations.forEachIndexed { index, (label, imageVector) ->
                         val text: @Composable () -> Unit = {
-                            Text(stringResource(label), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(stringResource(label), style = MaterialTheme.typography.labelLarge,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                         val icon: @Composable () -> Unit = { Icon(imageVector, contentDescription = null) }
                         if (leadingIcons) {
