@@ -16,6 +16,9 @@ DRIVER = APP + '.qa.lifecycle/com.wuxianggujun.tinaide.testing.ReleaseLifecycleI
 NAVIGATION = (('Projects', '项目'), ('Market', '市场'), ('Learn', '学习'), ('Profile', '我的'))
 TABS = (('Plugins', '插件'), ('Packages', '软件包'), ('vcpkg',))
 CASE_TIMEOUT_SECONDS = 60
+MIN_LANDSCAPE_RESULTS_DP = 120
+LESSON_ONE = ('Lab 1: From project to execution', '实践 1：从项目到运行')
+LESSON_TWO = ('Lab 2: C++ values and control flow', '实践 2：C++ 变量与控制流')
 
 
 def bounds(node):
@@ -217,23 +220,46 @@ def check_feedback(device, report):
     report.update(feedbackDialogRetained=True, messageAndContactRetained=True, feedbackSubmitted=False)
 
 
+def has_test_id(node, tag):
+    return node.get('package') == APP and node.get('resource-id', '').split(':id/')[-1] == tag
+
+
+def reader_is_open(device, root, parents, lesson_id):
+    selected = device.nav_node(root, NAVIGATION[2])
+    return (selected is not None and device.selected(selected, parents)
+            and device.find(root, ('Done', '完成')) is not None
+            and any(has_test_id(node, 'tutorial-reader-' + lesson_id) for node in root.iter('node')))
+
+
+def results_viewport(port, parents, width, height, density):
+    node = port
+    while node is not None and not has_test_id(node, 'vcpkg-results-viewport'):
+        node = parents.get(node)
+    if node is None:
+        raise AssertionError('Could not identify the viewport containing the fmt result')
+    left, top, right, bottom = rect = bounds(node)
+    if density <= 0 or not (0 <= left < right <= width and 0 <= top < bottom <= height):
+        raise AssertionError('Invalid on-screen results viewport')
+    if width > height and (bottom - top) / density < MIN_LANDSCAPE_RESULTS_DP:
+        raise AssertionError('Landscape results viewport is under 120 dp')
+    return rect
+
+
 def check_tutorial(device, report):
     open_portal(device)
     device.navigate(NAVIGATION[2])
     device.step = 'open-local-course'
-    device.open_course_card(device.scroll_to_text(('Lab 1: From project to execution',)))
-    device.wait_for(lambda root, _: device.find(root, ('Done', '完成')))
+    device.open_course_card(device.scroll_to_text(LESSON_ONE))
+    device.wait_for(lambda root, parents: reader_is_open(device, root, parents, 'ide_workflow'))
     device.step = 'open-next-local-lesson'
-    device.tap(device.scroll_to_text(('Lab 2: C++ values and control flow',)))
-    device.wait_for(lambda root, parents: device.find(root, ('Done', '完成')) is not None
-                    and (node := device.nav_node(root, NAVIGATION[2])) is not None
-                    and device.selected(node, parents))
+    device.tap(device.scroll_to_text(LESSON_TWO))
+    device.wait_for(lambda root, parents: reader_is_open(device, root, parents, 'cpp_basics'))
     device.recreate()
     wait_for_recreation(device)
-    device.wait_for(lambda root, _: device.find(root, ('Done', '完成')))
+    device.wait_for(lambda root, parents: reader_is_open(device, root, parents, 'cpp_basics'))
     device.screenshot('tutorial.png')
     report.update(localCourseOpenedWithoutNetworking=True, nextLessonStaysInTutorials=True,
-                  courseRetainedAfterActivityRecreation=True)
+                  courseRetainedAfterActivityRecreation=True, restoredLessonId='cpp_basics')
 
 
 def open_portal(device):
@@ -293,21 +319,11 @@ def check_market(device, report):
         and (node := device.find(root, TABS[2])) is not None and device.selected(node, parents))
     device.dismiss_keyboard()
     device.step = 'find-fmt-result'
-    device.step = 'find-fmt-result'
     data, root, parents, port = device.wait_for(lambda root, _:
         next((node for node in root.iter('node') if node.get('package') == APP
               and node.get('class') != 'android.widget.EditText'
               and re.match(r'^fmt(?:\s|$)', node.get('text', ''))), None))
-    list_bounds = None
-    parent = parents.get(port)
-    while parent is not None:
-        if parent.get('scrollable') == 'true':
-            list_bounds = bounds(parent)
-            break
-        parent = parents.get(parent)
-    if list_bounds is not None and device.width > device.height:
-        if (list_bounds[3] - list_bounds[1]) / device.density < 120:
-            raise AssertionError('Landscape results viewport is under 120 dp')
+    list_bounds = results_viewport(port, parents, device.width, device.height, device.density)
     report.update(navigationDestinations=1, labelBounds=label_bounds,
                   tabLabelGeometryFitsOneLine=True, searchRetainedAcrossThreeTabs=True,
                   searchRetainedAfterActivityRecreation=True, resultsViewportBounds=list_bounds)

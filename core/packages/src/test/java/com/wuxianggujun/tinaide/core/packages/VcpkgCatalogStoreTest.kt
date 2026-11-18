@@ -66,6 +66,29 @@ class VcpkgCatalogStoreTest {
         assertThat(store.readLocal().revision).isEqualTo(newRevision)
     }
 
+    @Test fun retentionProtectsLiveBuildsAndPreservesOnlyCurrentAndRollbackRevisions() = runTest {
+        val root = temporary.newFolder()
+        val store = VcpkgCatalogStore(root, { ByteArrayInputStream(seed) }, Source(newRevision))
+        store.update()
+        val current = store.ensureSources()
+        fun addCached(id: String, timestamp: Long): File {
+            val archive = File(root, "archives/$id.tar.gz").apply { writeText("cached"); setLastModified(timestamp) }
+            return File(root, "sources/$id").apply { mkdirs(); setLastModified(archive.lastModified()) }
+        }
+        val oldest = addCached("c".repeat(40), 1_600_000_000_000L)
+        val rollback = addCached("d".repeat(40), 1_700_000_000_000L)
+        val unrelated = File(root, "sources/user-data").apply { mkdirs() }
+        VcpkgBuildUse.during(true) {
+            store.update()
+            assertThat(oldest.isDirectory).isTrue()
+        }
+        assertThat(oldest.exists()).isFalse()
+        assertThat(File(root, "archives/${oldest.name}.tar.gz").exists()).isFalse()
+        assertThat(current.isDirectory).isTrue()
+        assertThat(rollback.isDirectory).isTrue()
+        assertThat(unrelated.isDirectory).isTrue()
+    }
+
     @Test fun failedOrCancelledUpdatePreservesPreviousCatalogAndRemovesStaging() = runTest {
         val root = temporary.newFolder()
         val source = Source(newRevision)
@@ -79,6 +102,19 @@ class VcpkgCatalogStoreTest {
             assertThat(File(root, "catalog.json").readBytes()).isEqualTo(before)
             assertThat(root.listFiles()!!.none { it.name.startsWith(".catalog-") }).isTrue()
         }
+    }
+
+    @Test fun sourcePreparationAlsoCollectsOldCachesWithoutRequiringACatalogUpdate() = runTest {
+        val root = temporary.newFolder()
+        val store = VcpkgCatalogStore(root, { ByteArrayInputStream(seed) }, Source(newRevision))
+        store.update()
+        store.ensureSources()
+        val oldest = File(root, "sources/${"c".repeat(40)}").apply { mkdirs(); setLastModified(1L) }
+        val rollback = File(root, "sources/${"d".repeat(40)}").apply { mkdirs(); setLastModified(2L) }
+        store.ensureSources()
+        assertThat(oldest.exists()).isFalse()
+        assertThat(rollback.isDirectory).isTrue()
+        assertThat(File(root, "sources/$newRevision").isDirectory).isTrue()
     }
 
     @Test fun invalidArchiveCannotPublishOrEscapeManagedDirectory() = runTest {

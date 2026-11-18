@@ -51,6 +51,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -111,7 +114,7 @@ internal suspend fun loadTutorialArticle(
 /**
  * 教程屏幕
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 fun TutorialScreen(
     modifier: Modifier = Modifier,
@@ -139,6 +142,8 @@ fun TutorialScreen(
             if (showContent) {
                 TinaTopBar(
                     title = stringResource(selectedTutorial!!.titleRes),
+                    modifier = Modifier.semantics { testTagsAsResourceId = true }
+                        .testTag("tutorial-reader-${selectedTutorial.id}"),
                     onNavigateBack = closeTutorialContent
                 )
             } else {

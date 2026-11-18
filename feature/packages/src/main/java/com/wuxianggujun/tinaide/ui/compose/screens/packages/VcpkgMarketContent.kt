@@ -42,6 +42,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -384,6 +386,7 @@ private fun VcpkgProjectChooser(projectName: String?, enabled: Boolean, onChoose
     )
 }
 
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 private fun VcpkgMarketBody(
     state: VcpkgMarketState,
@@ -399,7 +402,7 @@ private fun VcpkgMarketBody(
     onCopy: (VcpkgPort) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Box(modifier = modifier.fillMaxWidth().testTag("vcpkg-market-list")) {
+    Box(modifier = modifier.fillMaxWidth().semantics { testTagsAsResourceId = true }.testTag("vcpkg-market-list")) {
         when {
             state.androidCatalog != null -> TinaPullToRefreshBox(
                 isRefreshing = state.loading,
@@ -407,7 +410,7 @@ private fun VcpkgMarketBody(
                 modifier = Modifier.fillMaxSize(),
             ) {
                 LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize().testTag("vcpkg-results-viewport"),
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {

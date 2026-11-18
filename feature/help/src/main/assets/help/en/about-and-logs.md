@@ -20,6 +20,15 @@ You can view, export, or upload diagnostic logs. Anonymous uploads may include d
 
 Review a log before sharing it. Project paths, command output, package names, and other environment details may still be sensitive.
 
+## Feedback and attachments
+
+**Settings → About → Feedback** sends only your message, optional contact details, app version, and anonymous installation reference by default.
+Device details and logs are sent only after enabling **Attach logs and device information**. Redacted logs may still contain project paths, build commands, and PRoot output.
+Selecting your own archive does not generate additional runtime logs or add a device field.
+
+The selected attachment survives rotation and Activity recreation. If the system removes its cached copy, submission asks you to select it again; it never substitutes other logs.
+Removing the attachment, cancelling feedback, or successfully submitting deletes the local copy. Failed submissions retain it for retry. Later operations reclaim unused imported files older than seven days.
+
 ## Developer Options
 
 Repeatedly tapping the version information unlocks Developer Options when the feature is available. These options include diagnostic logging, server-address debugging, test tools, and bundled-package reinstallation. Private identity and commercial features are not included in the open-source app.

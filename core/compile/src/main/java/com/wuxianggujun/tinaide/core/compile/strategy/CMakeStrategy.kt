@@ -402,7 +402,7 @@ class CMakeStrategy(
 
     // ---------- needsReconfigure ----------
 
-    private fun needsReconfigure(projectRoot: File, buildDir: File, options: BuildOptions): Boolean {
+    private suspend fun needsReconfigure(projectRoot: File, buildDir: File, options: BuildOptions): Boolean {
         val cacheFile = File(buildDir, "CMakeCache.txt")
         if (!cacheFile.exists()) return true
         if (listOf("vcpkg.json", "vcpkg-configuration.json").any {
@@ -417,6 +417,16 @@ class CMakeStrategy(
 
         try {
             val cacheContent = cacheFile.readText()
+            val vcpkg = com.wuxianggujun.tinaide.project.VcpkgProjectSettings.from(options.nativeCMakeArgs)
+            if (vcpkg.enabled && isNativeMode(options.resolvedRunMode)) {
+                val toolchain = readCMakeCacheValue(cacheContent, "CMAKE_TOOLCHAIN_FILE") ?: return true
+                if (!File(toolchain).isFile) return true
+                if (vcpkg.mode == com.wuxianggujun.tinaide.project.VcpkgProjectSettings.SHARED) {
+                    val abi = PackageAbiCompatibility.currentAppAbi(context.applicationInfo.nativeLibraryDir, Build.SUPPORTED_ABIS)
+                    val installed = com.wuxianggujun.tinaide.core.packages.VcpkgManagedPaths.installed(context, projectRoot, vcpkg, abi)
+                    if (readCMakeCacheValue(cacheContent, "VCPKG_INSTALLED_DIR") != installed.canonicalPath) return true
+                }
+            }
             val (expectedCCompiler, expectedCxxCompiler) = resolveExpectedCompilerConfig(options)
 
             val cCompilerRegex = Regex("""(?m)^CMAKE_C_COMPILER:FILEPATH=(.+)$""")
@@ -459,6 +469,8 @@ class CMakeStrategy(
                         return true
                     }
                 }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             Timber.tag(TAG).w("Failed to read CMakeCache.txt: %s", e.message)
             return true
@@ -633,13 +645,14 @@ class CMakeStrategy(
         if (!isNativeMode(ctx.options.resolvedRunMode)) return projectInputs
         val vcpkgSettings = com.wuxianggujun.tinaide.project.VcpkgProjectSettings.from(ctx.options.nativeCMakeArgs)
         if (!vcpkgSettings.enabled) return projectInputs
+        val abi = PackageAbiCompatibility.currentAppAbi(context.applicationInfo.nativeLibraryDir, Build.SUPPORTED_ABIS)
         return projectInputs + VcpkgBuildInputs.collect(
             project = ctx.projectRoot,
             arguments = ctx.options.nativeCMakeArgs,
-            androidAbi = PackageAbiCompatibility.currentAppAbi(context.applicationInfo.nativeLibraryDir, Build.SUPPORTED_ABIS),
+            androidAbi = abi,
             debug = ctx.options.cmakeBuildType == CMakeBuildTypeOption.DEBUG,
             managedInstallationRoot = com.wuxianggujun.tinaide.core.packages.VcpkgManagedPaths.installed(
-                context, ctx.projectRoot, vcpkgSettings),
+                context, ctx.projectRoot, vcpkgSettings, abi),
         )
     }
 

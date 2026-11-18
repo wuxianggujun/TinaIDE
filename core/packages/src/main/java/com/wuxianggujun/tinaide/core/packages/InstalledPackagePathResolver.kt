@@ -163,7 +163,7 @@ object InstalledPackagePathResolver {
         if (projectRoot != null) {
             val config = VcpkgProjectSettings.from(ProjectMetadataStore.read(projectRoot)?.normalizedNativeCMakeArgs().orEmpty())
             if (config.enabled) {
-                val installed = VcpkgManagedPaths.installed(context, projectRoot, config)
+                val installed = VcpkgManagedPaths.installed(context, projectRoot, config, deviceAbi)
                 val prefix = File(installed, config.targetTriplet(deviceAbi))
                 val runtimeSubdirs = if (isDebugCMakeArtifact(runtimeArtifactDir, projectRoot)) {
                     listOf("debug/lib", "debug/bin", "lib", "bin")

@@ -21,9 +21,10 @@ object AegisFeedback {
         val message: String,
         val contact: String?,
         val appVersion: String,
-        val device: String,
+        val device: String?,
         val source: String = "android-settings",
         val attachment: File? = null,
+        val attachmentDisplayName: String? = null,
     )
 
     data class Result(
@@ -45,7 +46,7 @@ object AegisFeedback {
             draft.appVersion.trim().takeIf { it.isNotEmpty() }?.let {
                 put("app_version", JsonPrimitive(truncateUtf8Bytes(it, 64)))
             }
-            draft.device.trim().takeIf { it.isNotEmpty() }?.let {
+            draft.device?.trim()?.takeIf { it.isNotEmpty() }?.let {
                 put("device", JsonPrimitive(truncateUtf8Bytes(it, 128)))
             }
             draft.source.trim().takeIf { it.isNotEmpty() }?.let {
@@ -77,7 +78,9 @@ object AegisFeedback {
         val attachment = draft.attachment
             ?: return ApiResult.Success(Result(receipt.id))
 
-        return when (val uploaded = AegisHubClient.uploadAttachment(receipt.id, attachment)) {
+        return when (val uploaded = AegisHubClient.uploadAttachment(
+            receipt.id, attachment, displayName = draft.attachmentDisplayName ?: attachment.name,
+        )) {
             is ApiResult.Success -> ApiResult.Success(Result(receipt.id))
             is ApiResult.Error -> ApiResult.Success(Result(receipt.id, uploaded.message))
             is ApiResult.NetworkError -> ApiResult.Success(Result(receipt.id, uploaded.message))

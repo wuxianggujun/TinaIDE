@@ -3,6 +3,7 @@ from pathlib import Path
 import unittest
 import xml.etree.ElementTree as ET
 import struct
+from types import SimpleNamespace
 
 SPEC = importlib.util.spec_from_file_location('release_ui', Path(__file__).parents[1] / 'run_release_ui_blackbox.py')
 MODULE = importlib.util.module_from_spec(SPEC)
@@ -44,6 +45,42 @@ class ReleaseUiBlackboxTest(unittest.TestCase):
     def test_non_png_is_rejected(self):
         with self.assertRaises(ValueError):
             MODULE.validate_screenshot(b'not png', 720, 1280)
+
+    def test_viewport_must_contain_result_and_meet_height_threshold(self):
+        result = ET.Element('node', {'package': MODULE.APP, 'text': 'fmt'})
+        container = ET.Element('node', {'package': MODULE.APP, 'resource-id': 'vcpkg-results-viewport',
+                                        'bounds': '[160,392][1280,632]'})
+        self.assertEqual((160, 392, 1280, 632), MODULE.results_viewport(result, {result: container}, 1280, 720, 2))
+        with self.assertRaises(AssertionError):
+            MODULE.results_viewport(result, {}, 1280, 720, 2)
+        container.set('bounds', '[160,392][1280,440]')
+        with self.assertRaises(AssertionError):
+            MODULE.results_viewport(result, {result: container}, 1280, 720, 2)
+        container.set('bounds', '[160,392][1281,700]')
+        with self.assertRaises(AssertionError):
+            MODULE.results_viewport(result, {result: container}, 1280, 720, 2)
+        container.set('bounds', '[160,392][1280,700]')
+        with self.assertRaises(AssertionError):
+            MODULE.results_viewport(result, {result: container}, 1280, 720, 0)
+        container.set('package', 'foreign.fixture')
+        with self.assertRaises(AssertionError):
+            MODULE.results_viewport(result, {result: container}, 1280, 720, 2)
+
+    def test_related_link_and_done_do_not_identify_the_current_lesson(self):
+        device = MODULE.Device(SimpleNamespace(), 'fixture')
+        device.width, device.height = 720, 1280
+        root = ET.Element('hierarchy')
+        def node(**attributes):
+            return ET.SubElement(root, 'node', {'package': MODULE.APP, **attributes})
+        node(text='Learn', bounds='[0,1200][120,1278]', selected='true')
+        node(text='Done')
+        node(text=MODULE.LESSON_TWO[0])
+        toolbar = node(**{'resource-id': 'tutorial-reader-ide_workflow'})
+        self.assertFalse(MODULE.reader_is_open(device, root, {}, 'cpp_basics'))
+        toolbar.set('resource-id', 'tutorial-reader-cpp_basics')
+        self.assertTrue(MODULE.reader_is_open(device, root, {}, 'cpp_basics'))
+        toolbar.set('package', 'foreign.fixture')
+        self.assertFalse(MODULE.reader_is_open(device, root, {}, 'cpp_basics'))
 
 
 if __name__ == '__main__':

@@ -15,8 +15,6 @@ class AegisCrashReportMapperTest {
             crashLog = JAVA_TOMBSTONE,
             fileModifiedAtMillis = 1_700_000_000_000L,
             packageName = "com.wuxianggujun.tinaide",
-            release = "0.19.2",
-            buildId = "46c59a2a71-20261114082348",
             environment = "production",
             userReference = "device-fingerprint",
         )
@@ -53,8 +51,6 @@ class AegisCrashReportMapperTest {
             crashLog = JAVA_TOMBSTONE,
             fileModifiedAtMillis = 1234L,
             packageName = "com.wuxianggujun.tinaide",
-            release = "0.19.2",
-            buildId = null,
             environment = "production",
             userReference = null,
         )
@@ -63,8 +59,6 @@ class AegisCrashReportMapperTest {
             crashLog = JAVA_TOMBSTONE,
             fileModifiedAtMillis = 1234L,
             packageName = "com.wuxianggujun.tinaide",
-            release = "0.19.2",
-            buildId = null,
             environment = "production",
             userReference = null,
         )
@@ -80,8 +74,6 @@ class AegisCrashReportMapperTest {
             crashLog = NATIVE_TOMBSTONE,
             fileModifiedAtMillis = 1_700_000_000_000L,
             packageName = "com.wuxianggujun.tinaide",
-            release = "0.19.2",
-            buildId = null,
             environment = "production",
             userReference = null,
         )
@@ -118,8 +110,6 @@ class AegisCrashReportMapperTest {
             crashLog = tombstone,
             fileModifiedAtMillis = 1_700_000_000_000L,
             packageName = "com.wuxianggujun.tinaide",
-            release = "0.19.3",
-            buildId = null,
             environment = "production",
             userReference = null,
         )
@@ -141,17 +131,34 @@ class AegisCrashReportMapperTest {
             crashLog = "no useful header here\nnothing else",
             fileModifiedAtMillis = 1_700_000_000_000L,
             packageName = "com.wuxianggujun.tinaide",
-            release = "0.19.2",
-            buildId = null,
             environment = "production",
             userReference = null,
         )
 
         assertEquals("2023-11-14T22:13:20Z", report.occurredAt)
+        assertEquals("unknown", report.release)
+        assertEquals(null, report.buildId)
         val exception = requireNotNull(report.exception)
         assertEquals("Crash", exception.type)
         assertEquals(1, exception.frames.size)
         assertEquals("tombstone_c.native.xcrash", exception.frames.single().file)
+    }
+
+    @Test fun legacyTombstoneKeepsItsOwnReleaseWithoutGuessingTheMapping() {
+        for (label in listOf("0.18.7", "0.18.7 (code 187)")) {
+            val report = AegisCrashReportMapper.build("old.xcrash", "App version: '$label'", 1L, "test", "production", null)
+            assertEquals("0.18.7", report.release)
+            assertEquals(null, report.buildId)
+        }
+    }
+
+    @Test fun malformedVersionLabelsNeverGuessTheCurrentReleaseOrMapping() {
+        for (label in listOf("", "0.18.7 (code bad)", "0.18.7 (code 187, build )",
+            "0.18.7 (code 187, build ../../current)", "x".repeat(65), "0.18.7 (code 187) trailing")) {
+            val report = AegisCrashReportMapper.build("old.xcrash", "App version: '$label'", 1L, "test", "production", null)
+            assertEquals(label, "unknown", report.release)
+            assertEquals(label, null, report.buildId)
+        }
     }
 
     private companion object {

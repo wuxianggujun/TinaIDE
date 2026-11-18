@@ -15,18 +15,52 @@ import com.wuxianggujun.tinaide.core.network.aegis.AegisHubEnvironment
 import com.wuxianggujun.tinaide.core.network.aegis.AegisIdentity
 import com.wuxianggujun.tinaide.core.network.aegis.AegisIngestReport
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.time.Instant
 import java.util.UUID
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import timber.log.Timber
 
 private const val TAG = "LogArchiveUpload"
 private const val COPY_BUFFER_BYTES = 64 * 1024
+private val ARCHIVE_CACHE_RETENTION_MILLIS = TimeUnit.DAYS.toMillis(7)
+internal val IMPORTED_ARCHIVE_NAME = Regex("""archive-[0-9]+\.(zip|gz|tar)""")
+private val partialArchiveName = Regex("""import-[0-9]+\.part""")
 
 /** AegisHub 单个附件上限；压缩包本身已压缩，不需要再预留 deflate 余量。 */
 internal val LOG_ARCHIVE_MAX_BYTES: Long = LogExportUtils.MAX_UPLOAD_ATTACHMENT_BYTES
+
+internal fun importedArchiveCache(context: Context) = File(context.cacheDir, "aegis-log-archives")
+
+/** Reclaim only files owned by this importer; restored drafts retain their selected attachment. */
+internal fun removeExpiredLogArchives(
+    cache: File,
+    protectedCacheKey: String? = null,
+    nowMillis: Long = System.currentTimeMillis(),
+) {
+    if (Files.isSymbolicLink(cache.toPath())) return
+    cache.listFiles().orEmpty().filter { file ->
+        file.name != protectedCacheKey && file.isFile && !Files.isSymbolicLink(file.toPath()) &&
+            (IMPORTED_ARCHIVE_NAME.matches(file.name) || partialArchiveName.matches(file.name)) &&
+            file.lastModified() < nowMillis - ARCHIVE_CACHE_RETENTION_MILLIS
+    }.forEach(::deleteTemporaryArchive)
+}
+
+internal fun deleteTemporaryArchive(file: File) {
+    try {
+        if (file.exists() && !file.delete()) Timber.tag(TAG).w("Could not remove temporary archive")
+    } catch (error: Exception) {
+        Timber.tag(TAG).w(error, "Could not remove temporary archive")
+    }
+}
 
 /** OpenDocument 的类型过滤；部分文件管理器把压缩包报告为 octet-stream。 */
 internal val LOG_ARCHIVE_MIME_TYPES = arrayOf(
@@ -63,64 +97,73 @@ internal sealed interface LogArchiveImport {
 internal suspend fun importLogArchive(
     context: Context,
     uri: Uri,
-): LogArchiveImport = withContext(Dispatchers.IO) {
-    val metadata = queryArchiveMetadata(context, uri)
-    val declaredSize = metadata.sizeBytes
-    if (declaredSize != null && declaredSize > LOG_ARCHIVE_MAX_BYTES) {
-        return@withContext LogArchiveImport.TooLarge(declaredSize)
-    }
-
-    val cacheDir = File(context.cacheDir, "aegis-log-archives").apply { mkdirs() }
-    val temp = File.createTempFile("import-", ".part", cacheDir)
+): LogArchiveImport {
+    var completedFile: File? = null
+    var delivered = false
     try {
-        val copied = context.contentResolver.openInputStream(uri)?.use { input ->
-            temp.outputStream().use { output ->
-                val buffer = ByteArray(COPY_BUFFER_BYTES)
-                var total = 0L
-                while (true) {
-                    val read = input.read(buffer)
-                    if (read < 0) break
-                    if (read == 0) continue
-                    total += read
-                    if (total > LOG_ARCHIVE_MAX_BYTES) {
-                        return@withContext LogArchiveImport.TooLarge(total)
-                    }
-                    output.write(buffer, 0, read)
+        val result = withContext(Dispatchers.IO) {
+            var temp: File? = null
+            try {
+                val operation = currentCoroutineContext()
+                val metadata = queryArchiveMetadata(context, uri)
+                metadata.sizeBytes?.takeIf { it > LOG_ARCHIVE_MAX_BYTES }?.let {
+                    return@withContext LogArchiveImport.TooLarge(it)
                 }
-                total
+                val cacheDir = importedArchiveCache(context).apply {
+                    check(!Files.isSymbolicLink(toPath()))
+                    Files.createDirectories(toPath())
+                    check(!Files.isSymbolicLink(toPath()))
+                }
+                removeExpiredLogArchives(cacheDir)
+                val partial = File.createTempFile("import-", ".part", cacheDir)
+                temp = partial
+                val copied = context.contentResolver.openInputStream(uri)?.use { input ->
+                    partial.outputStream().use { output ->
+                        val buffer = ByteArray(COPY_BUFFER_BYTES)
+                        var total = 0L
+                        while (true) {
+                            operation.ensureActive()
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            if (count == 0) continue
+                            total += count
+                            if (total > LOG_ARCHIVE_MAX_BYTES) {
+                                return@withContext LogArchiveImport.TooLarge(total)
+                            }
+                            output.write(buffer, 0, count)
+                        }
+                        total
+                    }
+                } ?: return@withContext LogArchiveImport.Failed(context.getString(Strings.toast_log_archive_import_failed))
+                if (copied == 0L) return@withContext LogArchiveImport.Empty
+                val format = LogArchiveDetector.detect(partial)
+                    ?: return@withContext LogArchiveImport.UnsupportedFormat
+                val finalName = LogArchiveDetector.appendExtensionIfMissing(
+                    LogArchiveDetector.safeFileName(metadata.displayName), format,
+                )
+                operation.ensureActive()
+                // Simultaneous drafts may pick different documents with the same display name.
+                val target = File.createTempFile("archive-", ".${format.canonicalExtension}", cacheDir)
+                completedFile = target
+                Files.move(partial.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                operation.ensureActive()
+                LogArchiveImport.Success(ImportedLogArchive(target, finalName, format, target.length()))
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                Timber.tag(TAG).e(error, "Failed to import log archive")
+                LogArchiveImport.Failed(context.getString(Strings.toast_log_archive_import_failed))
+            } finally {
+                temp?.let(::deleteTemporaryArchive)
             }
-        } ?: return@withContext LogArchiveImport.Failed(
-            context.getString(Strings.toast_log_archive_empty)
-        )
-
-        if (copied <= 0L) {
-            return@withContext LogArchiveImport.Empty
         }
-
-        val format = LogArchiveDetector.detect(temp)
-            ?: return@withContext LogArchiveImport.UnsupportedFormat
-
-        val baseName = LogArchiveDetector.safeFileName(metadata.displayName)
-        val finalName = LogArchiveDetector.appendExtensionIfMissing(baseName, format)
-        val target = File(cacheDir, finalName)
-        if (target.exists()) target.delete()
-        if (!temp.renameTo(target)) {
-            temp.copyTo(target, overwrite = true)
-        }
-
-        LogArchiveImport.Success(
-            ImportedLogArchive(
-                file = target,
-                displayName = target.name,
-                format = format,
-                sizeBytes = target.length(),
-            )
-        )
-    } catch (e: Exception) {
-        Timber.tag(TAG).e(e, "Failed to import log archive")
-        LogArchiveImport.Failed(e.message ?: e.javaClass.simpleName)
+        delivered = result is LogArchiveImport.Success
+        return result
     } finally {
-        if (temp.exists()) temp.delete()
+        // withContext may discard a successful IO result when its caller is cancelled/recreated.
+        if (!delivered) withContext(NonCancellable + Dispatchers.IO) {
+            completedFile?.let(::deleteTemporaryArchive)
+        }
     }
 }
 
@@ -136,6 +179,7 @@ internal suspend fun submitLogBundleToAegisHub(
     context: Context,
     file: File,
     message: String,
+    displayName: String = file.name,
 ): ApiResult<String> {
     val config = AegisHubEnvironment.config
         ?: return ApiResult.Error(-1, context.getString(Strings.aegis_not_configured))
@@ -166,7 +210,7 @@ internal suspend fun submitLogBundleToAegisHub(
             AegisBreadcrumb(
                 category = "log",
                 level = "info",
-                message = "log bundle: ${file.name}".take(1024),
+                message = "log bundle: ${LogArchiveDetector.safeFileName(displayName)}".take(1024),
                 data = mapOf("size_bytes" to file.length().toString()),
             ),
         ),
@@ -178,7 +222,7 @@ internal suspend fun submitLogBundleToAegisHub(
         is ApiResult.NetworkError -> return submitted
     }
 
-    return when (val attachment = AegisHubClient.uploadAttachment(reportId, file)) {
+    return when (val attachment = AegisHubClient.uploadAttachment(reportId, file, displayName = displayName)) {
         is ApiResult.Success -> ApiResult.Success(reportId)
         is ApiResult.Error -> ApiResult.Error(
             attachment.code,
@@ -197,7 +241,7 @@ private data class ArchiveMetadata(
 )
 
 private fun queryArchiveMetadata(context: Context, uri: Uri): ArchiveMetadata {
-    return runCatching {
+    return try {
         context.contentResolver.query(
             uri,
             arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
@@ -217,5 +261,10 @@ private fun queryArchiveMetadata(context: Context, uri: Uri): ArchiveMetadata {
                 },
             )
         } ?: ArchiveMetadata(null, null)
-    }.getOrDefault(ArchiveMetadata(null, null))
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (error: Exception) {
+        Timber.tag(TAG).w("Could not query archive metadata: %s", error.javaClass.simpleName)
+        ArchiveMetadata(null, null)
+    }
 }

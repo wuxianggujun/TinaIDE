@@ -30,7 +30,6 @@ class AegisHubClientTest {
     @Before fun setUp() {
         mockkObject(AppStrings)
         every { AppStrings.get(any(), *anyVararg()) } returns "Localized error"
-        every { AppStrings.get(any(), *anyVararg()) } returns "Localized error"
         server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         server.createContext("/") { exchange ->
             requests.add(CapturedRequest(exchange.requestURI.path, exchange.requestHeaders.getFirst("Authorization"),
@@ -94,6 +93,29 @@ class AegisHubClientTest {
         val body = request.body.toString(Charsets.UTF_8)
         assertThat(body).contains("name=\"file\"; filename=\"诊断🙂.zip\"")
         assertThat(body).contains("Content-Type: application/octet-stream")
+    }
+
+    @Test fun feedbackWithoutDeviceConsentOmitsDeviceFromWireJson() = runBlocking {
+        mockkObject(AegisIdentity)
+        try {
+            every { AegisIdentity.installId(any()) } returns EVENT_ID
+            responses.add(200 to """{"id":"$REPORT_ID","status":"accepted"}""")
+            val draft = AegisFeedback.Draft("fixture", null, "0.19.5", null)
+            assertThat(AegisFeedback.submit(io.mockk.mockk(), draft).isSuccess).isTrue()
+            val report = JsonSerializer.default.parseToJsonElement(requests.remove().body.toString(Charsets.UTF_8)).jsonObject
+            assertThat(report.getValue("attributes").jsonObject.containsKey("device")).isFalse()
+        } finally {
+            unmockkObject(AegisIdentity)
+        }
+    }
+
+    @Test fun attachmentDisplayNameIsPreservedWithoutLeakingItsInternalCacheKey() = runBlocking {
+        val file = temporaryFolder.newFile("archive-123.zip").apply { writeBytes(byteArrayOf(80, 75, 3, 4)) }
+        responses.add(200 to """{"id":"$EVENT_ID","report_id":"$REPORT_ID","file_name":"fixture.zip","content_type":"application/octet-stream","size_bytes":4,"sha256":"hash","created_at":"2026-11-15T00:00:00Z"}""")
+        assertThat(AegisHubClient.uploadAttachment(REPORT_ID, file, displayName = "现场🙂.zip").isSuccess).isTrue()
+        val body = requests.remove().body.toString(Charsets.UTF_8)
+        assertThat(body).contains("filename=\"现场🙂.zip\"")
+        assertThat(body).doesNotContain(file.name)
     }
 
     @Test fun missingConfigurationAndOversizeFilesNeverSendARequest() = runBlocking {

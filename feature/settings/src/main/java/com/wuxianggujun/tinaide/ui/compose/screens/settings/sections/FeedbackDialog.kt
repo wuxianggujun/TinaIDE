@@ -14,7 +14,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,7 +49,7 @@ import timber.log.Timber
 /**
  * 意见反馈对话框。
  *
- * 走 AegisHub 的 `feedback` 报告类型；可选附带一份脱敏运行日志。
+ * 走 AegisHub 的 `feedback` 报告类型；日志与设备信息默认不上传，需用户主动选择。
  * 未配置 AegisHub 时按钮禁用并提示，不会静默失败。
  */
 @Composable
@@ -62,12 +62,31 @@ internal fun FeedbackDialog(
 
     var message by rememberSaveable { mutableStateOf("") }
     var contact by rememberSaveable { mutableStateOf("") }
-    var attachLogs by rememberSaveable { mutableStateOf(true) }
+    var diagnostics by rememberSaveable(stateSaver = FeedbackDiagnostics.Saver) {
+        mutableStateOf<FeedbackDiagnostics>(FeedbackDiagnostics.None)
+    }
     var isSubmitting by remember { mutableStateOf(false) }
     var errorText by remember { mutableStateOf<String?>(null) }
     var submitError by remember { mutableStateOf<String?>(null) }
-    // 用户自选的日志压缩包（优先于自动导出的日志），在提交成功/对话框销毁后清理。
-    var pickedArchive by remember { mutableStateOf<ImportedLogArchive?>(null) }
+    val selected = diagnostics as? FeedbackDiagnostics.Selected
+    var importing by remember { mutableStateOf(false) }
+    fun clearSelection() {
+        (diagnostics as? FeedbackDiagnostics.Selected)?.remove(importedArchiveCache(context))
+        diagnostics = FeedbackDiagnostics.None
+        submitError = null
+    }
+    fun dismiss() {
+        if (!isSubmitting && !importing) {
+            clearSelection()
+            onDismiss()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            removeExpiredLogArchives(importedArchiveCache(context), selected?.cacheKey)
+        }
+    }
 
     val emptyMessage = stringResource(Strings.feedback_empty_message)
     val archiveTooLargeTemplate = stringResource(Strings.toast_log_archive_too_large)
@@ -79,42 +98,31 @@ internal fun FeedbackDialog(
         contract = ActivityResultContracts.OpenDocument(),
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
+        if (isSubmitting || importing) return@rememberLauncherForActivityResult
+        importing = true
         scope.launch {
-            when (val imported = importLogArchive(context, uri)) {
-                is LogArchiveImport.Success -> {
-                    pickedArchive?.file?.let { previous -> runCatching { previous.delete() } }
-                    pickedArchive = imported.archive
-                    attachLogs = true
-                    submitError = null
+            try {
+                when (val imported = importLogArchive(context, uri)) {
+                    is LogArchiveImport.Success -> {
+                        clearSelection()
+                        diagnostics = FeedbackDiagnostics.Selected(imported.archive.file.name, imported.archive.displayName)
+                        submitError = null
+                    }
+                    LogArchiveImport.UnsupportedFormat -> submitError = archiveUnsupported
+                    LogArchiveImport.Empty -> submitError = archiveEmpty
+                    is LogArchiveImport.TooLarge -> {
+                        val megabytes = (imported.sizeBytes + 1024 * 1024 - 1) / (1024 * 1024)
+                        submitError = String.format(Locale.getDefault(), archiveTooLargeTemplate, megabytes)
+                    }
+                    is LogArchiveImport.Failed -> submitError = imported.message
                 }
-                LogArchiveImport.UnsupportedFormat ->
-                    submitError = archiveUnsupported
-
-                LogArchiveImport.Empty ->
-                    submitError = archiveEmpty
-
-                is LogArchiveImport.TooLarge -> {
-                    val megabytes = (imported.sizeBytes + 1024 * 1024 - 1) / (1024 * 1024)
-                    submitError = String.format(
-                        Locale.getDefault(),
-                        archiveTooLargeTemplate,
-                        megabytes
-                    )
-                }
-
-                is LogArchiveImport.Failed ->
-                    submitError = imported.message
+            } finally {
+                importing = false
             }
         }
     }
 
-    // 对话框被关闭时也要清掉自选压缩包在缓存里的副本。
-    DisposableEffect(pickedArchive) {
-        val archive = pickedArchive
-        onDispose { archive?.file?.let { file -> runCatching { file.delete() } } }
-    }
-
-    TinaCustomDialog(onDismissRequest = { if (!isSubmitting) onDismiss() }) {
+    TinaCustomDialog(onDismissRequest = ::dismiss) {
         TinaDialogTitleText(stringResource(Strings.feedback_dialog_title))
 
         Spacer(Modifier.height(12.dp))
@@ -166,9 +174,9 @@ internal fun FeedbackDialog(
             }
             Spacer(Modifier.width(12.dp))
             Switch(
-                checked = attachLogs,
-                onCheckedChange = { attachLogs = it },
-                enabled = !isSubmitting && pickedArchive == null,
+                checked = diagnostics == FeedbackDiagnostics.Automatic,
+                onCheckedChange = { diagnostics = if (it) FeedbackDiagnostics.Automatic else FeedbackDiagnostics.None },
+                enabled = !isSubmitting && !importing && selected == null,
             )
         }
 
@@ -183,7 +191,7 @@ internal fun FeedbackDialog(
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Text(
-                    text = pickedArchive?.let { archive ->
+                    text = selected?.let { archive ->
                         context.getString(
                             Strings.feedback_attach_archive_selected,
                             archive.displayName
@@ -195,20 +203,17 @@ internal fun FeedbackDialog(
                 )
             }
             Spacer(Modifier.width(12.dp))
-            if (pickedArchive == null) {
+            if (selected == null) {
                 TinaTextButton(
                     text = stringResource(Strings.feedback_attach_archive_pick),
                     onClick = { logArchivePicker.launch(LOG_ARCHIVE_MIME_TYPES) },
-                    enabled = !isSubmitting,
+                    enabled = !isSubmitting && !importing,
                 )
             } else {
                 TinaTextButton(
                     text = stringResource(Strings.feedback_attach_archive_remove),
-                    onClick = {
-                        pickedArchive?.file?.let { file -> runCatching { file.delete() } }
-                        pickedArchive = null
-                    },
-                    enabled = !isSubmitting,
+                    onClick = ::clearSelection,
+                    enabled = !isSubmitting && !importing,
                 )
             }
         }
@@ -227,14 +232,15 @@ internal fun FeedbackDialog(
         TinaDialogActionRow {
             TinaTextButton(
                 text = stringResource(Strings.btn_cancel),
-                onClick = { if (!isSubmitting) onDismiss() },
+                onClick = ::dismiss,
+                enabled = !isSubmitting && !importing,
             )
             TinaPrimaryButton(
                 text = stringResource(
                     if (isSubmitting) Strings.feedback_submitting else Strings.feedback_submit
                 ),
                 onClick = {
-                    if (isSubmitting) return@TinaPrimaryButton
+                    if (isSubmitting || importing) return@TinaPrimaryButton
                     val trimmed = AegisFeedback.normalizeMessage(message)
                     if (trimmed.isEmpty()) {
                         errorText = emptyMessage
@@ -249,8 +255,7 @@ internal fun FeedbackDialog(
                                 context = context,
                                 message = trimmed,
                                 contact = contact,
-                                attachLogs = attachLogs,
-                                pickedArchive = pickedArchive,
+                                diagnostics = diagnostics,
                             )
                         } catch (e: CancellationException) {
                             throw e
@@ -262,8 +267,7 @@ internal fun FeedbackDialog(
                         }
                         when (result) {
                             is ApiResult.Success -> {
-                                pickedArchive?.file?.let { file -> runCatching { file.delete() } }
-                                pickedArchive = null
+                                clearSelection()
                                 val text = result.data.attachmentError?.let { reason ->
                                     context.getString(Strings.feedback_submitted_with_log_warning, reason)
                                 } ?: context.getString(Strings.feedback_submitted)
@@ -278,26 +282,26 @@ internal fun FeedbackDialog(
                         }
                     }
                 },
-                enabled = !isSubmitting && reportingConfigured,
+                enabled = !isSubmitting && !importing && reportingConfigured,
             )
         }
     }
 }
 
-private suspend fun submitFeedback(
+internal suspend fun submitFeedback(
     context: Context,
     message: String,
     contact: String,
-    attachLogs: Boolean,
-    pickedArchive: ImportedLogArchive?,
+    diagnostics: FeedbackDiagnostics,
+    send: suspend (Context, AegisFeedback.Draft) -> ApiResult<AegisFeedback.Result> = AegisFeedback::submit,
 ): ApiResult<AegisFeedback.Result> = withContext(Dispatchers.IO) {
     var attachment: File? = null
     var generated = false
     try {
-        // 用户自选的压缩包优先；只有没选时才回退到自动导出的脱敏日志包。
-        if (pickedArchive != null) {
-            attachment = pickedArchive.file
-        } else if (attachLogs) {
+        if (diagnostics is FeedbackDiagnostics.Selected) {
+            attachment = diagnostics.resolve(importedArchiveCache(context))
+                ?: return@withContext ApiResult.Error(-1, context.getString(Strings.feedback_archive_reselect))
+        } else if (diagnostics == FeedbackDiagnostics.Automatic) {
             attachment = LogExportUtils.exportLogs(
                 context = context,
                 profile = LogExportProfile.SERVER_UPLOAD,
@@ -305,18 +309,21 @@ private suspend fun submitFeedback(
             )
             generated = true
         }
-        AegisFeedback.submit(
-            context = context,
-            draft = AegisFeedback.Draft(
+        send(
+            context,
+            AegisFeedback.Draft(
                 message = message,
                 contact = contact,
                 appVersion = DeviceInfoProvider.versionName,
-                device = "${DeviceInfoProvider.getDeviceModel()} / ${DeviceInfoProvider.getOsVersion()}",
+                device = if (diagnostics == FeedbackDiagnostics.Automatic) {
+                    "${DeviceInfoProvider.getDeviceModel()} / ${DeviceInfoProvider.getOsVersion()}"
+                } else null,
                 attachment = attachment,
+                attachmentDisplayName = (diagnostics as? FeedbackDiagnostics.Selected)?.displayName,
             ),
         )
     } finally {
         // 自选压缩包的缓存副本由调用方负责清理，这里只删除本次自动导出的临时包。
-        if (generated) attachment?.let { file -> runCatching { file.delete() } }
+        if (generated) attachment?.let(::deleteTemporaryArchive)
     }
 }

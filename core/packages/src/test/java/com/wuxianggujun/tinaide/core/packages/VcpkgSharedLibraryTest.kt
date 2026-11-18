@@ -7,6 +7,7 @@ import com.wuxianggujun.tinaide.project.ProjectMetadataStore
 import com.wuxianggujun.tinaide.project.VcpkgProjectSettings
 import java.io.File
 import java.io.IOException
+import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
@@ -37,7 +38,7 @@ class VcpkgSharedLibraryTest {
 
         val shared = VcpkgSharedLibrary.export(context, project, settings, "arm64-v8a")
 
-        assertThat(shared).isEqualTo(VcpkgSharedLibrary.root(context))
+        assertThat(shared).isEqualTo(VcpkgSharedLibrary.publishedRoot(context, "arm64-v8a"))
         val exported = File(shared, VcpkgSharedLibrary.triplet("arm64-v8a"))
         assertThat(exported.name).isEqualTo("arm64-android")
         assertThat(File(exported, "lib/libfmt.a").readText(Charsets.UTF_8)).isEqualTo("static")
@@ -90,9 +91,7 @@ class VcpkgSharedLibraryTest {
         assertThat(error).isInstanceOf(CancellationException::class.java)
         assertThat(previousLibrary.readText(Charsets.UTF_8)).isEqualTo("published-library")
         assertThat(File(target, "share/fmt/fmt-config.cmake").exists()).isFalse()
-        val abandonedTransactions = VcpkgSharedLibrary.root(context).listFiles().orEmpty().filter {
-            it.name.startsWith(".shared-staging-") || it.name.startsWith(".shared-backup-")
-        }
+        val abandonedTransactions = File(VcpkgSharedLibrary.root(context), ".versions/arm64-android").listFiles().orEmpty()
         assertThat(abandonedTransactions).isEmpty()
     }
 
@@ -113,6 +112,8 @@ class VcpkgSharedLibraryTest {
 
         assertThat(error).isInstanceOf(CancellationException::class.java)
         assertThat(target.exists()).isFalse()
+        assertThat(File(VcpkgSharedLibrary.root(context), ".current-x64-android").exists()).isFalse()
+        assertThat(File(VcpkgSharedLibrary.root(context), ".versions/x64-android").listFiles().orEmpty()).isEmpty()
     }
 
     @Test fun exportPreservesOtherLibrariesAndOtherAbis() = runTest {
@@ -128,10 +129,10 @@ class VcpkgSharedLibraryTest {
         val otherAbi = File(shared, "x64-android/lib/libfmt.a").apply { parentFile!!.mkdirs() }
         otherAbi.writeText("x64-fmt", Charsets.UTF_8)
 
-        VcpkgSharedLibrary.export(context, project, settings, "arm64-v8a")
+        val published = VcpkgSharedLibrary.export(context, project, settings, "arm64-v8a")
 
-        assertThat(File(shared, "arm64-android/lib/libfmt.a").readText(Charsets.UTF_8)).isEqualTo("new-fmt")
-        assertThat(otherLibrary.readText(Charsets.UTF_8)).isEqualTo("other-library")
+        assertThat(File(published, "arm64-android/lib/libfmt.a").readText(Charsets.UTF_8)).isEqualTo("new-fmt")
+        assertThat(File(published, "arm64-android/lib/libother.a").readText(Charsets.UTF_8)).isEqualTo("other-library")
         assertThat(otherAbi.readText(Charsets.UTF_8)).isEqualTo("x64-fmt")
     }
 
@@ -175,9 +176,92 @@ class VcpkgSharedLibraryTest {
         start.complete(Unit)
         exports.awaitAll()
 
-        val shared = File(VcpkgSharedLibrary.root(context), VcpkgSharedLibrary.triplet("arm64-v8a"))
+        val shared = File(VcpkgSharedLibrary.publishedRoot(context, "arm64-v8a"), VcpkgSharedLibrary.triplet("arm64-v8a"))
         projects.keys.forEach { library ->
             assertThat(File(shared, "lib/lib$library.a").readText(Charsets.UTF_8)).isEqualTo(library)
         }
+    }
+
+    @Test fun buildKeepsItsGenerationWhileAnotherProjectPublishesFilesAndVersions() = runTest {
+        val context = RuntimeEnvironment.getApplication()
+        val abi = "arm64-v8a"
+        val repo = VcpkgRepository(context)
+        val reader = temporary.newFolder()
+        repo.enableSharedLibrary(reader)
+        val first = publish("fmt", "1")
+        VcpkgBuildUse.during(true) {
+            assertThat(VcpkgSharedLibrary.publishedRoot(context, abi)).isEqualTo(first)
+            publish("fmt", "2")
+            publish("other", "3")
+            assertThat(VcpkgSharedLibrary.publishedRoot(context, abi)).isEqualTo(first)
+            assertThat(File(first, "arm64-android/lib/fmt.a").readText()).isEqualTo("1")
+            assertThat(repo.read(reader, abi, emptyList()).installed).containsExactly("fmt", "1")
+        }
+        val current = VcpkgSharedLibrary.publishedRoot(context, abi)
+        assertThat(first.exists()).isFalse()
+        assertThat(File(current, "arm64-android/lib/fmt.a").readText()).isEqualTo("2")
+        assertThat(repo.read(reader, abi, emptyList()).installed).containsExactly("fmt", "2", "other", "3")
+    }
+
+    @Test fun twoAbisPublishIndependentIndexesAndRetainTheirOwnRollbackGeneration() = runTest {
+        val context = RuntimeEnvironment.getApplication()
+        val arm = publish("fmt", "arm", "arm64-v8a")
+        val x64 = publish("fmt", "x64", "x86_64")
+        val previousArm = publish("fmt", "arm-2", "arm64-v8a")
+        val currentArm = publish("fmt", "arm-3", "arm64-v8a")
+        assertThat(arm.exists()).isFalse()
+        assertThat(previousArm.isDirectory).isTrue()
+        assertThat(VcpkgSharedLibrary.publishedRoot(context, "x86_64")).isEqualTo(x64)
+        assertThat(File(x64, "x64-android/lib/fmt.a").readText(Charsets.UTF_8)).isEqualTo("x64")
+        assertThat(VcpkgInstalledStatus.read(File(x64, "vcpkg/status"), "x64-android") {}).containsExactly("fmt", "x64")
+        assertThat(VcpkgInstalledStatus.read(File(currentArm, "vcpkg/status"), "arm64-android") {}).containsExactly("fmt", "arm-3")
+    }
+
+    @Test fun interruptedLegacyBackupIsRestoredAndRetiredOnlyAfterReadersLeave() = runTest {
+        val context = RuntimeEnvironment.getApplication()
+        val shared = VcpkgSharedLibrary.root(context).apply { mkdirs() }
+        val backup = File(shared, ".shared-backup-arm64-android-${UUID.randomUUID()}").apply { mkdirs() }
+        File(backup, "lib/other.a").apply { parentFile!!.mkdirs(); writeText("legacy", Charsets.UTF_8) }
+        val staging = File(shared, ".shared-staging-arm64-android-${UUID.randomUUID()}").apply { mkdirs() }
+        File(staging, "partial").writeText("incomplete", Charsets.UTF_8)
+        val unrelated = File(shared, ".shared-backup-user-data-${UUID.randomUUID()}").apply { mkdirs() }
+        val legacy = File(shared, "arm64-android")
+        VcpkgBuildUse.during(true) {
+            assertThat(VcpkgSharedLibrary.publishedRoot(context, "arm64-v8a")).isEqualTo(shared)
+            assertThat(File(legacy, "lib/other.a").readText(Charsets.UTF_8)).isEqualTo("legacy")
+            assertThat(backup.exists()).isFalse()
+            publish("fmt", "1")
+            val latest = publish("fmt", "2")
+            assertThat(File(latest, "arm64-android/lib/other.a").readText(Charsets.UTF_8)).isEqualTo("legacy")
+            assertThat(legacy.isDirectory).isTrue()
+            assertThat(staging.isDirectory).isTrue()
+            assertThat(VcpkgSharedLibrary.publishedRoot(context, "arm64-v8a")).isEqualTo(shared)
+        }
+        assertThat(legacy.exists()).isFalse()
+        assertThat(staging.exists()).isFalse()
+        assertThat(unrelated.isDirectory).isTrue()
+    }
+
+    @Test fun invalidOrDanglingPointersAreNotTreatedAsLegacyInstallations() = runTest {
+        val context = RuntimeEnvironment.getApplication()
+        val shared = VcpkgSharedLibrary.root(context).apply { mkdirs() }
+        val reference = File(shared, ".current-arm64-android")
+        for (invalid in listOf("../outside", UUID.randomUUID().toString(), "corrupt")) {
+            reference.writeText(invalid, Charsets.UTF_8)
+            val failure = runCatching { VcpkgSharedLibrary.publishedRoot(context, "arm64-v8a") }.exceptionOrNull()
+            assertThat((failure as? VcpkgException)?.messageResource).isEqualTo(Strings.vcpkg_invalid_path)
+            assertThat(reference.readText(Charsets.UTF_8)).isEqualTo(invalid)
+        }
+    }
+
+    private suspend fun publish(name: String, version: String, abi: String = "arm64-v8a"): File {
+        val context = RuntimeEnvironment.getApplication()
+        val settings = VcpkgProjectSettings(VcpkgProjectSettings.MANIFEST)
+        val project = temporary.newFolder()
+        val workspace = VcpkgManagedPaths.installed(context, project, settings, abi)
+        val source = File(workspace, settings.targetTriplet(abi))
+        File(source, "lib/$name.a").apply { parentFile!!.mkdirs(); writeText(version, Charsets.UTF_8) }
+        VcpkgInstalledStatus.write(File(workspace, "vcpkg/status"), settings.targetTriplet(abi), mapOf(name to version))
+        return VcpkgSharedLibrary.export(context, project, settings, abi)
     }
 }

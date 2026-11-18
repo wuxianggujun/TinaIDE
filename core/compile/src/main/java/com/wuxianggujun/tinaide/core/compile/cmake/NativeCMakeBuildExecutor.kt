@@ -26,6 +26,7 @@ import com.wuxianggujun.tinaide.core.packages.PackageAbiCompatibility
 import com.wuxianggujun.tinaide.core.packages.vcpkgUserMessage
 import com.wuxianggujun.tinaide.core.packages.VcpkgRuntimeManager
 import com.wuxianggujun.tinaide.core.packages.VcpkgManagedPaths
+import com.wuxianggujun.tinaide.core.packages.VcpkgBuildUse
 import com.wuxianggujun.tinaide.core.util.AndroidSystemLinker
 import com.wuxianggujun.tinaide.core.util.DiagnosticLogFormatter
 import com.wuxianggujun.tinaide.core.util.NativeExecutableRunner
@@ -797,7 +798,11 @@ class NativeCMakeBuildExecutor(
         projectDir: File,
         buildDir: File = File(projectDir, DEFAULT_BUILD_DIR),
         options: Options = Options()
-    ): ConfigureResult {
+    ): ConfigureResult = VcpkgBuildUse.during(VcpkgProjectSettings.from(options.extraCMakeArgs).enabled) {
+        configureProject(projectDir, buildDir, options)
+    }
+
+    private suspend fun configureProject(projectDir: File, buildDir: File, options: Options): ConfigureResult {
         // 确保构建目录存在
         if (!buildDir.exists()) {
             buildDir.mkdirs()
@@ -1127,7 +1132,7 @@ class NativeCMakeBuildExecutor(
             VcpkgCMakeIntegration.prepare(
                 projectDir, buildDir, combinedExtraCMakeArgs, androidAbi, command,
                 parallelJobs = options.parallelJobs,
-                managedInstallationRoot = if (managed != null) VcpkgManagedPaths.installed(appContext, projectDir, settings) else null,
+                managedInstallationRoot = if (managed != null) VcpkgManagedPaths.installed(appContext, projectDir, settings, androidAbi) else null,
                 runtimeRoot = managed?.root,
             )?.let { plan -> plan.copy(environment = plan.environment + managed?.environment.orEmpty()) }
         } catch (error: Exception) {

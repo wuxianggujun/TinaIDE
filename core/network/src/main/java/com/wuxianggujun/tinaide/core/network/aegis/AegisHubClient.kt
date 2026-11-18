@@ -84,6 +84,7 @@ object AegisHubClient {
         reportId: String,
         file: File,
         contentType: String = "application/octet-stream",
+        displayName: String = file.name,
     ): ApiResult<AegisAttachmentReceipt> = withContext(Dispatchers.IO) {
         val config = AegisHubEnvironment.config
             ?: return@withContext ApiResult.Error(-1, Strings.aegis_not_configured.str())
@@ -96,7 +97,7 @@ object AegisHubClient {
         if (runCatching { UUID.fromString(reportId) }.isFailure) {
             return@withContext ApiResult.Error(-1, Strings.aegis_invalid_report_id.str())
         }
-        val safeName = sanitizeAttachmentName(file.name)
+        val safeName = sanitizeAttachmentName(displayName)
         val body = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
             .addFormDataPart("file", safeName, file.asRequestBody(contentType.toMediaType()))

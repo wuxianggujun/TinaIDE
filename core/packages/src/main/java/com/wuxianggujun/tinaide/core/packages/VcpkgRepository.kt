@@ -35,12 +35,17 @@ class VcpkgRepository(private val context: Context? = null) {
         val ports = availablePorts ?: context?.let { VcpkgCatalogStore(it).readLocal().ports }.orEmpty()
         val manifest = File(project, "vcpkg.json")
         val declared = if (manifest.exists()) dependencyNames(readJson(manifest)) else emptySet()
-        val installedRoot = context?.let { VcpkgManagedPaths.installed(it, project, settings) }
-        val installed = linkedMapOf<String, String>()
-        val status = installedRoot?.let { File(it, "vcpkg/status") }
-        if (settings.enabled && status?.isFile == true) {
-            readInstalledStatus(status, settings.targetTriplet(androidAbi), installed)
-        }
+        val installed = if (context != null && settings.enabled) VcpkgBuildUse.during(true) {
+            val installedRoot = VcpkgManagedPaths.installed(context, project, settings, androidAbi)
+            try {
+                VcpkgInstalledStatus.read(File(installedRoot, "vcpkg/status"), settings.targetTriplet(androidAbi),
+                    currentCoroutineContext()::ensureActive)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                throw VcpkgException(Strings.vcpkg_invalid_manifest, error)
+            }
+        } else emptyMap()
         val catalog = ports.associateByTo(linkedMapOf()) { it.name }
         (declared + installed.keys).filter { PORT_NAME.matches(it) }.forEach { name ->
             catalog.putIfAbsent(name, VcpkgPort(name, installed[name].orEmpty(), "", ""))
@@ -197,35 +202,6 @@ class VcpkgRepository(private val context: Context? = null) {
         } catch (error: Exception) {
             throw VcpkgException(Strings.vcpkg_invalid_manifest, error)
         }
-    }
-
-    private suspend fun readInstalledStatus(status: File, triplet: String, installed: MutableMap<String, String>) {
-        val text = try {
-            PackageMetadataFiles.decodeUtf8(readBytesLimited(status, MAX_STATUS_BYTES))
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (error: Exception) {
-            throw VcpkgException(Strings.vcpkg_invalid_manifest, error)
-        }
-        val fields = mutableMapOf<String, String>()
-        fun finishRecord() {
-            val name = fields["Package"]
-            if (fields["Architecture"] == triplet && fields["Status"] == "install ok installed" &&
-                "Feature" !in fields && name != null && PORT_NAME.matches(name)) {
-                installed[name] = fields["Version"].orEmpty()
-            }
-            fields.clear()
-        }
-        // Iterate lines rather than copying the full status file into paragraphs.
-        for (line in text.lineSequence()) {
-            currentCoroutineContext().ensureActive()
-            if (line.isBlank()) {
-                finishRecord()
-            } else if (!line.first().isWhitespace() && ':' in line) {
-                fields[line.substringBefore(':')] = line.substringAfter(':').trim()
-            }
-        }
-        finishRecord()
     }
 
     private fun requireManifestLocation(project: File, manifest: File) {

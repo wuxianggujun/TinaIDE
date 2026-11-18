@@ -28,6 +28,11 @@ internal object AegisCrashReportMapper {
     private const val MAX_FRAME_FILE_BYTES = 1024
     private const val MAX_FRAMES = 64
 
+    // xCrash also wrote plain version names before TinaIDE added build IDs to its label.
+    private val appVersionLabel = Regex(
+        """([A-Za-z0-9][A-Za-z0-9.+_-]{0,63})(?: \(code [0-9]+(?:, build ([A-Za-z0-9._+-]{1,128}))?\))?"""
+    )
+
     private val crashTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSZ")
     private val javaFrameRegex = Regex("""^\s+at\s+([^\s(]+)\(([^)]*)\)\s*$""")
     private val nativeFrameRegex = Regex("""^\s*#(\d+)\s+pc\s+([0-9a-fA-F]+)\s+(.*\S)\s*$""")
@@ -43,14 +48,13 @@ internal object AegisCrashReportMapper {
         crashLog: String,
         fileModifiedAtMillis: Long,
         packageName: String,
-        release: String,
-        buildId: String?,
         environment: String,
         userReference: String?,
     ): AegisIngestReport {
         val text = stripNulls(crashLog)
         val lines = text.lineSequence().toList()
         val crashType = header(lines, "Crash type")?.lowercase().orEmpty()
+        val version = header(lines, "App version")?.let(appVersionLabel::matchEntire)
         val occurredAtMillis = parseCrashTimeMillis(header(lines, "Crash time"))
             ?: fileModifiedAtMillis.takeIf { it > 0L }
             ?: System.currentTimeMillis()
@@ -64,8 +68,8 @@ internal object AegisCrashReportMapper {
             ),
             typeKey = "crash",
             schemaVersion = 1,
-            release = release.ifBlank { "unknown" },
-            buildId = buildId,
+            release = version?.groupValues?.get(1) ?: "unknown",
+            buildId = version?.groups?.get(2)?.value,
             environment = environment,
             occurredAt = Instant.ofEpochMilli(occurredAtMillis).toString(),
             userReference = userReference?.takeIf { it.isNotBlank() },

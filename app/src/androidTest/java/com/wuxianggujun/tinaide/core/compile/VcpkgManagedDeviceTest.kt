@@ -92,14 +92,17 @@ class VcpkgManagedDeviceTest {
                     "cancel-shared" -> {
                         val abi = android.os.Build.SUPPORTED_ABIS.first()
                         val settings = VcpkgProjectSettings(VcpkgProjectSettings.MANIFEST)
-                        val shared = File(VcpkgSharedLibrary.root(context), VcpkgSharedLibrary.triplet(abi))
+                        val published = VcpkgSharedLibrary.publishedRoot(context, abi)
+                        val shared = File(published, VcpkgSharedLibrary.triplet(abi))
+                        val generations = File(VcpkgSharedLibrary.root(context), ".versions/${VcpkgSharedLibrary.triplet(abi)}")
+                        val generationNames = generations.listFiles().orEmpty().map { it.name }.toSet()
                         val before = libraryHashes(shared)
                         assertTrue("Run the shared-library case first", before.isNotEmpty())
                         val library = shared.walkTopDown().first { it.isFile && it.extension == "a" }
                         val original = library.readBytes()
                         val probe = File(context.filesDir, "cancel-shared-vcpkg-acceptance").apply { mkdirs() }
                         ProjectMetadataStore.ensure(probe)
-                        val source = File(VcpkgManagedPaths.installed(context, probe, settings), settings.targetTriplet(abi))
+                        val source = File(VcpkgManagedPaths.installed(context, probe, settings, abi), settings.targetTriplet(abi))
                         File(source, library.relativeTo(shared).path).apply {
                             parentFile!!.mkdirs()
                             writeBytes(original + "cancelled-export-change".toByteArray(Charsets.UTF_8))
@@ -112,9 +115,9 @@ class VcpkgManagedDeviceTest {
                             }.exceptionOrNull()
                             assertTrue("Shared export must propagate cancellation", failure is CancellationException)
                             assertEquals("Cancellation must preserve every published file", before, libraryHashes(shared))
-                            assertTrue(VcpkgSharedLibrary.root(context).listFiles().orEmpty().none {
-                                it.name.startsWith(".shared-staging-") || it.name.startsWith(".shared-backup-")
-                            })
+                            assertEquals("Cancellation must not switch generations", published, VcpkgSharedLibrary.publishedRoot(context, abi))
+                            assertEquals("Cancellation must remove its unpublished generation", generationNames,
+                                generations.listFiles().orEmpty().map { it.name }.toSet())
                             report.put("cancelled", true).put("publishedFilesPreserved", before.size)
                         } finally {
                             // Preserve the installed fmt fixture even when testing an old/broken APK.

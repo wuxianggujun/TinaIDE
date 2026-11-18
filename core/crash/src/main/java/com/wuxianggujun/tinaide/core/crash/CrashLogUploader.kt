@@ -234,8 +234,6 @@ object CrashLogUploader {
             crashLog = crashText,
             fileModifiedAtMillis = tombstone.lastModified(),
             packageName = context.packageName,
-            release = config.release,
-            buildId = config.buildId,
             environment = config.environment,
             userReference = AegisIdentity.installId(context),
         )

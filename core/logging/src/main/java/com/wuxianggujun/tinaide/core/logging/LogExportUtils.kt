@@ -14,13 +14,13 @@ import com.wuxianggujun.tinaide.storage.ExternalFileIntents
 import com.wuxianggujun.tinaide.storage.ProjectPaths
 import java.io.BufferedReader
 import java.io.File
-import java.io.FileOutputStream
 import java.io.InputStreamReader
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import timber.log.Timber
@@ -76,24 +76,13 @@ object LogExportUtils {
         context: Context,
         profile: LogExportProfile = LogExportProfile.LOCAL_EXPORT,
         maxInputBytes: Long = Long.MAX_VALUE
-    ): File? = withContext(Dispatchers.IO) {
-        try {
-            // 创建导出目录
-            val exportDir = File(context.getExternalFilesDir(null), "logs")
-            if (!exportDir.exists()) {
-                exportDir.mkdirs()
-            }
-
-            // 生成文件名（包含时间戳）
+    ): File? {
+        return try {
             val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
             val fileName = Strings.log_export_filename.strOr(context, timestamp)
-            val zipFile = File(exportDir, fileName)
-
             val policy = LogExportPolicy.from(profile)
             val budget = LogExportBudget(maxInputBytes.coerceAtLeast(1L))
-
-            // 创建ZIP文件
-            ZipOutputStream(FileOutputStream(zipFile)).use { zipOut ->
+            val zipFile = writeLogArchive(ProjectPaths.getLogsRoot(context), fileName) { zipOut ->
                 addLogBundleSources(context, zipOut, policy, budget)
             }
 
@@ -105,6 +94,8 @@ object LogExportUtils {
                 budget.truncated
             )
             zipFile
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             Timber.tag(TAG).e(e, "Failed to export logs")
             null

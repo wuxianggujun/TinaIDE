@@ -11,7 +11,8 @@ object VcpkgManagedPaths {
     suspend fun workspace(context: Context, project: File): File =
         ProjectPaths.getProjectWorkspaceDir(context, ProjectMetadataStore.ensure(project).id)
 
-    suspend fun installed(context: Context, project: File, settings: VcpkgProjectSettings): File =
-        if (settings.mode == VcpkgProjectSettings.SHARED) ProjectPaths.getSharedVcpkgInstalledDir(context)
+    suspend fun installed(context: Context, project: File, settings: VcpkgProjectSettings, androidAbi: String? = null): File =
+        if (settings.mode == VcpkgProjectSettings.SHARED) VcpkgSharedLibrary.publishedRoot(context,
+            androidAbi ?: PackageAbiCompatibility.currentAppAbi(context.applicationInfo.nativeLibraryDir, android.os.Build.SUPPORTED_ABIS))
         else ProjectPaths.getProjectVcpkgInstalledDir(context, ProjectMetadataStore.ensure(project).id)
 }

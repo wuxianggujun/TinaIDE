@@ -34,6 +34,7 @@ import com.wuxianggujun.tinaide.ui.compose.screens.settings.components.SettingsS
 import java.io.File
 import java.util.Locale
 import kotlinx.coroutines.launch
+import timber.log.Timber
 
 private const val GITHUB_URL = "https://github.com/wuxianggujun/TinaIDE"
 private const val QQ_GROUP_NUMBER = "557484133"
@@ -157,6 +158,7 @@ internal fun AboutSettingsSection(
                 val upload = submitLogBundleToAegisHub(
                     context = context,
                     file = selected.file,
+                    displayName = selected.displayName,
                     message = context.getString(
                         Strings.log_archive_report_message,
                         selected.displayName,
@@ -199,18 +201,21 @@ internal fun AboutSettingsSection(
                         ).show()
                     }
                 }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
+                Timber.tag("AboutSettings").w(e, "Failed to upload selected log archive")
                 Toast.makeText(
                     context,
                     String.format(
                         Locale.getDefault(),
                         toastUploadLogArchiveFailedTemplate,
-                        e.message ?: Strings.about_error_unknown.strOr(context)
+                        Strings.toast_log_archive_import_failed.strOr(context)
                     ),
                     Toast.LENGTH_SHORT
                 ).show()
             } finally {
-                archive?.file?.let { file -> runCatching { file.delete() } }
+                archive?.file?.let(::deleteTemporaryArchive)
                 isUploadingLogs = false
             }
         }
@@ -328,7 +333,11 @@ internal fun AboutSettingsSection(
                                     Toast.LENGTH_SHORT
                                 ).show()
                             }
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                            isExportingLogs = false
+                            throw cancelled
                         } catch (e: Exception) {
+                            Timber.tag("AboutSettings").w(e, "Failed to export logs")
                             isExportingLogs = false
                             Toast.makeText(
                                 context,
@@ -505,20 +514,23 @@ internal fun AboutSettingsSection(
                                     ).show()
                                 }
                             }
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                            throw cancelled
                         } catch (e: Exception) {
+                            Timber.tag("AboutSettings").w(e, "Failed to upload generated logs")
                             Toast.makeText(
                                 context,
                                 String.format(
                                     Locale.getDefault(),
                                     toastUploadLogsFailedTemplate,
-                                    e.message ?: Strings.about_error_unknown.strOr(context)
+                                    Strings.aegis_report_failed.strOr(context)
                                 ),
                                 Toast.LENGTH_SHORT
                             ).show()
                         } finally {
                             // The bundle was only needed for this upload; keeping it would
                             // leave a multi-MB zip in the export folder after every attempt.
-                            zip?.let { file -> runCatching { file.delete() } }
+                            zip?.let(::deleteTemporaryArchive)
                             isUploadingLogs = false
                         }
                     }

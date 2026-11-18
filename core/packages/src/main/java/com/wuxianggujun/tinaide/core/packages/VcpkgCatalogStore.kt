@@ -61,8 +61,11 @@ class VcpkgCatalogStore internal constructor(
             val previous = cached ?: readBundled()
             val revision = source.latestRevision()
             requireRevision(revision)
-            if (revision == cached?.revision) return@withLock previous
-            prepareRevision(revision, previous.archiveSha256.takeIf { revision == previous.revision }, onProgress)
+            val selected = if (revision == cached?.revision) previous else {
+                prepareRevision(revision, previous.archiveSha256.takeIf { revision == previous.revision }, onProgress)
+            }
+            collectOldRevisions(selected.revision)
+            selected
         }
     }
 
@@ -89,11 +92,36 @@ class VcpkgCatalogStore internal constructor(
                     if (!staging.deleteRecursively()) Timber.tag("VcpkgCatalog").w("Could not remove source staging directory")
                 }
             }
+            collectOldRevisions(catalog.revision)
             root
         }
     }
 
     private fun sourceRoot(revision: String): File = File(directory, "sources/$revision")
+
+    private fun collectOldRevisions(current: String) {
+        try {
+            pruneOldRevisions(current)
+        } catch (error: Exception) {
+            Timber.tag("VcpkgCatalog").w(error, "Could not collect obsolete source revisions")
+        }
+    }
+
+    /** Preserve the active revision and one rollback revision. Pinned builds defer collection. */
+    private fun pruneOldRevisions(current: String) {
+        val archives = File(directory, "archives").listFiles().orEmpty().toList()
+        val sources = File(directory, "sources").listFiles().orEmpty().toList()
+        val revisions = (archives.filter { it.isFile && it.name.endsWith(".tar.gz") }
+            .map { it.name.removeSuffix(".tar.gz") to it } + sources.filter(File::isDirectory).map { it.name to it })
+            .filter { revisionPattern.matches(it.first) && !Files.isSymbolicLink(it.second.toPath()) }
+        val recent = revisions.filter { it.first != current }.maxWithOrNull(
+            compareBy<Pair<String, File>> { it.second.lastModified() }.thenBy { it.first }
+        )?.first
+        val obsolete = revisions.filter { it.first != current && it.first != recent }.map { it.second }
+        VcpkgBuildUse.retireWhenIdle(directory, obsolete + (archives + sources).filter { it.name.startsWith(".retired-") }) {
+            mutex.withLock { collectOldRevisions((readCached() ?: readBundled()).revision) }
+        }
+    }
 
     private fun removeAbandonedStaging() {
         directory.listFiles().orEmpty().filter { it.name.startsWith(".catalog-") || it.name.startsWith(".sources-") }
@@ -222,13 +250,14 @@ class VcpkgCatalogStore internal constructor(
 
     internal companion object {
         private val mutex = Mutex()
+        private val revisionPattern = Regex("[0-9a-f]{40}")
         private const val MAX_CATALOG_BYTES = 8 * 1024 * 1024
         private val PORT_NAME = Regex("[a-z0-9]+(?:-[a-z0-9]+)*")
         val SOURCE_LIMITS = ArchiveExtractionLimits(64L * 1024 * 1024, 256L * 1024 * 1024,
             16L * 1024 * 1024, 60_000, 200, 32)
 
         fun requireRevision(value: String) {
-            if (!value.matches(Regex("[0-9a-f]{40}"))) throw VcpkgException(Strings.vcpkg_download_invalid)
+            if (!revisionPattern.matches(value)) throw VcpkgException(Strings.vcpkg_download_invalid)
         }
 
         fun decode(bytes: ByteArray): VcpkgCatalogSnapshot {
