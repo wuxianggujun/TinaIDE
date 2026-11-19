@@ -38,7 +38,7 @@
 
 ## 继续学习
 
-- [项目到运行](ide-workflow.md)
-- [CMake 实践](cmake-practice.md)
+- [项目到运行](../tutorial-course/ide-workflow.md)
+- [CMake 实践](../tutorial-course/cmake-practice.md)
 - [vcpkg 实践](vcpkg-guide.md)
-- [SDL3 实践](graphics-sdl3.md)
+- [SDL3 实践](../tutorial-course/graphics-sdl3.md)

@@ -19,7 +19,7 @@ Exporting switches the project to shared-library mode. Use **Use built-in vcpkg*
 The shared store retains the current and previous generations, deferring older-directory collection until active builds leave. vcpkg's generated CMake configs resolve their prefix relatively; if a port hardcodes absolute paths, installing again in the project may be necessary.
 After catalog updates or source preparation, archives and sources retain only the current revision and one recent older revision. Active builds defer collection; unrelated directories are not removed.
 Settings store only disabled, project-manifest, or device-shared mode. Old manual paths and prebuilt settings are no longer read. Helper tools are bundled and verified; missing library sources and Git objects still need a connection. Select shared mode in another project to reuse exported libraries. Platform filtering does not verify every feature or transitive dependency; inspect actual build output.
-For a complete new-project and existing-project example, see [Using vcpkg with CMake](vcpkg-guide.md), also available through **Usage guide** in the market and the Tutorials tab.
+For a complete new-project and existing-project example, see [Using vcpkg with CMake](vcpkg-guide.md), also available through the market's **Usage guide** action.
 
 ## Main actions
 

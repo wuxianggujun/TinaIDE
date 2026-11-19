@@ -46,7 +46,3 @@ Keep the range check. Enter `3`, `-1`, and `abc`; explain the difference between
 ## Your exercise
 
 Subtract 10 when the total is at least 100. Predict results for counts 9, 10, and 11 before implementing `if/else`. Explain `&&`, `||`, and `==`; avoid using assignment `=` instead of comparison.
-
-## Continue learning
-
-- [Functions and multiple files](cpp-functions.md)

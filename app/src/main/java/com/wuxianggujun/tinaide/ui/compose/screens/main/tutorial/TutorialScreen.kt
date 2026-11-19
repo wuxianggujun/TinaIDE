@@ -17,13 +17,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.automirrored.filled.OpenInNew
-import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -32,19 +28,26 @@ import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,64 +55,35 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.wuxianggujun.tinaide.R
-import com.wuxianggujun.tinaide.core.help.HelpDocument
 import com.wuxianggujun.tinaide.core.help.HelpRepository
-import com.wuxianggujun.tinaide.core.i18n.Arrays
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.settings.SettingsActivity
-import com.wuxianggujun.tinaide.tutorial.TutorialViewModel
 import com.wuxianggujun.tinaide.tutorial.data.ProgressStatus
 import com.wuxianggujun.tinaide.tutorial.data.Tutorial
 import com.wuxianggujun.tinaide.tutorial.data.TutorialCategory
+import com.wuxianggujun.tinaide.tutorial.data.TutorialCourseAction
 import com.wuxianggujun.tinaide.tutorial.data.TutorialType
 import com.wuxianggujun.tinaide.tutorial.data.TutorialWithProgress
+import com.wuxianggujun.tinaide.tutorial.TutorialViewModel
+import com.wuxianggujun.tinaide.tutorial.TutorialCourseContentState
+import com.wuxianggujun.tinaide.tutorial.firstUnlockedCourseStepIndex
+import com.wuxianggujun.tinaide.tutorial.loadTutorialCourseContent
 import com.wuxianggujun.tinaide.ui.compose.components.MarkdownViewer
 import com.wuxianggujun.tinaide.ui.compose.components.TinaBackHandlers
 import com.wuxianggujun.tinaide.ui.compose.components.TinaCard
 import com.wuxianggujun.tinaide.ui.compose.components.TinaTopBar
 import com.wuxianggujun.tinaide.ui.compose.components.tinaBackAction
+import com.wuxianggujun.tinaide.ui.compose.screens.main.market.MarketTab
 import com.wuxianggujun.tinaide.ui.compose.screens.settings.SettingsRoute
-import com.wuxianggujun.tinaide.ui.wizard.NewProjectWizardActivity
-import kotlinx.coroutines.CancellationException
-
-private const val PLUGIN_QUICK_START_TUTORIAL_ID = "plugin_quick_start"
-
-internal sealed interface TutorialArticleLoadState {
-    data object Loading : TutorialArticleLoadState
-
-    data class Content(val markdown: String) : TutorialArticleLoadState
-
-    data object Error : TutorialArticleLoadState
-}
-
-internal suspend fun loadTutorialArticle(
-    contentUrl: String?,
-    loadContent: suspend (String) -> Result<String>,
-): TutorialArticleLoadState {
-    if (contentUrl.isNullOrBlank()) return TutorialArticleLoadState.Error
-
-    return try {
-        val content = loadContent(contentUrl).getOrThrow()
-        if (content.isBlank()) {
-            TutorialArticleLoadState.Error
-        } else {
-            TutorialArticleLoadState.Content(content)
-        }
-    } catch (cancellation: CancellationException) {
-        throw cancellation
-    } catch (_: Throwable) {
-        TutorialArticleLoadState.Error
-    }
-}
 
 /**
  * 教程屏幕
@@ -118,7 +92,9 @@ internal suspend fun loadTutorialArticle(
 @Composable
 fun TutorialScreen(
     modifier: Modifier = Modifier,
-    viewModel: TutorialViewModel = viewModel()
+    viewModel: TutorialViewModel = viewModel(),
+    onOpenProjectTab: () -> Unit = {},
+    onOpenMarketTab: (MarketTab) -> Unit = {},
 ) {
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
@@ -154,28 +130,24 @@ fun TutorialScreen(
         }
     ) { padding ->
         if (showContent) {
-            TutorialArticleContent(
-                tutorial = selectedTutorial!!,
-                onComplete = { viewModel.completeTutorial(selectedTutorial.id) },
-                onCreatePluginProject = {
-                    context.startActivity(NewProjectWizardActivity.createPluginProjectIntent(context))
-                },
-                onOpenPluginSettings = {
-                    SettingsActivity.start(
-                        context = context,
-                        initialRoute = SettingsRoute.Plugins,
-                    )
-                },
-                resolveTutorialByLinkTarget = viewModel::resolveTutorialByLinkTarget,
-                resolveHelpDocumentByLinkTarget = helpRepository::resolveDocumentByLinkTarget,
-                loadTutorialContent = helpRepository::loadDocumentContentByLinkTarget,
-                onLinkClick = { target ->
-                    if (target.startsWith("#")) {
-                        return@TutorialArticleContent
-                    }
-
+            val selected = selectedTutorial!!
+            val openLink: (String) -> Unit = { target ->
+                if (!target.startsWith("#")) {
                     val helpDocument = helpRepository.resolveDocumentByLinkTarget(target)
                     when {
+                        selected.type == TutorialType.GUIDED &&
+                            selected.courseSteps.getOrNull(uiState.currentCourseStepIndex)?.helpLinkTarget == target &&
+                            helpDocument != null -> {
+                            SettingsActivity.start(
+                                context = context,
+                                initialRoute = SettingsRoute.Help,
+                                initialHelpDocumentId = helpDocument.id,
+                            )
+                        }
+
+                        selected.type == TutorialType.GUIDED &&
+                            viewModel.openCourseStepByLinkTarget(selected, target) -> Unit
+
                         viewModel.openTutorialByLinkTarget(target) -> Unit
 
                         helpDocument != null -> {
@@ -186,15 +158,29 @@ fun TutorialScreen(
                             )
                         }
 
-                        else -> {
-                            runCatching { uriHandler.openUri(target) }
-                        }
+                        else -> runCatching { uriHandler.openUri(target) }
                     }
-                },
-                modifier = modifier
-                    .fillMaxSize()
-                    .padding(padding)
-            )
+                }
+            }
+            if (selected.type == TutorialType.GUIDED) {
+                TutorialGuidedCourseContent(
+                    tutorial = selected,
+                    currentStepIndex = uiState.currentCourseStepIndex,
+                    completedStepIds = uiState.completedCourseStepIds,
+                    onOpenProjectTab = onOpenProjectTab,
+                    onOpenMarketTab = onOpenMarketTab,
+                    onOpenHelp = openLink,
+                    loadCourseContent = helpRepository::loadTutorialCourseContentByLinkTarget,
+                    onPrevious = viewModel::previousCourseStep,
+                    onNext = viewModel::nextCourseStep,
+                    onSelectStep = viewModel::selectCourseStep,
+                    onStepCompletion = { stepId, completed ->
+                        viewModel.setCourseStepCompleted(selected.id, stepId, completed)
+                    },
+                    onComplete = { viewModel.completeTutorial(selected.id) },
+                    modifier = modifier.fillMaxSize().padding(padding),
+                )
+            }
         } else if (catalogState.isLoading) {
             Box(
                 modifier = modifier
@@ -203,6 +189,20 @@ fun TutorialScreen(
                 contentAlignment = Alignment.Center,
             ) {
                 CircularProgressIndicator()
+            }
+        } else if (catalogState.hasLoadError) {
+            Column(
+                modifier = modifier.fillMaxSize().padding(padding).padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Text(
+                    text = stringResource(Strings.tutorial_catalog_load_failed),
+                    color = MaterialTheme.colorScheme.error,
+                )
+                TextButton(onClick = viewModel::retryCatalogLoading) {
+                    Text(stringResource(Strings.action_retry))
+                }
             }
         } else if (tutorialsByCategory.isEmpty()) {
             // 空状态
@@ -263,398 +263,320 @@ fun TutorialScreen(
 }
 
 @Composable
-private fun TutorialArticleContent(
+private fun TutorialGuidedCourseContent(
     tutorial: Tutorial,
+    currentStepIndex: Int,
+    completedStepIds: Set<String>,
+    onOpenProjectTab: () -> Unit,
+    onOpenMarketTab: (MarketTab) -> Unit,
+    onOpenHelp: (String) -> Unit,
+    loadCourseContent: suspend (String) -> Result<String>,
+    onPrevious: (Tutorial) -> Unit,
+    onNext: (Tutorial) -> Unit,
+    onSelectStep: (Tutorial, Int) -> Unit,
+    onStepCompletion: (String, Boolean) -> Unit,
     onComplete: () -> Unit,
-    onCreatePluginProject: () -> Unit,
-    onOpenPluginSettings: () -> Unit,
-    resolveTutorialByLinkTarget: (String) -> Tutorial?,
-    resolveHelpDocumentByLinkTarget: (String) -> HelpDocument?,
-    loadTutorialContent: suspend (String) -> Result<String>,
-    onLinkClick: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val context = LocalContext.current
-    val contentUrl = tutorial.contentUrl
-    val helpLoadFailedMessage = stringResource(Strings.help_load_failed)
-    val relatedSectionTitles = remember(context) {
-        context.resources
-            .getStringArray(Arrays.tutorial_related_section_titles)
-            .map(TutorialRelatedLearningSupport::normalizeSectionTitle)
-            .toSet()
+    val steps = tutorial.courseSteps
+    val stepIndex = currentStepIndex.coerceIn(0, steps.lastIndex.coerceAtLeast(0))
+    val step = steps.getOrNull(stepIndex) ?: return
+    val scrollState = key(tutorial.id, step.id) { rememberScrollState() }
+    val quiz = step.quiz
+    val contentLinkTarget = step.contentLinkTarget
+    var contentLoadState by remember(contentLinkTarget) {
+        mutableStateOf<TutorialCourseContentState?>(
+            if (contentLinkTarget == null) null else TutorialCourseContentState.Loading,
+        )
+    }
+    var retryRequest by remember(contentLinkTarget) { mutableIntStateOf(0) }
+    var selectedAnswerIndex by rememberSaveable(tutorial.id, step.id) { mutableIntStateOf(-1) }
+    var showChapterMenu by rememberSaveable(tutorial.id, step.id) { mutableStateOf(false) }
+    val isStepCompleted = step.id in completedStepIds
+    val isLastStep = stepIndex == steps.lastIndex
+    val lastUnlockedStepIndex = firstUnlockedCourseStepIndex(steps, completedStepIds)
+    val hasPassedQuiz = quiz == null || isStepCompleted || selectedAnswerIndex == quiz.correctAnswerIndex
+    val contentLoaded = contentLinkTarget == null || contentLoadState is TutorialCourseContentState.Content
+    val canContinue = if (quiz != null) hasPassedQuiz else isStepCompleted && contentLoaded
+
+    LaunchedEffect(contentLinkTarget, retryRequest) {
+        if (contentLinkTarget != null) {
+            contentLoadState = TutorialCourseContentState.Loading
+            contentLoadState = loadTutorialCourseContent(contentLinkTarget, loadCourseContent)
+        }
     }
 
-    var loadState by remember(contentUrl) {
-        mutableStateOf<TutorialArticleLoadState>(TutorialArticleLoadState.Loading)
-    }
-    var retryRequest by remember(contentUrl) { mutableStateOf(0) }
-
-    LaunchedEffect(contentUrl, helpLoadFailedMessage, retryRequest) {
-        loadState = TutorialArticleLoadState.Loading
-        loadState = loadTutorialArticle(contentUrl, loadTutorialContent)
+    LaunchedEffect(tutorial.id, step.id, isStepCompleted, quiz?.correctAnswerIndex) {
+        if (quiz != null && isStepCompleted) {
+            selectedAnswerIndex = quiz.correctAnswerIndex
+        }
     }
 
     Column(modifier = modifier) {
-        when (val currentState = loadState) {
-            TutorialArticleLoadState.Loading -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    contentAlignment = Alignment.Center
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(scrollState)
+                .padding(horizontal = 16.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(Strings.tutorial_course_step_progress, stepIndex + 1, steps.size),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Box {
+                    TextButton(
+                        onClick = { showChapterMenu = true },
+                        modifier = Modifier.testTag("tutorial-course-outline"),
+                    ) {
+                        Text(stringResource(Strings.tutorial_course_outline))
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowDown,
+                            contentDescription = null,
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = showChapterMenu,
+                        onDismissRequest = { showChapterMenu = false },
+                    ) {
+                        steps.forEachIndexed { index, courseStep ->
+                            val statusRes = when {
+                                index == stepIndex -> Strings.tutorial_course_chapter_current
+                                index > lastUnlockedStepIndex -> Strings.tutorial_course_chapter_locked
+                                courseStep.id in completedStepIds -> Strings.tutorial_course_chapter_completed
+                                else -> Strings.tutorial_course_chapter_available
+                            }
+                            DropdownMenuItem(
+                                enabled = index <= lastUnlockedStepIndex,
+                                modifier = Modifier.testTag("tutorial-course-outline-step-${courseStep.id}"),
+                                text = {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text(
+                                            text = stringResource(courseStep.titleRes),
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                        Text(
+                                            text = stringResource(statusRes),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                },
+                                onClick = {
+                                    showChapterMenu = false
+                                    if (index != stepIndex) onSelectStep(tutorial, index)
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+            LinearProgressIndicator(
+                progress = { (stepIndex + 1).toFloat() / steps.size.coerceAtLeast(1) },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Text(
+                text = stringResource(step.titleRes),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+            )
+            TinaCard(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = stringResource(step.descriptionRes),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(16.dp),
+                )
+            }
+
+            when (step.action) {
+                TutorialCourseAction.OPEN_PROJECTS -> Button(
+                    onClick = onOpenProjectTab,
+                    modifier = Modifier.fillMaxWidth().testTag("tutorial-course-open-projects"),
+                ) {
+                    Text(stringResource(Strings.tutorial_course_action_open_projects))
+                }
+
+                TutorialCourseAction.OPEN_MARKET -> Button(
+                    onClick = { onOpenMarketTab(MarketTab.VCPKG) },
+                    modifier = Modifier.fillMaxWidth().testTag("tutorial-course-open-market"),
+                ) {
+                    Text(stringResource(Strings.tutorial_course_action_open_market))
+                }
+
+                TutorialCourseAction.OPEN_MARKET_PACKAGES -> Button(
+                    onClick = { onOpenMarketTab(MarketTab.PACKAGES) },
+                    modifier = Modifier.fillMaxWidth().testTag("tutorial-course-open-market-packages"),
+                ) {
+                    Text(stringResource(Strings.tutorial_course_action_open_market_packages))
+                }
+
+                null -> Unit
+            }
+
+            step.helpLinkTarget?.let { target ->
+                Button(
+                    onClick = { onOpenHelp(target) },
+                    modifier = Modifier.fillMaxWidth().testTag("tutorial-course-open-help"),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    ),
+                ) {
+                    Text(stringResource(Strings.tutorial_course_open_help))
+                }
+            }
+
+            when (val contentState = contentLoadState) {
+                null -> Unit
+                TutorialCourseContentState.Loading -> Box(
+                    modifier = Modifier.fillMaxWidth().height(120.dp),
+                    contentAlignment = Alignment.Center,
                 ) {
                     CircularProgressIndicator()
                 }
-            }
 
-            is TutorialArticleLoadState.Content -> {
-                val articlePresentation = TutorialRelatedLearningSupport.buildPresentation(
-                    markdown = currentState.markdown,
-                    currentTutorialId = tutorial.id,
-                    resolveTutorial = resolveTutorialByLinkTarget,
-                    resolveHelpDocument = resolveHelpDocumentByLinkTarget,
-                    relatedSectionTitles = relatedSectionTitles,
+                is TutorialCourseContentState.Content -> MarkdownViewer(
+                    markdown = contentState.markdown,
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(0.dp),
+                    onLinkClick = onOpenHelp,
                 )
 
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .verticalScroll(rememberScrollState())
-                        .padding(vertical = 16.dp)
-                ) {
-                    TutorialPluginQuickActions(
-                        tutorialId = tutorial.id,
-                        onCreatePluginProject = onCreatePluginProject,
-                        onOpenPluginSettings = onOpenPluginSettings,
-                    )
-                    MarkdownViewer(
-                        markdown = articlePresentation.markdown,
-                        modifier = Modifier.fillMaxWidth(),
-                        onLinkClick = onLinkClick,
-                    )
-                    TutorialContinueLearningSection(
-                        relatedDestinations = articlePresentation.relatedDestinations,
-                        onDestinationClick = onLinkClick,
-                    )
-                    Spacer(modifier = Modifier.height(32.dp))
-                }
-
-                Button(
-                    onClick = onComplete,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                ) {
-                    Text(text = stringResource(Strings.tutorial_complete))
-                }
-            }
-
-            TutorialArticleLoadState.Error -> {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .padding(24.dp),
+                TutorialCourseContentState.Error -> Column(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Text(
-                        text = helpLoadFailedMessage,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.error
+                        text = stringResource(Strings.help_load_failed),
+                        color = MaterialTheme.colorScheme.error,
                     )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Button(onClick = { retryRequest += 1 }) {
-                        Text(text = stringResource(Strings.action_retry))
+                    Button(
+                        onClick = { retryRequest += 1 },
+                        modifier = Modifier.testTag("tutorial-course-retry-${step.id}"),
+                    ) {
+                        Text(stringResource(Strings.action_retry))
                     }
                 }
             }
-        }
-    }
-}
 
-@Composable
-private fun TutorialPluginQuickActions(
-    tutorialId: String,
-    onCreatePluginProject: () -> Unit,
-    onOpenPluginSettings: () -> Unit,
-) {
-    if (tutorialId != PLUGIN_QUICK_START_TUTORIAL_ID) return
-
-    TinaCard(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.28f),
-        elevation = 0.dp,
-    ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Text(
-                text = stringResource(Strings.help_quick_actions_title),
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-            )
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                TutorialPluginQuickActionCard(
-                    text = stringResource(Strings.help_action_create_plugin_project),
-                    onClick = onCreatePluginProject,
-                    modifier = Modifier.weight(1f),
-                )
-                TutorialPluginQuickActionCard(
-                    text = stringResource(Strings.help_action_open_plugin_settings),
-                    onClick = onOpenPluginSettings,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun TutorialPluginQuickActionCard(
-    text: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    TinaCard(
-        onClick = onClick,
-        modifier = modifier,
-        containerColor = MaterialTheme.colorScheme.surface,
-        elevation = 0.dp,
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-        )
-    }
-}
-
-@Composable
-private fun TutorialContinueLearningSection(
-    relatedDestinations: List<TutorialRelatedDestination>,
-    onDestinationClick: (String) -> Unit,
-) {
-    if (relatedDestinations.isEmpty()) return
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-    ) {
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = stringResource(Strings.tutorial_continue_learning_title),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = stringResource(Strings.tutorial_continue_learning_desc),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(modifier = Modifier.height(12.dp))
-
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            relatedDestinations.forEach { destination ->
-                TutorialContinueLearningCard(
-                    destination = destination,
-                    onClick = { onDestinationClick(destination.linkTarget) },
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun TutorialContinueLearningCard(
-    destination: TutorialRelatedDestination,
-    onClick: () -> Unit,
-) {
-    val icon = when (destination.type) {
-        TutorialRelatedDestinationType.TUTORIAL -> Icons.Default.School
-        TutorialRelatedDestinationType.HELP -> Icons.Default.Book
-        TutorialRelatedDestinationType.EXTERNAL -> Icons.AutoMirrored.Filled.OpenInNew
-    }
-    val badgeText = when (destination.type) {
-        TutorialRelatedDestinationType.TUTORIAL -> {
-            stringResource(Strings.tutorial_related_destination_tutorial)
-        }
-
-        TutorialRelatedDestinationType.HELP -> {
-            stringResource(Strings.tutorial_related_destination_help)
-        }
-
-        TutorialRelatedDestinationType.EXTERNAL -> {
-            stringResource(Strings.tutorial_related_destination_external)
-        }
-    }
-    val routeText = when (destination.type) {
-        TutorialRelatedDestinationType.TUTORIAL -> {
-            stringResource(Strings.tutorial_related_destination_tutorial_route)
-        }
-
-        TutorialRelatedDestinationType.HELP -> {
-            stringResource(Strings.tutorial_related_destination_help_route)
-        }
-
-        TutorialRelatedDestinationType.EXTERNAL -> {
-            stringResource(Strings.tutorial_related_destination_external_route)
-        }
-    }
-    val actionText = when (destination.type) {
-        TutorialRelatedDestinationType.TUTORIAL -> {
-            stringResource(Strings.tutorial_related_destination_tutorial_action)
-        }
-
-        TutorialRelatedDestinationType.HELP -> {
-            stringResource(Strings.tutorial_related_destination_help_action)
-        }
-
-        TutorialRelatedDestinationType.EXTERNAL -> {
-            stringResource(Strings.tutorial_related_destination_external_action)
-        }
-    }
-    val title = when (destination.type) {
-        TutorialRelatedDestinationType.TUTORIAL -> {
-            stringResource(destination.tutorial!!.titleRes)
-        }
-
-        TutorialRelatedDestinationType.HELP -> {
-            destination.helpDocument!!.title
-        }
-
-        TutorialRelatedDestinationType.EXTERNAL -> {
-            destination.label?.takeIf { it.isNotBlank() } ?: destination.linkTarget
-        }
-    }
-    val summary = when (destination.type) {
-        TutorialRelatedDestinationType.TUTORIAL -> {
-            stringResource(destination.tutorial!!.descriptionRes)
-        }
-
-        TutorialRelatedDestinationType.HELP -> {
-            destination.helpDocument!!.summary
-        }
-
-        TutorialRelatedDestinationType.EXTERNAL -> destination.linkTarget
-    }
-    val accentColor = when (destination.type) {
-        TutorialRelatedDestinationType.TUTORIAL -> MaterialTheme.colorScheme.primary
-        TutorialRelatedDestinationType.HELP -> MaterialTheme.colorScheme.tertiary
-        TutorialRelatedDestinationType.EXTERNAL -> MaterialTheme.colorScheme.secondary
-    }
-    val badgeContainerColor = when (destination.type) {
-        TutorialRelatedDestinationType.TUTORIAL -> MaterialTheme.colorScheme.primaryContainer
-        TutorialRelatedDestinationType.HELP -> MaterialTheme.colorScheme.tertiaryContainer
-        TutorialRelatedDestinationType.EXTERNAL -> MaterialTheme.colorScheme.secondaryContainer
-    }
-    val badgeContentColor = when (destination.type) {
-        TutorialRelatedDestinationType.TUTORIAL -> MaterialTheme.colorScheme.onPrimaryContainer
-        TutorialRelatedDestinationType.HELP -> MaterialTheme.colorScheme.onTertiaryContainer
-        TutorialRelatedDestinationType.EXTERNAL -> MaterialTheme.colorScheme.onSecondaryContainer
-    }
-
-    TinaCard(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f),
-        elevation = 0.dp,
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.Top,
-        ) {
-            Surface(
-                modifier = Modifier.size(36.dp),
-                shape = CircleShape,
-                color = badgeContainerColor,
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        tint = badgeContentColor,
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Medium,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Surface(
-                        shape = CircleShape,
-                        color = badgeContainerColor,
+            if (quiz == null && contentLoaded) {
+                TinaCard(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onStepCompletion(step.id, !isStepCompleted) }
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                            .testTag("tutorial-course-confirm-${step.id}"),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
+                        Checkbox(
+                            checked = isStepCompleted,
+                            onCheckedChange = { onStepCompletion(step.id, it) },
+                        )
                         Text(
-                            text = badgeText,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = badgeContentColor,
-                            modifier = Modifier.padding(
-                                horizontal = 8.dp,
-                                vertical = 4.dp,
-                            ),
+                            text = stringResource(Strings.tutorial_course_confirm_step),
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(start = 8.dp),
                         )
                     }
                 }
+            }
 
-                Spacer(modifier = Modifier.height(6.dp))
+            quiz?.let { courseQuiz ->
+                TinaCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            text = stringResource(courseQuiz.questionRes),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        courseQuiz.answerRes.forEachIndexed { index, answerRes ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .clickable {
+                                        selectedAnswerIndex = index
+                                        onStepCompletion(step.id, index == courseQuiz.correctAnswerIndex)
+                                    }
+                                    .testTag("tutorial-course-quiz-answer-$index")
+                                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                RadioButton(
+                                    selected = selectedAnswerIndex == index,
+                                    onClick = {
+                                        selectedAnswerIndex = index
+                                        onStepCompletion(step.id, index == courseQuiz.correctAnswerIndex)
+                                    },
+                                )
+                                Text(
+                                    text = stringResource(answerRes),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    modifier = Modifier.padding(start = 4.dp, end = 8.dp),
+                                )
+                            }
+                        }
+                        if (selectedAnswerIndex >= 0) {
+                            Text(
+                                text = stringResource(
+                                    if (hasPassedQuiz) Strings.tutorial_course_quiz_correct
+                                    else Strings.tutorial_course_quiz_wrong,
+                                ),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = if (hasPassedQuiz) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Button(
+                onClick = { onPrevious(tutorial) },
+                enabled = stepIndex > 0,
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                ),
+            ) {
+                Text(stringResource(Strings.tutorial_previous))
+            }
+            Button(
+                onClick = if (isLastStep) onComplete else ({ onNext(tutorial) }),
+                enabled = canContinue,
+                modifier = Modifier.weight(1f).testTag("tutorial-course-continue"),
+            ) {
                 Text(
-                    text = routeText,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = accentColor,
-                    fontWeight = FontWeight.Medium,
+                    stringResource(
+                        if (isLastStep) Strings.tutorial_course_finish
+                        else Strings.tutorial_course_next_step,
+                    ),
                 )
-
-                if (summary.isNotBlank()) {
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = summary,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = actionText,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = accentColor,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                        contentDescription = null,
-                        tint = accentColor,
-                        modifier = Modifier.size(18.dp),
-                    )
-                }
             }
         }
     }
@@ -751,8 +673,7 @@ private fun TutorialCard(
                         .background(
                             when {
                                 status == ProgressStatus.COMPLETED -> MaterialTheme.colorScheme.primaryContainer
-                                tutorial.type == TutorialType.INTERACTIVE -> MaterialTheme.colorScheme.tertiaryContainer
-                                else -> MaterialTheme.colorScheme.secondaryContainer
+                                else -> MaterialTheme.colorScheme.tertiaryContainer
                             }
                         ),
                     contentAlignment = Alignment.Center
@@ -760,15 +681,13 @@ private fun TutorialCard(
                     Icon(
                         imageVector = when {
                             status == ProgressStatus.COMPLETED -> Icons.Default.CheckCircle
-                            tutorial.type == TutorialType.INTERACTIVE -> Icons.Default.TouchApp
-                            else -> Icons.Default.Book
+                            else -> Icons.Default.TouchApp
                         },
                         contentDescription = null,
                         modifier = Modifier.size(28.dp),
                         tint = when {
                             status == ProgressStatus.COMPLETED -> MaterialTheme.colorScheme.onPrimaryContainer
-                            tutorial.type == TutorialType.INTERACTIVE -> MaterialTheme.colorScheme.onTertiaryContainer
-                            else -> MaterialTheme.colorScheme.onSecondaryContainer
+                            else -> MaterialTheme.colorScheme.onTertiaryContainer
                         }
                     )
                 }
@@ -788,20 +707,21 @@ private fun TutorialCard(
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f)
                         )
-                        if (tutorial.type == TutorialType.INTERACTIVE) {
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = stringResource(Strings.tutorial_interactive),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.tertiary,
-                                modifier = Modifier
-                                    .background(
-                                        MaterialTheme.colorScheme.tertiaryContainer,
-                                        RoundedCornerShape(4.dp)
-                                    )
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = stringResource(
+                                if (tutorial.type == TutorialType.GUIDED) Strings.tutorial_guided
+                                else Strings.tutorial_interactive,
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.tertiary,
+                            modifier = Modifier
+                                .background(
+                                    MaterialTheme.colorScheme.tertiaryContainer,
+                                    RoundedCornerShape(4.dp)
+                                )
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
                     }
                     Text(
                         text = stringResource(tutorial.descriptionRes),
@@ -820,9 +740,10 @@ private fun TutorialCard(
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        if (tutorial.steps.isNotEmpty()) {
+                        val chapterCount = tutorial.steps.size.takeIf { it > 0 } ?: tutorial.courseSteps.size
+                        if (chapterCount > 0) {
                             Text(
-                                text = stringResource(R.string.tutorial_chapters, tutorial.steps.size),
+                                text = stringResource(R.string.tutorial_chapters, chapterCount),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -869,39 +790,31 @@ private fun TutorialCard(
 
                 ProgressStatus.IN_PROGRESS -> {
                     Column {
-                        if (tutorial.type == TutorialType.ARTICLE) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
                             Text(
-                                text = stringResource(Strings.tutorial_reading),
+                                text = stringResource(Strings.tutorial_progress, progress),
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary,
+                                color = MaterialTheme.colorScheme.primary
                             )
-                        } else {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    text = stringResource(Strings.tutorial_progress, progress),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                                Text(
-                                    text = stringResource(Strings.tutorial_continue),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            LinearProgressIndicator(
-                                progress = { progress / 100f },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(4.dp)
-                                    .clip(RoundedCornerShape(2.dp)),
-                                color = MaterialTheme.colorScheme.primary,
-                                trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                            Text(
+                                text = stringResource(Strings.tutorial_continue),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary
                             )
                         }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        LinearProgressIndicator(
+                            progress = { progress / 100f },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(4.dp)
+                                .clip(RoundedCornerShape(2.dp)),
+                            color = MaterialTheme.colorScheme.primary,
+                            trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                        )
                         Spacer(modifier = Modifier.height(8.dp))
                         Button(
                             onClick = onClick,

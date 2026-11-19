@@ -52,7 +52,3 @@ if (!(std::cin >> count)) { std::cerr << "expected integer\n"; return 1; }
 ## 自己完成
 
 总价至少 100 时减 10，其他情况原价。先写出 `count=9、10、11` 的预期，再实现 `if/else` 并验证。思考 `&&`、`||` 和 `==` 的含义，避免用赋值 `=` 代替比较。
-
-## 继续学习
-
-- [函数与多文件](cpp-functions.md)

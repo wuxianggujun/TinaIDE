@@ -4447,36 +4447,10 @@ kept=%3$d bytes
   <string name="tutorial_title">Learn</string>
   <string name="tutorial_empty">No tutorials available</string>
   <string name="tutorial_progress">Progress: %1$d%%</string>
-  <string name="tutorial_reading">Reading in progress</string>
   <string name="tutorial_duration">%1$s min</string>
   <string name="tutorial_start">Start Learning</string>
   <string name="tutorial_continue">Continue</string>
   <string name="tutorial_completed">Completed</string>
-  <string name="tutorial_continue_learning_title">Continue Learning</string>
-  <string name="tutorial_continue_learning_desc">Tutorial links stay in the learning flow, while help links open in Help Center.</string>
-  <string name="tutorial_related_destination_tutorial">In Tutorials</string>
-  <string name="tutorial_related_destination_help">Help Center</string>
-  <string name="tutorial_related_destination_external">External Link</string>
-  <string name="tutorial_related_destination_tutorial_route">Stays inside the tutorial flow</string>
-  <string name="tutorial_related_destination_help_route">Opens the matching Help Center article</string>
-  <string name="tutorial_related_destination_external_route">Opens with the system handler</string>
-  <string name="tutorial_related_destination_tutorial_action">Continue tutorial</string>
-  <string name="tutorial_related_destination_help_action">View help</string>
-  <string name="tutorial_related_destination_external_action">Open link</string>
-  <string-array name="tutorial_related_section_titles">
-    <item>相关文档</item>
-    <item>建议下一步</item>
-    <item>相关阅读</item>
-    <item>相关教程</item>
-    <item>继续学习</item>
-    <item>下一步</item>
-    <item>related docs</item>
-    <item>related documents</item>
-    <item>related tutorials</item>
-    <item>next steps</item>
-    <item>suggested next steps</item>
-    <item>continue learning</item>
-  </string-array>
   <string name="tutorial_skip">Skip</string>
   <string name="tutorial_next">Next</string>
   <string name="tutorial_previous">Previous</string>
@@ -4498,15 +4472,30 @@ kept=%3$d bytes
   <!-- Tutorial Titles -->
   <string name="tutorial_onboarding_title">Welcome to TinaIDE</string>
   <string name="tutorial_onboarding_desc">Quick tour of TinaIDE\'s main features</string>
-  <string name="tutorial_getting_started_title">Getting Started Guide</string>
-  <string name="tutorial_getting_started_desc">Learn the interface layout and basic operations</string>
-  <string name="tutorial_editor_basics_title">Editor Basics</string>
-  <string name="tutorial_editor_basics_desc">Master code editing, undo/redo and shortcuts</string>
-  <string name="tutorial_build_project_title">Build Configuration</string>
-  <string name="tutorial_build_project_desc">Learn CMakeLists.txt configuration and build options</string>
-  <string name="tutorial_git_basics_title">Git Basics</string>
-  <string name="tutorial_git_basics_desc">Commit, view history and manage branches</string>
-
+  <string name="tutorial_complete_cpp_course_title">Complete C++ Practice: From Project to Execution</string>
+  <string name="tutorial_complete_cpp_course_desc">Follow a continuous course through IDE workflow, C++ basics, multiple files, containers, resource lifetimes, CMake, dependencies, and graphics. Progress is saved by chapter.</string>
+  <string name="tutorial_course_vcpkg_desc">Continue with native_lab: add fmt in Market, update the existing CMake target, and run it. Help covers package states, integration modes, and troubleshooting—not a second walkthrough.</string>
+  <string name="tutorial_course_step_check_title">Final check · Verify the full workflow</string>
+  <string name="tutorial_course_step_check_desc">Answer one final question to confirm you can complete the basic create-to-run workflow.</string>
+  <string name="tutorial_course_action_open_projects">Go to Projects</string>
+  <string name="tutorial_course_action_open_market">Go to Market to add dependency</string>
+  <string name="tutorial_course_action_open_market_packages">Go to Market to install SDL3</string>
+  <string name="tutorial_course_open_help">Open related help</string>
+  <string name="tutorial_course_step_progress">Stage %1$d of %2$d</string>
+  <string name="tutorial_course_outline">Course outline</string>
+  <string name="tutorial_course_chapter_current">Current</string>
+  <string name="tutorial_course_chapter_completed">Completed</string>
+  <string name="tutorial_course_chapter_available">Available</string>
+  <string name="tutorial_course_chapter_locked">Locked</string>
+  <string name="tutorial_course_confirm_step">I finished this stage</string>
+  <string name="tutorial_course_next_step">Continue to next stage</string>
+  <string name="tutorial_course_finish">Complete the full practice</string>
+  <string name="tutorial_course_quiz_question">After a build error, what is the most reliable next step?</string>
+  <string name="tutorial_course_quiz_answer_correct">Read the build log, locate the first actionable error, make a minimal fix, and rebuild</string>
+  <string name="tutorial_course_quiz_answer_wrong_compiler">Keep changing CMake options until it happens to work</string>
+  <string name="tutorial_course_quiz_answer_wrong_dependencies">Ignore the build error and run the program anyway</string>
+  <string name="tutorial_course_quiz_wrong">Not quite. Return to the build log and find the earliest actionable error.</string>
+  <string name="tutorial_course_quiz_correct">Correct. You completed the create, edit, build, debug, run, and version-save workflow.</string>
   <!-- Onboarding Steps -->
   <string name="tutorial_step_project_tab_title">Project List</string>
   <string name="tutorial_step_project_tab_desc">All your projects are displayed here. Tap to open and edit.</string>
@@ -4570,6 +4559,7 @@ kept=%3$d bytes
   <string name="spotlight_finish">Finish</string>
   <string name="spotlight_next">Next</string>
   <string name="tutorial_interactive">Interactive</string>
+  <string name="tutorial_guided">Guided Practice</string>
   <string name="tutorial_relearn">Relearn</string>
 
 <!-- Diff -->
@@ -4628,6 +4618,9 @@ kept=%3$d bytes
   <string name="filter_packages">Packages</string>
   <string name="filter_snippets">Snippets</string>
   <string name="action_retry">Retry</string>
+  <string name="tutorial_progress_storage_failed">Learning progress could not be read or saved. Pending changes are retained. Please retry.</string>
+  <string name="tutorial_catalog_load_failed">Course progress could not be loaded. Please retry.</string>
+  <string name="symbols_query_failed">Symbol lookup failed. Check the language service and retry.</string>
 <string name="action_close">Close</string>
   <string name="action_ok">OK</string>
 
@@ -5130,8 +5123,8 @@ kept=%3$d bytes
   <string name="vcpkg_open_guide">Usage guide</string>
   <string name="wizard_vcpkg_hint">Optionally enable built-in vcpkg for this CMake project and create a dependency manifest. No directory setup is needed. After creation, add libraries in the market and follow the guide to link them in CMake. First installation downloads and compiles dependencies.</string>
   <string name="wizard_vcpkg_setup_failed">Unable to prepare the vcpkg project. Ensure the template root contains CMakeLists.txt and vcpkg.json is not a directory.</string>
-  <string name="help_doc_vcpkg_guide_title">Using vcpkg with CMake: add, link and run</string>
-  <string name="help_doc_vcpkg_guide_summary">Set up a new or existing CMake project and use fmt to add, link, build and run a dependency</string>
+  <string name="help_doc_vcpkg_guide_title">vcpkg dependency reference</string>
+  <string name="help_doc_vcpkg_guide_summary">Look up manifest, install, shared-library, and compatibility states; follow the practical course for a full walkthrough</string>
   <string-array name="help_keywords_vcpkg_guide">
     <item>vcpkg</item>
     <item>CMake</item>

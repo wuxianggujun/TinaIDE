@@ -183,9 +183,9 @@ py tools/checks/check_documentation.py
 该数字是当时的历史基线，不是当前值：`core/plugin/src/test` 现有 42 个 `*Test.kt`，套件数已经增长。
 沿用这一门禁时按“0 failures / 0 errors / 0 skipped”判断，并从本次运行的 XML 重新取套件与用例数，不要拿 176 当作预期值。
 其中包含 workspace 确定性排序、runtime unavailable 单次加载、权限授予后激活，以及并发故障写入线程回收。
-教程目录/文章状态和帮助全文搜索属于 app/feature 帮助测试，不计入这 176 项。测试数变化时应核对 XML，而不是只看 Gradle 的 `BUILD SUCCESSFUL`。
+教程目录/课程状态和帮助全文搜索属于 feature 教程/帮助测试，不计入这 176 项。测试数变化时应核对 XML，而不是只看 Gradle 的 `BUILD SUCCESSFUL`。
 
-`Dev Static Checks` 会运行该任务，并额外固定执行教程/帮助 JVM 回归和 App 教程文章状态测试。插件、教程或帮助 JVM 步骤失败时会上传：
+`Dev Static Checks` 会运行该任务，并额外固定执行教程/帮助 JVM 回归和 App 宿主回归。课程正文加载与取消测试已归入 `feature:tutorial`。相关 JVM 步骤失败时会上传：
 
 - `core/plugin/build/test-results/testDebugUnitTest/`
 - `core/plugin/build/reports/tests/testDebugUnitTest/`
@@ -196,33 +196,37 @@ py tools/checks/check_documentation.py
 - `app/build/test-results/testArm64DebugUnitTest/`
 - `app/build/reports/tests/testArm64DebugUnitTest/`
 
-制品名为 `plugin-jvm-test-reports-<run_id>-<run_attempt>`，保留 14 天；成功运行不会上传失败报告。
-最近一次确认的成功记录为 run `29691804039`（提交 `76173ebe4`）；插件、帮助、教程和 App 文章状态两个 Gradle 步骤及最终 Gradle 进程清理均成功。
+制品名为 `core-jvm-test-reports-<run_id>-<run_attempt>`，保留 14 天；成功运行不会上传失败报告。
+历史成功记录 run `29691804039`（提交 `76173ebe4`）验证的是当时的插件、帮助、教程和 App 文章测试，不作为当前课程实现的验收结果。
 
 GitHub Actions 的 `CI=true` 配置只使用官方 Google/Maven Central/Gradle Plugin Portal，避免动态版本解析被国内镜像的临时 metadata 错误阻断；本地非 CI 环境仍保留 Aliyun 镜像优先策略。
 
 ## 教程与帮助 JVM 稳定性门禁
 
-教程目录、帮助资产和文章加载状态分属不同模块，不能只依赖插件模块测试。提交前可运行：
+教程目录、课程加载与进度由 `feature:tutorial` 维护，帮助资产和搜索由 `feature:help` 维护。提交前可运行：
 
 ```powershell
 ./gradlew :feature:help:testDebugUnitTest :feature:tutorial:testDebugUnitTest --no-daemon --console=plain
 ```
 
-```powershell
-./gradlew :app:testArm64DebugUnitTest \
-  --tests "com.wuxianggujun.tinaide.ui.compose.screens.main.tutorial.TutorialArticleLoadStateTest" \
-  --tests "com.wuxianggujun.tinaide.ui.compose.screens.main.tutorial.TutorialRelatedLearningSupportTest" \
-  --no-daemon --console=plain
-```
-
 两组回归分别覆盖：
 
 - `feature:help`：中英文帮助资源、插件教程正文、全文搜索、正文缓存隔离和站内链接解析；
-- `feature:tutorial`：目录 Loading/Content/Empty 状态、分类排序和教程进度模型；
-- `app`：文章缺失、空正文、加载失败、重试所依赖的 `Content/Error` 状态，以及取消传播和关联学习链接。
+- `feature:tutorial`：目录加载与排序、课程内容缺失/空白/失败/取消、章节解锁、异步保存、快速关闭重开、重复完成、损坏进度修复，以及 I/O 失败后的有序重试和目录重载。
 
-CI 中的教程测试只选择与教程页面直接相关的 App 测试，不把无关的 App 全量单元测试混入插件稳定性门禁。
+符号索引和 LSP 查询回归使用以下命令；涉及宿主文件事件或查询界面时追加 App 编译：
+
+```bash
+./gradlew :feature:editor:testDebugUnitTest :core:lsp:testDebugUnitTest :core:editor-lsp:testDebugUnitTest :app:compileArm64DebugKotlin --no-daemon --console=plain
+```
+
+- `CxxSymbolProviderTest`：重载、作用域、类成员、变量位置、函数指针、构造/析构和操作符；使用符合语法节点结构的 JVM fixture，不替代设备上的 native parser 验证。
+- `ProjectSymbolIndexEventsTest`：删除、目录移动、外部修改及解析中删除文件。
+- `SymbolIndexCacheTest`：签名、中文注释、所属作用域和位置的缓存往返。
+- `LspSymbolQueryTest`：空结果、服务器失败和取消的区别；`FuzzyMatcherTest` 验证有限结果排序。
+
+`TutorialCourseContentTest` 继承原文章加载测试的有效覆盖；独立文章推荐链路已删除。
+宿主 UI 改动还需运行 `:app:compileArm64DebugKotlin`，实际章节切换和课程跳转市场由设备上的 `TutorialCourseInstrumentationTest` 验收。
 
 ## 插件设备稳定性门禁
 

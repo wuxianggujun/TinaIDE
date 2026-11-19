@@ -87,7 +87,7 @@ jobs:
           ./gradlew -Ptina.devAbi=arm64 -Ptina.buildProotFromSource=false \
             :core:text-engine:testDebugUnitTest :core:editor-view:testDebugUnitTest \
             :feature:editor:testDebugUnitTest :core:compile:testDebugUnitTest \
-            :core:editor-lsp:testDebugUnitTest :core:debug:testDebugUnitTest \
+            :core:lsp:testDebugUnitTest :core:editor-lsp:testDebugUnitTest :core:debug:testDebugUnitTest \
             :core:apk-builder:testDebugUnitTest \
             :core:security:testDebugUnitTest :core:storage:testDebugUnitTest :core:git:testDebugUnitTest \
             :core:plugin:testDebugUnitTest :feature:help:testDebugUnitTest :feature:tutorial:testDebugUnitTest \
@@ -106,8 +106,6 @@ jobs:
             --tests "*CompileActionsHelperTest" \
             --tests "*EditorFontSizeHostIntegrationTest" --tests "*EditorContainerStateTest" \
             --tests "*EditorSplitPaneStateTest" --tests "*SplitEditorSessionStorageTest" \
-            --tests "com.wuxianggujun.tinaide.ui.compose.screens.main.tutorial.TutorialArticleLoadStateTest" \
-            --tests "com.wuxianggujun.tinaide.ui.compose.screens.main.tutorial.TutorialRelatedLearningSupportTest" \
             --no-daemon --configure-on-demand \
             -Dorg.gradle.internal.http.connectionTimeout=120000 \
             -Dorg.gradle.internal.http.socketTimeout=120000 \

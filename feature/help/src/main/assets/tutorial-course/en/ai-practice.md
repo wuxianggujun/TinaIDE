@@ -37,7 +37,7 @@ TinaIDE stores no second copy of the key for these lessons and never presents a 
 
 Write a prompt with environment, minimal code, error, constraints, and expected result. Review a suggested patch, apply one small change, build and run it, and record actual inputs and outputs. Use execution evidence to judge the change.
 
-## Continue learning
+## Related help
 
-- [Learning path](getting-started.md)
-- [Git: save reversible changes](git-basics.md)
+- [Learning path](../../help/en/getting-started.md)
+- [Git: save reversible changes](../../help/en/git-basics.md)

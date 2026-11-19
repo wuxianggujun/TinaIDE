@@ -30,6 +30,14 @@ interface IProjectSymbolIndexService {
      */
     fun onFileSaved(file: File, content: String)
 
+    /** A file or subtree was created, imported, or changed outside the editor. */
+    fun onFileChanged(file: File)
+
+    /** Remove a file or subtree, including any parse still using its former contents. */
+    fun onFileDeleted(file: File)
+
+    fun onFileRenamed(oldFile: File, newFile: File)
+
     /**
      * 查询全局符号（前缀匹配）
      *

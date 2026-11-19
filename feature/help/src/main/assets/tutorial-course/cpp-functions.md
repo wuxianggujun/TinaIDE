@@ -57,8 +57,3 @@ add_executable(native_lab main.cpp pricing.cpp)
 `int&` 是已有变量的别名，修改它会修改调用者；`const std::string&` 可只读访问较大字符串，避免值拷贝。引用必须指向生命周期足够长的对象，不要返回局部变量的引用。
 
 自己新增 `discountedTotal` 函数，保持 `main` 只负责调用和输出。函数规则变更后，重新运行边界输入。
-
-## 继续学习
-
-- [字符串与容器](cpp-collections.md)
-- [CMake 目标与库](cmake-practice.md)

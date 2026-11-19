@@ -1050,11 +1050,13 @@ class LspEditorManager(
                 ticket = requestTicket,
                 future = session.symbol(params),
                 timeoutSeconds = timeoutSeconds,
-                operation = "workspaceSymbol(${fileNameForLog(tabSession.file)})"
+                operation = "workspaceSymbol(${fileNameForLog(tabSession.file)})",
+                propagateFailure = true,
             )
         }
-        if (isTabRequestStillValid(requestTicket)) result else emptyList()
-    } ?: emptyList()
+        if (!isTabRequestStillValid(requestTicket)) throw CancellationException("Symbol request was invalidated")
+        result
+    } ?: error("Workspace symbols are unavailable")
 
     suspend fun resolveWorkspaceSymbol(tabId: String, item: WorkspaceSymbolItem): WorkspaceSymbolItem? = withLspTabSession(tabId) { tabSession, session ->
         val requestTicket = createTabRequestTicket(tabId, tabSession.documentUri)
@@ -1070,8 +1072,8 @@ class LspEditorManager(
     }
 
     suspend fun documentSymbols(tabId: String): List<DocumentSymbolItem> {
-        val tabSession = synchronized(stateLock) { tabSessions[tabId] } ?: return emptyList()
-        if (!tabSession.isConnected) return emptyList()
+        val tabSession = synchronized(stateLock) { tabSessions[tabId] } ?: error("Document session is unavailable")
+        check(tabSession.isConnected) { "Document symbols are unavailable" }
         tabSession.builtinSession?.let { session ->
             return withContext(Dispatchers.Default) { session.documentSymbols() }
         }
@@ -1082,11 +1084,13 @@ class LspEditorManager(
                     ticket = requestTicket,
                     future = session.documentSymbol(params),
                     timeoutSeconds = timeoutSeconds,
-                    operation = "documentSymbols(${fileNameForLog(currentTabSession.file)})"
+                    operation = "documentSymbols(${fileNameForLog(currentTabSession.file)})",
+                    propagateFailure = true,
                 )
             }
-            if (isTabRequestStillValid(requestTicket)) result else emptyList()
-        } ?: emptyList()
+            if (!isTabRequestStillValid(requestTicket)) throw CancellationException("Symbol request was invalidated")
+            result
+        } ?: error("Document symbols are unavailable")
     }
 
     suspend fun requestHoverMarkdown(tabId: String, line: Int, column: Int): String? {

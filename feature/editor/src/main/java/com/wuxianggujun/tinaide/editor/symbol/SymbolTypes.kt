@@ -8,6 +8,7 @@ data class GlobalSymbol(
     val location: SymbolLocation? = null,
     val signature: String? = null,
     val documentation: String? = null,
+    val containerName: String? = null,
 )
 
 data class SymbolLocation(

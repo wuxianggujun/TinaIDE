@@ -4,9 +4,10 @@ Goal: draw, handle input, read logs, and exit safely using the native template. 
 
 ## Run the template first
 
-1. Install the Android SDL3 package under **Market → Packages**, not a similarly named vcpkg port.
-2. Create the bundled **CMake library** project `native_lab`, leave vcpkg off, and use the complete root-level files below. An installed template plugin may also offer SDL3 templates, but the basic offline template list does not guarantee graphics templates.
-3. Return to the editor, enable **Graphics options → Floating log** in the run configuration, and check the window-ready log on the next run.
+1. Use this stage's Market action to install the Android SDL3 package under **Market → Packages**. This is a built-in package, not a similarly named vcpkg port.
+2. In the same `native_lab` project settings, disable vcpkg integration so the graphics build no longer uses the vcpkg toolchain. Return to this existing project; do not create another one.
+3. Replace the root `CMakeLists.txt` and `main.cpp` with the examples below. You may keep `pricing.*` and `vcpkg.json`, but this graphics target will neither compile nor install them.
+4. Enable **Graphics options → Floating log** in the run configuration and check the window-ready log on the next run.
 
 `CMakeLists.txt`:
 
@@ -26,11 +27,14 @@ set_target_properties(native_lab PROPERTIES OUTPUT_NAME "main")
 #define SDL_MAIN_USE_CALLBACKS 1
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
+#include <memory>
 
 struct AppState { SDL_Window* window = nullptr; SDL_Renderer* renderer = nullptr; };
+static std::unique_ptr<AppState> appStateStorage;
 
 SDL_AppResult SDL_AppInit(void** appstate, int, char**) {
-    auto* state = new AppState();
+    appStateStorage = std::make_unique<AppState>();
+    auto* state = appStateStorage.get();
     *appstate = state;
     if (!SDL_Init(SDL_INIT_VIDEO)) return SDL_APP_FAILURE;
     if (!SDL_CreateWindowAndRenderer("native_lab", 640, 480, SDL_WINDOW_RESIZABLE,
@@ -60,8 +64,8 @@ void SDL_AppQuit(void* appstate, SDL_AppResult) {
     if (state) {
         SDL_DestroyRenderer(state->renderer);
         SDL_DestroyWindow(state->window);
-        delete state;
     }
+    appStateStorage.reset();
     SDL_Quit();
 }
 ```
@@ -126,7 +130,6 @@ Select NativeActivity output, build, and verify the rectangle. Retain ordinary `
 
 Check cold start, stop and restart, touch, returning to the editor, and rotation. The IDE must remain usable after the program exits. Try a nonexistent image, inspect the diagnostic, fix it, and rerun.
 
-## Continue learning
+## Runtime reference
 
-- [Mock AI collaboration](ai-practice.md)
-- [Runtime and graphics log reference](build-project.md)
+- [Runtime and graphics log reference](../../help/en/build-project.md)

@@ -41,8 +41,7 @@ If the output remains unchanged, check saved files, the selected target, and whe
 
 Print two lines, rename the target to `hello_lab` and update the run configuration, then reopen the project and run again. Mark the lesson complete only after checking the result. Save source and text files as UTF-8.
 
-## Continue learning
+## Quick references
 
-- [C++ values and control flow](cpp-basics.md)
-- [Editor reference](editor-basics.md)
-- [Build troubleshooting](build-project.md)
+- [Editor reference](../../help/en/editor-basics.md)
+- [Build troubleshooting](../../help/en/build-project.md)

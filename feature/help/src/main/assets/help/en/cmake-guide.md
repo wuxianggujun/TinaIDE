@@ -1,6 +1,6 @@
 # CMake configuration reference
 
-Use [the CMake lab](cmake-practice.md) for practice. A minimal native executable is:
+Use [the CMake lab](../../tutorial-course/en/cmake-practice.md) for practice. A minimal native executable is:
 
 ```cmake
 cmake_minimum_required(VERSION 3.22)
@@ -36,6 +36,6 @@ Read the first configure error for missing packages or targets. Check include pa
 
 ## Continue learning
 
-- [Multiple files](cpp-functions.md)
-- [CMake lab](cmake-practice.md)
+- [Multiple files](../../tutorial-course/en/cpp-functions.md)
+- [CMake lab](../../tutorial-course/en/cmake-practice.md)
 - [Build reference](build-project.md)

@@ -57,6 +57,3 @@ An `int&` aliases an existing integer and can modify it. `const std::string&` ac
 Add a separate discount function yourself. Keep `main` responsible for input/output and rerun boundary cases after changing the rules.
 
 ## Continue learning
-
-- [Strings and containers](cpp-collections.md)
-- [CMake targets](cmake-practice.md)

@@ -8,6 +8,9 @@ import android.content.res.Resources
 import com.google.common.truth.Truth.assertThat
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import java.util.Locale
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -95,6 +98,27 @@ class HelpRepositoryTest {
     }
 
     @Test
+    fun concurrentCourseLoads_shouldKeepEachLocalizedArticleIsolated() = runTest {
+        val repository = HelpRepository(localizedContext(Locale.ENGLISH))
+        val targets = listOf("cpp-basics.md", "cpp-functions.md", "vcpkg-practice.md")
+
+        val contents = coroutineScope {
+            (0 until 30).map { index ->
+                async {
+                    repository.loadTutorialCourseContentByLinkTarget(targets[index % targets.size]).getOrThrow()
+                }
+            }.awaitAll()
+        }
+
+        assertThat(contents.filterIndexed { index, _ -> index % targets.size == 0 }
+            .all { it.startsWith("# Lab 2:") }).isTrue()
+        assertThat(contents.filterIndexed { index, _ -> index % targets.size == 1 }
+            .all { it.startsWith("# Lab 3:") }).isTrue()
+        assertThat(contents.filterIndexed { index, _ -> index % targets.size == 2 }
+            .all { it.startsWith("# Lab 7:") }).isTrue()
+    }
+
+    @Test
     fun pluginCourse_shouldLoadEveryChineseAndEnglishArticleByLinkTarget() = runTest {
         val courseFiles = listOf(
             "plugin-quick-start.md",
@@ -153,6 +177,16 @@ class HelpRepositoryTest {
             ).inOrder()
         assertThat(HelpAssetPathResolver.candidatePaths("getting-started.md", "zh-CN"))
             .containsExactly("help/getting-started.md")
+        assertThat(
+            HelpAssetPathResolver.candidatePaths(
+                fileName = "cpp-basics.md",
+                languageTag = "en-US",
+                directory = "tutorial-course",
+            ),
+        ).containsExactly(
+            "tutorial-course/en/cpp-basics.md",
+            "tutorial-course/cpp-basics.md",
+        ).inOrder()
     }
 
     @Test

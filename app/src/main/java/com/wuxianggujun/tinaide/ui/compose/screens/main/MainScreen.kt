@@ -11,11 +11,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.Alignment
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
@@ -24,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.wuxianggujun.tinaide.R
 import com.wuxianggujun.tinaide.tutorial.TutorialViewModel
 import com.wuxianggujun.tinaide.tutorial.spotlight.LocalSpotlightRegistry
@@ -40,6 +46,7 @@ import com.wuxianggujun.tinaide.ui.compose.components.TinaDialogTitleText
 import com.wuxianggujun.tinaide.ui.compose.components.TinaPrimaryButton
 import com.wuxianggujun.tinaide.ui.compose.components.TinaTextButton
 import com.wuxianggujun.tinaide.ui.compose.screens.main.market.MarketScreen
+import com.wuxianggujun.tinaide.ui.compose.screens.main.market.MarketTab
 import com.wuxianggujun.tinaide.ui.compose.screens.main.profile.ProfileScreen
 import com.wuxianggujun.tinaide.ui.compose.screens.main.project.ProjectScreen
 import com.wuxianggujun.tinaide.ui.compose.screens.main.tutorial.TutorialScreen
@@ -70,6 +77,7 @@ fun MainScreen(
     onNavigateToDownloadHistory: () -> Unit = {},
 ) {
     var selectedNavIndex by rememberSaveable { mutableIntStateOf(0) }
+    var requestedMarketTab by rememberSaveable { mutableStateOf<MarketTab?>(null) }
     val saveableStateHolder = rememberSaveableStateHolder()
 
     // Spotlight 注册表
@@ -77,8 +85,8 @@ fun MainScreen(
 
     // Tutorial ViewModel
     val tutorialViewModel: TutorialViewModel = viewModel()
-    val tutorialUiState by tutorialViewModel.uiState.collectAsState()
-    val spotlightState by tutorialViewModel.spotlightState.collectAsState()
+    val tutorialUiState by tutorialViewModel.uiState.collectAsStateWithLifecycle()
+    val spotlightState by tutorialViewModel.spotlightState.collectAsStateWithLifecycle()
 
     fun navigateToSpotlightTarget(targetId: String) {
         selectedNavIndex = when (targetId) {
@@ -111,6 +119,25 @@ fun MainScreen(
                     .fillMaxSize()
                     .windowInsetsPadding(WindowInsets.statusBars)
             ) {
+                if (tutorialUiState.hasProgressError) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.tutorial_progress_storage_failed),
+                            modifier = Modifier.weight(1f),
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        TextButton(
+                            onClick = tutorialViewModel::retryProgressOperation,
+                            enabled = !tutorialUiState.isRetryingProgress,
+                        ) {
+                            Text(stringResource(R.string.action_retry))
+                        }
+                    }
+                }
                 Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
                     if (useNavigationRail) {
                         TinaNavigationRail(
@@ -129,8 +156,18 @@ fun MainScreen(
                                     onProjectClick = onOpenProject,
                                     spotlightUiState = spotlightState,
                                 )
-                                1 -> MarketScreen()
-                                2 -> TutorialScreen(viewModel = tutorialViewModel)
+                                1 -> MarketScreen(
+                                    requestedTab = requestedMarketTab,
+                                    onTabRequestHandled = { requestedMarketTab = null },
+                                )
+                                2 -> TutorialScreen(
+                                    viewModel = tutorialViewModel,
+                                    onOpenProjectTab = { selectedNavIndex = 0 },
+                                    onOpenMarketTab = { marketTab ->
+                                        requestedMarketTab = marketTab
+                                        selectedNavIndex = 1
+                                    },
+                                )
                                 3 -> ProfileScreen(
                                     onNavigateToSettings = onNavigateToSettings,
                                     onNavigateToDonation = onNavigateToDonation,
@@ -157,7 +194,7 @@ fun MainScreen(
 
             // Spotlight 遮罩引导
             SpotlightOverlay(
-                visible = spotlightState.isVisible,
+                visible = spotlightState.isVisible && !tutorialUiState.hasProgressError,
                 steps = spotlightState.steps,
                 currentStepIndex = spotlightState.currentStepIndex,
                 onNext = { tutorialViewModel.nextStep() },

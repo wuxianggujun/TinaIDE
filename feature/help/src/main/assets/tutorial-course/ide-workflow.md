@@ -45,8 +45,7 @@ int main() {
 
 只在实际完成以上操作后标记本课完成；阅读进度不等于编译验收。源码、Markdown 和文本文件统一保存为 UTF-8，不使用系统默认 ANSI 编码。
 
-## 继续学习
+## 相关速查
 
-- [C++ 变量与控制流](cpp-basics.md)
-- [编辑器速查](editor-basics.md)
-- [构建与运行排错](build-project.md)
+- [编辑器速查](../help/editor-basics.md)
+- [构建与运行排错](../help/build-project.md)

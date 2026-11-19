@@ -34,7 +34,7 @@ Enable **Graphics options → Floating log** in the run configuration. Inspect t
 
 ## Continue learning
 
-- [Project to execution](ide-workflow.md)
-- [CMake lab](cmake-practice.md)
+- [Project to execution](../../tutorial-course/en/ide-workflow.md)
+- [CMake lab](../../tutorial-course/en/cmake-practice.md)
 - [vcpkg lab](vcpkg-guide.md)
-- [SDL3 lab](graphics-sdl3.md)
+- [SDL3 lab](../../tutorial-course/en/graphics-sdl3.md)

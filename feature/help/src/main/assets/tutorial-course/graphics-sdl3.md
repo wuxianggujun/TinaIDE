@@ -4,9 +4,10 @@
 
 ## 先运行模板
 
-1. 在 **市场 → 包** 安装 SDL3 的 Android 包。这里使用内置包市场，不把它当作 vcpkg 的同名库。
-2. 新建内置 **CMake 库** 项目 `native_lab`，不启用 vcpkg，把根目录文件改为下面的完整示例。如果已安装的模板插件提供 SDL3 模板，也可以先运行它；基础离线模板列表不保证包含图形模板。
-3. 返回编辑器；在运行配置的 **图形选项 → 悬浮日志** 开启日志，再运行，检查窗口就绪日志。
+1. 点击本阶段的市场入口，在 **市场 → 包** 安装 SDL3 的 Android 包。它来自内置包市场，不是 vcpkg 的同名库。
+2. 在同一个 `native_lab` 的项目设置中关闭 vcpkg 集成，避免图形构建继续走 vcpkg toolchain；之后再返回本项目，不要另建工程。
+3. 把根目录 `CMakeLists.txt` 和 `main.cpp` 替换为下方示例。之前的 `pricing.*` 和 `vcpkg.json` 可留在工程中，但本图形目标不再编译或安装它们。
+4. 在运行配置的 **图形选项 → 悬浮日志** 开启日志，再运行，检查窗口就绪日志。
 
 `CMakeLists.txt`：
 
@@ -26,11 +27,14 @@ set_target_properties(native_lab PROPERTIES OUTPUT_NAME "main")
 #define SDL_MAIN_USE_CALLBACKS 1
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
+#include <memory>
 
 struct AppState { SDL_Window* window = nullptr; SDL_Renderer* renderer = nullptr; };
+static std::unique_ptr<AppState> appStateStorage;
 
 SDL_AppResult SDL_AppInit(void** appstate, int, char**) {
-    auto* state = new AppState();
+    appStateStorage = std::make_unique<AppState>();
+    auto* state = appStateStorage.get();
     *appstate = state;
     if (!SDL_Init(SDL_INIT_VIDEO)) return SDL_APP_FAILURE;
     if (!SDL_CreateWindowAndRenderer("native_lab", 640, 480, SDL_WINDOW_RESIZABLE,
@@ -60,8 +64,8 @@ void SDL_AppQuit(void* appstate, SDL_AppResult) {
     if (state) {
         SDL_DestroyRenderer(state->renderer);
         SDL_DestroyWindow(state->window);
-        delete state;
     }
+    appStateStorage.reset();
     SDL_Quit();
 }
 ```
@@ -129,7 +133,6 @@ int main() {
 - 横竖屏变化后绘制可见；资源路径不依赖旧窗口尺寸。
 - 故意加载不存在图片，日志说明错误，修正后能重新运行。
 
-## 继续学习
+## 运行参考
 
-- [AI 协作模拟练习](ai-practice.md)
-- [运行配置与图形日志速查](build-project.md)
+- [运行配置与图形日志速查](../help/build-project.md)

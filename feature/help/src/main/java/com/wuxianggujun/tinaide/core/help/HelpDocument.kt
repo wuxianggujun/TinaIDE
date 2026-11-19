@@ -12,7 +12,7 @@ import com.wuxianggujun.tinaide.core.i18n.Strings
  * @param title 文档标题
  * @param category 文档分类
  * @param keywords 搜索关键词列表
- * @param fileName 文档文件名（相对于 assets/help/）
+ * @param fileName 文档文件名（相对于 assetDirectory）
  * @param summary 文档摘要（可选）
  * @param order 排序权重（数字越小越靠前）
  */
@@ -23,7 +23,9 @@ data class HelpDocument(
     val keywords: List<String> = emptyList(),
     val fileName: String,
     val summary: String = "",
-    val order: Int = 0
+    val order: Int = 0,
+    /** 普通参考文档与实操课程正文分目录，避免教程章节混入帮助资源目录。 */
+    val assetDirectory: String = "help",
 )
 
 /**

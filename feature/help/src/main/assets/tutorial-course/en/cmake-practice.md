@@ -32,7 +32,6 @@ Remove the link to `pricing`, observe the linker error, restore it, and run agai
 
 Complete the lesson when a library edit triggers rebuilding, the program runs, and recovery after a configuration error does not require deleting the project.
 
-## Continue learning
+## Quick reference
 
-- [Lab 7: Using vcpkg](vcpkg-guide.md)
-- [CMake reference](cmake-guide.md)
+- [CMake reference](../../help/en/cmake-guide.md)

@@ -4587,36 +4587,10 @@ kept=%3$d bytes
   <string name="tutorial_title">教程</string>
   <string name="tutorial_empty">暂无教程</string>
   <string name="tutorial_progress">进度: %1$d%%</string>
-  <string name="tutorial_reading">阅读中</string>
   <string name="tutorial_duration">%1$s 分钟</string>
   <string name="tutorial_start">开始学习</string>
   <string name="tutorial_continue">继续学习</string>
   <string name="tutorial_completed">已完成</string>
-  <string name="tutorial_continue_learning_title">继续学习</string>
-  <string name="tutorial_continue_learning_desc">教程内容会在当前学习流程中打开，帮助内容会跳转到帮助中心。</string>
-  <string name="tutorial_related_destination_tutorial">教程内打开</string>
-  <string name="tutorial_related_destination_help">帮助中心</string>
-  <string name="tutorial_related_destination_external">外部链接</string>
-  <string name="tutorial_related_destination_tutorial_route">留在教程体系中继续学习</string>
-  <string name="tutorial_related_destination_help_route">跳转到帮助中心查看文档</string>
-  <string name="tutorial_related_destination_external_route">使用系统方式打开外部资源</string>
-  <string name="tutorial_related_destination_tutorial_action">继续教程</string>
-  <string name="tutorial_related_destination_help_action">查看帮助</string>
-  <string name="tutorial_related_destination_external_action">打开链接</string>
-  <string-array name="tutorial_related_section_titles">
-    <item>相关文档</item>
-    <item>建议下一步</item>
-    <item>相关阅读</item>
-    <item>相关教程</item>
-    <item>继续学习</item>
-    <item>下一步</item>
-    <item>related docs</item>
-    <item>related documents</item>
-    <item>related tutorials</item>
-    <item>next steps</item>
-    <item>suggested next steps</item>
-    <item>continue learning</item>
-  </string-array>
   <string name="tutorial_skip">跳过</string>
   <string name="tutorial_next">下一步</string>
   <string name="tutorial_previous">上一步</string>
@@ -4638,14 +4612,30 @@ kept=%3$d bytes
   <!-- Tutorial Titles -->
   <string name="tutorial_onboarding_title">欢迎使用 TinaIDE</string>
   <string name="tutorial_onboarding_desc">快速了解 TinaIDE 的主要功能</string>
-  <string name="tutorial_getting_started_title">TinaIDE 入门指南</string>
-  <string name="tutorial_getting_started_desc">了解 TinaIDE 的界面布局和基本操作</string>
-  <string name="tutorial_editor_basics_title">编辑器基础</string>
-  <string name="tutorial_editor_basics_desc">掌握代码编辑、撤销重做和快捷键</string>
-  <string name="tutorial_build_project_title">项目构建配置</string>
-  <string name="tutorial_build_project_desc">了解 CMakeLists.txt 配置和构建选项</string>
-  <string name="tutorial_git_basics_title">Git 基础操作</string>
-  <string name="tutorial_git_basics_desc">提交、查看历史和管理分支</string>
+  <string name="tutorial_complete_cpp_course_title">C++ 完整实操路线：从项目到运行</string>
+  <string name="tutorial_complete_cpp_course_desc">按一条连续课程完成 IDE 工作流、C++ 基础、多文件、容器、资源生命周期、CMake、依赖与图形实践；每章进度自动保存。</string>
+  <string name="tutorial_course_vcpkg_desc">继续使用 native_lab：在市场添加 fmt，更新现有 CMake 目标并运行验证。帮助页只查包状态、管理模式和排错，不重复本课操作。</string>
+  <string name="tutorial_course_step_check_title">最终检查 · 验收完整流程</string>
+  <string name="tutorial_course_step_check_desc">回答最后一个问题，确认你已经掌握从创建到运行的基本闭环。</string>
+  <string name="tutorial_course_action_open_projects">去项目页操作</string>
+  <string name="tutorial_course_action_open_market">去市场添加依赖</string>
+  <string name="tutorial_course_action_open_market_packages">去市场安装 SDL3 包</string>
+  <string name="tutorial_course_open_help">打开相关帮助</string>
+  <string name="tutorial_course_step_progress">阶段 %1$d / %2$d</string>
+  <string name="tutorial_course_outline">课程目录</string>
+  <string name="tutorial_course_chapter_current">当前</string>
+  <string name="tutorial_course_chapter_completed">已完成</string>
+  <string name="tutorial_course_chapter_available">可开始</string>
+  <string name="tutorial_course_chapter_locked">未解锁</string>
+  <string name="tutorial_course_confirm_step">我已完成，继续下一步</string>
+  <string name="tutorial_course_next_step">进入下一阶段</string>
+  <string name="tutorial_course_finish">完成整套练习</string>
+  <string name="tutorial_course_quiz_question">构建报错后，最稳妥的下一步是什么？</string>
+  <string name="tutorial_course_quiz_answer_correct">读构建日志定位首个错误，修复最小问题后重新构建</string>
+  <string name="tutorial_course_quiz_answer_wrong_compiler">反复改 CMake 参数直到碰巧成功</string>
+  <string name="tutorial_course_quiz_answer_wrong_dependencies">忽略构建错误，直接运行</string>
+  <string name="tutorial_course_quiz_wrong">还不正确。回到构建日志，先找到最早出现的有效错误。</string>
+  <string name="tutorial_course_quiz_correct">答对了。你已走完创建、编辑、构建、排错、运行与版本保存的闭环。</string>
 
   <!-- Onboarding Steps -->
   <string name="tutorial_step_project_tab_title">项目</string>
@@ -4712,6 +4702,7 @@ kept=%3$d bytes
   <string name="spotlight_finish">完成</string>
   <string name="spotlight_next">下一步</string>
   <string name="tutorial_interactive">交互式</string>
+  <string name="tutorial_guided">完整实操</string>
   <string name="tutorial_relearn">重新学习</string>
 
 <!-- Diff -->
@@ -4763,6 +4754,9 @@ kept=%3$d bytes
   <string name="filter_packages">包</string>
   <string name="filter_snippets">代码片段</string>
   <string name="action_retry">重试</string>
+  <string name="tutorial_progress_storage_failed">学习进度读写失败，待保存操作已保留，请重试。</string>
+  <string name="tutorial_catalog_load_failed">无法读取课程进度，请重试。</string>
+  <string name="symbols_query_failed">符号查询失败，请检查语言服务后重试。</string>
 <string name="action_close">关闭</string>
   <string name="action_ok">确定</string>
 
@@ -5268,8 +5262,8 @@ kept=%3$d bytes
   <string name="vcpkg_open_guide">使用教程</string>
   <string name="wizard_vcpkg_hint">可选，为 CMake 项目启用内置 vcpkg 并创建依赖清单，不需要配置目录。创建后到市场添加库，按教程修改 CMake 链接；首次安装会联网下载并编译。</string>
   <string name="wizard_vcpkg_setup_failed">无法准备 vcpkg 项目。请确认模板根目录包含 CMakeLists.txt，且 vcpkg.json 不是目录。</string>
-  <string name="help_doc_vcpkg_guide_title">CMake 使用 vcpkg：从添加库到运行</string>
-  <string name="help_doc_vcpkg_guide_summary">新建或接入已有 CMake 项目，用 fmt 完成依赖添加、链接、编译与运行</string>
+  <string name="help_doc_vcpkg_guide_title">vcpkg 依赖管理速查</string>
+  <string name="help_doc_vcpkg_guide_summary">查看清单、安装、共享库与包兼容状态；完整动手流程请到教程中心</string>
   <string-array name="help_keywords_vcpkg_guide">
     <item>vcpkg</item>
     <item>CMake</item>

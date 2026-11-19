@@ -1,114 +1,43 @@
-# Using vcpkg with CMake: add, link and run
+# vcpkg dependency reference
 
-TinaIDE includes Android-native vcpkg. Select a library, declare its CMake linkage and build. The app manages tool and installation directories; no extra plugin or directory setup is required.
+TinaIDE's vcpkg integration targets Android-native CMake projects. For the complete add, link, build, and run workflow, start the continuous C++ practical course from the Tutorials tab. This page explains states, modes, and troubleshooting.
 
-This guide uses `fmt` to print `TinaIDE + vcpkg: 42`. Use native CMake. Supporting tools are bundled and verified before extraction; library sources are downloaded on first use and compiled on the device.
+## States and boundaries
 
-For slow GitHub connections, tap **GitHub proxy at the top right of Market**. Choose a preset or enter your own HTTPS proxy prefix and save, without opening Settings. The selected URL is tried first for catalogs, sources, and vcpkg Git fetches, with origin fallback. Git fetches require a proxy that supports Git; an optional HTTP proxy can also provide the connection. Clear the URL for automatic selection. Active installations retain their starting configuration; cancel and retry to use new settings.
+- **In manifest**: a dependency name is recorded in the selected project's `vcpkg.json`; it has not necessarily been downloaded or installed.
+- **Installed**: an installation record exists for the selected project and ABI. After changing the manifest, install/build again to synchronize dependencies.
+- **Verified**: TinaIDE has completed a device download, compile, and link check for the package. This does not guarantee every feature or transitive dependency.
+- Editing the manifest does not create CMake usage. CMake still needs `find_package` and `target_link_libraries`. Package, config, and target names can differ; check the upstream usage.
 
-## 1. Create or select a project
+## Integration modes
 
-For a new project:
+- **Built-in project vcpkg**: the manifest and installation workspace belong to the project. The app manages toolchain, tools, and paths; do not enter `CMAKE_TOOLCHAIN_FILE`, `VCPKG_ROOT`, or a desktop sysroot manually.
+- **Shared device library**: compiled dependencies are exported per ABI for reuse by other projects. Each project still needs CMake package discovery and target linkage. Switch back to built-in project mode to edit dependencies.
+- **Disabled integration**: the project no longer uses app-managed dependencies; adjust its CMake references accordingly.
 
-1. Open **Projects → +** and select **CMake executable**.
-2. Name the project `tina_vcpkg_example` and select C++17 or later.
-3. Check **Use built-in vcpkg**, then create the project.
+## Catalog and compatibility
 
-This option is off by default and appears only for CMake templates. It enables managed integration and creates an empty `vcpkg.json`. An existing template manifest is preserved. Project creation does not download or compile libraries.
+The market catalog is a set of browsable candidates, not a promise that each library has been built for the current Android ABI. Filtering uses upstream `supports` declarations and static-linking conditions; packages without declared restrictions can also appear. Features, transitive dependencies, or extra build tools may still be incompatible. Remove or adjust unavailable dependencies already in a manifest instead of mixing in Linux or Windows binaries.
 
-For an existing project, confirm that its root contains `CMakeLists.txt`, then continue below. Adding the first dependency in the market enables integration automatically. This also works if you left the wizard option unchecked.
+Refresh rereads the local catalog. **Download / update catalog** fetches new metadata; it does not edit manifests, upgrade installed libraries, or replace APK-bundled tools. Bundled tools are verified and extracted by the app. Missing ports, Git objects, or library sources may require network access on first use.
 
-Single-file and Make projects do not use this CMake integration. Graphics templates still need their existing engine packages; enabling vcpkg does not replace the built-in packages required by a template.
+For slow GitHub connections, configure a GitHub proxy from the top-right of Market. A basic HTTP download proxy may not support Git smart HTTP. Active tasks keep their startup configuration; cancel and retry after changing it. A failed or cancelled update keeps the previous catalog available.
 
-## 2. Add fmt
+## Troubleshooting reference
 
-1. Open **Market → vcpkg** and search for `fmt`.
-2. Tap **Add to project** and choose your CMake project.
-3. Confirm that the `fmt` card shows the **In manifest** badge.
-
-The app updates `vcpkg.json` in the project root. A minimal manifest is shown below. If it already contains dependencies or configuration, merge the dependency entry:
-
-```json
-{
-  "dependencies": ["fmt"]
-}
-```
-
-**Add to project** only edits the manifest. An **Installed** version indicates an actual installation for the selected project and architecture.
-
-## 3. Link the library in CMake
-
-For the new project in this guide, replace the root `CMakeLists.txt` with the following content and create `main.cpp` beside it. This example compiles that root-level `main.cpp`.
-
-```cmake
-cmake_minimum_required(VERSION 3.22)
-project(tina_vcpkg_example LANGUAGES CXX)
-find_package(fmt CONFIG REQUIRED)
-add_executable(tina_vcpkg_example main.cpp)
-target_link_libraries(tina_vcpkg_example PRIVATE fmt::fmt)
-target_compile_features(tina_vcpkg_example PRIVATE cxx_std_17)
-```
-
-`main.cpp`:
-
-```cpp
-#include <fmt/core.h>
-
-int main() {
-    fmt::print("TinaIDE + vcpkg: {}\n", 42);
-    return 0;
-}
-```
-
-For an existing project, merge `find_package(fmt CONFIG REQUIRED)` and add `fmt::fmt` to the existing target's `target_link_libraries`. Use the target name from your own `add_executable` or `add_library`. Keep your existing targets and source lists.
-
-The app passes the vcpkg toolchain automatically. Do not enter `CMAKE_TOOLCHAIN_FILE`, `VCPKG_ROOT` or installation paths manually. A market package name, its `find_package` name and its CMake target may differ; check the library's CMake instructions when using other packages.
-
-## 4. Install, build and run
-
-Save both files and tap **Run** in the editor. The app installs manifest dependencies, configures CMake, builds and runs the selected target.
-
-You can also tap **Install to project** in the market footer to inspect installation output. This step does not run your program; return to the editor to build and run. Select native CMake, terminal output, and the `tina_vcpkg_example` target in the run configuration.
-
-Expected output:
-
-```text
-TinaIDE + vcpkg: 42
-```
-
-If it fails, inspect the first installation, configuration or linker error in **Build Log**. Cancelling installation preserves completed libraries so you can retry later.
-
-## 5. Add, remove and update dependencies
-
-- Add another library in the market, then update CMake linkage and source usage according to that library's documentation.
-- To remove a library, tap **Remove from manifest** on its card, remove its source usage and CMake linkage, then install/build again. Packages required by other libraries may remain installed.
-- **Download / update catalog** refreshes browsable ports metadata. It does not automatically rewrite project manifests, upgrade installed libraries or replace the CLI bundled with the APK.
-- To reuse compiled libraries, tap **Shared library** in the footer. In another project choose **Project settings → vcpkg dependencies → Use the shared device library**. Keep its `find_package` and target linkage. Use **Use built-in vcpkg** to switch back before editing dependencies.
-- Existing `builtin-baseline`, features and overrides are preserved. The market shows the current catalog; the project's manifest and registries determine the versions it uses.
-- Disable integration under **Project settings → vcpkg dependencies**. Adjust the project's CMake dependencies accordingly.
-
-The default catalog evaluates upstream `supports` declarations for the current app architecture and static linking. Libraries without declared restrictions are also candidates. This does not verify every feature, transitive dependency or additional build tool. Existing incompatible or removed packages still appear in the list so they can be removed there.
-
-## Troubleshooting
-
-| Symptom | Check and action |
+| Symptom | Check |
 | --- | --- |
-| Project is absent from the market selector | Ensure it is in the project list and has `CMakeLists.txt` at its root; a file only in a subdirectory is insufficient |
-| fmt is not found after adding it | Confirm the selected project, inspect `vcpkg.json` and installation output, and use native CMake mode |
-| Headers resolve but linking fails | Link `fmt::fmt` to the target you actually run; adding a manifest entry does not edit CMake linkage |
-| A package is absent | Search covers current Android candidates. Update the catalog; Linux/Windows libraries cannot be linked into Android builds |
-| Installation fails offline | Browsing, lessons, and bundled helper preparation work offline. Missing ports sources, Git objects, or library sources still require a connection |
-| GitHub downloads fail or stall | Switch the GitHub proxy, then cancel and retry active tasks. Git fetches need smart HTTP support, not only a file-download proxy |
-| The catalog or repository archive cache is corrupt | Update the catalog or retry dependency installation. Cached data is validated when read; invalid archives are downloaded again with fallback to other sources. If all sources fail, the previous catalog remains available; no app reinstall or manual vcpkg installation is needed |
-| Shared mode cannot edit dependencies | Choose **Use built-in vcpkg** to return to project manifest mode; existing shared files remain |
+| Project is absent from the market selector | It must be in the project list and have a root `CMakeLists.txt` |
+| Package config is missing after adding a manifest entry | Check the selected project, ABI, installation state, native CMake mode, and `find_package` name |
+| Headers resolve but linking fails | Ensure the actual CMake target links the correct target; the manifest entry alone is insufficient |
+| Package is not in the compatibility list | Check catalog declaration, ABI, static linking, and dependency features; do not substitute desktop binaries |
+| Installation or catalog download fails | Read the first useful build/install error; check network and Git proxy support, then cancel and retry |
+| Shared mode cannot edit the manifest | Switch to built-in project vcpkg; exported shared libraries remain available |
 
-## Exercises and acceptance
+Keep the original project and build logs while troubleshooting. Uninstalling the app, deleting source, or manually copying dependencies is unnecessary.
 
-Replace `42` with `7 * 6`, save, and verify the same output. Temporarily remove `target_link_libraries`, observe the error, restore it, and run again. Rebuild to check reuse of installed dependencies. After a complete online installation, rebuild the unchanged project offline. Finally link and run another project using the shared library before marking the lesson complete.
+## Related documents
 
-## Further reading
-
-- [Create a project](create-project.md)
-- [CMake guide](cmake-guide.md)
+- [CMake configuration reference](cmake-guide.md)
 - [Package management](package-manager.md)
-- [Build a project](build-project.md)
+- [Build and run reference](build-project.md)

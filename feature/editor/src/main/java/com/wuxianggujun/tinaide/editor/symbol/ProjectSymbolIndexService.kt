@@ -22,11 +22,13 @@ import kotlin.concurrent.read
 import kotlin.concurrent.write
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -52,6 +54,7 @@ import timber.log.Timber
 class ProjectSymbolIndexService(
     private val context: Context? = null,
     providers: List<LanguageSymbolProvider> = listOf(CxxSymbolProvider()),
+    workerDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ServiceLifecycle,
     Closeable,
     IProjectSymbolIndexService {
@@ -74,6 +77,7 @@ class ProjectSymbolIndexService(
         private const val MAX_INDEX_FILES = 50_000
         private const val MAX_SCAN_ENTRIES = 100_000
         private const val MAX_SCAN_DEPTH = 64
+        private const val FILE_CHANGE_DEBOUNCE_MS = 150L
     }
 
     init {
@@ -96,7 +100,7 @@ class ProjectSymbolIndexService(
         val cacheHitFiles: Int = 0, // 缓存命中的文件数
     )
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + workerDispatcher)
     private val lock = ReentrantReadWriteLock()
     private val revision = AtomicLong(0L)
     private val projectGeneration = AtomicLong(0L)
@@ -225,6 +229,86 @@ class ProjectSymbolIndexService(
         }
     }
 
+    override fun onFileChanged(file: File) {
+        val root = activeProjectRoot ?: return
+        val generation = projectGeneration.get()
+        if (runCatching { Files.isSymbolicLink(file.toPath()) }.getOrDefault(true)) return
+        val normalizedFile = runCatching { file.canonicalFile }.getOrNull() ?: return
+        if (!isUnderOrEqualRoot(normalizedFile, root) || isIgnoredPath(normalizedFile, root)) return
+        val token = beginFileUpdate(normalizedFile.path, generation)
+        scope.launch {
+            try {
+                delay(FILE_CHANGE_DEBOUNCE_MS)
+                if (!isCurrentFileUpdate(normalizedFile.path, token)) return@launch
+                if (Files.isSymbolicLink(normalizedFile.toPath())) return@launch
+                val canonicalFile = normalizedFile.canonicalFile
+                if (!isUnderOrEqualRoot(canonicalFile, root)) return@launch
+                if (canonicalFile.isDirectory) {
+                    for (child in collectProjectFiles(canonicalFile)) {
+                        if (!isCurrentFileUpdate(normalizedFile.path, token)) return@launch
+                        onFileChanged(child)
+                    }
+                } else if (isSupportedFile(canonicalFile)) {
+                    val error = if (canonicalFile.isFile) {
+                        updateSingleFile(canonicalFile, readFileForIndex(canonicalFile), token)
+                    } else {
+                        removeSnapshotForCurrentUpdate(canonicalFile.path, token)
+                        null
+                    }
+                    if (isCurrentFileUpdate(normalizedFile.path, token)) {
+                        mutableStatus.value = mutableStatus.value.copy(lastError = error)
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                removeSnapshotForCurrentUpdate(normalizedFile.path, token)
+                if (isCurrentFileUpdate(normalizedFile.path, token)) {
+                    Timber.tag(TAG).w(error, "Failed to refresh changed symbols: %s", normalizedFile.name)
+                    mutableStatus.value = mutableStatus.value.copy(lastError = error.messageOrClass())
+                }
+            } finally {
+                completeFileUpdate(normalizedFile.path, token)
+            }
+        }
+    }
+
+    override fun onFileDeleted(file: File) {
+        val root = activeProjectRoot ?: return
+        val generation = projectGeneration.get()
+        val path = runCatching { file.canonicalFile }.getOrNull() ?: return
+        if (!isUnderOrEqualRoot(path, root)) return
+        lock.write {
+            if (!isCurrentProject(root, generation)) return@write
+            // Tokens are removed even before a snapshot exists, so a late parse cannot resurrect it.
+            latestFileUpdates.keys.filter { isSameOrDescendantPath(it, path.path) }
+                .forEach(latestFileUpdates::remove)
+            val removedPaths = fileSnapshots.keys.filter { isSameOrDescendantPath(it, path.path) }
+            removedPaths.forEach { removedPath ->
+                removeFileSnapshotLocked(removedPath)
+                fileTimestamps.remove(removedPath)
+            }
+            if (removedPaths.isNotEmpty()) {
+                bumpRevisionLocked()
+                mutableStatus.value = mutableStatus.value.copy(
+                    indexedFiles = fileSnapshots.size,
+                    totalFiles = if (mutableStatus.value.isIndexing) mutableStatus.value.totalFiles else fileSnapshots.size,
+                )
+            }
+        }
+    }
+
+    override fun onFileRenamed(oldFile: File, newFile: File) {
+        onFileDeleted(oldFile)
+        onFileChanged(newFile)
+    }
+
+    private fun isSameOrDescendantPath(path: String, parent: String): Boolean =
+        path == parent || path.startsWith(parent.trimEnd(File.separatorChar) + File.separator)
+
+    private fun isIgnoredPath(file: File, root: File): Boolean =
+        file.relativeTo(root).invariantSeparatorsPath.split('/').any { it in IGNORED_DIR_NAMES }
+
     /**
      * 查询全局符号（前缀匹配）
      *
@@ -287,7 +371,7 @@ class ProjectSymbolIndexService(
             return lock.read {
                 val out = ArrayList<FuzzySymbolResult>(minOf(max, 64))
                 val seenKeys = HashSet<String>(minOf(max * 2, 512))
-                for (symbol in globalSymbolsByLower.values.flatten()) {
+                for (symbol in globalSymbolsByLower.values.asSequence().flatMap { it.asSequence() }) {
                     val key = symbol.composeStableKey()
                     if (!seenKeys.add(key)) continue
                     out.add(FuzzySymbolResult(symbol, FuzzyMatcher.MatchResult(matched = true, score = 0)))
@@ -297,19 +381,18 @@ class ProjectSymbolIndexService(
             }
         }
 
-        return lock.read {
-            val allSymbols = globalSymbolsByLower.values.flatten()
-            val matched = FuzzyMatcher.matchAndSort(p, allSymbols, { it.name }, max)
-            val out = ArrayList<FuzzySymbolResult>(minOf(matched.size, max))
-            val seenKeys = HashSet<String>(minOf(max * 2, 512))
-            for ((symbol, matchResult) in matched) {
-                val key = symbol.composeStableKey()
-                if (!seenKeys.add(key)) continue
-                out.add(FuzzySymbolResult(symbol, matchResult))
-                if (out.size >= max) break
-            }
-            out
+        // Copy the immutable symbols under the lock, then release it before expensive matching.
+        val allSymbols = lock.read { globalSymbolsByLower.values.flatten() }
+        val matched = FuzzyMatcher.matchAndSort(p, allSymbols, { it.name }, max)
+        val out = ArrayList<FuzzySymbolResult>(minOf(matched.size, max))
+        val seenKeys = HashSet<String>(minOf(max * 2, 512))
+        for ((symbol, matchResult) in matched) {
+            val key = symbol.composeStableKey()
+            if (!seenKeys.add(key)) continue
+            out.add(FuzzySymbolResult(symbol, matchResult))
+            if (out.size >= max) break
         }
+        return out
     }
 
     /**
@@ -452,6 +535,8 @@ class ProjectSymbolIndexService(
                     ?.projectGeneration == generation
                 if (cachedSnapshot.filePath !in allowedPaths ||
                     hasCurrentUpdate ||
+                    cachedSnapshot.filePath in fileSnapshots ||
+                    !File(cachedSnapshot.filePath).isFile ||
                     !appliedPaths.add(cachedSnapshot.filePath)
                 ) {
                     skipped++
@@ -608,6 +693,12 @@ class ProjectSymbolIndexService(
                 fileSnapshots[path] = snapshot
                 fileTimestamps[path] = file.lastModified()
                 bumpRevisionLocked()
+                if (!mutableStatus.value.isIndexing) {
+                    mutableStatus.value = mutableStatus.value.copy(
+                        indexedFiles = fileSnapshots.size,
+                        totalFiles = fileSnapshots.size,
+                    )
+                }
             }
         } finally {
             tree.close()
@@ -828,6 +919,7 @@ data class ProjectSymbol(
     val location: SymbolLocation? = null,
     val signature: String? = null,
     val documentation: String? = null,
+    val containerName: String? = null,
 ) {
     val displayDetail: String
         get() {
@@ -890,6 +982,7 @@ private data class FileSnapshot(
                     location = it.location,
                     signature = it.signature,
                     documentation = it.documentation,
+                    containerName = it.containerName,
                 )
             }
             return FileSnapshot(
@@ -935,6 +1028,7 @@ private fun ProjectSymbol.toSymbolInfo(): SymbolInfo = SymbolInfo(
     },
     signature = signature,
     documentation = documentation,
+    containerName = containerName,
 )
 
 /**

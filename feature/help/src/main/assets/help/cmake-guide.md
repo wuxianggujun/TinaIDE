@@ -1,6 +1,6 @@
 # CMake 配置速查
 
-动手学习见 [CMake 目标与库](cmake-practice.md)，以下只保留常用写法。
+动手学习见 [CMake 目标与库](../tutorial-course/cmake-practice.md)，以下只保留常用写法。
 
 ```cmake
 cmake_minimum_required(VERSION 3.22)
@@ -40,6 +40,6 @@ target_link_libraries(native_lab PRIVATE fmt::fmt)
 
 ## 继续学习
 
-- [多文件实践](cpp-functions.md)
-- [CMake 实践](cmake-practice.md)
+- [多文件实践](../tutorial-course/cpp-functions.md)
+- [CMake 实践](../tutorial-course/cmake-practice.md)
 - [构建速查](build-project.md)

@@ -9,6 +9,7 @@ import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import timber.log.Timber
@@ -20,12 +21,14 @@ import timber.log.Timber
 class HelpRepository(private val context: Context) {
 
     // 文档内容缓存
-    private val contentCache = mutableMapOf<String, String>()
+    private val contentCache = ConcurrentHashMap<String, String>()
 
     private fun keywords(@ArrayRes resId: Int): List<String> = context.resources.getStringArray(resId).toList()
 
-    // 预定义的帮助文档列表
-    private val documents: List<HelpDocument> = practiceDocuments() + listOf(
+    private val tutorialCourseDocuments: List<HelpDocument> = createTutorialCourseDocuments()
+
+    // 帮助目录与搜索只列参考文档；实操章节使用独立资源目录，保留既有站内链接解析。
+    private val documents: List<HelpDocument> = listOf(
         // 快速开始
         HelpDocument(
             id = "getting-started",
@@ -361,21 +364,23 @@ class HelpRepository(private val context: Context) {
         )
     )
 
-    private fun practiceDocuments(): List<HelpDocument> {
+    private fun createTutorialCourseDocuments(): List<HelpDocument> {
         fun lab(fileName: String, title: Int, summary: Int, order: Int) = HelpDocument(
             id = fileName.removeSuffix(".md"), title = title.strOr(context), summary = summary.strOr(context),
             category = HelpCategory.GETTING_STARTED, fileName = fileName, order = order,
             keywords = listOf(fileName.substringBefore('-'), "TinaIDE"),
+            assetDirectory = "tutorial-course",
         )
         return listOf(
-            lab(fileName = "ide-workflow.md", Strings.course_ide_title, Strings.course_ide_desc, 10),
-            lab(fileName = "cpp-basics.md", Strings.course_cpp_basics_title, Strings.course_cpp_basics_desc, 11),
-            lab(fileName = "cpp-functions.md", Strings.course_cpp_functions_title, Strings.course_cpp_functions_desc, 12),
-            lab(fileName = "cpp-collections.md", Strings.course_cpp_collections_title, Strings.course_cpp_collections_desc, 13),
-            lab(fileName = "cpp-raii.md", Strings.course_cpp_raii_title, Strings.course_cpp_raii_desc, 14),
-            lab(fileName = "cmake-practice.md", Strings.course_cmake_title, Strings.course_cmake_desc, 15),
-            lab(fileName = "graphics-sdl3.md", Strings.course_graphics_title, Strings.course_graphics_desc, 16),
-            lab(fileName = "ai-practice.md", Strings.course_ai_title, Strings.course_ai_desc, 17),
+            lab(fileName = "ide-workflow.md", Strings.course_ide_title, Strings.course_ide_desc, 0),
+            lab(fileName = "cpp-basics.md", Strings.course_cpp_basics_title, Strings.course_cpp_basics_desc, 1),
+            lab(fileName = "cpp-functions.md", Strings.course_cpp_functions_title, Strings.course_cpp_functions_desc, 2),
+            lab(fileName = "cpp-collections.md", Strings.course_cpp_collections_title, Strings.course_cpp_collections_desc, 3),
+            lab(fileName = "cpp-raii.md", Strings.course_cpp_raii_title, Strings.course_cpp_raii_desc, 4),
+            lab(fileName = "cmake-practice.md", Strings.course_cmake_title, Strings.course_cmake_desc, 5),
+            lab(fileName = "vcpkg-practice.md", Strings.help_doc_vcpkg_guide_title, Strings.tutorial_course_vcpkg_desc, 6),
+            lab(fileName = "graphics-sdl3.md", Strings.course_graphics_title, Strings.course_graphics_desc, 7),
+            lab(fileName = "ai-practice.md", Strings.course_ai_title, Strings.course_ai_desc, 8),
         )
     }
 
@@ -396,10 +401,9 @@ class HelpRepository(private val context: Context) {
      */
     fun getAllCategories(): List<HelpCategory> = HelpCategory.entries
 
-    /**
-     * 根据 ID 获取文档
-     */
-    fun getDocumentById(id: String): HelpDocument? = documents.find { it.id == id }
+    /** 根据 ID 获取公开帮助文档；教程章节仅允许通过显式深链打开。 */
+    fun getDocumentById(id: String): HelpDocument? =
+        documents.find { it.id == id } ?: tutorialCourseDocuments.find { it.id == id }
 
     /**
      * 根据 Markdown 链接目标解析帮助文档。
@@ -412,7 +416,7 @@ class HelpRepository(private val context: Context) {
      */
     fun resolveDocumentByLinkTarget(linkTarget: String): HelpDocument? {
         val normalizedFileName = normalizeHelpLinkTarget(linkTarget) ?: return null
-        return documents.find { document ->
+        return (documents + tutorialCourseDocuments).find { document ->
             document.fileName.equals(normalizedFileName, ignoreCase = true)
         }
     }
@@ -426,6 +430,15 @@ class HelpRepository(private val context: Context) {
     suspend fun loadDocumentContentByLinkTarget(linkTarget: String): Result<String> {
         val document = resolveDocumentByLinkTarget(linkTarget)
             ?: return Result.failure(IOException("Unknown help document: $linkTarget"))
+        return loadDocumentContent(document)
+    }
+
+    /** 教程独占实操章节不进入目录与搜索，但帮助文档可以通过深链复用其正文。 */
+    suspend fun loadTutorialCourseContentByLinkTarget(linkTarget: String): Result<String> {
+        val fileName = normalizeHelpLinkTarget(linkTarget)
+            ?: return Result.failure(IOException("Unknown tutorial course asset: $linkTarget"))
+        val document = tutorialCourseDocuments.firstOrNull { it.fileName.equals(fileName, ignoreCase = true) }
+            ?: return Result.failure(IOException("Unknown tutorial course asset: $linkTarget"))
         return loadDocumentContent(document)
     }
 
@@ -546,7 +559,7 @@ class HelpRepository(private val context: Context) {
     }
 
     private fun contentCacheKey(document: HelpDocument): String =
-        "${currentLanguageCode()}:${document.id}"
+        "${currentLanguageCode()}:${document.assetDirectory}:${document.fileName}"
 
     private fun currentLanguageCode(): String {
         val locales = context.resources.configuration.locales
@@ -556,7 +569,11 @@ class HelpRepository(private val context: Context) {
     @Throws(IOException::class)
     private fun readLocalizedMarkdown(document: HelpDocument): String {
         var lastError: IOException? = null
-        HelpAssetPathResolver.candidatePaths(document.fileName, currentLanguageCode()).forEach { assetPath ->
+        HelpAssetPathResolver.candidatePaths(
+            document.fileName,
+            currentLanguageCode(),
+            directory = document.assetDirectory,
+        ).forEach { assetPath ->
             try {
                 val bytes = context.assets.open(assetPath).use { it.readBytes() }
                 val content = Charsets.UTF_8.newDecoder()

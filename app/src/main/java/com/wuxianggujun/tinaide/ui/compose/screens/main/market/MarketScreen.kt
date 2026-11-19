@@ -92,6 +92,12 @@ import org.koin.androidx.compose.koinViewModel
 
 private val LeadingMarketTabsMinWidth = 480.dp
 
+enum class MarketTab(val index: Int) {
+    PLUGINS(0),
+    PACKAGES(1),
+    VCPKG(2),
+}
+
 /**
  * 市场主屏幕
  *
@@ -101,7 +107,9 @@ private val LeadingMarketTabsMinWidth = 480.dp
 @Composable
 fun MarketScreen(
     modifier: Modifier = Modifier,
-    viewModel: MarketScreenViewModel = koinViewModel()
+    viewModel: MarketScreenViewModel = koinViewModel(),
+    requestedTab: MarketTab? = null,
+    onTabRequestHandled: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val permissionDeniedText = stringResource(Strings.toast_plugins_permission_denied)
@@ -129,6 +137,18 @@ fun MarketScreen(
         selectedPluginId = pluginState.selectedPluginId,
         plugins = pluginState.plugins,
     )
+
+    LaunchedEffect(requestedTab) {
+        requestedTab?.let { requested ->
+            // Course navigation starts at the requested catalogue, including after plugin browsing.
+            viewModel.closePluginDetails()
+            selectedTab = requested.index
+            searchFocusPending = false
+            collapseSearch()
+            showProxyDialog = false
+            onTabRequestHandled()
+        }
+    }
 
     // 显示安装结果提示
     LaunchedEffect(pluginState.message) {

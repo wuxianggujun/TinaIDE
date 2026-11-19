@@ -3,6 +3,7 @@ package com.wuxianggujun.tinaide.core.lsp
 import java.io.File
 import java.net.URI
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 import org.eclipse.lsp4j.*
 import org.eclipse.lsp4j.jsonrpc.messages.Either
@@ -167,19 +168,13 @@ class LspNavigationService {
         query: String,
         symbolRequest: suspend (WorkspaceSymbolParams, Long) -> Either<List<SymbolInformation>, List<WorkspaceSymbol?>>?,
     ): List<WorkspaceSymbolItem> = withContext(Dispatchers.IO) {
-        try {
-            val params = WorkspaceSymbolParams().apply {
-                this.query = query
-            }
-            val result = symbolRequest(params, TIMEOUT_SECONDS)
-                ?: return@withContext emptyList()
-            parseWorkspaceSymbolEither(result)
-                .distinctBy { it.stableId }
-                .take(MAX_WORKSPACE_SYMBOLS)
-        } catch (e: Exception) {
-            Timber.tag(TAG).w("Failed to workspace symbol: ${e.message}")
-            emptyList()
+        val params = WorkspaceSymbolParams().apply {
+            this.query = query
         }
+        val result = symbolRequest(params, TIMEOUT_SECONDS) ?: return@withContext emptyList()
+        parseWorkspaceSymbolEither(result)
+            .distinctBy { it.stableId }
+            .take(MAX_WORKSPACE_SYMBOLS)
     }
 
     /**
@@ -214,6 +209,7 @@ class LspNavigationService {
                 kindValue = item.kindValue,
             )
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Timber.tag(TAG).d("Failed to resolve workspace symbol: ${e.message}")
             null
         }
@@ -228,19 +224,12 @@ class LspNavigationService {
         documentUri: String,
         documentSymbolRequest: suspend (DocumentSymbolParams, Long) -> List<Either<SymbolInformation, DocumentSymbol>>?,
     ): List<DocumentSymbolItem> = withContext(Dispatchers.IO) {
-        try {
-            val fileUri = documentUri
-            val params = DocumentSymbolParams().apply {
-                textDocument = TextDocumentIdentifier(fileUri)
-            }
-            val result = documentSymbolRequest(params, TIMEOUT_SECONDS)
-                ?: return@withContext emptyList()
-            parseDocumentSymbolEither(fileUri, result)
-                .distinctBy { it.composeStableKey() }
-        } catch (e: Exception) {
-            Timber.tag(TAG).w("Failed to documentSymbols: ${e.message}")
-            emptyList()
+        val params = DocumentSymbolParams().apply {
+            textDocument = TextDocumentIdentifier(documentUri)
         }
+        val result = documentSymbolRequest(params, TIMEOUT_SECONDS) ?: return@withContext emptyList()
+        parseDocumentSymbolEither(documentUri, result)
+            .distinctBy { it.composeStableKey() }
     }
 
     /**

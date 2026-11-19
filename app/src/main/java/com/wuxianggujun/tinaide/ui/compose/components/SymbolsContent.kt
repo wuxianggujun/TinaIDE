@@ -26,12 +26,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -53,6 +54,9 @@ import com.wuxianggujun.tinaide.ui.MainActivityNavigationHelper
 import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState
 import java.io.File
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveWorkspaceSymbolsTargetResult
 
@@ -82,6 +86,8 @@ fun SymbolsContent(
     val effectiveUseLspSearch = useLspSearch && isWorkspaceSymbolsAvailable
 
     var lspLoading by remember { mutableStateOf(false) }
+    var lspFailed by remember { mutableStateOf(false) }
+    var retryToken by remember { mutableIntStateOf(0) }
     var lspResults by remember { mutableStateOf<List<WorkspaceSymbolItem>>(emptyList()) }
     val lspGroupExpanded = remember { mutableStateMapOf<String, Boolean>() }
     val groupedLspResults = remember(lspResults, effectiveUseLspSearch) {
@@ -93,7 +99,8 @@ fun SymbolsContent(
     }
 
     if (effectiveUseLspSearch) {
-        LaunchedEffect(query, workspaceSymbolsTabId) {
+        LaunchedEffect(query, workspaceSymbolsTabId, retryToken) {
+            lspFailed = false
             val q = query.trim()
             if (q.length < 2) {
                 lspLoading = false
@@ -108,9 +115,16 @@ fun SymbolsContent(
             delay(200)
 
             val tabId = workspaceSymbolsTabId ?: return@LaunchedEffect
-            val initial = runCatching {
+            val initial = try {
                 editorContainerState.workspaceSymbol(tabId, q)
-            }.getOrElse { emptyList() }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                timber.log.Timber.w(error, "Workspace symbol query failed")
+                lspFailed = true
+                lspLoading = false
+                return@LaunchedEffect
+            }
             lspResults = initial
             lspLoading = false
 
@@ -126,9 +140,14 @@ fun SymbolsContent(
 
             val resolvedById = mutableMapOf<String, WorkspaceSymbolItem>()
             for (candidate in candidates) {
-                val resolved = runCatching {
+                val resolved = try {
                     editorContainerState.resolveWorkspaceSymbol(tabId, candidate)
-                }.getOrNull() ?: continue
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    timber.log.Timber.d(error, "Workspace symbol resolve failed")
+                    null
+                } ?: continue
 
                 if (resolved.stableId == candidate.stableId && resolved != candidate) {
                     resolvedById[resolved.stableId] = resolved
@@ -143,26 +162,44 @@ fun SymbolsContent(
     }
 
     // 根据搜索模式选择不同的查询方法
-    val fuzzyResults by remember(query, status.revision, useFuzzySearch, effectiveUseLspSearch) {
-        derivedStateOf {
-            if (effectiveUseLspSearch) {
-                emptyList<FuzzySymbolMatch>()
-            } else {
-                if (useFuzzySearch) {
+    var fuzzyResults by remember { mutableStateOf<List<FuzzySymbolMatch>>(emptyList()) }
+    var localLoading by remember { mutableStateOf(false) }
+    var localFailed by remember { mutableStateOf(false) }
+    LaunchedEffect(service, query, status.revision, useFuzzySearch, effectiveUseLspSearch, retryToken) {
+        fuzzyResults = emptyList()
+        localFailed = false
+        localLoading = !effectiveUseLspSearch
+        if (effectiveUseLspSearch) return@LaunchedEffect
+        try {
+            delay(150)
+            fuzzyResults = withContext(Dispatchers.Default) {
+                val results = if (useFuzzySearch) {
                     service.queryGlobalsFuzzy(query, limit = 200)
                 } else {
-                    // 前缀搜索，转换为 FuzzySymbolMatch 格式
                     service.queryGlobals(query, limit = 200).map { symbol ->
                         FuzzySymbolMatch(symbol, score = 0, matchedIndices = emptyList())
                     }
                 }
-                    // 防御性去重：避免缓存/增量索引异常导致的重复项触发 LazyColumn key 冲突崩溃
-                    .distinctBy { it.symbol.composeStableKey() }
+                results.distinctBy { it.symbol.composeStableKey() }
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            timber.log.Timber.w(error, "Local symbol query failed")
+            localFailed = true
+        } finally {
+            localLoading = false
         }
     }
 
     Column(modifier = modifier.fillMaxSize().padding(12.dp)) {
+        if ((effectiveUseLspSearch && lspFailed) || (!effectiveUseLspSearch && localFailed)) {
+            Text(stringResource(Strings.symbols_query_failed), color = MaterialTheme.colorScheme.error)
+            TextButton(onClick = { retryToken++ }) { Text(stringResource(Strings.action_retry)) }
+        }
+        if (!effectiveUseLspSearch && localLoading) {
+            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+        }
         TinaOverlayPanelSurface(
             modifier = Modifier.fillMaxWidth(),
             shape = MaterialTheme.shapes.small,

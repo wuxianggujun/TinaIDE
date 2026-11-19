@@ -22,12 +22,16 @@ class HelpRepositoryCatalogTest {
     @Test fun practicalCourseAssetsLoadInBothLanguagesAndAllNextLinksResolve() = runTest {
         val app = RuntimeEnvironment.getApplication() as Application
         val lessons = listOf("getting-started", "ide-workflow", "cpp-basics", "cpp-functions", "cpp-collections",
-            "cpp-raii", "cmake-practice", "vcpkg-guide", "graphics-sdl3", "ai-practice")
+            "cpp-raii", "cmake-practice", "vcpkg-practice", "vcpkg-guide", "graphics-sdl3", "ai-practice")
         for (language in listOf("zh", "en")) {
             val configuration = Configuration(app.resources.configuration).apply { setLocale(Locale.forLanguageTag(language)) }
             val repository = HelpRepository(app.createConfigurationContext(configuration))
             for (lesson in lessons) {
-                val content = repository.loadDocumentContentByLinkTarget("$lesson.md").getOrThrow()
+                val content = if (lesson == "vcpkg-guide" || lesson == "getting-started") {
+                    repository.loadDocumentContentByLinkTarget("$lesson.md").getOrThrow()
+                } else {
+                    repository.loadTutorialCourseContentByLinkTarget("$lesson.md").getOrThrow()
+                }
                 assertThat(content.length).isGreaterThan(500)
                 assertThat(content).doesNotContain("`n+")
                 assertThat(content).doesNotContain("PRoot")
@@ -35,6 +39,20 @@ class HelpRepositoryCatalogTest {
                     assertThat(repository.resolveDocumentByLinkTarget(link.groupValues[1])).isNotNull()
                 }
             }
+        }
+    }
+
+    @Test fun courseLessonsAreNotListedOrSearchableButCanBeOpenedByExistingLinks() = runTest {
+        val repository = HelpRepository(RuntimeEnvironment.getApplication())
+        val lessonIds = listOf("ide-workflow", "cpp-basics", "cpp-functions", "cpp-collections", "cpp-raii",
+            "cmake-practice", "vcpkg-practice", "graphics-sdl3", "ai-practice")
+
+        assertThat(repository.getAllDocuments().map { it.id }).containsNoneIn(lessonIds)
+        assertThat(repository.search("cpp-basics").map { it.document.id }).containsNoneIn(lessonIds)
+        for (lessonId in lessonIds) {
+            val document = repository.resolveDocumentByLinkTarget("help/$lessonId.md#next")
+            assertThat(document?.id).isEqualTo(lessonId)
+            assertThat(repository.getDocumentById(lessonId)).isEqualTo(document)
         }
     }
 
@@ -55,13 +73,15 @@ class HelpRepositoryCatalogTest {
 
     @Test fun vcpkgGuideLoadsRealChineseAndEnglishContentOffline() = runTest {
         val app = RuntimeEnvironment.getApplication() as Application
-        for ((language, heading) in mapOf("zh" to "# CMake 使用 vcpkg", "en" to "# Using vcpkg with CMake")) {
+        for ((language, heading) in mapOf("zh" to "# vcpkg 依赖管理速查", "en" to "# vcpkg dependency reference")) {
             val configuration = Configuration(app.resources.configuration).apply { setLocale(Locale.forLanguageTag(language)) }
             val repository = HelpRepository(app.createConfigurationContext(configuration))
             val document = checkNotNull(repository.getDocumentById("vcpkg-guide"))
             val content = repository.loadDocumentContent(document).getOrThrow()
             assertThat(content).startsWith(heading)
-            assertThat(content).contains("target_link_libraries(tina_vcpkg_example PRIVATE fmt::fmt)")
+            assertThat(content).contains("find_package")
+            assertThat(content).doesNotContain("fmt::fmt")
+            assertThat(content).doesNotContain("total=30")
         }
     }
 
@@ -74,11 +94,23 @@ class HelpRepositoryCatalogTest {
         val sortedDocuments = documents.sortedWith(compareBy({ it.category.ordinal }, { it.order }))
         val assetNames = context.assets.list("help").orEmpty().toSet()
         val englishAssetNames = context.assets.list("help/en").orEmpty().toSet()
+        val courseAssetNames = context.assets.list("tutorial-course").orEmpty().toSet()
+        val englishCourseAssetNames = context.assets.list("tutorial-course/en").orEmpty().toSet()
 
         assertThat(documents.map { it.id }).containsNoDuplicates()
         assertThat(documents).containsExactlyElementsIn(sortedDocuments).inOrder()
         assertThat(assetNames).containsAtLeastElementsIn(documents.map { it.fileName })
         assertThat(englishAssetNames).containsAtLeastElementsIn(documents.map { it.fileName })
+        assertThat(courseAssetNames).containsAtLeast(
+            "ide-workflow.md", "cpp-basics.md", "cpp-functions.md", "cpp-collections.md",
+            "cpp-raii.md", "cmake-practice.md", "graphics-sdl3.md", "ai-practice.md",
+            "vcpkg-practice.md",
+        )
+        assertThat(englishCourseAssetNames).containsAtLeast(
+            "ide-workflow.md", "cpp-basics.md", "cpp-functions.md", "cpp-collections.md",
+            "cpp-raii.md", "cmake-practice.md", "graphics-sdl3.md", "ai-practice.md",
+            "vcpkg-practice.md",
+        )
     }
 
     @Test

@@ -36,7 +36,6 @@ TinaIDE 的 **原生 CMake** 已提供 Android 工具链与 sysroot，不要把�
 
 验收：库代码修改会重新编译；主程序仍能运行；错误后恢复配置无需删除整个项目。
 
-## 继续学习
+## 相关速查
 
-- [实践 7：CMake 使用 vcpkg](vcpkg-guide.md)
-- [CMake 参数速查](cmake-guide.md)
+- [CMake 参数速查](../help/cmake-guide.md)

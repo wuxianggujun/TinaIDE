@@ -25,6 +25,8 @@ CURRENT_FACT_DOCUMENTS = (
 
 HELP_ASSET_DIRECTORY = "feature/help/src/main/assets/help"
 HELP_ENGLISH_ASSET_DIRECTORY = HELP_ASSET_DIRECTORY + "/en"
+TUTORIAL_ASSET_DIRECTORY = "feature/help/src/main/assets/tutorial-course"
+TUTORIAL_ENGLISH_ASSET_DIRECTORY = TUTORIAL_ASSET_DIRECTORY + "/en"
 HELP_REPOSITORY = (
     "feature/help/src/main/java/com/wuxianggujun/tinaide/core/help/HelpRepository.kt"
 )
@@ -84,6 +86,8 @@ def check_markdown_links(root: Path) -> list[str]:
     documents.extend(sorted((root / "docs").rglob("*.md")))
     documents.extend(sorted((root / HELP_ASSET_DIRECTORY).glob("*.md")))
     documents.extend(sorted((root / HELP_ENGLISH_ASSET_DIRECTORY).glob("*.md")))
+    documents.extend(sorted((root / TUTORIAL_ASSET_DIRECTORY).glob("*.md")))
+    documents.extend(sorted((root / TUTORIAL_ENGLISH_ASSET_DIRECTORY).glob("*.md")))
 
     for document in documents:
         if not document.is_file():
@@ -175,15 +179,29 @@ def check_help_catalog(root: Path) -> list[str]:
 
     asset_names = {path.name for path in help_directory.glob("*.md")}
     english_asset_names = {path.name for path in english_help_directory.glob("*.md")}
+    tutorial_asset_names = {
+        path.name for path in (root / TUTORIAL_ASSET_DIRECTORY).glob("*.md")
+    }
+    english_tutorial_asset_names = {
+        path.name for path in (root / TUTORIAL_ENGLISH_ASSET_DIRECTORY).glob("*.md")
+    }
+    all_tutorial_asset_names = tutorial_asset_names | english_tutorial_asset_names
     registered_names = set(
         HELP_FILE_PATTERN.findall(repository.read_text(encoding="utf-8"))
     )
+    registered_help_names = registered_names - all_tutorial_asset_names
 
     failures: list[str] = []
-    for file_name in sorted(asset_names - registered_names):
+    for file_name in sorted(asset_names - registered_help_names):
         failures.append(f"help asset is not registered: {file_name}")
-    for file_name in sorted(registered_names - asset_names):
+    for file_name in sorted(registered_help_names - asset_names):
         failures.append(f"registered help asset is missing: {file_name}")
+    for file_name in sorted(all_tutorial_asset_names - registered_names):
+        failures.append(f"tutorial asset is not registered: {file_name}")
+    for file_name in sorted(tutorial_asset_names - english_tutorial_asset_names):
+        failures.append(f"English tutorial asset is missing: {file_name}")
+    for file_name in sorted(english_tutorial_asset_names - tutorial_asset_names):
+        failures.append(f"English tutorial asset has no default counterpart: {file_name}")
     for file_name in sorted(asset_names - english_asset_names):
         failures.append(f"English help asset is missing: {file_name}")
     for file_name in sorted(english_asset_names - asset_names):
