@@ -38,6 +38,7 @@ core/linux-distro/src/main/java/com/wuxianggujun/tinaide/core/linuxdistro/LinuxD
 core/linux-distro/src/main/java/com/wuxianggujun/tinaide/core/linuxdistro/LinuxDistroInstaller.kt | deleteRecursively=6,renameTo=4,delete=4 | Linux distro archive retry, install staging, atomic replacement, recovery, and rollback.
 core/linux-distro/src/main/java/com/wuxianggujun/tinaide/core/linuxdistro/LinuxDistroManager.kt | deleteRecursively=1 | Linux distro rootfs removal.
 core/logging/src/main/java/com/wuxianggujun/tinaide/core/logging/FileLoggingTree.kt | delete=1 | Log rotation cleanup.
+core/logging/src/main/java/com/wuxianggujun/tinaide/core/logging/LogArchiveWriter.kt | delete=1 | Remove only the uniquely created log archive when writing fails or cancellation prevents ownership transfer to the caller.
 core/logging/src/main/java/com/wuxianggujun/tinaide/core/logging/LogExportUtils.kt | deleteRecursively=4,delete=1 | Log export directory cleanup.
 core/logging/src/main/java/com/wuxianggujun/tinaide/core/logging/LogProcessRegistry.kt | deleteRecursively=1,delete=1 | Short-lived process registry cleanup for scoped log export.
 core/ndk/src/main/java/com/wuxianggujun/tinaide/core/ndk/AndroidNativeToolchainManager.kt | deleteRecursively=6,renameTo=2 | Toolchain install staging and rollback.
@@ -46,6 +47,7 @@ core/ndk/src/main/java/com/wuxianggujun/tinaide/core/ndk/InstalledToolchainConfi
 core/ndk/src/main/java/com/wuxianggujun/tinaide/core/ndk/SysrootProfileConfig.kt | deleteRecursively=1 | Sysroot profile cleanup.
 core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/BundledPackagesInstaller.kt | deleteRecursively=2,renameTo=1,delete=1 | Locked staging, interrupted install recovery, and bundled package temp cleanup.
 core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/PackageInstallCoordinator.kt | deleteRecursively=1,renameTo=3 | Shared app-private package staging publication, backup cleanup, and rollback.
+core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/VcpkgBuildUse.kt | renameTo=1 | Retire obsolete app-owned vcpkg generations under the publication lock only when no IDE build uses them; rename within the same parent before reclaiming them.
 core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/VcpkgCatalogStore.kt | deleteRecursively=3 | Mutex-protected source/catalog staging and abandoned staging cleanup below the application-owned vcpkg root; published snapshots are retained.
 core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/VcpkgRepository.kt | delete=1 | Remove only the uniquely created manifest temporary file after atomic publication or cancellation; the project manifest is preserved on failure.
 core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/VcpkgRuntimeManager.kt | deleteRecursively=1,delete=1 | Clean only the application-owned unpublished bundled-helper staging directory and temporary CLI copy; published runtimes and project files are preserved.
@@ -83,10 +85,8 @@ core/storage/src/main/java/com/wuxianggujun/tinaide/storage/TinaFileProvider.kt 
 feature/editor/src/main/java/com/wuxianggujun/tinaide/editor/session/DocumentDraftStore.kt | delete=1 | Only SHA-256 keyed recovery records under the app-private no-backup root; saved/discarded draft cleanup.
 feature/editor/src/main/java/com/wuxianggujun/tinaide/editor/symbol/SymbolIndexCache.kt | delete=3 | Symbol index cache cleanup.
 feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/CompilerSettingsSection.kt | delete=2 | Compiler settings temp file cleanup.
-feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/AboutSettingsSection.kt | delete=2 | App-private exported log archive temporary file cleanup.
 feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/EditorSettingsSection.kt | delete=1 | Editor settings temp file cleanup.
-feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/FeedbackDialog.kt | delete=5 | App-private feedback attachment archive temporary file cleanup.
-feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/LogArchiveUpload.kt | delete=2,renameTo=1 | App-private copied log archive atomic replacement and failed staged copy cleanup.
+feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/LogArchiveUpload.kt | delete=1 | Central cleanup of app-owned imported/exported log archives after failure, cancellation, expiry, or explicit draft removal; user-selected source documents are preserved.
 feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/PluginInstallHelper.kt | deleteRecursively=1,delete=2 | Plugin install staging cleanup.
 feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/PluginsSettingsSection.kt | delete=5 | Plugin settings temp file cleanup.
 feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/TerminalSettingsHelpers.kt | delete=1 | Terminal settings temp file cleanup.
