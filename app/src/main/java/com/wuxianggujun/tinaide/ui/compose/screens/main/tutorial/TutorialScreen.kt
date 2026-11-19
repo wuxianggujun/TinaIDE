@@ -1,5 +1,7 @@
 package com.wuxianggujun.tinaide.ui.compose.screens.main.tutorial
 
+import android.content.ClipData
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -47,14 +49,17 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.toClipEntry
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
@@ -75,6 +80,7 @@ import com.wuxianggujun.tinaide.tutorial.data.TutorialType
 import com.wuxianggujun.tinaide.tutorial.data.TutorialWithProgress
 import com.wuxianggujun.tinaide.tutorial.TutorialViewModel
 import com.wuxianggujun.tinaide.tutorial.TutorialCourseContentState
+import com.wuxianggujun.tinaide.tutorial.TutorialCourseHints
 import com.wuxianggujun.tinaide.tutorial.firstUnlockedCourseStepIndex
 import com.wuxianggujun.tinaide.tutorial.loadTutorialCourseContent
 import com.wuxianggujun.tinaide.ui.compose.components.MarkdownViewer
@@ -84,6 +90,9 @@ import com.wuxianggujun.tinaide.ui.compose.components.TinaTopBar
 import com.wuxianggujun.tinaide.ui.compose.components.tinaBackAction
 import com.wuxianggujun.tinaide.ui.compose.screens.main.market.MarketTab
 import com.wuxianggujun.tinaide.ui.compose.screens.settings.SettingsRoute
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
+import timber.log.Timber
 
 /**
  * 教程屏幕
@@ -97,6 +106,8 @@ fun TutorialScreen(
     onOpenMarketTab: (MarketTab) -> Unit = {},
 ) {
     val context = LocalContext.current
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
     val uriHandler = LocalUriHandler.current
     val helpRepository = remember(context.applicationContext) {
         HelpRepository(context.applicationContext)
@@ -170,6 +181,21 @@ fun TutorialScreen(
                     onOpenProjectTab = onOpenProjectTab,
                     onOpenMarketTab = onOpenMarketTab,
                     onOpenHelp = openLink,
+                    onCodeCopy = { code ->
+                        scope.launch {
+                            try {
+                                clipboard.setClipEntry(
+                                    ClipData.newPlainText(context.getString(Strings.tutorial_title), code).toClipEntry(),
+                                )
+                                Toast.makeText(context, Strings.toast_copied, Toast.LENGTH_SHORT).show()
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (error: Exception) {
+                                Timber.w(error, "Could not copy course code")
+                                Toast.makeText(context, Strings.tutorial_course_copy_failed, Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
                     loadCourseContent = helpRepository::loadTutorialCourseContentByLinkTarget,
                     onPrevious = viewModel::previousCourseStep,
                     onNext = viewModel::nextCourseStep,
@@ -270,6 +296,7 @@ private fun TutorialGuidedCourseContent(
     onOpenProjectTab: () -> Unit,
     onOpenMarketTab: (MarketTab) -> Unit,
     onOpenHelp: (String) -> Unit,
+    onCodeCopy: (String) -> Unit,
     loadCourseContent: suspend (String) -> Result<String>,
     onPrevious: (Tutorial) -> Unit,
     onNext: (Tutorial) -> Unit,
@@ -399,6 +426,14 @@ private fun TutorialGuidedCourseContent(
                 )
             }
 
+            TutorialCourseHints(
+                stepId = step.id,
+                hints = (contentLoadState as? TutorialCourseContentState.Content)?.hints
+                    ?: quiz?.hintRes?.map { stringResource(it) }.orEmpty(),
+                onCodeCopy = onCodeCopy,
+                onLinkClick = onOpenHelp,
+            )
+
             when (step.action) {
                 TutorialCourseAction.OPEN_PROJECTS -> Button(
                     onClick = onOpenProjectTab,
@@ -451,6 +486,7 @@ private fun TutorialGuidedCourseContent(
                     modifier = Modifier.fillMaxWidth(),
                     contentPadding = PaddingValues(0.dp),
                     onLinkClick = onOpenHelp,
+                    onCodeCopy = onCodeCopy,
                 )
 
                 TutorialCourseContentState.Error -> Column(

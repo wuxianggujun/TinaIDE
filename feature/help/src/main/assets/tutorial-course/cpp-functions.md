@@ -57,3 +57,28 @@ add_executable(native_lab main.cpp pricing.cpp)
 `int&` 是已有变量的别名，修改它会修改调用者；`const std::string&` 可只读访问较大字符串，避免值拷贝。引用必须指向生命周期足够长的对象，不要返回局部变量的引用。
 
 自己新增 `discountedTotal` 函数，保持 `main` 只负责调用和输出。函数规则变更后，重新运行边界输入。
+
+<!-- tutorial-hint -->
+本章涉及四个文件：`pricing.h` 声明、`pricing.cpp` 实现、`main.cpp` 调用，以及 `CMakeLists.txt` 的源码列表。先复制本章完整示例运行成功，再做折扣函数练习。
+
+<!-- tutorial-hint -->
+新函数先调用 `totalPrice`，先检查返回值是否为 -1，再处理折扣。这样保留前面数量、单价的范围校验。`main.cpp` 调用新函数，但不要删除旧的 `totalPrice`。
+
+<!-- tutorial-hint -->
+在 `pricing.h` 原声明后**添加**：
+
+```cpp
+int discountedTotal(int count, int unitPrice);
+```
+
+在 `pricing.cpp` 的 `totalPrice` 函数结束后**添加**：
+
+```cpp
+int discountedTotal(int count, int unitPrice) {
+    const int total = totalPrice(count, unitPrice);
+    if (total < 0) return -1;
+    return total >= 100 ? total - 10 : total;
+}
+```
+
+在 `main.cpp` 把一次 `totalPrice(3, 10)` 调用改为 `discountedTotal(10, 10)`，预期 `total=90`；数量 -1 应仍报错。若未定义，检查声明及 CMake 中的 `pricing.cpp`。

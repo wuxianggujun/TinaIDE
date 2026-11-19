@@ -41,7 +41,30 @@ If the output remains unchanged, check saved files, the selected target, and whe
 
 Print two lines, rename the target to `hello_lab` and update the run configuration, then reopen the project and run again. Mark the lesson complete only after checking the result. Save source and text files as UTF-8.
 
+After the rename exercise, restore `native_lab` in CMake and the run configuration before continuing.
+
 ## Quick references
 
 - [Editor reference](../../help/en/editor-basics.md)
 - [Build troubleshooting](../../help/en/build-project.md)
+
+<!-- tutorial-hint -->
+Open the root `CMakeLists.txt` and `main.cpp`. The two code blocks in this lesson replace those files completely. Keep CMake code out of the C++ file. Copy only places text on the clipboard; paste into the editor and save it yourself.
+
+<!-- tutorial-hint -->
+Put both output statements inside `int main()`, before `return 0;`. For the rename exercise change the target in `add_executable`, `target_compile_features`, and the run configuration. Restore `native_lab` afterward.
+
+<!-- tutorial-hint -->
+For the two-line exercise, **replace all of main.cpp** with:
+
+```cpp
+#include <iostream>
+
+int main() {
+    std::cout << "Hello, TinaIDE!\n";
+    std::cout << "First change\n";
+    return 0;
+}
+```
+
+Save, build, and run; expect two lines. If it fails, check the CMake source path and the first build error before marking the stage complete.

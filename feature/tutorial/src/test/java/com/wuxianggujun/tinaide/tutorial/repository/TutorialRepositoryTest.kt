@@ -70,6 +70,7 @@ class TutorialRepositoryTest {
         assertThat(course.courseSteps[6].action).isEqualTo(TutorialCourseAction.OPEN_MARKET)
         assertThat(course.courseSteps[0].contentLinkTarget).isEqualTo("ide-workflow.md")
         assertThat(course.courseSteps.last().quiz?.correctAnswerIndex).isEqualTo(0)
+        assertThat(course.courseSteps.last().quiz?.hintRes).hasSize(3)
     }
 
     @Test

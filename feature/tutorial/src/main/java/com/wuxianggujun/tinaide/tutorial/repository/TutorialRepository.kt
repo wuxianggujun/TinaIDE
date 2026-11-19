@@ -160,7 +160,7 @@ class TutorialRepository(
         )
     )
 
-    /** 按项目生命周期组织 C++ 实践章节；章节正文在帮助资产中只保存一份。 */
+    /** 按项目生命周期组织 C++ 实践章节；正文和提示共用一份独占课程资产。 */
     private fun createCppPracticeCourse(): Tutorial = Tutorial(
         id = CPP_PRACTICE_COURSE_ID,
         titleRes = Strings.tutorial_complete_cpp_course_title,
@@ -214,7 +214,7 @@ class TutorialRepository(
             ),
             TutorialCourseStep(
                 id = "vcpkg_guide",
-                titleRes = Strings.help_doc_vcpkg_guide_title,
+                titleRes = Strings.course_vcpkg_title,
                 descriptionRes = Strings.tutorial_course_vcpkg_desc,
                 contentLinkTarget = "vcpkg-practice.md",
                 helpLinkTarget = "vcpkg-guide.md",
@@ -246,6 +246,11 @@ class TutorialRepository(
                         Strings.tutorial_course_quiz_answer_wrong_dependencies,
                     ),
                     correctAnswerIndex = 0,
+                    hintRes = listOf(
+                        Strings.tutorial_course_quiz_hint_1,
+                        Strings.tutorial_course_quiz_hint_2,
+                        Strings.tutorial_course_quiz_hint_3,
+                    ),
                 ),
             ),
         ),

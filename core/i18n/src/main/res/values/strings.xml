@@ -4635,7 +4635,17 @@ kept=%3$d bytes
   <string name="tutorial_course_quiz_answer_wrong_compiler">反复改 CMake 参数直到碰巧成功</string>
   <string name="tutorial_course_quiz_answer_wrong_dependencies">忽略构建错误，直接运行</string>
   <string name="tutorial_course_quiz_wrong">还不正确。回到构建日志，先找到最早出现的有效错误。</string>
-  <string name="tutorial_course_quiz_correct">答对了。你已走完创建、编辑、构建、排错、运行与版本保存的闭环。</string>
+  <string name="tutorial_course_quiz_correct">答对了。实际构建、运行并核对结果后，即可完成课程。</string>
+  <string name="tutorial_course_hints_title">卡住了？逐步查看提示</string>
+  <string name="tutorial_course_hints_description">先看修改位置，再看思路和参考代码。复制代码后回到项目手动粘贴，核对运行结果后再标记完成。</string>
+  <string name="tutorial_course_hint_number">提示 %1$d</string>
+  <string name="tutorial_course_hint_reveal">查看提示 %1$d / %2$d</string>
+  <string name="tutorial_course_hints_hide">收起提示</string>
+  <string name="tutorial_course_copy_failed">复制失败，请重试或根据示例手动输入。</string>
+  <string name="tutorial_course_quiz_hint_1">先判断是哪一步失败：配置找不到包、编译语法错误，还是链接找不到实现。查看构建日志中最早的有效错误。</string>
+  <string name="tutorial_course_quiz_hint_2">如果 totalPrice 未定义，检查 pricing.cpp 是否参与目标或 pricing 库是否已链接。修改后保存、构建，再运行。</string>
+  <string name="tutorial_course_quiz_hint_3">应选择“读构建日志定位首个错误，修复最小问题后重新构建”。忽略报错可能运行旧产物；乱改参数会增加问题。选择答案后再点击完成课程。</string>
+  <string name="course_vcpkg_title">实践 7：给现有项目接入 fmt</string>
 
   <!-- Onboarding Steps -->
   <string name="tutorial_step_project_tab_title">项目</string>

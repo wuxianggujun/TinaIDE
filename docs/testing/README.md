@@ -225,8 +225,15 @@ GitHub Actions 的 `CI=true` 配置只使用官方 Google/Maven Central/Gradle P
 - `SymbolIndexCacheTest`：签名、中文注释、所属作用域和位置的缓存往返。
 - `LspSymbolQueryTest`：空结果、服务器失败和取消的区别；`FuzzyMatcherTest` 验证有限结果排序。
 
-`TutorialCourseContentTest` 继承原文章加载测试的有效覆盖；独立文章推荐链路已删除。
-宿主 UI 改动还需运行 `:app:compileArm64DebugKotlin`，实际章节切换和课程跳转市场由设备上的 `TutorialCourseInstrumentationTest` 验收。
+`TutorialCourseContentTest` 覆盖正文与逐级提示分离、CRLF、代码围栏中的提示标记、空正文拒绝，
+并读取真实的 9 章中英资产，检查每章三个提示及参考代码一致性。提示使用同一 Markdown 文件末尾的
+`<!-- tutorial-hint -->` 分隔，不在帮助目录重复登记；代码围栏内的同名文本保持原样。
+独立文章推荐链路已删除。
+
+宿主 UI 改动还需运行 `:app:compileArm64DebugKotlin`；设备上的 `TutorialCourseInstrumentationTest`
+验证逐级展开与收起、章节切换后提示复位、代码复制到剪贴板，以及查看提示不会自动解锁或完成章节。
+测试源码可先用 `:app:compileArm64DebugAndroidTestKotlin` 编译；编译通过不等于设备交互验收通过。
+人工从第 7 章走到第 9 章时，检查控制台备份、SDL3 宿主切换、控制台恢复与缺少备份时的参考代码恢复。
 
 ## 插件设备稳定性门禁
 

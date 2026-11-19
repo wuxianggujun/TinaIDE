@@ -56,4 +56,27 @@ An `int&` aliases an existing integer and can modify it. `const std::string&` ac
 
 Add a separate discount function yourself. Keep `main` responsible for input/output and rerun boundary cases after changing the rules.
 
-## Continue learning
+<!-- tutorial-hint -->
+Four files matter: declarations in `pricing.h`, implementation in `pricing.cpp`, calls in `main.cpp`, and the source list in `CMakeLists.txt`. Run the complete examples first, then add the discount exercise.
+
+<!-- tutorial-hint -->
+Call `totalPrice` first and reject -1 before applying the discount. This preserves the quantity and price validation. Call the new function from main without deleting `totalPrice`.
+
+<!-- tutorial-hint -->
+**Append** this declaration to `pricing.h`:
+
+```cpp
+int discountedTotal(int count, int unitPrice);
+```
+
+**Append** this function after `totalPrice` in `pricing.cpp`:
+
+```cpp
+int discountedTotal(int count, int unitPrice) {
+    const int total = totalPrice(count, unitPrice);
+    if (total < 0) return -1;
+    return total >= 100 ? total - 10 : total;
+}
+```
+
+Replace one `totalPrice(3, 10)` call in main with `discountedTotal(10, 10)`. Expect `total=90`; count -1 must still fail. For an undefined function, check the declaration and the CMake source list.

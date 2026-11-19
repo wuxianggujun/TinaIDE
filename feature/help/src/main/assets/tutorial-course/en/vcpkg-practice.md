@@ -24,8 +24,29 @@ target_link_libraries(native_lab PRIVATE pricing fmt::fmt)
 ## Diagnose and accept
 
 - If fmt is not found, check the selected project, `vcpkg.json`, native CMake mode, and the first useful error in Build Log.
-- Temporarily remove `fmt::fmt` from `target_link_libraries` and build to observe the linker error; restore it and run again.
+- Temporarily remove `fmt::fmt` from `target_link_libraries` and build to observe missing headers or unresolved symbols; restore it and run again.
 - Build once more to confirm the project reuses the installed dependency. Do not fix this by deleting the project, copying desktop libraries, or entering obsolete installation paths.
 - Independently complete dependency addition, build, error recovery, and run verification before checking **I completed this step**.
 
 For package compatibility, shared libraries, proxies, catalog updates, or installation states, open the [vcpkg dependency reference](../../help/en/vcpkg-guide.md). Help does not repeat this complete lab.
+
+<!-- tutorial-hint -->
+Add fmt to the selected native_lab in Market and confirm that project settings enable vcpkg. Then edit the root CMake and `main.cpp`. Being in the manifest does not mean installation is complete; the first build needs network access to fetch dependencies.
+
+<!-- tutorial-hint -->
+CMake must both find fmt and link `fmt::fmt`. Add `<fmt/core.h>` at the top of C++, then replace the final output with `fmt::print`. Keep the calculation, file write, and read-back checks.
+
+<!-- tutorial-hint -->
+**Add** this to the include section of `main.cpp`:
+
+```cpp
+#include <fmt/core.h>
+```
+
+**Replace** the amount output statement with:
+
+```cpp
+fmt::print("total={}\n", restored);
+```
+
+`restored` comes from the previous file read-back; use `total` instead if using the simplified calculator. Use the full CMake in the lesson and expect `total=30`. For missing packages, retry installation and inspect the first error. Copying code does not install a dependency.

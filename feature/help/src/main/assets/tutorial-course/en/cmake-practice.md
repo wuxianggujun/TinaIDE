@@ -35,3 +35,18 @@ Complete the lesson when a library edit triggers rebuilding, the program runs, a
 ## Quick reference
 
 - [CMake reference](../../help/en/cmake-guide.md)
+
+<!-- tutorial-hint -->
+Replace only the root `CMakeLists.txt`, keeping the previous `main.cpp`, `pricing.h`, and `pricing.cpp`. Do not compile `pricing.cpp` into both the library and executable.
+
+<!-- tutorial-hint -->
+The pricing target compiles the rules. The native_lab target compiles main and links pricing. Intentionally deleting the link should produce an unresolved symbol; restore the target relationship instead of including a `.cpp` file.
+
+<!-- tutorial-hint -->
+After both targets have been defined, restore this line:
+
+```cmake
+target_link_libraries(native_lab PRIVATE pricing)
+```
+
+Keep the target definitions and include directory from the complete CMake above. Save, build, and run; expect `total=30`. For a missing source file, check its location and filename case first.

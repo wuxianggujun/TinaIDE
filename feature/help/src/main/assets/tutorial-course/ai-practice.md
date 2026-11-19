@@ -2,6 +2,12 @@
 
 本课所有“用户 / 助手”内容都是随应用提供的静态模拟数据，不发送请求、不读取 Key、不产生模型调用。先离线完成练习；是否启用真实服务由你决定。
 
+## 从图形章节回到计价程序
+
+1. 继续使用 `native_lab`，把上一章的 `console-main.cpp` 内容复制回 `main.cpp`，把 `CMakeLists.console.txt` 内容复制回 `CMakeLists.txt`。保留图形代码的备份后再替换。
+2. 若控制台版本使用 fmt，在项目设置中重新启用 vcpkg；运行配置选择原生 CMake、终端输出和 `native_lab` 目标，退出 SDL3 模式。
+3. 保存并运行，先确认 `total=30`，再开始下面的链接错误练习。缺少备份时，第三个提示给出不依赖 fmt 的最小恢复版本，可保持 vcpkg 关闭。
+
 ## 模拟 1：把要求变成可验收任务
 
 **用户（模拟）**：我在 Android 上用 TinaIDE、原生 CMake 和 C++17。计价函数只接受数量 0～100、单价 0～10000。请给最小修改，保留现有目标名，解释边界并列出测试输入。不要引入网络或新库。
@@ -41,3 +47,40 @@ TinaIDE 宿主不另存一份 Key，也不会把课程中的模拟回答伪装�
 
 - [学习路线](../help/getting-started.md)
 - [Git 基础：保存可回退的修改](../help/git-basics.md)
+
+<!-- tutorial-hint -->
+先完成本章开头的恢复步骤。模拟对话用于练习判断，不需要账号或真实 AI。练习只改项目里的 `pricing.cpp`、`main.cpp` 和 CMake，不要在聊天文本中勾选“完成”代替实际运行。
+
+<!-- tutorial-hint -->
+链接排错时，临时移除 `target_link_libraries(native_lab PRIVATE pricing)`，构建确认 `totalPrice` 未定义，再恢复它。提问写清 Android 原生 CMake、实际第一条错误、目标配置、预期输出以及不能引入新库的约束。
+
+<!-- tutorial-hint -->
+没有控制台备份时，保留[函数课](cpp-functions.md)中的 `pricing.h` 和 `pricing.cpp`，**完整替换**下面两个文件；这个最小版本不使用 fmt，可保持 vcpkg 关闭。
+
+根目录 `CMakeLists.txt`：
+
+```cmake
+cmake_minimum_required(VERSION 3.22)
+project(native_lab LANGUAGES CXX)
+add_library(pricing STATIC pricing.cpp)
+target_include_directories(pricing PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_compile_features(pricing PUBLIC cxx_std_17)
+add_executable(native_lab main.cpp)
+target_link_libraries(native_lab PRIVATE pricing)
+```
+
+根目录 `main.cpp`：
+
+```cpp
+#include "pricing.h"
+#include <iostream>
+
+int main() {
+    const int total = totalPrice(3, 10);
+    if (total < 0) { std::cerr << "invalid order\n"; return 1; }
+    std::cout << "total=" << total << '\n';
+    return 0;
+}
+```
+
+切回终端宿主，预期 `total=30`。故意移除链接行后应构建失败，恢复后再次得到 30；把这一过程写入自己的提问和验证记录，即可完成离线练习。

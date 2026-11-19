@@ -378,7 +378,7 @@ class HelpRepository(private val context: Context) {
             lab(fileName = "cpp-collections.md", Strings.course_cpp_collections_title, Strings.course_cpp_collections_desc, 3),
             lab(fileName = "cpp-raii.md", Strings.course_cpp_raii_title, Strings.course_cpp_raii_desc, 4),
             lab(fileName = "cmake-practice.md", Strings.course_cmake_title, Strings.course_cmake_desc, 5),
-            lab(fileName = "vcpkg-practice.md", Strings.help_doc_vcpkg_guide_title, Strings.tutorial_course_vcpkg_desc, 6),
+            lab(fileName = "vcpkg-practice.md", Strings.course_vcpkg_title, Strings.tutorial_course_vcpkg_desc, 6),
             lab(fileName = "graphics-sdl3.md", Strings.course_graphics_title, Strings.course_graphics_desc, 7),
             lab(fileName = "ai-practice.md", Strings.course_ai_title, Strings.course_ai_desc, 8),
         )

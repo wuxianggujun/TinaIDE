@@ -1,12 +1,16 @@
 package com.wuxianggujun.tinaide.ui.compose.editor
 
 import android.app.Application
+import android.content.ClipboardManager
+import android.content.Context
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -61,6 +65,25 @@ class TutorialCourseInstrumentationTest {
                 viewModel.uiState.value.currentCourseStepIndex == index &&
                     composeRule.onAllNodes(hasTestTag(confirmationTag)).fetchSemanticsNodes().isNotEmpty()
             }
+            composeRule.onNodeWithTag("tutorial-course-hint-${step.id}-0").assertDoesNotExist()
+            if (index == 0) {
+                repeat(3) {
+                    composeRule.onNodeWithTag("tutorial-course-hint-next-${step.id}")
+                        .performScrollTo().performClick()
+                }
+                composeRule.onNodeWithTag("tutorial-course-hint-${step.id}-2").assertExists()
+                composeRule.onNodeWithTag("tutorial-course-continue").assertIsNotEnabled()
+                composeRule.onAllNodesWithText(context.getString(Strings.action_copy)).onFirst()
+                    .performScrollTo().performClick()
+                composeRule.runOnIdle {
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    assertTrue(clipboard.primaryClip?.getItemAt(0)?.text.toString().contains("First change"))
+                    assertTrue(viewModel.uiState.value.completedCourseStepIds.isEmpty())
+                }
+                composeRule.onNodeWithTag("tutorial-course-hints-hide-${step.id}")
+                    .performScrollTo().performClick()
+                composeRule.onNodeWithTag("tutorial-course-hint-${step.id}-0").assertDoesNotExist()
+            }
             composeRule.onNodeWithTag(confirmationTag).performScrollTo().performClick()
             composeRule.waitUntil(5_000) { step.id in viewModel.uiState.value.completedCourseStepIds }
 
@@ -86,8 +109,13 @@ class TutorialCourseInstrumentationTest {
             composeRule.waitUntil(5_000) { viewModel.uiState.value.currentCourseStepIndex == index + 1 }
         }
 
-        composeRule.onNodeWithTag("tutorial-course-quiz-answer-0").performScrollTo().performClick()
         val finalStep = course.courseSteps.last()
+        repeat(3) {
+            composeRule.onNodeWithTag("tutorial-course-hint-next-${finalStep.id}")
+                .performScrollTo().performClick()
+        }
+        composeRule.onNodeWithTag("tutorial-course-continue").assertIsNotEnabled()
+        composeRule.onNodeWithTag("tutorial-course-quiz-answer-0").performScrollTo().performClick()
         composeRule.waitUntil(5_000) { finalStep.id in viewModel.uiState.value.completedCourseStepIds }
         composeRule.onNodeWithText(context.getString(Strings.tutorial_course_finish))
             .performClick()

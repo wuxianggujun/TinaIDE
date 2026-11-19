@@ -39,3 +39,18 @@ TinaIDE 的 **原生 CMake** 已提供 Android 工具链与 sysroot，不要把�
 ## 相关速查
 
 - [CMake 参数速查](../help/cmake-guide.md)
+
+<!-- tutorial-hint -->
+只完整替换根目录 `CMakeLists.txt`，保留上一章的 `main.cpp`、`pricing.h` 和 `pricing.cpp`。不要把 `pricing.cpp` 同时加进库目标和可执行目标。
+
+<!-- tutorial-hint -->
+目标分工是 `pricing` 编译计价实现，`native_lab` 编译 main 并链接 pricing。故意删除链接行后应看到未解析符号；修复是恢复目标关系，不是把 `.cpp` 包含进头文件。
+
+<!-- tutorial-hint -->
+在两个目标都已定义之后，恢复下面这行：
+
+```cmake
+target_link_libraries(native_lab PRIVATE pricing)
+```
+
+目标定义及头文件目录仍使用正文中的完整 CMake。保存、构建、运行应恢复 `total=30`。若提示找不到源码，先检查文件是否在根目录及文件名大小写。

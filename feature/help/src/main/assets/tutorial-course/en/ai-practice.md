@@ -2,6 +2,12 @@
 
 All user and assistant messages below are static examples bundled with the app. This lesson sends no requests, reads no keys, and makes no model calls. Complete it offline first; connecting a real service is optional.
 
+## Return from graphics to the calculator
+
+1. Keep using `native_lab`. Copy the earlier `console-main.cpp` contents back to `main.cpp` and `CMakeLists.console.txt` back to `CMakeLists.txt`. Back up the graphics code before replacing it.
+2. If the console version uses fmt, enable vcpkg again. Select native CMake, terminal output, and target `native_lab` instead of the SDL3 host.
+3. Save, build, and verify `total=30` before the link-error exercise. If backups are missing, the third hint provides a minimal recovery version without fmt; vcpkg can stay disabled for that version.
+
 ## Mock conversation: specify an acceptance test
 
 **User — mock:** I use TinaIDE on Android with native CMake and C++17. Accept counts 0–100 and prices 0–10000 only. Suggest a minimal change, preserve target names, and list boundary inputs. Add no libraries or network requests.
@@ -41,3 +47,40 @@ Write a prompt with environment, minimal code, error, constraints, and expected 
 
 - [Learning path](../../help/en/getting-started.md)
 - [Git: save reversible changes](../../help/en/git-basics.md)
+
+<!-- tutorial-hint -->
+Complete the recovery steps first. The mock conversations teach review and need no account or live AI. Edit the project files `pricing.cpp`, `main.cpp`, and CMake and actually run them before marking the exercise complete.
+
+<!-- tutorial-hint -->
+For link troubleshooting, remove `target_link_libraries(native_lab PRIVATE pricing)` temporarily. Build to observe the undefined totalPrice symbol, then restore the line. Include native Android CMake, the first error, target configuration, expected output, and the no-new-library constraint in your prompt.
+
+<!-- tutorial-hint -->
+Without console backups, keep `pricing.h` and `pricing.cpp` from [the functions lesson](cpp-functions.md) and **replace both files below completely**. This minimal version does not use fmt, so vcpkg can remain disabled.
+
+Root `CMakeLists.txt`:
+
+```cmake
+cmake_minimum_required(VERSION 3.22)
+project(native_lab LANGUAGES CXX)
+add_library(pricing STATIC pricing.cpp)
+target_include_directories(pricing PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_compile_features(pricing PUBLIC cxx_std_17)
+add_executable(native_lab main.cpp)
+target_link_libraries(native_lab PRIVATE pricing)
+```
+
+Root `main.cpp`:
+
+```cpp
+#include "pricing.h"
+#include <iostream>
+
+int main() {
+    const int total = totalPrice(3, 10);
+    if (total < 0) { std::cerr << "invalid order\n"; return 1; }
+    std::cout << "total=" << total << '\n';
+    return 0;
+}
+```
+
+Switch to terminal output and expect `total=30`. Removing the link line must fail the build; restoring it must produce 30 again. Record this sequence in your prompt and test notes to finish the offline exercise.

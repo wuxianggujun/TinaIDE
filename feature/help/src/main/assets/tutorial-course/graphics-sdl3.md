@@ -5,9 +5,10 @@
 ## 先运行模板
 
 1. 点击本阶段的市场入口，在 **市场 → 包** 安装 SDL3 的 Android 包。它来自内置包市场，不是 vcpkg 的同名库。
-2. 在同一个 `native_lab` 的项目设置中关闭 vcpkg 集成，避免图形构建继续走 vcpkg toolchain；之后再返回本项目，不要另建工程。
-3. 把根目录 `CMakeLists.txt` 和 `main.cpp` 替换为下方示例。之前的 `pricing.*` 和 `vcpkg.json` 可留在工程中，但本图形目标不再编译或安装它们。
-4. 在运行配置的 **图形选项 → 悬浮日志** 开启日志，再运行，检查窗口就绪日志。
+2. 在同一个 `native_lab` 中，先把 `main.cpp` 复制为 `console-main.cpp`，把 `CMakeLists.txt` 复制为 `CMakeLists.console.txt`，为下一章保留控制台版本。只复制文件，不把备份加入构建目标。
+3. 在项目设置中关闭 vcpkg 集成，避免图形构建继续走 vcpkg toolchain；之后再返回本项目，不要另建工程。
+4. 把根目录 `CMakeLists.txt` 和 `main.cpp` 替换为下方示例。保留 `pricing.*`、`vcpkg.json` 和刚才的备份，但本图形目标不再编译或安装它们。
+5. 在运行配置的 **图形选项 → 悬浮日志** 开启日志，再运行，检查窗口就绪日志。
 
 `CMakeLists.txt`：
 
@@ -104,35 +105,60 @@ SDL_RenderFillRect(state->renderer, &marker);
 
 把图片放入项目资源目录后，按项目运行配置设置资源入口，不写电脑绝对路径。纹理创建失败时检查错误与日志，先停止绘制该纹理。SDL2 的事件和初始化返回值与 SDL3 不同，不能直接混用代码。
 
-raylib 使用普通 `main` 和 NativeActivity。安装 Android raylib 包，另建 CMake 库项目；把上例的 `find_package` 换为 `find_package(raylib CONFIG REQUIRED)`，链接换为 `raylib::raylib`，保留共享库目标和输出名。将 `main.cpp` 替换为：
-
-```cpp
-#include <raylib.h>
-
-int main() {
-    InitWindow(640, 480, "raylib lab");
-    if (!IsWindowReady()) return 1;
-    SetTargetFPS(60);
-    while (!WindowShouldClose()) {
-        BeginDrawing();
-        ClearBackground(DARKBLUE);
-        DrawRectangle(40, 40, 120, 80, ORANGE);
-        EndDrawing();
-    }
-    CloseWindow();
-    return 0;
-}
-```
-
-运行配置改选 NativeActivity，构建后确认蓝底矩形。不要把这个入口替换成 SDL3 callbacks，也不要手动拼接 Android Activity。
+raylib 使用普通 `main` 和 NativeActivity，与 SDL3 的回调入口不同。本课程继续使用 SDL3；其他图形宿主的选择见运行配置速查。
 
 ## 验收
 
 - 冷启动、返回编辑器后再次启动都成功。
 - 点击能改变颜色；窗口可退出，IDE 仍可操作。
 - 横竖屏变化后绘制可见；资源路径不依赖旧窗口尺寸。
-- 故意加载不存在图片，日志说明错误，修正后能重新运行。
+- 本示例不加载图片；图片加载排错属于可选扩展，不作为完成本章的要求。
 
 ## 运行参考
 
 - [运行配置与图形日志速查](../help/build-project.md)
+
+<!-- tutorial-hint -->
+先保存控制台备份，再运行正文中的完整 SDL3 示例。修改位置仍是根目录 `main.cpp` 和 `CMakeLists.txt`。使用市场的 Android SDL3 包，选择 SDL3 宿主；无需自动创建图形项目。
+
+<!-- tutorial-hint -->
+触摸练习分三处：`AppState` 保存开关，`SDL_AppEvent` 接收触摸并切换它，`SDL_AppIterate` 根据开关选矩形颜色。保留退出事件和窗口释放；改变颜色应发生在画矩形之前。
+
+<!-- tutorial-hint -->
+在 `main.cpp` 中**分别替换**原来的 `AppState`、`SDL_AppEvent` 和 `SDL_AppIterate`，保留初始化与退出函数，不追加第二份同名定义：
+
+```cpp
+struct AppState {
+    SDL_Window* window = nullptr;
+    SDL_Renderer* renderer = nullptr;
+    bool touched = false;
+};
+```
+
+```cpp
+SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
+    if (event->type == SDL_EVENT_QUIT) return SDL_APP_SUCCESS;
+    auto* state = static_cast<AppState*>(appstate);
+    if (event->type == SDL_EVENT_FINGER_DOWN) state->touched = !state->touched;
+    return SDL_APP_CONTINUE;
+}
+```
+
+```cpp
+SDL_AppResult SDL_AppIterate(void* appstate) {
+    auto* state = static_cast<AppState*>(appstate);
+    SDL_SetRenderDrawColor(state->renderer, 15, 55, 100, SDL_ALPHA_OPAQUE);
+    SDL_RenderClear(state->renderer);
+    SDL_FRect marker{80.0f, 100.0f, 160.0f, 100.0f};
+    if (state->touched) {
+        SDL_SetRenderDrawColor(state->renderer, 60, 220, 120, SDL_ALPHA_OPAQUE);
+    } else {
+        SDL_SetRenderDrawColor(state->renderer, 255, 80, 40, SDL_ALPHA_OPAQUE);
+    }
+    SDL_RenderFillRect(state->renderer, &marker);
+    SDL_RenderPresent(state->renderer);
+    return SDL_APP_CONTINUE;
+}
+```
+
+每次点击屏幕，矩形应在橙色和绿色之间切换；退出再启动仍正常，才能标记本章完成。

@@ -43,9 +43,32 @@ int main() {
 - 把目标名改成 `hello_lab`，同时更新运行配置；源文件名不用跟着改。
 - 关闭项目再打开，确认文件仍在、输出仍正确。
 
+完成改名练习后，把 CMake 目标名和运行配置恢复为 `native_lab`，再进入下一章。
+
 只在实际完成以上操作后标记本课完成；阅读进度不等于编译验收。源码、Markdown 和文本文件统一保存为 UTF-8，不使用系统默认 ANSI 编码。
 
 ## 相关速查
 
 - [编辑器速查](../help/editor-basics.md)
 - [构建与运行排错](../help/build-project.md)
+
+<!-- tutorial-hint -->
+先打开项目根目录的 `CMakeLists.txt` 与 `main.cpp`。本章上方两段代码分别完整替换这两个文件；不要把 CMake 代码粘到 C++ 文件里。代码块的“复制”只复制文字，回到编辑器后还需要粘贴、保存。
+
+<!-- tutorial-hint -->
+两行输出都写在 `int main()` 的花括号内、`return 0;` 前。改名练习只改 `add_executable`、`target_compile_features` 里的目标名和运行配置，不改源文件名；练完恢复 `native_lab`。
+
+<!-- tutorial-hint -->
+两行输出练习可把 `main.cpp` **完整替换**为：
+
+```cpp
+#include <iostream>
+
+int main() {
+    std::cout << "Hello, TinaIDE!\n";
+    std::cout << "First change\n";
+    return 0;
+}
+```
+
+保存、构建、运行，应看到两行文字。仍失败时核对 CMake 源文件路径和第一个构建错误，再确认勾选完成。

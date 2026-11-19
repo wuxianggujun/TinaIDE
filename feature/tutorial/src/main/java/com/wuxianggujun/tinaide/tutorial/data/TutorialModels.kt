@@ -115,6 +115,7 @@ data class TutorialCourseQuiz(
     @param:StringRes @get:StringRes val questionRes: Int,
     @param:StringRes @get:StringRes val answerRes: List<Int>,
     val correctAnswerIndex: Int,
+    @param:StringRes @get:StringRes val hintRes: List<Int> = emptyList(),
 )
 
 /**

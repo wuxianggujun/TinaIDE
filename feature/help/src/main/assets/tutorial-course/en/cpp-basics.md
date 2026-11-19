@@ -46,3 +46,20 @@ Keep the range check. Enter `3`, `-1`, and `abc`; explain the difference between
 ## Your exercise
 
 Subtract 10 when the total is at least 100. Predict results for counts 9, 10, and 11 before implementing `if/else`. Explain `&&`, `||`, and `==`; avoid using assignment `=` instead of comparison.
+
+<!-- tutorial-hint -->
+Edit only `main.cpp`, keeping the earlier CMake. Run the fixed quantity of 3 first, then add terminal input. Return 1 immediately on parsing failure and keep the range check before calculation.
+
+<!-- tutorial-hint -->
+Apply the discount after the loop and before output. Test `total >= 100`, not the item count. Counts 9, 10, and 11 should produce 90, 90, and 100 after discount.
+
+<!-- tutorial-hint -->
+**Insert** this fragment immediately before `std::cout` inside the existing `main()`. Keep the loop and do not declare another `total`:
+
+```cpp
+if (total >= 100) {
+    total -= 10;
+}
+```
+
+Enter `9`, `10`, `11`, `abc`, and `-1`. Check the three discounted amounts; the last two must fail. You can copy and insert this fragment manually without automatic filling.

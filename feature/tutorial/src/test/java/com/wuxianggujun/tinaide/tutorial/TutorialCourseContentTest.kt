@@ -1,6 +1,7 @@
 package com.wuxianggujun.tinaide.tutorial
 
 import com.google.common.truth.Truth.assertThat
+import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
@@ -63,5 +64,62 @@ class TutorialCourseContentTest {
         }
 
         assertThat(propagatedCancellation).isSameInstanceAs(cancellation)
+    }
+
+    @Test
+    fun loadCourseContent_shouldSeparateProgressiveHintsFromTheLesson() = runTest {
+        val state = loadTutorialCourseContent("lesson.md") {
+            Result.success("# Lesson\r\n\r\nTask\r\n<!-- tutorial-hint -->\r\nWhere to edit\r\n" +
+                "<!-- tutorial-hint -->\r\n\r\n<!-- tutorial-hint -->\r\nReference code\r\n")
+        } as TutorialCourseContentState.Content
+
+        assertThat(state.markdown).isEqualTo("# Lesson\n\nTask")
+        assertThat(state.hints).containsExactly("Where to edit", "Reference code").inOrder()
+    }
+
+    @Test
+    fun loadCourseContent_shouldKeepHintMarkersInsideFencedCode() = runTest {
+        for (fence in listOf("````", "~~~")) {
+            val lesson = "# Example\n${fence}text\n<!-- tutorial-hint -->\n```\n中文\n$fence"
+            val state = loadTutorialCourseContent("lesson.md") {
+                Result.success("$lesson\n<!-- tutorial-hint -->\nActual hint")
+            } as TutorialCourseContentState.Content
+
+            assertThat(state.markdown).isEqualTo(lesson)
+            assertThat(state.hints).containsExactly("Actual hint")
+        }
+    }
+
+    @Test
+    fun loadCourseContent_shouldNotAcceptHintsWithoutALesson() = runTest {
+        val state = loadTutorialCourseContent("lesson.md") {
+            Result.success("<!-- tutorial-hint -->\nOnly a hint")
+        }
+        assertThat(state).isEqualTo(TutorialCourseContentState.Error)
+    }
+
+    @Test
+    fun bundledLessons_shouldHaveThreeLocalizedHintsWithMatchingReferenceCode() = runTest {
+        val root = generateSequence(File(System.getProperty("user.dir")).absoluteFile) { it.parentFile }
+            .first { File(it, "feature/help/src/main/assets/tutorial-course").isDirectory }
+        val directory = File(root, "feature/help/src/main/assets/tutorial-course")
+        val lessons = directory.listFiles().orEmpty().filter { it.extension == "md" }
+        val codeBlocks = Regex("(?ms)^```(?:cpp|cmake)\\r?\\n(.*?)^```[ \\t]*\\r?$")
+        assertThat(lessons).hasSize(9)
+
+        for (lesson in lessons) {
+            val translated = File(directory, "en/${lesson.name}")
+            val variants = listOf(lesson, translated).map { it.readText(Charsets.UTF_8) }
+            for (markdown in variants) {
+                val content = loadTutorialCourseContent(lesson.name) { Result.success(markdown) }
+                    as TutorialCourseContentState.Content
+                assertThat(content.hints).hasSize(3)
+                assertThat(content.markdown).doesNotContain("<!-- tutorial-hint -->")
+                assertThat(codeBlocks.findAll(content.hints.last()).toList()).isNotEmpty()
+            }
+            assertThat(codeBlocks.findAll(variants[0]).map { it.groupValues[1].trim() }.toList())
+                .containsExactlyElementsIn(codeBlocks.findAll(variants[1]).map { it.groupValues[1].trim() }.toList())
+                .inOrder()
+        }
     }
 }

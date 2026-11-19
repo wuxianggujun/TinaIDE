@@ -5,9 +5,10 @@ Goal: draw, handle input, read logs, and exit safely using the native template. 
 ## Run the template first
 
 1. Use this stage's Market action to install the Android SDL3 package under **Market → Packages**. This is a built-in package, not a similarly named vcpkg port.
-2. In the same `native_lab` project settings, disable vcpkg integration so the graphics build no longer uses the vcpkg toolchain. Return to this existing project; do not create another one.
-3. Replace the root `CMakeLists.txt` and `main.cpp` with the examples below. You may keep `pricing.*` and `vcpkg.json`, but this graphics target will neither compile nor install them.
-4. Enable **Graphics options → Floating log** in the run configuration and check the window-ready log on the next run.
+2. In the same `native_lab`, copy `main.cpp` to `console-main.cpp` and `CMakeLists.txt` to `CMakeLists.console.txt` for the next lesson. Do not add these backups to a build target.
+3. Disable vcpkg integration in project settings so the graphics build no longer uses its toolchain. Return to this existing project; do not create another one.
+4. Replace the root `CMakeLists.txt` and `main.cpp` with the examples below. Keep `pricing.*`, `vcpkg.json`, and the backups, but this graphics target will neither compile nor install them.
+5. Enable **Graphics options → Floating log** in the run configuration and check the window-ready log on the next run.
 
 `CMakeLists.txt`:
 
@@ -104,32 +105,57 @@ Do not assume desktop mouse events are identical to Android touch. Check the coo
 
 Use project assets and the configured runtime asset location, not a desktop absolute path. Check texture-loading failures and stop drawing invalid textures. SDL2 APIs and initialization return values differ from SDL3.
 
-For raylib, install its Android package and create another CMake library project. Replace `find_package` with `find_package(raylib CONFIG REQUIRED)` and link `raylib::raylib`, retaining the shared target and output name. Replace `main.cpp` with:
-
-```cpp
-#include <raylib.h>
-
-int main() {
-    InitWindow(640, 480, "raylib lab");
-    if (!IsWindowReady()) return 1;
-    SetTargetFPS(60);
-    while (!WindowShouldClose()) {
-        BeginDrawing();
-        ClearBackground(DARKBLUE);
-        DrawRectangle(40, 40, 120, 80, ORANGE);
-        EndDrawing();
-    }
-    CloseWindow();
-    return 0;
-}
-```
-
-Select NativeActivity output, build, and verify the rectangle. Retain ordinary `main`; do not replace it with SDL3 callbacks or manually construct an Android Activity.
+raylib uses ordinary `main` and NativeActivity, unlike the SDL3 callback entry point. Continue with SDL3 in this course; see the runtime reference for other graphical hosts.
 
 ## Acceptance
 
-Check cold start, stop and restart, touch, returning to the editor, and rotation. The IDE must remain usable after the program exits. Try a nonexistent image, inspect the diagnostic, fix it, and rerun.
+Check cold start, stop and restart, touch, returning to the editor, and rotation. The IDE must remain usable after the program exits. This example loads no images; image-loading troubleshooting is an optional extension, not required for completion.
 
 ## Runtime reference
 
 - [Runtime and graphics log reference](../../help/en/build-project.md)
+
+<!-- tutorial-hint -->
+Save the console backups before running the complete SDL3 example. Edit the root `main.cpp` and `CMakeLists.txt`. Install the Android SDL3 package from Market and choose the SDL3 host. No automatic project creation is required.
+
+<!-- tutorial-hint -->
+The touch exercise has three parts: store a flag in AppState, toggle it in SDL_AppEvent, and select a rectangle color in SDL_AppIterate. Keep quit handling and resource release. Choose the color before drawing the rectangle.
+
+<!-- tutorial-hint -->
+**Replace each existing definition** of `AppState`, `SDL_AppEvent`, and `SDL_AppIterate` with the matching code below. Keep initialization and quit functions; do not append duplicate definitions:
+
+```cpp
+struct AppState {
+    SDL_Window* window = nullptr;
+    SDL_Renderer* renderer = nullptr;
+    bool touched = false;
+};
+```
+
+```cpp
+SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
+    if (event->type == SDL_EVENT_QUIT) return SDL_APP_SUCCESS;
+    auto* state = static_cast<AppState*>(appstate);
+    if (event->type == SDL_EVENT_FINGER_DOWN) state->touched = !state->touched;
+    return SDL_APP_CONTINUE;
+}
+```
+
+```cpp
+SDL_AppResult SDL_AppIterate(void* appstate) {
+    auto* state = static_cast<AppState*>(appstate);
+    SDL_SetRenderDrawColor(state->renderer, 15, 55, 100, SDL_ALPHA_OPAQUE);
+    SDL_RenderClear(state->renderer);
+    SDL_FRect marker{80.0f, 100.0f, 160.0f, 100.0f};
+    if (state->touched) {
+        SDL_SetRenderDrawColor(state->renderer, 60, 220, 120, SDL_ALPHA_OPAQUE);
+    } else {
+        SDL_SetRenderDrawColor(state->renderer, 255, 80, 40, SDL_ALPHA_OPAQUE);
+    }
+    SDL_RenderFillRect(state->renderer, &marker);
+    SDL_RenderPresent(state->renderer);
+    return SDL_APP_CONTINUE;
+}
+```
+
+Each tap should switch the rectangle between orange and green. Check exit and restart before marking the stage complete.
