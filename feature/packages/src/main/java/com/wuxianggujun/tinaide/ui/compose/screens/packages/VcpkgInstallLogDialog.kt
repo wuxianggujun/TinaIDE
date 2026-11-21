@@ -57,7 +57,7 @@ internal fun VcpkgInstallLogDialog(
     val context = LocalContext.current
     val listState = rememberLazyListState()
     val copiedText = stringResource(Strings.toast_log_copied)
-    LaunchedEffect(output.size) {
+    LaunchedEffect(output) {
         if (output.isNotEmpty()) listState.scrollToItem(output.lastIndex)
     }
     TinaCustomDialog(onDismissRequest = onDismiss) {

@@ -9,6 +9,7 @@ vcpkg 已内置于应用，用于 native CMake 项目；工具、源码和依赖
 [自动管理验收记录](testing/vcpkg-managed-2026-11-10.md)。包含在线目录更新、自动准备工具、外部存储项目和离线重配；ARM64 真机、Release/R8 和其他 ports 尚未完成本轮验收。
 本次 Android 目录筛选与旧项目兼容的验证范围见 [Android 市场回归记录](testing/vcpkg-android-catalog-2026-11-10.md)。
 代理、完整归档回退、缓存修复和批量取消的本轮结果见 [2026-11-13 集成审查](testing/2026-11-13_集成审查-vcpkg-report.md)：118 项定向测试及宿主/设备测试源码编译通过；未执行新 APK 的设备验收。
+ARM64 7zip 的 ASM 修复、源码构建安装及最终 Debug APK 的压缩/解压验证见 [2026-11-21 真机验收](testing/2026-11-21_vcpkg-7zip-asm-acceptance.md)。
 
 ## Android 包列表与安装位置
 
@@ -76,6 +77,11 @@ python tools/vcpkg/build_android_tool.py \
 CMake、Ninja、clang 复用当前工具链。本集成设置 `VCPKG_FORCE_SYSTEM_BINARIES=1`，避免下载 Linux/glibc 宿主程序。
 编译并发沿用运行配置；原生子进程直接使用 Android 系统 shell，不需要手工创建 `/bin/sh` 映射。
 
+原生 CMake 与生成的 vcpkg chainload 文件同时配置 C、C++ 和通用 ASM。Android 的编译器通过
+`/system/bin/sh <clang-wrapper>` 启动，因此 ASM 必须显式保留 `COMPILER_ARG1`、目标 triple、sysroot
+和编译执行参数；仅让 CMake 从 C 语言推断汇编器会丢失包装脚本，并把 `sh` 当作汇编器执行。
+这会影响 ARM64 `7zip` 等启用 ASM 的 ports；`Compiler found: /system/bin/sh` 本身不足以判断成功或失败。
+
 辅助工具只使用随包快照，解压取消或失败会清理未发布的临时目录，完成标记仅在校验成功后写入。库源码按需下载，保留其许可与已有缓存。
 安装前会检查 CLI 的 ELF 格式与 ABI；该检查不能证明其使用 Android/Bionic，必须使用 Android 构建产物。
 依赖 Windows、桌面 GUI、额外构建系统或不支持 Android 的 port 仍会失败，完整原因进入构建日志。
@@ -105,6 +111,8 @@ target_link_libraries(tina_vcpkg_example PRIVATE fmt::fmt)
 在市场点击 **添加到项目** 后选择 CMake 项目，会自动启用内置 vcpkg 并更新 manifest，无需先进入设置。也可以在 **项目设置 → vcpkg 依赖** 启用或关闭内置管理。工具目录自动管理，**安装到项目** 时依赖固定安装到私有 `files/workspace/<projectId>/vcpkg_installed`，**装到共享库** 时改写到 `files/vcpkg/shared-installed/<triplet>`。市场、编译、运行与增量输入跟踪共用 `VcpkgManagedPaths.installed()` 这一路径策略；项目重命名不改变安装位置。旧自定义目录的文件不会被删除，首次使用自动管理模式会重新安装依赖。
 构建会先执行 `vcpkg install`，成功后才配置 CMake；失败不会继续使用缺失的依赖。
 安装使用独立进程组，取消会回收该任务的编译子进程并重新读取实际安装状态。构建成功后清理 buildtrees 和 packages staging；已安装库和源码缓存保留，便于重试。
+安装失败和异常会保留在可复制的安装日志末尾；随后刷新安装状态失败时，也保留原始构建错误。
+日志最多保留 250 条，达到上限后继续跟随新增输出滚动，避免把仍有输出的构建误看成停住。
 ARM64 使用 `arm64-tina-android`，x86_64 使用 `x64-tina-android`，默认静态链接。自定义 triplet 和 chainload 文件由当前 native 构建参数生成。
 配置沿用项目的 CMake 参数存储；不需要编辑额外全局配置。停用 vcpkg 后，下一次配置会清除旧 CMake toolchain 缓存。
 正式项目应在 manifest 中指定自己的 `builtin-baseline`，锁定 ports 版本。
@@ -129,5 +137,11 @@ SDL JNI 修复改变了共享模板源码，必须先执行 `buildApkTemplates` 
 ```bash
 ./gradlew :core:compile:testDebugUnitTest --tests '*VcpkgCMakeIntegrationTest' --tests '*BuildProcessRunnerTest' --no-daemon --console=plain
 ./gradlew :core:packages:testDebugUnitTest --tests '*VcpkgAndroidSupportTest' --tests '*VcpkgAndroidCatalogTest' --tests '*VcpkgRepositoryTest' --no-daemon --console=plain
-./gradlew :feature:packages:testDebugUnitTest --tests '*PackageFilterStateTest' --tests '*PackageManagerViewModelTest' --no-daemon --console=plain
+./gradlew :feature:packages:testDebugUnitTest --tests '*PackageFilterStateTest' --tests '*PackageManagerViewModelTest' --tests '*VcpkgMarketViewModelTest' --no-daemon --console=plain
 ```
+
+[`NativeCMakeAssemblyDeviceTest`](../app/src/androidTest/java/com/wuxianggujun/tinaide/core/compile/NativeCMakeAssemblyDeviceTest.kt)
+使用独立项目验证普通 CMake 与空 manifest 的 vcpkg chainload 两条 ASM 路径，检查 clang 包装脚本、
+Android 目标、sysroot 头文件、链接和 `asm=42` 输出，不改用户项目。
+显式传入 `vcpkgAssemblyPort=7zip` 可启用真实库的链接与 LZMA 压缩/解压夹具；完整依赖安装、
+短测超时限制及本轮真机结果见上述 2026-11-21 验收记录。

@@ -58,6 +58,12 @@ add_executable(native_lab main.cpp pricing.cpp)
 
 自己新增 `discountedTotal` 函数，保持 `main` 只负责调用和输出。函数规则变更后，重新运行边界输入。
 
+## 顺着同一个函数阅读代码
+
+打开大纲，找到 `totalPrice` 并查看签名，点击回到实现。在 `totalPrice` 名称上放置光标，执行“谁调用了此方法”；在 `discountedTotal` 上执行“此方法调用了谁”，应能找到对 `totalPrice` 的调用。语言服务尚未就绪时先等待或查看失败提示。
+
+把光标放进 `totalPrice`，打开“当前函数流程图”。应看到参数检查的真假分支分别通向 `return -1` 和乘法返回。点击返回节点核对源码位置，把数量上限从 100 改成 90 后重新生成，观察条件变化；完成后恢复 100 并重新运行边界输入。操作入口见[编辑器速查](../help/editor-basics.md)，这里沿用当前计价项目练习。
+
 <!-- tutorial-hint -->
 本章涉及四个文件：`pricing.h` 声明、`pricing.cpp` 实现、`main.cpp` 调用，以及 `CMakeLists.txt` 的源码列表。先复制本章完整示例运行成功，再做折扣函数练习。
 

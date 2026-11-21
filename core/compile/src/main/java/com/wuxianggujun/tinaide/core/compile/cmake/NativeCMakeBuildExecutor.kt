@@ -791,6 +791,24 @@ class NativeCMakeBuildExecutor(
         null
     }
 
+    internal fun resolveCompilerCommands(
+        toolchainId: String?,
+        cCompilerPath: String?,
+        cxxCompilerPath: String?,
+    ): Pair<CMakeCompilerCommand, CMakeCompilerCommand> {
+        val bin = toolchainManager.getBinDir(toolchainId)
+        val preferLinker64 = NativeExecutableRunner.shouldPreferLinker64()
+        val shims = if (preferLinker64) shimManager.prepare(bin, SHIM_TOOL_NAMES) else null
+        val linker64 = AndroidSystemLinker.resolve64BitPreferred()
+        fun resolve(configuredPath: String?, name: String) = resolveCMakeCompilerCommand(
+            realCompilerPath = resolveConfiguredCompilerPath(configuredPath, File(bin, name).absolutePath),
+            shimCompilerPath = shims?.shimPath(name),
+            preferLinker64 = preferLinker64,
+            linker64Path = linker64,
+        )
+        return resolve(cCompilerPath, "clang") to resolve(cxxCompilerPath, "clang++")
+    }
+
     /**
      * 配置 CMake 项目
      */
@@ -1036,10 +1054,15 @@ class NativeCMakeBuildExecutor(
             cmakeCCompiler.arg1?.let { add("-DCMAKE_C_COMPILER_ARG1=$it") }
             add("-DCMAKE_CXX_COMPILER=${cmakeCxxCompiler.compiler}")
             cmakeCxxCompiler.arg1?.let { add("-DCMAKE_CXX_COMPILER_ARG1=$it") }
+            // CMake copies the C compiler path for ASM, but not its shell-wrapper argument.
+            // Ports such as 7zip enable ASM on ARM64 and must use the same clang launcher.
+            add("-DCMAKE_ASM_COMPILER=${cmakeCCompiler.compiler}")
+            cmakeCCompiler.arg1?.let { add("-DCMAKE_ASM_COMPILER_ARG1=$it") }
             cmakeAr?.let { add("-DCMAKE_AR=$it") }
             cmakeRanlib?.let { add("-DCMAKE_RANLIB=$it") }
             add("-DCMAKE_C_COMPILER_TARGET=$targetTripleWithApi")
             add("-DCMAKE_CXX_COMPILER_TARGET=$targetTripleWithApi")
+            add("-DCMAKE_ASM_COMPILER_TARGET=$targetTripleWithApi")
             add("-DCMAKE_SYSROOT=${sysrootDir.absolutePath}")
 
             // 统一复用 sysroot 管理器生成的 flags，确保 CMake 与单文件/Make 路径一致。
@@ -1060,6 +1083,7 @@ class NativeCMakeBuildExecutor(
                 )
                 add("-DCMAKE_C_FLAGS=${mergeFlagSegments(cCompileFlags, compilerExecutionFlags, projectCFlags)}")
                 add("-DCMAKE_CXX_FLAGS=${mergeFlagSegments(cxxCompileFlags, compilerExecutionFlags, projectCppFlags)}")
+                add("-DCMAKE_ASM_FLAGS=${mergeFlagSegments(cCompileFlags, compilerExecutionFlags)}")
                 add("-DCMAKE_EXE_LINKER_FLAGS=$executableLinkerFlags")
                 add("-DCMAKE_SHARED_LINKER_FLAGS=$sharedLinkerFlags")
             }

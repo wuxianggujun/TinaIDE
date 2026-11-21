@@ -1,5 +1,10 @@
 # TinaIDE 测试文档
 
+## 2026-11-21 vcpkg 7zip 汇编修复
+
+[7zip 汇编修复与真机验收](2026-11-21_vcpkg-7zip-asm-acceptance.md) 记录 PMS110 上的实际失败命令、
+ASM 包装器修复、完整依赖安装及最终 ARM64 APK 的链接和压缩/解压回归，并区分短测超时与最终通过范围。
+
 ## 2026-11-18 续接验收
 
 [vcpkg、市场与课程续接验收](2026-11-18_vcpkg-market-course-acceptance.md) 记录共享库取消修复、正式图形启动器课程测试及本轮候选/最终包验证；不把开发 Debug 结果当作所有 Release 或真机验收通过。
@@ -202,6 +207,53 @@ py tools/checks/check_documentation.py
 GitHub Actions 的 `CI=true` 配置只使用官方 Google/Maven Central/Gradle Plugin Portal，避免动态版本解析被国内镜像的临时 metadata 错误阻断；本地非 CI 环境仍保留 Aliyun 镜像优先策略。
 
 ## 教程与帮助 JVM 稳定性门禁
+
+安装到真机后的手工步骤见 [真机课程与代码理解验收](course-device-manual.md)，覆盖课程提示、
+真实 CMake 验收、类/方法导航、流程图、超时取消与进度恢复。
+
+2026-11-20 新增 `CourseAssessmentTest`（实际输入/输出匹配、退出码、超时、源码变化与取消）、
+`FunctionFlowTest`（循环跳转、switch 穿透、提前返回及 Mermaid 转义），以及
+`LspCodeUnderstandingTest`（完整作用域/签名、出向调用目标位置和查询失败）。
+`CompilerViewModelTest` 同时验证验收不得与已有编译重叠。
+
+```powershell
+./gradlew :feature:tutorial:testDebugUnitTest :feature:editor:testDebugUnitTest :core:lsp:testDebugUnitTest :core:editor-lsp:testDebugUnitTest :core:compile:testDebugUnitTest --no-daemon --console=plain --configure-on-demand
+./gradlew :app:compileArm64DebugKotlin :app:compileArm64DebugAndroidTestKotlin --no-daemon --console=plain --configure-on-demand
+```
+
+`CxxFunctionFlowInstrumentationTest` 使用真实 Tree-sitter JNI 验证 Unicode 位置、循环与 switch，
+必须在安装了匹配 ABI 原生库的设备上执行，JVM 图模型测试不代替原生解析验收。
+
+`CourseAssessmentDeviceTest` 在独立项目中使用真实 `EditorManager`、`CompilerViewModel` 和原生
+CMake 编译链路，从 `tutorial-course` 的正文及提示组装终端输入与折扣练习，验证保存未保存的编辑、
+五组输入及退出码、进度回读、编译错误、错误金额、取消、五秒超时及修复后重试。取消与超时还会
+核对记录的 native PID 已退出；测试使用独立进度 ID，结束时只移除自己的项目与进度。
+
+```powershell
+$env:ANDROID_SERIAL = '<device-serial>'
+./gradlew.bat '-Ptina.devAbi=x86_64' :app:connectedX86_64DebugAndroidTest '-Pandroid.testInstrumentationRunnerArguments.class=com.wuxianggujun.tinaide.core.compile.CourseAssessmentDeviceTest' '-Pandroid.testInstrumentationRunnerArguments.courseLanguage=zh' --no-daemon --console=plain --configure-on-demand
+```
+
+将 `courseLanguage=zh` 改为 `courseLanguage=en` 可验证英文课程；设备 ABI 为 arm64 时使用
+`-Ptina.devAbi=arm64` 和 `connectedArm64DebugAndroidTest`。PowerShell 的 `-P` 参数整体加引号。
+运行前必须准备好对应 ABI 的工具链与 sysroot，不使用 assumption 跳过缺失环境。
+
+`NativeCourseDeviceTest` 同样只读取 `tutorial-course` 资产。`courseLesson` 支持
+`ide-workflow`、`cpp-basics`、`cpp-functions`、`cpp-collections`、`cpp-raii`、`cmake-practice`；
+多文件和 CMake 章节保留前置计价实现。传 `courseRecovery=true` 可验证编译错误修复，
+`courseLanguage=en` 切换英文。构建和 instrumentation 源码编译成功不能代替测试结果中的明确
+`OK (1 test)`；零测试、跳过、runner 初始化失败均不算通过。
+
+已有设备回归入口的 `course` suite 统一执行 12 组中英课程示例、一次编译错误恢复和两组自动验收。
+APK 已构建并安装后运行；每个用例最多 60 秒，报告校验当前 run ID、语言、检查数和进程回收结果：
+
+```powershell
+py tools/testing/run_editor_runtime_regression.py --adb '<sdk>/platform-tools/adb.exe' --serial '<device-serial>' --suite course
+```
+
+只复测自动验收时追加 `--case assess-zh` 或 `--case assess-en`。2026-11-20 在 API 34 x86_64 模拟器
+验证了两种语言的完整验收和 12 组课程示例（均包含编译错误恢复）；这些结果不覆盖图形、联网依赖
+安装或 ARM 真机运行。
 
 教程目录、课程加载与进度由 `feature:tutorial` 维护，帮助资产和搜索由 `feature:help` 维护。提交前可运行：
 

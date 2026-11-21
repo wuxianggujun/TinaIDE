@@ -106,6 +106,9 @@ fun TutorialScreen(
     onOpenMarketTab: (MarketTab) -> Unit = {},
 ) {
     val context = LocalContext.current
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+        viewModel.reloadSelectedCourseProgress()
+    }
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
     val uriHandler = LocalUriHandler.current
@@ -433,6 +436,9 @@ private fun TutorialGuidedCourseContent(
                 onCodeCopy = onCodeCopy,
                 onLinkClick = onOpenHelp,
             )
+            if (com.wuxianggujun.tinaide.tutorial.CourseAssessment.checks(step.id).isNotEmpty()) {
+                Text(stringResource(Strings.course_assessment_entry), style = MaterialTheme.typography.bodySmall)
+            }
 
             when (step.action) {
                 TutorialCourseAction.OPEN_PROJECTS -> Button(

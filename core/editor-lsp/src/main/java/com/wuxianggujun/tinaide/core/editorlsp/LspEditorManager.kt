@@ -1002,7 +1002,8 @@ class LspEditorManager(
                     ticket = requestTicket,
                     future = session.prepareCallHierarchy(params),
                     timeoutSeconds = timeoutSeconds,
-                    operation = "prepareCallHierarchy(${fileNameForLog(tabSession.file)})"
+                    operation = "prepareCallHierarchy(${fileNameForLog(tabSession.file)})",
+                    propagateFailure = true,
                 )
             },
             incomingCallsRequest = { params, timeoutSeconds ->
@@ -1010,12 +1011,34 @@ class LspEditorManager(
                     ticket = requestTicket,
                     future = session.callHierarchyIncomingCalls(params),
                     timeoutSeconds = timeoutSeconds,
-                    operation = "callHierarchy/incomingCalls(${fileNameForLog(tabSession.file)})"
+                    operation = "callHierarchy/incomingCalls(${fileNameForLog(tabSession.file)})",
+                    propagateFailure = true,
                 )
             }
         )
-        if (isTabRequestStillValid(requestTicket)) result else emptyList()
-    } ?: emptyList()
+        if (!isTabRequestStillValid(requestTicket)) throw kotlinx.coroutines.CancellationException("Stale call hierarchy request")
+        result
+    } ?: error("Call hierarchy session unavailable")
+
+    suspend fun callHierarchyOutgoingCalls(tabId: String, line: Int, column: Int): List<LocationItem> = withLspTabSession(tabId) { tabSession, session ->
+        val ticket = createTabRequestTicket(tabId, tabSession.documentUri)
+        val result = navigationService.callHierarchyOutgoingCalls(
+            documentUri = tabSession.documentUri,
+            line = line,
+            column = column,
+            prepareRequest = { params, timeout ->
+                awaitTrackedTabFuture(ticket, session.prepareCallHierarchy(params), timeout,
+                    operation = "prepareCallHierarchy", propagateFailure = true)
+            },
+            outgoingCallsRequest = { params, timeout ->
+                awaitTrackedTabFuture(ticket, session.callHierarchyOutgoingCalls(params), timeout,
+                    operation = "callHierarchy/outgoingCalls", propagateFailure = true)
+            },
+        )
+        if (!isTabRequestStillValid(ticket)) throw kotlinx.coroutines.CancellationException("Stale call hierarchy request")
+        result
+    } ?: error("Call hierarchy session unavailable")
+
     suspend fun switchSourceHeader(tabId: String): String? {
         val resultUri = withLspTabSession(tabId) { tabSession, session ->
             val requestTicket = createTabRequestTicket(tabId, tabSession.documentUri)

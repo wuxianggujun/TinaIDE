@@ -9,6 +9,8 @@ import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 
 /**
  * LSP 导航请求的处理委托。
@@ -20,6 +22,8 @@ class LspNavigationDelegate(
     private val context: Context,
     private val scope: CoroutineScope,
 ) {
+    private var navigationJob: Job? = null
+    private var navigationSequence = 0L
 
     /**
      * 导航结果回调，由调用方设置用于更新 UI 状态。
@@ -62,7 +66,12 @@ class LspNavigationDelegate(
         val cursor = editorContainerState.getCursorPositionInActiveTab() ?: return
         val line = cursor.line
         val column = cursor.column
+        val requestFile = editorContainerState.getActiveFileOrNull()
+        fun requireCurrentFile() {
+            if (editorContainerState.getActiveFileOrNull() != requestFile) throw CancellationException("Navigation target changed")
+        }
         val isPeekDefinition = navigationType == "peekDefinition"
+        val sequence = ++navigationSequence
 
         if (isPeekDefinition) {
             onNavigationDismissed?.invoke()
@@ -71,44 +80,48 @@ class LspNavigationDelegate(
             onNavigationStarted?.invoke()
         }
 
-        scope.launch {
+        navigationJob?.cancel()
+        navigationJob = scope.launch {
             try {
                 when (navigationType) {
                     "definition" -> {
                         val title = context.getString(com.wuxianggujun.tinaide.core.i18n.R.string.lsp_location_dialog_title_definition)
-                        val results = editorContainerState.gotoDefinition(tabId, line, column)
+                        val results = editorContainerState.gotoDefinition(tabId, line, column).also { requireCurrentFile() }
                         dispatchResults(title, results, editorContainerState)
                     }
                     "peekDefinition" -> {
                         val title = context.getString(com.wuxianggujun.tinaide.core.i18n.R.string.lsp_location_dialog_title_peek_definition)
                         editorContainerState.showPeekDefinitionLoading(tabId, title)
-                        val results = editorContainerState.gotoDefinition(tabId, line, column)
+                        val results = editorContainerState.gotoDefinition(tabId, line, column).also { requireCurrentFile() }
                         editorContainerState.showPeekDefinitionResults(tabId, title, results)
                     }
                     "references" -> {
-                        val results = editorContainerState.findReferences(tabId, line, column)
+                        val results = editorContainerState.findReferences(tabId, line, column).also { requireCurrentFile() }
                         val title = context.getString(com.wuxianggujun.tinaide.core.i18n.R.string.lsp_location_dialog_title_references, results.size)
                         dispatchResults(title, results, editorContainerState)
                     }
                     "typeDefinition" -> {
                         val title = context.getString(com.wuxianggujun.tinaide.core.i18n.R.string.lsp_location_dialog_title_type_definition)
-                        val results = editorContainerState.gotoTypeDefinition(tabId, line, column)
+                        val results = editorContainerState.gotoTypeDefinition(tabId, line, column).also { requireCurrentFile() }
                         dispatchResults(title, results, editorContainerState)
                     }
                     "implementation" -> {
                         val title = context.getString(com.wuxianggujun.tinaide.core.i18n.R.string.lsp_location_dialog_title_implementation)
-                        val results = editorContainerState.gotoImplementation(tabId, line, column)
+                        val results = editorContainerState.gotoImplementation(tabId, line, column).also { requireCurrentFile() }
                         dispatchResults(title, results, editorContainerState)
                     }
-                    "callHierarchyIncoming" -> {
-                        val results = editorContainerState.callHierarchyIncomingCalls(tabId, line, column)
+                    "callHierarchyIncoming", "callHierarchyOutgoing" -> {
+                        val outgoing = navigationType == "callHierarchyOutgoing"
+                        val results = if (outgoing) editorContainerState.callHierarchyOutgoingCalls(tabId, line, column)
+                            else editorContainerState.callHierarchyIncomingCalls(tabId, line, column)
+                        requireCurrentFile()
                         if (results.isEmpty()) {
                             onNavigationDismissed?.invoke()
-                            onToastInfo?.invoke(Strings.lsp_call_hierarchy_no_incoming_calls.strOr(context))
+                            onToastInfo?.invoke((if (outgoing) Strings.lsp_call_hierarchy_no_outgoing_calls else Strings.lsp_call_hierarchy_no_incoming_calls).strOr(context))
                             return@launch
                         }
                         val title = context.getString(
-                            com.wuxianggujun.tinaide.core.i18n.R.string.lsp_location_dialog_title_call_hierarchy_incoming,
+                            if (outgoing) Strings.lsp_location_dialog_title_call_hierarchy_outgoing else Strings.lsp_location_dialog_title_call_hierarchy_incoming,
                             results.size
                         )
                         dispatchResults(
@@ -120,7 +133,7 @@ class LspNavigationDelegate(
                     }
                     "switchHeaderSource" -> {
                         onNavigationDismissed?.invoke()
-                        val targetPath = editorContainerState.switchSourceHeader(tabId)
+                        val targetPath = editorContainerState.switchSourceHeader(tabId).also { requireCurrentFile() }
                         if (targetPath != null) {
                             val targetFile = File(targetPath)
                             if (targetFile.isFile) {
@@ -136,13 +149,20 @@ class LspNavigationDelegate(
                         onNavigationDismissed?.invoke()
                     }
                 }
+            } catch (cancelled: CancellationException) {
+                if (sequence == navigationSequence) {
+                    if (isPeekDefinition) editorContainerState.dismissPeekDefinitionPanel(tabId)
+                    else onNavigationDismissed?.invoke()
+                }
+                throw cancelled
             } catch (e: Exception) {
+                if (editorContainerState.getActiveFileOrNull() != requestFile) return@launch
                 if (isPeekDefinition) {
                     editorContainerState.dismissPeekDefinitionPanel(tabId)
                 } else {
                     onNavigationDismissed?.invoke()
                 }
-                val errorMessage = if (navigationType == "callHierarchyIncoming") {
+                val errorMessage = if (navigationType.startsWith("callHierarchy")) {
                     Strings.lsp_error_call_hierarchy_failed.strOr(context)
                 } else {
                     Strings.lsp_error_navigation_failed.strOr(context)

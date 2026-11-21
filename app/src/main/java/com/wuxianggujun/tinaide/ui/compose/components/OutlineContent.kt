@@ -122,6 +122,7 @@ fun OutlineContent(
                     item.name.contains(needle, ignoreCase = true) ||
                         item.kind.contains(needle, ignoreCase = true) ||
                         (item.containerName?.contains(needle, ignoreCase = true) == true)
+                        || (item.detail?.contains(needle, ignoreCase = true) == true)
                 }
             }
         }
@@ -426,6 +427,16 @@ private fun DocumentSymbolRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+        }
+        item.detail?.takeIf { it.isNotBlank() }?.let { signature ->
+            androidx.compose.foundation.text.selection.SelectionContainer {
+                Text(
+                    text = signature,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(start = indent + 30.dp, top = 4.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }

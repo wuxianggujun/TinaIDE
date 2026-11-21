@@ -164,6 +164,7 @@ class CompileProjectUseCase(
             val runnablePath: String?,
             val workingDirectory: String,
             val backend: TerminalBackend = TerminalBackend.HOST,
+            val verificationCommand: String? = null,
         ) : LaunchSpec()
         data class Debug(
             val programPath: String?,
@@ -928,9 +929,30 @@ class CompileProjectUseCase(
                     runnablePath = descriptor.runnablePath,
                     workingDirectory = workingDir,
                     backend = backend,
+                    verificationCommand = if (backend == TerminalBackend.HOST) terminalCommandBuilder.build(
+                        workingDir, descriptor.runnablePath, args, projectRoot, launchEnvironment, nativeRuntimeIdentity,
+                        interactive = false,
+                    ) else null,
                 )
             }
         }
+    }
+
+    data class ConsoleCheckResult(val exitCode: Int, val output: String, val timedOut: Boolean)
+
+    /** Runs a prepared native executable with bounded output and no terminal close prompt. */
+    suspend fun checkConsoleOutput(report: Report, input: String): ConsoleCheckResult {
+        val terminal = report.launch as? LaunchSpec.Terminal ?: error("Native terminal target required")
+        require(terminal.backend == TerminalBackend.HOST)
+        val command = requireNotNull(terminal.verificationCommand)
+        val result = BuildProcessRunner.run(
+            ProcessBuilder("/system/bin/sh", "-c", command).redirectErrorStream(true),
+            commandLabel = "course-check",
+            timeoutMs = 5_000,
+            stdin = input,
+            maxOutputChars = 32_768,
+        )
+        return ConsoleCheckResult(result.exitCode, result.output, result.timedOut)
     }
 
     private fun mapKind(kind: com.wuxianggujun.tinaide.core.compile.artifact.ArtifactKind): BuildArtifactKind = when (kind) {

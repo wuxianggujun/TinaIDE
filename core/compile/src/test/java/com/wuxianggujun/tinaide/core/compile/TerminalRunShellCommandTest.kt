@@ -16,6 +16,12 @@ import org.junit.Test
  * Windows 上被 File 分隔符归一化打扰。
  */
 class TerminalRunShellCommandTest {
+    @Test fun `verification replaces the shell and has no terminal interaction`() {
+        val command = assembleTerminalRunShellCommand(layout(envPrefix = "LANG='C.UTF-8' ").copy(replaceShell = true), preferLinker64 = true)
+        assertThat(command).contains("exec /system/bin/env LANG='C.UTF-8'")
+        assertThat(command).doesNotContain("printf")
+        assertThat(command).doesNotContain("read")
+    }
 
     private fun layout(
         workingDir: String = "/project",

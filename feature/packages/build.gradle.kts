@@ -5,6 +5,7 @@ plugins {
 
 android {
     namespace = "com.wuxianggujun.tinaide.feature.packages"
+    testOptions.unitTests.isIncludeAndroidResources = true
     buildFeatures {
         compose = true
     }

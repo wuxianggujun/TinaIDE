@@ -39,6 +39,7 @@ class TerminalCommandBuilder(context: Context) {
         projectRoot: File,
         extraEnvironment: Map<String, String> = emptyMap(),
         nativeRuntimeIdentity: NativeRuntimeIdentity? = null,
+        interactive: Boolean = true,
     ): String = withContext(Dispatchers.IO) {
         buildOnIo(
             workingDir = workingDir,
@@ -47,6 +48,7 @@ class TerminalCommandBuilder(context: Context) {
             projectRoot = projectRoot,
             extraEnvironment = extraEnvironment,
             nativeRuntimeIdentity = nativeRuntimeIdentity,
+            interactive = interactive,
         )
     }
 
@@ -57,6 +59,7 @@ class TerminalCommandBuilder(context: Context) {
         projectRoot: File,
         extraEnvironment: Map<String, String>,
         nativeRuntimeIdentity: NativeRuntimeIdentity?,
+        interactive: Boolean,
     ): String {
         val outputFile = File(outputPath)
         val stageDir = File(appContext.filesDir, "run-bin")
@@ -96,7 +99,7 @@ class TerminalCommandBuilder(context: Context) {
         }
         val envPrefix = LaunchEnvironment.buildShellPrefix(launchEnvironment - "LD_LIBRARY_PATH")
 
-        val waitForEnterSuffix = buildWaitForEnterSuffix()
+        val waitForEnterSuffix = if (interactive) buildWaitForEnterSuffix() else ""
 
         return assembleTerminalRunShellCommand(
             layout = TerminalRunLayout(
@@ -109,6 +112,7 @@ class TerminalCommandBuilder(context: Context) {
                 ldLibraryPrefix = ldLibraryPrefix,
                 waitForEnterSuffix = waitForEnterSuffix,
                 kind = sourceKind,
+                replaceShell = !interactive,
             )
         )
     }

@@ -137,6 +137,12 @@ class TutorialViewModel internal constructor(
     /**
      * 继续教程
      */
+    fun reloadSelectedCourseProgress() {
+        val state = _uiState.value
+        val selected = state.selectedTutorial ?: return
+        if (selected.type == TutorialType.GUIDED && !state.hasProgressError) continueTutorial(selected)
+    }
+
     fun continueTutorial(tutorial: Tutorial) {
         val sessionId = resetTutorialSession()
         launchProgressOperation {

@@ -24,6 +24,22 @@ import org.robolectric.annotation.Config
     application = Application::class,
 )
 class TutorialProgressStoreTest {
+    @Test fun verificationWritesOnlyToTheUnchangedChapter() = runTest {
+        val application = RuntimeEnvironment.getApplication() as Application
+        val store = TutorialProgressStore(application)
+        store.clearAllProgress()
+        val course = "cpp_practice_course"
+        assertThat(store.recordVerifiedStep(course, "ide_workflow", 0, emptySet(), null)).isTrue()
+        val baseline = store.getProgress(course)
+        store.updateStepProgress(course, 1)
+        assertThat(store.recordVerifiedStep(course, "ide_workflow", 0, emptySet(), baseline)).isFalse()
+        val current = store.getProgress(course)
+        assertThat(store.recordVerifiedStep(course, "cpp_basics", 1, setOf("ide_workflow"), current)).isTrue()
+        assertThat(store.getProgress(course)?.completedStepIds).containsExactly("ide_workflow", "cpp_basics")
+        store.clearAllProgress()
+        assertThat(store.recordVerifiedStep(course, "cpp_basics", 1, setOf("ide_workflow"), current)).isFalse()
+        assertThat(store.getProgress(course)).isNull()
+    }
 
     @Test
     fun courseStepCompletion_shouldPersistAndCanBeUnchecked() = runTest {

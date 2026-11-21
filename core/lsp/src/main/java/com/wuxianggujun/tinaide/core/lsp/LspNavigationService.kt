@@ -267,6 +267,26 @@ class LspNavigationService {
         }
     }
 
+    /** Outgoing results navigate to the callee; fromRanges belong to the caller, not the callee. */
+    suspend fun callHierarchyOutgoingCalls(
+        documentUri: String,
+        line: Int,
+        column: Int,
+        prepareRequest: suspend (CallHierarchyPrepareParams, Long) -> List<CallHierarchyItem>?,
+        outgoingCallsRequest: suspend (org.eclipse.lsp4j.CallHierarchyOutgoingCallsParams, Long) -> List<org.eclipse.lsp4j.CallHierarchyOutgoingCall>?,
+    ): List<LocationItem> = withContext(Dispatchers.IO) {
+        val prepared = prepareRequest(CallHierarchyPrepareParams(TextDocumentIdentifier(documentUri), Position(line, column)), TIMEOUT_SECONDS).orEmpty()
+        val locations = prepared.flatMap { item ->
+            outgoingCallsRequest(org.eclipse.lsp4j.CallHierarchyOutgoingCallsParams(item), TIMEOUT_SECONDS).orEmpty().mapNotNull { call ->
+                val target = call.to ?: return@mapNotNull null
+                val uri = target.uri ?: return@mapNotNull null
+                val range = target.selectionRange ?: target.range ?: return@mapNotNull null
+                Location(uri, range).toLocationItem().copy(previewText = target.name)
+            }
+        }
+        locations.distinctBy { listOf(it.uri, it.line, it.column) }
+    }
+
     // ---- 内部工具方法 ----
 
     /**
@@ -445,12 +465,13 @@ class LspNavigationService {
                     endLine = navRange.end.line,
                     endColumn = navRange.end.character,
                     level = level,
+                    detail = symbol.detail,
                 )
             )
 
             val children = symbol.children ?: return
             for (child in children) {
-                appendDocumentSymbol(child, name, level + 1)
+                appendDocumentSymbol(child, listOfNotNull(containerName, name).joinToString("::"), level + 1)
             }
         }
 
@@ -647,6 +668,7 @@ data class DocumentSymbolItem(
     val endLine: Int,
     val endColumn: Int,
     val level: Int = 0,
+    val detail: String? = null,
 )
 
 private fun WorkspaceSymbolItem.composeStableKey(): String = stableId

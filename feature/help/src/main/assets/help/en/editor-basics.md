@@ -41,6 +41,12 @@ Back first closes temporary UI: an open dropdown is dismissed, an expanded botto
 
 ## Language intelligence
 
+Outline displays method signatures and containing scopes supplied by the language server, with signature search. Place the cursor on a method and use the command palette or More menu to show incoming or outgoing calls. Results navigate to call sites or callee definitions. Failed queries are distinct from empty results and can be repeated after reconnection.
+
+Current function flowchart uses the current editor text, including unsaved edits. It supports if/else, for/while/do, switch, and break/continue/return, with scrolling, zoom, source navigation, and Mermaid copy. Macros, exceptions, goto, range loops, and lambdas are not expanded or supported. This is a syntax diagram, not a full compiler CFG; call side effects are not expanded. Regenerate after source changes.
+
+Verify current course stage saves the project, rebuilds the native CMake terminal target, and checks lesson inputs against exit codes and output. Each execution is limited to 5 seconds. Closing or cancelling stops the current verification. Graphics interactions and the final quiz remain in the tutorial, which owns the exercises and reference code.
+
 When the language server is ready, the editor can provide completion, diagnostics, definition and reference navigation, symbols, outline, rename, and selected quick fixes.
 
 If these features are missing, verify that:

@@ -51,6 +51,7 @@ interface LspSession {
     fun implementation(params: ImplementationParams): CompletableFuture<Either<List<Location>, List<LocationLink>>>?
     fun prepareCallHierarchy(params: CallHierarchyPrepareParams): CompletableFuture<List<CallHierarchyItem>>?
     fun callHierarchyIncomingCalls(params: CallHierarchyIncomingCallsParams): CompletableFuture<List<CallHierarchyIncomingCall>>?
+    fun callHierarchyOutgoingCalls(params: org.eclipse.lsp4j.CallHierarchyOutgoingCallsParams): CompletableFuture<List<org.eclipse.lsp4j.CallHierarchyOutgoingCall>>? = null
 
     fun symbol(params: WorkspaceSymbolParams): CompletableFuture<Either<List<SymbolInformation>, List<WorkspaceSymbol?>>>?
     fun resolveWorkspaceSymbol(unresolved: WorkspaceSymbol): CompletableFuture<WorkspaceSymbol>?

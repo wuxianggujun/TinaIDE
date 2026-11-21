@@ -2,7 +2,9 @@ import unittest
 import base64
 import struct
 
-from run_editor_runtime_regression import instrumentation_passed, instrumentation_report, validate_market_evidence
+from run_editor_runtime_regression import (
+    instrumentation_passed, instrumentation_report, validate_course_assessment_evidence, validate_market_evidence,
+)
 
 
 class InstrumentationVerdictTest(unittest.TestCase):
@@ -46,6 +48,23 @@ class InstrumentationVerdictTest(unittest.TestCase):
     def test_non_object_report_is_rejected(self):
         with self.assertRaises(ValueError):
             instrumentation_report('INSTRUMENTATION_STATUS: tina_regression_report=[]\n')
+
+
+class CourseAssessmentEvidenceTest(unittest.TestCase):
+    def report(self):
+        return dict(runId="current", passed=True, language="zh", checks=5, savedAndVerified=True,
+                    progressReloaded=True, compileFailureRejected=True, wrongOutputRejected=True,
+                    cancelledProcessStopped=True, timeoutProcessStopped=True, retryPassed=True)
+
+    def test_complete_current_report_passes(self):
+        validate_course_assessment_evidence(self.report(), "current", "zh")
+
+    def test_stale_wrong_language_and_missing_process_evidence_are_rejected(self):
+        for changes in ({"runId": "old"}, {"language": "en"}, {"checks": 4},
+                        {"cancelledProcessStopped": False}, {"timeoutProcessStopped": None},
+                        {"retryPassed": 1}, {"passed": False}):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                validate_course_assessment_evidence(self.report() | changes, "current", "zh")
 
 
 class MarketEvidenceTest(unittest.TestCase):

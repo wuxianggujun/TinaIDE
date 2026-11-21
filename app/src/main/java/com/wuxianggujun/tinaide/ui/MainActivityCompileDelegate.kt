@@ -22,6 +22,7 @@ class MainActivityCompileDelegate(
     private val compileRuntimeObserver: CompileRuntimeObserver,
     private val compileUiEventObserver: CompileUiEventObserver,
 ) {
+    internal val assessmentCompiler: CompilerViewModel get() = compilerViewModel
     fun registerObservers() {
         observeCompilerState()
         observeCompileActionsEvents()

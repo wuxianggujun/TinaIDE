@@ -98,12 +98,25 @@ internal object BuildProcessRunner {
             ) {
                 try {
                     runningProcess.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
-                        reader.lineSequence().forEach { line ->
-                            synchronized(outputLock) {
-                                output.appendLine(line)
-                                if (output.length > maxOutputChars) output.delete(0, output.length - maxOutputChars)
+                        if (onOutputLine == null && maxOutputChars < Int.MAX_VALUE) {
+                            // An untrusted program may never write a newline; cap while reading chunks.
+                            val buffer = CharArray(4096)
+                            while (true) {
+                                val count = reader.read(buffer)
+                                if (count < 0) break
+                                synchronized(outputLock) {
+                                    output.append(buffer, 0, count)
+                                    if (output.length > maxOutputChars) output.delete(0, output.length - maxOutputChars)
+                                }
                             }
-                            onOutputLine?.invoke(line)
+                        } else {
+                            reader.lineSequence().forEach { line ->
+                                synchronized(outputLock) {
+                                    output.appendLine(line)
+                                    if (output.length > maxOutputChars) output.delete(0, output.length - maxOutputChars)
+                                }
+                                onOutputLine?.invoke(line)
+                            }
                         }
                     }
                 } catch (t: Throwable) {

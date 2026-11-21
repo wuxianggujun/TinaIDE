@@ -63,6 +63,20 @@ class BuildProcessRunnerTest {
     }
 
     @Test
+    fun `bounded output drains a long line without inventing a newline`() = runBlocking {
+        val result = BuildProcessRunner.run(
+            processBuilder = ProcessBuilder(stdinEchoCommand()).redirectErrorStream(true),
+            commandLabel = "long-line-output-test",
+            timeoutMs = 10_000L,
+            stdin = "x".repeat(262_144) + "END",
+            maxOutputChars = 32,
+        )
+        assertThat(result.timedOut).isFalse()
+        assertThat(result.exitCode).isEqualTo(0)
+        assertThat(result.output).isEqualTo("x".repeat(29) + "END")
+    }
+
+    @Test
     fun `run times out when child does not consume stdin`() = runBlocking {
         val command = timeoutCommand()
         assumeTrue("No supported shell for stdin timeout test", command.isNotEmpty())

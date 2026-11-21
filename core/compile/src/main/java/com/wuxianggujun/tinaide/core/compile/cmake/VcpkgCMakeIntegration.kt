@@ -6,12 +6,13 @@ import com.wuxianggujun.tinaide.core.packages.VcpkgException
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+import java.security.MessageDigest
 
 internal object VcpkgCMakeIntegration {
     private val nativeToolchainKeys = setOf(
         "CMAKE_SYSTEM_VERSION", "ANDROID_ABI", "CMAKE_SYSROOT", "CMAKE_AR", "CMAKE_RANLIB",
         "CMAKE_EXE_LINKER_FLAGS", "CMAKE_SHARED_LINKER_FLAGS", "CMAKE_SIZEOF_VOID_P", "CMAKE_TRY_COMPILE_TARGET_TYPE",
-    ) + listOf("C", "CXX").flatMap { language ->
+    ) + listOf("C", "CXX", "ASM").flatMap { language ->
         listOf("COMPILER", "COMPILER_ARG1", "COMPILER_TARGET", "FLAGS", "ABI_COMPILED", "COMPILER_WORKS",
             "COMPILER_ABI", "BYTE_ORDER", "SIZEOF_DATA_PTR", "LIBRARY_ARCHITECTURE").map { "CMAKE_${language}_$it" }
     }
@@ -49,14 +50,11 @@ internal object VcpkgCMakeIntegration {
             val key = argument.trim().removePrefix("-D").substringBefore('=').substringBefore(':')
             key == "CMAKE_TOOLCHAIN_FILE" || key.startsWith("VCPKG_") || key == "TINA_VCPKG_INTEGRATION"
         }) throw VcpkgException(Strings.vcpkg_conflicting_arguments)
-        val integrationDir = File(buildDir, "tina-vcpkg").canonicalFile
-        if (!integrationDir.isDirectory && !integrationDir.mkdirs()) throw VcpkgException(Strings.vcpkg_write_failed)
-        val nativeToolchain = File(integrationDir, "native-toolchain.cmake")
         // Ports choose their own generator, dependencies and build type. Only share the native compiler/sysroot.
         val nativeSettings = nativeCMakeArguments.filter {
             it.startsWith("-D") && it.removePrefix("-D").substringBefore('=').substringBefore(':') in nativeToolchainKeys
-        }
-        writeIfChanged(nativeToolchain, buildString {
+        }.sortedBy { it.removePrefix("-D").substringBefore('=').substringBefore(':') }
+        val toolchainContents = buildString {
             appendLine("# Generated from TinaIDE's active native toolchain and sysroot.")
             appendLine("set(CMAKE_SYSTEM_NAME Linux)")
             appendLine("set(ANDROID TRUE)")
@@ -64,10 +62,23 @@ internal object VcpkgCMakeIntegration {
             nativeSettings.forEach { argument ->
                 val key = argument.removePrefix("-D").substringBefore('=').substringBefore(':')
                 if (!key.matches(Regex("[A-Za-z0-9_]+"))) throw VcpkgException(Strings.vcpkg_conflicting_arguments)
-                val type = if (key in setOf("CMAKE_C_COMPILER", "CMAKE_CXX_COMPILER", "CMAKE_AR", "CMAKE_RANLIB")) "FILEPATH" else "STRING"
+                val type = if (key in setOf("CMAKE_C_COMPILER", "CMAKE_CXX_COMPILER", "CMAKE_ASM_COMPILER", "CMAKE_AR", "CMAKE_RANLIB")) "FILEPATH" else "STRING"
                 appendLine("set($key ${quote(argument.substringAfter('='))} CACHE $type \"\" FORCE)")
             }
-        })
+        }
+        // The triplet embeds its chainload path in the package ABI. Market and Run must
+        // share it, while different native configurations must not overwrite active files.
+        val integrationDir = if (manifestMode) {
+            val workspace = installed.parentFile ?: throw VcpkgException(Strings.vcpkg_root_required)
+            val profile = MessageDigest.getInstance("SHA-256").digest(toolchainContents.toByteArray(Charsets.UTF_8))
+                .joinToString("") { "%02x".format(it) }
+            File(workspace, "tina-vcpkg/$triplet/$profile")
+        } else {
+            File(buildDir, "tina-vcpkg")
+        }.canonicalFile
+        if (!integrationDir.isDirectory && !integrationDir.mkdirs()) throw VcpkgException(Strings.vcpkg_write_failed)
+        val nativeToolchain = File(integrationDir, "native-toolchain.cmake")
+        writeIfChanged(nativeToolchain, toolchainContents)
         val installCommand = if (manifestMode) {
             if (!File(projectDir, "vcpkg.json").isFile) throw VcpkgException(Strings.vcpkg_manifest_required)
             val executable = File(root, "vcpkg")

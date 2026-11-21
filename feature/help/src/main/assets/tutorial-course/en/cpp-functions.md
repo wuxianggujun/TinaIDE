@@ -56,6 +56,12 @@ An `int&` aliases an existing integer and can modify it. `const std::string&` ac
 
 Add a separate discount function yourself. Keep `main` responsible for input/output and rerun boundary cases after changing the rules.
 
+## Follow the same function through the code
+
+Find `totalPrice` in Outline, inspect its signature, and navigate to the implementation. With the cursor on its name, show incoming calls. On `discountedTotal`, show outgoing calls and find the call to `totalPrice`. Wait for the language server or inspect its error if queries are unavailable.
+
+Place the cursor inside `totalPrice` and open Current function flowchart. The validation branches should lead to `return -1` and the multiplication return. Tap a return node to check its source location. Change the maximum count from 100 to 90, regenerate, and observe the condition; restore 100 and rerun the boundary inputs afterward. The [editor reference](../../help/en/editor-basics.md) describes the controls; this exercise continues the same pricing project.
+
 <!-- tutorial-hint -->
 Four files matter: declarations in `pricing.h`, implementation in `pricing.cpp`, calls in `main.cpp`, and the source list in `CMakeLists.txt`. Run the complete examples first, then add the discount exercise.
 

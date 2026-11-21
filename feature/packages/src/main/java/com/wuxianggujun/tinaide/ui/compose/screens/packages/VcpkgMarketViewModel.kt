@@ -228,12 +228,13 @@ class VcpkgMarketViewModel(application: Application, private val savedState: Sav
                     VcpkgSharedLibrary.export(getApplication(), project, settings, abi, log)
                     repository.enableSharedLibrary(project)
                 }
-                val catalog = readProject(path, _state.value.available?.ports)
                 _state.update {
-                    it.copy(catalog = catalog, error = failure,
-                        output = (it.output + if (failure != null) emptyList() else
-                            listOf(Strings.vcpkg_install_complete.strOr(getApplication()))).takeLast(MAX_LOG_LINES))
+                    it.copy(error = failure,
+                        output = (it.output + (failure ?: Strings.vcpkg_install_complete.strOr(getApplication())))
+                            .takeLast(MAX_LOG_LINES))
                 }
+                val catalog = readProject(path, _state.value.available?.ports)
+                _state.update { it.copy(catalog = catalog) }
             } catch (cancelled: CancellationException) {
                 // vcpkg can install some ports before cancellation; reload the actual status database.
                 withContext(NonCancellable) {
@@ -241,13 +242,13 @@ class VcpkgMarketViewModel(application: Application, private val savedState: Sav
                         val catalog = readProject(path, _state.value.available?.ports)
                         _state.update { it.copy(catalog = catalog) }
                     } catch (error: Exception) {
-                        reportFailure(error)
+                        reportFailure(error, appendToInstallLog = true)
                     }
                 }
                 _state.update { it.copy(output = (it.output + Strings.vcpkg_install_cancelled.strOr(getApplication())).takeLast(MAX_LOG_LINES)) }
                 throw cancelled
             } catch (error: Exception) {
-                reportFailure(error)
+                reportFailure(error, appendToInstallLog = true)
             } finally {
                 _state.update { it.copy(installing = false) }
             }
@@ -283,9 +284,12 @@ class VcpkgMarketViewModel(application: Application, private val savedState: Sav
         _state.update { it.copy(available = available, androidCatalog = androidCatalog) }
     }
 
-    private fun reportFailure(error: Exception) {
+    private fun reportFailure(error: Exception, appendToInstallLog: Boolean = false) {
         Timber.tag("VcpkgMarket").w(error, "vcpkg project operation failed")
-        _state.update { it.copy(error = error.vcpkgUserMessage(getApplication())) }
+        val message = error.vcpkgUserMessage(getApplication())
+        _state.update {
+            it.copy(error = message, output = if (appendToInstallLog) (it.output + message).takeLast(MAX_LOG_LINES) else it.output)
+        }
     }
 
     private companion object {

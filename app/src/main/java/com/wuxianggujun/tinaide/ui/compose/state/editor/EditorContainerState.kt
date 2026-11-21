@@ -1597,6 +1597,7 @@ class EditorContainerState(
     suspend fun gotoImplementation(tabId: String, line: Int, column: Int) = lspEditorManager.gotoImplementation(tabId, line, column)
 
     suspend fun callHierarchyIncomingCalls(tabId: String, line: Int, column: Int) = lspEditorManager.callHierarchyIncomingCalls(tabId, line, column)
+    suspend fun callHierarchyOutgoingCalls(tabId: String, line: Int, column: Int) = lspEditorManager.callHierarchyOutgoingCalls(tabId, line, column)
 
     suspend fun switchSourceHeader(tabId: String) = lspEditorManager.switchSourceHeader(tabId)
 

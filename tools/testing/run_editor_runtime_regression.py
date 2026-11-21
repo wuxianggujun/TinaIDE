@@ -65,6 +65,15 @@ def validate_performance_evidence(report: dict, run_id: str, extras: dict) -> No
         raise ValueError("Incomplete renderer samples")
 
 
+def validate_course_assessment_evidence(report: dict, run_id: str, language: str) -> None:
+    required_checks = ("savedAndVerified", "progressReloaded", "compileFailureRejected",
+                       "wrongOutputRejected", "cancelledProcessStopped", "timeoutProcessStopped", "retryPassed")
+    if (report.get("runId") != run_id or report.get("passed") is not True or
+            report.get("language") != language or type(report.get("checks")) is not int or
+            report["checks"] != 5 or any(report.get(check) is not True for check in required_checks)):
+        raise ValueError("Incomplete or stale course assessment evidence")
+
+
 def validate_market_evidence(report: dict, run_id: str, orientation: str) -> bytes:
     """Validate this invocation's viewport and bounded inline PNG without private-file access."""
     landscape = orientation == "landscape"
@@ -147,6 +156,8 @@ def main():
                      for language in ("zh", "en") for lesson in
                      ("ide-workflow", "cpp-basics", "cpp-functions", "cpp-collections", "cpp-raii", "cmake-practice")]
             cases.append(("recover-compile-error", selector, {"courseLesson": "ide-workflow", "courseLanguage": "en", "courseRecovery": "true"}))
+            assessment_selector = "com.wuxianggujun.tinaide.core.compile.CourseAssessmentDeviceTest#savesRebuildsChecksAndRecordsOnlySuccessfulRuns"
+            cases += [(f"assess-{language}", assessment_selector, {"courseLanguage": language}) for language in ("zh", "en")]
         elif args.suite == "graphics-course":
             selector = "com.wuxianggujun.tinaide.core.compile.GraphicsCourseDeviceTest#lessonBuildsAndDrawsThroughProductionHost"
             cases = [(f"{language}-{library}", selector, {"courseLanguage": language, "graphicsLibrary": library})
@@ -193,7 +204,8 @@ def main():
         if args.suite in ("performance", "vcpkg-managed", "course", "graphics-course", "market-layout") and name != "market-ui":
             try:
                 filename = (f"warm-cpp-scroll-{extras['performanceHighlight']}.json" if args.suite == "performance"
-                            else f"course-{extras['courseLanguage']}-{extras['courseLesson']}.json" if args.suite == "course"
+                            else f"course-{extras['courseLanguage']}-{extras['courseLesson']}.json" if args.suite == "course" and "courseLesson" in extras
+                            else f"course-assessment-{extras['courseLanguage']}.json" if args.suite == "course"
                             else f"graphics-course-{extras['courseLanguage']}-{extras['graphicsLibrary']}.json" if args.suite == "graphics-course"
                             else f"market-search-{args.orientation}.json" if args.suite == "market-layout"
                             else f"vcpkg-managed-{name}.json")
@@ -229,6 +241,8 @@ def main():
                                 report.get("language") != extras["courseLanguage"] or
                                 report.get("orangeSamples", 0) <= 40 or report.get("blueSamples", 0) <= 200):
                             raise ValueError("Incomplete or stale graphical course evidence")
+                    elif args.suite == "course" and "courseLesson" not in extras:
+                        validate_course_assessment_evidence(report, run_id, extras["courseLanguage"])
                     elif args.suite == "course":
                         if (report.get("runId") != run_id or report.get("passed") is not True or
                                 report.get("lesson") != extras["courseLesson"] or report.get("language") != extras["courseLanguage"] or

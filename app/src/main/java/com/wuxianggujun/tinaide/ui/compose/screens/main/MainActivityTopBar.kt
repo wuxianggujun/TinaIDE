@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -49,7 +48,7 @@ import com.wuxianggujun.tinaide.ui.compose.components.TinaDropdownMenuSectionTit
 import com.wuxianggujun.tinaide.ui.compose.icons.rememberTinaPainter
 import com.wuxianggujun.tinaide.ui.compose.state.editor.SplitEditorLayout
 
-internal class TopBarCallbacks(
+internal data class TopBarCallbacks(
     val onOpenDrawer: () -> Unit,
     val onOpenCommandPalette: () -> Unit,
     val onBuild: () -> Unit,
@@ -72,6 +71,9 @@ internal class TopBarCallbacks(
     val onGotoTypeDefinition: () -> Unit = {},
     val onGotoImplementation: () -> Unit = {},
     val onCallHierarchyIncoming: () -> Unit = {},
+    val onCallHierarchyOutgoing: () -> Unit = {},
+    val onFunctionFlow: () -> Unit = {},
+    val onCourseAssessment: () -> Unit = {},
     val onCodeActions: () -> Unit = {},
     val onRenameSymbol: () -> Unit = {},
     val onSwitchHeaderSource: () -> Unit = {},
@@ -171,6 +173,8 @@ internal fun MainActivityTopBar(
                         isConfigEnabled = !isRunConfigLoading,
                         isBuildEnabled = !isCompiling && !isRunConfigLoading,
                         isRunEnabled = !isCompiling && !isRunConfigLoading,
+                        isRunning = isCompiling,
+                        onStop = callbacks.onStopCompile,
                         isDebugEnabled = !isCompiling && !isRunConfigLoading,
                         buildIconRes = Drawables.ic_build,
                         debugIconRes = Drawables.ic_debug,
@@ -193,16 +197,6 @@ internal fun MainActivityTopBar(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = callbacks.onOpenDrawer) {
                     Icon(Icons.Default.Menu, stringResource(Strings.content_desc_open_file_tree))
-                }
-                if (isCompiling) {
-                    // Keep Stop separate from Run so rapid Run taps cannot toggle into Stop.
-                    IconButton(onClick = callbacks.onStopCompile) {
-                        Icon(
-                            Icons.Default.Stop,
-                            stringResource(Strings.content_desc_stop),
-                            tint = MaterialTheme.colorScheme.error,
-                        )
-                    }
                 }
                 if (!isDebugActive) {
                     EditHistoryActionButton(

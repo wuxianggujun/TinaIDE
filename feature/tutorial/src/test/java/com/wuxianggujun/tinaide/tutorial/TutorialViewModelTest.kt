@@ -63,6 +63,18 @@ class TutorialViewModelTest {
     }
 
     @Test
+    fun returningFromEditorReloadsVerifiedCourseProgress() = runTest {
+        val viewModel = createViewModel()
+        val course = requireNotNull(repository.getTutorial(TutorialRepository.CPP_PRACTICE_COURSE_ID))
+        viewModel.startTutorial(course)
+        runCurrent()
+        progressStore.setStepCompleted(course.id, course.courseSteps.first().id, true)
+        viewModel.reloadSelectedCourseProgress()
+        runCurrent()
+        assertThat(viewModel.uiState.value.completedCourseStepIds).contains(course.courseSteps.first().id)
+    }
+
+    @Test
     fun closingCourse_shouldInvalidateAnOpeningThatIsStillSaving() = runTest {
         val viewModel = createViewModel()
         runCurrent()

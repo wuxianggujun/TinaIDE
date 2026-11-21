@@ -204,6 +204,63 @@ class CompilerViewModel(
      */
     suspend fun getAvailableTargets() = compileUseCase.getAvailableTargets()
 
+    suspend fun assessCourse(
+        stepId: String,
+        editorManager: com.wuxianggujun.tinaide.editor.IEditorManager,
+    ): com.wuxianggujun.tinaide.tutorial.CourseAssessmentResult {
+        check(!processManager.isRunning())
+        val ticket = checkNotNull(actionGate.tryBegin())
+        val previousJob = compileJob
+        val assessmentJob = currentCoroutineContext().job
+        compileJob = assessmentJob
+        processManager.setCurrentRunJob(assessmentJob)
+        try {
+            previousJob?.cancelAndJoin()
+            currentCoroutineContext().ensureActive()
+            val project = requireNotNull(projectContext.getCurrentProject())
+            require(BuildSystemDetector.detect(File(project.rootPath)) == BuildSystem.CMAKE)
+            check(editorManager.saveAll(com.wuxianggujun.tinaide.editor.session.SaveReason.MANUAL)
+                .none { it is com.wuxianggujun.tinaide.editor.session.SaveResult.Failure })
+            check(ticket.isCurrent && ticket.startCompilation())
+            val config = getRunConfiguration()
+            require(config.outputMode == com.wuxianggujun.tinaide.core.compile.OutputMode.TERMINAL)
+            var report: CompileProjectUseCase.Report? = null
+            val result = com.wuxianggujun.tinaide.tutorial.CourseAssessment.assess(
+                project = File(project.rootPath), stepId = stepId,
+                build = {
+                    when (val built = compileUseCase.execute(
+                        operation = CompileProjectUseCase.Operation.rebuildRun(),
+                        onProgress = { _progress.value = it }, runConfig = config,
+                    )) {
+                        is CompileProjectUseCase.Result.Success -> {
+                            val terminal = built.report.launch as? CompileProjectUseCase.LaunchSpec.Terminal
+                            require(terminal?.backend == com.wuxianggujun.tinaide.core.terminal.TerminalBackend.HOST)
+                            report = built.report
+                        }
+                        is CompileProjectUseCase.Result.Error -> throw IllegalStateException(built.userMessage)
+                    }
+                },
+                run = { input ->
+                    currentCoroutineContext().ensureActive()
+                    check(ticket.isCurrent && projectContext.getCurrentProject()?.rootPath == project.rootPath)
+                    val output = compileUseCase.checkConsoleOutput(requireNotNull(report), input)
+                    com.wuxianggujun.tinaide.tutorial.CourseCheckOutput(output.exitCode, output.output, output.timedOut)
+                },
+            )
+            return if (projectContext.getCurrentProject()?.rootPath != project.rootPath || !ticket.isCurrent || config != getRunConfiguration() ||
+                editorManager.getOpenTabs().any { editorManager.getSessionState(it.id)?.value?.isDirty == true }) {
+                result.copy(sourceChanged = true)
+            } else result
+        } finally {
+            ticket.finish()
+            if (compileJob === assessmentJob) {
+                compileJob = null
+                _progress.value = null
+            }
+            processManager.clearCurrentRunJob(assessmentJob)
+        }
+    }
+
     fun cancelCompile() {
         actionGate.cancel()
         compileJob?.cancel()

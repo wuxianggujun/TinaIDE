@@ -28,6 +28,7 @@ import com.wuxianggujun.tinaide.core.compile.artifact.TrackedInputCollector
 import com.wuxianggujun.tinaide.core.compile.artifact.VcpkgBuildInputs
 import com.wuxianggujun.tinaide.core.compile.cmake.CMakeBuildExecutor
 import com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutor
+import com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutor.Companion.CMakeCompilerCommand
 import com.wuxianggujun.tinaide.core.compile.event.BuildEvent
 import com.wuxianggujun.tinaide.core.compile.event.BuildEventEmitter
 import com.wuxianggujun.tinaide.core.i18n.Strings
@@ -35,7 +36,6 @@ import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.core.linux.LinuxEnvironmentProvider
 import com.wuxianggujun.tinaide.core.linux.LinuxRunModePolicy
 import com.wuxianggujun.tinaide.core.linux.UnavailableLinuxEnvironmentProvider
-import com.wuxianggujun.tinaide.core.ndk.AndroidNativeToolchainManager
 import com.wuxianggujun.tinaide.core.packages.PackageAbiCompatibility
 import com.wuxianggujun.tinaide.core.proot.PRootEnvironment
 import com.wuxianggujun.tinaide.core.proot.ToolchainPathResolver
@@ -78,6 +78,17 @@ class CMakeStrategy(
         internal fun shouldForceReconfigureForReason(reason: String?): Boolean =
             "reconfigureInputsHash" in reason.normalizedBuildReason()
 
+        internal fun compilerCacheMatches(
+            cacheContent: String,
+            language: String,
+            expected: CMakeCompilerCommand,
+        ): Boolean = readCMakeCacheValue(cacheContent, "CMAKE_${language}_COMPILER") == expected.compiler &&
+            readCMakeCacheValue(cacheContent, "CMAKE_${language}_COMPILER_ARG1").orEmpty() == expected.arg1.orEmpty()
+
+        private fun readCMakeCacheValue(cacheContent: String, key: String): String? =
+            Regex("""(?m)^${Regex.escape(key)}:[A-Z_]+=(.*)$""")
+                .find(cacheContent)?.groupValues?.getOrNull(1)?.trim()
+
         private fun String?.normalizedBuildReason(): String = orEmpty().trim()
     }
 
@@ -91,9 +102,6 @@ class CMakeStrategy(
     }
     private val nativeExecutor by lazy {
         NativeCMakeBuildExecutor(context, sharedTimeoutConfig)
-    }
-    private val nativeToolchainManager by lazy {
-        AndroidNativeToolchainManager(context.applicationContext)
     }
     private val pathResolver by lazy { ToolchainPathResolver(context) }
 
@@ -429,13 +437,8 @@ class CMakeStrategy(
             }
             val (expectedCCompiler, expectedCxxCompiler) = resolveExpectedCompilerConfig(options)
 
-            val cCompilerRegex = Regex("""(?m)^CMAKE_C_COMPILER:FILEPATH=(.+)$""")
-            val cMatch = cCompilerRegex.find(cacheContent)
-            if (cMatch == null || cMatch.groupValues[1].trim() != expectedCCompiler) return true
-
-            val cxxCompilerRegex = Regex("""(?m)^CMAKE_CXX_COMPILER:FILEPATH=(.+)$""")
-            val cxxMatch = cxxCompilerRegex.find(cacheContent)
-            if (cxxMatch == null || cxxMatch.groupValues[1].trim() != expectedCxxCompiler) return true
+            if (!compilerCacheMatches(cacheContent, "C", expectedCCompiler) ||
+                !compilerCacheMatches(cacheContent, "CXX", expectedCxxCompiler)) return true
 
             val generatorRegex = Regex("""(?m)^CMAKE_GENERATOR:INTERNAL=(.+)$""")
             val cachedGenerator = generatorRegex.find(cacheContent)?.groupValues?.get(1)?.trim()
@@ -478,28 +481,16 @@ class CMakeStrategy(
         return false
     }
 
-    private fun readCMakeCacheValue(cacheContent: String, key: String): String? =
-        Regex("""(?m)^${Regex.escape(key)}:[A-Z_]+=(.*)$""")
-            .find(cacheContent)
-            ?.groupValues
-            ?.getOrNull(1)
-            ?.trim()
-
-    private fun resolveExpectedCompilerConfig(options: BuildOptions): Pair<String, String> {
+    private fun resolveExpectedCompilerConfig(options: BuildOptions): Pair<CMakeCompilerCommand, CMakeCompilerCommand> {
         if (!isNativeMode(options.resolvedRunMode)) {
             val (cCompiler, cxxCompiler) = resolveCompilerPaths(options)
-            return cCompiler to cxxCompiler
+            return CMakeCompilerCommand(cCompiler) to CMakeCompilerCommand(cxxCompiler)
         }
-        val binDir = nativeToolchainManager.getBinDir(options.toolchainId)
-        val realCCompiler = NativeCMakeBuildExecutor.resolveConfiguredCompilerPath(
-            configuredPath = options.customCCompiler,
-            fallbackPath = File(binDir, "clang").absolutePath,
+        return nativeExecutor.resolveCompilerCommands(
+            toolchainId = options.toolchainId,
+            cCompilerPath = options.customCCompiler,
+            cxxCompilerPath = options.customCppCompiler,
         )
-        val realCxxCompiler = NativeCMakeBuildExecutor.resolveConfiguredCompilerPath(
-            configuredPath = options.customCppCompiler,
-            fallbackPath = File(binDir, "clang++").absolutePath,
-        )
-        return realCCompiler to realCxxCompiler
     }
 
     private fun resolveCompilerPaths(options: BuildOptions): Pair<String, String> {

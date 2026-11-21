@@ -4,8 +4,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutor
 import com.wuxianggujun.tinaide.core.ndk.AndroidElfExecutor
-import com.wuxianggujun.tinaide.ui.regressionEvidenceDirectory
 import com.wuxianggujun.tinaide.ui.emitRegressionReport
+import com.wuxianggujun.tinaide.ui.regressionEvidenceDirectory
 import java.io.File
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -27,28 +27,9 @@ class NativeCourseDeviceTest {
         val report = JSONObject().put("runId", arguments.getString("regressionRunId", "manual"))
             .put("lesson", lesson).put("language", language).put("passed", false)
         val output = StringBuilder()
-        fun blocks(name: String, tag: String): List<String> {
-            val prefix = if (language == "en") "help/en" else "help"
-            val markdown = context.assets.open("$prefix/$name.md").bufferedReader(Charsets.UTF_8).use { it.readText() }
-            return Regex("(?s)```$tag\\r?\\n(.*?)\\r?\\n```").findAll(markdown).map { it.groupValues[1] }.toList()
-        }
         try {
             withTimeout(50_000) {
-                val multiFile = lesson in setOf("cpp-functions", "cmake-practice")
-                val cpp = blocks(if (multiFile) "cpp-functions" else lesson, "cpp")
-                if (multiFile) {
-                    listOf("pricing.h", "pricing.cpp", "main.cpp").zip(cpp).forEach { (name, contents) ->
-                        File(directory, name).writeText(contents, Charsets.UTF_8)
-                    }
-                } else File(directory, "main.cpp").writeText(cpp.first(), Charsets.UTF_8)
-                val cmake = when (lesson) {
-                    "cmake-practice" -> blocks(lesson, "cmake").first()
-                    "ide-workflow" -> blocks(lesson, "cmake").first()
-                    else -> "cmake_minimum_required(VERSION 3.22)\nproject(native_lab LANGUAGES CXX)\n" +
-                        "add_executable(native_lab main.cpp${if (multiFile) " pricing.cpp" else ""})\n" +
-                        "target_compile_features(native_lab PRIVATE cxx_std_17)\n"
-                }
-                File(directory, "CMakeLists.txt").writeText(cmake, Charsets.UTF_8)
+                CourseLessonAssets(context, language).writeProject(directory, lesson)
                 val executor = NativeCMakeBuildExecutor(context)
                 val options = NativeCMakeBuildExecutor.Options(parallelJobs = 1, onProgress = { output.appendLine(it) })
                 val build = File(directory, "build")
@@ -69,8 +50,7 @@ class NativeCourseDeviceTest {
                 assertEquals(result.output, 0, result.exitCode)
                 val expected = when (lesson) {
                     "ide-workflow" -> "Hello, TinaIDE!"
-                    "cpp-collections" -> "Tina: count=3 average=80"
-                    "cpp-raii" -> "restored=60"
+                    "cpp-collections" -> "Tina: items=3 total=30"
                     else -> "total=30"
                 }
                 assertTrue(result.output, result.output.contains(expected))

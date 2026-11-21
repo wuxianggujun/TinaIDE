@@ -45,6 +45,10 @@ private val DEFAULT_OVERFLOW_MENU_COMMAND_IDS = listOf(
     HostCommands.VIEW_BOOKMARKS,
     HostCommands.VIEW_TOGGLE_TERMINAL,
     HostCommands.VIEW_SETTINGS,
+    "editor.callHierarchyIncoming",
+    "editor.callHierarchyOutgoing",
+    "editor.functionFlow",
+    "tutorial.assess",
     // 工程
     COMMAND_WORKSPACE_EXIT,
 )
@@ -277,6 +281,30 @@ private fun buildMainActivityCommands(
         enabled = availability.isCallHierarchyIncomingAvailable,
         keywords = listOf("call hierarchy"),
         execute = callbacks.onCallHierarchyIncoming
+    )
+    addBuiltInCommand(
+        id = "editor.callHierarchyOutgoing",
+        titleRes = Strings.lsp_call_hierarchy_outgoing,
+        category = MainActivityCommandCategory.CODE,
+        enabled = availability.isCallHierarchyIncomingAvailable,
+        keywords = listOf("callee outgoing"),
+        execute = callbacks.onCallHierarchyOutgoing,
+    )
+    addBuiltInCommand(
+        id = "editor.functionFlow",
+        titleRes = Strings.function_flow_title,
+        category = MainActivityCommandCategory.CODE,
+        enabled = availability.hasActiveFile,
+        keywords = listOf("flowchart control flow"),
+        execute = callbacks.onFunctionFlow,
+    )
+    addBuiltInCommand(
+        id = "tutorial.assess",
+        titleRes = Strings.course_assessment_title,
+        category = MainActivityCommandCategory.CODE,
+        enabled = !availability.isCompiling,
+        keywords = listOf("course verify tutorial"),
+        execute = callbacks.onCourseAssessment,
     )
 
     addHostCommand(

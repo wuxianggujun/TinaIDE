@@ -119,6 +119,33 @@ class TutorialProgressStore private constructor(
         }
     }
 
+    /** A delayed verification must not complete a chapter in a restarted or advanced course. */
+    suspend fun recordVerifiedStep(
+        tutorialId: String,
+        stepId: String,
+        stepIndex: Int,
+        previousStepIds: Set<String>,
+        expectedProgress: TutorialProgress?,
+    ): Boolean {
+        var recorded = false
+        dataStore.edit { preferences ->
+            val progressMap = readProgressMapForUpdate(preferences)
+            val current = progressMap[tutorialId]
+            if (current != expectedProgress || (current?.currentStepIndex ?: 0) != stepIndex ||
+                !current?.completedStepIds.orEmpty().containsAll(previousStepIds)) return@edit
+            progressMap[tutorialId] = (current ?: TutorialProgress(tutorialId = tutorialId, status = ProgressStatus.IN_PROGRESS)).copy(
+                status = ProgressStatus.IN_PROGRESS,
+                currentStepIndex = stepIndex,
+                completedStepIds = current?.completedStepIds.orEmpty() + stepId,
+                completedAt = null,
+                lastAccessedAt = System.currentTimeMillis(),
+            )
+            preferences[KEY_ALL_PROGRESS] = json.encodeToString(progressMap)
+            recorded = true
+        }
+        return recorded
+    }
+
     /** 原子替换课程章节完成集合和当前位置，避免撤销章节时进度出现半更新。 */
     suspend fun updateCourseProgress(
         tutorialId: String,

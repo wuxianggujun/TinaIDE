@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -432,6 +433,8 @@ fun RunConfigSelector(
     configSegmentMaxWidth: Dp = 84.dp,
     showBuildButton: Boolean = false,
     showDebugButton: Boolean = false,
+    isRunning: Boolean = false,
+    onStop: () -> Unit = {},
 ) {
     var expanded by remember { mutableStateOf(false) }
     val currentConfig = configManager.selectedConfig
@@ -528,6 +531,8 @@ fun RunConfigSelector(
                     onDebug = onDebug,
                     isBuildEnabled = isBuildEnabled,
                     isDebugEnabled = isDebugEnabled,
+                    isRunning = isRunning,
+                    onStop = onStop,
                 )
 
                 if (showInlineBuild) {
@@ -713,13 +718,16 @@ internal fun RunActionButton(
     onDebug: (() -> Unit)? = null,
     isBuildEnabled: Boolean = true,
     isDebugEnabled: Boolean = true,
+    isRunning: Boolean = false,
+    onStop: () -> Unit = {},
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     val interactionSource = remember { MutableInteractionSource() }
-    val runLabel = stringResource(Strings.action_run)
+    val actionLabel = stringResource(if (isRunning) Strings.content_desc_stop else Strings.action_run)
+    val actionEnabled = enabled || isRunning
 
-    LaunchedEffect(enabled) {
-        if (!enabled) {
+    LaunchedEffect(enabled, isRunning) {
+        if (!enabled || isRunning) {
             menuExpanded = false
         }
     }
@@ -729,14 +737,18 @@ internal fun RunActionButton(
     ) {
         TinaPanelSegmentButton(
             onClick = {},
-            enabled = enabled,
+            enabled = actionEnabled,
             modifier = Modifier.matchParentSize(),
             contentPadding = PaddingValues(0.dp)
         ) {
             Icon(
-                imageVector = Icons.Default.PlayArrow,
-                contentDescription = stringResource(Strings.action_run),
-                tint = if (enabled) runTint else disabledTint,
+                imageVector = if (isRunning) Icons.Default.Stop else Icons.Default.PlayArrow,
+                contentDescription = actionLabel,
+                tint = when {
+                    isRunning -> MaterialTheme.colorScheme.error
+                    enabled -> runTint
+                    else -> disabledTint
+                },
                 modifier = Modifier.size(22.dp)
             )
         }
@@ -745,14 +757,14 @@ internal fun RunActionButton(
                 .matchParentSize()
                 // 覆盖层接管了点击，必须自带语义标签；否则无障碍与 UI 自动化
                 // 只能看到一个无名可点区域（NAF），下层 Icon 的描述被完全遮挡。
-                .semantics { contentDescription = runLabel }
+                .semantics { contentDescription = actionLabel }
                 .combinedClickable(
-                    enabled = enabled,
+                    enabled = actionEnabled,
                     role = Role.Button,
                     interactionSource = interactionSource,
                     indication = null,
-                    onClick = onRun,
-                    onLongClick = { menuExpanded = true },
+                    onClick = { if (isRunning) onStop() else onRun() },
+                    onLongClick = if (isRunning) null else ({ menuExpanded = true }),
                 )
         )
         RunMenu(
