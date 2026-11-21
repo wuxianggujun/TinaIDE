@@ -1,6 +1,7 @@
 package com.wuxianggujun.tinaide.core.compile
 
 import android.content.Context
+import com.wuxianggujun.tinaide.tutorial.project.TutorialProjectBlueprints
 import java.io.File
 
 /** Read shipped lessons and their hints so the device fixtures cannot silently drift. */
@@ -20,23 +21,11 @@ internal class CourseLessonAssets(private val context: Context, private val lang
 
     fun writeProject(directory: File, lesson: String) {
         require(lesson in LESSONS)
-        val multiFile = lesson in setOf("cpp-functions", "cpp-collections", "cpp-raii", "cmake-practice")
-        if (multiFile) {
-            val functions = blocks("cpp-functions", "cpp")
-            File(directory, "pricing.h").writeText(functions[0], Charsets.UTF_8)
-            File(directory, "pricing.cpp").writeText(functions[1], Charsets.UTF_8)
+        val prefix = if (language == "en") "tutorial-course/en" else "tutorial-course"
+        val blueprint = TutorialProjectBlueprints.load(lesson.replace('-', '_')) { sourceLesson ->
+            context.assets.open("$prefix/$sourceLesson.md").bufferedReader(Charsets.UTF_8).use { it.readText() }
         }
-        val mainLesson = if (lesson == "cmake-practice") "cpp-raii" else lesson
-        val main = blocks(mainLesson, "cpp")[if (lesson == "cpp-functions") 2 else 0]
-        File(directory, "main.cpp").writeText(main, Charsets.UTF_8)
-        val cmake = if (lesson in setOf("ide-workflow", "cmake-practice")) {
-            blocks(lesson, "cmake").first()
-        } else {
-            "cmake_minimum_required(VERSION 3.22)\nproject(native_lab LANGUAGES CXX)\n" +
-                "add_executable(native_lab main.cpp" + (if (multiFile) " pricing.cpp" else "") + ")\n" +
-                "target_compile_features(native_lab PRIVATE cxx_std_17)\n"
-        }
-        File(directory, "CMakeLists.txt").writeText(cmake, Charsets.UTF_8)
+        blueprint.files.forEach { (name, contents) -> File(directory, name).writeText(contents, Charsets.UTF_8) }
     }
 
     fun basicsWithInputAndDiscount(): String {
@@ -56,6 +45,7 @@ internal class CourseLessonAssets(private val context: Context, private val lang
             "cpp-collections",
             "cpp-raii",
             "cmake-practice",
+            "ai-practice",
         )
     }
 }

@@ -12,6 +12,29 @@ import org.junit.Test
 class ProjectRunConfigBootstrapperTest {
 
     @Test
+    fun `ensureInitialized rejects storage conflicts and can retry without replacing user config`() = runTest {
+        val root = createTempProjectRoot()
+        try {
+            ProjectMetadataStore.ensure(root, root.name, defaultRunTargetName = "native_lab")
+            val configFile = runConfigFile(root)
+            check(configFile.mkdirs())
+            org.junit.Assert.assertThrows(IllegalStateException::class.java) {
+                kotlinx.coroutines.runBlocking { ProjectRunConfigBootstrapper.ensureInitialized(root) }
+            }
+            check(configFile.delete())
+            ProjectRunConfigBootstrapper.ensureInitialized(root)
+            val bytes = configFile.readBytes()
+            val modified = configFile.lastModified()
+            ProjectRunConfigBootstrapper.ensureInitialized(root)
+            assertThat(configFile.readBytes()).isEqualTo(bytes)
+            assertThat(configFile.lastModified()).isEqualTo(modified)
+            assertThat(RunConfigurationManager.load(root.absolutePath).selectedConfig.targetName).isEqualTo("native_lab")
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `initializeIfMissing writes explicit sdl config for sdl3 project`() = runTest {
         val projectRoot = createTempProjectRoot()
         try {

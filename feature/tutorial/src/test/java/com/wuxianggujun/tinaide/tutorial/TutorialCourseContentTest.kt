@@ -99,8 +99,18 @@ class TutorialCourseContentTest {
     }
 
     @Test
+    fun projectMarkersAreHiddenFromReaderButKeptInsideExampleCode() = runTest {
+        val marker = "<!-- tutorial-project-file: main.cpp -->"
+        val state = loadTutorialCourseContent("lesson.md") {
+            Result.success("# Lesson\n$marker\n```cpp\nint main() {}\n```\n<!-- tutorial-hint -->\n```text\n$marker\n```")
+        } as TutorialCourseContentState.Content
+        assertThat(state.markdown).isEqualTo("# Lesson\n```cpp\nint main() {}\n```")
+        assertThat(state.hints.single()).contains(marker)
+    }
+
+    @Test
     fun bundledLessons_shouldHaveThreeLocalizedHintsWithMatchingReferenceCode() = runTest {
-        val root = generateSequence(File(System.getProperty("user.dir")).absoluteFile) { it.parentFile }
+        val root = generateSequence(File(requireNotNull(System.getProperty("user.dir"))).absoluteFile) { it.parentFile }
             .first { File(it, "feature/help/src/main/assets/tutorial-course").isDirectory }
         val directory = File(root, "feature/help/src/main/assets/tutorial-course")
         val lessons = directory.listFiles().orEmpty().filter { it.extension == "md" }
@@ -115,6 +125,7 @@ class TutorialCourseContentTest {
                     as TutorialCourseContentState.Content
                 assertThat(content.hints).hasSize(3)
                 assertThat(content.markdown).doesNotContain("<!-- tutorial-hint -->")
+                assertThat(content.markdown).doesNotContain("<!-- tutorial-project-file:")
                 assertThat(codeBlocks.findAll(content.hints.last()).toList()).isNotEmpty()
             }
             assertThat(codeBlocks.findAll(variants[0]).map { it.groupValues[1].trim() }.toList())

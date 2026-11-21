@@ -1,12 +1,15 @@
 # Lab 7: Add fmt to the existing project
 
-Prerequisite: [CMake targets and libraries](cmake-practice.md). Continue with the same `native_lab`; do not create another project. Complete the loop: manifest → install → CMake linkage → build → run.
+Prerequisite: [CMake targets and libraries](cmake-practice.md). Tap **Create / resume chapter project** to prepare the independent tina_course_07_vcpkg, with target native_lab. Complete source files, the CMake below, an empty vcpkg.json, and managed manifest mode are prepared; fmt is not added or downloaded automatically.
+
+Complete manifest → install → CMake linkage → build → run yourself, without manually creating tutorial files.
 
 ## Work through it
 
-1. Use this stage's Market button to open **Market → vcpkg**, select `native_lab`, and add `fmt`. Confirm the card says **In manifest**. This edits `vcpkg.json`; it does not mean the library is installed.
-2. Replace the root `CMakeLists.txt` with the content below. Keep the existing `pricing` library and executable. Do not enter a manual toolchain or installation path:
+1. Create the chapter project first. Use its Market button to open **Market → vcpkg**, select tina_course_07_vcpkg (with a suffix if its name conflicted), and add fmt. Confirm **In manifest**. This edits vcpkg.json; it does not mean the library is installed.
+2. The root CMakeLists.txt already contains the code below. Review the pricing library, executable, and fmt linkage. Do not enter a manual toolchain or installation path:
 
+<!-- tutorial-project-file: CMakeLists.txt -->
 ```cmake
 cmake_minimum_required(VERSION 3.22)
 project(native_lab LANGUAGES CXX)
@@ -18,7 +21,7 @@ add_executable(native_lab main.cpp)
 target_link_libraries(native_lab PRIVATE pricing fmt::fmt)
 ```
 
-3. Keep the previous pricing logic in `main.cpp`, change its output to `fmt::print("total={}\n", total);`, and include `<fmt/core.h>`. Save and run `native_lab`.
+3. The prepared main.cpp contains RAII calculation, file writing, and read-back. Change its final output to `fmt::print("total={}\n", restored);` and include `<fmt/core.h>`. Save and run native_lab.
 4. The first build installs the manifest dependency. After installation, configuration, and build all succeed, the terminal should print `total=30`. **Installed** is an installation state; **In manifest** only means the dependency is declared.
 
 ## Diagnose and accept
@@ -31,7 +34,7 @@ target_link_libraries(native_lab PRIVATE pricing fmt::fmt)
 For package compatibility, shared libraries, proxies, catalog updates, or installation states, open the [vcpkg dependency reference](../../help/en/vcpkg-guide.md). Help does not repeat this complete lab.
 
 <!-- tutorial-hint -->
-Add fmt to the selected native_lab in Market and confirm that project settings enable vcpkg. Then edit the root CMake and `main.cpp`. Being in the manifest does not mean installation is complete; the first build needs network access to fetch dependencies.
+Create the chapter project, select tina_course_07_vcpkg in Market, and add fmt. CMake, sources, the empty manifest, and managed manifest mode are prepared automatically; edit main.cpp to use fmt. Being in the manifest does not mean installation is complete; the first build needs network access to fetch dependencies.
 
 <!-- tutorial-hint -->
 CMake must both find fmt and link `fmt::fmt`. Add `<fmt/core.h>` at the top of C++, then replace the final output with `fmt::print`. Keep the calculation, file write, and read-back checks.
@@ -49,4 +52,4 @@ CMake must both find fmt and link `fmt::fmt`. Add `<fmt/core.h>` at the top of C
 fmt::print("total={}\n", restored);
 ```
 
-`restored` comes from the previous file read-back; use `total` instead if using the simplified calculator. Use the full CMake in the lesson and expect `total=30`. For missing packages, retry installation and inspect the first error. Copying code does not install a dependency.
+restored comes from this chapter's prefilled total.txt read-back. CMake already matches the complete example; expect total=30 after building. For missing packages, retry installation and inspect the first error. Creating a project or copying code does not install a dependency.

@@ -4,14 +4,14 @@ Goal: draw, handle input, read logs, and exit safely using the native template. 
 
 ## Run the template first
 
-1. Use this stage's Market action to install the Android SDL3 package under **Market → Packages**. This is a built-in package, not a similarly named vcpkg port.
-2. In the same `native_lab`, copy `main.cpp` to `console-main.cpp` and `CMakeLists.txt` to `CMakeLists.console.txt` for the next lesson. Do not add these backups to a build target.
-3. Disable vcpkg integration in project settings so the graphics build no longer uses its toolchain. Return to this existing project; do not create another one.
-4. Replace the root `CMakeLists.txt` and `main.cpp` with the examples below. Keep `pricing.*`, `vcpkg.json`, and the backups, but this graphics target will neither compile nor install them.
-5. Enable **Graphics options → Floating log** in the run configuration and check the window-ready log on the next run.
+1. Tap **Create / resume chapter project** to prepare the independent tina_course_08_sdl3, complete sources, and SDL3 run configuration. vcpkg is disabled. The console chapter stays unchanged; no backups or manual file replacement are needed.
+2. Use this stage's Market action to install the Android SDL3 package under **Market → Packages**. This is a built-in package, not a similarly named vcpkg port. Project creation does not download libraries; install the package before building if missing.
+3. Reopen this chapter from Projects and review the two prefilled files below.
+4. Enable **Graphics options → Floating log** in the run configuration and check the window-ready log on the next run.
 
 `CMakeLists.txt`:
 
+<!-- tutorial-project-file: CMakeLists.txt -->
 ```cmake
 cmake_minimum_required(VERSION 3.22)
 project(native_lab LANGUAGES CXX)
@@ -24,6 +24,7 @@ set_target_properties(native_lab PROPERTIES OUTPUT_NAME "main")
 
 `main.cpp`:
 
+<!-- tutorial-project-file: main.cpp -->
 ```cpp
 #define SDL_MAIN_USE_CALLBACKS 1
 #include <SDL3/SDL.h>
@@ -71,7 +72,7 @@ void SDL_AppQuit(void* appstate, SDL_AppResult) {
 }
 ```
 
-Select native CMake, target `native_lab`, and SDL3 output. Save and run; expect an orange rectangle on blue. Do not keep running the original library template test executable.
+The default configuration selects native CMake, target native_lab, and SDL3 output. After installing the package, run directly and expect an orange rectangle on blue. Do not select terminal output to launch this shared library.
 
 Keep this order in exactly one implementation file:
 
@@ -116,7 +117,7 @@ Check cold start, stop and restart, touch, returning to the editor, and rotation
 - [Runtime and graphics log reference](../../help/en/build-project.md)
 
 <!-- tutorial-hint -->
-Save the console backups before running the complete SDL3 example. Edit the root `main.cpp` and `CMakeLists.txt`. Install the Android SDL3 package from Market and choose the SDL3 host. No automatic project creation is required.
+The creation action generates an independent SDL3 project; no console backup or manual file creation is required. Install the Android SDL3 package and run the complete prefilled example. Subsequent edits to this chapter's main.cpp do not affect other chapters.
 
 <!-- tutorial-hint -->
 The touch exercise has three parts: store a flag in AppState, toggle it in SDL_AppEvent, and select a rectangle color in SDL_AppIterate. Keep quit handling and resource release. Choose the color before drawing the rectangle.

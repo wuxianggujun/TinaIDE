@@ -1,7 +1,8 @@
 # Lab 4: Strings and containers
 
-Prerequisite: [Functions and multiple files](cpp-functions.md). Keep the same `native_lab`, `pricing.h`, `pricing.cpp`, and CMake targets. Replace only `main.cpp`:
+Prerequisite: [Functions and multiple files](cpp-functions.md). Tap **Create / resume chapter project** to open the independent `tina_course_04_collections`. The app prepares pricing.h, pricing.cpp, CMake, and main.cpp below without overwriting the previous chapter's discount exercise.
 
+<!-- tutorial-project-file: main.cpp -->
 ```cpp
 #include "pricing.h"
 #include <algorithm>
@@ -29,7 +30,7 @@ int main() {
 }
 ```
 
-Expect `Tina: items=3 total=30`. `std::string` stores the customer, `vector` stores quantities, and `all_of` validates each item. The range loop checks the order limit before adding, preventing overflow before validation. Finally call the earlier `totalPrice`, continuing the existing multi-file project.
+Expect `Tina: items=3 total=30`. `std::string` stores the customer, `vector` stores quantities, and `all_of` validates each item. The range loop checks the order limit before adding, preventing overflow before validation. This project already includes the earlier totalPrice implementation.
 
 ## Exercise and boundaries
 
@@ -45,7 +46,7 @@ Expect `Tina: items=3 total=30`. `std::string` stores the customer, `vector` sto
 Read the unit price from input and reject parse failures. Add a count of valid line items; predict and test an empty list, zero quantity, and an invalid quantity.
 
 <!-- tutorial-hint -->
-Replace `main.cpp`, keeping `pricing.*` and CMake. Start with quantities `{1, 2}`. Do not change price, discount, and target name at once. User-entered price is the next exercise.
+Run the prefilled main.cpp first; no files need to be copied from the earlier chapter. Start with quantities `{1, 2}`. Do not change price, discount, and target name at once. User-entered price is the next exercise.
 
 <!-- tutorial-hint -->
 Replace 10 in `totalPrice(itemCount, 10)` with a parsed variable. Stop on parse failure; `totalPrice` already rejects prices outside 0–10000. `quantities.size()` counts rows, while `itemCount` counts all items.

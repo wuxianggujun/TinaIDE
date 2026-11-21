@@ -50,12 +50,14 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
@@ -67,8 +69,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.withResumed
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.wuxianggujun.tinaide.R
+import com.wuxianggujun.tinaide.core.compile.ProjectRunConfigBootstrapper
 import com.wuxianggujun.tinaide.core.help.HelpRepository
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.settings.SettingsActivity
@@ -81,6 +86,8 @@ import com.wuxianggujun.tinaide.tutorial.data.TutorialWithProgress
 import com.wuxianggujun.tinaide.tutorial.TutorialViewModel
 import com.wuxianggujun.tinaide.tutorial.TutorialCourseContentState
 import com.wuxianggujun.tinaide.tutorial.TutorialCourseHints
+import com.wuxianggujun.tinaide.tutorial.TutorialProjectUiState
+import com.wuxianggujun.tinaide.tutorial.project.TutorialProjectBlueprints
 import com.wuxianggujun.tinaide.tutorial.firstUnlockedCourseStepIndex
 import com.wuxianggujun.tinaide.tutorial.loadTutorialCourseContent
 import com.wuxianggujun.tinaide.ui.compose.components.MarkdownViewer
@@ -92,6 +99,7 @@ import com.wuxianggujun.tinaide.ui.compose.screens.main.market.MarketTab
 import com.wuxianggujun.tinaide.ui.compose.screens.settings.SettingsRoute
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import java.io.File
 import timber.log.Timber
 
 /**
@@ -102,6 +110,7 @@ import timber.log.Timber
 fun TutorialScreen(
     modifier: Modifier = Modifier,
     viewModel: TutorialViewModel = viewModel(),
+    onOpenProject: (String) -> Unit = {},
     onOpenProjectTab: () -> Unit = {},
     onOpenMarketTab: (MarketTab) -> Unit = {},
 ) {
@@ -116,6 +125,24 @@ fun TutorialScreen(
         HelpRepository(context.applicationContext)
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val projectOpener by rememberUpdatedState(onOpenProject)
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val locales = LocalConfiguration.current.locales
+    val courseLanguage = if (!locales.isEmpty && locales[0].language == "en") "en" else "zh"
+    LaunchedEffect(uiState.courseProject, lifecycle) {
+        val request = uiState.courseProject as? TutorialProjectUiState.Ready ?: return@LaunchedEffect
+        try {
+            ProjectRunConfigBootstrapper.ensureInitialized(File(request.projectPath))
+            lifecycle.withResumed {
+                viewModel.consumeCourseProjectRequest(request)?.let(projectOpener)
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            Timber.e(error, "Could not open prepared course project")
+            viewModel.courseProjectOpenFailed(request)
+        }
+    }
     val catalogState by viewModel.tutorialCatalogState.collectAsStateWithLifecycle()
     val tutorialsByCategory = catalogState.tutorialsByCategory
 
@@ -181,6 +208,8 @@ fun TutorialScreen(
                     tutorial = selected,
                     currentStepIndex = uiState.currentCourseStepIndex,
                     completedStepIds = uiState.completedCourseStepIds,
+                    projectState = uiState.courseProject,
+                    onPrepareProject = { viewModel.prepareCourseProject(it, courseLanguage) },
                     onOpenProjectTab = onOpenProjectTab,
                     onOpenMarketTab = onOpenMarketTab,
                     onOpenHelp = openLink,
@@ -296,6 +325,8 @@ private fun TutorialGuidedCourseContent(
     tutorial: Tutorial,
     currentStepIndex: Int,
     completedStepIds: Set<String>,
+    projectState: TutorialProjectUiState,
+    onPrepareProject: (String) -> Unit,
     onOpenProjectTab: () -> Unit,
     onOpenMarketTab: (MarketTab) -> Unit,
     onOpenHelp: (String) -> Unit,
@@ -429,6 +460,45 @@ private fun TutorialGuidedCourseContent(
                 )
             }
 
+            if (TutorialProjectBlueprints.supports(step.id)) {
+                val isPreparing = projectState is TutorialProjectUiState.Preparing || projectState is TutorialProjectUiState.Ready
+                Button(
+                    onClick = { onPrepareProject(step.id) },
+                    enabled = !isPreparing,
+                    modifier = Modifier.fillMaxWidth().testTag("tutorial-course-prepare-project"),
+                ) {
+                    if (isPreparing) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    Text(stringResource(
+                        if (isPreparing) Strings.tutorial_course_project_preparing
+                        else Strings.tutorial_course_project_create_or_resume,
+                    ))
+                }
+                Text(
+                    text = stringResource(Strings.tutorial_course_project_storage_note),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (step.id == "vcpkg_guide" || step.id == "graphics_sdl3") {
+                    Text(
+                        text = stringResource(
+                            if (step.id == "vcpkg_guide") Strings.tutorial_course_project_vcpkg_note
+                            else Strings.tutorial_course_project_sdl3_note,
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                if (projectState is TutorialProjectUiState.Error && projectState.stepId == step.id) {
+                    Text(
+                        stringResource(Strings.tutorial_course_project_failed),
+                        modifier = Modifier.testTag("tutorial-course-project-error"),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+
             TutorialCourseHints(
                 stepId = step.id,
                 hints = (contentLoadState as? TutorialCourseContentState.Content)?.hints
@@ -441,7 +511,7 @@ private fun TutorialGuidedCourseContent(
             }
 
             when (step.action) {
-                TutorialCourseAction.OPEN_PROJECTS -> Button(
+                TutorialCourseAction.OPEN_PROJECTS -> TextButton(
                     onClick = onOpenProjectTab,
                     modifier = Modifier.fillMaxWidth().testTag("tutorial-course-open-projects"),
                 ) {

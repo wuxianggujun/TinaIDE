@@ -1,9 +1,10 @@
 # Lab 3: Functions and multiple files
 
-Goal: move pricing rules out of `main`. Create three UTF-8 files in the project root.
+Goal: move pricing rules out of `main`. Tap **Create / resume chapter project** to open `tina_course_03_functions`. All three UTF-8 source files and the complete CMake file below are prepared automatically.
 
 `pricing.h` declares the function:
 
+<!-- tutorial-project-file: pricing.h -->
 ```cpp
 #pragma once
 int totalPrice(int count, int unitPrice);
@@ -11,6 +12,7 @@ int totalPrice(int count, int unitPrice);
 
 `pricing.cpp` implements it. This lesson uses `-1` for invalid inputs, so callers must check the result:
 
+<!-- tutorial-project-file: pricing.cpp -->
 ```cpp
 #include "pricing.h"
 
@@ -24,6 +26,7 @@ int totalPrice(int count, int unitPrice) {
 
 `main.cpp`:
 
+<!-- tutorial-project-file: main.cpp -->
 ```cpp
 #include "pricing.h"
 #include <iostream>
@@ -36,10 +39,14 @@ int main() {
 }
 ```
 
-Update the existing executable target:
+The root CMakeLists.txt already includes the implementation in the executable:
 
+<!-- tutorial-project-file: CMakeLists.txt -->
 ```cmake
+cmake_minimum_required(VERSION 3.22)
+project(native_lab LANGUAGES CXX)
 add_executable(native_lab main.cpp pricing.cpp)
+target_compile_features(native_lab PRIVATE cxx_std_17)
 ```
 
 Run and expect `total=30`. Including a header makes declarations visible. Adding the implementation to a target makes the compiler build it; both are needed.
@@ -63,7 +70,7 @@ Find `totalPrice` in Outline, inspect its signature, and navigate to the impleme
 Place the cursor inside `totalPrice` and open Current function flowchart. The validation branches should lead to `return -1` and the multiplication return. Tap a return node to check its source location. Change the maximum count from 100 to 90, regenerate, and observe the condition; restore 100 and rerun the boundary inputs afterward. The [editor reference](../../help/en/editor-basics.md) describes the controls; this exercise continues the same pricing project.
 
 <!-- tutorial-hint -->
-Four files matter: declarations in `pricing.h`, implementation in `pricing.cpp`, calls in `main.cpp`, and the source list in `CMakeLists.txt`. Run the complete examples first, then add the discount exercise.
+All four files are generated: declarations in pricing.h, implementation in pricing.cpp, calls in main.cpp, and the CMake source list. Run the baseline directly, then add the discount exercise. Project creation does not implement the new function for you.
 
 <!-- tutorial-hint -->
 Call `totalPrice` first and reject -1 before applying the discount. This preserves the quantity and price validation. Call the new function from main without deleting `totalPrice`.

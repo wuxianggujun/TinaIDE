@@ -4,12 +4,15 @@
 
 ## 准备与操作
 
-1. 在 **项目 → + → 新建项目** 选择 **CMake 可执行程序**，名字填 `native_lab`，语言选 C++17。暂不启用 vcpkg。
+1. 点击本章上方 **创建／继续本章项目**。应用自动创建 `tina_course_01_ide`，准备完整的 C++17 工程；运行目标为 `native_lab`，vcpkg 默认关闭。
 2. 首次使用按应用提示准备编译环境。只有环境安装完成后再运行项目。
-3. 打开根目录 `CMakeLists.txt` 和 `main.cpp`。模板可能把源码放在 `src/`，本课统一使用根目录的 `main.cpp`，因此同时修改源文件列表。
+3. 编辑器自动打开工程。根目录 `CMakeLists.txt` 和 `main.cpp` 已填好下方示例，无需新建文件或复制初始化代码。
+
+每章使用独立工程，源码保存在应用私有项目目录，可从项目列表继续打开或导出。重复点击会继续已有工程，不覆盖修改；同名用户目录不会被覆盖，新工程会自动加后缀。
 
 `CMakeLists.txt`：
 
+<!-- tutorial-project-file: CMakeLists.txt -->
 ```cmake
 cmake_minimum_required(VERSION 3.22)
 project(native_lab LANGUAGES CXX)
@@ -19,6 +22,7 @@ target_compile_features(native_lab PRIVATE cxx_std_17)
 
 `main.cpp`：
 
+<!-- tutorial-project-file: main.cpp -->
 ```cpp
 #include <iostream>
 
@@ -28,7 +32,7 @@ int main() {
 }
 ```
 
-4. 保存两个文件。在运行配置选择 **原生 CMake**、终端输出、`native_lab` 目标，点击运行。
+4. 默认运行配置已选择 **原生 CMake**、终端输出和 `native_lab` 目标，直接点击运行；练习修改后记得保存。
 5. 在终端找到 `Hello, TinaIDE!`。把它改为 `First change`，保存并再次运行，确认输出随之变化。
 
 ## 主动制造一次错误
@@ -53,7 +57,7 @@ int main() {
 - [构建与运行排错](../help/build-project.md)
 
 <!-- tutorial-hint -->
-先打开项目根目录的 `CMakeLists.txt` 与 `main.cpp`。本章上方两段代码分别完整替换这两个文件；不要把 CMake 代码粘到 C++ 文件里。代码块的“复制”只复制文字，回到编辑器后还需要粘贴、保存。
+点击“创建／继续本章项目”即可打开已填好两个文件的工程。先运行基线，再练习修改。代码块“复制”仅供查看或恢复练习代码，不是创建工程的必要步骤；不会自动覆盖你已有的修改。
 
 <!-- tutorial-hint -->
 两行输出都写在 `int main()` 的花括号内、`return 0;` 前。改名练习只改 `add_executable`、`target_compile_features` 里的目标名和运行配置，不改源文件名；练完恢复 `native_lab`。

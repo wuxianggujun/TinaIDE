@@ -17,6 +17,14 @@ object ProjectRunConfigBootstrapper {
         initializeOnIo(projectDir)
     }
 
+    /** For flows that require a persisted configuration before opening the editor. */
+    suspend fun ensureInitialized(projectDir: File): Unit = withContext(Dispatchers.IO) {
+        initializeOnIo(projectDir)
+        check(RunConfigurationManager.configFile(projectDir.absolutePath).isFile) {
+            "Project run configuration was not saved"
+        }
+    }
+
     private suspend fun initializeOnIo(projectDir: File): Boolean {
         if (!projectDir.isDirectory) return false
 

@@ -1,7 +1,8 @@
 # Lab 5: Objects and resource lifetimes
 
-Prerequisite: [Strings and containers](cpp-collections.md). Keep the same `native_lab` and `pricing.*`; replace only `main.cpp` so it records the existing price calculation with RAII:
+Prerequisite: [Strings and containers](cpp-collections.md). Tap **Create / resume chapter project** to prepare all files in `tina_course_05_raii`, including pricing.* and main.cpp below. It records the price with RAII without moving or replacing the previous chapter's project.
 
+<!-- tutorial-project-file: main.cpp -->
 ```cpp
 #include "pricing.h"
 #include <fstream>
@@ -58,7 +59,7 @@ RAII ties memory and file cleanup to object lifetime, including early returns. F
 Use a stack `OrderLedger` without changing `total=30`. Try a nonexistent output directory and check the error, then restore the valid path. Explain why a raw pointer does not express ownership and why two `unique_ptr`s must not own the same object. Add `count() const` and test an empty list.
 
 <!-- tutorial-hint -->
-Start with the complete example in `main.cpp`. Keep the class outside `main()`. Use a writable working directory; `total.txt` is relative to it, not a desktop path.
+The complete example is already in main.cpp; run the baseline directly. Keep the class outside main(). Use a writable working directory; total.txt is relative to it, not a desktop path.
 
 <!-- tutorial-hint -->
 For the stack exercise replace only the object creation and method call. `unique_ptr` uses `->`; a stack object uses `.`. Keep the file operations. `count()` is the number of rows; `itemCount()` validates and totals quantities.

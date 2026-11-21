@@ -1,7 +1,8 @@
 # 实践 6：CMake 目标与库
 
-目标：把[函数课](cpp-functions.md)的计价代码编成独立库，再让主程序链接它。源码仍是 `pricing.h`、`pricing.cpp`、`main.cpp`。
+目标：把[函数课](cpp-functions.md)的计价代码编成独立库，再让主程序链接它。点击 **创建／继续本章项目**，打开 `tina_course_06_cmake`；应用已准备 `pricing.h`、`pricing.cpp`、RAII 版 `main.cpp` 和下方完整 CMake。
 
+<!-- tutorial-project-file: CMakeLists.txt -->
 ```cmake
 cmake_minimum_required(VERSION 3.22)
 project(native_lab LANGUAGES CXX)
@@ -41,7 +42,7 @@ TinaIDE 的 **原生 CMake** 已提供 Android 工具链与 sysroot，不要把�
 - [CMake 参数速查](../help/cmake-guide.md)
 
 <!-- tutorial-hint -->
-只完整替换根目录 `CMakeLists.txt`，保留上一章的 `main.cpp`、`pricing.h` 和 `pricing.cpp`。不要把 `pricing.cpp` 同时加进库目标和可执行目标。
+本章项目的 CMake 已完成库化，其他三个源码文件也已准备，不需要复制上一章文件。先核对目标关系并运行，再做删除链接行的排错练习。不要把 `pricing.cpp` 同时加进库目标和可执行目标。
 
 <!-- tutorial-hint -->
 目标分工是 `pricing` 编译计价实现，`native_lab` 编译 main 并链接 pricing。故意删除链接行后应看到未解析符号；修复是恢复目标关系，不是把 `.cpp` 包含进头文件。

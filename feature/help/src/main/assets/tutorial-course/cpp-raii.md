@@ -1,7 +1,8 @@
 # 实践 5：对象与资源生命周期
 
-前置：[字符串与容器](cpp-collections.md)。继续使用同一个 `native_lab` 和 `pricing.*`，只替换 `main.cpp`，让它通过 RAII 记录已有计价结果：
+前置：[字符串与容器](cpp-collections.md)。点击 **创建／继续本章项目**，自动准备 `tina_course_05_raii` 的完整文件，包括 `pricing.*` 和下方 `main.cpp`。本章通过 RAII 记录计价结果，不需要搬运或替换上一章工程。
 
+<!-- tutorial-project-file: main.cpp -->
 ```cpp
 #include "pricing.h"
 #include <fstream>
@@ -61,7 +62,7 @@ RAII 让文件流和内存跟随对象生命周期释放，提前返回也不会
 4. 给 `OrderLedger` 添加 `count() const`，验证空列表计数为 0。
 
 <!-- tutorial-hint -->
-先将本章完整示例写入 `main.cpp`。类声明放在 `main()` 外部。运行目录必须可写，输出文件是该目录下的 `total.txt`，不是电脑上的路径。
+本章完整示例已填入 `main.cpp`，直接运行基线。类声明放在 `main()` 外部。运行目录必须可写，输出文件是该目录下的 `total.txt`，不是电脑上的路径。
 
 <!-- tutorial-hint -->
 栈对象练习只替换创建对象和调用方法的两行：`unique_ptr` 用 `->`，栈对象用 `.`。其余读写文件代码保留。`count()` 返回容器长度，`itemCount()` 校验并计算商品总数。

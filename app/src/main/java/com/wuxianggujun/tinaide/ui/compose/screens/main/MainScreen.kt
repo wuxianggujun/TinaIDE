@@ -162,6 +162,7 @@ fun MainScreen(
                                 )
                                 2 -> TutorialScreen(
                                     viewModel = tutorialViewModel,
+                                    onOpenProject = onOpenProject,
                                     onOpenProjectTab = { selectedNavIndex = 0 },
                                     onOpenMarketTab = { marketTab ->
                                         requestedMarketTab = marketTab

@@ -3,6 +3,7 @@
 from pathlib import Path
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -113,7 +114,13 @@ llvm-objdump() {{
 {function.group(0)}
 verify_raylib_runtime_contract fixture.so
 """
-        bash = shutil.which("bash")
+        if os.name == "nt":
+            git = shutil.which("git")
+            self.assertIsNotNone(git, "Git Bash is required for these checks on Windows")
+            bash = Path(git).resolve().parents[1] / "bin/bash.exe"
+            self.assertTrue(bash.is_file(), "Use Git for Windows with its bundled Bash")
+        else:
+            bash = shutil.which("bash")
         self.assertIsNotNone(bash, "Run these checks in Bash (Git Bash on Windows)")
         return subprocess.run(
             [bash, "-c", fixture],

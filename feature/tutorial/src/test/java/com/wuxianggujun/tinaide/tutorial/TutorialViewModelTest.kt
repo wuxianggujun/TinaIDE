@@ -10,6 +10,8 @@ import com.wuxianggujun.tinaide.tutorial.data.ProgressStatus
 import com.wuxianggujun.tinaide.tutorial.data.TutorialProgress
 import com.wuxianggujun.tinaide.tutorial.repository.TutorialProgressStore
 import com.wuxianggujun.tinaide.tutorial.repository.TutorialRepository
+import com.wuxianggujun.tinaide.tutorial.project.TutorialProjectPreparer
+import com.wuxianggujun.tinaide.tutorial.project.TutorialProjectRepository
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -24,6 +26,9 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.collect
 import java.io.IOException
+import java.io.File
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -426,9 +431,231 @@ class TutorialViewModelTest {
         assertThat(viewModel.uiState.value.hasProgressError).isFalse()
     }
 
+    @Test
+    fun preparingProjectIgnoresRepeatedClicksAndNeverCompletesTheLesson() = runTest {
+        val release = CompletableDeferred<File>()
+        var calls = 0
+        val viewModel = createViewModel(TutorialProjectPreparer { stepId, language ->
+            calls += 1
+            assertThat(stepId).isEqualTo("ide_workflow")
+            assertThat(language).isEqualTo("en")
+            release.await()
+        })
+        val course = course()
+        viewModel.startTutorial(course)
+        runCurrent()
+        viewModel.prepareCourseProject("ide_workflow", "en")
+        viewModel.prepareCourseProject("ide_workflow", "zh")
+        runCurrent()
+        assertThat(calls).isEqualTo(1)
+        assertThat(viewModel.uiState.value.courseProject).isInstanceOf(TutorialProjectUiState.Preparing::class.java)
+        release.complete(File(application.cacheDir, "chapter"))
+        runCurrent()
+        assertThat(viewModel.uiState.value.courseProject).isInstanceOf(TutorialProjectUiState.Ready::class.java)
+        assertThat(viewModel.uiState.value.completedCourseStepIds).isEmpty()
+        assertThat(progressStore.getProgress(course.id)?.completedStepIds).isEmpty()
+        assertThat(progressStore.getProgress(course.id)?.status).isEqualTo(ProgressStatus.IN_PROGRESS)
+    }
+
+    @Test
+    fun projectReadyIsConsumedOnlyOnceAndOldRequestsCannotOpenAgain() = runTest {
+        val path = File(application.cacheDir, "chapter")
+        val viewModel = createViewModel(TutorialProjectPreparer { _, _ -> path })
+        viewModel.startTutorial(course())
+        runCurrent()
+        viewModel.prepareCourseProject("ide_workflow", "zh")
+        runCurrent()
+        val ready = viewModel.uiState.value.courseProject as TutorialProjectUiState.Ready
+        assertThat(viewModel.consumeCourseProjectRequest(ready)).isEqualTo(path.absolutePath)
+        assertThat(viewModel.consumeCourseProjectRequest(ready)).isNull()
+        viewModel.prepareCourseProject("ide_workflow", "en")
+        runCurrent()
+        assertThat(viewModel.consumeCourseProjectRequest(ready)).isNull()
+        assertThat(viewModel.uiState.value.courseProject).isInstanceOf(TutorialProjectUiState.Ready::class.java)
+    }
+
+    @Test
+    fun closingAndReopeningSameCourseDiscardsLateProjectNavigation() = runTest {
+        val release = CompletableDeferred<File>()
+        val viewModel = createViewModel(TutorialProjectPreparer { _, _ -> withContext(NonCancellable) { release.await() } })
+        val course = course()
+        viewModel.startTutorial(course)
+        runCurrent()
+        viewModel.prepareCourseProject("ide_workflow", "zh")
+        runCurrent()
+        viewModel.closeTutorialContent()
+        viewModel.continueTutorial(course)
+        runCurrent()
+        release.complete(File(application.cacheDir, "completed-after-close"))
+        runCurrent()
+        assertThat(viewModel.uiState.value.showTutorialContent).isTrue()
+        assertThat(viewModel.uiState.value.courseProject).isEqualTo(TutorialProjectUiState.Idle)
+    }
+
+    @Test
+    fun changingChapterDiscardsLateProjectNavigationAndAllowsNewCreation() = runTest {
+        val release = CompletableDeferred<File>()
+        val viewModel = createViewModel(TutorialProjectPreparer { stepId, _ ->
+            if (stepId == "ide_workflow") withContext(NonCancellable) { release.await() }
+            else File(application.cacheDir, stepId)
+        })
+        val course = course()
+        viewModel.startTutorial(course)
+        runCurrent()
+        viewModel.prepareCourseProject("ide_workflow", "zh")
+        runCurrent()
+        viewModel.setCourseStepCompleted(course.id, "ide_workflow", true)
+        viewModel.nextCourseStep(course)
+        runCurrent()
+        viewModel.prepareCourseProject("cpp_basics", "en")
+        runCurrent()
+        val ready = viewModel.uiState.value.courseProject as TutorialProjectUiState.Ready
+        assertThat(ready.stepId).isEqualTo("cpp_basics")
+        release.complete(File(application.cacheDir, "old-chapter"))
+        runCurrent()
+        assertThat(viewModel.uiState.value.courseProject).isEqualTo(ready)
+    }
+
+    @Test
+    fun closedUnselectedAndLockedChaptersCannotCreateProjects() = runTest {
+        var calls = 0
+        val viewModel = createViewModel(TutorialProjectPreparer { _, _ -> calls += 1; File(application.cacheDir, "chapter") })
+        viewModel.prepareCourseProject("ide_workflow", "zh")
+        viewModel.startTutorial(course())
+        runCurrent()
+        viewModel.prepareCourseProject("cpp_basics", "zh")
+        viewModel.prepareCourseProject("final_review", "zh")
+        runCurrent()
+        assertThat(calls).isEqualTo(0)
+        assertThat(viewModel.uiState.value.courseProject).isEqualTo(TutorialProjectUiState.Idle)
+    }
+
+    @Test
+    fun projectFailureCanBeRetriedWithoutChangingCourseProgress() = runTest {
+        var calls = 0
+        val viewModel = createViewModel(TutorialProjectPreparer { _, _ ->
+            calls += 1
+            if (calls == 1) throw IOException("fixture storage failure")
+            File(application.cacheDir, "retry")
+        })
+        viewModel.startTutorial(course())
+        runCurrent()
+        viewModel.prepareCourseProject("ide_workflow", "zh")
+        runCurrent()
+        assertThat(viewModel.uiState.value.courseProject).isEqualTo(TutorialProjectUiState.Error("ide_workflow"))
+        viewModel.prepareCourseProject("ide_workflow", "zh")
+        runCurrent()
+        assertThat(calls).isEqualTo(2)
+        assertThat(viewModel.uiState.value.courseProject).isInstanceOf(TutorialProjectUiState.Ready::class.java)
+        assertThat(viewModel.uiState.value.completedCourseStepIds).isEmpty()
+    }
+
+    @Test
+    fun resumingReaderPreservesReadyRequestAndStillConsumesItOnlyOnce() = runTest {
+        val viewModel = createViewModel(TutorialProjectPreparer { _, _ -> File(application.cacheDir, "chapter") })
+        viewModel.startTutorial(course())
+        runCurrent()
+        viewModel.prepareCourseProject("ide_workflow", "zh")
+        runCurrent()
+        val ready = viewModel.uiState.value.courseProject as TutorialProjectUiState.Ready
+        viewModel.reloadSelectedCourseProgress()
+        runCurrent()
+        assertThat(viewModel.consumeCourseProjectRequest(ready)).isEqualTo(ready.projectPath)
+        assertThat(viewModel.consumeCourseProjectRequest(ready)).isNull()
+        assertThat(viewModel.uiState.value.courseProject).isEqualTo(TutorialProjectUiState.Idle)
+    }
+
+    @Test
+    fun resumingReaderDoesNotCancelProjectPreparation() = runTest {
+        val release = CompletableDeferred<File>()
+        val viewModel = createViewModel(TutorialProjectPreparer { _, _ -> release.await() })
+        viewModel.startTutorial(course())
+        runCurrent()
+        viewModel.prepareCourseProject("ide_workflow", "zh")
+        runCurrent()
+        val preparing = viewModel.uiState.value.courseProject
+        viewModel.reloadSelectedCourseProgress()
+        runCurrent()
+        assertThat(viewModel.uiState.value.courseProject).isEqualTo(preparing)
+        release.complete(File(application.cacheDir, "chapter"))
+        runCurrent()
+        assertThat(viewModel.uiState.value.courseProject).isInstanceOf(TutorialProjectUiState.Ready::class.java)
+    }
+
+    @Test
+    fun delayedResumeReadDoesNotNavigateBackAfterSelectingAnotherChapter() = runTest {
+        val viewModel = createViewModel()
+        val course = course()
+        viewModel.startTutorial(course)
+        runCurrent()
+        viewModel.setCourseStepCompleted(course.id, "ide_workflow", true)
+        runCurrent()
+        val gate = preferences.pauseNextRead()
+        viewModel.reloadSelectedCourseProgress()
+        runCurrent()
+        assertThat(gate.entered.isCompleted).isTrue()
+        viewModel.nextCourseStep(course)
+        gate.release.complete(Unit)
+        runCurrent()
+        assertThat(viewModel.uiState.value.currentCourseStepIndex).isEqualTo(1)
+        assertThat(progressStore.getProgress(course.id)?.currentStepIndex).isEqualTo(1)
+    }
+
+    @Test
+    fun delayedResumeReadDoesNotEraseNewCompletion() = runTest {
+        val viewModel = createViewModel()
+        val course = course()
+        viewModel.startTutorial(course)
+        runCurrent()
+        val gate = preferences.pauseNextRead()
+        viewModel.reloadSelectedCourseProgress()
+        runCurrent()
+        assertThat(gate.entered.isCompleted).isTrue()
+        viewModel.setCourseStepCompleted(course.id, "ide_workflow", true)
+        gate.release.complete(Unit)
+        runCurrent()
+        assertThat(viewModel.uiState.value.completedCourseStepIds).containsExactly("ide_workflow")
+        assertThat(progressStore.getProgress(course.id)?.completedStepIds).containsExactly("ide_workflow")
+    }
+
+    @Test
+    fun hostFailureAfterConsumptionCanBeRetried() = runTest {
+        val viewModel = createViewModel(TutorialProjectPreparer { _, _ -> File(application.cacheDir, "chapter") })
+        viewModel.startTutorial(course())
+        runCurrent()
+        viewModel.prepareCourseProject("ide_workflow", "zh")
+        runCurrent()
+        val ready = viewModel.uiState.value.courseProject as TutorialProjectUiState.Ready
+        viewModel.consumeCourseProjectRequest(ready)
+        viewModel.courseProjectOpenFailed(ready)
+        assertThat(viewModel.uiState.value.courseProject).isEqualTo(TutorialProjectUiState.Error("ide_workflow"))
+        viewModel.prepareCourseProject("ide_workflow", "zh")
+        runCurrent()
+        val retry = viewModel.uiState.value.courseProject
+        viewModel.courseProjectOpenFailed(ready)
+        assertThat(viewModel.uiState.value.courseProject).isEqualTo(retry)
+    }
+
+    @Test
+    fun staleHostOpenFailureDoesNotReplaceNewChapterState() = runTest {
+        val viewModel = createViewModel(TutorialProjectPreparer { _, _ -> File(application.cacheDir, "chapter") })
+        val course = course()
+        viewModel.startTutorial(course)
+        runCurrent()
+        viewModel.prepareCourseProject("ide_workflow", "zh")
+        runCurrent()
+        val ready = viewModel.uiState.value.courseProject as TutorialProjectUiState.Ready
+        viewModel.courseProjectOpenFailed(ready)
+        assertThat(viewModel.uiState.value.courseProject).isEqualTo(TutorialProjectUiState.Error("ide_workflow"))
+        viewModel.setCourseStepCompleted(course.id, "ide_workflow", true)
+        viewModel.nextCourseStep(course)
+        viewModel.courseProjectOpenFailed(ready)
+        assertThat(viewModel.uiState.value.courseProject).isEqualTo(TutorialProjectUiState.Idle)
+    }
+
     private suspend fun course() = requireNotNull(repository.getTutorial(TutorialRepository.CPP_PRACTICE_COURSE_ID))
 
-    private fun createViewModel() = TutorialViewModel(application, progressStore).also {
+    private fun createViewModel(projectPreparer: TutorialProjectPreparer = TutorialProjectRepository(application)) = TutorialViewModel(application, progressStore, projectPreparer).also {
         viewModelStore.put("tutorial", it)
     }
 }

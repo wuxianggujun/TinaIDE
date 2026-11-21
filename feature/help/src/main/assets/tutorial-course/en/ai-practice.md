@@ -2,11 +2,11 @@
 
 All user and assistant messages below are static examples bundled with the app. This lesson sends no requests, reads no keys, and makes no model calls. Complete it offline first; connecting a real service is optional.
 
-## Return from graphics to the calculator
+## Prepare the offline calculator in one tap
 
-1. Keep using `native_lab`. Copy the earlier `console-main.cpp` contents back to `main.cpp` and `CMakeLists.console.txt` back to `CMakeLists.txt`. Back up the graphics code before replacing it.
-2. If the console version uses fmt, enable vcpkg again. Select native CMake, terminal output, and target `native_lab` instead of the SDL3 host.
-3. Save, build, and verify `total=30` before the link-error exercise. If backups are missing, the third hint provides a minimal recovery version without fmt; vcpkg can stay disabled for that version.
+1. Tap **Create / resume chapter project** to prepare the independent tina_course_09_ai with complete calculator sources and CMake. No console backup needs restoring, and the graphics chapter remains unchanged.
+2. This chapter does not use fmt; vcpkg is disabled. Its default configuration uses native CMake, terminal output, and target native_lab.
+3. Run directly and verify total=30 before the link-error exercise. Creation and mock conversations work offline without reading keys or requesting models.
 
 ## Mock conversation: specify an acceptance test
 
@@ -49,16 +49,17 @@ Write a prompt with environment, minimal code, error, constraints, and expected 
 - [Git: save reversible changes](../../help/en/git-basics.md)
 
 <!-- tutorial-hint -->
-Complete the recovery steps first. The mock conversations teach review and need no account or live AI. Edit the project files `pricing.cpp`, `main.cpp`, and CMake and actually run them before marking the exercise complete.
+Create and run this chapter's prefilled calculator first; no backups or manual file creation are needed. The mock conversations teach review and need no account or live AI. Edit pricing.cpp, main.cpp, and CMake in this project and run them before marking the exercise complete.
 
 <!-- tutorial-hint -->
 For link troubleshooting, remove `target_link_libraries(native_lab PRIVATE pricing)` temporarily. Build to observe the undefined totalPrice symbol, then restore the line. Include native Android CMake, the first error, target configuration, expected output, and the no-new-library constraint in your prompt.
 
 <!-- tutorial-hint -->
-Without console backups, keep `pricing.h` and `pricing.cpp` from [the functions lesson](cpp-functions.md) and **replace both files below completely**. This minimal version does not use fmt, so vcpkg can remain disabled.
+The project automatically reuses pricing.h and pricing.cpp from [the functions lesson](cpp-functions.md) and prefills the two files below. They are baseline references to restore your own broken exercise edits if needed; normal creation needs no manual file work and uses no fmt.
 
 Root `CMakeLists.txt`:
 
+<!-- tutorial-project-file: CMakeLists.txt -->
 ```cmake
 cmake_minimum_required(VERSION 3.22)
 project(native_lab LANGUAGES CXX)
@@ -71,6 +72,7 @@ target_link_libraries(native_lab PRIVATE pricing)
 
 Root `main.cpp`:
 
+<!-- tutorial-project-file: main.cpp -->
 ```cpp
 #include "pricing.h"
 #include <iostream>

@@ -1,7 +1,8 @@
 # Lab 2: C++ values and control flow
 
-First finish [the IDE workflow](ide-workflow.md). Keep its CMake file and replace `main.cpp` with this integer price calculator:
+First finish [the IDE workflow](ide-workflow.md). Tap **Create / resume chapter project** to prepare `tina_course_02_basics` with CMake and the complete calculator below. Its run target is `native_lab`. No manual file creation or changes to the previous chapter's project are needed.
 
+<!-- tutorial-project-file: main.cpp -->
 ```cpp
 #include <iostream>
 
@@ -48,7 +49,7 @@ Keep the range check. Enter `3`, `-1`, and `abc`; explain the difference between
 Subtract 10 when the total is at least 100. Predict results for counts 9, 10, and 11 before implementing `if/else`. Explain `&&`, `||`, and `==`; avoid using assignment `=` instead of comparison.
 
 <!-- tutorial-hint -->
-Edit only `main.cpp`, keeping the earlier CMake. Run the fixed quantity of 3 first, then add terminal input. Return 1 immediately on parsing failure and keep the range check before calculation.
+CMake and the complete main.cpp are already prepared. Run the fixed quantity of 3 first, then edit only main.cpp to add terminal input. Return 1 immediately on parsing failure and keep the range check before calculation.
 
 <!-- tutorial-hint -->
 Apply the discount after the loop and before output. Test `total >= 100`, not the item count. Counts 9, 10, and 11 should produce 90, 90, and 100 after discount.
@@ -62,4 +63,4 @@ if (total >= 100) {
 }
 ```
 
-Enter `9`, `10`, `11`, `abc`, and `-1`. Check the three discounted amounts; the last two must fail. You can copy and insert this fragment manually without automatic filling.
+Enter `9`, `10`, `11`, `abc`, and `-1`. Check the three discounted amounts; the last two must fail. Project creation prepares the baseline only. Input and discount remain learning tasks and are not automatically marked as passed.

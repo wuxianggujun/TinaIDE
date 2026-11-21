@@ -1,7 +1,8 @@
 # Lab 6: CMake targets and libraries
 
-Use the three source files from [the functions lesson](cpp-functions.md). Build `pricing.cpp` as a library and link it into the executable:
+Tap **Create / resume chapter project** to open `tina_course_06_cmake` with pricing.h, pricing.cpp, the RAII main.cpp, and the complete CMake below. It builds the [functions lesson](cpp-functions.md) implementation as a library and links it into the executable.
 
+<!-- tutorial-project-file: CMakeLists.txt -->
 ```cmake
 cmake_minimum_required(VERSION 3.22)
 project(native_lab LANGUAGES CXX)
@@ -37,7 +38,7 @@ Complete the lesson when a library edit triggers rebuilding, the program runs, a
 - [CMake reference](../../help/en/cmake-guide.md)
 
 <!-- tutorial-hint -->
-Replace only the root `CMakeLists.txt`, keeping the previous `main.cpp`, `pricing.h`, and `pricing.cpp`. Do not compile `pricing.cpp` into both the library and executable.
+The library-based CMake and all three source files are prepared; nothing needs to be copied from the previous chapter. Review the target relationships and run first, then practice deleting and restoring the link. Do not compile pricing.cpp into both the library and executable.
 
 <!-- tutorial-hint -->
 The pricing target compiles the rules. The native_lab target compiles main and links pricing. Intentionally deleting the link should produce an unresolved symbol; restore the target relationship instead of including a `.cpp` file.

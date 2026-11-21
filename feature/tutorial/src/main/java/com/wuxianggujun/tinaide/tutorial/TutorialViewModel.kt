@@ -13,9 +13,13 @@ import com.wuxianggujun.tinaide.tutorial.data.TutorialType
 import com.wuxianggujun.tinaide.tutorial.data.TutorialWithProgress
 import com.wuxianggujun.tinaide.tutorial.repository.TutorialProgressStore
 import com.wuxianggujun.tinaide.tutorial.repository.TutorialRepository
+import com.wuxianggujun.tinaide.tutorial.project.TutorialProjectBlueprints
+import com.wuxianggujun.tinaide.tutorial.project.TutorialProjectPreparer
+import com.wuxianggujun.tinaide.tutorial.project.TutorialProjectRepository
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -36,6 +40,7 @@ import kotlinx.coroutines.sync.withLock
 class TutorialViewModel internal constructor(
     application: Application,
     private val progressStore: TutorialProgressStore,
+    private val projectPreparer: TutorialProjectPreparer = TutorialProjectRepository(application),
 ) : AndroidViewModel(application) {
 
     constructor(application: Application) : this(application, TutorialProgressStore(application))
@@ -46,8 +51,11 @@ class TutorialViewModel internal constructor(
     private var progressOperationsPaused = false
     private val catalogReload = MutableStateFlow(0L)
     private var tutorialSessionId = 0L
+    private var courseProgressRevision = 0L
     private var completingSessionId: Long? = null
     private var onboardingPromptHandled = false
+    private var courseProjectJob: Job? = null
+    private var courseProjectRequestId = 0L
 
     // UI 状态
     private val _uiState = MutableStateFlow(TutorialUiState())
@@ -140,7 +148,11 @@ class TutorialViewModel internal constructor(
     fun reloadSelectedCourseProgress() {
         val state = _uiState.value
         val selected = state.selectedTutorial ?: return
-        if (selected.type == TutorialType.GUIDED && !state.hasProgressError) continueTutorial(selected)
+        if (selected.type != TutorialType.GUIDED || state.hasProgressError) return
+        val sessionId = tutorialSessionId
+        val revision = courseProgressRevision
+        // Resuming the same reader (including rotation) must preserve its pending project request.
+        launchProgressOperation { restoreTutorial(selected, sessionId, expectedProgressRevision = revision) }
     }
 
     fun continueTutorial(tutorial: Tutorial) {
@@ -194,6 +206,8 @@ class TutorialViewModel internal constructor(
         if (progress.completedStepIds == _uiState.value.completedCourseStepIds &&
             progress.currentStepIndex == _uiState.value.currentCourseStepIndex
         ) return
+        if (progress.currentStepIndex != _uiState.value.currentCourseStepIndex) invalidateCourseProjectRequest()
+        courseProgressRevision += 1
         _uiState.update {
             it.copy(
                 completedCourseStepIds = progress.completedStepIds,
@@ -363,6 +377,8 @@ class TutorialViewModel internal constructor(
 
     private fun updateCourseStep(tutorialId: String, stepIndex: Int) {
         if (_uiState.value.currentCourseStepIndex == stepIndex) return
+        courseProgressRevision += 1
+        invalidateCourseProjectRequest()
         _uiState.update { it.copy(currentCourseStepIndex = stepIndex) }
         launchProgressOperation {
             progressStore.updateStepProgress(tutorialId, stepIndex)
@@ -374,6 +390,70 @@ class TutorialViewModel internal constructor(
             completingSessionId != tutorialSessionId && state.showTutorialContent &&
                 state.selectedTutorial?.let { it.id == tutorialId && it.type == TutorialType.GUIDED } == true
         }
+
+    /** Preparing starter files is independent of confirming or verifying the lesson. */
+    fun prepareCourseProject(stepId: String, language: String) {
+        val courseId = TutorialRepository.CPP_PRACTICE_COURSE_ID
+        if (!isCurrentCourseProjectStep(stepId) || _uiState.value.hasProgressError ||
+            !TutorialProjectBlueprints.supports(stepId) || courseProjectJob?.isActive == true ||
+            _uiState.value.courseProject is TutorialProjectUiState.Ready
+        ) return
+        val sessionId = tutorialSessionId
+        val requestId = ++courseProjectRequestId
+        val preparing = TutorialProjectUiState.Preparing(requestId, stepId)
+        _uiState.update { it.copy(courseProject = preparing) }
+        courseProjectJob = viewModelScope.launch {
+            try {
+                val project = projectPreparer.prepare(stepId, language)
+                if (sessionId == tutorialSessionId && isSelectedGuidedTutorial(courseId) &&
+                    isCurrentCourseProjectStep(stepId) && _uiState.value.courseProject == preparing
+                ) {
+                    _uiState.update {
+                        it.copy(courseProject = TutorialProjectUiState.Ready(requestId, stepId, project.absolutePath))
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                Log.e("TutorialViewModel", "Failed to prepare course project: $stepId", error)
+                if (sessionId == tutorialSessionId && _uiState.value.courseProject == preparing) {
+                    _uiState.update { it.copy(courseProject = TutorialProjectUiState.Error(stepId)) }
+                }
+            } finally {
+                if (_uiState.value.courseProject == preparing) {
+                    _uiState.update { it.copy(courseProject = TutorialProjectUiState.Idle) }
+                }
+            }
+        }
+    }
+
+    /** Consume only the active reader's request, immediately before the host opens the editor. */
+    fun consumeCourseProjectRequest(request: TutorialProjectUiState.Ready): String? {
+        if (_uiState.value.courseProject != request || !isCurrentCourseProjectStep(request.stepId)) return null
+        _uiState.update { it.copy(courseProject = TutorialProjectUiState.Idle) }
+        return request.projectPath
+    }
+
+    fun courseProjectOpenFailed(request: TutorialProjectUiState.Ready) {
+        val projectState = _uiState.value.courseProject
+        if (request.requestId == courseProjectRequestId &&
+            (projectState == request || projectState == TutorialProjectUiState.Idle) &&
+            isCurrentCourseProjectStep(request.stepId)
+        ) {
+            _uiState.update { it.copy(courseProject = TutorialProjectUiState.Error(request.stepId)) }
+        }
+    }
+
+    private fun isCurrentCourseProjectStep(stepId: String): Boolean =
+        isSelectedGuidedTutorial(TutorialRepository.CPP_PRACTICE_COURSE_ID) &&
+            _uiState.value.let { it.selectedTutorial?.courseSteps?.getOrNull(it.currentCourseStepIndex)?.id == stepId }
+
+    private fun invalidateCourseProjectRequest() {
+        courseProjectRequestId += 1
+        courseProjectJob?.cancel()
+        courseProjectJob = null
+        _uiState.update { it.copy(courseProject = TutorialProjectUiState.Idle) }
+    }
 
     /**
      * 展开/收起分类
@@ -455,6 +535,7 @@ class TutorialViewModel internal constructor(
     /** Opening and closing both invalidate pending UI callbacks, even for the same tutorial ID. */
     private fun resetTutorialSession(): Long {
         tutorialSessionId += 1
+        invalidateCourseProjectRequest()
         completingSessionId = null
         onboardingPromptHandled = true
         _spotlightState.value = SpotlightUiState()
@@ -475,10 +556,13 @@ class TutorialViewModel internal constructor(
         tutorial: Tutorial,
         sessionId: Long,
         requestedStepIndex: Int? = null,
+        expectedProgressRevision: Long? = null,
     ) {
-        if (sessionId != tutorialSessionId) return
+        fun isCurrentRequest() = sessionId == tutorialSessionId &&
+            (expectedProgressRevision == null || expectedProgressRevision == courseProgressRevision)
+        if (!isCurrentRequest()) return
         val progress = progressStore.getProgress(tutorial.id)
-        if (sessionId != tutorialSessionId) return
+        if (!isCurrentRequest()) return
         val completedStepIds = if (tutorial.type == TutorialType.GUIDED) {
             normalizeCompletedCourseStepIds(tutorial.courseSteps, progress?.completedStepIds.orEmpty())
         } else {
@@ -500,7 +584,10 @@ class TutorialViewModel internal constructor(
         } else if (progress?.currentStepIndex != stepIndex) {
             progressStore.updateStepProgress(tutorial.id, stepIndex)
         }
-        if (sessionId == tutorialSessionId) openTutorial(tutorial, stepIndex, completedStepIds)
+        if (isCurrentRequest()) {
+            if (_uiState.value.currentCourseStepIndex != stepIndex) invalidateCourseProjectRequest()
+            openTutorial(tutorial, stepIndex, completedStepIds)
+        }
     }
 
     private fun openTutorial(
@@ -555,7 +642,15 @@ data class TutorialUiState(
     val currentCourseStepIndex: Int = 0,
     val completedCourseStepIds: Set<String> = emptySet(),
     val expandedCategories: Set<TutorialCategory> = TutorialCategory.entries.toSet(),
+    val courseProject: TutorialProjectUiState = TutorialProjectUiState.Idle,
 )
+
+sealed interface TutorialProjectUiState {
+    data object Idle : TutorialProjectUiState
+    data class Preparing(val requestId: Long, val stepId: String) : TutorialProjectUiState
+    data class Ready(val requestId: Long, val stepId: String, val projectPath: String) : TutorialProjectUiState
+    data class Error(val stepId: String) : TutorialProjectUiState
+}
 
 /**
  * 教程目录的显式加载状态。

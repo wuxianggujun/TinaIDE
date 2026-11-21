@@ -6,7 +6,7 @@ import json
 from run_editor_runtime_regression import (
     COURSE_ASSESSMENT_CHECKS, COURSE_ASSESSMENT_METHODS, COURSE_ASSESSMENT_PHASES, instrumentation_passed, instrumentation_progress,
     instrumentation_report, select_cases, validate_course_assessment_evidence, validate_market_evidence,
-    validate_tab_label_evidence, validate_vcpkg_evidence,
+    validate_tab_label_evidence, validate_vcpkg_evidence, validate_tutorial_project_evidence,
 )
 
 
@@ -83,6 +83,25 @@ class CourseAssessmentEvidenceTest(unittest.TestCase):
                     validate_course_assessment_evidence(report | {"assessmentPhase": "all"}, "current", "zh", phase)
                 with self.assertRaises(ValueError):
                     validate_course_assessment_evidence(report, "old", "zh", phase)
+
+
+class TutorialProjectEvidenceTest(unittest.TestCase):
+    def test_creation_requires_all_chapters_preservation_and_native_output(self):
+        report = dict(runId="current", passed=True, language="zh", created=9,
+                      preservedEditsAndConfig=True, symlinkConflictPreserved=True, output="total=30\n")
+        validate_tutorial_project_evidence(report, "current", "zh")
+        for changes in ({"runId": "old"}, {"language": "en"}, {"created": 8}, {"output": ""},
+                        {"preservedEditsAndConfig": False}, {"symlinkConflictPreserved": False}):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                validate_tutorial_project_evidence(report | changes, "current", "zh")
+
+    def test_navigation_cannot_be_replaced_by_creation_only(self):
+        report = dict(runId="current", passed=True, openedRealEditor=True, reopenedSameProject=True,
+                      preservedSource=True, activityRecreated=True)
+        validate_tutorial_project_evidence(report, "current", None)
+        for check in ("openedRealEditor", "reopenedSameProject", "preservedSource", "activityRecreated"):
+            with self.subTest(check=check), self.assertRaises(ValueError):
+                validate_tutorial_project_evidence(report | {check: False}, "current", None)
 
 
 class InstrumentationProgressTest(unittest.TestCase):

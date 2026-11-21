@@ -4,14 +4,14 @@
 
 ## 先运行模板
 
-1. 点击本阶段的市场入口，在 **市场 → 包** 安装 SDL3 的 Android 包。它来自内置包市场，不是 vcpkg 的同名库。
-2. 在同一个 `native_lab` 中，先把 `main.cpp` 复制为 `console-main.cpp`，把 `CMakeLists.txt` 复制为 `CMakeLists.console.txt`，为下一章保留控制台版本。只复制文件，不把备份加入构建目标。
-3. 在项目设置中关闭 vcpkg 集成，避免图形构建继续走 vcpkg toolchain；之后再返回本项目，不要另建工程。
-4. 把根目录 `CMakeLists.txt` 和 `main.cpp` 替换为下方示例。保留 `pricing.*`、`vcpkg.json` 和刚才的备份，但本图形目标不再编译或安装它们。
-5. 在运行配置的 **图形选项 → 悬浮日志** 开启日志，再运行，检查窗口就绪日志。
+1. 点击 **创建／继续本章项目**，自动准备独立的 `tina_course_08_sdl3`、完整示例及 SDL3 运行配置。vcpkg 默认关闭，上一章控制台工程保持不变，无需手工备份或替换文件。
+2. 点击本阶段的市场入口，在 **市场 → 包** 安装 SDL3 的 Android 包。它来自内置包市场，不是 vcpkg 的同名库。创建工程不会联网安装库；未装包时需先完成安装才能构建。
+3. 从项目列表重新打开本章工程，核对下方已预填的两个文件。
+4. 在运行配置的 **图形选项 → 悬浮日志** 开启日志，再运行，检查窗口就绪日志。
 
 `CMakeLists.txt`：
 
+<!-- tutorial-project-file: CMakeLists.txt -->
 ```cmake
 cmake_minimum_required(VERSION 3.22)
 project(native_lab LANGUAGES CXX)
@@ -24,6 +24,7 @@ set_target_properties(native_lab PROPERTIES OUTPUT_NAME "main")
 
 `main.cpp`：
 
+<!-- tutorial-project-file: main.cpp -->
 ```cpp
 #define SDL_MAIN_USE_CALLBACKS 1
 #include <SDL3/SDL.h>
@@ -71,7 +72,7 @@ void SDL_AppQuit(void* appstate, SDL_AppResult) {
 }
 ```
 
-选择原生 CMake、目标 `native_lab`、SDL3 图形宿主，保存并运行；预期蓝底橙色矩形。不要继续运行原库模板的测试可执行目标。
+默认配置已选择原生 CMake、目标 `native_lab` 和 SDL3 图形宿主，装好包后直接运行；预期蓝底橙色矩形。不要把运行宿主切回终端来启动此共享库。
 
 模板应保留以下入口顺序，只在一个 `.cpp` 中包含 `SDL_main.h`：
 
@@ -119,7 +120,7 @@ raylib 使用普通 `main` 和 NativeActivity，与 SDL3 的回调入口不同�
 - [运行配置与图形日志速查](../help/build-project.md)
 
 <!-- tutorial-hint -->
-先保存控制台备份，再运行正文中的完整 SDL3 示例。修改位置仍是根目录 `main.cpp` 和 `CMakeLists.txt`。使用市场的 Android SDL3 包，选择 SDL3 宿主；无需自动创建图形项目。
+创建入口自动生成独立 SDL3 工程，无需控制台备份或手工新建文件。装好市场的 Android SDL3 包后运行预填的完整示例；后续练习只改本章 `main.cpp`，不会影响其他章节。
 
 <!-- tutorial-hint -->
 触摸练习分三处：`AppState` 保存开关，`SDL_AppEvent` 接收触摸并切换它，`SDL_AppIterate` 根据开关选矩形颜色。保留退出事件和窗口释放；改变颜色应发生在画矩形之前。

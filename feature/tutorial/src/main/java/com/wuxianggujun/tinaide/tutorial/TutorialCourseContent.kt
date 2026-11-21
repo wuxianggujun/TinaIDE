@@ -27,15 +27,21 @@ suspend fun loadTutorialCourseContent(
 
 private const val HINT_MARKER = "<!-- tutorial-hint -->"
 private val fenceOpening = Regex("^ {0,3}(`{3,}|~{3,})(.*)$")
+private val projectFileMarker = Regex("^<!-- tutorial-project-file: (?:CMakeLists\\.txt|main\\.cpp|pricing\\.h|pricing\\.cpp) -->$")
 
 /** Hints live after the lesson in the same localized asset; fenced code remains verbatim. */
 private fun parseCourseContent(markdown: String): TutorialCourseContentState.Content {
     val sections = mutableListOf(StringBuilder())
     var fence: String? = null
+    var removedProjectMarker = false
     for (line in markdown.lineSequence()) {
         val currentFence = fence
         if (currentFence == null && line.trim() == HINT_MARKER) {
             sections.add(StringBuilder())
+            continue
+        }
+        if (currentFence == null && projectFileMarker.matches(line.trim())) {
+            removedProjectMarker = true
             continue
         }
         if (currentFence == null) {
@@ -54,7 +60,7 @@ private fun parseCourseContent(markdown: String): TutorialCourseContentState.Con
         sections.last().appendLine(line)
     }
     // Keep old assets unchanged when no hint marker is present.
-    if (sections.size == 1) return TutorialCourseContentState.Content(markdown)
+    if (sections.size == 1 && !removedProjectMarker) return TutorialCourseContentState.Content(markdown)
     return TutorialCourseContentState.Content(
         markdown = sections.first().toString().trimEnd(),
         hints = sections.drop(1).map { it.toString().trim() }.filter { it.isNotBlank() },

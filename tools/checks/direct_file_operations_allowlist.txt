@@ -91,4 +91,5 @@ feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/setti
 feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/PluginsSettingsSection.kt | delete=5 | Plugin settings temp file cleanup.
 feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/TerminalSettingsHelpers.kt | delete=1 | Terminal settings temp file cleanup.
 feature/settings/src/main/java/com/wuxianggujun/tinaide/ui/compose/screens/settings/sections/UserProjectTemplateManager.kt | renameTo=5,delete=6 | User project template install and rollback.
+feature/tutorial/src/main/java/com/wuxianggujun/tinaide/tutorial/project/TutorialProjectRepository.kt | deleteRecursively=1,delete=1 | Remove only this invocation's temporary cache ZIP and roll back its newly created, canonical direct-child project if marker publication fails; existing chapter projects and user sources are never removed.
 feature/workspace/src/main/java/com/wuxianggujun/tinaide/ui/workspace/PRootLogActivity.kt | delete=1 | PRoot log entry cleanup.

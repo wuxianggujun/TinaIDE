@@ -4,12 +4,15 @@ Goal: finish the edit, save, build, run, and verify cycle yourself. This course 
 
 ## Create and run
 
-1. Open **Projects → + → New project**, choose **CMake executable**, name it `native_lab`, and select C++17. Leave vcpkg off for now.
+1. Tap **Create / resume chapter project** above. The app creates `tina_course_01_ide` with complete C++17 files, target `native_lab`, and vcpkg disabled.
 2. Finish the environment preparation requested by the app before building.
-3. Use the following root-level files. If the template initially uses `src/main.cpp`, update its source list to match this example.
+3. The editor opens the project automatically. The root `CMakeLists.txt` and `main.cpp` already contain the examples below; no manual file creation or initialization paste is needed.
+
+Each chapter has its own project in app-private storage, available from Projects for reopening or export. Repeated taps resume it without overwriting edits. Unrelated directories are preserved; a name conflict adds a suffix to the new project.
 
 `CMakeLists.txt`:
 
+<!-- tutorial-project-file: CMakeLists.txt -->
 ```cmake
 cmake_minimum_required(VERSION 3.22)
 project(native_lab LANGUAGES CXX)
@@ -19,6 +22,7 @@ target_compile_features(native_lab PRIVATE cxx_std_17)
 
 `main.cpp`:
 
+<!-- tutorial-project-file: main.cpp -->
 ```cpp
 #include <iostream>
 
@@ -28,7 +32,7 @@ int main() {
 }
 ```
 
-4. Save both files. Select native CMake, terminal output, and target `native_lab` in the run configuration; run it.
+4. The default run configuration already selects native CMake, terminal output, and `native_lab`; run it directly. Save your subsequent exercise edits.
 5. Find `Hello, TinaIDE!` in the terminal. Change the text to `First change`, save, and verify the new output.
 
 ## Diagnose an intentional error
@@ -49,7 +53,7 @@ After the rename exercise, restore `native_lab` in CMake and the run configurati
 - [Build troubleshooting](../../help/en/build-project.md)
 
 <!-- tutorial-hint -->
-Open the root `CMakeLists.txt` and `main.cpp`. The two code blocks in this lesson replace those files completely. Keep CMake code out of the C++ file. Copy only places text on the clipboard; paste into the editor and save it yourself.
+Create / resume chapter project opens both prefilled files. Run the baseline first, then edit it. Copying a block is optional for reviewing or restoring exercise code, not a prerequisite for project creation; existing edits are never overwritten automatically.
 
 <!-- tutorial-hint -->
 Put both output statements inside `int main()`, before `return 0;`. For the rename exercise change the target in `add_executable`, `target_compile_features`, and the run configuration. Restore `native_lab` afterward.

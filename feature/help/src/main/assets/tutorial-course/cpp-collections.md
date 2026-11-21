@@ -1,7 +1,8 @@
 # 实践 4：字符串与容器
 
-前置：[函数与多文件](cpp-functions.md)。继续使用同一个 `native_lab`，保留 `pricing.h`、`pricing.cpp` 和当前 CMake 目标，只替换 `main.cpp`：
+前置：[函数与多文件](cpp-functions.md)。点击 **创建／继续本章项目**，打开独立的 `tina_course_04_collections`。应用已准备 `pricing.h`、`pricing.cpp`、CMake 和下方 `main.cpp`；上一章的折扣练习不会被覆盖。
 
+<!-- tutorial-project-file: main.cpp -->
 ```cpp
 #include "pricing.h"
 #include <algorithm>
@@ -29,7 +30,7 @@ int main() {
 }
 ```
 
-预期：`Tina: items=3 total=30`。`std::string` 保存顾客名，`vector` 管理多行数量；`all_of` 校验每一行，范围循环在累加前检查订单上限，避免先溢出再检查。最后调用前一课的 `totalPrice`，继续构建原来的多文件项目。
+预期：`Tina: items=3 total=30`。`std::string` 保存顾客名，`vector` 管理多行数量；`all_of` 校验每一行，范围循环在累加前检查订单上限，避免先溢出再检查。最后复用前一课的 `totalPrice`，本章工程已包含对应实现。
 
 ## 边界与遍历
 
@@ -45,7 +46,7 @@ int main() {
 把单价改为用户输入并检查解析失败；增加有效数量行数统计，先列出空列表、零数量和无效数量的预期，再运行验证。
 
 <!-- tutorial-hint -->
-完整替换 `main.cpp`，保留 `pricing.*` 和 CMake。数量集合先用 `{1, 2}`，不要同时修改单价、折扣和目标名。单价输入属于本章的下一步练习。
+点击创建入口后先运行预填的 `main.cpp`，无需复制前一章文件。数量集合先用 `{1, 2}`，不要同时修改单价、折扣和目标名。单价输入属于本章的下一步练习。
 
 <!-- tutorial-hint -->
 把 `totalPrice(itemCount, 10)` 中的 10 换成经过解析的变量。解析失败应立即停止；`totalPrice` 已负责拒绝负单价和超过 10000 的单价。行数用 `quantities.size()`，商品总数用 `itemCount`，二者不同。

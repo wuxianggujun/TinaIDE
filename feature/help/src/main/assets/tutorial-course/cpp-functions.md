@@ -1,9 +1,10 @@
 # 实践 3：函数与多文件
 
-目标：把计价规则从 `main` 分离出来。前置：[变量与控制流](cpp-basics.md)。创建以下三个 UTF-8 文件。
+目标：把计价规则从 `main` 分离出来。前置：[变量与控制流](cpp-basics.md)。点击 **创建／继续本章项目**，自动打开 `tina_course_03_functions`；以下三个 UTF-8 源文件和完整 CMake 都已准备好，不需要逐个新建。
 
 `pricing.h` 只放声明，`#pragma once` 防止同一头文件重复展开：
 
+<!-- tutorial-project-file: pricing.h -->
 ```cpp
 #pragma once
 int totalPrice(int count, int unitPrice);
@@ -11,6 +12,7 @@ int totalPrice(int count, int unitPrice);
 
 `pricing.cpp` 放实现。值参数适合小整数；无效输入用 `-1` 表示，本课约定调用方必须检查：
 
+<!-- tutorial-project-file: pricing.cpp -->
 ```cpp
 #include "pricing.h"
 
@@ -24,6 +26,7 @@ int totalPrice(int count, int unitPrice) {
 
 `main.cpp`：
 
+<!-- tutorial-project-file: main.cpp -->
 ```cpp
 #include "pricing.h"
 #include <iostream>
@@ -36,10 +39,14 @@ int main() {
 }
 ```
 
-把原来的 `add_executable` 改为：
+根目录 `CMakeLists.txt` 已将实现加入可执行目标：
 
+<!-- tutorial-project-file: CMakeLists.txt -->
 ```cmake
+cmake_minimum_required(VERSION 3.22)
+project(native_lab LANGUAGES CXX)
 add_executable(native_lab main.cpp pricing.cpp)
+target_compile_features(native_lab PRIVATE cxx_std_17)
 ```
 
 构建并运行，仍应得到 `total=30`。`#include` 让编译器看到声明；把 `.cpp` 加入目标才会编译实现，二者不能互相替代。
@@ -65,7 +72,7 @@ add_executable(native_lab main.cpp pricing.cpp)
 把光标放进 `totalPrice`，打开“当前函数流程图”。应看到参数检查的真假分支分别通向 `return -1` 和乘法返回。点击返回节点核对源码位置，把数量上限从 100 改成 90 后重新生成，观察条件变化；完成后恢复 100 并重新运行边界输入。操作入口见[编辑器速查](../help/editor-basics.md)，这里沿用当前计价项目练习。
 
 <!-- tutorial-hint -->
-本章涉及四个文件：`pricing.h` 声明、`pricing.cpp` 实现、`main.cpp` 调用，以及 `CMakeLists.txt` 的源码列表。先复制本章完整示例运行成功，再做折扣函数练习。
+本章项目自动包含四个文件：`pricing.h` 声明、`pricing.cpp` 实现、`main.cpp` 调用，以及 `CMakeLists.txt` 的源码列表。直接运行完整基线，再做折扣函数练习；创建不会替你实现新函数。
 
 <!-- tutorial-hint -->
 新函数先调用 `totalPrice`，先检查返回值是否为 -1，再处理折扣。这样保留前面数量、单价的范围校验。`main.cpp` 调用新函数，但不要删除旧的 `totalPrice`。
