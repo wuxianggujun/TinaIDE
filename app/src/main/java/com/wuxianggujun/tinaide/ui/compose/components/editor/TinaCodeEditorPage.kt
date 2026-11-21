@@ -75,6 +75,7 @@ import com.wuxianggujun.tinaide.core.editorlsp.InlayHintsRequestResult
 import com.wuxianggujun.tinaide.core.editorlsp.SemanticTokensRequestResult
 import com.wuxianggujun.tinaide.ui.compose.components.MarkdownViewer
 import com.wuxianggujun.tinaide.ui.compose.editor.editorConfigFromPrefs
+import com.wuxianggujun.tinaide.ui.compose.editor.rememberEditorProjectIndentation
 import com.wuxianggujun.tinaide.ui.compose.state.editor.CodeEditorCallback
 import com.wuxianggujun.tinaide.ui.compose.state.editor.CodeEditorDocumentBinding
 import com.wuxianggujun.tinaide.ui.compose.state.editor.CodeEditorRuntime
@@ -157,6 +158,7 @@ fun TinaCodeEditorPage(
         )
     }
     val editorState = runtime.editorState
+    val projectIndentation = rememberEditorProjectIndentation(state, tab.file, editorState)
     val syntaxHighlighter = remember(tab.id, runtime, tab.file) { state.getOrCreateSyntaxHighlighter(tab) }
     val foldingProvider = remember(tab.id, runtime, tab.file) { state.getOrCreateFoldingProvider(tab) }
     val breakpointStore: BreakpointStore = koinInject()
@@ -288,7 +290,7 @@ fun TinaCodeEditorPage(
             }
     }
 
-    DisposableEffect(tab.id, state, editorState, buffer, callbackRegistrationId) {
+    DisposableEffect(tab.id, state, editorState, buffer, callbackRegistrationId, projectIndentation) {
         val editorCallback = CodeEditorCallback(
             goToPosition = goToPosition@ { line, column ->
                 if (loading || loadError != null) {
@@ -379,7 +381,7 @@ fun TinaCodeEditorPage(
             },
             applyEditorSettings = { settings ->
                 // 统一从 Prefs 读取 EditorConfig，确保“设置页变更 → 已打开编辑器即时生效”。
-                editorState.config = editorConfigFromPrefs()
+                editorState.config = editorConfigFromPrefs(projectIndentation.value)
                 editorState.fontSizeSp = settings.fontSize
 
                 val appContext = context.applicationContext

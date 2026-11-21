@@ -38,6 +38,7 @@ class NativeCodeFormatter(
         private const val TAG = "NativeCodeFormatter"
         private const val FORMAT_TIMEOUT = 30_000L
         private const val VERSION_CHECK_TIMEOUT = 10_000L
+        private const val CONFIG_READ_TIMEOUT = 10_000L
     }
 
     /**
@@ -233,6 +234,22 @@ class NativeCodeFormatter(
         return FormatResult.Success(result.output)
     }
 
+    suspend fun dumpConfig(fileName: String, style: FormatStyle): FormatResult {
+        val command = buildFormatCommand(
+            fileName,
+            style,
+            FormatOptions(extraArgs = listOf("--dump-config"))
+        )
+        val result = executeNativeCommand(
+            command = command,
+            workingDir = File(fileName).parentFile ?: appContext.filesDir,
+            timeout = CONFIG_READ_TIMEOUT,
+            stdin = "",
+        )
+        result.toFormatError(CONFIG_READ_TIMEOUT)?.let { return it }
+        return FormatResult.Success(result.output)
+    }
+
     // ========== 风格解析 ==========
 
     /**
@@ -342,9 +359,6 @@ class NativeCodeFormatter(
             commandLabel = "clang-format:${File(executable).name}",
             timeoutMs = timeout,
             stdin = stdin,
-            onOutputLine = { line ->
-                Timber.tag(TAG).v(line)
-            },
         )
 
         CommandResult(

@@ -2,6 +2,7 @@ package com.wuxianggujun.tinaide.core.compile
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.wuxianggujun.tinaide.core.compile.action.LaunchIntent
 import com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutor
 import com.wuxianggujun.tinaide.core.ndk.AndroidElfExecutor
 import com.wuxianggujun.tinaide.core.packages.VcpkgCatalogStore
@@ -124,7 +125,7 @@ class VcpkgManagedDeviceTest {
                             if (!library.readBytes().contentEquals(original)) library.writeBytes(original)
                         }
                     }
-                    "configure", "repeat", "build", "run", "external", "shared" -> {
+                    "configure", "repeat", "build", "run", "external", "shared", "market-reuse" -> {
                         File(project, "CMakeLists.txt").writeText("""
                             cmake_minimum_required(VERSION 3.22)
                             project(managed_vcpkg LANGUAGES CXX)
@@ -143,6 +144,58 @@ class VcpkgManagedDeviceTest {
                                 com.wuxianggujun.tinaide.project.VcpkgProjectSettings.MANIFEST).applyTo(emptyList()),
                             onProgress = { if (output.length < 128 * 1024) output.appendLine(it) })
                         when (phase) {
+                            "market-reuse" -> {
+                                val installedResult = VcpkgProjectInstaller(context).install(project) { output.appendLine(it) }
+                                assertTrue("$installedResult\n$output", installedResult is ConfigureResult.Success)
+                                File(regressionEvidenceDirectory(context), "vcpkg-managed-market-install.log")
+                                    .writeText(output.toString(), Charsets.UTF_8)
+                                val settings = VcpkgProjectSettings(VcpkgProjectSettings.MANIFEST)
+                                val abi = android.os.Build.SUPPORTED_ABIS.first()
+                                val installed = VcpkgManagedPaths.installed(context, project, settings, abi)
+                                val library = File(installed, "${settings.targetTriplet(abi)}/lib/libfmt.a")
+                                assertTrue("Market installation must publish fmt", library.isFile)
+                                val beforeModified = library.lastModified()
+                                val beforeHashes = libraryHashes(File(installed, settings.targetTriplet(abi)))
+                                val effective = EffectiveBuildConfigResolver.resolve(EffectiveBuildConfigResolver.Input(
+                                    launch = LaunchIntent.None,
+                                    buildSystem = BuildSystem.CMAKE,
+                                    runConfig = RunConfigurationManager.load(project.absolutePath).selectedConfig,
+                                    projectRoot = project,
+                                    linuxEnvironmentAvailable = true,
+                                    appContext = context,
+                                ))
+                                val runOptions = options.copy(
+                                    buildType = NativeCMakeBuildExecutor.CMakeBuildType.valueOf(effective.cmakeBuildType.name),
+                                    generator = NativeCMakeBuildExecutor.CMakeGenerator.valueOf(effective.cmakeGenerator.name),
+                                    compilerType = effective.compilerType,
+                                    toolchainId = effective.toolchainId,
+                                    sysrootProfileId = effective.sysrootProfileId,
+                                    sysrootApiLevel = effective.sysrootApiLevel,
+                                    cCompilerPath = effective.customCCompiler,
+                                    cxxCompilerPath = effective.customCppCompiler,
+                                    cFlags = effective.nativeCFlags,
+                                    cppFlags = effective.nativeCppFlags,
+                                    ldFlags = effective.nativeLdFlags,
+                                    ldLibs = effective.nativeLdLibs,
+                                    cppStandard = effective.cppStandard,
+                                    extraCMakeArgs = effective.nativeCMakeArgs,
+                                )
+                                output.setLength(0)
+                                val configured = executor.configure(project, build, runOptions)
+                                assertTrue("$configured\n$output", configured is ConfigureResult.Success)
+                                assertTrue("Run must reuse the installed dependency, not restore or rebuild it:\n$output",
+                                    output.contains("All requested packages are currently installed"))
+                                assertEquals(beforeModified, library.lastModified())
+                                assertEquals(beforeHashes, libraryHashes(File(installed, settings.targetTriplet(abi))))
+                                val built = executor.build(project, build, options = runOptions)
+                                assertTrue("$built\n$output", built is BuildResult.Success)
+                                val result = AndroidElfExecutor.exec(context, File(build, "managed_vcpkg"), emptyList(),
+                                    workDir = project, timeoutMs = 10_000)
+                                assertEquals(result.output, 0, result.exitCode)
+                                assertTrue(result.output, result.output.contains("managed vcpkg: 42"))
+                                report.put("marketInstalled", true).put("runReusedInstalledLibrary", true)
+                                    .put("installedLibraryTimestampUnchanged", true).put("output", result.output)
+                            }
                             "shared" -> {
                                 val settings = VcpkgProjectSettings(VcpkgProjectSettings.MANIFEST)
                                 val shared = VcpkgSharedLibrary.export(context, project, settings, android.os.Build.SUPPORTED_ABIS.first())

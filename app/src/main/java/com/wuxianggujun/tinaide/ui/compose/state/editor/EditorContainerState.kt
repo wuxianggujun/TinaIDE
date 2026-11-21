@@ -30,6 +30,8 @@ import com.wuxianggujun.tinaide.core.editorapi.SignatureHelpResult
 import com.wuxianggujun.tinaide.core.editorview.EditorColorScheme
 import com.wuxianggujun.tinaide.core.editorview.EditorRenderPerformanceSnapshot
 import com.wuxianggujun.tinaide.core.editorview.EditorState
+import com.wuxianggujun.tinaide.core.format.CodeFormatter
+import com.wuxianggujun.tinaide.core.format.FormatterIndentationResult
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.core.lang.CxxFileSupport
@@ -55,6 +57,8 @@ import com.wuxianggujun.tinaide.editor.session.SaveResult
 import com.wuxianggujun.tinaide.editor.symbol.ProjectSymbolIndexService
 import com.wuxianggujun.tinaide.editor.theme.PluginEditorThemeRegistry
 import com.wuxianggujun.tinaide.file.IFileWatchService
+import com.wuxianggujun.tinaide.file.FileChangeListener
+import com.wuxianggujun.tinaide.file.FileWatchRegistration
 import com.wuxianggujun.tinaide.plugin.PluginSnippetManager
 import com.wuxianggujun.tinaide.plugin.lsp.LspPluginManager
 import com.wuxianggujun.tinaide.plugin.script.api.EditorSelectionPayload
@@ -829,9 +833,13 @@ class EditorContainerState(
         tabId: String,
         expectedText: String,
         newText: String,
+        expectedFile: java.io.File? = null,
     ): ConditionalEditorTextReplaceResult {
         val tab = tabManager.findTab(tabId)
             ?: return ConditionalEditorTextReplaceResult.TARGET_UNAVAILABLE
+        if (expectedFile != null && tab.file.absoluteFile.normalize() != expectedFile.absoluteFile.normalize()) {
+            return ConditionalEditorTextReplaceResult.CONTENT_CHANGED
+        }
         if (!isCodeEditableType(tab.contentType)) {
             return ConditionalEditorTextReplaceResult.TARGET_UNAVAILABLE
         }
@@ -1629,6 +1637,19 @@ class EditorContainerState(
                     Timber.tag("EditorContainerState").w(t, "Failed to apply editor settings for tab=%s", tabId)
                 }
         }
+    }
+
+    internal suspend fun resolveFormattingIndentation(
+        context: android.content.Context,
+        sourceFile: java.io.File,
+    ): FormatterIndentationResult = CodeFormatter(
+        context = context,
+        linuxEnvironmentProvider = linuxEnvironmentProvider,
+    ).resolveIndentation(sourceFile)
+
+    internal fun watchFormattingConfiguration(listener: FileChangeListener): FileWatchRegistration? {
+        val rootPath = getBookmarksProjectRootPathOrNull() ?: return null
+        return fileWatchService?.addFileWatcher(rootPath, listener)
     }
 
     private fun resolveEditorColorScheme(context: android.content.Context): EditorColorScheme {

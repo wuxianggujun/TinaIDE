@@ -43,9 +43,16 @@ A few edge cases are worth knowing up front:
 
 - Automatic indentation
 - Insert spaces instead of a Tab character
+- Indentation width
 - Tab width
 
 Tab width cycles through 2, 4, and 8. It is not a free-form number field.
+
+Indentation width controls each nesting level; tab width controls tab display and alignment. They are independent. Project or ancestor `.clang-format` / `_clang-format` files take priority, and the editor uses clang-format to resolve their effective indentation rules. Without a project configuration, editing and formatting share the widths and spaces/tabs setting from Editor Behavior.
+
+Changing a setting does not rewrite existing text. Ordinary newlines preserve the current line indentation. Format the file once when normalizing old code.
+
+With tabs enabled, partial tab stops still use spaces when needed to preserve the requested indentation columns. A project `ContinuationIndentWidth` is also used for basic continuation indentation inside parentheses and brackets.
 
 ## Performance
 

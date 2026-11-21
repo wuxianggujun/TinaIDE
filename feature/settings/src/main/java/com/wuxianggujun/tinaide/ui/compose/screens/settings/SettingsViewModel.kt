@@ -124,7 +124,8 @@ data class SettingsUiState(
     val projectNativeCppFlags: String = "",
     val projectNativeLdFlags: String = "",
     val projectNativeLdLibs: String = "",
-    val projectNativeCMakeArgs: List<String> = emptyList()
+    val projectNativeCMakeArgs: List<String> = emptyList(),
+    val editorIndentSize: Int = editorTabSize,
 ) {
     companion object {
         fun fromPrefs(configManager: IConfigManager, linuxEnvironmentEnabled: Boolean): SettingsUiState = SettingsUiState(
@@ -133,6 +134,7 @@ data class SettingsUiState(
             customEditorTheme = Prefs.customEditorTheme,
             editorFontSize = Prefs.editorFontSize,
             editorTabSize = Prefs.editorTabSize,
+            editorIndentSize = Prefs.editorIndentSize,
             editorWordWrap = Prefs.editorWordWrap,
             editorShowLineNumbers = Prefs.editorShowLineNumbers,
             editorShowMinimap = Prefs.editorShowMinimap,
@@ -384,7 +386,12 @@ class SettingsViewModel(
 
     fun setEditorTabSize(tabSize: Int) {
         Prefs.setEditorTabSize(tabSize)
-        _uiState.update { it.copy(editorTabSize = tabSize) }
+        _uiState.update { it.copy(editorTabSize = Prefs.editorTabSize, editorIndentSize = Prefs.editorIndentSize) }
+    }
+
+    fun setEditorIndentSize(indentSize: Int) {
+        Prefs.setEditorIndentSize(indentSize)
+        _uiState.update { it.copy(editorIndentSize = Prefs.editorIndentSize) }
     }
 
     fun setEditorWordWrap(enabled: Boolean) {

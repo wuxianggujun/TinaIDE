@@ -409,6 +409,7 @@ class MainActivityActionsViewModel(
                 tabId = formatTarget.tabId,
                 expectedText = formatTarget.text,
                 newText = formattedContent,
+                expectedFile = formatTarget.file,
             )
         ) {
             ConditionalEditorTextReplaceResult.REPLACED ->

@@ -1251,13 +1251,13 @@
   <string name="clang_format_style_webkit_desc">WebKit 项目编码规范，4 空格缩进</string>
   <string name="clang_format_style_microsoft_desc">Microsoft C++ 编码规范，4 空格缩进，Allman 大括号风格</string>
   <string name="clang_format_style_gnu_desc">GNU 编码规范，2 空格缩进，GNU 大括号风格</string>
-  <string name="settings_format_style_hint">当项目中存在 .clang-format 文件时，将优先使用项目配置</string>
+  <string name="settings_format_style_hint">项目 .clang-format 优先；否则使用所选排版风格，并沿用编辑行为中的缩进与 Tab 设置。</string>
   <string name="settings_auto_indent">自动缩进</string>
   <string name="settings_auto_indent_desc">换行时自动添加缩进</string>
   <string name="settings_insert_spaces_for_tabs">Tab 转空格</string>
-  <string name="settings_insert_spaces_for_tabs_desc">按 Tab 键时插入空格而非制表符</string>
+  <string name="settings_insert_spaces_for_tabs_desc">输入和格式化均使用空格；项目 .clang-format 配置优先</string>
   <string name="settings_tab_width">Tab 宽度</string>
-  <string name="toast_tab_width_set">Tab 宽度已设置为 %1$d 空格</string>
+  <string name="toast_tab_width_set">Tab 显示宽度已设置为 %1$d 列</string>
   <string name="toast_font_restored">已恢复默认字体</string>
   <string name="dialog_title_font_size">字体大小</string>
   <string name="dialog_title_custom_font">自定义字体</string>
@@ -5348,4 +5348,9 @@ kept=%3$d bytes
   <string name="course_assessment_recorded">本章完成已保存，返回教程即可继续。</string>
   <string name="course_assessment_run">保存、构建并验收</string>
   <string name="course_assessment_expected">用例 %1$d · 输入：%2$s · 退出码：%3$d · 输出：%4$s</string>
+    <string name="settings_indent_width_desc">换行、增减缩进与格式化共用；项目 .clang-format 配置优先</string>
+    <string name="format_indent_config_invalid">无法读取项目格式化配置的缩进规则</string>
+    <string name="settings_tab_width_desc">制表符的显示与对齐宽度，不改变每级缩进</string>
+    <string name="settings_indent_width">缩进宽度</string>
+    <string name="editor_width_columns">%1$d 列</string>
 </resources>

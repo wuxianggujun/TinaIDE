@@ -237,8 +237,21 @@ internal fun EditorSettingsSection(viewModel: SettingsViewModel) {
         )
 
         SettingsClickableItem(
+            title = stringResource(Strings.settings_indent_width),
+            subtitle = stringResource(Strings.settings_indent_width_desc),
+            value = stringResource(Strings.editor_width_columns, state.editorIndentSize),
+            onClick = {
+                viewModel.setEditorIndentSize(
+                    EditorSettingsSectionSupport.resolveNextTabSize(state.editorIndentSize)
+                )
+            },
+            showDivider = true,
+        )
+
+        SettingsClickableItem(
             title = stringResource(Strings.settings_tab_width),
-            value = stringResource(Strings.tab_width_spaces, state.editorTabSize),
+            subtitle = stringResource(Strings.settings_tab_width_desc),
+            value = stringResource(Strings.editor_width_columns, state.editorTabSize),
             onClick = {
                 val newSize = EditorSettingsSectionSupport.resolveNextTabSize(
                     state.editorTabSize

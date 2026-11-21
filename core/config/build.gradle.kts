@@ -4,6 +4,11 @@ plugins {
 
 android {
     namespace = "com.wuxianggujun.tinaide.core.config"
+
+    testOptions {
+        // Prefs is process-scoped; a different Robolectric Application must not inherit its Context.
+        unitTests.all { test -> test.forkEvery = 1L }
+    }
 }
 
 dependencies {

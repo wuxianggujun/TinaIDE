@@ -12,16 +12,16 @@ class FormatStyleResolverTest {
     @Test
     fun resolve_withoutProjectConfig_readsCurrentUserStyleOnEveryCall() {
         var selectedStyle = "GOOGLE"
-        val resolver = FormatStyleResolver { selectedStyle }
+        val resolver = resolver { selectedStyle }
         val sourceFile = tempFolder.newFolder("project", "src")
             .resolve("main.cpp")
             .apply { writeText("int main() { return 0; }") }
 
-        assertThat(resolver.resolve(sourceFile)).isSameInstanceAs(FormatStyle.GOOGLE)
+        assertThat(resolver.resolve(sourceFile)).isEqualTo(indentation.applyTo(FormatStyle.GOOGLE))
 
         selectedStyle = "MICROSOFT"
 
-        assertThat(resolver.resolve(sourceFile)).isSameInstanceAs(FormatStyle.MICROSOFT)
+        assertThat(resolver.resolve(sourceFile)).isEqualTo(indentation.applyTo(FormatStyle.MICROSOFT))
     }
 
     @Test
@@ -32,7 +32,7 @@ class FormatStyleResolverTest {
             requireNotNull(parentFile).mkdirs()
             writeText("int main() { return 0; }")
         }
-        val resolver = FormatStyleResolver { "GOOGLE" }
+        val resolver = resolver { "GOOGLE" }
 
         assertThat(resolver.resolve(sourceFile)).isSameInstanceAs(FormatStyle.FILE)
     }
@@ -48,7 +48,7 @@ class FormatStyleResolverTest {
         val sourceFile = sourceDir.resolve("main.cpp").apply {
             writeText("int main() { return 0; }")
         }
-        val resolver = FormatStyleResolver { "GOOGLE" }
+        val resolver = resolver { "GOOGLE" }
 
         assertThat(resolver.resolve(sourceFile)).isSameInstanceAs(FormatStyle.FILE)
     }
@@ -60,7 +60,7 @@ class FormatStyleResolverTest {
         val sourceFile = projectDir.resolve("main.cpp").apply {
             writeText("int main() { return 0; }")
         }
-        val resolver = FormatStyleResolver { "LLVM" }
+        val resolver = resolver { "LLVM" }
 
         assertThat(resolver.resolve(sourceFile)).isSameInstanceAs(FormatStyle.FILE)
     }
@@ -68,17 +68,17 @@ class FormatStyleResolverTest {
     @Test
     fun resolve_withUnknownUserValue_fallsBackToLlvm() {
         val sourceFile = tempFolder.newFile("main.cpp")
-        val resolver = FormatStyleResolver { "unknown-style" }
+        val resolver = resolver { "unknown-style" }
 
-        assertThat(resolver.resolve(sourceFile)).isSameInstanceAs(FormatStyle.LLVM)
+        assertThat(resolver.resolve(sourceFile)).isEqualTo(indentation.applyTo(FormatStyle.LLVM))
     }
 
     @Test
     fun resolve_withoutProjectConfigAndLegacyFilePreference_fallsBackToLlvm() {
         val sourceFile = tempFolder.newFile("legacy-file-style.cpp")
-        val resolver = FormatStyleResolver { "FILE" }
+        val resolver = resolver { "FILE" }
 
-        assertThat(resolver.resolve(sourceFile)).isSameInstanceAs(FormatStyle.LLVM)
+        assertThat(resolver.resolve(sourceFile)).isEqualTo(indentation.applyTo(FormatStyle.LLVM))
     }
 
     @Test
@@ -99,4 +99,11 @@ class FormatStyleResolverTest {
             assertThat(style.toClangFormatArgument()).isEqualTo(expectedArgument)
         }
     }
+
+    private val indentation = FormatterIndentation(4, 4, insertSpacesForTabs = true)
+
+    private fun resolver(style: () -> String) = FormatStyleResolver(
+        indentationProvider = { indentation },
+        userStyleNameProvider = style,
+    )
 }

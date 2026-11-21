@@ -5,13 +5,17 @@ import com.wuxianggujun.tinaide.core.editorview.EditorConfig
 import com.wuxianggujun.tinaide.core.editorview.EditorRuntimeOptions
 import com.wuxianggujun.tinaide.core.editorview.EditorTouchDiagnosticsFlags
 import com.wuxianggujun.tinaide.core.editorview.WhitespaceRenderMode
+import com.wuxianggujun.tinaide.core.format.FormatterIndentation
 
-internal fun editorConfigFromPrefs(): EditorConfig = runCatching {
+internal fun editorConfigFromPrefs(projectIndentation: FormatterIndentation? = null): EditorConfig = runCatching {
     val rainbow = Prefs.editorRainbowBrackets
+    val indentation = projectIndentation ?: FormatterIndentation.fromPreferences()
     EditorConfig(
         showLineNumbers = Prefs.editorShowLineNumbers,
         fontSizeSp = Prefs.editorFontSize,
-        tabSize = Prefs.editorTabSize,
+        tabSize = indentation.tabWidth,
+        indentSize = indentation.indentWidth,
+        continuationIndentSize = indentation.continuationIndentWidth,
         completionCaseSensitive = Prefs.completionCaseSensitive,
         wordWrap = Prefs.editorWordWrap,
         autoIndent = Prefs.editorAutoIndent,
@@ -27,7 +31,7 @@ internal fun editorConfigFromPrefs(): EditorConfig = runCatching {
             "all" -> WhitespaceRenderMode.ALL
             else -> WhitespaceRenderMode.NONE
         },
-        insertSpacesForTabs = Prefs.editorInsertSpacesForTabs,
+        insertSpacesForTabs = indentation.insertSpacesForTabs,
         showMinimap = Prefs.editorShowMinimap,
         showGitGutter = Prefs.editorShowGitGutter
     )

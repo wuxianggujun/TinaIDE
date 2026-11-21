@@ -29,7 +29,8 @@ data class EditorSettings(
     val singleDirectionDragging: Boolean,
     val singleDirectionFling: Boolean,
     val showMinimap: Boolean,
-    val showGitGutter: Boolean
+    val showGitGutter: Boolean,
+    val indentSize: Int = tabSize,
 )
 
 data class DeveloperDiagnosticsSettings(
@@ -85,6 +86,8 @@ object Prefs {
     private val sharedPrefs: SharedPreferences by lazy {
         AppPreferences.get(appContext)
     }
+
+    private val indentationPreferences by lazy { EditorIndentationPreferences(sharedPrefs) }
 
     // ========== PRoot / Rootfs 配置 ==========
 
@@ -384,6 +387,7 @@ object Prefs {
     private fun readEditorSettings(): EditorSettings = EditorSettings(
         fontSize = editorFontSize,
         tabSize = editorTabSize,
+        indentSize = editorIndentSize,
         wordWrap = editorWordWrap,
         showLineNumbers = editorShowLineNumbers,
         autoIndent = editorAutoIndent,
@@ -473,9 +477,11 @@ object Prefs {
      * 存储为字符串，键为 "editor_tab_size"。
      */
     val editorTabSize: Int
-        get() = sharedPrefs.getString("editor_tab_size", "4")
-            ?.toIntOrNull()
-            ?.coerceIn(2, 8) ?: 4
+        get() = indentationPreferences.tabSize
+
+    /** Indentation is independent of tab-stop width; inherit the legacy width until first edited. */
+    val editorIndentSize: Int
+        get() = indentationPreferences.indentSize
 
     /** 是否启用自动换行。 */
     val editorWordWrap: Boolean
@@ -811,7 +817,12 @@ object Prefs {
     }
 
     fun setEditorTabSize(tabSize: Int) {
-        sharedPrefs.edit().putString("editor_tab_size", tabSize.coerceIn(2, 8).toString()).apply()
+        indentationPreferences.setTabSize(tabSize)
+        notifyEditorSettingsChanged()
+    }
+
+    fun setEditorIndentSize(indentSize: Int) {
+        indentationPreferences.setIndentSize(indentSize)
         notifyEditorSettingsChanged()
     }
 
