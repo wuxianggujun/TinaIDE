@@ -1,5 +1,9 @@
 # TinaIDE 测试文档
 
+## 2026-11-21 集成与 PMS110 真机验收
+
+[集成与真机验收](2026-11-21_integration-device-acceptance.md) 记录整合后的 ARM64 Debug APK 安装、PMS110 回归和超时项；超时或缺少 instrumentation 报告的用例不计为通过，也不替代 Release/R8 验收。
+
 ## 2026-11-21 vcpkg 7zip 汇编修复
 
 [7zip 汇编修复与真机验收](2026-11-21_vcpkg-7zip-asm-acceptance.md) 记录 PMS110 上的实际失败命令、

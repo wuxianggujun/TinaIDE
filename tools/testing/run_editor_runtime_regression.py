@@ -145,7 +145,7 @@ def main():
         elif args.suite == "vcpkg-managed":
             selector = "com.wuxianggujun.tinaide.core.compile.VcpkgManagedDeviceTest#managedCatalogAndRuntime"
             cases = [(phase, selector, {"vcpkgManagedPhase": phase}) for phase in
-                     ("catalog", "update", "sources", "cancel-runtime", "runtime", "configure", "build", "run", "repeat", "external", "shared", "cancel-shared")]
+                     ("catalog", "update", "sources", "cancel-runtime", "runtime", "configure", "build", "run", "repeat", "market-reuse", "external", "shared", "cancel-shared")]
             cases.insert(1, ("market-ui", "com.wuxianggujun.tinaide.ui.compose.editor.VcpkgMarketInstrumentationTest#noProjectStillShowsCatalogAndSupportsSearch", {}))
             # These cases require the caller to disable networking explicitly; the default suite stays online.
             if args.case in ("offline-update", "runtime-offline"):

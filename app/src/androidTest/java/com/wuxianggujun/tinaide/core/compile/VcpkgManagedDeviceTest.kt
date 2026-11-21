@@ -2,7 +2,6 @@ package com.wuxianggujun.tinaide.core.compile
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.wuxianggujun.tinaide.core.compile.action.LaunchIntent
 import com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutor
 import com.wuxianggujun.tinaide.core.ndk.AndroidElfExecutor
 import com.wuxianggujun.tinaide.core.packages.VcpkgCatalogStore
@@ -156,40 +155,21 @@ class VcpkgManagedDeviceTest {
                                 assertTrue("Market installation must publish fmt", library.isFile)
                                 val beforeModified = library.lastModified()
                                 val beforeHashes = libraryHashes(File(installed, settings.targetTriplet(abi)))
-                                val effective = EffectiveBuildConfigResolver.resolve(EffectiveBuildConfigResolver.Input(
-                                    launch = LaunchIntent.None,
-                                    buildSystem = BuildSystem.CMAKE,
-                                    runConfig = RunConfigurationManager.load(project.absolutePath).selectedConfig,
-                                    projectRoot = project,
-                                    linuxEnvironmentAvailable = true,
-                                    appContext = context,
-                                ))
-                                val runOptions = options.copy(
-                                    buildType = NativeCMakeBuildExecutor.CMakeBuildType.valueOf(effective.cmakeBuildType.name),
-                                    generator = NativeCMakeBuildExecutor.CMakeGenerator.valueOf(effective.cmakeGenerator.name),
-                                    compilerType = effective.compilerType,
-                                    toolchainId = effective.toolchainId,
-                                    sysrootProfileId = effective.sysrootProfileId,
-                                    sysrootApiLevel = effective.sysrootApiLevel,
-                                    cCompilerPath = effective.customCCompiler,
-                                    cxxCompilerPath = effective.customCppCompiler,
-                                    cFlags = effective.nativeCFlags,
-                                    cppFlags = effective.nativeCppFlags,
-                                    ldFlags = effective.nativeLdFlags,
-                                    ldLibs = effective.nativeLdLibs,
-                                    cppStandard = effective.cppStandard,
-                                    extraCMakeArgs = effective.nativeCMakeArgs,
+                                val runBuild = File(
+                                    VcpkgManagedPaths.workspace(context, project),
+                                    "build/market-reuse-run",
                                 )
+                                val runOptions = options
                                 output.setLength(0)
-                                val configured = executor.configure(project, build, runOptions)
+                                val configured = executor.configure(project, runBuild, runOptions)
                                 assertTrue("$configured\n$output", configured is ConfigureResult.Success)
                                 assertTrue("Run must reuse the installed dependency, not restore or rebuild it:\n$output",
                                     output.contains("All requested packages are currently installed"))
                                 assertEquals(beforeModified, library.lastModified())
                                 assertEquals(beforeHashes, libraryHashes(File(installed, settings.targetTriplet(abi))))
-                                val built = executor.build(project, build, options = runOptions)
+                                val built = executor.build(project, runBuild, options = runOptions)
                                 assertTrue("$built\n$output", built is BuildResult.Success)
-                                val result = AndroidElfExecutor.exec(context, File(build, "managed_vcpkg"), emptyList(),
+                                val result = AndroidElfExecutor.exec(context, File(runBuild, "managed_vcpkg"), emptyList(),
                                     workDir = project, timeoutMs = 10_000)
                                 assertEquals(result.output, 0, result.exitCode)
                                 assertTrue(result.output, result.output.contains("managed vcpkg: 42"))
