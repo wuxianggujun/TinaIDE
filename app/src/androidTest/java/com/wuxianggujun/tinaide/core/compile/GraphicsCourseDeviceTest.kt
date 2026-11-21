@@ -10,7 +10,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutor
 import com.wuxianggujun.tinaide.core.ndk.AndroidSysrootManager
 import com.wuxianggujun.tinaide.settings.SettingsActivity
-import com.wuxianggujun.tinaide.ui.ContextCompileNativeActivityLauncher
+import com.wuxianggujun.tinaide.tutorial.project.TutorialProjectBlueprints
 import com.wuxianggujun.tinaide.ui.ContextCompileSdlLauncher
 import com.wuxianggujun.tinaide.ui.regressionEvidenceDirectory
 import com.wuxianggujun.tinaide.ui.emitRegressionReport
@@ -35,7 +35,7 @@ class GraphicsCourseDeviceTest {
         val arguments = InstrumentationRegistry.getArguments()
         val library = arguments.getString("graphicsLibrary", "sdl3")
         val language = arguments.getString("courseLanguage", "zh")
-        require(library in setOf("sdl3", "raylib"))
+        require(library == "sdl3")
         require(language in setOf("zh", "en"))
         val report = JSONObject().put("runId", arguments.getString("regressionRunId", "manual"))
             .put("library", library).put("language", language).put("passed", false)
@@ -44,19 +44,12 @@ class GraphicsCourseDeviceTest {
         val output = StringBuilder()
         try {
             withTimeout(50_000) {
-                val prefix = if (language == "en") "help/en" else "help"
-                val markdown = context.assets.open("$prefix/graphics-sdl3.md")
-                    .bufferedReader(Charsets.UTF_8).use { it.readText() }
-                fun blocks(tag: String) = Regex("(?s)```$tag\\r?\\n(.*?)\\r?\\n```")
-                    .findAll(markdown).map { it.groupValues[1] }.toList()
-                val directory = File(context.filesDir, "course-acceptance/$language/graphics-$library").apply { mkdirs() }
-                val cpp = blocks("cpp").let { if (library == "sdl3") it.first() else it.last() }
-                val cmake = blocks("cmake").first().let {
-                    if (library == "raylib") it.replace("SDL3 CONFIG", "raylib CONFIG")
-                        .replace("SDL3::SDL3", "raylib::raylib") else it
+                val prefix = if (language == "en") "tutorial-course/en" else "tutorial-course"
+                val blueprint = TutorialProjectBlueprints.load("graphics_sdl3") { lesson ->
+                    context.assets.open("$prefix/$lesson.md").bufferedReader(Charsets.UTF_8).use { it.readText() }
                 }
-                File(directory, "main.cpp").writeText(cpp, Charsets.UTF_8)
-                File(directory, "CMakeLists.txt").writeText(cmake, Charsets.UTF_8)
+                val directory = File(context.filesDir, "course-acceptance/$language/graphics-$library").apply { mkdirs() }
+                blueprint.files.forEach { (name, contents) -> File(directory, name).writeText(contents, Charsets.UTF_8) }
                 val executor = NativeCMakeBuildExecutor(context)
                 val sysrootManager = AndroidSysrootManager(context.applicationContext)
                 val arch = AndroidSysrootManager.Companion.Arch.current()
@@ -88,22 +81,13 @@ class GraphicsCourseDeviceTest {
                 var launchIntent: Intent? = null
                 val activityStarter: (Intent) -> Unit = { launchIntent = it }
                 val onError: (String) -> Unit = { fail(it) }
-                if (library == "sdl3") {
-                    ContextCompileSdlLauncher(context, onError, activityStarter).open(
-                        GraphicalRuntimeLaunchRequest.Sdl(
-                            libraryPath = main.absolutePath,
-                            environment = environment,
-                            preferredSdlMajor = 3,
-                        )
+                ContextCompileSdlLauncher(context, onError, activityStarter).open(
+                    GraphicalRuntimeLaunchRequest.Sdl(
+                        libraryPath = main.absolutePath,
+                        environment = environment,
+                        preferredSdlMajor = 3,
                     )
-                } else {
-                    ContextCompileNativeActivityLauncher(context, onError, activityStarter).open(
-                        GraphicalRuntimeLaunchRequest.NativeActivity(
-                            libraryPath = main.absolutePath,
-                            environment = environment,
-                        )
-                    )
-                }
+                )
                 val launch = checkNotNull(launchIntent) { "The production launcher must create a graphical Intent" }
                 val signal = GraphicalRuntimeLaunchSignal().also { it.attachTo(launch) }
                 context.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))

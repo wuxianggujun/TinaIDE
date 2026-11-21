@@ -270,7 +270,7 @@ def main():
         elif args.suite == "graphics-course":
             selector = "com.wuxianggujun.tinaide.core.compile.GraphicsCourseDeviceTest#lessonBuildsAndDrawsThroughProductionHost"
             cases = [(f"{language}-{library}", selector, {"courseLanguage": language, "graphicsLibrary": library})
-                     for language in ("zh", "en") for library in ("sdl3", "raylib")]
+                     for language in ("zh", "en") for library in ("sdl3",)]
         elif args.suite == "performance":
             selector = "com.wuxianggujun.tinaide.ui.compose.editor.EditorScrollPerformanceInstrumentationTest#warmCppScroll_recordsEnoughRendererSamples"
             cases = [(f"warm-cpp-{highlight}", selector,

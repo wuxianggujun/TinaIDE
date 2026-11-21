@@ -50,9 +50,13 @@ fmt 和 Android SDL3 包仍需用户明确添加、安装；自动创建不联�
 - Python 设备回归脚本 39 项、维护与分发策略脚本 60 项全部通过；国际化、完整维护门禁、分发许可检查与主仓库/编辑器 `git diff --check` 通过。Windows raylib 校验显式选择 Git Bash，修复误选系统 WSL Bash 导致的超时与错误解码。
 - x86_64 Debug 主 APK 与 AndroidTest APK 构建成功；主包覆盖安装到 `emulator-5580`（API 34）。安装包与设备包 SHA-256 一致：`b87cb024aef2cbda18ce755a31429c7fd74d3b5cbab1c5b084305d373c4bc98c`。APK 原生库完整性与 ELF 架构检查通过。
 - `tutorial-project` 最终三例全部通过：`zh`、`en` 分别生成九章工程并真实编译运行，`navigation` 经生产门户进入与续开真实编辑器，覆盖 Activity 重建。首轮测试用阻塞监视器等待 Activity，阻止 Compose 测试时钟推进；改为 Compose `waitUntil` 后通过。一次重跑在 instrumentation attach 阶段失败、未执行测试，恢复进程后完整三例重新通过。失败记录保留，不计入通过数。
-- 补充四例通过：`zh-ai-practice`、`en-ai-practice`、`en-cmake-practice`、`recover-compile-error`，均在新安装 Debug 包上执行。共七例设备验证通过，无跳过；报告按每次独立 runId 校验。
-- 证据保存在 `app/build/verification/tutorial-project-20261121/`：`device-passed/results.json`、`course/*/results.json`、`installed-apk.json`、`final-build.log`、`modules-regression.log`、`editor-shortcuts.log`。生成物不纳入 Git。
-- ARM64 Release：用户已要求构建并安装，正在执行 `:app:assembleArm64Release`；保留 `0.19.5` / `19062`，使用 `-Ptina.autoIncrementReleaseVersion=false`，R8 mapping 仍按现有构建逻辑本地归档。完成后记录实际哈希与真机安装结果。
+- 补充四例通过：`zh-ai-practice`、`en-ai-practice`、`en-cmake-practice`、`recover-compile-error`，均在新安装 Debug 包上执行。
+- SDL3 中英文绘制复验通过：`GraphicsCourseDeviceTest` 不再读取已删除的 `help/graphics-sdl3.md`，直接复用 `TutorialProjectBlueprints` 生成当前课程源码和 CMake；删除已不存在的 raylib 课程测试分支，raylib 的独立 runtime suite 保留。测试明确验证配置、构建、生产图形宿主启动、蓝底橙色矩形和退出后 IDE 进程存活。模拟器首次缺少 SDL3 开发包，通过现有 Android 包管理器安装 `sdl3` 后复验；生产创建入口仍不自动下载安装依赖。
+- 共九例课程/编辑器设备验证通过，另有一例 SDL3 依赖安装验证通过，均无跳过；报告按每次独立 runId 校验。初始缺包、旧测试路径与启动超时记录均保留，不计为成功。
+- 证据保存在 `app/build/verification/tutorial-project-20261121/`：`device-passed/results.json`、`course/*/results.json`、`graphics-verified/results.json`、`graphics-sdl3-install/results.json`、`installed-apk.json`、`final-build.log`、`graphics-test-build.log`、`modules-regression.log`、`editor-shortcuts.log`。生成物不纳入 Git。
+- ARM64 Release：`:app:assembleArm64Release` 构建成功（38 分 3 秒），R8 与资源压缩完成，lintVital 无错误或警告，APK 签名验证及 ARM64 原生运行库/ELF 检查通过。使用 `-Ptina.autoIncrementReleaseVersion=false` 保留 `0.19.5` / `19062`，不修改 `version.properties`；APK 不带 debuggable 标记。产物为 `app/build/outputs/apk/arm64/release/TinaIDE-0.19.5-arm64-v8a-release.apk`，SHA-256：`df1ce93b9e5608b5e78f3359cb4fb4fb48b4ba65e811881464a635b5ff4e2ddc`。
+- R8 mapping 已按现有构建逻辑归档至 `app/mappings/0.19.5-nogit-20261121230831/arm64Release/`，只做本地保留；构建和校验记录见 `arm64-release-build.log`、`release-signature.log` 与 `release-verification.json`。
+- 真机安装尚未完成：构建开始前 PMS110 在线，构建结束后无线 ADB 已断开，原端口 `192.168.2.185:43525` 拒绝连接，mDNS 没有发现该设备。需要恢复 USB 调试连接或提供新的无线调试 IP 与连接端口；不卸载应用，不清空数据，不运行真机功能测试。
 
 最小模块验证命令：
 
@@ -78,6 +82,8 @@ py -X utf8 tools/testing/run_editor_runtime_regression.py --adb D:/Programs/Andr
 
 基线主仓库 CI [Core Regression Checks / 44903002005](https://github.com/wuxianggujun/TinaIDE/actions/runs/44903002005) 因 `EditorKeyboardShortcutsTest.handleEditorShortcut_shouldIndentEveryMultiCursorLineWithTab` 失败。本轮已一并修复：缩进开始替换整段行首空白后，通用替换映射把空白内光标折叠到新缩进末尾；现在多光标缩进使用与单选区一致的字符增量映射，并夹取到本行行首。原失败用例与新增回归均通过。
 
-编辑器修复已先提交推送到 `TinaEditor/main`：`575fde62d6e60272696a7cc537c17ececc91bff1`，远端分支已核对可达，主仓库随后更新 gitlink。
+编辑器修复已先提交推送到 `TinaEditor/main`：`575fde62d6e60272696a7cc537c17ececc91bff1`，远端分支已核对可达。主仓库功能提交 `94349d3aa8cb4634958e7ae0ef88598657946044` 已推送 `dev`，包含对应 gitlink。
 
-没有发布新版本；当前模拟器 Debug 验证与真机安装不等同于正式发布或真机功能验收。正式发版还需新提交的远端 CI 和 Release/R8 候选验收；本轮不安排真机测试。
+新功能提交的远端 [Core Regression Checks / 44918032908](https://github.com/wuxianggujun/TinaIDE/actions/runs/44918032908) 已全部成功，包含编辑器/编译器/安全/教程与宿主生命周期/分屏/存储回归。
+
+没有发布 GitHub 新版本，最新正式发布仍为 `v0.19.2`。本地签名 Release 已生成，但尚未安装到断开连接的 PMS110，也没有执行真机功能测试；两者不能写成已完成设备验收。
