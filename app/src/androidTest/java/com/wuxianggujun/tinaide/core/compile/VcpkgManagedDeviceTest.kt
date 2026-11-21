@@ -1,5 +1,6 @@
 package com.wuxianggujun.tinaide.core.compile
 
+import android.system.Os
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutor
@@ -11,8 +12,7 @@ import com.wuxianggujun.tinaide.core.packages.VcpkgSharedLibrary
 import com.wuxianggujun.tinaide.core.packages.VcpkgManagedPaths
 import com.wuxianggujun.tinaide.project.ProjectMetadataStore
 import com.wuxianggujun.tinaide.project.VcpkgProjectSettings
-import com.wuxianggujun.tinaide.ui.regressionEvidenceDirectory
-import com.wuxianggujun.tinaide.ui.emitRegressionReport
+import com.wuxianggujun.tinaide.ui.RegressionStageTracker
 import java.io.File
 import java.security.MessageDigest
 import kotlinx.coroutines.CancellationException
@@ -34,16 +34,26 @@ class VcpkgManagedDeviceTest {
             "managed-vcpkg-acceptance").apply { mkdirs() }
         val report = JSONObject().put("phase", phase).put("passed", false)
             .put("runId", InstrumentationRegistry.getArguments().getString("regressionRunId", "manual"))
+        val fixtureId = InstrumentationRegistry.getArguments().getString("marketReuseFixtureId", "manual")
+        if (phase in setOf("market-install", "market-reuse-run", "market-reuse")) {
+            report.put("marketReuseFixtureId", fixtureId)
+        }
+        val tracker = RegressionStageTracker(context, "vcpkg-managed-$phase", report)
         val output = StringBuilder()
+        val appendOutput: (String) -> Unit = { line ->
+            if (output.length < 128 * 1024) output.appendLine(line.take(128 * 1024 - output.length))
+            tracker.appendLog(line)
+        }
         val started = android.os.SystemClock.elapsedRealtime()
         val progress: (Long, Long) -> Unit = { downloaded, total ->
             val elapsed = android.os.SystemClock.elapsedRealtime() - started
             report.put("downloadedBytes", downloaded).put("expectedBytes", total)
                 .put("lastProgressMs", elapsed)
-            output.appendLine("${report.optString("stage")}: $downloaded/$total bytes after $elapsed ms")
+            appendOutput("${report.optString("stage")}: $downloaded/$total bytes after $elapsed ms")
         }
         try {
             withTimeout(50_000) {
+                tracker.checkpoint(phase)
                 when (phase) {
                     "catalog" -> {
                         val catalog = VcpkgCatalogStore(context).readLocal()
@@ -124,7 +134,7 @@ class VcpkgManagedDeviceTest {
                             if (!library.readBytes().contentEquals(original)) library.writeBytes(original)
                         }
                     }
-                    "configure", "repeat", "build", "run", "external", "shared", "market-reuse" -> {
+                    "configure", "repeat", "build", "run", "external", "shared", "market-install", "market-reuse-run", "market-reuse" -> {
                         File(project, "CMakeLists.txt").writeText("""
                             cmake_minimum_required(VERSION 3.22)
                             project(managed_vcpkg LANGUAGES CXX)
@@ -141,40 +151,74 @@ class VcpkgManagedDeviceTest {
                         val options = NativeCMakeBuildExecutor.Options(parallelJobs = 1,
                             extraCMakeArgs = com.wuxianggujun.tinaide.project.VcpkgProjectSettings(
                                 com.wuxianggujun.tinaide.project.VcpkgProjectSettings.MANIFEST).applyTo(emptyList()),
-                            onProgress = { if (output.length < 128 * 1024) output.appendLine(it) })
+                            onProgress = appendOutput)
                         when (phase) {
-                            "market-reuse" -> {
-                                val installedResult = VcpkgProjectInstaller(context).install(project) { output.appendLine(it) }
-                                assertTrue("$installedResult\n$output", installedResult is ConfigureResult.Success)
-                                File(regressionEvidenceDirectory(context), "vcpkg-managed-market-install.log")
-                                    .writeText(output.toString(), Charsets.UTF_8)
+                            "market-install", "market-reuse-run", "market-reuse" -> {
                                 val settings = VcpkgProjectSettings(VcpkgProjectSettings.MANIFEST)
                                 val abi = android.os.Build.SUPPORTED_ABIS.first()
                                 val installed = VcpkgManagedPaths.installed(context, project, settings, abi)
                                 val library = File(installed, "${settings.targetTriplet(abi)}/lib/libfmt.a")
+                                val fixture = File(project, ".market-reuse-fixture.json")
+                                if (phase != "market-reuse-run") {
+                                    tracker.checkpoint("market-install-configure")
+                                    val installedResult = VcpkgProjectInstaller(context).install(project, appendOutput)
+                                    assertTrue("$installedResult\n$output", installedResult is ConfigureResult.Success)
+                                    assertTrue("Market installation must publish fmt", library.isFile)
+                                    val identity = Os.stat(library.path)
+                                    fixture.writeText(JSONObject().put("fixtureId", fixtureId).put("abi", abi)
+                                        .put("libraryTimestampMs", library.lastModified())
+                                        .put("libraryDevice", identity.st_dev).put("libraryInode", identity.st_ino)
+                                        .put("libraryChangeTimeSeconds", identity.st_ctime)
+                                        .put("libraryHashes", JSONObject(libraryHashes(File(installed, settings.targetTriplet(abi)))))
+                                        .toString(2), Charsets.UTF_8)
+                                    report.put("marketInstalled", true)
+                                    tracker.checkpoint("market-installed")
+                                }
+                                if (phase == "market-install") return@withTimeout
+                                tracker.checkpoint("reuse-validate-installation")
+                                assertTrue("Run market-install before the dependency reuse phase", fixture.isFile)
+                                val baseline = JSONObject(fixture.readText(Charsets.UTF_8))
+                                assertEquals("Reuse must match this invocation's installation", fixtureId, baseline.getString("fixtureId"))
+                                assertEquals(abi, baseline.getString("abi"))
                                 assertTrue("Market installation must publish fmt", library.isFile)
-                                val beforeModified = library.lastModified()
-                                val beforeHashes = libraryHashes(File(installed, settings.targetTriplet(abi)))
+                                val beforeModified = baseline.getLong("libraryTimestampMs")
+                                val beforeHashes = baseline.getJSONObject("libraryHashes").let { hashes ->
+                                    hashes.keys().asSequence().associateWith { hashes.getString(it) }
+                                }
+                                assertTrue(beforeHashes.isNotEmpty())
+                                fun assertInstalledLibraryUnchanged() {
+                                    val identity = Os.stat(library.path)
+                                    assertEquals("Run must not replace the installed library", baseline.getLong("libraryDevice"), identity.st_dev)
+                                    assertEquals("Run must not replace the installed library", baseline.getLong("libraryInode"), identity.st_ino)
+                                    assertEquals("Run must not rewrite the installed library", baseline.getLong("libraryChangeTimeSeconds"), identity.st_ctime)
+                                    assertEquals(beforeModified, library.lastModified())
+                                    assertEquals(beforeHashes, libraryHashes(File(installed, settings.targetTriplet(abi))))
+                                }
+                                assertInstalledLibraryUnchanged()
                                 val runBuild = File(
                                     VcpkgManagedPaths.workspace(context, project),
                                     "build/market-reuse-run",
                                 )
                                 val runOptions = options
                                 output.setLength(0)
+                                tracker.checkpoint("reuse-configure")
                                 val configured = executor.configure(project, runBuild, runOptions)
                                 assertTrue("$configured\n$output", configured is ConfigureResult.Success)
-                                assertTrue("Run must reuse the installed dependency, not restore or rebuild it:\n$output",
-                                    output.contains("All requested packages are currently installed"))
-                                assertEquals(beforeModified, library.lastModified())
-                                assertEquals(beforeHashes, libraryHashes(File(installed, settings.targetTriplet(abi))))
+                                // CLI wording changes across vcpkg versions; file identity and content are the contract.
+                                assertInstalledLibraryUnchanged()
+                                tracker.checkpoint("reuse-build")
                                 val built = executor.build(project, runBuild, options = runOptions)
                                 assertTrue("$built\n$output", built is BuildResult.Success)
+                                tracker.checkpoint("reuse-run")
                                 val result = AndroidElfExecutor.exec(context, File(runBuild, "managed_vcpkg"), emptyList(),
                                     workDir = project, timeoutMs = 10_000)
                                 assertEquals(result.output, 0, result.exitCode)
                                 assertTrue(result.output, result.output.contains("managed vcpkg: 42"))
+                                assertInstalledLibraryUnchanged()
                                 report.put("marketInstalled", true).put("runReusedInstalledLibrary", true)
-                                    .put("installedLibraryTimestampUnchanged", true).put("output", result.output)
+                                    .put("installedLibraryTimestampUnchanged", true).put("installedLibraryHashesUnchanged", true)
+                                    .put("installedLibraryIdentityUnchanged", true)
+                                    .put("output", result.output)
                             }
                             "shared" -> {
                                 val settings = VcpkgProjectSettings(VcpkgProjectSettings.MANIFEST)
@@ -220,14 +264,10 @@ class VcpkgManagedDeviceTest {
             }
             report.put("passed", true)
         } catch (error: Throwable) {
-            report.put("failureType", error.javaClass.simpleName)
+            report.put("failureType", error.javaClass.simpleName).put("failedStage", report.optString("stage"))
             throw error
         } finally {
-            report.put("elapsedMs", android.os.SystemClock.elapsedRealtime() - started)
-            val evidence = regressionEvidenceDirectory(context)
-            File(evidence, "vcpkg-managed-$phase.json").writeText(report.toString(2), Charsets.UTF_8)
-            File(evidence, "vcpkg-managed-$phase.log").writeText(output.toString(), Charsets.UTF_8)
-            emitRegressionReport(report)
+            tracker.finish()
         }
     }
 

@@ -85,7 +85,12 @@ class MarketSearchInstrumentationTest {
             composeRule.onNodeWithText(context.getString(label), useUnmergedTree = true)
                 .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
             assertTrue("Market tab ${context.getString(label)} must fit: " +
-                layouts.joinToString { "lines=${it.lineCount}, overflow=${it.hasVisualOverflow}, size=${it.size}" }, layouts.size == 1 &&
+                layouts.joinToString {
+                    "lines=${it.lineCount}, overflowWidth=${it.didOverflowWidth}, overflowHeight=${it.didOverflowHeight}, " +
+                        "ellipsized=${it.isLineEllipsized(0)}, size=${it.size}, constraints=${it.layoutInput.constraints}, " +
+                        "paragraphWidth=${it.multiParagraph.width}, lineRight=${it.getLineRight(0)}, " +
+                        "fontScale=${it.layoutInput.density.fontScale}, lineHeight=${it.layoutInput.style.lineHeight}"
+                }, layouts.size == 1 &&
                 layouts.single().lineCount == 1 && !layouts.single().hasVisualOverflow)
         }
         // Exercise the real top-level routes, including the scrollable short-window rail.

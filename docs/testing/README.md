@@ -1,5 +1,9 @@
 # TinaIDE 测试文档
 
+## 2026-11-21 市场布局与考核回归优化
+
+[市场布局与课程回归优化](2026-11-21_market-course-optimization.md) 记录布局宽度误报、窄窗口与大字体标签、中英文考核分阶段及市场库文件身份验证；本轮只覆盖模拟器 Debug，不执行真机或 Release/R8 验收。
+
 ## 2026-11-21 集成与 PMS110 真机验收
 
 [集成与真机验收](2026-11-21_integration-device-acceptance.md) 记录整合后的 ARM64 Debug APK 安装、PMS110 回归和超时项；超时或缺少 instrumentation 报告的用例不计为通过，也不替代 Release/R8 验收。

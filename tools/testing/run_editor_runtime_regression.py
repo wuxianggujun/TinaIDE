@@ -26,6 +26,19 @@ EDITOR_CASES = (
     "foldGutterHitTargets_followFontGeometryAfterPinch",
 )
 MAX_MARKET_SCREENSHOT_BYTES = 512 * 1024
+COURSE_ASSESSMENT_PHASES = ("save", "reject", "cancel", "timeout")
+COURSE_ASSESSMENT_METHODS = {
+    "save": "savesRebuildsChecksAndRecordsOnlySuccessfulRuns",
+    "reject": "rejectsCompileErrorsAndWrongOutputThenRetries",
+    "cancel": "cancellationStopsTheProcessAndAllowsRetry",
+    "timeout": "deadlineStopsTheProcessAndAllowsRetry",
+}
+COURSE_ASSESSMENT_CHECKS = {
+    "save": ("savedAndVerified", "progressReloaded"),
+    "reject": ("compileFailureRejected", "wrongOutputRejected", "retryPassed"),
+    "cancel": ("cancelledProcessStopped", "retryPassed"),
+    "timeout": ("timeoutProcessStopped", "retryPassed"),
+}
 
 
 def instrumentation_passed(output: str, returncode: int, timed_out: bool) -> bool:
@@ -49,6 +62,38 @@ def instrumentation_report(output: str) -> dict | None:
     return report
 
 
+def instrumentation_progress(output: str, run_id: str) -> list[dict]:
+    """Keep current-run checkpoints separate from the one final success report."""
+    checkpoints = []
+    for payload in re.findall(r"(?m)^INSTRUMENTATION_STATUS: tina_regression_progress=(.+)\r?$", output):
+        checkpoint = json.loads(payload)
+        if not isinstance(checkpoint, dict):
+            raise ValueError("Expected an instrumentation progress object")
+        if checkpoint.get("runId") != run_id:
+            continue
+        if (not isinstance(checkpoint.get("stage"), str) or not checkpoint["stage"] or
+                type(checkpoint.get("elapsedMs")) is not int or checkpoint["elapsedMs"] < 0):
+            raise ValueError("Invalid instrumentation checkpoint")
+        if checkpoints and checkpoint["elapsedMs"] < checkpoints[-1]["elapsedMs"]:
+            raise ValueError("Instrumentation checkpoint time went backwards")
+        checkpoints.append(checkpoint)
+    return checkpoints
+
+
+def select_cases(cases: list[tuple], requested: str | None) -> list[tuple]:
+    """Legacy case names select bounded phases, not a longer test deadline."""
+    if requested is None:
+        return cases
+    aliases = {f"assess-{language}": tuple(f"assess-{language}-{phase}" for phase in COURSE_ASSESSMENT_PHASES)
+               for language in ("zh", "en")}
+    aliases["market-reuse"] = ("market-install", "market-reuse-run")
+    names = aliases.get(requested, (requested,))
+    selected = [case for case in cases if case[0] in names]
+    if len(selected) != len(names):
+        raise ValueError("Unknown case for the selected suite")
+    return selected
+
+
 def validate_performance_evidence(report: dict, run_id: str, extras: dict) -> None:
     if not isinstance(report, dict):
         raise ValueError("Expected a performance report object")
@@ -65,13 +110,48 @@ def validate_performance_evidence(report: dict, run_id: str, extras: dict) -> No
         raise ValueError("Incomplete renderer samples")
 
 
-def validate_course_assessment_evidence(report: dict, run_id: str, language: str) -> None:
-    required_checks = ("savedAndVerified", "progressReloaded", "compileFailureRejected",
-                       "wrongOutputRejected", "cancelledProcessStopped", "timeoutProcessStopped", "retryPassed")
+def validate_course_assessment_evidence(report: dict, run_id: str, language: str, phase: str = "all") -> None:
+    required_checks = (tuple(dict.fromkeys(check for checks in COURSE_ASSESSMENT_CHECKS.values() for check in checks))
+                       if phase == "all" else COURSE_ASSESSMENT_CHECKS[phase])
     if (report.get("runId") != run_id or report.get("passed") is not True or
+            report.get("assessmentPhase", "all") != phase or
             report.get("language") != language or type(report.get("checks")) is not int or
             report["checks"] != 5 or any(report.get(check) is not True for check in required_checks)):
         raise ValueError("Incomplete or stale course assessment evidence")
+
+
+def validate_vcpkg_evidence(report: dict, run_id: str, phase: str, fixture_id: str | None = None) -> None:
+    if report.get("runId") != run_id or report.get("passed") is not True or report.get("phase") != phase:
+        raise ValueError("Incomplete or stale managed vcpkg evidence")
+    if phase in ("market-install", "market-reuse-run"):
+        if not fixture_id or report.get("marketReuseFixtureId") != fixture_id or report.get("marketInstalled") is not True:
+            raise ValueError("Market dependency evidence belongs to a different installation")
+        if phase == "market-reuse-run" and any(report.get(check) is not True for check in
+                ("runReusedInstalledLibrary", "installedLibraryTimestampUnchanged", "installedLibraryHashesUnchanged", "installedLibraryIdentityUnchanged")):
+            raise ValueError("Market run did not prove installed dependency reuse")
+
+
+def validate_tab_label_evidence(report: dict, run_id: str) -> None:
+    expected = {(language, width, scale) for language in ("zh", "en") for width in (240, 320)
+                for scale in (1, 1.5, 2)}
+    variants = report.get("variants")
+    if report.get("runId") != run_id or report.get("passed") is not True or not isinstance(variants, list):
+        raise ValueError("Missing or stale market label evidence")
+    observed = []
+    for variant in variants:
+        if (not isinstance(variant, dict) or not isinstance(variant.get("language"), str) or
+                type(variant.get("widthDp")) is not int or
+                type(variant.get("fontScale")) not in (int, float) or not math.isfinite(variant["fontScale"])):
+            raise ValueError("Expected market label variant objects")
+        labels = variant.get("labels")
+        if not isinstance(labels, list) or len(labels) != 3 or any(
+                not isinstance(label, dict) or type(label.get("lineCount")) is not int or label["lineCount"] != 1 or
+                label.get("overflowWidth") is not False or label.get("overflowHeight") is not False or
+                label.get("ellipsized") is not False for label in labels):
+            raise ValueError("Market labels were truncated or not measured")
+        observed.append((variant.get("language"), variant.get("widthDp"), variant.get("fontScale")))
+    if len(observed) != len(expected) or set(observed) != expected:
+        raise ValueError("Incomplete market locale/width/font-scale matrix")
 
 
 def validate_market_evidence(report: dict, run_id: str, orientation: str) -> bytes:
@@ -110,6 +190,7 @@ def main():
     parser.add_argument("--orientation", choices=("portrait", "landscape"), default="portrait")
     parser.add_argument("--output", type=Path, default=ROOT / "app/build/reports/editor-runtime-regression")
     parser.add_argument("--case", help="Run one named case from the suite")
+    parser.add_argument("--market-fixture-id", help="Reuse the fixture id recorded by a successful market-install case")
     parser.add_argument("--profile", action="store_true", help="Sample Java methods during the performance suite")
     args = parser.parse_args()
     if args.build_type == "release" and args.suite == "editor":
@@ -118,6 +199,10 @@ def main():
         parser.error("--root-evidence requires an emulator serial")
     if args.profile and args.suite != "performance":
         parser.error("--profile requires --suite performance")
+    if args.market_fixture_id and (args.suite != "vcpkg-managed" or not re.fullmatch(r"[0-9a-f]{32}", args.market_fixture_id)):
+        parser.error("--market-fixture-id requires --suite vcpkg-managed and a 32-character lowercase hex id")
+    if args.suite == "vcpkg-managed" and args.case == "market-reuse-run" and not args.market_fixture_id:
+        parser.error("--case market-reuse-run requires --market-fixture-id from market-install; use --case market-reuse to run both")
     args.output.mkdir(parents=True, exist_ok=True)
     if args.suite == "editor":
         package = "com.wuxianggujun.tinaide.core.editorview.test"
@@ -135,6 +220,7 @@ def main():
         elif args.suite == "market-layout":
             selector = "com.wuxianggujun.tinaide.ui.compose.editor.MarketSearchInstrumentationTest#searchSurvivesTabSwitchAndStateRestorationAndCanBeClosed"
             cases = [(f"market-{args.orientation}", selector, {"regressionInlineScreenshot": "true"})]
+            cases.append(("tab-labels", "com.wuxianggujun.tinaide.ui.compose.editor.MarketTabLayoutInstrumentationTest#labelsRemainCompleteAcrossLocalesWidthsAndFontScales", {}))
         elif args.suite == "packages":
             selector = "com.wuxianggujun.tinaide.core.packages.RegistryInstallDeviceTest#downloadCancelRetryAndUninstall_keepFilesAndRecordsConsistent"
             cases = [(phase, selector, {"packagePhase": phase, "packageId": args.package_id})
@@ -145,7 +231,11 @@ def main():
         elif args.suite == "vcpkg-managed":
             selector = "com.wuxianggujun.tinaide.core.compile.VcpkgManagedDeviceTest#managedCatalogAndRuntime"
             cases = [(phase, selector, {"vcpkgManagedPhase": phase}) for phase in
-                     ("catalog", "update", "sources", "cancel-runtime", "runtime", "configure", "build", "run", "repeat", "market-reuse", "external", "shared", "cancel-shared")]
+                     ("catalog", "update", "sources", "cancel-runtime", "runtime", "configure", "build", "run", "repeat", "market-install", "market-reuse-run", "external", "shared", "cancel-shared")]
+            fixture_id = args.market_fixture_id or uuid.uuid4().hex
+            for name, _, extras in cases:
+                if name in ("market-install", "market-reuse-run"):
+                    extras["marketReuseFixtureId"] = fixture_id
             cases.insert(1, ("market-ui", "com.wuxianggujun.tinaide.ui.compose.editor.VcpkgMarketInstrumentationTest#noProjectStillShowsCatalogAndSupportsSearch", {}))
             # These cases require the caller to disable networking explicitly; the default suite stays online.
             if args.case in ("offline-update", "runtime-offline"):
@@ -156,8 +246,10 @@ def main():
                      for language in ("zh", "en") for lesson in
                      ("ide-workflow", "cpp-basics", "cpp-functions", "cpp-collections", "cpp-raii", "cmake-practice")]
             cases.append(("recover-compile-error", selector, {"courseLesson": "ide-workflow", "courseLanguage": "en", "courseRecovery": "true"}))
-            assessment_selector = "com.wuxianggujun.tinaide.core.compile.CourseAssessmentDeviceTest#savesRebuildsChecksAndRecordsOnlySuccessfulRuns"
-            cases += [(f"assess-{language}", assessment_selector, {"courseLanguage": language}) for language in ("zh", "en")]
+            assessment_class = "com.wuxianggujun.tinaide.core.compile.CourseAssessmentDeviceTest"
+            cases += [(f"assess-{language}-{phase}", assessment_class + "#" + COURSE_ASSESSMENT_METHODS[phase],
+                       {"courseLanguage": language, "assessmentPhase": phase})
+                      for language in ("zh", "en") for phase in COURSE_ASSESSMENT_PHASES]
         elif args.suite == "graphics-course":
             selector = "com.wuxianggujun.tinaide.core.compile.GraphicsCourseDeviceTest#lessonBuildsAndDrawsThroughProductionHost"
             cases = [(f"{language}-{library}", selector, {"courseLanguage": language, "graphicsLibrary": library})
@@ -174,10 +266,10 @@ def main():
                      for major in (3, 2) for action, custom in (("return", False), ("return", True), ("abort", True), ("exit", False))]
             cases += [(f"raylib-{action}", selector, {"nativeHost": "raylib", "nativeAction": action})
                       for action in ("return", "abort", "exit")]
-    if args.case:
-        cases = [case for case in cases if case[0] == args.case]
-        if not cases:
-            parser.error("Unknown case for the selected suite")
+    try:
+        cases = select_cases(cases, args.case)
+    except ValueError as error:
+        parser.error(str(error))
     reports = []
     for name, selector, extras in cases:
         run_id = uuid.uuid4().hex
@@ -193,6 +285,8 @@ def main():
         returncode = -1
         evidence_file = None
         evidence_image = None
+        timeout_source = None
+        checkpoints = []
         try:
             result = subprocess.run(command, capture_output=True, timeout=60)
             output = (result.stdout + result.stderr).decode("utf-8", errors="replace")
@@ -200,13 +294,23 @@ def main():
         except subprocess.TimeoutExpired as error:
             output = (error.stdout or b"").decode("utf-8", errors="replace") + "\nHOST_TIMEOUT_60_SECONDS\n"
             timed_out = True
+            timeout_source = "host"
+        if "TestTimedOutException" in output:
+            timed_out = True
+            timeout_source = timeout_source or "device"
         passed = instrumentation_passed(output, returncode, timed_out)
+        try:
+            checkpoints = instrumentation_progress(output, run_id)
+        except ValueError as error:
+            output += f"\nREGRESSION_PROGRESS_ERROR: {error}\n"
+            passed = False
         if args.suite in ("performance", "vcpkg-managed", "course", "graphics-course", "market-layout") and name != "market-ui":
             try:
                 filename = (f"warm-cpp-scroll-{extras['performanceHighlight']}.json" if args.suite == "performance"
                             else f"course-{extras['courseLanguage']}-{extras['courseLesson']}.json" if args.suite == "course" and "courseLesson" in extras
-                            else f"course-assessment-{extras['courseLanguage']}.json" if args.suite == "course"
+                            else f"course-assessment-{extras['courseLanguage']}-{extras['assessmentPhase']}.json" if args.suite == "course"
                             else f"graphics-course-{extras['courseLanguage']}-{extras['graphicsLibrary']}.json" if args.suite == "graphics-course"
+                            else "market-tab-labels.json" if args.suite == "market-layout" and name == "tab-labels"
                             else f"market-search-{args.orientation}.json" if args.suite == "market-layout"
                             else f"vcpkg-managed-{name}.json")
                 evidence_command = ([args.adb, "-s", args.serial, "exec-out", "cat",
@@ -217,7 +321,16 @@ def main():
                 report = instrumentation_report(output)
                 if report is None:
                     evidence = subprocess.check_output(evidence_command, stderr=subprocess.PIPE, timeout=10)
-                    report = json.loads(evidence)
+                    if not evidence.strip():
+                        if passed or not checkpoints:
+                            raise ValueError("No current-run evidence; instrumentation did not write a final report")
+                        report = checkpoints[-1]
+                        evidence = json.dumps(report, ensure_ascii=False, indent=2).encode("utf-8")
+                    else:
+                        try:
+                            report = json.loads(evidence)
+                        except json.JSONDecodeError as error:
+                            raise ValueError("Device evidence is not JSON; no readable report was written for this test") from error
                 else:
                     evidence = json.dumps(report, ensure_ascii=False, indent=2).encode("utf-8")
                 if not isinstance(report, dict):
@@ -229,6 +342,8 @@ def main():
                 if passed:
                     if args.suite == "performance":
                         validate_performance_evidence(report, run_id, extras)
+                    elif args.suite == "market-layout" and name == "tab-labels":
+                        validate_tab_label_evidence(report, run_id)
                     elif args.suite == "market-layout":
                         png = validate_market_evidence(report, run_id, args.orientation)
                         evidence_image = f"{name}-{run_id}.png"
@@ -242,16 +357,19 @@ def main():
                                 report.get("orangeSamples", 0) <= 40 or report.get("blueSamples", 0) <= 200):
                             raise ValueError("Incomplete or stale graphical course evidence")
                     elif args.suite == "course" and "courseLesson" not in extras:
-                        validate_course_assessment_evidence(report, run_id, extras["courseLanguage"])
+                        validate_course_assessment_evidence(report, run_id, extras["courseLanguage"], extras["assessmentPhase"])
                     elif args.suite == "course":
                         if (report.get("runId") != run_id or report.get("passed") is not True or
                                 report.get("lesson") != extras["courseLesson"] or report.get("language") != extras["courseLanguage"] or
                                 extras.get("courseRecovery") == "true" and report.get("recoveredFromCompileError") is not True):
                             raise ValueError("Incomplete or stale course execution evidence")
-                    elif report.get("runId") != run_id or report.get("passed") is not True or report.get("phase") != name:
-                        raise ValueError("Incomplete or stale managed vcpkg evidence")
+                    else:
+                        validate_vcpkg_evidence(report, run_id, name, extras.get("marketReuseFixtureId"))
             except (subprocess.SubprocessError, ValueError, OSError) as error:
                 output += f"\nREGRESSION_EVIDENCE_ERROR: {error}\n"
+                if checkpoints and evidence_file is None:
+                    evidence_file = f"{name}-{run_id}-metrics.json"
+                    (args.output / evidence_file).write_text(json.dumps(checkpoints[-1], ensure_ascii=False, indent=2), encoding="utf-8")
                 passed = False
         if not passed:
             # Both host and device-side timeouts can leave instrumentation alive.
@@ -267,7 +385,11 @@ def main():
         reports.append(dict(name=name, selector=selector, extras=extras, serial=args.serial,
                             orientation=args.orientation, buildType=args.build_type, seconds=round(time.monotonic() - started, 2),
                             passed=passed, timed_out=timed_out, returncode=returncode, runId=run_id,
-                            evidenceFile=evidence_file))
+                            evidenceFile=evidence_file, timeoutSource=timeout_source,
+                            lastStage="complete" if passed else checkpoints[-1].get("failedStage", checkpoints[-1]["stage"]) if checkpoints else
+                            "test-body" if "INSTRUMENTATION_STATUS: class=" in output else "instrumentation-startup",
+                            checkpoints=[{"stage": checkpoint["stage"], "elapsedMs": checkpoint["elapsedMs"]}
+                                         for checkpoint in checkpoints]))
         if evidence_image:
             reports[-1]["evidenceImage"] = evidence_image
         print(("PASS " if passed else "FAIL ") + name, flush=True)

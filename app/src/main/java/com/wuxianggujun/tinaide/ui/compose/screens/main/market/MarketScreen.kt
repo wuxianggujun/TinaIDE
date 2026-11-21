@@ -5,7 +5,6 @@ package com.wuxianggujun.tinaide.ui.compose.screens.main.market
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -21,7 +20,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -35,11 +33,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SuggestionChip
-import androidx.compose.material3.LeadingIconTab
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -89,8 +84,6 @@ import com.wuxianggujun.tinaide.ui.compose.components.TinaTopBar
 import com.wuxianggujun.tinaide.ui.compose.components.tinaBackAction
 import com.wuxianggujun.tinaide.ui.compose.screens.settings.sections.GitHubRegistryProxyDialog
 import org.koin.androidx.compose.koinViewModel
-
-private val LeadingMarketTabsMinWidth = 480.dp
 
 enum class MarketTab(val index: Int) {
     PLUGINS(0),
@@ -266,32 +259,7 @@ fun MarketScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                val leadingIcons = maxWidth >= LeadingMarketTabsMinWidth
-                val destinations = listOf(
-                    Strings.market_tab_plugins to Icons.Default.Extension,
-                    Strings.market_tab_packages to Icons.Default.Inventory,
-                    Strings.market_tab_vcpkg to Icons.Default.Build,
-                )
-                PrimaryTabRow(
-                    selectedTabIndex = selectedTab,
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    contentColor = MaterialTheme.colorScheme.primary,
-                ) {
-                    destinations.forEachIndexed { index, (label, imageVector) ->
-                        val text: @Composable () -> Unit = {
-                            Text(stringResource(label), style = MaterialTheme.typography.labelLarge,
-                                maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
-                        val icon: @Composable () -> Unit = { Icon(imageVector, contentDescription = null) }
-                        if (leadingIcons) {
-                            LeadingIconTab(selected = selectedTab == index, onClick = { selectedTab = index }, text = text, icon = icon)
-                        } else {
-                            Tab(selected = selectedTab == index, onClick = { selectedTab = index }, text = text, icon = icon)
-                        }
-                    }
-                }
-            }
+            MarketTabRow(selectedTab = selectedTab, onTabSelected = { selectedTab = it })
 
             Box(
                 modifier = Modifier

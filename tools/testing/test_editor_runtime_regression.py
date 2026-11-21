@@ -1,9 +1,12 @@
 import unittest
 import base64
 import struct
+import json
 
 from run_editor_runtime_regression import (
-    instrumentation_passed, instrumentation_report, validate_course_assessment_evidence, validate_market_evidence,
+    COURSE_ASSESSMENT_CHECKS, COURSE_ASSESSMENT_METHODS, COURSE_ASSESSMENT_PHASES, instrumentation_passed, instrumentation_progress,
+    instrumentation_report, select_cases, validate_course_assessment_evidence, validate_market_evidence,
+    validate_tab_label_evidence, validate_vcpkg_evidence,
 )
 
 
@@ -67,6 +70,91 @@ class CourseAssessmentEvidenceTest(unittest.TestCase):
                 validate_course_assessment_evidence(self.report() | changes, "current", "zh")
 
 
+    def test_each_bounded_phase_requires_its_own_checks_and_identity(self):
+        for phase, checks in COURSE_ASSESSMENT_CHECKS.items():
+            report = dict(runId="current", passed=True, language="zh", checks=5, assessmentPhase=phase)
+            report.update({check: True for check in checks})
+            with self.subTest(phase=phase):
+                validate_course_assessment_evidence(report, "current", "zh", phase)
+                for missing in checks:
+                    with self.assertRaises(ValueError):
+                        validate_course_assessment_evidence(report | {missing: False}, "current", "zh", phase)
+                with self.assertRaises(ValueError):
+                    validate_course_assessment_evidence(report | {"assessmentPhase": "all"}, "current", "zh", phase)
+                with self.assertRaises(ValueError):
+                    validate_course_assessment_evidence(report, "old", "zh", phase)
+
+
+class InstrumentationProgressTest(unittest.TestCase):
+    @staticmethod
+    def output(*checkpoints):
+        return "".join("INSTRUMENTATION_STATUS: tina_regression_progress=" + json.dumps(checkpoint) + "\r\n"
+                       for checkpoint in checkpoints)
+
+    def test_progress_survives_a_timeout_without_becoming_a_success_report(self):
+        checkpoint = dict(runId="current", stage="configure", elapsedMs=1000, passed=False)
+        output = self.output(checkpoint) + "HOST_TIMEOUT_60_SECONDS\n"
+        self.assertEqual(instrumentation_progress(output, "current"), [checkpoint])
+        self.assertIsNone(instrumentation_report(output))
+        self.assertFalse(instrumentation_passed(output, 0, True))
+
+    def test_progress_does_not_replace_the_final_completed_test(self):
+        output = self.output(dict(runId="current", stage="cleanup", elapsedMs=1000, passed=True))
+        self.assertFalse(instrumentation_passed(output, 0, False))
+        self.assertIsNone(instrumentation_report(output))
+
+    def test_ignores_prior_run_checkpoints(self):
+        output = self.output(dict(runId="old", stage="configure", elapsedMs=1000))
+        self.assertEqual(instrumentation_progress(output, "current"), [])
+
+    def test_invalid_or_non_monotonic_progress_is_rejected(self):
+        checkpoint = dict(runId="current", stage="configure", elapsedMs=1000)
+        for changes in ({"stage": ""}, {"elapsedMs": -1}, {"elapsedMs": True}):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                instrumentation_progress(self.output(checkpoint | changes), "current")
+        with self.assertRaises(ValueError):
+            instrumentation_progress(self.output(checkpoint, checkpoint | {"elapsedMs": 999}), "current")
+        with self.assertRaises(ValueError):
+            instrumentation_progress(self.output([]), "current")
+
+
+class BoundedCaseSelectionTest(unittest.TestCase):
+    def test_each_assessment_phase_has_an_independent_junit_method(self):
+        self.assertEqual(set(COURSE_ASSESSMENT_METHODS), set(COURSE_ASSESSMENT_PHASES))
+        self.assertEqual(len(set(COURSE_ASSESSMENT_METHODS.values())), len(COURSE_ASSESSMENT_PHASES))
+
+    def test_legacy_course_case_selects_all_phases_in_order(self):
+        cases = [(f"assess-{language}-{phase}", "selector", {})
+                 for language in ("zh", "en") for phase in COURSE_ASSESSMENT_PHASES]
+        self.assertEqual([name for name, _, _ in select_cases(cases, "assess-en")],
+                         [f"assess-en-{phase}" for phase in COURSE_ASSESSMENT_PHASES])
+        self.assertEqual(select_cases(cases, "assess-zh-cancel"), [cases[2]])
+
+    def test_market_reuse_includes_installation_before_run(self):
+        cases = [(name, "selector", {}) for name in ("catalog", "market-install", "market-reuse-run", "shared")]
+        self.assertEqual(select_cases(cases, "market-reuse"), cases[1:3])
+        self.assertEqual(select_cases(cases, None), cases)
+
+    def test_unknown_or_incomplete_group_is_not_silently_selected(self):
+        for cases, requested in (([], "unknown"), ([("market-install", "selector", {})], "market-reuse")):
+            with self.subTest(requested=requested), self.assertRaises(ValueError):
+                select_cases(cases, requested)
+
+
+class MarketReuseEvidenceTest(unittest.TestCase):
+    def test_reuse_requires_the_current_installation_and_unchanged_libraries(self):
+        report = dict(runId="current", passed=True, phase="market-reuse-run", marketReuseFixtureId="fixture",
+                      marketInstalled=True, runReusedInstalledLibrary=True,
+                      installedLibraryTimestampUnchanged=True, installedLibraryHashesUnchanged=True,
+                      installedLibraryIdentityUnchanged=True)
+        validate_vcpkg_evidence(report, "current", "market-reuse-run", "fixture")
+        for changes in ({"marketReuseFixtureId": "old"}, {"marketInstalled": False},
+                        {"runReusedInstalledLibrary": False}, {"installedLibraryTimestampUnchanged": False},
+                        {"installedLibraryHashesUnchanged": False}, {"installedLibraryIdentityUnchanged": False}):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                validate_vcpkg_evidence(report | changes, "current", "market-reuse-run", "fixture")
+
+
 class MarketEvidenceTest(unittest.TestCase):
     def report(self):
         # Only the protocol header is needed for identity/dimension validation.
@@ -116,6 +204,39 @@ class MarketEvidenceTest(unittest.TestCase):
         report["width"] = 1201
         with self.assertRaises(ValueError):
             validate_market_evidence(report, "current", "landscape")
+
+
+class MarketTabLabelEvidenceTest(unittest.TestCase):
+    @staticmethod
+    def report():
+        return dict(runId="current", passed=True, variants=[
+            dict(language=language, widthDp=width, fontScale=scale,
+                 labels=[dict(lineCount=1, overflowWidth=False, overflowHeight=False, ellipsized=False) for _ in range(3)])
+            for language in ("zh", "en") for width in (240, 320) for scale in (1, 1.5, 2)])
+
+    def test_complete_current_matrix_passes(self):
+        validate_tab_label_evidence(self.report(), "current")
+
+    def test_clipping_or_ellipsis_is_not_a_pass(self):
+        for changes in ({"lineCount": 2}, {"lineCount": True}, {"overflowWidth": True},
+                        {"overflowHeight": True}, {"ellipsized": True}):
+            report = self.report()
+            report["variants"][0]["labels"][0].update(changes)
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                validate_tab_label_evidence(report, "current")
+
+    def test_partial_duplicate_stale_or_wrong_scale_matrix_is_rejected(self):
+        report = self.report()
+        for changed in (report | {"variants": report["variants"][:-1]},
+                        report | {"variants": [report["variants"][0]] * 12}, report | {"runId": "old"},
+                        report | {"passed": False}):
+            with self.subTest(changed=changed), self.assertRaises(ValueError):
+                validate_tab_label_evidence(changed, "current")
+        for scale in (True, float("nan"), "large"):
+            report = self.report()
+            report["variants"][0]["fontScale"] = scale
+            with self.subTest(scale=scale), self.assertRaises(ValueError):
+                validate_tab_label_evidence(report, "current")
 
 
 if __name__ == "__main__":
