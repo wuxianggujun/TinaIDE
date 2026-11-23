@@ -1,5 +1,6 @@
 package com.wuxianggujun.tinaide.ui.compose.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -8,14 +9,11 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -23,10 +21,17 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CloseFullscreen
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DragHandle
+import androidx.compose.material.icons.filled.DragIndicator
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.OpenInFull
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.Icon
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -41,20 +46,33 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.wuxianggujun.tinaide.core.i18n.Strings
+import com.wuxianggujun.tinaide.ui.runtime.GraphicalOverlayWindowState
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import kotlinx.coroutines.coroutineScope
@@ -66,20 +84,20 @@ import timber.log.Timber
  * Shared controls displayed over every fullscreen graphical runtime.
  *
  * 提供：
- * - 可拖拽的半透明小球（始终显示）
- * - 开启悬浮日志时默认展开，可手动折叠
+ * - 收起时只显示一个可拖拽控制球，返回与日志入口放在菜单内
+ * - 日志标题栏可拖拽，右下角可缩放，支持最大化和还原
  * - 日志面板捕获当前图形进程的全部日志标签
  */
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
-fun GraphicalRuntimeOverlay(
+internal fun GraphicalRuntimeOverlay(
     enableFloatingLog: Boolean,
     onExit: () -> Unit,
-    windowBounds: IntSize,
-    onDragWindow: (Offset) -> Unit,
+    windowState: GraphicalOverlayWindowState,
     modifier: Modifier = Modifier,
 ) {
-    var expanded by rememberSaveable(enableFloatingLog) { mutableStateOf(enableFloatingLog) }
-    var showExitDialog by remember { mutableStateOf(false) }
+    var showControlMenu by remember { mutableStateOf(false) }
+    var showExitDialog by rememberSaveable { mutableStateOf(false) }
 
     val logLines = remember { mutableStateListOf<LogEntry>() }
     val listState = rememberLazyListState()
@@ -99,32 +117,41 @@ fun GraphicalRuntimeOverlay(
         }
     }
 
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(FloatingControlGap)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(FloatingControlGap)) {
-            FloatingControlButton(
-                icon = Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = stringResource(Strings.floating_overlay_ball_desc),
-                onTap = { showExitDialog = true },
-                onDrag = onDragWindow,
-            )
-            if (enableFloatingLog) {
-                FloatingControlButton(
-                    icon = Icons.Default.Terminal,
-                    contentDescription = stringResource(Strings.floating_overlay_log_title),
-                    active = expanded,
-                    onTap = { expanded = !expanded },
-                    onDrag = onDragWindow,
-                )
-            }
-        }
-        if (expanded && enableFloatingLog) {
+    LaunchedEffect(enableFloatingLog) {
+        if (!enableFloatingLog) windowState.collapseWindow()
+    }
+    val density = LocalDensity.current
+    val bounds = windowState.bounds
+    Box(modifier = modifier
+        .size(with(density) { bounds.width.toDp() }, with(density) { bounds.height.toDp() })
+        .testTag("graphical-overlay-root")
+        .semantics { testTagsAsResourceId = true },
+    ) {
+        if (windowState.expanded && enableFloatingLog) {
             FloatingLogPanel(
                 logLines = logLines,
                 listState = listState,
                 onClearLog = { logLines.clear() },
-                onClose = { expanded = false },
                 onExit = { showExitDialog = true },
-                windowBounds = windowBounds,
+                windowState = windowState,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            FloatingControlButton(
+                icon = if (enableFloatingLog) Icons.Default.Terminal else Icons.Default.MoreVert,
+                contentDescription = stringResource(Strings.floating_overlay_ball_desc),
+                onTap = { showControlMenu = !showControlMenu },
+                onDrag = { delta ->
+                    showControlMenu = false
+                    windowState.dragBy(delta)
+                },
+                modifier = Modifier.fillMaxSize().testTag("graphical-overlay-control"),
+            )
+            GraphicalRuntimeActionsMenu(
+                expanded = showControlMenu,
+                onDismiss = { showControlMenu = false },
+                onOpenLog = if (enableFloatingLog) windowState::openWindow else null,
+                onExit = { showExitDialog = true },
             )
         }
     }
@@ -150,41 +177,31 @@ private fun FloatingControlButton(
     contentDescription: String,
     onTap: () -> Unit,
     onDrag: (Offset) -> Unit,
-    active: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val currentOnTap by rememberUpdatedState(onTap)
     val currentOnDrag by rememberUpdatedState(onDrag)
     Surface(
         modifier = modifier
-            .size(FloatingControlSize)
             .shadow(6.dp, CircleShape)
-            .alpha(0.7f)
-            .pointerInput(Unit) {
-                detectDragGestures { change, dragAmount ->
-                    change.consume()
-                    currentOnDrag(dragAmount)
-                }
+            .alpha(0.85f)
+            .semantics(mergeDescendants = true) {
+                this.contentDescription = contentDescription
+                role = Role.Button
+                onClick(label = contentDescription) { currentOnTap(); true }
             }
+            .floatingDrag { currentOnDrag(it) }
             .pointerInput(Unit) {
                 detectTapGestures(onTap = { currentOnTap() })
             },
         shape = CircleShape,
-        color = if (active) {
-            MaterialTheme.colorScheme.primary
-        } else {
-            MaterialTheme.colorScheme.surfaceVariant
-        },
-        contentColor = if (active) {
-            MaterialTheme.colorScheme.onPrimary
-        } else {
-            MaterialTheme.colorScheme.onSurfaceVariant
-        }
+        color = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
                 imageVector = icon,
-                contentDescription = contentDescription,
+                contentDescription = null,
                 modifier = Modifier.size(24.dp)
             )
         }
@@ -196,84 +213,173 @@ private fun FloatingLogPanel(
     logLines: List<LogEntry>,
     listState: androidx.compose.foundation.lazy.LazyListState,
     onClearLog: () -> Unit,
-    onClose: () -> Unit,
     onExit: () -> Unit,
-    windowBounds: IntSize,
+    windowState: GraphicalOverlayWindowState,
     modifier: Modifier = Modifier,
 ) {
-    val density = LocalDensity.current
-    val windowSize = windowBounds
-    val panelWidth = with(density) { (windowSize.width * FLOATING_LOG_PANEL_WIDTH_FRACTION).toDp() }
-    val expandedLogHeight = with(density) {
-        (windowSize.height * FLOATING_LOG_PANEL_HEIGHT_FRACTION).toDp()
-            .coerceAtMost((windowSize.height.toDp() - 200.dp).coerceAtLeast(48.dp))
-    }
-    val logPanelHeight = if (logLines.isEmpty()) {
-        FloatingLogPanelEmptyHeight.coerceAtMost(expandedLogHeight)
-    } else {
-        expandedLogHeight
-    }
+    var showMenu by remember { mutableStateOf(false) }
     val panelShape = RoundedCornerShape(TinaShapes.DialogCorner)
-
     TinaOverlayPanelSurface(
-        modifier = modifier
-            .widthIn(max = panelWidth),
+        modifier = modifier.testTag("graphical-log-window"),
         shape = panelShape,
         containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
         tonalElevation = 8.dp,
-        shadowElevation = 8.dp
+        shadowElevation = 8.dp,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            TinaCustomDialogHeader(
-                title = stringResource(Strings.floating_overlay_log_title),
-                trailingContent = {
-                    if (logLines.isNotEmpty()) {
-                        FloatingOverlayActionButton(
-                            onClick = onClearLog,
-                            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.24f)
-                        ) {
-                            Icon(
-                                Icons.Default.Delete,
-                                contentDescription = stringResource(Strings.floating_overlay_log_clear),
-                                tint = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(8.dp))
+        Box(Modifier.fillMaxSize()) {
+            Column(Modifier.fillMaxSize()) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    val dragLabel = stringResource(Strings.floating_overlay_window_drag)
+                    Row(
+                        modifier = Modifier.weight(1f).height(48.dp).padding(start = 8.dp)
+                            .testTag("graphical-log-drag-handle")
+                            .semantics { contentDescription = dragLabel }
+                            .floatingDrag(windowState::dragBy)
+                            .pointerInput(windowState) {
+                                detectTapGestures(onDoubleTap = { windowState.toggleMaximized() })
+                            },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Default.DragIndicator, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            text = stringResource(Strings.floating_overlay_log_title),
+                            style = MaterialTheme.typography.labelMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(start = 4.dp),
+                        )
                     }
-
-                    FloatingOverlayActionButton(onClick = onClose) {
+                    FloatingOverlayActionButton(
+                        onClick = windowState::toggleMaximized,
+                        modifier = Modifier.testTag("graphical-log-maximize"),
+                    ) {
                         Icon(
-                            Icons.Default.Close,
-                            contentDescription = stringResource(Strings.floating_overlay_exit_confirm_no),
-                            modifier = Modifier.size(18.dp)
+                            if (windowState.maximized) Icons.Default.CloseFullscreen else Icons.Default.OpenInFull,
+                            stringResource(if (windowState.maximized) Strings.floating_overlay_window_restore else Strings.floating_overlay_window_maximize),
+                            Modifier.size(20.dp),
+                        )
+                    }
+                    FloatingOverlayActionButton(
+                        onClick = windowState::collapseWindow,
+                        modifier = Modifier.testTag("graphical-log-collapse"),
+                    ) {
+                        Icon(Icons.Default.Remove, stringResource(Strings.floating_overlay_window_minimize), Modifier.size(20.dp))
+                    }
+                    Box {
+                        FloatingOverlayActionButton(
+                            onClick = { showMenu = true },
+                            modifier = Modifier.testTag("graphical-log-more"),
+                        ) {
+                            Icon(Icons.Default.MoreVert, stringResource(Strings.content_desc_more_actions), Modifier.size(20.dp))
+                        }
+                        GraphicalRuntimeActionsMenu(
+                            expanded = showMenu,
+                            onDismiss = { showMenu = false },
+                            onClearLog = onClearLog,
+                            canClearLog = logLines.isNotEmpty(),
+                            onExit = onExit,
                         )
                     }
                 }
-            )
-
-            FloatingLogContent(
-                logLines = logLines,
-                listState = listState,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(logPanelHeight)
-            )
-
-            TinaDialogActionRow {
-                TinaOutlinedButton(
-                    text = stringResource(Strings.floating_overlay_exit),
-                    onClick = onExit,
-                    leadingIcon = Icons.AutoMirrored.Filled.ArrowBack
+                FloatingLogContent(
+                    logLines = logLines,
+                    listState = listState,
+                    modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
                 )
             }
+            if (!windowState.maximized) {
+                FloatingWindowResizeHandle(windowState, Modifier.align(Alignment.BottomEnd))
+            }
         }
+    }
+}
+
+/** Drag regions are limited to the control, title and resize grip; never the engine/content area. */
+@Composable
+private fun Modifier.floatingDrag(onDrag: (Offset) -> Unit): Modifier {
+    val currentOnDrag by rememberUpdatedState(onDrag)
+    var coordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    return onGloballyPositioned { coordinates = it }.pointerInput(Unit) {
+        var previousScreenPosition: Offset? = null
+        detectDragGestures(
+            onDragStart = { previousScreenPosition = null },
+            onDragEnd = { previousScreenPosition = null },
+            onDragCancel = { previousScreenPosition = null },
+        ) { change, overSlopDelta ->
+            // Moving a PopupWindow also moves its local origin. Local deltas lose part
+            // of the finger's movement; compare actual screen positions instead.
+            val screenPosition = coordinates?.takeIf { it.isAttached }
+                ?.localToScreen(change.position)?.takeIf { it.x.isFinite() && it.y.isFinite() }
+            val previous = previousScreenPosition
+            val delta = if (screenPosition != null && previous != null) screenPosition - previous else overSlopDelta
+            previousScreenPosition = screenPosition
+            change.consume()
+            currentOnDrag(delta)
+        }
+    }
+}
+
+@Composable
+private fun FloatingWindowResizeHandle(windowState: GraphicalOverlayWindowState, modifier: Modifier = Modifier) {
+    val resizeLabel = stringResource(Strings.floating_overlay_window_resize)
+    val growLabel = stringResource(Strings.floating_overlay_window_grow)
+    val shrinkLabel = stringResource(Strings.floating_overlay_window_shrink)
+    val step = with(LocalDensity.current) { 32.dp.toPx() }
+    Box(
+        modifier = modifier.size(32.dp).testTag("graphical-log-resize")
+            .semantics {
+                contentDescription = resizeLabel
+                customActions = listOf(
+                    CustomAccessibilityAction(growLabel) { windowState.resizeBy(Offset(step, step)); true },
+                    CustomAccessibilityAction(shrinkLabel) { windowState.resizeBy(Offset(-step, -step)); true },
+                )
+            }
+            .floatingDrag(windowState::resizeBy),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(Icons.Default.DragHandle, null, Modifier.size(20.dp).rotate(-45f), tint = MaterialTheme.colorScheme.primary)
+    }
+}
+
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+private fun GraphicalRuntimeActionsMenu(
+    expanded: Boolean,
+    onDismiss: () -> Unit,
+    onExit: () -> Unit,
+    onOpenLog: (() -> Unit)? = null,
+    onClearLog: (() -> Unit)? = null,
+    canClearLog: Boolean = false,
+) {
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismiss,
+        modifier = Modifier.semantics { testTagsAsResourceId = true },
+    ) {
+        if (onOpenLog != null) {
+            DropdownMenuItem(
+                text = { Text(stringResource(Strings.floating_overlay_log_title)) },
+                leadingIcon = { Icon(Icons.Default.Terminal, null) },
+                onClick = { onDismiss(); onOpenLog() },
+                modifier = Modifier.testTag("graphical-overlay-open-log"),
+            )
+        }
+        if (onClearLog != null) {
+            DropdownMenuItem(
+                text = { Text(stringResource(Strings.floating_overlay_log_clear)) },
+                leadingIcon = { Icon(Icons.Default.Delete, null) },
+                onClick = { onDismiss(); onClearLog() },
+                enabled = canClearLog,
+                modifier = Modifier.testTag("graphical-overlay-clear-log"),
+            )
+        }
+        DropdownMenuItem(
+            text = { Text(stringResource(Strings.floating_overlay_exit)) },
+            leadingIcon = { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) },
+            onClick = { onDismiss(); onExit() },
+            modifier = Modifier.testTag("graphical-overlay-exit"),
+        )
     }
 }
 
@@ -348,8 +454,8 @@ private fun FloatingOverlayActionButton(
 ) {
     TinaPanelSegmentButton(
         onClick = onClick,
-        modifier = modifier.size(32.dp),
-        minHeight = 32.dp,
+        modifier = modifier.size(48.dp),
+        minHeight = 48.dp,
         color = color,
         contentPadding = PaddingValues(0.dp),
         contentAlignment = Alignment.Center,
@@ -385,11 +491,6 @@ data class LogEntry(
 private const val MAX_LOG_LINES = 500
 private const val MAX_LOG_LINE_CHARS = 8_192
 private const val LOGCAT_INITIAL_LINE_COUNT = 200
-private const val FLOATING_LOG_PANEL_WIDTH_FRACTION = 0.85f
-private const val FLOATING_LOG_PANEL_HEIGHT_FRACTION = 0.60f
-private val FloatingControlSize = 48.dp
-private val FloatingControlGap = 8.dp
-private val FloatingLogPanelEmptyHeight = 112.dp
 
 /**
  * Keep engine-specific and user-defined log tags, bounded to the current graphical process.

@@ -7,7 +7,9 @@ Goal: draw, handle input, read logs, and exit safely using the native template. 
 1. Tap **Create / resume chapter project** to prepare the independent tina_course_08_sdl3, complete sources, and SDL3 run configuration. vcpkg is disabled. The console chapter stays unchanged; no backups or manual file replacement are needed.
 2. Use this stage's Market action to install the Android SDL3 package under **Market → Packages**. This is a built-in package, not a similarly named vcpkg port. Project creation does not download libraries; install the package before building if missing.
 3. Reopen this chapter from Projects and review the two prefilled files below.
-4. Enable **Graphics options → Floating log** in the run configuration and check the window-ready log on the next run.
+4. Enable **Graphics options → Floating log** in the run configuration and run. Tap the single floating control, select **Runtime Log**, and check the window-ready message. Logs start collapsed to keep graphics visible.
+
+Drag the log title to move the window and its bottom-right grip to resize it. The title bar has maximize / restore, minimize, and an overflow menu; double-tapping the title also maximizes or restores. Minimizing keeps its size and position while capture continues. Choose **Back to Editor** from the menu and confirm to stop the graphical program. These controls resize the log window, not SDL rendering; touches outside the window still reach your program.
 
 `CMakeLists.txt`:
 

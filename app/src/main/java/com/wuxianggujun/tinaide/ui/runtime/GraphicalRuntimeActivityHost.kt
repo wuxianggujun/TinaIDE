@@ -17,8 +17,11 @@ import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.unit.IntRect
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.doOnAttach
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -59,6 +62,8 @@ internal class GraphicalRuntimeActivityHost(
     private var overlayPopup: PopupWindow? = null
     private var overlayContainer: ViewGroup? = null
     private var overlayLayoutListener: View.OnLayoutChangeListener? = null
+    private var overlayWindowState: GraphicalOverlayWindowState? = null
+    private var restoredWindowSnapshot: GraphicalOverlayWindowState.Snapshot? = null
     private var backCallback: OnBackInvokedCallback? = null
 
     @Volatile
@@ -81,6 +86,7 @@ internal class GraphicalRuntimeActivityHost(
             return false
         }
         viewTreeOwner.performRestore(savedInstanceState)
+        restoredWindowSnapshot = savedInstanceState?.getBundle(OVERLAY_WINDOW_STATE)?.readWindowSnapshot()
         LogProcessRegistry.recordCurrentProcess(activity)
 
         environmentOwnerId =
@@ -106,28 +112,40 @@ internal class GraphicalRuntimeActivityHost(
 
         viewTreeOwner.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
 
-        fun bounds(): IntSize = IntSize(
-            container.rootView.width.takeIf { it > 0 } ?: activity.resources.displayMetrics.widthPixels,
-            container.rootView.height.takeIf { it > 0 } ?: activity.resources.displayMetrics.heightPixels,
-        )
-        val windowBounds = mutableStateOf(bounds())
-        var positionX = 16
-        var positionY = (windowBounds.value.height * 0.2f).toInt()
+        fun bounds(): IntRect {
+            val root = container.rootView
+            val width = root.width.takeIf { it > 0 } ?: activity.resources.displayMetrics.widthPixels
+            val height = root.height.takeIf { it > 0 } ?: activity.resources.displayMetrics.heightPixels
+            val insets = ViewCompat.getRootWindowInsets(root)?.getInsetsIgnoringVisibility(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout(),
+            )
+            return IntRect(
+                insets?.left ?: 0,
+                insets?.top ?: 0,
+                (width - (insets?.right ?: 0)).coerceAtLeast((insets?.left ?: 0) + 1),
+                (height - (insets?.bottom ?: 0)).coerceAtLeast((insets?.top ?: 0) + 1),
+            )
+        }
         val popup = PopupWindow(activity).apply {
-            width = ViewGroup.LayoutParams.WRAP_CONTENT
-            height = ViewGroup.LayoutParams.WRAP_CONTENT
             isFocusable = false
             isTouchable = true
             isOutsideTouchable = false
             isClippingEnabled = true
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) isTouchModal = false
             inputMethodMode = PopupWindow.INPUT_METHOD_NOT_NEEDED
             setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         }
-        fun updatePosition() {
-            positionX = positionX.coerceIn(0, (windowBounds.value.width - (overlayView?.width ?: 0)).coerceAtLeast(0))
-            positionY = positionY.coerceIn(0, (windowBounds.value.height - (overlayView?.height ?: 0)).coerceAtLeast(0))
-            if (popup.isShowing) popup.update(positionX, positionY, -1, -1)
-        }
+        val windowState = GraphicalOverlayWindowState(
+            viewport = bounds(),
+            density = activity.resources.displayMetrics.density,
+            restored = restoredWindowSnapshot?.let { it.copy(expanded = it.expanded && enableFloatingLog) },
+            onBoundsChanged = { rect ->
+                if (popup.isShowing) popup.update(rect.left, rect.top, rect.width, rect.height)
+            },
+        )
+        overlayWindowState = windowState
+        popup.width = windowState.bounds.width
+        popup.height = windowState.bounds.height
 
         val composeView = ComposeView(activity).apply {
             setViewTreeLifecycleOwner(viewTreeOwner)
@@ -139,12 +157,7 @@ internal class GraphicalRuntimeActivityHost(
                     GraphicalRuntimeOverlay(
                         enableFloatingLog = enableFloatingLog,
                         onExit = onExit,
-                        windowBounds = windowBounds.value,
-                        onDragWindow = { delta ->
-                            positionX += delta.x.toInt()
-                            positionY += delta.y.toInt()
-                            updatePosition()
-                        },
+                        windowState = windowState,
                     )
                 }
             }
@@ -167,15 +180,17 @@ internal class GraphicalRuntimeActivityHost(
         overlayPopup = popup
         overlayContainer = container
         overlayAttached = true
-        composeView.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> updatePosition() }
         overlayLayoutListener = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
-            windowBounds.value = bounds()
-            updatePosition()
+            windowState.updateViewport(bounds(), activity.resources.displayMetrics.density)
         }.also(container::addOnLayoutChangeListener)
         container.doOnAttach {
             container.post {
                 if (overlayAttached && container.isAttachedToWindow && !activity.isFinishing && !activity.isDestroyed) {
-                    popup.showAtLocation(container, Gravity.TOP or Gravity.START, positionX, positionY)
+                    windowState.updateViewport(bounds(), activity.resources.displayMetrics.density)
+                    val rect = windowState.bounds
+                    popup.width = rect.width
+                    popup.height = rect.height
+                    popup.showAtLocation(container, Gravity.TOP or Gravity.LEFT, rect.left, rect.top)
                 }
             }
         }
@@ -198,7 +213,12 @@ internal class GraphicalRuntimeActivityHost(
     fun onStop() = dispatchOverlayEvent(Lifecycle.Event.ON_STOP)
 
     fun onSaveInstanceState(outState: Bundle) {
-        if (prepared) viewTreeOwner.performSave(outState)
+        if (prepared) {
+            overlayWindowState?.snapshot()?.let { snapshot ->
+                outState.putBundle(OVERLAY_WINDOW_STATE, snapshot.toBundle())
+            }
+            viewTreeOwner.performSave(outState)
+        }
     }
 
     fun requestReturnToParentOnFinish() {
@@ -262,6 +282,7 @@ internal class GraphicalRuntimeActivityHost(
                 overlayPopup = null
                 viewTreeOwner.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
                 overlayView = null
+                overlayWindowState = null
                 overlayAttached = false
             }
             viewTreeOwner.clear()
@@ -283,6 +304,29 @@ internal class GraphicalRuntimeActivityHost(
 
     private companion object {
         const val NATIVE_QUIT_GRACE_PERIOD_MS = 800L
+        const val OVERLAY_WINDOW_STATE = "graphical_overlay_window"
+        const val WINDOW_GEOMETRY = "geometry_dp"
+        const val WINDOW_EXPANDED = "expanded"
+        const val WINDOW_MAXIMIZED = "maximized"
+
+        fun GraphicalOverlayWindowState.Snapshot.toBundle(): Bundle = Bundle().apply {
+            putBoolean(WINDOW_EXPANDED, expanded)
+            putBoolean(WINDOW_MAXIMIZED, maximized)
+            putFloatArray(WINDOW_GEOMETRY, floatArrayOf(
+                windowBoundsDp.left, windowBoundsDp.top, windowBoundsDp.right, windowBoundsDp.bottom,
+                ballPositionDp.x, ballPositionDp.y,
+            ))
+        }
+
+        fun Bundle.readWindowSnapshot(): GraphicalOverlayWindowState.Snapshot? {
+            val geometry = getFloatArray(WINDOW_GEOMETRY)?.takeIf { it.size == 6 } ?: return null
+            return GraphicalOverlayWindowState.Snapshot(
+                expanded = getBoolean(WINDOW_EXPANDED),
+                maximized = getBoolean(WINDOW_MAXIMIZED),
+                windowBoundsDp = Rect(geometry[0], geometry[1], geometry[2], geometry[3]),
+                ballPositionDp = Offset(geometry[4], geometry[5]),
+            ).takeIf { it.isValid() }
+        }
     }
 }
 

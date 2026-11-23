@@ -2405,8 +2405,15 @@
   <string name="floating_overlay_log_title">运行日志</string>
   <string name="floating_overlay_log_empty">暂无日志输出</string>
   <string name="floating_overlay_log_clear">清空</string>
-  <string name="floating_overlay_ball_desc">悬浮返回按钮</string>
-  <string name="floating_overlay_double_back_hint">再按一次返回键退出，或点击悬浮球退出</string>
+  <string name="floating_overlay_ball_desc">图形程序悬浮控制</string>
+  <string name="floating_overlay_double_back_hint">再按一次返回键退出，或从悬浮菜单返回编辑器</string>
+  <string name="floating_overlay_window_drag">拖动日志窗口，双击标题最大化或还原</string>
+  <string name="floating_overlay_window_resize">拖动右下角调整日志窗口大小</string>
+  <string name="floating_overlay_window_maximize">最大化日志窗口</string>
+  <string name="floating_overlay_window_restore">还原日志窗口</string>
+  <string name="floating_overlay_window_minimize">收起日志窗口</string>
+  <string name="floating_overlay_window_grow">放大日志窗口</string>
+  <string name="floating_overlay_window_shrink">缩小日志窗口</string>
   <string name="floating_overlay_log_capture_failed">无法读取当前图形程序的运行日志</string>
 
   <string name="sdl_host_title">SDL 运行界面</string>

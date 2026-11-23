@@ -24,6 +24,8 @@ Change the GitHub/HTTP proxy in Market, then cancel and retry a failed task. Git
 
 Enable **Graphics options → Floating log** in the run configuration. Inspect the user program exit code and errors. Resolve assets relative to the configured working directory or asset entry, not a desktop path. Keep user-runtime failures separate from IDE crashes.
 
+Only one floating control is shown initially. Tap it to open **Runtime Log** or choose **Back to Editor**. Drag the log title to move, double-tap it to maximize / restore, and drag the bottom-right grip to resize. Minimizing retains size and position and keeps capturing logs; it does not exit. Returning to the editor requires confirmation and stops the program. Touches outside the popup continue to the graphical program; resizing logs does not change its rendering size.
+
 | Error | Check first |
 | --- | --- |
 | Syntax error | Saved file, line number, and actual source list |

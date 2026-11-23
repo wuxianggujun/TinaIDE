@@ -7,8 +7,45 @@ from run_editor_runtime_regression import (
     COURSE_ASSESSMENT_CHECKS, COURSE_ASSESSMENT_METHODS, COURSE_ASSESSMENT_PHASES, instrumentation_passed, instrumentation_progress,
     instrumentation_report, select_cases, validate_course_assessment_evidence, validate_market_evidence,
     validate_tab_label_evidence, validate_vcpkg_evidence, validate_tutorial_project_evidence,
-    validate_fmt_course_evidence, validate_tutorial_ui_evidence,
+    validate_fmt_course_evidence, validate_tutorial_ui_evidence, validate_graphics_overlay_evidence,
 )
+
+
+class GraphicsOverlayEvidenceTest(unittest.TestCase):
+    def report(self):
+        flags = ("referenceExercise", "collapsedControl", "controlDragged", "openedLog", "dragged", "grew", "shrunk", "maximized",
+                 "restored", "preservedGeometry", "chromeTouchIsolated", "outsideTouchDelivered", "exitConfirmation", "ideSurvived", "pointerFollowing")
+        return dict(runId="current", passed=True, library="sdl3", language="zh", orientation="portrait",
+                    orangeSamples=100, greenSamples=100, orangeAfterPopupInput=100, blueSamples=300,
+                    screenWidth=1080, screenHeight=1920, touchSlopPx=14, controlBounds=[20, 100, 100, 180],
+                    movedControlBounds=[79, 126, 159, 206], initialBounds=[20, 100, 620, 700],
+                    draggedBounds=[46, 159, 646, 759], grownBounds=[46, 159, 706, 819],
+                    shrunkBounds=[46, 159, 606, 719], maximizedBounds=[8, 24, 1072, 1900], **dict.fromkeys(flags, True))
+
+    def test_complete_runtime_and_window_report_passes(self):
+        validate_graphics_overlay_evidence(self.report(), "current", "zh", "portrait")
+
+    def test_stale_wrong_orientation_or_unproven_touch_is_rejected(self):
+        for changes in ({"runId": "old"}, {"orientation": "landscape"}, {"language": "en"},
+                        {"referenceExercise": False}, {"outsideTouchDelivered": False}, {"greenSamples": 0},
+                        {"restored": 1}, {"chromeTouchIsolated": False}, {"exitConfirmation": False}, {"controlDragged": False}):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                validate_graphics_overlay_evidence(self.report() | changes, "current", "zh", "portrait")
+
+    def test_invalid_offscreen_or_unchanged_geometry_is_rejected(self):
+        report = self.report()
+        for changes in ({"screenWidth": 0}, {"grownBounds": [40, 160, 1400, 820]},
+                        {"movedControlBounds": report["controlBounds"]}, {"movedControlBounds": [80, 120, 180, 200]},
+                        {"shrunkBounds": [40, 160, 0, 820]}, {"draggedBounds": report["initialBounds"]},
+                        {"grownBounds": report["draggedBounds"]}, {"maximizedBounds": report["shrunkBounds"]}):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                validate_graphics_overlay_evidence(report | changes, "current", "zh", "portrait")
+
+    def test_drag_must_follow_screen_coordinates_after_touch_slop(self):
+        for changes in ({"pointerFollowing": False}, {"touchSlopPx": 0}, {"touchSlopPx": True},
+                        {"movedControlBounds": [52, 114, 132, 194]}, {"draggedBounds": [38, 141, 638, 741]}):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                validate_graphics_overlay_evidence(self.report() | changes, "current", "zh", "portrait")
 
 
 class TutorialFixEvidenceTest(unittest.TestCase):

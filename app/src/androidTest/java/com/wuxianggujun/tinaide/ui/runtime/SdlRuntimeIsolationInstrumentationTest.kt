@@ -94,6 +94,7 @@ class SdlRuntimeIsolationInstrumentationTest {
         automation.serviceInfo = automation.serviceInfo.apply {
             flags = flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
         }
+        GraphicalOverlayDeviceDriver(automation).openLog()
         val logTitle = context.getString(Strings.floating_overlay_log_title)
         fun hasVisibleLog(node: AccessibilityNodeInfo?): Boolean {
             if (node == null) return false

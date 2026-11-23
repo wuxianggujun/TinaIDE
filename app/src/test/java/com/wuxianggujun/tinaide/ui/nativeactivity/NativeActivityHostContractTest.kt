@@ -144,8 +144,9 @@ class NativeActivityHostContractTest {
             "src/main/java/com/wuxianggujun/tinaide/ui/compose/components/GraphicalRuntimeOverlay.kt",
         ).readText(Charsets.UTF_8)
 
-        assertThat(overlaySource).contains("onTap = { showExitDialog = true }")
-        assertThat(overlaySource).contains("onTap = { expanded = !expanded }")
+        assertThat(overlaySource).contains("GraphicalRuntimeActionsMenu(")
+        assertThat(overlaySource).contains("onOpenLog = if (enableFloatingLog) windowState::openWindow else null")
+        assertThat(overlaySource).contains("onExit = { showExitDialog = true }")
     }
 
     @Test

@@ -42,6 +42,7 @@ jobs:
       - name: Test distribution policy and device result checks
         run: |
           python3 -m unittest discover -s tools/checks -p 'test_*.py'
+          python3 -m unittest discover -s tools/testing -p 'test_editor_runtime_regression.py'
           python3 tools/checks/check_distribution.py
 
       - name: Run i18n checks
@@ -96,7 +97,7 @@ jobs:
             -Dorg.gradle.internal.http.socketTimeout=120000 \
             -Dorg.gradle.internal.repository.max.retries=4
 
-      - name: Run host lifecycle, split editor, and storage regression tests
+      - name: Run host lifecycle, split editor, storage, and graphics overlay regression tests
         run: |
           ./gradlew -Ptina.devAbi=arm64 -Ptina.buildProotFromSource=false \
             :app:testArm64DebugUnitTest \
@@ -106,6 +107,9 @@ jobs:
             --tests "*CompileActionsHelperTest" \
             --tests "*EditorFontSizeHostIntegrationTest" --tests "*EditorContainerStateTest" \
             --tests "*EditorSplitPaneStateTest" --tests "*SplitEditorSessionStorageTest" \
+            --tests "*GraphicalOverlayWindowStateTest" --tests "*GraphicalRuntimeOverlayTest" \
+            --tests "*GraphicalRuntimeActivityHostTest" --tests "*GraphicalRuntimeExitGuardTest" \
+            --tests "*NativeActivityHostContractTest" --tests "*GraphicalRuntimeLogcatCommandTest" \
             --no-daemon --configure-on-demand \
             -Dorg.gradle.internal.http.connectionTimeout=120000 \
             -Dorg.gradle.internal.http.socketTimeout=120000 \

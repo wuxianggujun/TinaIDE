@@ -26,6 +26,7 @@ EDITOR_CASES = (
     "foldGutterHitTargets_followFontGeometryAfterPinch",
 )
 MAX_MARKET_SCREENSHOT_BYTES = 512 * 1024
+MAX_GRAPHICS_DRAG_ERROR_PX = 4
 COURSE_ASSESSMENT_PHASES = ("save", "reject", "cancel", "timeout")
 COURSE_ASSESSMENT_METHODS = {
     "save": "savesRebuildsChecksAndRecordsOnlySuccessfulRuns",
@@ -144,6 +145,44 @@ def validate_vcpkg_evidence(report: dict, run_id: str, phase: str, fixture_id: s
             raise ValueError("Market run did not prove installed dependency reuse")
 
 
+def validate_graphics_overlay_evidence(report: dict, run_id: str, language: str, orientation: str) -> None:
+    checks = ("referenceExercise", "collapsedControl", "controlDragged", "openedLog", "dragged", "grew", "shrunk",
+              "maximized", "restored", "preservedGeometry", "chromeTouchIsolated", "outsideTouchDelivered",
+              "exitConfirmation", "ideSurvived", "pointerFollowing")
+    if (report.get("runId") != run_id or report.get("passed") is not True or report.get("library") != "sdl3" or
+            report.get("language") != language or report.get("orientation") != orientation or
+            any(report.get(key) is not True for key in checks)):
+        raise ValueError("Incomplete or stale graphical overlay evidence")
+    for key, minimum in (("orangeSamples", 40), ("greenSamples", 40), ("orangeAfterPopupInput", 40), ("blueSamples", 200)):
+        if type(report.get(key)) is not int or report[key] <= minimum:
+            raise ValueError("Graphical overlay did not prove actual SDL3 rendering and touch delivery")
+    width, height = report.get("screenWidth"), report.get("screenHeight")
+    if type(width) is not int or type(height) is not int or width <= 0 or height <= 0:
+        raise ValueError("Missing graphical display bounds")
+    sizes = {}
+    for key in ("controlBounds", "movedControlBounds", "initialBounds", "draggedBounds", "grownBounds", "shrunkBounds", "maximizedBounds"):
+        rect = report.get(key)
+        if (not isinstance(rect, list) or len(rect) != 4 or any(type(item) is not int for item in rect) or
+                not (0 <= rect[0] < rect[2] <= width and 0 <= rect[1] < rect[3] <= height)):
+            raise ValueError("Floating window was invalid or outside the display")
+        sizes[key] = (rect[2] - rect[0], rect[3] - rect[1])
+    if (report["controlBounds"] == report["movedControlBounds"] or sizes["controlBounds"] != sizes["movedControlBounds"] or
+            report["initialBounds"] == report["draggedBounds"] or
+            not all(grown > dragged for grown, dragged in zip(sizes["grownBounds"], sizes["draggedBounds"])) or
+            not all(shrunk < grown for shrunk, grown in zip(sizes["shrunkBounds"], sizes["grownBounds"])) or
+            not all(maximized > shrunk for maximized, shrunk in zip(sizes["maximizedBounds"], sizes["shrunkBounds"]))):
+        raise ValueError("Floating control/window geometry did not prove drag, grow, shrink and maximize")
+    slop = report.get("touchSlopPx")
+    if type(slop) is not int or not 0 < slop < math.hypot(72, 32):
+        raise ValueError("Missing graphical touch threshold")
+    for before, after, delta_x, delta_y in (("controlBounds", "movedControlBounds", 72, 32),
+                                           ("initialBounds", "draggedBounds", 32, -72 if orientation == "landscape" else 72)):
+        scale = 1 - slop / math.hypot(delta_x, delta_y)
+        if any(abs(report[after][axis] - report[before][axis] - delta * scale) > MAX_GRAPHICS_DRAG_ERROR_PX
+               for axis, delta in enumerate((delta_x, delta_y))):
+            raise ValueError("Floating drag did not follow screen coordinates after touch slop")
+
+
 def validate_fmt_course_evidence(report: dict, run_id: str, language: str) -> None:
     if (report.get("runId") != run_id or report.get("passed") is not True or report.get("language") != language or
             any(report.get(key) is not True for key in ("declaredFmt", "usesFmt", "installedFmt", "reusedFmt", "preservedSources")) or
@@ -231,7 +270,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--adb", default="adb")
     parser.add_argument("--serial", required=True)
-    parser.add_argument("--suite", choices=("editor", "host", "runtime", "packages", "vcpkg", "vcpkg-managed", "course", "tutorial-project", "fmt-course", "tutorial-ui", "graphics-course", "performance", "market-layout"), required=True)
+    parser.add_argument("--suite", choices=("editor", "host", "runtime", "packages", "vcpkg", "vcpkg-managed", "course", "tutorial-project", "fmt-course", "tutorial-ui", "graphics-course", "graphics-overlay", "performance", "market-layout"), required=True)
     parser.add_argument("--build-type", choices=("debug", "release"), default="debug", help="Select the App instrumentation package")
     parser.add_argument("--root-evidence", action="store_true", help="Read only this suite's private evidence on an explicitly rooted emulator")
     parser.add_argument("--package-id", default="fmt", help="Market package used by the packages suite")
@@ -309,8 +348,9 @@ def main():
             cases += [(f"assess-{language}-{phase}", assessment_class + "#" + COURSE_ASSESSMENT_METHODS[phase],
                        {"courseLanguage": language, "assessmentPhase": phase})
                       for language in ("zh", "en") for phase in COURSE_ASSESSMENT_PHASES]
-        elif args.suite == "graphics-course":
-            selector = "com.wuxianggujun.tinaide.core.compile.GraphicsCourseDeviceTest#lessonBuildsAndDrawsThroughProductionHost"
+        elif args.suite in ("graphics-course", "graphics-overlay"):
+            method = "floatingControlsResizeWithoutStealingProgramInput" if args.suite == "graphics-overlay" else "lessonBuildsAndDrawsThroughProductionHost"
+            selector = "com.wuxianggujun.tinaide.core.compile.GraphicsCourseDeviceTest#" + method
             cases = [(f"{language}-{library}", selector, {"courseLanguage": language, "graphicsLibrary": library})
                      for language in ("zh", "en") for library in ("sdl3",)]
         elif args.suite == "performance":
@@ -334,7 +374,7 @@ def main():
         run_id = uuid.uuid4().hex
         target = "com.wuxianggujun.tinaide" if package in ("com.wuxianggujun.tinaide.test", "com.wuxianggujun.tinaide.release.test") else package
         command = [args.adb, "-s", args.serial, "shell", "am", "instrument", "-w", "-r",
-                   "-e", "timeout_msec", "55000" if args.suite in ("vcpkg-managed", "course", "tutorial-project", "fmt-course", "graphics-course") else "45000", "-e", "editorOrientation", args.orientation,
+                   "-e", "timeout_msec", "55000" if args.suite in ("vcpkg-managed", "course", "tutorial-project", "fmt-course", "graphics-course", "graphics-overlay") else "45000", "-e", "editorOrientation", args.orientation,
                    "-e", "regressionRunId", run_id, "-e", "class", selector]
         for key, value in extras.items():
             command += ["-e", key, value]
@@ -363,12 +403,13 @@ def main():
         except ValueError as error:
             output += f"\nREGRESSION_PROGRESS_ERROR: {error}\n"
             passed = False
-        if args.suite in ("performance", "vcpkg-managed", "course", "tutorial-project", "fmt-course", "tutorial-ui", "graphics-course", "market-layout") and name != "market-ui":
+        if args.suite in ("performance", "vcpkg-managed", "course", "tutorial-project", "fmt-course", "tutorial-ui", "graphics-course", "graphics-overlay", "market-layout") and name != "market-ui":
             try:
                 filename = (f"warm-cpp-scroll-{extras['performanceHighlight']}.json" if args.suite == "performance"
                             else f"course-project-{name}.json" if args.suite == "tutorial-project"
                             else f"tutorial-fmt-{name}.json" if args.suite == "fmt-course"
                             else f"tutorial-ui-{name}.json" if args.suite == "tutorial-ui"
+                            else f"graphics-overlay-{extras['courseLanguage']}-{extras['graphicsLibrary']}.json" if args.suite == "graphics-overlay"
                             else f"course-{extras['courseLanguage']}-{extras['courseLesson']}.json" if args.suite == "course" and "courseLesson" in extras
                             else f"course-assessment-{extras['courseLanguage']}-{extras['assessmentPhase']}.json" if args.suite == "course"
                             else f"graphics-course-{extras['courseLanguage']}-{extras['graphicsLibrary']}.json" if args.suite == "graphics-course"
@@ -408,6 +449,8 @@ def main():
                         validate_fmt_course_evidence(report, run_id, extras["courseLanguage"])
                     elif args.suite == "tutorial-ui":
                         validate_tutorial_ui_evidence(report, run_id, name)
+                    elif args.suite == "graphics-overlay":
+                        validate_graphics_overlay_evidence(report, run_id, extras["courseLanguage"], args.orientation)
                     elif args.suite == "performance":
                         validate_performance_evidence(report, run_id, extras)
                     elif args.suite == "market-layout" and name == "tab-labels":
@@ -462,7 +505,7 @@ def main():
             reports[-1]["evidenceImage"] = evidence_image
         print(("PASS " if passed else "FAIL ") + name, flush=True)
         (args.output / "results.json").write_text(json.dumps(reports, ensure_ascii=False, indent=2), encoding="utf-8")
-        if timed_out or (not passed and args.suite in ("packages", "vcpkg", "vcpkg-managed", "course", "tutorial-project", "fmt-course", "graphics-course")):
+        if timed_out or (not passed and args.suite in ("packages", "vcpkg", "vcpkg-managed", "course", "tutorial-project", "fmt-course", "graphics-course", "graphics-overlay")):
             break
     return 0 if all(report["passed"] for report in reports) and len(reports) == len(cases) else 1
 
