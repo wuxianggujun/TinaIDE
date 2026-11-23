@@ -7,7 +7,38 @@ from run_editor_runtime_regression import (
     COURSE_ASSESSMENT_CHECKS, COURSE_ASSESSMENT_METHODS, COURSE_ASSESSMENT_PHASES, instrumentation_passed, instrumentation_progress,
     instrumentation_report, select_cases, validate_course_assessment_evidence, validate_market_evidence,
     validate_tab_label_evidence, validate_vcpkg_evidence, validate_tutorial_project_evidence,
+    validate_fmt_course_evidence, validate_tutorial_ui_evidence,
 )
+
+
+class TutorialFixEvidenceTest(unittest.TestCase):
+    def test_complete_fmt_chapter_and_reuse_report_passes(self):
+        report = dict(runId="current", passed=True, language="zh", output="total=30\n",
+                      declaredFmt=True, usesFmt=True, installedFmt=True, reusedFmt=True, preservedSources=True)
+        validate_fmt_course_evidence(report, "current", "zh")
+        for changes in ({"runId": "old"}, {"language": "en"}, {"declaredFmt": False}, {"reusedFmt": 1},
+                        {"usesFmt": False}, {"output": "old total=30 output"}):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                validate_fmt_course_evidence(report | changes, "current", "zh")
+
+    def test_real_highlight_and_readonly_markdown_evidence_is_required(self):
+        report = dict(runId="current", passed=True, highlightedBlocks=3, coloredSamples=[21, 100, 40], readOnly=True, copiedWholeCode=True)
+        validate_tutorial_ui_evidence(report, "current", "markdown")
+        for changes in ({"runId": "old"}, {"coloredSamples": [0, 100, 40]}, {"readOnly": False},
+                        {"coloredSamples": [100, 100]}, {"copiedWholeCode": False}):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                validate_tutorial_ui_evidence(report | changes, "current", "markdown")
+
+    def test_project_titles_require_the_complete_matrix_and_badges_below(self):
+        variants = [dict(name=name, language=locale, widthDp=width, fontScale=scale, completeName=True, tagsBelowTitle=True)
+                    for name in ("tina_course_07_vcpkg", "a_much_longer_project_name") for locale in ("zh", "en")
+                    for width in (280, 320) for scale in (1, 1.5, 2)]
+        report = dict(runId="current", passed=True, variantCount=24, variants=variants)
+        validate_tutorial_ui_evidence(report, "current", "project-titles")
+        for changed in (variants[:-1], [variants[0]] * 24, variants[:-1] + [variants[-1] | {"completeName": False}],
+                        variants[:-1] + [variants[-1] | {"tagsBelowTitle": False}]):
+            with self.subTest(changed=changed), self.assertRaises(ValueError):
+                validate_tutorial_ui_evidence(report | {"variants": changed}, "current", "project-titles")
 
 
 class InstrumentationVerdictTest(unittest.TestCase):

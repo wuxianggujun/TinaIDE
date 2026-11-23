@@ -29,7 +29,7 @@ object TutorialProjectBlueprints {
         "cpp_collections" to LessonPlan("cpp-collections", "tina_course_04_collections"),
         "cpp_raii" to LessonPlan("cpp-raii", "tina_course_05_raii"),
         "cmake_practice" to LessonPlan("cmake-practice", "tina_course_06_cmake", mainLesson = "cpp-raii", cmakeLesson = "cmake-practice"),
-        "vcpkg_guide" to LessonPlan("vcpkg-practice", "tina_course_07_vcpkg", mainLesson = "cpp-raii", cmakeLesson = "vcpkg-practice", useVcpkg = true),
+        "vcpkg_guide" to LessonPlan("vcpkg-practice", "tina_course_07_vcpkg", cmakeLesson = "vcpkg-practice", useVcpkg = true),
         "graphics_sdl3" to LessonPlan("graphics-sdl3", "tina_course_08_sdl3", cmakeLesson = "graphics-sdl3", includePricing = false, isSdl3 = true),
         "ai_practice" to LessonPlan("ai-practice", "tina_course_09_ai", cmakeLesson = "ai-practice"),
     )
@@ -50,6 +50,7 @@ object TutorialProjectBlueprints {
             "CMakeLists.txt" to source(plan.cmakeLesson, "CMakeLists.txt"),
             "main.cpp" to source(plan.mainLesson, "main.cpp"),
         )
+        if (plan.useVcpkg) files["vcpkg.json"] = source(plan.lesson, "vcpkg.json")
         if (plan.includePricing) {
             files["pricing.h"] = source("cpp-functions", "pricing.h")
             files["pricing.cpp"] = source("cpp-functions", "pricing.cpp")
@@ -70,7 +71,7 @@ object TutorialProjectBlueprints {
     }
 
     private val PROJECT_FILE_BLOCK = Regex(
-        "(?m)^<!-- tutorial-project-file: (CMakeLists\\.txt|main\\.cpp|pricing\\.h|pricing\\.cpp) -->[ \\t]*\\r?\\n" +
-            "(?:[ \\t]*\\r?\\n)*```(?:cpp|cmake)\\r?\\n([\\s\\S]*?)\\r?\\n```[ \\t]*\\r?$",
+        "(?m)^<!-- tutorial-project-file: (CMakeLists\\.txt|main\\.cpp|pricing\\.h|pricing\\.cpp|vcpkg\\.json) -->[ \\t]*\\r?\\n" +
+            "(?:[ \\t]*\\r?\\n)*```(?:cpp|cmake|json)\\r?\\n([\\s\\S]*?)\\r?\\n```[ \\t]*\\r?$",
     )
 }

@@ -4614,14 +4614,14 @@ kept=%3$d bytes
   <string name="tutorial_onboarding_desc">快速了解 TinaIDE 的主要功能</string>
   <string name="tutorial_complete_cpp_course_title">C++ 完整实操路线：从项目到运行</string>
   <string name="tutorial_complete_cpp_course_desc">按章节学习 IDE、C++、CMake、依赖与图形；一键准备独立练习工程，保留修改并自动保存学习进度。</string>
-  <string name="tutorial_course_vcpkg_desc">一键准备本章工程，再在市场添加 fmt，修改输出并运行验证；创建不会自动联网安装依赖。</string>
+  <string name="tutorial_course_vcpkg_desc">一键准备已声明并使用 fmt 的完整工程，运行后验证依赖安装、链接与复用；创建不会联网下载依赖。</string>
   <string name="tutorial_course_step_check_title">最终检查 · 验收完整流程</string>
   <string name="tutorial_course_step_check_desc">回答最后一个问题，确认你已经掌握从创建到运行的基本闭环。</string>
   <string name="tutorial_course_action_open_projects">查看项目列表</string>
   <string name="tutorial_course_project_create_or_resume">创建／继续本章项目</string>
   <string name="tutorial_course_project_preparing">正在准备并打开项目…</string>
   <string name="tutorial_course_project_storage_note">自动准备完整文件，保存在应用私有项目目录，可从项目列表继续打开或导出。重复打开保留修改，各章互不覆盖。</string>
-  <string name="tutorial_course_project_vcpkg_note">清单与 CMake 自动准备；fmt 仍需在市场添加并安装，创建项目不会联网下载依赖。</string>
+  <string name="tutorial_course_project_vcpkg_note">新工程已声明 fmt 并使用它输出；首次运行会安装依赖，创建本身不联网。已有空清单请在市场添加 fmt。</string>
   <string name="tutorial_course_project_sdl3_note">SDL3 工程与运行配置自动准备；缺少 Android SDL3 包时，请先到市场安装后再构建。</string>
   <string name="tutorial_course_project_failed">项目准备失败，已有文件保持不变。请检查可用存储空间，再点击创建／继续重试。</string>
   <string name="tutorial_course_action_open_market">去市场添加依赖</string>
@@ -4651,7 +4651,7 @@ kept=%3$d bytes
   <string name="tutorial_course_quiz_hint_1">先判断是哪一步失败：配置找不到包、编译语法错误，还是链接找不到实现。查看构建日志中最早的有效错误。</string>
   <string name="tutorial_course_quiz_hint_2">如果 totalPrice 未定义，检查 pricing.cpp 是否参与目标或 pricing 库是否已链接。修改后保存、构建，再运行。</string>
   <string name="tutorial_course_quiz_hint_3">应选择“读构建日志定位首个错误，修复最小问题后重新构建”。忽略报错可能运行旧产物；乱改参数会增加问题。选择答案后再点击完成课程。</string>
-  <string name="course_vcpkg_title">实践 7：给现有项目接入 fmt</string>
+  <string name="course_vcpkg_title">实践 7：fmt 依赖与构建</string>
 
   <!-- Onboarding Steps -->
   <string name="tutorial_step_project_tab_title">项目</string>

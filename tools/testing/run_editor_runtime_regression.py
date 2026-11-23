@@ -144,6 +144,41 @@ def validate_vcpkg_evidence(report: dict, run_id: str, phase: str, fixture_id: s
             raise ValueError("Market run did not prove installed dependency reuse")
 
 
+def validate_fmt_course_evidence(report: dict, run_id: str, language: str) -> None:
+    if (report.get("runId") != run_id or report.get("passed") is not True or report.get("language") != language or
+            any(report.get(key) is not True for key in ("declaredFmt", "usesFmt", "installedFmt", "reusedFmt", "preservedSources")) or
+            not isinstance(report.get("output"), str) or "total=30" not in report["output"].splitlines()):
+        raise ValueError("Incomplete or stale production fmt chapter evidence")
+
+
+def validate_tutorial_ui_evidence(report: dict, run_id: str, case: str) -> None:
+    if report.get("runId") != run_id or report.get("passed") is not True:
+        raise ValueError("Incomplete or stale tutorial UI evidence")
+    if case == "markdown":
+        samples = report.get("coloredSamples")
+        if (report.get("highlightedBlocks") != 3 or report.get("readOnly") is not True or
+                report.get("copiedWholeCode") is not True or not isinstance(samples, list) or len(samples) != 3 or
+                any(type(sample) is not int or sample <= 20 for sample in samples)):
+            raise ValueError("Markdown did not prove editor highlighting, read-only display and whole-code copy")
+    else:
+        variants = report.get("variants")
+        if case != "project-titles" or not isinstance(variants, list) or report.get("variantCount") != 24:
+            raise ValueError("Missing project title matrix")
+        observed = []
+        for item in variants:
+            if (not isinstance(item, dict) or not isinstance(item.get("name"), str) or not item["name"] or
+                    item.get("completeName") is not True or item.get("tagsBelowTitle") is not True or
+                    item.get("language") not in ("zh", "en") or type(item.get("widthDp")) is not int or
+                    type(item.get("fontScale")) not in (int, float) or not math.isfinite(item["fontScale"])):
+                raise ValueError("Project names were truncated or shared the badge row")
+            observed.append((item["name"], item["language"], item["widthDp"], item["fontScale"]))
+        names = {item[0] for item in observed}
+        expected = {(name, locale, width, scale) for name in names for locale in ("zh", "en")
+                    for width in (280, 320) for scale in (1, 1.5, 2)}
+        if len(names) != 2 or len(observed) != 24 or set(observed) != expected:
+            raise ValueError("Incomplete project title locale/width/font-scale matrix")
+
+
 def validate_tab_label_evidence(report: dict, run_id: str) -> None:
     expected = {(language, width, scale) for language in ("zh", "en") for width in (240, 320)
                 for scale in (1, 1.5, 2)}
@@ -196,7 +231,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--adb", default="adb")
     parser.add_argument("--serial", required=True)
-    parser.add_argument("--suite", choices=("editor", "host", "runtime", "packages", "vcpkg", "vcpkg-managed", "course", "tutorial-project", "graphics-course", "performance", "market-layout"), required=True)
+    parser.add_argument("--suite", choices=("editor", "host", "runtime", "packages", "vcpkg", "vcpkg-managed", "course", "tutorial-project", "fmt-course", "tutorial-ui", "graphics-course", "performance", "market-layout"), required=True)
     parser.add_argument("--build-type", choices=("debug", "release"), default="debug", help="Select the App instrumentation package")
     parser.add_argument("--root-evidence", action="store_true", help="Read only this suite's private evidence on an explicitly rooted emulator")
     parser.add_argument("--package-id", default="fmt", help="Market package used by the packages suite")
@@ -257,6 +292,13 @@ def main():
             selector = "com.wuxianggujun.tinaide.core.compile.TutorialProjectDeviceTest#bundledChaptersCreateReopenAndRunOffline"
             cases = [(language, selector, {"courseLanguage": language}) for language in ("zh", "en")]
             cases.append(("navigation", "com.wuxianggujun.tinaide.ui.compose.editor.TutorialProjectNavigationInstrumentationTest#chapterButtonOpensRealEditorAndReopensWithoutRewritingFiles", {}))
+        elif args.suite == "fmt-course":
+            selector = "com.wuxianggujun.tinaide.core.compile.TutorialFmtCourseDeviceTest#generatedProjectInstallsBuildsRunsAndReusesFmt"
+            cases = [(language, selector, {"courseLanguage": language}) for language in ("zh", "en")]
+        elif args.suite == "tutorial-ui":
+            selector = "com.wuxianggujun.tinaide.ui.compose.editor.TutorialUiInstrumentationTest"
+            cases = [("markdown", selector + "#markdownUsesActualSyntaxColorsAndCopiesWithoutEditing", {}),
+                     ("project-titles", selector + "#projectNamesStayCompleteAndBadgesUseTheirOwnRows", {})]
         elif args.suite == "course":
             selector = "com.wuxianggujun.tinaide.core.compile.NativeCourseDeviceTest#lessonBuildsAndProducesItsExpectedOutput"
             cases = [(f"{language}-{lesson}", selector, {"courseLesson": lesson, "courseLanguage": language})
@@ -292,7 +334,7 @@ def main():
         run_id = uuid.uuid4().hex
         target = "com.wuxianggujun.tinaide" if package in ("com.wuxianggujun.tinaide.test", "com.wuxianggujun.tinaide.release.test") else package
         command = [args.adb, "-s", args.serial, "shell", "am", "instrument", "-w", "-r",
-                   "-e", "timeout_msec", "55000" if args.suite in ("vcpkg-managed", "course", "tutorial-project", "graphics-course") else "45000", "-e", "editorOrientation", args.orientation,
+                   "-e", "timeout_msec", "55000" if args.suite in ("vcpkg-managed", "course", "tutorial-project", "fmt-course", "graphics-course") else "45000", "-e", "editorOrientation", args.orientation,
                    "-e", "regressionRunId", run_id, "-e", "class", selector]
         for key, value in extras.items():
             command += ["-e", key, value]
@@ -321,10 +363,12 @@ def main():
         except ValueError as error:
             output += f"\nREGRESSION_PROGRESS_ERROR: {error}\n"
             passed = False
-        if args.suite in ("performance", "vcpkg-managed", "course", "tutorial-project", "graphics-course", "market-layout") and name != "market-ui":
+        if args.suite in ("performance", "vcpkg-managed", "course", "tutorial-project", "fmt-course", "tutorial-ui", "graphics-course", "market-layout") and name != "market-ui":
             try:
                 filename = (f"warm-cpp-scroll-{extras['performanceHighlight']}.json" if args.suite == "performance"
                             else f"course-project-{name}.json" if args.suite == "tutorial-project"
+                            else f"tutorial-fmt-{name}.json" if args.suite == "fmt-course"
+                            else f"tutorial-ui-{name}.json" if args.suite == "tutorial-ui"
                             else f"course-{extras['courseLanguage']}-{extras['courseLesson']}.json" if args.suite == "course" and "courseLesson" in extras
                             else f"course-assessment-{extras['courseLanguage']}-{extras['assessmentPhase']}.json" if args.suite == "course"
                             else f"graphics-course-{extras['courseLanguage']}-{extras['graphicsLibrary']}.json" if args.suite == "graphics-course"
@@ -360,6 +404,10 @@ def main():
                 if passed:
                     if args.suite == "tutorial-project":
                         validate_tutorial_project_evidence(report, run_id, extras.get("courseLanguage"))
+                    elif args.suite == "fmt-course":
+                        validate_fmt_course_evidence(report, run_id, extras["courseLanguage"])
+                    elif args.suite == "tutorial-ui":
+                        validate_tutorial_ui_evidence(report, run_id, name)
                     elif args.suite == "performance":
                         validate_performance_evidence(report, run_id, extras)
                     elif args.suite == "market-layout" and name == "tab-labels":
@@ -414,7 +462,7 @@ def main():
             reports[-1]["evidenceImage"] = evidence_image
         print(("PASS " if passed else "FAIL ") + name, flush=True)
         (args.output / "results.json").write_text(json.dumps(reports, ensure_ascii=False, indent=2), encoding="utf-8")
-        if timed_out or (not passed and args.suite in ("packages", "vcpkg", "vcpkg-managed", "course", "tutorial-project", "graphics-course")):
+        if timed_out or (not passed and args.suite in ("packages", "vcpkg", "vcpkg-managed", "course", "tutorial-project", "fmt-course", "graphics-course")):
             break
     return 0 if all(report["passed"] for report in reports) and len(reports) == len(cases) else 1
 

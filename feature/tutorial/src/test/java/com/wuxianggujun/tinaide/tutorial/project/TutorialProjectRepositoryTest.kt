@@ -68,6 +68,20 @@ class TutorialProjectRepositoryTest {
     }
 
     @Test
+    fun resumingAnExistingEmptyManifestNeverSilentlyReplacesLearnerFiles() = runTest {
+        val repository = repository()
+        val project = repository.prepare("vcpkg_guide", "zh")
+        val manifest = File(project, "vcpkg.json").apply { writeText("{\"dependencies\":[]}\n", Charsets.UTF_8) }
+        val source = File(project, "main.cpp").apply { appendText("// learner changes\n", Charsets.UTF_8) }
+        val snapshots = listOf(manifest, source).associateWith { it.readBytes() to it.lastModified() }
+        assertThat(repository.prepare("vcpkg_guide", "en")).isEqualTo(project)
+        snapshots.forEach { (file, snapshot) ->
+            assertThat(file.readBytes()).isEqualTo(snapshot.first)
+            assertThat(file.lastModified()).isEqualTo(snapshot.second)
+        }
+    }
+
+    @Test
     fun unownedDirectoryAndFileConflictsArePreserved() = runTest {
         projectsRoot.mkdirs()
         val baseName = TutorialProjectBlueprints.load("ide_workflow") { readBundledLesson(it, "zh") }.directoryName

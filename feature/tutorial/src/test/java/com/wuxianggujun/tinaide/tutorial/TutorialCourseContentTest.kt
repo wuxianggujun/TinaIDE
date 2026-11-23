@@ -109,12 +109,21 @@ class TutorialCourseContentTest {
     }
 
     @Test
+    fun bundledManifestMarkerIsHiddenWhileItsJsonCodeIsReadable() = runTest {
+        val state = loadTutorialCourseContent("vcpkg-practice.md") {
+            Result.success("# Lesson\n<!-- tutorial-project-file: vcpkg.json -->\n```json\n{\"dependencies\":[\"fmt\"]}\n```")
+        } as TutorialCourseContentState.Content
+        assertThat(state.markdown).doesNotContain("<!-- tutorial-project-file:")
+        assertThat(state.markdown).contains("{\"dependencies\":[\"fmt\"]}")
+    }
+
+    @Test
     fun bundledLessons_shouldHaveThreeLocalizedHintsWithMatchingReferenceCode() = runTest {
         val root = generateSequence(File(requireNotNull(System.getProperty("user.dir"))).absoluteFile) { it.parentFile }
             .first { File(it, "feature/help/src/main/assets/tutorial-course").isDirectory }
         val directory = File(root, "feature/help/src/main/assets/tutorial-course")
         val lessons = directory.listFiles().orEmpty().filter { it.extension == "md" }
-        val codeBlocks = Regex("(?ms)^```(?:cpp|cmake)\\r?\\n(.*?)^```[ \\t]*\\r?$")
+        val codeBlocks = Regex("(?ms)^```(?:cpp|cmake|json)\\r?\\n(.*?)^```[ \\t]*\\r?$")
         assertThat(lessons).hasSize(9)
 
         for (lesson in lessons) {

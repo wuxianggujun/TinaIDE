@@ -27,7 +27,7 @@ suspend fun loadTutorialCourseContent(
 
 private const val HINT_MARKER = "<!-- tutorial-hint -->"
 private val fenceOpening = Regex("^ {0,3}(`{3,}|~{3,})(.*)$")
-private val projectFileMarker = Regex("^<!-- tutorial-project-file: (?:CMakeLists\\.txt|main\\.cpp|pricing\\.h|pricing\\.cpp) -->$")
+private val projectFileMarker = Regex("^<!-- tutorial-project-file: (?:CMakeLists\\.txt|main\\.cpp|pricing\\.h|pricing\\.cpp|vcpkg\\.json) -->$")
 
 /** Hints live after the lesson in the same localized asset; fenced code remains verbatim. */
 private fun parseCourseContent(markdown: String): TutorialCourseContentState.Content {

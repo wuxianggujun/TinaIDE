@@ -90,7 +90,7 @@ import com.wuxianggujun.tinaide.tutorial.TutorialProjectUiState
 import com.wuxianggujun.tinaide.tutorial.project.TutorialProjectBlueprints
 import com.wuxianggujun.tinaide.tutorial.firstUnlockedCourseStepIndex
 import com.wuxianggujun.tinaide.tutorial.loadTutorialCourseContent
-import com.wuxianggujun.tinaide.ui.compose.components.MarkdownViewer
+import com.wuxianggujun.tinaide.ui.compose.components.EditorMarkdownViewer as MarkdownViewer
 import com.wuxianggujun.tinaide.ui.compose.components.TinaBackHandlers
 import com.wuxianggujun.tinaide.ui.compose.components.TinaCard
 import com.wuxianggujun.tinaide.ui.compose.components.TinaTopBar

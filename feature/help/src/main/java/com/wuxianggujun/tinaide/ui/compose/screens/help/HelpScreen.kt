@@ -48,7 +48,7 @@ import com.wuxianggujun.tinaide.core.help.HelpQuickActionSupport
 import com.wuxianggujun.tinaide.core.help.HelpSearchResult
 import com.wuxianggujun.tinaide.core.i18n.Drawables
 import com.wuxianggujun.tinaide.core.i18n.Strings
-import com.wuxianggujun.tinaide.ui.compose.components.MarkdownViewer
+import com.wuxianggujun.tinaide.ui.compose.components.EditorMarkdownViewer as MarkdownViewer
 import com.wuxianggujun.tinaide.ui.compose.components.TinaBackHandlers
 import com.wuxianggujun.tinaide.ui.compose.components.TinaSearchField
 import com.wuxianggujun.tinaide.ui.compose.components.TinaSpacing

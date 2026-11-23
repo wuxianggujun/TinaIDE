@@ -56,7 +56,7 @@ fmt 和 Android SDL3 包仍需用户明确添加、安装；自动创建不联�
 - 证据保存在 `app/build/verification/tutorial-project-20261121/`：`device-passed/results.json`、`course/*/results.json`、`graphics-verified/results.json`、`graphics-sdl3-install/results.json`、`installed-apk.json`、`final-build.log`、`graphics-test-build.log`、`modules-regression.log`、`editor-shortcuts.log`。生成物不纳入 Git。
 - ARM64 Release：`:app:assembleArm64Release` 构建成功（38 分 3 秒），R8 与资源压缩完成，lintVital 无错误或警告，APK 签名验证及 ARM64 原生运行库/ELF 检查通过。使用 `-Ptina.autoIncrementReleaseVersion=false` 保留 `0.19.5` / `19062`，不修改 `version.properties`；APK 不带 debuggable 标记。产物为 `app/build/outputs/apk/arm64/release/TinaIDE-0.19.5-arm64-v8a-release.apk`，SHA-256：`df1ce93b9e5608b5e78f3359cb4fb4fb48b4ba65e811881464a635b5ff4e2ddc`。
 - R8 mapping 已按现有构建逻辑归档至 `app/mappings/0.19.5-nogit-20261121230831/arm64Release/`，只做本地保留；构建和校验记录见 `arm64-release-build.log`、`release-signature.log` 与 `release-verification.json`。
-- 真机安装尚未完成：构建开始前 PMS110 在线，构建结束后无线 ADB 已断开，原端口 `192.168.2.185:43525` 拒绝连接，mDNS 没有发现该设备。需要恢复 USB 调试连接或提供新的无线调试 IP 与连接端口；不卸载应用，不清空数据，不运行真机功能测试。
+- 2026-11-21 真机安装未完成：构建开始前 PMS110 在线，构建结束后无线 ADB 已断开，原端口 `192.168.2.185:43525` 拒绝连接，mDNS 没有发现该设备。2026-11-22 恢复连接后已用同一候选覆盖安装成功，手机包版本、非 debuggable 标记与 APK SHA-256 均已核对；没有卸载、清空数据或运行真机功能测试。详见 [安装结果与用户手测清单](2026-11-22_physical-install-and-tutorial-review.md)。
 
 最小模块验证命令：
 
@@ -86,4 +86,4 @@ py -X utf8 tools/testing/run_editor_runtime_regression.py --adb D:/Programs/Andr
 
 新功能提交的远端 [Core Regression Checks / 44918032908](https://github.com/wuxianggujun/TinaIDE/actions/runs/44918032908) 已全部成功，包含编辑器/编译器/安全/教程与宿主生命周期/分屏/存储回归。
 
-没有发布 GitHub 新版本，最新正式发布仍为 `v0.19.2`。本地签名 Release 已生成，但尚未安装到断开连接的 PMS110，也没有执行真机功能测试；两者不能写成已完成设备验收。
+本轮没有发布 GitHub 新版本，2026-11-21 核对的最新正式发布为 `v0.19.2`。本地签名 Release 在 2026-11-22 已覆盖安装到 PMS110，但没有执行真机功能测试，安装不能写成已完成设备功能验收。最新测试/文档提交 `e6a68514a` 的 CI 因 Robolectric 运行时下载 HTTP 429 失败，完整门禁仍需重跑，见上述续接记录。

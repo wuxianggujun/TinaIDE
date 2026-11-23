@@ -2,10 +2,27 @@ package com.wuxianggujun.tinaide.tutorial.project
 
 import com.google.common.truth.Truth.assertThat
 import java.io.File
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class TutorialProjectBlueprintsTest {
+    @Test
+    fun vcpkgStarterDeclaresAndUsesFmtBeforeItsFirstBuild() {
+        val files = blueprint("vcpkg_guide").files
+        assertThat(files.keys).contains("vcpkg.json")
+        val dependencies = Json.parseToJsonElement(files.getValue("vcpkg.json"))
+            .jsonObject.getValue("dependencies").jsonArray.map { it.jsonPrimitive.content }
+        assertThat(dependencies).containsExactly("fmt")
+        assertThat(files.getValue("main.cpp")).contains("#include <fmt/core.h>")
+        assertThat(files.getValue("main.cpp")).contains("fmt::print")
+        assertThat(files.getValue("CMakeLists.txt")).contains("find_package(fmt CONFIG REQUIRED)")
+        assertThat(files.getValue("CMakeLists.txt")).contains("fmt::fmt")
+    }
+
     @Test
     fun allNineChaptersHaveCompleteMatchingLocalizedStarterFiles() {
         assertThat(TutorialProjectBlueprints.stepIds).hasSize(9)
@@ -13,10 +30,10 @@ class TutorialProjectBlueprintsTest {
             val chinese = blueprint(stepId, "zh")
             val english = blueprint(stepId, "en")
             assertThat(english).isEqualTo(chinese)
-            val expectedFiles = if (stepId in setOf("ide_workflow", "cpp_basics", "graphics_sdl3")) {
-                setOf("CMakeLists.txt", "main.cpp")
-            } else {
-                setOf("CMakeLists.txt", "main.cpp", "pricing.h", "pricing.cpp")
+            val expectedFiles = when (stepId) {
+                "ide_workflow", "cpp_basics", "graphics_sdl3" -> setOf("CMakeLists.txt", "main.cpp")
+                "vcpkg_guide" -> setOf("CMakeLists.txt", "main.cpp", "pricing.h", "pricing.cpp", "vcpkg.json")
+                else -> setOf("CMakeLists.txt", "main.cpp", "pricing.h", "pricing.cpp")
             }
             assertThat(chinese.files.keys).containsExactlyElementsIn(expectedFiles)
             assertThat(chinese.files.getValue("CMakeLists.txt")).contains("project(native_lab LANGUAGES CXX)")
@@ -42,7 +59,6 @@ class TutorialProjectBlueprintsTest {
             assertThat(files.getValue("pricing.cpp")).doesNotContain("discountedTotal")
         }
         assertThat(blueprint("cmake_practice").files.getValue("main.cpp")).isEqualTo(raii.files.getValue("main.cpp"))
-        assertThat(blueprint("vcpkg_guide").files.getValue("main.cpp")).isEqualTo(raii.files.getValue("main.cpp"))
         assertThat(blueprint("cpp_basics").files.getValue("main.cpp")).contains("const int count = 3;")
     }
 

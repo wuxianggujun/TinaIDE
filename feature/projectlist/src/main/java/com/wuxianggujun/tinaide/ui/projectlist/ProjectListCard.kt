@@ -17,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -38,7 +39,7 @@ import java.io.File
 /**
  * 项目列表卡片 - 符合设计图样式
  */
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
 fun ProjectListCard(
     project: ProjectListItem,
@@ -83,6 +84,7 @@ fun ProjectListCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .testTag("project-list-card")
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = { showMenu = true }
@@ -97,106 +99,70 @@ fun ProjectListCard(
             MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
         )
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            // 项目图标
-            ProjectIcon(
-                projectName = project.displayName,
-                size = 48.dp
-            )
-
-            Spacer(Modifier.width(16.dp))
-
-            // 项目信息
-            Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        text = project.displayName,
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.SemiBold
-                        ),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false)
-                    )
-                    // 项目标签（可能有多个：Git + 构建系统）
-                    projectTags.forEach { tag ->
-                        ProjectTagChip(tag = tag)
-                    }
-                }
-
-                Spacer(Modifier.height(4.dp))
-
+            // Names are primary information: badges never compete for their title width.
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                ProjectIcon(projectName = project.displayName, size = 48.dp)
+                Spacer(Modifier.width(12.dp))
                 Text(
-                    text = simplifyPath(project.dir.absolutePath, context),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    text = project.displayName,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f).testTag("project-card-title"),
+                    softWrap = true,
                 )
-
-                // 如果是 Git 项目，显示分支信息
-                if (isGitProject) {
-                    Spacer(Modifier.height(4.dp))
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Text(
-                            text = "<>",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = "_BRANCH",
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                fontWeight = FontWeight.Medium
-                            ),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = "main",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                Box {
+                    IconButton(onClick = { showMenu = true }, modifier = Modifier.testTag("project-card-more")) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = stringResource(Strings.content_desc_more_actions),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                } else {
-                    // 显示更新时间
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = stringResource(Strings.label_recently_updated),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TinaSemanticColors.Project.recentUpdate
+                    ProjectActionMenu(
+                        expanded = showMenu,
+                        onDismiss = { showMenu = false },
+                        onAction = { action ->
+                            showMenu = false
+                            onAction(action)
+                        },
                     )
                 }
             }
 
-            // 更多操作按钮 + 下拉菜单
-            Box {
-                IconButton(onClick = { showMenu = true }) {
-                    Icon(
-                        imageVector = Icons.Default.MoreVert,
-                        contentDescription = stringResource(Strings.content_desc_more_actions),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+            FlowRow(
+                modifier = Modifier.fillMaxWidth().testTag("project-card-tags"),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                projectTags.forEach { tag -> ProjectTagChip(tag = tag) }
+            }
+            Text(
+                text = simplifyPath(project.dir.absolutePath, context),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (isGitProject) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text("<>", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("_BRANCH", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("main", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-
-                // 下拉菜单
-                ProjectActionMenu(
-                    expanded = showMenu,
-                    onDismiss = { showMenu = false },
-                    onAction = { action ->
-                        showMenu = false
-                        onAction(action)
-                    }
+            } else {
+                Text(
+                    text = stringResource(Strings.label_recently_updated),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TinaSemanticColors.Project.recentUpdate,
                 )
             }
         }

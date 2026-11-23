@@ -19,7 +19,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.wuxianggujun.tinaide.core.i18n.Strings
-import com.wuxianggujun.tinaide.ui.compose.components.MarkdownViewer
+import com.wuxianggujun.tinaide.ui.compose.components.EditorMarkdownViewer as MarkdownViewer
 import com.wuxianggujun.tinaide.ui.compose.components.TinaCard
 
 /** Revealing help is independent from completing or unlocking a course stage. */
