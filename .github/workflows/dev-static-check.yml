@@ -83,11 +83,11 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Run editor, compiler, debug, and security regression tests
+      - name: Run editor, search, compiler, debug, and security regression tests
         run: |
           ./gradlew -Ptina.devAbi=arm64 -Ptina.buildProotFromSource=false \
             :core:text-engine:testDebugUnitTest :core:editor-view:testDebugUnitTest \
-            :feature:editor:testDebugUnitTest :core:compile:testDebugUnitTest \
+            :feature:editor:testDebugUnitTest :core:search:testDebugUnitTest :core:compile:testDebugUnitTest \
             :core:lsp:testDebugUnitTest :core:editor-lsp:testDebugUnitTest :core:debug:testDebugUnitTest \
             :core:apk-builder:testDebugUnitTest \
             :core:security:testDebugUnitTest :core:storage:testDebugUnitTest :core:git:testDebugUnitTest \
@@ -112,6 +112,7 @@ jobs:
             --tests "*NativeActivityHostContractTest" --tests "*GraphicalRuntimeLogcatCommandTest" \
             --tests "*GraphicalRuntimeMenuPositionProviderTest" --tests "*GraphicalRuntimePopupAnchorTest" \
             --tests "*GraphicalRuntimeLogDocumentTest" --tests "*GraphicalRuntimeLogcatTest" \
+            --tests "*GraphicalRuntimeLogPolicyTest" --tests "*GraphicalRuntimeLogSearchTest" \
             --no-daemon --configure-on-demand \
             -Dorg.gradle.internal.http.connectionTimeout=120000 \
             -Dorg.gradle.internal.http.socketTimeout=120000 \

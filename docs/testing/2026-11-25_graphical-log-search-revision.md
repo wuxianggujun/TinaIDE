@@ -68,3 +68,9 @@ API 34／x86_64 Debug 的 SDL2、SDL3、NativeActivity／raylib 三个端到端�
 PMS110 无线真机 `192.168.2.185:40777` 已先安装本地签名包，再覆盖为上表的正式 CI ARM64 APK，设备版本确认为 **0.19.12 / 19142**，UID 仍为 10472，首次安装时间仍为 2026-11-01 13:10:17。覆盖安装成功，未清数据、未启动 App 或切换用户其他应用画面。初次安装记录脚本因新 Android 使用 `appId` 而非 `userId` 报断言失败，随后直接核验并修正了检查器；不是 APK 安装失败。
 
 真机确认范围为正式包覆盖安装、版本与身份保留；图形交互完整回归在 API 34 模拟器完成，不扩写为 PMS110 图形 UI 已全部实测。本地产物与核验 JSON 位于 `app/build/verification/graphical-log-search-20261125/`。
+
+## 2026-11-26 日常 CI 覆盖补齐
+
+发布后核对发现，本地已验证的 `CodeSearchEngineTest`、`GraphicalRuntimeLogPolicyTest` 和 `GraphicalRuntimeLogSearchTest` 尚未全部进入日常 CI 的显式任务／类列表。`Core Regression Checks` 现将 `:core:search:testDebugUnitTest` 加入模块回归，并在宿主定向回归中加入两个日志测试类；复用已有失败报告上传路径。
+
+这三组回归分别固定 Unicode 搜索偏移与匹配上限、厂商诊断过滤与用户日志保留、日志追加／裁剪／清空后的搜索定位。日常 `dev` 推送、PR 和后续正式发布都会使用该工作流；这次维护仅更新 `dev`，不改变已发布的 0.19.12 APK。Android 图形端到端仍按前文单独验收，JVM 门禁不代替设备交互验证。
