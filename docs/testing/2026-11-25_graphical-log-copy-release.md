@@ -57,3 +57,11 @@ Windows 使用 `gradlew.bat`。单元测试任务设 60 秒超时；编译与 R8
 | `TinaIDE-0.19.11-x86_64.apk` | 170971222 | `24cd566c1221275a8dda082400ac63d1096d9e7ce8f4780538e5ba7324dd1133` |
 
 手机安装的是上节记录的本地签名构建；公开 Release 为同一运行源码的 CI 构建，build ID／环境不同，APK 哈希不相同。没有把公开资产的哈希误记为手机安装包哈希，也没有为发布再次覆盖手机。最终公开状态证据在 `publication-verification.json`、`published-release.json` 与 `release-ci-complete.json`。
+
+## 发布流程复核与主分支收尾
+
+2026-11-25 复核发现：首次发布 `v0.19.11` 时只推送了 `dev` 和 Tag，远端 `main` 仍停留在 `e9f4e852c1e2adf246fd3ba880b362312e131415`。这是发布流程遗漏；此前 Release CI 成功和资产核验通过，不能代替主分支合并完成。
+
+本次收尾范围是将该版本的原始提交历史、验证记录及发布规范通过 PR 合入 `main`，随后同步回 `dev`。原 Tag 继续指向 `6d7c9c20c6fa19e6cfac7a04f6a9116c3e044c92`，公开 APK 和版本号保持原值；以 PR 合并状态及 `git merge-base --is-ancestor 'v0.19.11^{commit}' origin/main` 返回 0 核验补齐结果。
+
+后续正式发布必须执行 [先合并 main、再打 Tag 的完整流程](../guides/Branch-Management-Guide.md#8-正式发布流程必须先合并-main)。日常开发和本地 Release 构建／安装不触发 `main` 更新。

@@ -65,7 +65,7 @@
 
 ---
 
-## 3.5 Git 子模块规则（TinaIDE 必须遵守）
+## 3.5 Git 子模块与正式发布规则（TinaIDE 必须遵守）
 
 本项目包含多个 Git submodule。**任何涉及子模块指针（gitlink）变更的提交/发版，必须先提交并推送子模块仓库，再提交并推送主仓库**，否则 CI 可能在 `git submodule update --recursive` 阶段因 `not our ref <sha>` 失败。
 
@@ -74,6 +74,16 @@
 - 先在子模块仓库内完成提交并 `git push`（确保目标提交在远端分支/Tag 上可达）。
 - 再回到主仓库提交子模块指针变更并 `git push`。
 - 打 tag 前做一次校验：`git submodule status --recursive`（必要时配合 `git -C <submodule> ls-remote origin <sha>` 确认远端可达）。
+
+### 正式发布必须先合并到 main
+
+- **`main` 是正式发布分支，只在发布新版本时更新；日常开发、普通修复、文档维护和本地测试包都在 `dev` 或短期分支推进。**
+- 用户要求“发布新版本”时，**将已验证的待发布变更合并并推送到远端 `main` 是发布任务的必要步骤**；只推送 `dev`、打 Tag 或上传 APK 均不算完成发布流程。
+- 固定顺序：**子模块提交推送 → 主仓库版本号／CHANGELOG／源码提交推送 → 验证候选提交 → 通过 PR 合并到 `main` 并确认远端已更新 → 在已验证的 `origin/main` 发布提交上创建并推送版本 Tag → 等待发布 CI 成功并核验 Release 产物 → 将发布变更同步回 `dev`**。
+- 创建正式版本 Tag 前，必须重新获取远端 `main`，核对其提交、`version.properties`、CHANGELOG 和子模块；Tag 去掉 `v` 后必须等于该提交的 `versionName`。禁止从尚未进入远端 `main` 的 `dev`、`release/*` 或其他分支直接发布。
+- 本地 Release 构建、签名 APK 安装与正式发布是不同阶段；仅要求构建／安装时，不因此更新 `main` 或创建正式版本 Tag。
+- 已公开的 Tag 和发布资产不得为补漏而移动、覆盖或重建。历史发布若遗漏合并，保留原 Tag，通过保留提交历史的合并补齐 `main`，并记录偏差与核验结果。
+- 完整操作与验收清单见 [分支管理指南](docs/guides/Branch-Management-Guide.md#8-正式发布流程必须先合并-main)。
 
 ---
 
