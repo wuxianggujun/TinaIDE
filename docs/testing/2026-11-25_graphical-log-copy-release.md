@@ -34,3 +34,26 @@ cd ..
 ```
 
 Windows 使用 `gradlew.bat`。单元测试任务设 60 秒超时；编译与 R8 构建不套用该超时。真机操作仅限 TinaIDE，不关闭、调整其他应用的小窗口，也不改变系统显示大小、方向或字体。
+
+## Release 构建与真机安装
+
+本地 ARM64 Release 构建成功，耗时 19m 02s。版本按现有机制推进为 `0.19.11 / 19122`，于 2026-11-25 15:40 覆盖安装到 PMS110（Android user 0）。安装前后 UID 均为 `10472`，首次安装时间均为 `2026-11-01 13:10:17`；没有卸载或清数据。
+
+本地 APK 与设备 `base.apk` 的 SHA-256 均为 `94e3ecfd276517886820ca5331526997dde718cebfb1a6129ad8372a712cca83`。签名与旧包一致，非 debuggable；原生 ABI／ELF、ZIP 对齐、vcpkg 随包工具与分发许可检查均通过。mapping 归档与本地 APK 对应，构建配置时的 build ID 为 `0a4772104b-20261125152100`；构建期间后续提交仅固定已验证的同一源码与文档，没有修改运行代码。
+
+真机冷启动返回 `Status: ok`、`LaunchState: COLD`。用户另一个应用的小窗口覆盖主要操作区域，因此停止进一步 UI 点按，没有关闭、拖动或缩放该窗口。日志配色、手柄与复制的真机端到端交互未完成，不能把 83 项 JVM／Robolectric 和启动检查写成该项已验收。
+
+## 源码与发布追踪
+
+- 先推送 TinaEditor `1db3d3404f2c16ec9cef033092a626890d1202e2`，再提交并推送 TinaIDE `6d7c9c20c6fa19e6cfac7a04f6a9116c3e044c92`，最后推送 `v0.19.11` Tag。
+- 同一提交的 [分支全量回归](https://github.com/wuxianggujun/TinaIDE/actions/runs/45567776172) 通过。
+- [正式发布工作流](https://github.com/wuxianggujun/TinaIDE/actions/runs/45570634010) 第一次因 Robolectric 下载 `android-all-instrumented:14-robolectric-10818077-i6` 遭 Maven HTTP 429 失败；失败 XML 与日志单独归档，未跳过检查，随后重跑失败任务。
+- 第二次运行全部通过：分发许可、全量回归、ARM64／x86_64 Release 构建、包体验证与发布。`build-debug` 按 Tag 发布条件跳过，不属于 Release 验证项。
+- [v0.19.11 正式 Release](https://github.com/wuxianggujun/TinaIDE/releases/tag/v0.19.11) 于 2026-11-25 17:03（Asia/Shanghai）发布为 Latest，非草稿、非预发布。两个 APK、CHANGELOG 内容与对应源码获取说明均已核验。
+
+| 公开产物 | 字节数 | GitHub 记录的 SHA-256 |
+| --- | ---: | --- |
+| `TinaIDE-0.19.11-arm64-v8a.apk` | 177311417 | `2c15efcda2879c106b7003faac68158ed3f5da886e66052d1439f288f4b47467` |
+| `TinaIDE-0.19.11-x86_64.apk` | 170971222 | `24cd566c1221275a8dda082400ac63d1096d9e7ce8f4780538e5ba7324dd1133` |
+
+手机安装的是上节记录的本地签名构建；公开 Release 为同一运行源码的 CI 构建，build ID／环境不同，APK 哈希不相同。没有把公开资产的哈希误记为手机安装包哈希，也没有为发布再次覆盖手机。最终公开状态证据在 `publication-verification.json`、`published-release.json` 与 `release-ci-complete.json`。
