@@ -5,6 +5,15 @@ description: TinaIDE 构建、Gradle、ABI、CI、发布、签名和 R8 排障�
 
 # TinaIDE 构建与发布
 
+## 正式发布顺序（必须遵守）
+
+- `main` 只在正式发布新版本时更新；日常开发、文档维护和本地 Release 构建／安装继续使用 `dev` 或短期分支。
+- 发布任务必须包含：**先推送子模块 → 提交主仓库版本号、CHANGELOG 和源码 → 验证候选提交 → 通过 PR 合并到远端 `main` → 从已验证的 `origin/main` 发布提交打 Tag → 推送 Tag 并等待发布 CI／产物核验 → 将发布变更同步回 `dev`**。
+- 打 Tag 前重新获取远端 `main`，核对发布 SHA、版本号与子模块；Tag 去掉 `v` 后必须与该提交的 `versionName` 一致。禁止直接从尚未合入 `main` 的 `dev` 或 `release/*` 发布。
+- 交付时分别报告 `main` 合并／推送、Tag、Release 和设备验证状态；任何一项未完成，都不能笼统写成“已全部发布完成”。
+- 发现历史发布遗漏 `main` 时，保留公开 Tag 和资产，以保留提交历史的合并补齐 `main`；禁止重打已有 Tag 掩盖遗漏。
+- 详细流程与发布前后检查见 [分支管理指南](../../../docs/guides/Branch-Management-Guide.md#8-正式发布流程必须先合并-main)，仓库级约束见 [AGENTS.md](../../../AGENTS.md#35-git-子模块与正式发布规则tinaide-必须遵守)。
+
 ## 先读文件
 
 - `gradle/wrapper/gradle-wrapper.properties`：Gradle Wrapper 版本，当前指向 Gradle 9.6.0。

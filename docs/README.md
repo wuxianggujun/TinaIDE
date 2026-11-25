@@ -85,7 +85,7 @@
 - [MT Data Files Provider](guides/MT-Data-Files-Provider.md)
 - [文件预览指南](guides/File-Viewer-Guide.md)
 - [Hex Viewer 设计说明](guides/Hex-Viewer-Design.md)
-- [分支管理指南](guides/Branch-Management-Guide.md)
+- [分支管理与正式发布指南](guides/Branch-Management-Guide.md)（`main` 仅正式发版时更新，先合并 `main` 再打 Tag）
 
 ### 测试与排障
 
