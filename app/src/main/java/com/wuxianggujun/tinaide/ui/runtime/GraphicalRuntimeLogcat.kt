@@ -16,19 +16,21 @@ import timber.log.Timber
 private const val LOGCAT_INITIAL_LINE_COUNT = 200
 private const val LOG_BATCH_SIZE = 64
 private const val LOG_BATCH_INTERVAL_MS = 50L
+private val LOGCAT_BRIEF_LINE = Regex("^([VDIWEF])/([^\\r\\n]*?)\\(\\s*\\d+\\): ?(.*)$")
 
-/** Include user/engine tags, but never logs belonging to another application process. */
-internal fun graphicalRuntimeLogcatCommand(processId: Int): List<String> = listOf(
-    "logcat", "--pid=$processId", "-v", "brief", "-T", LOGCAT_INITIAL_LINE_COUNT.toString(), "*:V",
-)
+/** Filter at the source so framework noise cannot consume the program log's bounded buffer. */
+internal fun graphicalRuntimeLogcatCommand(processId: Int, showAllProcessLogs: Boolean = false): List<String> =
+    listOf("logcat", "--pid=$processId", "-v", "brief", "-T", LOGCAT_INITIAL_LINE_COUNT.toString()) +
+        GraphicalRuntimeLogPolicy.logcatFilters(showAllProcessLogs)
 
 internal suspend fun captureGraphicalRuntimeLogcat(
     failureMessage: String,
     append: (List<GraphicalRuntimeLogEntry>) -> Unit,
+    showAllProcessLogs: Boolean = false,
     startProcess: (List<String>) -> Process = { ProcessBuilder(it).redirectErrorStream(true).start() },
 ) = withContext(Dispatchers.IO) {
     val process = try {
-        startProcess(graphicalRuntimeLogcatCommand(android.os.Process.myPid()))
+        startProcess(graphicalRuntimeLogcatCommand(android.os.Process.myPid(), showAllProcessLogs))
     } catch (cancelled: CancellationException) {
         throw cancelled
     } catch (error: Exception) {
@@ -58,12 +60,22 @@ internal suspend fun captureGraphicalRuntimeLogcat(
     try {
         withContext(Dispatchers.IO) {
             val reader = BufferedReader(InputStreamReader(process.inputStream, Charsets.UTF_8))
+            var level = 'I'
+            var tag = ""
+            var visible = true
             while (isActive) {
                 val line = reader.readLine() ?: break
                 if (line.isBlank() || line.startsWith("-----")) continue
-                val level = line.first().takeIf { it in "VDIWEF" } ?: 'I'
-                val message = line.substringAfter("): ", line)
-                pending.send(GraphicalRuntimeLogEntry(level, message.take(GRAPHICAL_LOG_MAX_LINE_CHARS + 1)))
+                val header = LOGCAT_BRIEF_LINE.matchEntire(line)
+                if (header != null) {
+                    level = header.groupValues[1].single()
+                    tag = header.groupValues[2].trim()
+                    visible = GraphicalRuntimeLogPolicy.accepts(tag, level, showAllProcessLogs)
+                }
+                if (!visible) continue
+                val message = header?.groupValues?.get(3) ?: line
+                val displayMessage = if (showAllProcessLogs && tag.isNotEmpty()) "[$tag] $message" else message
+                pending.send(GraphicalRuntimeLogEntry(level, displayMessage.take(GRAPHICAL_LOG_MAX_LINE_CHARS + 1)))
             }
         }
     } catch (cancelled: CancellationException) {

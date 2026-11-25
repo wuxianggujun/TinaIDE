@@ -35,7 +35,7 @@ class GraphicalRuntimeLogcatTest {
     @Test
     fun utf8OutputIsBatchedInOrderAndDeliveredOnTheOwnerThread() = runTest(dispatcher, timeout = 10.seconds) {
         val mainThread = Thread.currentThread()
-        val output = "----- beginning of main\n\n" + (1..130).joinToString("\n") { "I/UserTag(123): 第${it}行 😀" }
+        val output = "----- beginning of main\n\n" + (1..130).joinToString("\n") { "I/TINA_USER_OUTPUT(123): 第${it}行 😀" }
         val process = FakeProcess(ByteArrayInputStream(output.toByteArray(Charsets.UTF_8)))
         val batches = mutableListOf<List<GraphicalRuntimeLogEntry>>()
         var command = emptyList<String>()
@@ -47,16 +47,75 @@ class GraphicalRuntimeLogcatTest {
         assertThat(batches.all { it.size in 1..64 }).isTrue()
         assertThat(command).contains("--pid=${android.os.Process.myPid()}")
         assertThat(command).contains("*:V")
+        assertThat(command).contains("ViewRootImpl:S")
         assertThat(process.destroyed).isTrue()
     }
 
     @Test
     fun levelsAndUnprefixedContinuationLinesArePreserved() = runTest(dispatcher, timeout = 10.seconds) {
-        val process = FakeProcess(ByteArrayInputStream("W/SDL(123): warning\nE/User(123): error\nat frame.cpp:17\n".toByteArray(Charsets.UTF_8)))
+        val process = FakeProcess(ByteArrayInputStream("W/SDL(123): warning\nE/TINA_USER_OUTPUT(123): error\nat frame.cpp:17\n".toByteArray(Charsets.UTF_8)))
         val entries = mutableListOf<GraphicalRuntimeLogEntry>()
         captureGraphicalRuntimeLogcat("failure", append = { entries.addAll(it) }, startProcess = { process })
         assertThat(entries).containsExactly(
-            GraphicalRuntimeLogEntry('W', "warning"), GraphicalRuntimeLogEntry('E', "error"), GraphicalRuntimeLogEntry('I', "at frame.cpp:17"),
+            GraphicalRuntimeLogEntry('W', "warning"), GraphicalRuntimeLogEntry('E', "error"), GraphicalRuntimeLogEntry('E', "at frame.cpp:17"),
+        ).inOrder()
+    }
+
+    @Test
+    fun allProcessLogsExposeTheTagAndKeepCustomMessagesAndJavaStackTraces() = runTest(dispatcher, timeout = 10.seconds) {
+        val output = "V/TINA_SDL_HOST( 123): onPause()\n" +
+            "D/ViewRootImpl(123): window changed\n" +
+            "I/MyGame(native)(123): 用户日志 😀 contains ): text\n" +
+            "E/AndroidRuntime(123): FATAL EXCEPTION: main\n" +
+            "E/AndroidRuntime(123):     at example.Game.run(Game.java:7)\n"
+        val process = FakeProcess(ByteArrayInputStream(output.toByteArray(Charsets.UTF_8)))
+        val entries = mutableListOf<GraphicalRuntimeLogEntry>()
+        var command = emptyList<String>()
+        captureGraphicalRuntimeLogcat("failure", append = { entries.addAll(it) }, showAllProcessLogs = true,
+            startProcess = { command = it; process })
+        assertThat(command).contains("*:V")
+        assertThat(command).contains("--pid=${android.os.Process.myPid()}")
+        assertThat(entries).containsExactly(
+            GraphicalRuntimeLogEntry('V', "[TINA_SDL_HOST] onPause()"),
+            GraphicalRuntimeLogEntry('D', "[ViewRootImpl] window changed"),
+            GraphicalRuntimeLogEntry('I', "[MyGame(native)] 用户日志 😀 contains ): text"),
+            GraphicalRuntimeLogEntry('E', "[AndroidRuntime] FATAL EXCEPTION: main"),
+            GraphicalRuntimeLogEntry('E', "[AndroidRuntime]     at example.Game.run(Game.java:7)"),
+        ).inOrder()
+    }
+
+    @Test
+    fun programViewKeepsFatalFailuresAndDoesNotStripHeaderLikeTextFromContinuations() = runTest(dispatcher, timeout = 10.seconds) {
+        val output = "E/AndroidRuntime(123): java.lang.IllegalStateException: boom\n" +
+            "F/libc    ( 123): Fatal signal 11\n" +
+            "E/TINA_USER_OUTPUT(123): shader failed\n" +
+            "Debug context (shader): fragment\n"
+        val process = FakeProcess(ByteArrayInputStream(output.toByteArray(Charsets.UTF_8)))
+        val entries = mutableListOf<GraphicalRuntimeLogEntry>()
+        captureGraphicalRuntimeLogcat("failure", append = { entries.addAll(it) }, startProcess = { process })
+        assertThat(entries).containsExactly(
+            GraphicalRuntimeLogEntry('E', "java.lang.IllegalStateException: boom"),
+            GraphicalRuntimeLogEntry('F', "Fatal signal 11"),
+            GraphicalRuntimeLogEntry('E', "shader failed"),
+            GraphicalRuntimeLogEntry('E', "Debug context (shader): fragment"),
+        ).inOrder()
+    }
+
+    @Test
+    fun noisyNativeActivityWindowsCannotDisplaceRaylibOrCustomProgramOutput() = runTest(dispatcher, timeout = 10.seconds) {
+        val output = "D/MyGraphicsEngine(123): first user line\n" +
+            (1..600).joinToString("\n", postfix = "\n") { "D/VRI[ExternalNativeActivity]@abc(123): frame $it" } +
+            "    at internal.Window.dispatch(Window.java:7)\n" +
+            "V/TINA_SDL_HOST(123): onResume()\n" +
+            "V/SDL(123): user verbose detail\n" +
+            "I/raylib(123): last user line 😀\n"
+        val process = FakeProcess(ByteArrayInputStream(output.toByteArray(Charsets.UTF_8)))
+        val entries = mutableListOf<GraphicalRuntimeLogEntry>()
+        captureGraphicalRuntimeLogcat("failure", append = { entries.addAll(it) }, startProcess = { process })
+        assertThat(entries).containsExactly(
+            GraphicalRuntimeLogEntry('D', "first user line"),
+            GraphicalRuntimeLogEntry('V', "user verbose detail"),
+            GraphicalRuntimeLogEntry('I', "last user line 😀"),
         ).inOrder()
     }
 

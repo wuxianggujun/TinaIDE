@@ -7,10 +7,25 @@ import org.junit.Test
 
 class GraphicalRuntimeLogcatCommandTest {
     @Test
-    fun capture_shouldIncludeEveryEngineTagButOnlyTheCurrentRuntimeProcess() {
+    fun captureDefaultsToAllUserTagsWhileFilteringKnownHostNoise() {
         val command = graphicalRuntimeLogcatCommand(12345)
         assertThat(command).contains("--pid=12345")
         assertThat(command).contains("*:V")
+        assertThat(command).containsAtLeast("TINA_SDL_HOST:W", "NativeStdStreamRedirect:W", "ExternalNativeActivity:W")
+        assertThat(command).containsAtLeast("ViewRootImpl:S", "InputMethodManager:S", "Choreographer:S")
+        assertThat(command).doesNotContain("*:S")
+        assertThat(command).doesNotContain("SDL:I")
+        assertThat(command).doesNotContain("SDL:W")
+        assertThat(command).doesNotContain("raylib:W")
+    }
+
+    @Test
+    fun optingInIncludesCustomTagsAndHostDiagnosticsButKeepsTheProcessBoundary() {
+        val command = graphicalRuntimeLogcatCommand(12345, showAllProcessLogs = true)
+        assertThat(command).contains("--pid=12345")
+        assertThat(command).contains("*:V")
+        assertThat(command).doesNotContain("ViewRootImpl:S")
+        assertThat(command).doesNotContain("TINA_SDL_HOST:W")
         assertThat(command).doesNotContain("-s")
         assertThat(command).doesNotContain("*:S")
     }

@@ -40,7 +40,7 @@ class SDLSensorManager
                     } catch (Exception e2) {
                     }
                 } else {
-                    Log.v("SDL", "Multiple ConcurrentModificationException caught while registering sensor listener, canceling operation");
+                    Log.v("TINA_SDL_HOST", "Multiple ConcurrentModificationException caught while registering sensor listener, canceling operation");
                     complete = true;
                 }
             }
@@ -63,7 +63,7 @@ class SDLSensorManager
                     } catch (Exception e2) {
                     }
                 } else {
-                    Log.v("SDL", "Multiple ConcurrentModificationException caught while unregistering sensor listener, canceling operation");
+                    Log.v("TINA_SDL_HOST", "Multiple ConcurrentModificationException caught while unregistering sensor listener, canceling operation");
                     complete = true;
                 }
             }
