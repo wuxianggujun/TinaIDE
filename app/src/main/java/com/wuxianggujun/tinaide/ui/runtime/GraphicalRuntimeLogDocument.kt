@@ -45,13 +45,14 @@ internal class GraphicalRuntimeLogDocument : AutoCloseable {
         private set
     var followingTail by mutableStateOf(true)
         private set
+    val search = GraphicalRuntimeLogSearch(state)
     private var closed = false
 
     fun append(entries: List<GraphicalRuntimeLogEntry>) {
         check(!closed) { "Graphical log document is closed" }
         if (entries.isEmpty()) return
         val previousSelection = state.selectionRange?.takeUnless { it.isEmpty }
-        val wasFollowingTail = previousSelection == null && isAtEnd()
+        val wasFollowingTail = !search.active && previousSelection == null && isAtEnd()
         val previousScroll = state.scrollOffsetPx
         val hasExistingLines = lineCount > 0
         var nextLine = if (hasExistingLines) buffer.lineCount else 0
@@ -101,6 +102,7 @@ internal class GraphicalRuntimeLogDocument : AutoCloseable {
             )
         }
         lineCount = buffer.lineCount
+        search.refresh(removedCharacters)
         revision++
         followingTail = wasFollowingTail
         if (followingTail) scrollToEnd()
@@ -114,25 +116,26 @@ internal class GraphicalRuntimeLogDocument : AutoCloseable {
         state.lineForegroundColors.clear()
         state.clearSelection()
         lineCount = 0
+        search.refresh()
         revision++
-        followingTail = true
+        followingTail = !search.active
         state.scrollBy(-state.scrollOffsetPx)
         state.scrollByX(-state.scrollOffsetXPx)
     }
 
     fun setWordWrap(enabled: Boolean) {
         if (state.config.wordWrap == enabled) return
-        followingTail = state.selectionRange?.isEmpty != false && isAtEnd()
+        followingTail = !search.active && state.selectionRange?.isEmpty != false && isAtEnd()
         state.config = state.config.copy(wordWrap = enabled)
         if (followingTail) scrollToEnd()
     }
 
     fun scrollToEnd() {
-        if (state.selectionRange?.isEmpty == false) return
+        if (search.active || state.selectionRange?.isEmpty == false) return
         state.scrollBy(state.maxVerticalScrollOffsetPx() - state.scrollOffsetPx)
     }
 
-    fun onUserScroll() { followingTail = state.selectionRange?.isEmpty != false && isAtEnd() }
+    fun onUserScroll() { followingTail = !search.active && state.selectionRange?.isEmpty != false && isAtEnd() }
 
     private fun setLineDecoration(line: Int, decoration: GutterDecoration) {
         state.gutterDecorations[line] = decoration

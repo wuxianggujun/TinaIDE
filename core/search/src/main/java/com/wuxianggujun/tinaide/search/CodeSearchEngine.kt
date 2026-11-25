@@ -6,8 +6,10 @@ package com.wuxianggujun.tinaide.search
  * 通过 TextContentProvider 抽象文本访问，避免直接依赖 CodeEditor UI 组件。
  */
 class CodeSearchEngine(
-    private val contentProvider: TextContentProvider
+    private val contentProvider: TextContentProvider,
+    private val maxResults: Int = Int.MAX_VALUE,
 ) : SearchEngine {
+    init { require(maxResults > 0) }
 
     override fun search(query: String, options: SearchOptions): List<SearchResult> {
         if (query.isEmpty()) return emptyList()
@@ -32,21 +34,22 @@ class CodeSearchEngine(
                 if (endIndex <= startIndex) return@forEach
                 if (options.wholeWord && !isWholeWord(content, startIndex, endIndex)) return@forEach
                 matches.add(CodeSearchResult(buildSearchRange(startIndex, endIndex)))
+                if (matches.size >= maxResults) return matches
             }
             return matches
         }
 
-        val queryText = if (options.caseSensitive) query else query.lowercase()
-        val contentText = if (options.caseSensitive) content else content.lowercase()
         var startIndex = 0
 
         while (true) {
-            val foundIndex = contentText.indexOf(queryText, startIndex)
+            // Keep offsets in the original UTF-16 text (lowercase can change its length).
+            val foundIndex = content.indexOf(query, startIndex, ignoreCase = !options.caseSensitive)
             if (foundIndex < 0) break
 
             val endIndex = foundIndex + query.length
             if (!options.wholeWord || isWholeWord(content, foundIndex, endIndex)) {
                 matches.add(CodeSearchResult(buildSearchRange(foundIndex, endIndex)))
+                if (matches.size >= maxResults) break
             }
             startIndex = foundIndex + 1
         }

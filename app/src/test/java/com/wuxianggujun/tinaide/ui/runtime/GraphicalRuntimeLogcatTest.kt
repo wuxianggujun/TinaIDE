@@ -120,6 +120,36 @@ class GraphicalRuntimeLogcatTest {
     }
 
     @Test
+    fun vendorTouchDiagnosticsCannotDisplaceProgramOutputOrHideUserMessagesWithTheSameMethodName() = runTest(dispatcher, timeout = 10.seconds) {
+        val output = "I/TINA_USER_OUTPUT(123): first user line\n" +
+            (1..600).joinToString("\n", postfix = "\n") {
+                "I/DynamicFramerate [AnimationSpeedAware]( 123): onEventHandled: info: InputEventInfo: mAction = 0, event = $it"
+            } +
+            "    touch diagnostic continuation\n" +
+            "I/SDL(123): user onEventHandled: tap\n" +
+            "I/raylib(123): user onEventHandled: click\n" +
+            "I/MyEngine(123): last user line 中文😀\n" +
+            "W/DynamicFramerate [AnimationSpeedAware](123): frame-rate failure\n"
+        val entries = mutableListOf<GraphicalRuntimeLogEntry>()
+        captureGraphicalRuntimeLogcat("failure", append = { entries.addAll(it) },
+            startProcess = { FakeProcess(ByteArrayInputStream(output.toByteArray(Charsets.UTF_8))) })
+        assertThat(entries).containsExactly(
+            GraphicalRuntimeLogEntry('I', "first user line"),
+            GraphicalRuntimeLogEntry('I', "user onEventHandled: tap"),
+            GraphicalRuntimeLogEntry('I', "user onEventHandled: click"),
+            GraphicalRuntimeLogEntry('I', "last user line 中文😀"),
+            GraphicalRuntimeLogEntry('W', "frame-rate failure"),
+        ).inOrder()
+
+        entries.clear()
+        captureGraphicalRuntimeLogcat("failure", append = { entries.addAll(it) }, showAllProcessLogs = true,
+            startProcess = { FakeProcess(ByteArrayInputStream(output.toByteArray(Charsets.UTF_8))) })
+        assertThat(entries).hasSize(606)
+        assertThat(entries[1].message).startsWith("[DynamicFramerate [AnimationSpeedAware]] onEventHandled:")
+        assertThat(entries[601].message).contains("touch diagnostic continuation")
+    }
+
+    @Test
     fun startupFailureUsesTheSuppliedLocalizedMessage() = runTest(dispatcher, timeout = 10.seconds) {
         val entries = mutableListOf<GraphicalRuntimeLogEntry>()
         captureGraphicalRuntimeLogcat("本地化失败文案", append = { entries.addAll(it) }, startProcess = { throw IOException("fixture") })

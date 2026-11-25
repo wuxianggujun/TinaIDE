@@ -6,6 +6,22 @@ import org.junit.Test
 class CodeSearchEngineTest {
 
     @Test
+    fun `case folding does not move offsets after expanding Unicode characters`() {
+        val content = "\u0130 error \uD83D\uDE00 ERROR"
+        val results = CodeSearchEngine(FakeTextContentProvider(content)).search("error")
+            .filterIsInstance<CodeSearchResult>()
+        assertThat(results.map { content.substring(it.range.startIndex, it.range.endIndex) })
+            .containsExactly("error", "ERROR").inOrder()
+    }
+
+    @Test
+    fun `result limit bounds both literal and regex searches`() {
+        val engine = CodeSearchEngine(FakeTextContentProvider("a a a a a"), maxResults = 2)
+        assertThat(engine.search("a")).hasSize(2)
+        assertThat(engine.search("a", SearchOptions(useRegex = true))).hasSize(2)
+    }
+
+    @Test
     fun `search is case insensitive by default`() {
         val engine = CodeSearchEngine(FakeTextContentProvider("Hello hello"))
 
