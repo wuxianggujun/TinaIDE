@@ -17,6 +17,11 @@ import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performImeAction
+import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.IntOffset
@@ -83,6 +88,33 @@ class GraphicalRuntimePopupAnchorTest {
             val clipboard = compose.activity.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
             assertThat(clipboard.primaryClip!!.getItemAt(0).text.toString()).isEqualTo("warning sample 你好😀\nerror detail")
         }
+    }
+
+    @Test
+    fun searchDialogPreservesTheNativePopupAndReleasesFocusAfterSubmitting() {
+        attachNativePopup()
+        compose.onNodeWithTag("graphical-overlay-control").performClick()
+        compose.onNodeWithTag("graphical-overlay-open-log").performClick()
+        val originalBounds = state.bounds
+        compose.onNodeWithTag("graphical-log-search").performClick()
+        compose.onNodeWithTag("graphical-log-search-input").performTextInput("error")
+        compose.runOnIdle {
+            assertThat(popup.isFocusable).isFalse()
+            assertThat(state.bounds).isEqualTo(originalBounds)
+        }
+        compose.runOnIdle { state.dragBy(Offset(-40f * density, 60f * density)) }
+        compose.waitForIdle()
+        compose.onNodeWithTag("graphical-log-search-input").performImeAction()
+        compose.onNodeWithTag("graphical-log-search-query").assertTextEquals("error")
+        compose.onNodeWithTag("graphical-log-search-count").assertTextEquals("1/1")
+        compose.runOnIdle {
+            assertThat(WindowInspector.getGlobalWindowViews().filter { isPopupLayout(it) }).isEmpty()
+            assertThat(popup.isFocusable).isFalse()
+        }
+        val viewer = compose.onNodeWithTag("tina-code-viewer").fetchSemanticsNode().config
+        val range = viewer[SemanticsProperties.TextSelectionRange]
+        assertThat(range).isNotEqualTo(TextRange.Zero)
+        assertThat(viewer[SemanticsProperties.Text].single().text.substring(range.start, range.end)).isEqualTo("error")
     }
 
     @Test

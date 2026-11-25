@@ -14,6 +14,10 @@ internal object GraphicalRuntimeLogPolicy {
         "TINA_SDL_HOST", "SDLAudio", "SDLControllerManager", "hidapi", "SdlNativeCompat",
         "TinaApplication", "ExternalSdlActivity", "ExternalSdl2Activity", "ExternalNativeActivity",
         "GraphicalRuntimeOverlay", "NativeStdStreamRedirect", "SdlAssetRedirect",
+        // Vendor frame-rate diagnostics run inside the app process on every touch.
+        "DynamicFramerate",
+        // logcat filters match full tags; include known decorations before its initial tail limit.
+        "DynamicFramerate [AnimationSpeedAware]", "DynamicFramerate [DynamicFrameRateController]",
     )
     private val programFilters = buildList {
         add("*:V")
@@ -27,8 +31,8 @@ internal object GraphicalRuntimeLogPolicy {
     fun accepts(tag: String, level: Char, showAllProcessLogs: Boolean): Boolean {
         if (showAllProcessLogs) return true
         // Android decorates some per-window tags with an Activity name or object identity.
-        val windowTag = tag.substringBefore('[').substringBefore('@')
+        val windowTag = tag.substringBefore('[').substringBefore('@').trimEnd()
         if (windowTag in windowTags) return false
-        return tag !in hostTags || level in "WEF"
+        return windowTag !in hostTags || level in "WEF"
     }
 }

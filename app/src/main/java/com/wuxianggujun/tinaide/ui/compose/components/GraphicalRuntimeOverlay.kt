@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.DragIndicator
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.OpenInFull
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.automirrored.filled.WrapText
 import androidx.compose.material3.Checkbox
@@ -268,6 +269,12 @@ private fun FloatingLogPanel(
                         )
                     }
                     FloatingOverlayActionButton(
+                        onClick = { logDocument.search.open(); logDocument.onUserScroll() },
+                        modifier = Modifier.testTag("graphical-log-search"),
+                    ) {
+                        Icon(Icons.Default.Search, stringResource(Strings.floating_overlay_log_search), Modifier.size(20.dp))
+                    }
+                    FloatingOverlayActionButton(
                         onClick = windowState::toggleMaximized,
                         modifier = Modifier.testTag("graphical-log-maximize"),
                     ) {
@@ -278,7 +285,7 @@ private fun FloatingLogPanel(
                         )
                     }
                     FloatingOverlayActionButton(
-                        onClick = windowState::collapseWindow,
+                        onClick = { logDocument.search.finishEditing(); windowState.collapseWindow() },
                         modifier = Modifier.testTag("graphical-log-collapse"),
                     ) {
                         Icon(Icons.Default.Remove, stringResource(Strings.floating_overlay_window_minimize), Modifier.size(20.dp))
@@ -307,6 +314,12 @@ private fun FloatingLogPanel(
                             onAllProcessLogsChanged = onAllProcessLogsChanged,
                             onExit = onExit,
                         )
+                    }
+                }
+                if (logDocument.search.active) {
+                    GraphicalRuntimeLogSearchBar(logDocument.search) {
+                        logDocument.search.close()
+                        logDocument.onUserScroll()
                     }
                 }
                 FloatingLogContent(

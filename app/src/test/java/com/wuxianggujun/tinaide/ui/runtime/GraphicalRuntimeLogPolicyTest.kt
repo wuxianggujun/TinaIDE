@@ -5,6 +5,25 @@ import org.junit.Test
 
 class GraphicalRuntimeLogPolicyTest {
     @Test
+    fun vendorTouchDiagnosticsAreHiddenRegardlessOfGraphicalHost() {
+        assertThat(GraphicalRuntimeLogPolicy.logcatFilters(false)).contains("DynamicFramerate [AnimationSpeedAware]:W")
+        for (tag in listOf("DynamicFramerate", "DynamicFramerate [AnimationSpeedAware]", "DynamicFramerate [DynamicFrameRateController]")) {
+            for (level in "VDI") assertThat(GraphicalRuntimeLogPolicy.accepts(tag, level, false)).isFalse()
+            for (level in "WEF") assertThat(GraphicalRuntimeLogPolicy.accepts(tag, level, false)).isTrue()
+            for (level in "VDIWEF") assertThat(GraphicalRuntimeLogPolicy.accepts(tag, level, true)).isTrue()
+        }
+        assertThat(GraphicalRuntimeLogPolicy.accepts("MyDynamicFramerate", 'I', false)).isTrue()
+        assertThat(GraphicalRuntimeLogPolicy.accepts("SDL", 'I', false)).isTrue()
+    }
+
+    @Test
+    fun decoratedFrameworkTagsIgnorePaddingBeforeTheDecoration() {
+        for (tag in listOf("ViewRootImpl [ExternalSdlActivity]", "VRI [ExternalSdl2Activity]", "SurfaceView @abc")) {
+            assertThat(GraphicalRuntimeLogPolicy.accepts(tag, 'I', false)).isFalse()
+        }
+    }
+
+    @Test
     fun everyEngineAndArbitraryUserTagKeepsEveryPriorityByDefault() {
         val tags = listOf("TINA_USER_OUTPUT", "SDL", "raylib", "MyNativeActivity", "VulkanSample", "Qt", "自定义Tag", "System.out", "System.err")
         for (tag in tags) for (level in "VDIWEF") {

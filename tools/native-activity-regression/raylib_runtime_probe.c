@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <android/log.h>
 
 int main(void) {
     const char *result_path = getenv("TINA_PROBE_RESULT");
@@ -14,7 +15,16 @@ int main(void) {
     fflush(result);
     SetTargetFPS(30);
     const char *overlay_ready = getenv("TINA_PROBE_READY");
-    for (int frame = 0; ready && frame < 450 && !WindowShouldClose(); ++frame) {
+    const char *action = getenv("TINA_PROBE_ACTION");
+    const bool test_logs = action && strcmp(action, "log-search") == 0;
+    for (int frame = 0; ready && frame < (test_logs ? 1200 : 450) && !WindowShouldClose(); ++frame) {
+        if (test_logs && frame % 60 == 0) {
+            for (int touch = 0; touch < 600; ++touch)
+                __android_log_print(ANDROID_LOG_INFO, "DynamicFramerate [AnimationSpeedAware]", "onEventHandled: info: InputEventInfo: mAction = 0, event = %d", touch);
+            __android_log_print(ANDROID_LOG_INFO, "TinaLogProbe", "needle first 中文😀");
+            __android_log_print(ANDROID_LOG_WARN, "TinaLogProbe", "needle second");
+            __android_log_print(ANDROID_LOG_INFO, "TinaLogProbe", "user onEventHandled kept");
+        }
         BeginDrawing();
         ClearBackground(DARKBLUE);
         DrawRectangle(20 + frame * 2, 200, 100, 100, SKYBLUE);
@@ -22,7 +32,6 @@ int main(void) {
         EndDrawing();
         if (frame > 30 && overlay_ready && access(overlay_ready, F_OK) == 0) break;
     }
-    const char *action = getenv("TINA_PROBE_ACTION");
     fprintf(result, "action=%s\n", action ? action : "return");
     fclose(result);
     if (action && strcmp(action, "abort") == 0) abort();
