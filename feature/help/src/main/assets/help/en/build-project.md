@@ -26,6 +26,12 @@ Enable **Graphics options → Floating log** in the run configuration. Inspect t
 
 Only one floating control is shown initially. Tap it to open **Runtime Log** or choose **Back to Editor**. Drag the log title to move, double-tap it to maximize / restore, and drag the bottom-right grip to resize. Minimizing retains size and position and keeps capturing logs; it does not exit. Returning to the editor requires confirmation and stops the program. Touches outside the popup continue to the graphical program; resizing logs does not change its rendering size.
 
+Menus follow their control or overflow button and adjust near display edges. Logs use TinaEditor's read-only view with pinned line numbers and no Debug bar. Lines do not wrap by default; scroll horizontally to inspect long lines, or toggle **Word Wrap** in the log window's overflow menu. Minimizing and reopening retain this choice. New output does not force the view to the bottom while you read older logs. The bounded buffer discards its oldest lines as output continues.
+
+A compact colored priority column appears next to the line numbers, such as `I` for information, `W` for warning, and `E` for error. It reserves no breakpoint/folding controls and cannot trigger breakpoint actions; priority prefixes no longer take up body columns. Multiline messages retain their priority on each logical line, while soft-wrapped continuations do not repeat the marker. The normal code editor keeps its breakpoint and folding features.
+
+The log body also uses priority colors: blue for information, yellow for warnings, red for errors, and a subdued color for debug output. Long-press the text, adjust the selection handles, then choose **Copy**, or use **Select All** to copy the current buffer. Copied text preserves line breaks, Unicode and emoji, without line numbers or priority labels. An active selection pauses tail following. When old lines expire, surviving selections move with their text and fully expired selections are cleared. Logs remain read-only, with no keyboard, Cut or Paste actions.
+
 | Error | Check first |
 | --- | --- |
 | Syntax error | Saved file, line number, and actual source list |

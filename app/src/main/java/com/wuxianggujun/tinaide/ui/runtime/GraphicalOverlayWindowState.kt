@@ -50,6 +50,11 @@ internal class GraphicalOverlayWindowState(
             return IntRect(left, top, left + width, top + height)
         }
 
+    val safeMenuBounds: IntRect
+        get() = usableBounds.let {
+            IntRect(it.left.roundToInt(), it.top.roundToInt(), it.right.roundToInt(), it.bottom.roundToInt())
+        }
+
     fun openWindow() {
         if (expanded) return
         floatingBounds = fitWindow(Rect(ballPosition, floatingBounds.size))

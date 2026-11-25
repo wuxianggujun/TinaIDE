@@ -1,6 +1,7 @@
 package com.wuxianggujun.tinaide.ui.projectlist
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -12,16 +13,27 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.outlined.FolderOpen
+import androidx.compose.material.icons.outlined.History
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.wuxianggujun.tinaide.core.common.simplifyPath
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.project.ProjectBuildSystem
@@ -33,18 +45,24 @@ import com.wuxianggujun.tinaide.ui.compose.components.TinaDropdownMenuDivider
 import com.wuxianggujun.tinaide.ui.compose.components.TinaDropdownMenuItem
 import com.wuxianggujun.tinaide.ui.compose.components.TinaDropdownMenuSectionHeader
 import com.wuxianggujun.tinaide.ui.compose.components.TinaDropdownMenuSectionTitle
-import com.wuxianggujun.tinaide.ui.compose.components.TinaSemanticColors
 import java.io.File
 
+private val RecentRibbonCornerSize = 40.dp
+private val RecentRibbonWidth = 72.dp
+private val RecentRibbonHeight = 16.dp
+private const val RecentRibbonRotation = 45f
+private const val RecentRibbonMaxFontScale = 1.2f
+
 /**
- * 项目列表卡片 - 符合设计图样式
+ * Names and badges share a text column; the icon never reserves space between them.
  */
 @OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
 fun ProjectListCard(
     project: ProjectListItem,
     onClick: () -> Unit,
-    onAction: (ProjectAction) -> Unit
+    onAction: (ProjectAction) -> Unit,
+    isRecent: Boolean = false,
 ) {
     val context = LocalContext.current
     var showMenu by remember { mutableStateOf(false) }
@@ -99,70 +117,123 @@ fun ProjectListCard(
             MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
         )
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            // Names are primary information: badges never compete for their title width.
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-                ProjectIcon(projectName = project.displayName, size = 48.dp)
-                Spacer(Modifier.width(12.dp))
-                Text(
-                    text = project.displayName,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f).testTag("project-card-title"),
-                    softWrap = true,
-                )
-                Box {
-                    IconButton(onClick = { showMenu = true }, modifier = Modifier.testTag("project-card-more")) {
-                        Icon(
-                            imageVector = Icons.Default.MoreVert,
-                            contentDescription = stringResource(Strings.content_desc_more_actions),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        Box(Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    ProjectIcon(
+                        projectName = project.displayName,
+                        size = 48.dp,
+                        modifier = Modifier.testTag("project-card-icon"),
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column(
+                        modifier = Modifier.weight(1f).testTag("project-card-heading"),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(
+                            text = project.displayName,
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                lineBreak = LineBreak.Heading,
+                            ),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.fillMaxWidth().testTag("project-card-title"),
+                            // Typical names take one or two lines; large fonts still keep the full name.
+                            softWrap = true,
+                        )
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth().testTag("project-card-tags"),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            projectTags.forEach { tag -> ProjectTagChip(tag = tag) }
+                        }
+                    }
+                    Box {
+                        IconButton(
+                            onClick = { showMenu = true },
+                            modifier = Modifier.size(48.dp).testTag("project-card-more"),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = stringResource(Strings.content_desc_more_actions),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        ProjectActionMenu(
+                            expanded = showMenu,
+                            onDismiss = { showMenu = false },
+                            onAction = { action ->
+                                showMenu = false
+                                onAction(action)
+                            },
                         )
                     }
-                    ProjectActionMenu(
-                        expanded = showMenu,
-                        onDismiss = { showMenu = false },
-                        onAction = { action ->
-                            showMenu = false
-                            onAction(action)
-                        },
-                    )
                 }
-            }
 
-            FlowRow(
-                modifier = Modifier.fillMaxWidth().testTag("project-card-tags"),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                projectTags.forEach { tag -> ProjectTagChip(tag = tag) }
+                Text(
+                    text = simplifyPath(project.dir.absolutePath, context),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.testTag("project-card-path"),
+                )
             }
-            Text(
-                text = simplifyPath(project.dir.absolutePath, context),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (isGitProject) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    Text("<>", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("_BRANCH", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("main", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+            if (isRecent) {
+                RecentProjectRibbon(Modifier.align(Alignment.TopStart))
+            }
+        }
+    }
+}
+
+/** A clipped, non-interactive overlay: recency must not change the card's measured height. */
+@Composable
+private fun RecentProjectRibbon(modifier: Modifier = Modifier) {
+    val description = stringResource(Strings.section_recent_projects)
+    val isLeftToRight = LocalLayoutDirection.current == LayoutDirection.Ltr
+    Box(
+        modifier = modifier
+            .size(RecentRibbonCornerSize)
+            .testTag("project-card-recent-ribbon")
+            .semantics { contentDescription = description }
+            .clipToBounds(),
+    ) {
+        Box(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .wrapContentSize(Alignment.Center, unbounded = true)
+                .width(RecentRibbonWidth)
+                .height(RecentRibbonHeight)
+                .rotate(if (isLeftToRight) -RecentRibbonRotation else RecentRibbonRotation)
+                .background(MaterialTheme.colorScheme.primary)
+                .clearAndSetSemantics { },
+            contentAlignment = Alignment.Center,
+        ) {
+            // At large font scales use a symbol, keeping the full spoken label without clipping text.
+            if (LocalDensity.current.fontScale > RecentRibbonMaxFontScale) {
+                Icon(
+                    imageVector = Icons.Outlined.History,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.size(12.dp),
+                )
             } else {
                 Text(
-                    text = stringResource(Strings.label_recently_updated),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TinaSemanticColors.Project.recentUpdate,
+                    text = stringResource(Strings.label_recent_project_badge),
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = 10.sp,
+                        lineHeight = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    ),
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }

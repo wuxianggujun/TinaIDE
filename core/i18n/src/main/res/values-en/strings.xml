@@ -556,6 +556,7 @@
   <string name="toast_import_failed">Project import failed</string>
 
   <!-- Project List Card -->
+  <string name="label_recent_project_badge">Recent</string>
   <string name="label_recently_updated">● Recently Updated</string>
   <string name="content_desc_more_actions">More Actions</string>
   <string name="action_open_project">Open Project</string>

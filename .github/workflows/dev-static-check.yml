@@ -110,6 +110,8 @@ jobs:
             --tests "*GraphicalOverlayWindowStateTest" --tests "*GraphicalRuntimeOverlayTest" \
             --tests "*GraphicalRuntimeActivityHostTest" --tests "*GraphicalRuntimeExitGuardTest" \
             --tests "*NativeActivityHostContractTest" --tests "*GraphicalRuntimeLogcatCommandTest" \
+            --tests "*GraphicalRuntimeMenuPositionProviderTest" --tests "*GraphicalRuntimePopupAnchorTest" \
+            --tests "*GraphicalRuntimeLogDocumentTest" --tests "*GraphicalRuntimeLogcatTest" \
             --no-daemon --configure-on-demand \
             -Dorg.gradle.internal.http.connectionTimeout=120000 \
             -Dorg.gradle.internal.http.socketTimeout=120000 \

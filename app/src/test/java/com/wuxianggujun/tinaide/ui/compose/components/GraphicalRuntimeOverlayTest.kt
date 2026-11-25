@@ -6,12 +6,16 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
 import androidx.compose.ui.unit.Density
@@ -19,6 +23,7 @@ import androidx.compose.ui.unit.IntRect
 import com.google.common.truth.Truth.assertThat
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.ui.runtime.GraphicalOverlayWindowState
+import com.wuxianggujun.tinaide.ui.runtime.GraphicalRuntimeLogEntry
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -162,12 +167,88 @@ class GraphicalRuntimeOverlayTest {
         assertThat(buttons.zipWithNext().all { (left, right) -> left.right <= right.left }).isTrue()
     }
 
-    private fun render(enableLog: Boolean, fontScale: Float = 1f, onExit: () -> Unit = {}): GraphicalOverlayWindowState {
+    @Test
+    fun logsUseTheReadOnlyEditorWithoutInputFocusOrTruncatingLongMessages() {
+        val message = "开始😀 " + "x".repeat(600) + " 完整末尾"
+        render(enableLog = true, initialLogs = listOf(GraphicalRuntimeLogEntry('E', message)))
+        openLog()
+        val viewer = compose.onNodeWithTag("tina-code-viewer").assertIsDisplayed()
+        val semantics = viewer.fetchSemanticsNode().config
+        assertThat(semantics.contains(SemanticsActions.SetText)).isFalse()
+        assertThat(semantics.contains(SemanticsActions.RequestFocus)).isFalse()
+        assertThat(semantics.contains(SemanticsProperties.EditableText)).isFalse()
+        assertThat(semantics[SemanticsProperties.Text].single().text).isEqualTo(message)
+        assertThat(semantics.contains(SemanticsActions.SetSelection)).isTrue()
+        assertThat(semantics.contains(SemanticsActions.CopyText)).isTrue()
+        assertThat(semantics[SemanticsProperties.HorizontalScrollAxisRange].maxValue()).isGreaterThan(0f)
+        viewer.performSemanticsAction(SemanticsActions.ScrollBy) { it(100f, 0f) }
+        assertThat(viewer.fetchSemanticsNode().config[SemanticsProperties.HorizontalScrollAxisRange].value()).isGreaterThan(0f)
+    }
+
+    @Test
+    fun logWrappingStartsOffAndCanBeToggledInTheWindowMenu() {
+        render(enableLog = true, initialLogs = listOf(GraphicalRuntimeLogEntry('I', "x".repeat(600))))
+        openLog()
+        compose.onNodeWithTag("graphical-log-more").performClick()
+        compose.onNodeWithTag("graphical-log-word-wrap").assertIsOff().performClick()
+        compose.onNodeWithTag("graphical-log-word-wrap").assertIsOn()
+        val viewer = compose.onNodeWithTag("tina-code-viewer")
+        assertThat(viewer.fetchSemanticsNode().config[SemanticsProperties.HorizontalScrollAxisRange].maxValue()).isEqualTo(0f)
+        compose.onNodeWithTag("graphical-log-word-wrap").performClick().assertIsOff()
+        assertThat(viewer.fetchSemanticsNode().config[SemanticsProperties.HorizontalScrollAxisRange].maxValue()).isGreaterThan(0f)
+    }
+
+    @Test
+    fun minimizingAndReopeningPreserveTheLogAndWrapChoice() {
+        render(enableLog = true, initialLogs = listOf(GraphicalRuntimeLogEntry('I', "persisted log")))
+        openLog()
+        compose.onNodeWithTag("graphical-log-more").performClick()
+        compose.onNodeWithTag("graphical-log-word-wrap").performClick()
+        compose.onNodeWithTag("graphical-log-collapse").performClick()
+        openLog()
+        assertThat(compose.onNodeWithTag("tina-code-viewer").fetchSemanticsNode().config[SemanticsProperties.Text].single().text)
+            .isEqualTo("persisted log")
+        compose.onNodeWithTag("graphical-log-more").performClick()
+        compose.onNodeWithTag("graphical-log-word-wrap").assertIsOn()
+    }
+
+    @Test
+    fun theEditorBodyHasOnlyTwoDpOfPaddingInsteadOfTwoNestedEightDpInsets() {
+        render(enableLog = true)
+        openLog()
+        val panel = compose.onNodeWithTag("graphical-log-window").fetchSemanticsNode().boundsInRoot
+        val content = compose.onNodeWithTag("graphical-log-content").fetchSemanticsNode().boundsInRoot
+        val density = RuntimeEnvironment.getApplication().resources.displayMetrics.density
+        assertThat(content.left - panel.left).isWithin(1f).of(2f * density)
+        assertThat(panel.right - content.right).isWithin(1f).of(2f * density)
+        assertThat(panel.bottom - content.bottom).isWithin(1f).of(2f * density)
+    }
+
+    @Test
+    fun clearingTheLogDoesNotRemoveItsEditorOrEnableEditing() {
+        render(enableLog = true, initialLogs = listOf(GraphicalRuntimeLogEntry('I', "clear me")))
+        openLog()
+        compose.onNodeWithTag("graphical-log-more").performClick()
+        compose.onNodeWithTag("graphical-overlay-clear-log").performClick()
+        val viewer = compose.onNodeWithTag("tina-code-viewer").assertIsDisplayed().fetchSemanticsNode().config
+        assertThat(viewer[SemanticsProperties.Text].single().text).isEmpty()
+        assertThat(viewer.contains(SemanticsActions.SetText)).isFalse()
+        compose.onNodeWithText(text(Strings.floating_overlay_log_empty)).assertIsDisplayed()
+    }
+
+    private fun render(
+        enableLog: Boolean,
+        fontScale: Float = 1f,
+        onExit: () -> Unit = {},
+        initialLogs: List<GraphicalRuntimeLogEntry> = emptyList(),
+    ): GraphicalOverlayWindowState {
         val density = RuntimeEnvironment.getApplication().resources.displayMetrics.density
         val state = GraphicalOverlayWindowState(IntRect(0, 0, (320 * density).toInt(), (600 * density).toInt()), density)
         compose.setContent {
             CompositionLocalProvider(LocalDensity provides Density(density, fontScale)) {
-                MaterialTheme { GraphicalRuntimeOverlay(enableLog, onExit, state) }
+                MaterialTheme {
+                    GraphicalRuntimeOverlay(enableLog, onExit, state, captureLogs = { _, append -> append(initialLogs) })
+                }
             }
         }
         return state

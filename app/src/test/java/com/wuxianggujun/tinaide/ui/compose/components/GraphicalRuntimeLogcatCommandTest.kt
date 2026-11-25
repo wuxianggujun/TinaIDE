@@ -1,5 +1,7 @@
 package com.wuxianggujun.tinaide.ui.compose.components
 
+import com.wuxianggujun.tinaide.ui.runtime.graphicalRuntimeLogcatCommand
+
 import com.google.common.truth.Truth.assertThat
 import org.junit.Test
 

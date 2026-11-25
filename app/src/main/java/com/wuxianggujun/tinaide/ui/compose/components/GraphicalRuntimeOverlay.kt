@@ -3,20 +3,22 @@ package com.wuxianggujun.tinaide.ui.compose.components
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -29,16 +31,17 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.OpenInFull
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material.icons.automirrored.filled.WrapText
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -54,8 +57,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -67,18 +74,21 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
+import com.wuxianggujun.tinaide.core.editorview.TinaCodeViewer
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.ui.runtime.GraphicalOverlayWindowState
-import java.io.BufferedReader
-import java.io.InputStreamReader
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.isActive
-import timber.log.Timber
+import com.wuxianggujun.tinaide.ui.runtime.GraphicalRuntimeLogDocument
+import com.wuxianggujun.tinaide.ui.runtime.GraphicalRuntimeLogEntry
+import com.wuxianggujun.tinaide.ui.runtime.GraphicalRuntimeMenuPositionProvider
+import com.wuxianggujun.tinaide.ui.runtime.captureGraphicalRuntimeLogcat
+import kotlin.math.roundToInt
 
 /**
  * Shared controls displayed over every fullscreen graphical runtime.
@@ -95,26 +105,21 @@ internal fun GraphicalRuntimeOverlay(
     onExit: () -> Unit,
     windowState: GraphicalOverlayWindowState,
     modifier: Modifier = Modifier,
+    captureLogs: suspend (String, (List<GraphicalRuntimeLogEntry>) -> Unit) -> Unit = { message, append ->
+        captureGraphicalRuntimeLogcat(message, append)
+    },
 ) {
     var showControlMenu by remember { mutableStateOf(false) }
     var showExitDialog by rememberSaveable { mutableStateOf(false) }
 
-    val logLines = remember { mutableStateListOf<LogEntry>() }
-    val listState = rememberLazyListState()
+    val logDocument = remember { GraphicalRuntimeLogDocument() }
+    var wordWrap by rememberSaveable { mutableStateOf(false) }
     val logCaptureFailureMessage = stringResource(Strings.floating_overlay_log_capture_failed)
+    DisposableEffect(logDocument) { onDispose { logDocument.close() } }
+    SideEffect { logDocument.setWordWrap(wordWrap) }
 
     if (enableFloatingLog) {
-        LaunchedEffect(Unit) {
-            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                captureLogcat(logLines, logCaptureFailureMessage)
-            }
-        }
-
-        LaunchedEffect(logLines.size) {
-            if (logLines.isNotEmpty()) {
-                listState.animateScrollToItem(logLines.size - 1)
-            }
-        }
+        LaunchedEffect(logDocument) { captureLogs(logCaptureFailureMessage, logDocument::append) }
     }
 
     LaunchedEffect(enableFloatingLog) {
@@ -129,9 +134,9 @@ internal fun GraphicalRuntimeOverlay(
     ) {
         if (windowState.expanded && enableFloatingLog) {
             FloatingLogPanel(
-                logLines = logLines,
-                listState = listState,
-                onClearLog = { logLines.clear() },
+                logDocument = logDocument,
+                wordWrap = wordWrap,
+                onWordWrapChanged = { wordWrap = it },
                 onExit = { showExitDialog = true },
                 windowState = windowState,
                 modifier = Modifier.fillMaxSize(),
@@ -148,6 +153,8 @@ internal fun GraphicalRuntimeOverlay(
                 modifier = Modifier.fillMaxSize().testTag("graphical-overlay-control"),
             )
             GraphicalRuntimeActionsMenu(
+                windowState = windowState,
+                anchorBoundsInOverlay = { IntRect(0, 0, bounds.width, bounds.height) },
                 expanded = showControlMenu,
                 onDismiss = { showControlMenu = false },
                 onOpenLog = if (enableFloatingLog) windowState::openWindow else null,
@@ -210,14 +217,15 @@ private fun FloatingControlButton(
 
 @Composable
 private fun FloatingLogPanel(
-    logLines: List<LogEntry>,
-    listState: androidx.compose.foundation.lazy.LazyListState,
-    onClearLog: () -> Unit,
+    logDocument: GraphicalRuntimeLogDocument,
+    wordWrap: Boolean,
+    onWordWrapChanged: (Boolean) -> Unit,
     onExit: () -> Unit,
     windowState: GraphicalOverlayWindowState,
     modifier: Modifier = Modifier,
 ) {
     var showMenu by remember { mutableStateOf(false) }
+    var menuAnchor by remember { mutableStateOf(IntRect.Zero) }
     val panelShape = RoundedCornerShape(TinaShapes.DialogCorner)
     TinaOverlayPanelSurface(
         modifier = modifier.testTag("graphical-log-window"),
@@ -266,7 +274,11 @@ private fun FloatingLogPanel(
                     ) {
                         Icon(Icons.Default.Remove, stringResource(Strings.floating_overlay_window_minimize), Modifier.size(20.dp))
                     }
-                    Box {
+                    Box(Modifier.onGloballyPositioned { coordinates ->
+                        menuAnchor = coordinates.boundsInRoot().let {
+                            IntRect(it.left.roundToInt(), it.top.roundToInt(), it.right.roundToInt(), it.bottom.roundToInt())
+                        }
+                    }) {
                         FloatingOverlayActionButton(
                             onClick = { showMenu = true },
                             modifier = Modifier.testTag("graphical-log-more"),
@@ -274,18 +286,21 @@ private fun FloatingLogPanel(
                             Icon(Icons.Default.MoreVert, stringResource(Strings.content_desc_more_actions), Modifier.size(20.dp))
                         }
                         GraphicalRuntimeActionsMenu(
+                            windowState = windowState,
+                            anchorBoundsInOverlay = { menuAnchor },
                             expanded = showMenu,
                             onDismiss = { showMenu = false },
-                            onClearLog = onClearLog,
-                            canClearLog = logLines.isNotEmpty(),
+                            onClearLog = logDocument::clear,
+                            canClearLog = logDocument.lineCount > 0,
+                            wordWrap = wordWrap,
+                            onWordWrapChanged = onWordWrapChanged,
                             onExit = onExit,
                         )
                     }
                 }
                 FloatingLogContent(
-                    logLines = logLines,
-                    listState = listState,
-                    modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+                    logDocument = logDocument,
+                    modifier = Modifier.weight(1f).fillMaxWidth().padding(2.dp),
                 )
             }
             if (!windowState.maximized) {
@@ -345,58 +360,108 @@ private fun FloatingWindowResizeHandle(windowState: GraphicalOverlayWindowState,
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun GraphicalRuntimeActionsMenu(
+    windowState: GraphicalOverlayWindowState,
+    anchorBoundsInOverlay: () -> IntRect,
     expanded: Boolean,
     onDismiss: () -> Unit,
     onExit: () -> Unit,
     onOpenLog: (() -> Unit)? = null,
     onClearLog: (() -> Unit)? = null,
     canClearLog: Boolean = false,
+    wordWrap: Boolean = false,
+    onWordWrapChanged: ((Boolean) -> Unit)? = null,
 ) {
-    DropdownMenu(
-        expanded = expanded,
-        onDismissRequest = onDismiss,
-        modifier = Modifier.semantics { testTagsAsResourceId = true },
-    ) {
-        if (onOpenLog != null) {
-            DropdownMenuItem(
-                text = { Text(stringResource(Strings.floating_overlay_log_title)) },
-                leadingIcon = { Icon(Icons.Default.Terminal, null) },
-                onClick = { onDismiss(); onOpenLog() },
-                modifier = Modifier.testTag("graphical-overlay-open-log"),
-            )
-        }
-        if (onClearLog != null) {
-            DropdownMenuItem(
-                text = { Text(stringResource(Strings.floating_overlay_log_clear)) },
-                leadingIcon = { Icon(Icons.Default.Delete, null) },
-                onClick = { onDismiss(); onClearLog() },
-                enabled = canClearLog,
-                modifier = Modifier.testTag("graphical-overlay-clear-log"),
-            )
-        }
-        DropdownMenuItem(
-            text = { Text(stringResource(Strings.floating_overlay_exit)) },
-            leadingIcon = { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) },
-            onClick = { onDismiss(); onExit() },
-            modifier = Modifier.testTag("graphical-overlay-exit"),
+    if (!expanded) return
+    val density = LocalDensity.current
+    val currentAnchor by rememberUpdatedState(anchorBoundsInOverlay)
+    val positionProvider = remember(windowState, density) {
+        GraphicalRuntimeMenuPositionProvider(
+            screenAnchor = { currentAnchor().translate(windowState.bounds.topLeft) },
+            safeScreenBounds = { windowState.safeMenuBounds },
+            gapPx = with(density) { 4.dp.toPx().roundToInt() },
         )
+    }
+    val safeBounds = windowState.safeMenuBounds
+    Popup(
+        popupPositionProvider = positionProvider,
+        onDismissRequest = onDismiss,
+        properties = PopupProperties(focusable = true),
+    ) {
+        TinaOverlayPanelSurface(
+            modifier = Modifier.testTag("graphical-overlay-actions-menu").semantics { testTagsAsResourceId = true },
+            shape = RoundedCornerShape(TinaShapes.CardCorner),
+            containerColor = MaterialTheme.colorScheme.surface,
+            tonalElevation = 8.dp,
+            shadowElevation = 12.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)),
+        ) {
+            Column(Modifier.widthIn(max = with(density) { safeBounds.width.toDp() })
+                .width(IntrinsicSize.Max)
+                .heightIn(max = with(density) { safeBounds.height.toDp() })
+                .verticalScroll(rememberScrollState())
+                .padding(vertical = 4.dp),
+            ) {
+                if (onOpenLog != null) {
+                    TinaDropdownMenuItem(
+                        text = { Text(stringResource(Strings.floating_overlay_log_title)) },
+                        leadingIcon = { Icon(Icons.Default.Terminal, null) },
+                        onClick = { onDismiss(); onOpenLog() },
+                        modifier = Modifier.testTag("graphical-overlay-open-log"),
+                    )
+                }
+                if (onClearLog != null) {
+                    TinaDropdownMenuItem(
+                        text = { Text(stringResource(Strings.floating_overlay_log_clear)) },
+                        leadingIcon = { Icon(Icons.Default.Delete, null) },
+                        onClick = { onDismiss(); onClearLog() },
+                        enabled = canClearLog,
+                        modifier = Modifier.testTag("graphical-overlay-clear-log"),
+                    )
+                }
+                if (onWordWrapChanged != null) {
+                    TinaDropdownMenuItem(
+                        text = { Text(stringResource(Strings.settings_word_wrap)) },
+                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.WrapText, null) },
+                        trailingIcon = { Checkbox(checked = wordWrap, onCheckedChange = null) },
+                        onClick = { onWordWrapChanged(!wordWrap) },
+                        modifier = Modifier.testTag("graphical-log-word-wrap").semantics {
+                            role = Role.Checkbox
+                            toggleableState = if (wordWrap) ToggleableState.On else ToggleableState.Off
+                        },
+                    )
+                }
+                TinaDropdownMenuItem(
+                    text = { Text(stringResource(Strings.floating_overlay_exit)) },
+                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) },
+                    onClick = { onDismiss(); onExit() },
+                    modifier = Modifier.testTag("graphical-overlay-exit"),
+                )
+            }
+        }
     }
 }
 
 @Composable
 private fun FloatingLogContent(
-    logLines: List<LogEntry>,
-    listState: androidx.compose.foundation.lazy.LazyListState,
+    logDocument: GraphicalRuntimeLogDocument,
     modifier: Modifier = Modifier
 ) {
-    FloatingOverlayLogSurface(modifier = modifier) {
-        if (logLines.isEmpty()) {
+    val editorState = logDocument.state
+    val scrollConnection = remember(logDocument) {
+        object : NestedScrollConnection {
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (consumed.y != 0f) logDocument.onUserScroll()
+                return Offset.Zero
+            }
+        }
+    }
+    LaunchedEffect(logDocument.revision, editorState.viewportWidthPx, editorState.viewportHeightPx, editorState.config.wordWrap) {
+        if (logDocument.followingTail) logDocument.scrollToEnd()
+    }
+    FloatingOverlayLogSurface(modifier = modifier.testTag("graphical-log-content")) {
+        TinaCodeViewer(editorState, Modifier.fillMaxSize().nestedScroll(scrollConnection), selectable = true)
+        if (logDocument.lineCount == 0) {
             FloatingLogEmptyState()
-        } else {
-            FloatingLogList(
-                logLines = logLines,
-                listState = listState
-            )
         }
     }
 }
@@ -412,36 +477,6 @@ private fun FloatingLogEmptyState() {
             color = Color.Gray,
             style = MaterialTheme.typography.bodySmall
         )
-    }
-}
-
-@Composable
-private fun FloatingLogList(
-    logLines: List<LogEntry>,
-    listState: androidx.compose.foundation.lazy.LazyListState,
-) {
-    LazyColumn(
-        state = listState,
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(8.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp)
-    ) {
-        items(logLines) { entry ->
-            Text(
-                text = entry.message,
-                color = when (entry.level) {
-                    'E' -> Color(0xFFFF6B6B)
-                    'W' -> Color(0xFFFFD93D)
-                    else -> Color(0xFFCCCCCC)
-                },
-                fontSize = 11.sp,
-                fontFamily = FontFamily.Monospace,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
     }
 }
 
@@ -470,7 +505,7 @@ private fun FloatingOverlayLogSurface(
 ) {
     TinaOverlayPanelSurface(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(8.dp),
         containerColor = Color(0xFF1E1E1E),
         tonalElevation = 0.dp,
         shadowElevation = 0.dp
@@ -479,92 +514,5 @@ private fun FloatingOverlayLogSurface(
             modifier = Modifier.fillMaxSize(),
             content = content
         )
-    }
-}
-
-data class LogEntry(
-    val level: Char,
-    val message: String,
-    val timestamp: Long = System.currentTimeMillis()
-)
-
-private const val MAX_LOG_LINES = 500
-private const val MAX_LOG_LINE_CHARS = 8_192
-private const val LOGCAT_INITIAL_LINE_COUNT = 200
-
-/**
- * Keep engine-specific and user-defined log tags, bounded to the current graphical process.
- */
-internal fun graphicalRuntimeLogcatCommand(processId: Int): List<String> = listOf(
-    "logcat", "--pid=$processId", "-v", "brief", "-T", LOGCAT_INITIAL_LINE_COUNT.toString(), "*:V",
-)
-
-/**
- * 捕获隔离图形进程的全部标签，包括 stdout/stderr、SDL、raylib 和用户自定义 Android 日志。
- *
- * 使用 `--pid` 限制为当前进程，保留启动初期的有限历史，不依赖引擎标签白名单。
- * 当行数超过 [MAX_LOG_LINES] 时移除最早的条目。
- */
-private suspend fun captureLogcat(
-    logLines: MutableList<LogEntry>,
-    failureMessage: String,
-) = coroutineScope {
-    val pid = android.os.Process.myPid()
-    val cmd = graphicalRuntimeLogcatCommand(pid)
-
-    val process = try {
-        ProcessBuilder(cmd)
-            .redirectErrorStream(true)
-            .start()
-    } catch (e: Exception) {
-        Timber.tag("GraphicalRuntimeOverlay").w(e, "Unable to start graphical log capture")
-        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
-            logLines.add(LogEntry('E', failureMessage))
-        }
-        return@coroutineScope
-    }
-
-    val cancellationCloser = launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
-        try {
-            kotlinx.coroutines.awaitCancellation()
-        } finally {
-            process.destroy()
-        }
-    }
-    try {
-        val reader = BufferedReader(InputStreamReader(process.inputStream, Charsets.UTF_8))
-        var line: String?
-        while (isActive) {
-            line = reader.readLine() ?: break
-            if (line.isBlank() || line.startsWith("-----")) continue
-
-            val level = when {
-                line.isNotEmpty() && line[0] in "VDIWEF" -> line[0]
-                else -> 'I'
-            }
-            val message = line.substringAfter("): ", line).take(MAX_LOG_LINE_CHARS)
-
-            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
-                logLines.add(LogEntry(level, message))
-                while (logLines.size > MAX_LOG_LINES) {
-                    logLines.removeAt(0)
-                }
-            }
-        }
-    } catch (cancelled: kotlinx.coroutines.CancellationException) {
-        throw cancelled
-    } catch (error: Exception) {
-        if (isActive) Timber.tag("GraphicalRuntimeOverlay").w(error, "Graphical log capture failed")
-        if (isActive) kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
-            logLines.add(LogEntry('E', failureMessage))
-        }
-    } finally {
-        cancellationCloser.cancel()
-        process.destroy()
-        listOf(process.inputStream, process.errorStream, process.outputStream).forEach { stream ->
-            runCatching { stream.close() }.onFailure { error ->
-                Timber.tag("GraphicalRuntimeOverlay").d(error, "Log capture stream already closed")
-            }
-        }
     }
 }

@@ -472,7 +472,8 @@ fun ProjectScreen(
                                     ProjectListCard(
                                         project = project,
                                         onClick = { requestOpenProject(project) },
-                                        onAction = { action -> handleAction(project, action) }
+                                        onAction = { action -> handleAction(project, action) },
+                                        isRecent = true,
                                     )
                                 }
                             }

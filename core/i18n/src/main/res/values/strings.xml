@@ -621,6 +621,7 @@
   <string name="toast_clone_success">仓库克隆成功</string>
 
   <!-- Project List Card -->
+  <string name="label_recent_project_badge">最近</string>
   <string name="label_recently_updated">● 最近更新</string>
   <string name="content_desc_more_actions">更多操作</string>
   <string name="action_open_project">打开项目</string>

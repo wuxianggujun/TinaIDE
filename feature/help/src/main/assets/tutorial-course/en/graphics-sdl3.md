@@ -11,6 +11,8 @@ Goal: draw, handle input, read logs, and exit safely using the native template. 
 
 Drag the log title to move the window and its bottom-right grip to resize it. The title bar has maximize / restore, minimize, and an overflow menu; double-tapping the title also maximizes or restores. Minimizing keeps its size and position while capture continues. Choose **Back to Editor** from the menu and confirm to stop the graphical program. These controls resize the log window, not SDL rendering; touches outside the window still reach your program.
 
+Menus follow their buttons. Log content uses TinaEditor's read-only view with pinned line numbers and no Debug bar. Lines do not wrap by default, so scroll horizontally to inspect long output or toggle **Word Wrap** in the overflow menu. Minimizing and reopening preserve this choice. The buffer discards its oldest output when full, without forcing you back to the bottom while reading history.
+
 `CMakeLists.txt`:
 
 <!-- tutorial-project-file: CMakeLists.txt -->
