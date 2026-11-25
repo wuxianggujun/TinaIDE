@@ -44,7 +44,7 @@ class ResponseBodyLimitsTest {
     @Test
     fun readBytesLimited_returnsBinaryBodyAtLimit() {
         val payload = byteArrayOf(0, 1, 2, 3)
-        val body = payload.toResponseBody("application/msgpack".toMediaType())
+        val body = payload.toResponseBody("application/octet-stream".toMediaType())
 
         assertThat(body.readBytesLimited(payload.size).asList())
             .containsExactlyElementsIn(payload.asList())

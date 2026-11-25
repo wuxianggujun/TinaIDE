@@ -42,7 +42,7 @@ import com.wuxianggujun.tinaide.core.editorlsp.CompletionTextEdit
 import com.wuxianggujun.tinaide.core.editorlsp.DefaultCompletionProvider
 import com.wuxianggujun.tinaide.core.editorlsp.InlayHint as LspInlayHint
 import com.wuxianggujun.tinaide.core.editorlsp.InlayHintKind as LspInlayHintKind
-import com.wuxianggujun.tinaide.core.editorlsp.SemanticToken as LspSemanticToken
+import com.wuxianggujun.tinaide.core.editorapi.SemanticToken as LspSemanticToken
 import com.wuxianggujun.tinaide.core.editorview.DiagnosticSeverity
 import com.wuxianggujun.tinaide.core.editorview.EditorCompletionFetchResult
 import com.wuxianggujun.tinaide.core.editorview.EditorCompletionItem

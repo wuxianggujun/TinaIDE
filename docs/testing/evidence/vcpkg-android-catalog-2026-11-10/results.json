@@ -1,0 +1,48 @@
+{
+  "date": "2026-11-10",
+  "suites": [
+    {
+      "name": "VcpkgAndroidSupportTest",
+      "tests": 9,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "VcpkgAndroidCatalogTest",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "VcpkgRepositoryTest",
+      "tests": 19,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "VcpkgCatalogStoreTest",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  ],
+  "catalog": {
+    "revision": "bdadb1e1a5feceeaf1040dbdd5180dce2ecad61d",
+    "total": 2912,
+    "arm64-v8a": 2487,
+    "x86_64": 2530
+  },
+  "compile": {
+    "featurePackages": true,
+    "featureSettings": true,
+    "appArm64Debug": true,
+    "appArm64AndroidTest": true
+  },
+  "i18n": true,
+  "deviceTestsExecuted": false,
+  "apkBuilt": false
+}

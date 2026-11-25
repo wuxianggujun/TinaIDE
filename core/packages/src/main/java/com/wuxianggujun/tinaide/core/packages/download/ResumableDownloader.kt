@@ -92,9 +92,13 @@ class ResumableDownloader(
                 startPosition = 0L
             }
 
+            coroutineContext.ensureActive()
+
             Timber.tag(TAG).d("Starting package download, resume from $startPosition")
 
-            val requestBuilder = Request.Builder().url(url)
+            // Content-Range and byte counts refer to the representation on the wire.
+            // Transparent gzip must not turn a resumed archive into decoded bytes.
+            val requestBuilder = Request.Builder().url(url).header("Accept-Encoding", "identity")
             if (startPosition > 0 && supportsRange) {
                 requestBuilder.header("Range", "bytes=$startPosition-")
             }
@@ -107,6 +111,19 @@ class ResumableDownloader(
                     )
                 }
                 if (!response.isSuccessful) {
+                    if (response.code == 416 && startPosition > 0L) {
+                        // A previous request may have completed before its final callback.
+                        // Accept only verified bytes; otherwise discard the stale partial
+                        // and retry once without a Range request.
+                        if (calculateChecksum(tempFile).equals(expectedChecksum.substringAfter(":"), ignoreCase = true)) {
+                            coroutineContext.ensureActive()
+                            publishVerifiedFile(tempFile, targetFile)
+                            return@withContext DownloadResult.Success(targetFile)
+                        }
+                        check(tempFile.delete()) { "Failed to discard stale partial package" }
+                        response.close()
+                        return@withContext downloadLocked(url, targetFile, checksum, expectedSize, false, progress)
+                    }
                     return@withContext DownloadResult.Failed(
                         DownloadError.HttpError(response.code, response.message)
                     )
@@ -237,6 +254,7 @@ class ResumableDownloader(
             }
             Timber.tag(TAG).d("Checksum verified")
 
+            coroutineContext.ensureActive()
             publishVerifiedFile(tempFile, targetFile)
 
             Timber.tag(TAG).d("Package download completed")
@@ -249,17 +267,19 @@ class ResumableDownloader(
             Timber.tag(TAG).d("Download cancelled by user")
             throw e
         } catch (e: Exception) {
+            coroutineContext.ensureActive()
             Timber.tag(TAG).e("Package download failed: %s", e.javaClass.simpleName)
             DownloadResult.Failed(DownloadError.IOError(e.message ?: "Unknown error"))
         }
     }
 
-    private fun calculateChecksum(file: File): String {
+    private suspend fun calculateChecksum(file: File): String {
         val digest = MessageDigest.getInstance("SHA-256")
         file.inputStream().use { input ->
             val buffer = ByteArray(BUFFER_SIZE)
             var read: Int
             while (input.read(buffer).also { read = it } != -1) {
+                coroutineContext.ensureActive()
                 digest.update(buffer, 0, read)
             }
         }

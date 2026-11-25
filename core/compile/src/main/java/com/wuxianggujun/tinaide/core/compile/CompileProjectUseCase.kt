@@ -69,6 +69,7 @@ class CompileProjectUseCase(
          * 该字面量必须与 native 侧 sdl_asset_redirect hook 读取的名字保持一致。
          */
         const val RUNTIME_ASSET_ROOT_ENV = "TINAIDE_SDL_ASSET_ROOT"
+        const val RUNTIME_ASSET_DIR_ENV = "TINAIDE_SDL_ASSET_DIR"
     }
 
     // ---------- 嵌套类型(保持外部 API 稳定) ----------
@@ -163,6 +164,7 @@ class CompileProjectUseCase(
             val runnablePath: String?,
             val workingDirectory: String,
             val backend: TerminalBackend = TerminalBackend.HOST,
+            val verificationCommand: String? = null,
         ) : LaunchSpec()
         data class Debug(
             val programPath: String?,
@@ -868,18 +870,23 @@ class CompileProjectUseCase(
             projectRoot = projectRoot,
             launchEnvironment = launchEnvironment,
             nativeRuntimeIdentity = nativeRuntimeIdentity,
+            runtimeArtifactDir = File(descriptor.artifact.absolutePath).parentFile,
         )
+        val graphicalEnvironment = if (descriptor is LaunchDescriptor.Sdl) {
+            resolvedLaunchEnvironment + (RUNTIME_ASSET_DIR_ENV to
+                resolveRuntimeAssetDirectory(projectRoot, config.runtimeAssetDirectory, buildContext).absolutePath)
+        } else resolvedLaunchEnvironment
         return when (descriptor) {
             is LaunchDescriptor.Sdl -> LaunchSpec.Sdl(
                 libraryPath = descriptor.libraryPath,
-                environment = resolvedLaunchEnvironment,
+                environment = graphicalEnvironment,
                 preferredSdlMajor = config.sdlVersion?.major,
                 orientation = config.sdlOrientation,
                 enableFloatingLog = config.enableFloatingLog,
             )
             is LaunchDescriptor.NativeActivity -> LaunchSpec.NativeActivity(
                 libraryPath = descriptor.libraryPath,
-                environment = resolvedLaunchEnvironment,
+                environment = graphicalEnvironment,
                 enableFloatingLog = config.enableFloatingLog,
             )
             is LaunchDescriptor.Debug -> LaunchSpec.Debug(
@@ -922,9 +929,30 @@ class CompileProjectUseCase(
                     runnablePath = descriptor.runnablePath,
                     workingDirectory = workingDir,
                     backend = backend,
+                    verificationCommand = if (backend == TerminalBackend.HOST) terminalCommandBuilder.build(
+                        workingDir, descriptor.runnablePath, args, projectRoot, launchEnvironment, nativeRuntimeIdentity,
+                        interactive = false,
+                    ) else null,
                 )
             }
         }
+    }
+
+    data class ConsoleCheckResult(val exitCode: Int, val output: String, val timedOut: Boolean)
+
+    /** Runs a prepared native executable with bounded output and no terminal close prompt. */
+    suspend fun checkConsoleOutput(report: Report, input: String): ConsoleCheckResult {
+        val terminal = report.launch as? LaunchSpec.Terminal ?: error("Native terminal target required")
+        require(terminal.backend == TerminalBackend.HOST)
+        val command = requireNotNull(terminal.verificationCommand)
+        val result = BuildProcessRunner.run(
+            ProcessBuilder("/system/bin/sh", "-c", command).redirectErrorStream(true),
+            commandLabel = "course-check",
+            timeoutMs = 5_000,
+            stdin = input,
+            maxOutputChars = 32_768,
+        )
+        return ConsoleCheckResult(result.exitCode, result.output, result.timedOut)
     }
 
     private fun mapKind(kind: com.wuxianggujun.tinaide.core.compile.artifact.ArtifactKind): BuildArtifactKind = when (kind) {
@@ -1031,10 +1059,11 @@ class CompileProjectUseCase(
         projectRoot: File,
         launchEnvironment: Map<String, String>,
         nativeRuntimeIdentity: NativeRuntimeIdentity,
+        runtimeArtifactDir: File?,
     ): Map<String, String> {
         val normalized = LaunchEnvironment.sanitized(launchEnvironment)
 
-        val packagePaths = InstalledPackagePathResolver.resolve(appContext, projectRoot)
+        val packagePaths = InstalledPackagePathResolver.resolve(appContext, projectRoot, runtimeArtifactDir)
         val sysrootRuntimeDirs = NativeRuntimeLibraryPaths.sysrootRuntimeDirs(
             context = appContext,
             sysrootProfileId = nativeRuntimeIdentity.sysrootProfileId,

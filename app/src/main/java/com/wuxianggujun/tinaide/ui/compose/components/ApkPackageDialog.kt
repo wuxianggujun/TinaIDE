@@ -55,6 +55,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import com.wuxianggujun.tinaide.core.apkbuilder.ApkBuildConfig
+import com.wuxianggujun.tinaide.core.packages.RaylibRuntimePolicy
 import com.wuxianggujun.tinaide.core.apkbuilder.ApkBuilder
 import com.wuxianggujun.tinaide.core.apkbuilder.ApkKeyStoreManager
 import com.wuxianggujun.tinaide.core.apkbuilder.ApkSigningConfig
@@ -121,6 +122,10 @@ fun ApkPackageDialog(
     missingLibraries: List<String> = emptyList(),
     availablePackages: List<GUIPackage> = emptyList(),
     installedLibraryPackageIndex: Map<String, String> = emptyMap(),
+    /**
+     * 需要打进导出 APK `assets/` 的项目资源目录（递归），通常是 `<项目根>/assets`。
+     */
+    projectAssetDirectories: List<File> = emptyList(),
     onOpenPackageManager: ((String) -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
@@ -1169,11 +1174,20 @@ fun ApkPackageDialog(
                                     sdlLibraryPath = if (resolvedTemplateOption.templateType == ApkTemplateType.SDL3) sdlLibraryPath else null,
                                     preloadLibraries = preloadLibraries,
                                     iconFile = effectiveIconFile,
+                                    assetDirectories = projectAssetDirectories,
                                     signingConfig = signingConfig
                                 )
                                 val outputFile = File(outputDir, "${appName.trim().replace(" ", "_")}.apk")
 
                                 scope.launch {
+                                    val supportedRuntime = withContext(Dispatchers.IO) {
+                                        config.soFiles.all(RaylibRuntimePolicy::isSupportedRuntimeLibrary)
+                                    }
+                                    if (!supportedRuntime) {
+                                        buildError = Strings.raylib_runtime_update_required.strOr(context)
+                                        isBuilding = false
+                                        return@launch
+                                    }
                                     val result = apkBuilder.build(config, outputFile) { progress ->
                                         when (progress) {
                                             is ApkBuilder.BuildProgress.Step -> {

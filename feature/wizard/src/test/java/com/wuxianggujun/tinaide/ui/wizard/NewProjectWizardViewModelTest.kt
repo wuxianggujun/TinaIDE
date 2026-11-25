@@ -45,6 +45,47 @@ class NewProjectWizardViewModelTest {
 
     private val tempDirs = mutableListOf<File>()
 
+    @Test fun vcpkgSelectionIsOptionalAndClearedWhenLeavingCmakeTemplates() {
+        val viewModel = NewProjectWizardViewModel()
+        val cmake = template(id = "template:cmake", buildSystem = ProjectBuildSystem.CMAKE, language = ProjectLanguage.CPP)
+        viewModel.setTemplate(cmake)
+        assertThat(viewModel.state.value.canUseVcpkg).isTrue()
+        assertThat(viewModel.state.value.useVcpkg).isFalse()
+        viewModel.setUseVcpkg(true)
+        viewModel.syncTemplateSelection(listOf(cmake))
+        assertThat(viewModel.state.value.useVcpkg).isTrue()
+        for (system in ProjectBuildSystem.entries.filter { it != ProjectBuildSystem.CMAKE }) {
+            viewModel.setTemplate(template("template:${system.name}", system, ProjectLanguage.CPP))
+            viewModel.setUseVcpkg(true)
+            assertThat(viewModel.state.value.canUseVcpkg).isFalse()
+            assertThat(viewModel.state.value.useVcpkg).isFalse()
+        }
+        viewModel.setTemplate(cmake)
+        assertThat(viewModel.state.value.useVcpkg).isFalse()
+    }
+
+    @Test fun createProjectPassesSelectedVcpkgOptionToProjectTransaction() = runTest {
+        val root = tempDir("wizard-vcpkg")
+        val zipFile = File(root, "cmake.zip")
+        ZipOutputStream(zipFile.outputStream()).use { zip ->
+            zip.writeEntry("CMakeLists.txt", "cmake_minimum_required(VERSION 3.22)\nproject(Demo)\nadd_executable(Demo main.cpp)")
+            zip.writeEntry("main.cpp", "int main() {}")
+        }
+        val option = template("template:cmake", ProjectBuildSystem.CMAKE, ProjectLanguage.CPP, zipFile = zipFile)
+        val viewModel = NewProjectWizardViewModel(ioDispatcher = mainDispatcherRule.dispatcher)
+        viewModel.setTemplate(option)
+        viewModel.setProjectName("Demo")
+        viewModel.setUseVcpkg(true)
+        val completed = kotlinx.coroutines.CompletableDeferred<File>()
+        viewModel.createProject(RuntimeEnvironment.getApplication(), root.absolutePath, listOf(option),
+            onSuccess = { completed.complete(it) }, onError = { completed.completeExceptionally(AssertionError(it)) })
+        val project = completed.await()
+        val settings = com.wuxianggujun.tinaide.project.VcpkgProjectSettings.from(ProjectMetadataStore.read(project)!!.normalizedNativeCMakeArgs())
+        assertThat(settings.mode).isEqualTo(com.wuxianggujun.tinaide.project.VcpkgProjectSettings.MANIFEST)
+        assertThat(File(project, "vcpkg.json").readText(Charsets.UTF_8)).contains("\"dependencies\": []")
+        assertThat(viewModel.state.value.isCreating).isFalse()
+    }
+
     @After
     fun tearDown() {
         tempDirs.forEach { it.deleteRecursively() }

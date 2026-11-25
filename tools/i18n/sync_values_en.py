@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 
@@ -34,6 +35,22 @@ def build_resource_entry_map(xml_text: str) -> dict[str, str]:
     return out
 
 
+def validate_unique_resources(xml_text: str) -> None:
+    resources = ET.fromstring(xml_text)
+    seen: set[tuple[str, str]] = set()
+    for element in resources:
+        name = element.get("name")
+        resource_type = element.get("type") if element.tag == "item" else element.tag
+        if resource_type in {"string-array", "integer-array"}:
+            resource_type = "array"
+        if name is None or resource_type is None:
+            continue
+        key = (resource_type, name)
+        if key in seen:
+            raise ValueError(f"Duplicate resource: {resource_type}/{name}")
+        seen.add(key)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -58,6 +75,15 @@ def main() -> int:
 
     base_text = base_path.read_text(encoding="utf-8")
     en_text = en_path.read_text(encoding="utf-8")
+
+    # A dict silently hides duplicates, even when both locales contain the same
+    # invalid key. Reject them before either checking or writing the translation.
+    for path, text in ((base_path, base_text), (en_path, en_text)):
+        try:
+            validate_unique_resources(text)
+        except (ET.ParseError, ValueError) as error:
+            print(f"{path.as_posix()}: {error}")
+            return 1
 
     base_entries = build_resource_entry_map(base_text)
     en_entries = build_resource_entry_map(en_text)

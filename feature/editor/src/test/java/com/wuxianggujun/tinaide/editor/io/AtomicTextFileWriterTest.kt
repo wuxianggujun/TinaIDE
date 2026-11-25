@@ -2,11 +2,45 @@ package com.wuxianggujun.tinaide.editor.io
 
 import com.google.common.truth.Truth.assertThat
 import java.nio.file.Files
+import java.nio.charset.Charset
+import java.nio.charset.CharacterCodingException
 import java.nio.file.attribute.PosixFilePermission
 import kotlin.io.path.createTempDirectory
 import org.junit.Test
 
 class AtomicTextFileWriterTest {
+    @Test
+    fun write_shouldPreserveOriginalAndRemoveTemporaryFileWhenEncodingWouldLoseCharacters() {
+        val directory = createTempDirectory("atomic-text-writer-encoding-")
+        try {
+            val target = directory.resolve("source.cpp").toFile()
+            val gbk = Charset.forName("GBK")
+            target.writeText("旧内容", gbk)
+            val original = target.readBytes()
+
+            val result = runCatching { AtomicTextFileWriter.write(target, "中文🙂", gbk) }
+
+            assertThat(result.exceptionOrNull()).isInstanceOf(CharacterCodingException::class.java)
+            assertThat(target.readBytes()).isEqualTo(original)
+            assertThat(directory.toFile().listFiles().orEmpty().map { it.name }).containsExactly("source.cpp")
+        } finally {
+            directory.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun write_shouldRejectUnpairedSurrogateWithoutReplacingOriginal() {
+        val directory = createTempDirectory("atomic-text-writer-surrogate-")
+        try {
+            val target = directory.resolve("source.cpp").toFile().apply { writeText("original") }
+            val result = runCatching { AtomicTextFileWriter.write(target, "\uD83D", Charsets.UTF_8) }
+            assertThat(result.exceptionOrNull()).isInstanceOf(CharacterCodingException::class.java)
+            assertThat(target.readText()).isEqualTo("original")
+        } finally {
+            directory.toFile().deleteRecursively()
+        }
+    }
+
     @Test
     fun write_shouldReplaceContentWithoutLeavingTemporaryFile() {
         val directory = createTempDirectory("atomic-text-writer-")

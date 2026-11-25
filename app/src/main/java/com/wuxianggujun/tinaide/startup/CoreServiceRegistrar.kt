@@ -8,7 +8,7 @@ import com.wuxianggujun.tinaide.core.config.KeyboardShortcutManager
 import com.wuxianggujun.tinaide.core.config.MTFileProviderManager
 import com.wuxianggujun.tinaide.core.config.Prefs
 import com.wuxianggujun.tinaide.core.lsp.RemoteLspConfigManager
-import com.wuxianggujun.tinaide.core.network.server.TinaServerEnvironment
+import com.wuxianggujun.tinaide.core.network.aegis.AegisHubEnvironment
 import com.wuxianggujun.tinaide.core.proot.InstallLogManager
 import com.wuxianggujun.tinaide.core.proot.PRootBootstrap
 import org.koin.core.component.KoinComponent
@@ -25,6 +25,19 @@ class CoreServiceRegistrar(private val context: Context) : KoinComponent {
 
     companion object {
         private const val TAG = "CoreServiceRegistrar"
+
+        /** Also used by :crash without initializing Koin, editor or project services. */
+        internal fun initializeReporting() {
+            com.wuxianggujun.tinaide.core.device.DeviceInfoProvider.initialize(BuildConfig.VERSION_NAME)
+            AegisHubEnvironment.initialize(
+                baseUrl = BuildConfig.AEGISHUB_BASE_URL,
+                appId = BuildConfig.AEGISHUB_APP_ID,
+                ingestKey = BuildConfig.AEGISHUB_INGEST_KEY,
+                release = BuildConfig.VERSION_NAME,
+                buildId = BuildConfig.BUILD_ID,
+                environment = if (BuildConfig.DEBUG) "development" else "production",
+            )
+        }
     }
 
     fun execute() {
@@ -34,11 +47,7 @@ class CoreServiceRegistrar(private val context: Context) : KoinComponent {
         // === 副作用初始化（不创建服务实例，只做配置/注册回调） ===
 
         Prefs.initialize(appContext, configManager)
-        com.wuxianggujun.tinaide.core.device.DeviceInfoProvider.initialize(BuildConfig.VERSION_NAME)
-        TinaServerEnvironment.initialize(
-            serverConfigHmacSecret = BuildConfig.SERVER_CONFIG_HMAC_SECRET,
-            serverConfigSignatureRequired = BuildConfig.SERVER_CONFIG_SIGNATURE_REQUIRED
-        )
+        initializeReporting()
         KeyboardShortcutManager.initialize(AppPreferences.get(appContext))
         RemoteLspConfigManager.install(appContext, configManager)
         val installLogManager = get<InstallLogManager>()

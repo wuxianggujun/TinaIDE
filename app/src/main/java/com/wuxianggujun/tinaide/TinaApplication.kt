@@ -15,12 +15,12 @@ import com.wuxianggujun.tinaide.core.debug.di.debugModule
 import com.wuxianggujun.tinaide.core.i18n.AppStrings
 import com.wuxianggujun.tinaide.core.logging.LogProcessRegistry
 import com.wuxianggujun.tinaide.core.logging.TinaTimber
+import com.wuxianggujun.tinaide.core.network.aegis.AegisSessionReporter
 import com.wuxianggujun.tinaide.core.proot.PRootBootstrap
 import com.wuxianggujun.tinaide.core.linuxdesktop.di.linuxDesktopModule
 import com.wuxianggujun.tinaide.core.proot.di.prootModule
 import com.wuxianggujun.tinaide.core.util.CrashLogPrivacyClassifier
 import com.wuxianggujun.tinaide.database.di.databaseModule
-import com.wuxianggujun.tinaide.database.worker.FavoriteSyncWorker
 import com.wuxianggujun.tinaide.di.appModule
 import com.wuxianggujun.tinaide.di.appViewModelModule
 import com.wuxianggujun.tinaide.editor.di.editorModule
@@ -33,8 +33,8 @@ import com.wuxianggujun.tinaide.startup.BundledPackagesInstallTask
 import com.wuxianggujun.tinaide.startup.AppProcessRole
 import com.wuxianggujun.tinaide.startup.AppProcessRoleClassifier
 import com.wuxianggujun.tinaide.startup.CoreServiceRegistrar
+import com.wuxianggujun.tinaide.startup.LegacyServerCleanup
 import com.wuxianggujun.tinaide.startup.ProjectMetadataInitializer
-import com.wuxianggujun.tinaide.startup.ServerConfigSyncTask
 import com.wuxianggujun.tinaide.startup.StartupFlowManager
 import com.wuxianggujun.tinaide.startup.ThemeInitializer
 import com.wuxianggujun.tinaide.storage.di.storageModule
@@ -61,7 +61,7 @@ class TinaApplication : Application() {
     }
 
     // 应用级协程作用域（用于后台任务）
-    // 使用 Dispatchers.Default 而非 Dispatchers.Main：后台任务（ServerConfigSync、Auth、BundledPackages 等）
+    // 使用 Dispatchers.Default 而非 Dispatchers.Main：后台任务（崩溃上传、BundledPackages 等）
     // 不需要在主线程排队，子任务按需通过 withContext(Dispatchers.IO) 切换到 IO 线程。
     private val applicationScope by lazy {
         CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -106,6 +106,7 @@ class TinaApplication : Application() {
                         crashReport = crashReport,
                         source = crashSource,
                         crashLogFileName = crashLogFileName,
+                        processName = processName,
                     )
                 }
             } else {
@@ -152,6 +153,9 @@ class TinaApplication : Application() {
 
         AppStrings.initialize(this)
         if (processRole != AppProcessRole.HOST) {
+            if (processRole == AppProcessRole.CRASH) {
+                CoreServiceRegistrar.initializeReporting()
+            }
             // :crash 继续保留 xCrash 日志展示、国际化和主题；用户 runtime 也保留 Activity
             // 必需资源。数据库、Koin、Tree-sitter 与宿主后台任务只允许主进程初始化。
             val themeInitializer = ThemeInitializer(this)
@@ -201,12 +205,12 @@ class TinaApplication : Application() {
         // 启动时立即尝试上传主进程崩溃日志，并注册 JobScheduler 兜底重试。
         CrashLogAutoUploader.uploadOnStartup(this, applicationScope)
 
-        // 服务器配置同步不依赖本地 C/C++ 工具链，不应为了它在 Application 与 Portal
-        // 重复扫描 sysroot/toolchain 资产。
-        ServerConfigSyncTask(this, applicationScope).execute()
-
-        // 调度收藏后台同步任务
-        FavoriteSyncWorker.schedule(this)
+        // 记录 IDE 启动次数（best-effort，不阻塞启动）。
+        applicationScope.launch(Dispatchers.IO) {
+            LegacyServerCleanup.run(this@TinaApplication)
+            runCatching { AegisSessionReporter.reportLaunch(this@TinaApplication) }
+                .onFailure { Timber.tag(TAG).w(it, "Failed to report launch") }
+        }
 
         // 安装内置包（SDL3 等预编译库）
         BundledPackagesInstallTask(this, applicationScope).execute()

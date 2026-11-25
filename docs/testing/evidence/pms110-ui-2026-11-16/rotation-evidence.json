@@ -1,0 +1,20 @@
+{
+  "08-feedback.xml": {
+    "layout-check-draft": false,
+    "意见反馈": true,
+    "提交反馈": true,
+    "问题或建议": true
+  },
+  "09-feedback-keyboard.xml": {
+    "layout-check-draft": true,
+    "意见反馈": true,
+    "提交反馈": true,
+    "问题或建议": true
+  },
+  "10-feedback-landscape.xml": {
+    "layout-check-draft": false,
+    "意见反馈": false,
+    "提交反馈": false,
+    "问题或建议": false
+  }
+}

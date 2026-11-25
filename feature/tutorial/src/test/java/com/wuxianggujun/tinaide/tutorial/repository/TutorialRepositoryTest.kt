@@ -2,6 +2,7 @@ package com.wuxianggujun.tinaide.tutorial.repository
 
 import android.app.Application
 import com.google.common.truth.Truth.assertThat
+import com.wuxianggujun.tinaide.tutorial.data.TutorialCourseAction
 import com.wuxianggujun.tinaide.tutorial.data.TutorialType
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -20,56 +21,67 @@ import org.robolectric.annotation.Config
 class TutorialRepositoryTest {
 
     @Test
-    fun resolveTutorialByLinkTarget_shouldPreferTutorialEntriesForInternalDocs() {
+    fun resolveTutorialByLinkTarget_shouldNotShadowHelpArticles() {
         val application = RuntimeEnvironment.getApplication() as Application
         val repository = TutorialRepository(application, TutorialProgressStore(application))
 
-        assertThat(repository.resolveTutorialByLinkTarget("build-project.md")?.id)
-            .isEqualTo("build_project")
-        assertThat(repository.resolveTutorialByLinkTarget("./getting-started.md#overview")?.id)
-            .isEqualTo("getting_started")
-        assertThat(repository.resolveTutorialByLinkTarget("create-project.md")?.id)
-            .isEqualTo("create_project")
+        assertThat(repository.resolveTutorialByLinkTarget("build-project.md")).isNull()
+        assertThat(repository.resolveTutorialByLinkTarget("help/vcpkg-guide.md")).isNull()
+        assertThat(repository.resolveTutorialByLinkTarget("./getting-started.md#overview")).isNull()
+        assertThat(repository.resolveTutorialByLinkTarget("create-project.md")).isNull()
         assertThat(repository.resolveTutorialByLinkTarget("plugins-settings.md"))
             .isNull()
-        assertThat(repository.resolveTutorialByLinkTarget("plugin-manifest-compatibility.md")?.id)
-            .isEqualTo("plugin_manifest_compatibility")
-        assertThat(repository.resolveTutorialByLinkTarget("plugin-script-api.md")?.id)
-            .isEqualTo("plugin_script_api")
-        assertThat(repository.resolveTutorialByLinkTarget("plugin-panels-events.md")?.id)
-            .isEqualTo("plugin_panels_events")
-        assertThat(repository.resolveTutorialByLinkTarget("plugin-lsp-troubleshooting.md")?.id)
-            .isEqualTo("plugin_lsp_troubleshooting")
-        assertThat(repository.resolveTutorialByLinkTarget("plugin-testing-recovery.md")?.id)
-            .isEqualTo("plugin_testing_recovery")
+        assertThat(repository.resolveTutorialByLinkTarget("plugin-manifest-compatibility.md")).isNull()
+        assertThat(repository.resolveTutorialByLinkTarget("plugin-script-api.md")).isNull()
+        assertThat(repository.resolveTutorialByLinkTarget("plugin-panels-events.md")).isNull()
+        assertThat(repository.resolveTutorialByLinkTarget("plugin-lsp-troubleshooting.md")).isNull()
+        assertThat(repository.resolveTutorialByLinkTarget("plugin-testing-recovery.md")).isNull()
         assertThat(repository.resolveTutorialByLinkTarget("https://example.com/build-project.md"))
             .isNull()
     }
 
     @Test
-    fun builtInArticles_shouldHaveUniqueResolvableContentAndCompletePluginCourse() = runTest {
+    fun builtInCatalog_shouldContainOneContinuousCourseAndNoHelpArticleCopies() = runTest {
         val application = RuntimeEnvironment.getApplication() as Application
         val repository = TutorialRepository(application, TutorialProgressStore(application))
         val tutorials = repository.getAllTutorialsWithProgress().first().map { it.tutorial }
-        val articles = tutorials.filter { it.type == TutorialType.ARTICLE }
-        val pluginCourseIds = tutorials
-            .filter { it.id.startsWith("plugin_") }
-            .map { it.id }
+        val course = tutorials.single { it.type == TutorialType.GUIDED }
 
         assertThat(tutorials.map { it.id }).containsNoDuplicates()
-        assertThat(articles.mapNotNull { it.contentUrl }).hasSize(articles.size)
-        assertThat(articles.mapNotNull { it.contentUrl }).containsNoDuplicates()
-        articles.forEach { tutorial ->
-            assertThat(repository.resolveTutorialByLinkTarget(tutorial.contentUrl!!)?.id)
-                .isEqualTo(tutorial.id)
-        }
-        assertThat(pluginCourseIds).containsExactly(
-            "plugin_quick_start",
-            "plugin_manifest_compatibility",
-            "plugin_script_api",
-            "plugin_panels_events",
-            "plugin_lsp_troubleshooting",
-            "plugin_testing_recovery",
+        assertThat(tutorials.map { it.id }).containsExactly("onboarding", "cpp_practice_course").inOrder()
+        assertThat(tutorials.map { it.type }).containsExactly(TutorialType.INTERACTIVE, TutorialType.GUIDED)
+        assertThat(course.courseSteps.map { it.id }).containsExactly(
+            "ide_workflow",
+            "cpp_basics",
+            "cpp_functions",
+            "cpp_collections",
+            "cpp_raii",
+            "cmake_practice",
+            "vcpkg_guide",
+            "graphics_sdl3",
+            "ai_practice",
+            "final_review",
         ).inOrder()
+        assertThat(course.courseSteps.dropLast(1).all {
+            it.contentLinkTarget != null || it.helpLinkTarget != null
+        }).isTrue()
+        assertThat(course.courseSteps[6].contentLinkTarget).isEqualTo("vcpkg-practice.md")
+        assertThat(course.courseSteps[6].helpLinkTarget).isEqualTo("vcpkg-guide.md")
+        assertThat(course.courseSteps[6].action).isEqualTo(TutorialCourseAction.OPEN_MARKET)
+        assertThat(course.courseSteps[0].contentLinkTarget).isEqualTo("ide-workflow.md")
+        assertThat(course.courseSteps.last().quiz?.correctAnswerIndex).isEqualTo(0)
+        assertThat(course.courseSteps.last().quiz?.hintRes).hasSize(3)
+    }
+
+    @Test
+    fun courseLinks_shouldResolveToTheMatchingChapterIncludingAnchors() {
+        val application = RuntimeEnvironment.getApplication() as Application
+        val repository = TutorialRepository(application, TutorialProgressStore(application))
+
+        assertThat(repository.resolveCourseStepIndexByLinkTarget("help/cpp-basics.md#input")).isEqualTo(1)
+        assertThat(repository.resolveCourseStepIndexByLinkTarget("vcpkg-guide.md")).isNull()
+        assertThat(repository.resolveCourseStepIndexByLinkTarget("vcpkg-practice.md")).isEqualTo(6)
+        assertThat(repository.resolveCourseStepIndexByLinkTarget("./graphics-sdl3.md")).isEqualTo(7)
+        assertThat(repository.resolveCourseStepIndexByLinkTarget("https://example.com/cpp-basics.md")).isNull()
     }
 }

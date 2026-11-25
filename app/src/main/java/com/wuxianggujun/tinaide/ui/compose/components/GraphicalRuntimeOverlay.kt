@@ -1,168 +1,165 @@
 package com.wuxianggujun.tinaide.ui.compose.components
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CloseFullscreen
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DragHandle
+import androidx.compose.material.icons.filled.DragIndicator
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.OpenInFull
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material.icons.automirrored.filled.WrapText
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
+import com.wuxianggujun.tinaide.core.editorview.TinaCodeViewer
 import com.wuxianggujun.tinaide.core.i18n.Strings
-import java.io.BufferedReader
-import java.io.InputStreamReader
+import com.wuxianggujun.tinaide.ui.runtime.GraphicalOverlayWindowState
+import com.wuxianggujun.tinaide.ui.runtime.GraphicalRuntimeLogDocument
+import com.wuxianggujun.tinaide.ui.runtime.GraphicalRuntimeLogEntry
+import com.wuxianggujun.tinaide.ui.runtime.GraphicalRuntimeMenuPositionProvider
+import com.wuxianggujun.tinaide.ui.runtime.captureGraphicalRuntimeLogcat
 import kotlin.math.roundToInt
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.isActive
 
 /**
  * Shared controls displayed over every fullscreen graphical runtime.
  *
  * 提供：
- * - 可拖拽的半透明小球（始终显示）
- * - 点击小球展开控制面板：退出按钮 + 日志面板
- * - 日志面板实时捕获 logcat 的 TINA_USER_OUTPUT 标签输出
+ * - 收起时只显示一个可拖拽控制球，返回与日志入口放在菜单内
+ * - 日志标题栏可拖拽，右下角可缩放，支持最大化和还原
+ * - 日志面板捕获当前图形进程的全部日志标签
  */
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
-fun GraphicalRuntimeOverlay(
+internal fun GraphicalRuntimeOverlay(
     enableFloatingLog: Boolean,
     onExit: () -> Unit,
-    modifier: Modifier = Modifier
+    windowState: GraphicalOverlayWindowState,
+    modifier: Modifier = Modifier,
+    captureLogs: suspend (String, (List<GraphicalRuntimeLogEntry>) -> Unit) -> Unit = { message, append ->
+        captureGraphicalRuntimeLogcat(message, append)
+    },
 ) {
-    val density = LocalDensity.current
-    val windowSize = LocalWindowInfo.current.containerSize
-    val ballSizePx = with(density) { FloatingControlSize.toPx() }
-    val controlsHeightPx = with(density) {
-        if (enableFloatingLog) {
-            (FloatingControlSize * 2 + FloatingControlGap).toPx()
-        } else {
-            FloatingControlSize.toPx()
-        }
-    }
-    val screenWidthPx = windowSize.width.toFloat().coerceAtLeast(ballSizePx)
-    val screenHeightPx = windowSize.height.toFloat().coerceAtLeast(controlsHeightPx)
-    val maxOffsetX = (screenWidthPx - ballSizePx).coerceAtLeast(0f)
-    val maxOffsetY = (screenHeightPx - controlsHeightPx).coerceAtLeast(0f)
+    var showControlMenu by remember { mutableStateOf(false) }
+    var showExitDialog by rememberSaveable { mutableStateOf(false) }
 
-    var offsetX by remember { mutableFloatStateOf(screenWidthPx - with(density) { 60.dp.toPx() }) }
-    var offsetY by remember { mutableFloatStateOf(screenHeightPx * 0.3f) }
-    var expanded by remember { mutableStateOf(false) }
-    var showExitDialog by remember { mutableStateOf(false) }
-
-    LaunchedEffect(maxOffsetX, maxOffsetY) {
-        offsetX = offsetX.coerceIn(0f, maxOffsetX)
-        offsetY = offsetY.coerceIn(0f, maxOffsetY)
-    }
-
-    val logLines = remember { mutableStateListOf<LogEntry>() }
-    val listState = rememberLazyListState()
+    val logDocument = remember { GraphicalRuntimeLogDocument() }
+    var wordWrap by rememberSaveable { mutableStateOf(false) }
     val logCaptureFailureMessage = stringResource(Strings.floating_overlay_log_capture_failed)
+    DisposableEffect(logDocument) { onDispose { logDocument.close() } }
+    SideEffect { logDocument.setWordWrap(wordWrap) }
 
     if (enableFloatingLog) {
-        LaunchedEffect(Unit) {
-            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                captureLogcat(logLines, logCaptureFailureMessage)
-            }
-        }
-
-        LaunchedEffect(logLines.size) {
-            if (logLines.isNotEmpty()) {
-                listState.animateScrollToItem(logLines.size - 1)
-            }
-        }
+        LaunchedEffect(logDocument) { captureLogs(logCaptureFailureMessage, logDocument::append) }
     }
 
-    Box(modifier = modifier.fillMaxSize()) {
-        // 展开的日志面板（仅在开启悬浮日志时可展开）
-        AnimatedVisibility(
-            visible = expanded && enableFloatingLog,
-            enter = fadeIn() + scaleIn(initialScale = 0.8f),
-            exit = fadeOut() + scaleOut(targetScale = 0.8f),
-            modifier = Modifier.align(Alignment.Center)
-        ) {
+    LaunchedEffect(enableFloatingLog) {
+        if (!enableFloatingLog) windowState.collapseWindow()
+    }
+    val density = LocalDensity.current
+    val bounds = windowState.bounds
+    Box(modifier = modifier
+        .size(with(density) { bounds.width.toDp() }, with(density) { bounds.height.toDp() })
+        .testTag("graphical-overlay-root")
+        .semantics { testTagsAsResourceId = true },
+    ) {
+        if (windowState.expanded && enableFloatingLog) {
             FloatingLogPanel(
-                logLines = logLines,
-                listState = listState,
-                onClearLog = { logLines.clear() },
-                onClose = { expanded = false },
-                onExit = { showExitDialog = true }
+                logDocument = logDocument,
+                wordWrap = wordWrap,
+                onWordWrapChanged = { wordWrap = it },
+                onExit = { showExitDialog = true },
+                windowState = windowState,
+                modifier = Modifier.fillMaxSize(),
             )
-        }
-
-        // 返回和日志职责独立，避免启用日志后改变返回按钮的行为。
-        val onDrag: (androidx.compose.ui.geometry.Offset) -> Unit = { dragAmount ->
-            offsetX = (offsetX + dragAmount.x).coerceIn(0f, maxOffsetX)
-            offsetY = (offsetY + dragAmount.y).coerceIn(0f, maxOffsetY)
-        }
-        Column(
-            modifier = Modifier.offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) },
-            verticalArrangement = Arrangement.spacedBy(FloatingControlGap),
-        ) {
+        } else {
             FloatingControlButton(
-                icon = Icons.AutoMirrored.Filled.ArrowBack,
+                icon = if (enableFloatingLog) Icons.Default.Terminal else Icons.Default.MoreVert,
                 contentDescription = stringResource(Strings.floating_overlay_ball_desc),
-                onTap = { showExitDialog = true },
-                onDrag = onDrag,
+                onTap = { showControlMenu = !showControlMenu },
+                onDrag = { delta ->
+                    showControlMenu = false
+                    windowState.dragBy(delta)
+                },
+                modifier = Modifier.fillMaxSize().testTag("graphical-overlay-control"),
             )
-            if (enableFloatingLog) {
-                FloatingControlButton(
-                    icon = Icons.Default.Terminal,
-                    contentDescription = stringResource(Strings.floating_overlay_log_title),
-                    active = logLines.isNotEmpty(),
-                    onTap = { expanded = !expanded },
-                    onDrag = onDrag,
-                )
-            }
+            GraphicalRuntimeActionsMenu(
+                windowState = windowState,
+                anchorBoundsInOverlay = { IntRect(0, 0, bounds.width, bounds.height) },
+                expanded = showControlMenu,
+                onDismiss = { showControlMenu = false },
+                onOpenLog = if (enableFloatingLog) windowState::openWindow else null,
+                onExit = { showExitDialog = true },
+            )
         }
     }
 
@@ -186,40 +183,32 @@ private fun FloatingControlButton(
     icon: ImageVector,
     contentDescription: String,
     onTap: () -> Unit,
-    onDrag: (androidx.compose.ui.geometry.Offset) -> Unit,
-    active: Boolean = false,
+    onDrag: (Offset) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val currentOnTap by rememberUpdatedState(onTap)
+    val currentOnDrag by rememberUpdatedState(onDrag)
     Surface(
         modifier = modifier
-            .size(FloatingControlSize)
             .shadow(6.dp, CircleShape)
-            .alpha(0.7f)
-            .pointerInput(Unit) {
-                detectDragGestures { change, dragAmount ->
-                    change.consume()
-                    onDrag(dragAmount)
-                }
+            .alpha(0.85f)
+            .semantics(mergeDescendants = true) {
+                this.contentDescription = contentDescription
+                role = Role.Button
+                onClick(label = contentDescription) { currentOnTap(); true }
             }
+            .floatingDrag { currentOnDrag(it) }
             .pointerInput(Unit) {
-                detectTapGestures(onTap = { onTap() })
+                detectTapGestures(onTap = { currentOnTap() })
             },
         shape = CircleShape,
-        color = if (active) {
-            MaterialTheme.colorScheme.primary
-        } else {
-            MaterialTheme.colorScheme.surfaceVariant
-        },
-        contentColor = if (active) {
-            MaterialTheme.colorScheme.onPrimary
-        } else {
-            MaterialTheme.colorScheme.onSurfaceVariant
-        }
+        color = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
                 imageVector = icon,
-                contentDescription = contentDescription,
+                contentDescription = null,
                 modifier = Modifier.size(24.dp)
             )
         }
@@ -228,80 +217,224 @@ private fun FloatingControlButton(
 
 @Composable
 private fun FloatingLogPanel(
-    logLines: List<LogEntry>,
-    listState: androidx.compose.foundation.lazy.LazyListState,
-    onClearLog: () -> Unit,
-    onClose: () -> Unit,
+    logDocument: GraphicalRuntimeLogDocument,
+    wordWrap: Boolean,
+    onWordWrapChanged: (Boolean) -> Unit,
     onExit: () -> Unit,
-    modifier: Modifier = Modifier
+    windowState: GraphicalOverlayWindowState,
+    modifier: Modifier = Modifier,
 ) {
-    val density = LocalDensity.current
-    val windowSize = LocalWindowInfo.current.containerSize
-    val panelWidth = with(density) { (windowSize.width * FLOATING_LOG_PANEL_WIDTH_FRACTION).toDp() }
-    val expandedLogHeight = with(density) { (windowSize.height * FLOATING_LOG_PANEL_HEIGHT_FRACTION).toDp() }
-    val logPanelHeight = if (logLines.isEmpty()) {
-        FloatingLogPanelEmptyHeight.coerceAtMost(expandedLogHeight)
-    } else {
-        expandedLogHeight
-    }
+    var showMenu by remember { mutableStateOf(false) }
+    var menuAnchor by remember { mutableStateOf(IntRect.Zero) }
     val panelShape = RoundedCornerShape(TinaShapes.DialogCorner)
-
     TinaOverlayPanelSurface(
-        modifier = modifier
-            .widthIn(max = panelWidth),
+        modifier = modifier.testTag("graphical-log-window"),
         shape = panelShape,
         containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
         tonalElevation = 8.dp,
-        shadowElevation = 8.dp
+        shadowElevation = 8.dp,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            TinaCustomDialogHeader(
-                title = stringResource(Strings.floating_overlay_log_title),
-                trailingContent = {
-                    if (logLines.isNotEmpty()) {
-                        FloatingOverlayActionButton(
-                            onClick = onClearLog,
-                            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.24f)
-                        ) {
-                            Icon(
-                                Icons.Default.Delete,
-                                contentDescription = stringResource(Strings.floating_overlay_log_clear),
-                                tint = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(8.dp))
+        Box(Modifier.fillMaxSize()) {
+            Column(Modifier.fillMaxSize()) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    val dragLabel = stringResource(Strings.floating_overlay_window_drag)
+                    Row(
+                        modifier = Modifier.weight(1f).height(48.dp).padding(start = 8.dp)
+                            .testTag("graphical-log-drag-handle")
+                            .semantics { contentDescription = dragLabel }
+                            .floatingDrag(windowState::dragBy)
+                            .pointerInput(windowState) {
+                                detectTapGestures(onDoubleTap = { windowState.toggleMaximized() })
+                            },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Default.DragIndicator, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            text = stringResource(Strings.floating_overlay_log_title),
+                            style = MaterialTheme.typography.labelMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(start = 4.dp),
+                        )
                     }
-
-                    FloatingOverlayActionButton(onClick = onClose) {
+                    FloatingOverlayActionButton(
+                        onClick = windowState::toggleMaximized,
+                        modifier = Modifier.testTag("graphical-log-maximize"),
+                    ) {
                         Icon(
-                            Icons.Default.Close,
-                            contentDescription = stringResource(Strings.floating_overlay_exit_confirm_no),
-                            modifier = Modifier.size(18.dp)
+                            if (windowState.maximized) Icons.Default.CloseFullscreen else Icons.Default.OpenInFull,
+                            stringResource(if (windowState.maximized) Strings.floating_overlay_window_restore else Strings.floating_overlay_window_maximize),
+                            Modifier.size(20.dp),
+                        )
+                    }
+                    FloatingOverlayActionButton(
+                        onClick = windowState::collapseWindow,
+                        modifier = Modifier.testTag("graphical-log-collapse"),
+                    ) {
+                        Icon(Icons.Default.Remove, stringResource(Strings.floating_overlay_window_minimize), Modifier.size(20.dp))
+                    }
+                    Box(Modifier.onGloballyPositioned { coordinates ->
+                        menuAnchor = coordinates.boundsInRoot().let {
+                            IntRect(it.left.roundToInt(), it.top.roundToInt(), it.right.roundToInt(), it.bottom.roundToInt())
+                        }
+                    }) {
+                        FloatingOverlayActionButton(
+                            onClick = { showMenu = true },
+                            modifier = Modifier.testTag("graphical-log-more"),
+                        ) {
+                            Icon(Icons.Default.MoreVert, stringResource(Strings.content_desc_more_actions), Modifier.size(20.dp))
+                        }
+                        GraphicalRuntimeActionsMenu(
+                            windowState = windowState,
+                            anchorBoundsInOverlay = { menuAnchor },
+                            expanded = showMenu,
+                            onDismiss = { showMenu = false },
+                            onClearLog = logDocument::clear,
+                            canClearLog = logDocument.lineCount > 0,
+                            wordWrap = wordWrap,
+                            onWordWrapChanged = onWordWrapChanged,
+                            onExit = onExit,
                         )
                     }
                 }
-            )
+                FloatingLogContent(
+                    logDocument = logDocument,
+                    modifier = Modifier.weight(1f).fillMaxWidth().padding(2.dp),
+                )
+            }
+            if (!windowState.maximized) {
+                FloatingWindowResizeHandle(windowState, Modifier.align(Alignment.BottomEnd))
+            }
+        }
+    }
+}
 
-            FloatingLogContent(
-                logLines = logLines,
-                listState = listState,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(logPanelHeight)
-            )
+/** Drag regions are limited to the control, title and resize grip; never the engine/content area. */
+@Composable
+private fun Modifier.floatingDrag(onDrag: (Offset) -> Unit): Modifier {
+    val currentOnDrag by rememberUpdatedState(onDrag)
+    var coordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    return onGloballyPositioned { coordinates = it }.pointerInput(Unit) {
+        var previousScreenPosition: Offset? = null
+        detectDragGestures(
+            onDragStart = { previousScreenPosition = null },
+            onDragEnd = { previousScreenPosition = null },
+            onDragCancel = { previousScreenPosition = null },
+        ) { change, overSlopDelta ->
+            // Moving a PopupWindow also moves its local origin. Local deltas lose part
+            // of the finger's movement; compare actual screen positions instead.
+            val screenPosition = coordinates?.takeIf { it.isAttached }
+                ?.localToScreen(change.position)?.takeIf { it.x.isFinite() && it.y.isFinite() }
+            val previous = previousScreenPosition
+            val delta = if (screenPosition != null && previous != null) screenPosition - previous else overSlopDelta
+            previousScreenPosition = screenPosition
+            change.consume()
+            currentOnDrag(delta)
+        }
+    }
+}
 
-            TinaDialogActionRow {
-                TinaOutlinedButton(
-                    text = stringResource(Strings.floating_overlay_exit),
-                    onClick = onExit,
-                    leadingIcon = Icons.AutoMirrored.Filled.ArrowBack
+@Composable
+private fun FloatingWindowResizeHandle(windowState: GraphicalOverlayWindowState, modifier: Modifier = Modifier) {
+    val resizeLabel = stringResource(Strings.floating_overlay_window_resize)
+    val growLabel = stringResource(Strings.floating_overlay_window_grow)
+    val shrinkLabel = stringResource(Strings.floating_overlay_window_shrink)
+    val step = with(LocalDensity.current) { 32.dp.toPx() }
+    Box(
+        modifier = modifier.size(32.dp).testTag("graphical-log-resize")
+            .semantics {
+                contentDescription = resizeLabel
+                customActions = listOf(
+                    CustomAccessibilityAction(growLabel) { windowState.resizeBy(Offset(step, step)); true },
+                    CustomAccessibilityAction(shrinkLabel) { windowState.resizeBy(Offset(-step, -step)); true },
+                )
+            }
+            .floatingDrag(windowState::resizeBy),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(Icons.Default.DragHandle, null, Modifier.size(20.dp).rotate(-45f), tint = MaterialTheme.colorScheme.primary)
+    }
+}
+
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+private fun GraphicalRuntimeActionsMenu(
+    windowState: GraphicalOverlayWindowState,
+    anchorBoundsInOverlay: () -> IntRect,
+    expanded: Boolean,
+    onDismiss: () -> Unit,
+    onExit: () -> Unit,
+    onOpenLog: (() -> Unit)? = null,
+    onClearLog: (() -> Unit)? = null,
+    canClearLog: Boolean = false,
+    wordWrap: Boolean = false,
+    onWordWrapChanged: ((Boolean) -> Unit)? = null,
+) {
+    if (!expanded) return
+    val density = LocalDensity.current
+    val currentAnchor by rememberUpdatedState(anchorBoundsInOverlay)
+    val positionProvider = remember(windowState, density) {
+        GraphicalRuntimeMenuPositionProvider(
+            screenAnchor = { currentAnchor().translate(windowState.bounds.topLeft) },
+            safeScreenBounds = { windowState.safeMenuBounds },
+            gapPx = with(density) { 4.dp.toPx().roundToInt() },
+        )
+    }
+    val safeBounds = windowState.safeMenuBounds
+    Popup(
+        popupPositionProvider = positionProvider,
+        onDismissRequest = onDismiss,
+        properties = PopupProperties(focusable = true),
+    ) {
+        TinaOverlayPanelSurface(
+            modifier = Modifier.testTag("graphical-overlay-actions-menu").semantics { testTagsAsResourceId = true },
+            shape = RoundedCornerShape(TinaShapes.CardCorner),
+            containerColor = MaterialTheme.colorScheme.surface,
+            tonalElevation = 8.dp,
+            shadowElevation = 12.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)),
+        ) {
+            Column(Modifier.widthIn(max = with(density) { safeBounds.width.toDp() })
+                .width(IntrinsicSize.Max)
+                .heightIn(max = with(density) { safeBounds.height.toDp() })
+                .verticalScroll(rememberScrollState())
+                .padding(vertical = 4.dp),
+            ) {
+                if (onOpenLog != null) {
+                    TinaDropdownMenuItem(
+                        text = { Text(stringResource(Strings.floating_overlay_log_title)) },
+                        leadingIcon = { Icon(Icons.Default.Terminal, null) },
+                        onClick = { onDismiss(); onOpenLog() },
+                        modifier = Modifier.testTag("graphical-overlay-open-log"),
+                    )
+                }
+                if (onClearLog != null) {
+                    TinaDropdownMenuItem(
+                        text = { Text(stringResource(Strings.floating_overlay_log_clear)) },
+                        leadingIcon = { Icon(Icons.Default.Delete, null) },
+                        onClick = { onDismiss(); onClearLog() },
+                        enabled = canClearLog,
+                        modifier = Modifier.testTag("graphical-overlay-clear-log"),
+                    )
+                }
+                if (onWordWrapChanged != null) {
+                    TinaDropdownMenuItem(
+                        text = { Text(stringResource(Strings.settings_word_wrap)) },
+                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.WrapText, null) },
+                        trailingIcon = { Checkbox(checked = wordWrap, onCheckedChange = null) },
+                        onClick = { onWordWrapChanged(!wordWrap) },
+                        modifier = Modifier.testTag("graphical-log-word-wrap").semantics {
+                            role = Role.Checkbox
+                            toggleableState = if (wordWrap) ToggleableState.On else ToggleableState.Off
+                        },
+                    )
+                }
+                TinaDropdownMenuItem(
+                    text = { Text(stringResource(Strings.floating_overlay_exit)) },
+                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) },
+                    onClick = { onDismiss(); onExit() },
+                    modifier = Modifier.testTag("graphical-overlay-exit"),
                 )
             }
         }
@@ -310,18 +443,25 @@ private fun FloatingLogPanel(
 
 @Composable
 private fun FloatingLogContent(
-    logLines: List<LogEntry>,
-    listState: androidx.compose.foundation.lazy.LazyListState,
+    logDocument: GraphicalRuntimeLogDocument,
     modifier: Modifier = Modifier
 ) {
-    FloatingOverlayLogSurface(modifier = modifier) {
-        if (logLines.isEmpty()) {
+    val editorState = logDocument.state
+    val scrollConnection = remember(logDocument) {
+        object : NestedScrollConnection {
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (consumed.y != 0f) logDocument.onUserScroll()
+                return Offset.Zero
+            }
+        }
+    }
+    LaunchedEffect(logDocument.revision, editorState.viewportWidthPx, editorState.viewportHeightPx, editorState.config.wordWrap) {
+        if (logDocument.followingTail) logDocument.scrollToEnd()
+    }
+    FloatingOverlayLogSurface(modifier = modifier.testTag("graphical-log-content")) {
+        TinaCodeViewer(editorState, Modifier.fillMaxSize().nestedScroll(scrollConnection), selectable = true)
+        if (logDocument.lineCount == 0) {
             FloatingLogEmptyState()
-        } else {
-            FloatingLogList(
-                logLines = logLines,
-                listState = listState
-            )
         }
     }
 }
@@ -341,36 +481,6 @@ private fun FloatingLogEmptyState() {
 }
 
 @Composable
-private fun FloatingLogList(
-    logLines: List<LogEntry>,
-    listState: androidx.compose.foundation.lazy.LazyListState,
-) {
-    LazyColumn(
-        state = listState,
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(8.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp)
-    ) {
-        items(logLines) { entry ->
-            Text(
-                text = entry.message,
-                color = when (entry.level) {
-                    'E' -> Color(0xFFFF6B6B)
-                    'W' -> Color(0xFFFFD93D)
-                    else -> Color(0xFFCCCCCC)
-                },
-                fontSize = 11.sp,
-                fontFamily = FontFamily.Monospace,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-    }
-}
-
-@Composable
 private fun FloatingOverlayActionButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -379,8 +489,8 @@ private fun FloatingOverlayActionButton(
 ) {
     TinaPanelSegmentButton(
         onClick = onClick,
-        modifier = modifier.size(32.dp),
-        minHeight = 32.dp,
+        modifier = modifier.size(48.dp),
+        minHeight = 48.dp,
         color = color,
         contentPadding = PaddingValues(0.dp),
         contentAlignment = Alignment.Center,
@@ -395,7 +505,7 @@ private fun FloatingOverlayLogSurface(
 ) {
     TinaOverlayPanelSurface(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(8.dp),
         containerColor = Color(0xFF1E1E1E),
         tonalElevation = 0.dp,
         shadowElevation = 0.dp
@@ -404,90 +514,5 @@ private fun FloatingOverlayLogSurface(
             modifier = Modifier.fillMaxSize(),
             content = content
         )
-    }
-}
-
-data class LogEntry(
-    val level: Char,
-    val message: String,
-    val timestamp: Long = System.currentTimeMillis()
-)
-
-private const val MAX_LOG_LINES = 500
-private const val LOGCAT_INITIAL_LINE_COUNT = 200
-private const val FLOATING_LOG_PANEL_WIDTH_FRACTION = 0.85f
-private const val FLOATING_LOG_PANEL_HEIGHT_FRACTION = 0.60f
-private val FloatingControlSize = 48.dp
-private val FloatingControlGap = 8.dp
-private val FloatingLogPanelEmptyHeight = 112.dp
-
-/**
- * 捕获的 logcat 标签列表。
- *
- * - TINA_USER_OUTPUT: 原生 log redirect 库重定向的 stdout/stderr
- * - SDL: SDL_Log 系列输出
- * - System.out / System.err: Java 标准输出
- */
-private val LOG_TAGS = listOf(
-    "TINA_USER_OUTPUT",
-    "SDL",
-    "System.out",
-    "System.err"
-)
-
-/**
- * 通过 logcat 捕获用户程序的 stdout/stderr 及 SDL 日志。
- *
- * 使用 `--pid` 限制为当前进程，`-T 1` 从启动时刻开始读取（忽略历史），
- * `-s` 只保留 [LOG_TAGS] 中列出的标签。
- * 当行数超过 [MAX_LOG_LINES] 时移除最早的条目。
- */
-private suspend fun captureLogcat(
-    logLines: MutableList<LogEntry>,
-    failureMessage: String,
-) = coroutineScope {
-    val pid = android.os.Process.myPid()
-    val tagFilters = LOG_TAGS.map { "$it:*" }
-    val cmd = mutableListOf(
-        "logcat",
-        "--pid=$pid",
-        "-v",
-        "brief",
-        "-T",
-        LOGCAT_INITIAL_LINE_COUNT.toString(),
-        "-s"
-    ).apply { addAll(tagFilters) }
-
-    val process = try {
-        ProcessBuilder(cmd)
-            .redirectErrorStream(true)
-            .start()
-    } catch (e: Exception) {
-        logLines.add(LogEntry('E', failureMessage))
-        return@coroutineScope
-    }
-
-    try {
-        val reader = BufferedReader(InputStreamReader(process.inputStream))
-        var line: String?
-        while (isActive) {
-            line = reader.readLine() ?: break
-            if (line.isBlank() || line.startsWith("-----")) continue
-
-            val level = when {
-                line.isNotEmpty() && line[0] in "VDIWEF" -> line[0]
-                else -> 'I'
-            }
-            val message = line.substringAfter("): ", line)
-
-            logLines.add(LogEntry(level, message))
-            while (logLines.size > MAX_LOG_LINES) {
-                logLines.removeAt(0)
-            }
-        }
-    } catch (_: Exception) {
-        // reader closed
-    } finally {
-        process.destroy()
     }
 }

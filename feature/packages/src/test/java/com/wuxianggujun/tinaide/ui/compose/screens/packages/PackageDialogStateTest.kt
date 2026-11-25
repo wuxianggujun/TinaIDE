@@ -52,7 +52,6 @@ class PackageDialogStateTest {
             platform = Platform.LINUX
         )
         val updating = PackageDialogState.BatchUpdating(
-            updates = listOf(update),
             currentIndex = 0,
             totalCount = 1,
             currentPackageName = "CMake",
@@ -62,13 +61,16 @@ class PackageDialogStateTest {
             updates = listOf(update),
             plans = listOf(packageInstallPlan("cmake"))
         )
-        val complete = PackageDialogState.BatchUpdateComplete(totalCount = 1)
+        val complete = PackageDialogState.BatchComplete(
+            operation = PackageBatchOperation.UPDATE,
+            result = PackageBatchResult(total = 1, succeeded = 1, failures = emptyList(), cancelled = false),
+        )
 
         assertThat(confirm.updates).containsExactly(update)
         assertThat(confirm.plans.single().packageId).isEqualTo("cmake")
-        assertThat(updating.updates).containsExactly(update)
         assertThat(updating.currentPackageName).isEqualTo("CMake")
-        assertThat(complete.totalCount).isEqualTo(1)
+        assertThat(complete.result.succeeded).isEqualTo(1)
+        assertThat(complete.result.unfinished).isEqualTo(0)
     }
 
     private fun packageInstallPlan(packageId: String): PackageInstallPlan = PackageInstallPlan(

@@ -94,7 +94,7 @@ internal class EditorLspNavigationFacade(
             "typeDefinition",
             "implementation",
             -> supportsAdvancedLspNavigation(file)
-            "callHierarchyIncoming" -> lspEditorManager.supportsCallHierarchyIncoming(tabId, file)
+            "callHierarchyIncoming", "callHierarchyOutgoing" -> lspEditorManager.supportsCallHierarchyIncoming(tabId, file)
             "switchHeaderSource" -> supportsHeaderSourceSwitch(file)
             else -> false
         }

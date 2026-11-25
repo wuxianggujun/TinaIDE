@@ -15,50 +15,42 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Inventory
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SuggestionChip
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -70,6 +62,7 @@ import com.wuxianggujun.tinaide.plugin.marketplace.PluginDetail
 import com.wuxianggujun.tinaide.plugin.marketplace.PluginMarketplaceSelectionSupport
 import com.wuxianggujun.tinaide.plugin.marketplace.PluginSummary
 import com.wuxianggujun.tinaide.plugin.marketplace.PluginVersion
+import com.wuxianggujun.tinaide.ui.compose.components.BadgeStatus
 import com.wuxianggujun.tinaide.ui.compose.components.PluginCardSkeleton
 import com.wuxianggujun.tinaide.ui.compose.components.PluginPermissionDialog
 import com.wuxianggujun.tinaide.ui.compose.components.TinaAlertDialog
@@ -79,13 +72,24 @@ import com.wuxianggujun.tinaide.ui.compose.components.TinaDialogCard
 import com.wuxianggujun.tinaide.ui.compose.components.TinaDialogContentColumn
 import com.wuxianggujun.tinaide.ui.compose.components.TinaDialogMessageCard
 import com.wuxianggujun.tinaide.ui.compose.components.TinaDialogTitleText
+import com.wuxianggujun.tinaide.ui.compose.components.TinaEmptyState
+import com.wuxianggujun.tinaide.ui.compose.components.TinaErrorState
 import com.wuxianggujun.tinaide.ui.compose.components.TinaOutlinedButton
 import com.wuxianggujun.tinaide.ui.compose.components.TinaPrimaryButton
+import com.wuxianggujun.tinaide.ui.compose.components.TinaInlineSearchField
 import com.wuxianggujun.tinaide.ui.compose.components.TinaPullToRefreshBox
+import com.wuxianggujun.tinaide.ui.compose.components.TinaStatusBadge
 import com.wuxianggujun.tinaide.ui.compose.components.TinaTextButton
 import com.wuxianggujun.tinaide.ui.compose.components.TinaTopBar
 import com.wuxianggujun.tinaide.ui.compose.components.tinaBackAction
+import com.wuxianggujun.tinaide.ui.compose.screens.settings.sections.GitHubRegistryProxyDialog
 import org.koin.androidx.compose.koinViewModel
+
+enum class MarketTab(val index: Int) {
+    PLUGINS(0),
+    PACKAGES(1),
+    VCPKG(2),
+}
 
 /**
  * 市场主屏幕
@@ -96,19 +100,48 @@ import org.koin.androidx.compose.koinViewModel
 @Composable
 fun MarketScreen(
     modifier: Modifier = Modifier,
-    viewModel: MarketScreenViewModel = koinViewModel()
+    viewModel: MarketScreenViewModel = koinViewModel(),
+    requestedTab: MarketTab? = null,
+    onTabRequestHandled: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val permissionDeniedText = stringResource(Strings.toast_plugins_permission_denied)
+    val proxySavedText = stringResource(Strings.github_registry_proxy_save_ok)
+    var showProxyDialog by rememberSaveable { mutableStateOf(false) }
     // 默认「插件」；包管理为第二 Tab，不抢首屏
-    var selectedTab by remember { mutableIntStateOf(0) }
-    val pluginState by viewModel.pluginState.collectAsState()
-    val packageState by viewModel.packageState.collectAsState()
+    var selectedTab by androidx.compose.runtime.saveable.rememberSaveable { mutableIntStateOf(0) }
+    // 搜索由顶栏统一持有：三个 Tab 共用一份关键词，切换 Tab 不丢
+    var searchExpanded by rememberSaveable { mutableStateOf(false) }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    val searchActive = searchExpanded || searchQuery.isNotBlank()
+    var searchFocusPending by remember { mutableStateOf(false) }
+    val searchFocusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val collapseSearch: () -> Unit = {
+        searchQuery = ""
+        searchExpanded = false
+        keyboardController?.hide()
+    }
+
+    val pluginState by viewModel.pluginState.collectAsStateWithLifecycle()
+    val packageState by viewModel.packageState.collectAsStateWithLifecycle()
     val closePluginDetails = viewModel::closePluginDetails
     val selectedPlugin = PluginMarketplaceSelectionSupport.resolveSelectedPlugin(
         selectedPluginId = pluginState.selectedPluginId,
         plugins = pluginState.plugins,
     )
+
+    LaunchedEffect(requestedTab) {
+        requestedTab?.let { requested ->
+            // Course navigation starts at the requested catalogue, including after plugin browsing.
+            viewModel.closePluginDetails()
+            selectedTab = requested.index
+            searchFocusPending = false
+            collapseSearch()
+            showProxyDialog = false
+            onTabRequestHandled()
+        }
+    }
 
     // 显示安装结果提示
     LaunchedEffect(pluginState.message) {
@@ -126,6 +159,7 @@ fun MarketScreen(
     }
 
     TinaBackHandlers(
+        tinaBackAction(enabled = searchActive && selectedPlugin == null, onBack = collapseSearch),
         tinaBackAction(
             enabled = pluginState.selectedPluginId != null,
             onBack = closePluginDetails
@@ -155,6 +189,13 @@ fun MarketScreen(
         )
     }
 
+    if (showProxyDialog) {
+        GitHubRegistryProxyDialog(
+            onDismiss = { showProxyDialog = false },
+            onSaved = { Toast.makeText(context, proxySavedText, Toast.LENGTH_SHORT).show() },
+        )
+    }
+
     // 如果选中了插件，显示详情页面；拦截返回手势，防止直接退出 APP
     selectedPlugin?.let { plugin ->
         val detail = pluginState.selectedPluginDetail ?: plugin.toPluginDetailFallback()
@@ -173,11 +214,44 @@ fun MarketScreen(
         return
     }
 
+    // 只在用户主动点开搜索时请求焦点；从插件详情返回时不弹键盘。
+    LaunchedEffect(searchActive, searchFocusPending) {
+        if (searchFocusPending && searchActive) {
+            searchFocusPending = false
+            searchFocusRequester.requestFocus()
+            keyboardController?.show()
+        }
+    }
+
     Scaffold(
         topBar = {
-            TinaTopBar(
-                title = stringResource(Strings.market_title)
-            )
+            // 搜索态与标题态同高（64dp）：展开搜索不额外占用列表空间
+            if (searchActive) {
+                MarketSearchTopBar(
+                    query = searchQuery,
+                    onQueryChange = { searchQuery = it },
+                    onCollapse = collapseSearch,
+                    focusRequester = searchFocusRequester,
+                )
+            } else {
+                TinaTopBar(
+                    title = stringResource(Strings.market_title),
+                    actions = {
+                        IconButton(onClick = {
+                            searchFocusPending = true
+                            searchExpanded = true
+                        }) {
+                            Icon(
+                                Icons.Default.Search,
+                                contentDescription = stringResource(Strings.market_search_action)
+                            )
+                        }
+                        IconButton(onClick = { showProxyDialog = true }) {
+                            Icon(Icons.Default.Language, contentDescription = stringResource(Strings.market_github_proxy))
+                        }
+                    },
+                )
+            }
         }
     ) { padding ->
         Column(
@@ -185,24 +259,7 @@ fun MarketScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            PrimaryTabRow(
-                selectedTabIndex = selectedTab,
-                containerColor = MaterialTheme.colorScheme.surface,
-                contentColor = MaterialTheme.colorScheme.primary
-            ) {
-                Tab(
-                    selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
-                    text = { Text(stringResource(Strings.market_tab_plugins)) },
-                    icon = { Icon(Icons.Default.Extension, contentDescription = null) }
-                )
-                Tab(
-                    selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
-                    text = { Text(stringResource(Strings.market_tab_packages)) },
-                    icon = { Icon(Icons.Default.Inventory, contentDescription = null) }
-                )
-            }
+            MarketTabRow(selectedTab = selectedTab, onTabSelected = { selectedTab = it })
 
             Box(
                 modifier = Modifier
@@ -211,6 +268,7 @@ fun MarketScreen(
             ) {
                 when (selectedTab) {
                     0 -> PluginsMarketContent(
+                        query = searchQuery,
                         plugins = pluginState.plugins,
                         installedPlugins = pluginState.installedPlugins,
                         updatablePlugins = pluginState.updatablePlugins,
@@ -225,6 +283,7 @@ fun MarketScreen(
                         onRefresh = viewModel::retryLoadPlugins
                     )
                     1 -> PackagesMarketContent(
+                        query = searchQuery,
                         packages = packageState.filteredPackages,
                         installStates = packageState.installStates,
                         installingPackages = packageState.installingPackages,
@@ -234,6 +293,7 @@ fun MarketScreen(
                         onCancel = viewModel::cancelPackageInstall,
                         onRefresh = viewModel::retryLoadPackages
                     )
+                    2 -> VcpkgMarketHost(query = searchQuery)
                 }
             }
         }
@@ -251,6 +311,7 @@ fun MarketScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PluginsMarketContent(
+    query: String,
     plugins: List<PluginSummary>,
     installedPlugins: Set<String>,
     updatablePlugins: Set<String>,
@@ -264,51 +325,12 @@ private fun PluginsMarketContent(
     onPluginClick: (PluginSummary) -> Unit,
     onRefresh: () -> Unit
 ) {
-    var searchQuery by remember { mutableStateOf("") }
-    var selectedCategory by remember { mutableIntStateOf(0) }
-    val categories = listOf(
-        stringResource(Strings.market_category_all),
-        stringResource(Strings.market_category_theme),
-        stringResource(Strings.market_category_tool),
-        stringResource(Strings.market_category_language),
-    )
-    val categoryKeys = listOf(null, "theme", "tool", "language")
-    val visiblePlugins = remember(plugins, searchQuery, selectedCategory, categories) {
-        filterPlugins(
-            plugins = plugins,
-            query = searchQuery,
-            selectedCategory = selectedCategory,
-            categories = categories,
-            categoryKeys = categoryKeys,
-        )
+    // 分类不再做成筛选条：插件卡片上直接显示分类标签，省下一整行高度。
+    val visiblePlugins = remember(plugins, query) {
+        filterPlugins(plugins = plugins, query = query)
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        SearchTextField(
-            query = searchQuery,
-            onQueryChange = { searchQuery = it },
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
-        )
-
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            items(categories.size) { index ->
-                FilterChip(
-                    selected = selectedCategory == index,
-                    onClick = { selectedCategory = index },
-                    label = { Text(categories[index]) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
         when {
             isLoading && plugins.isEmpty() -> {
                 LazyColumn(
@@ -318,17 +340,17 @@ private fun PluginsMarketContent(
                 ) { items(5) { PluginCardSkeleton() } }
             }
             error != null && plugins.isEmpty() -> {
-                MarketErrorState(icon = Icons.Default.Extension, errorMessage = error, onRetry = onRefresh)
+                TinaErrorState(icon = Icons.Default.Extension, errorMessage = error, onRetry = onRefresh)
             }
             plugins.isEmpty() -> {
-                MarketEmptyState(
+                TinaEmptyState(
                     icon = Icons.Default.Extension,
                     title = stringResource(Strings.market_empty_plugins_title),
                     description = stringResource(Strings.market_empty_plugins_desc)
                 )
             }
             visiblePlugins.isEmpty() -> {
-                MarketEmptyState(
+                TinaEmptyState(
                     icon = Icons.Default.Search,
                     title = stringResource(Strings.market_empty_search_title),
                     description = stringResource(Strings.market_empty_search_desc)
@@ -390,9 +412,20 @@ private fun PluginCard(
                 Column(Modifier.weight(1f)) {
                     Text(plugin.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(plugin.description ?: "", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    plugin.latestVersion?.let { version ->
+                    val categoryLabel = pluginCategoryLabel(plugin.category)
+                    if (plugin.latestVersion != null || categoryLabel != null) {
                         Spacer(Modifier.height(4.dp))
-                        Text(stringResource(Strings.market_version, version), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            plugin.latestVersion?.let { version ->
+                                Text(stringResource(Strings.market_version, version), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            categoryLabel?.let { label ->
+                                TinaStatusBadge(label, BadgeStatus.INFO)
+                            }
+                        }
                     }
                 }
                 Spacer(Modifier.width(8.dp))
@@ -502,6 +535,7 @@ private fun marketPlatformDisplayName(platform: Platform): String = when (platfo
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PackagesMarketContent(
+    query: String,
     packages: List<GUIPackage>,
     installStates: Map<String, com.wuxianggujun.tinaide.core.packages.model.PackageInstallState>,
     installingPackages: Map<String, Float>,
@@ -511,35 +545,30 @@ private fun PackagesMarketContent(
     onCancel: (String) -> Unit,
     onRefresh: () -> Unit
 ) {
-    var searchQuery by remember { mutableStateOf("") }
-    val visiblePackages = remember(packages, searchQuery) {
-        filterPackages(packages = packages, query = searchQuery)
+    val visiblePackages = remember(packages, query) {
+        filterPackages(packages = packages, query = query)
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        SearchTextField(query = searchQuery, onQueryChange = { searchQuery = it }, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp))
-
-        when {
-            isLoading && packages.isEmpty() -> {
-                LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxSize()) { items(5) { PluginCardSkeleton() } }
-            }
-            error != null && packages.isEmpty() -> MarketErrorState(icon = Icons.Default.Inventory, errorMessage = error, onRetry = onRefresh)
-            packages.isEmpty() -> MarketEmptyState(icon = Icons.Default.Inventory, title = stringResource(Strings.market_empty_packages_title), description = stringResource(Strings.market_empty_packages_desc))
-            visiblePackages.isEmpty() -> MarketEmptyState(icon = Icons.Default.Search, title = stringResource(Strings.market_empty_search_title), description = stringResource(Strings.market_empty_search_desc))
-            else -> {
-                TinaPullToRefreshBox(isRefreshing = isLoading, onRefresh = onRefresh, enableHapticFeedback = true, modifier = Modifier.fillMaxSize()) {
-                    LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        items(visiblePackages) { pkg ->
-                            val installState = installStates[pkg.id]
-                            val isInstalled = installState?.linux?.isInstalled == true || installState?.android?.isInstalled == true
-                            PackageCard(
-                                packageItem = pkg,
-                                isInstalled = isInstalled,
-                                installProgress = installingPackages[pkg.id],
-                                onInstall = { onInstall(pkg.id) },
-                                onCancel = { onCancel(pkg.id) }
-                            )
-                        }
+    when {
+        isLoading && packages.isEmpty() -> {
+            LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxSize()) { items(5) { PluginCardSkeleton() } }
+        }
+        error != null && packages.isEmpty() -> TinaErrorState(icon = Icons.Default.Inventory, errorMessage = error, onRetry = onRefresh)
+        packages.isEmpty() -> TinaEmptyState(icon = Icons.Default.Inventory, title = stringResource(Strings.market_empty_packages_title), description = stringResource(Strings.market_empty_packages_desc))
+        visiblePackages.isEmpty() -> TinaEmptyState(icon = Icons.Default.Search, title = stringResource(Strings.market_empty_search_title), description = stringResource(Strings.market_empty_search_desc))
+        else -> {
+            TinaPullToRefreshBox(isRefreshing = isLoading, onRefresh = onRefresh, enableHapticFeedback = true, modifier = Modifier.fillMaxSize()) {
+                LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    items(visiblePackages) { pkg ->
+                        val installState = installStates[pkg.id]
+                        val isInstalled = installState?.linux?.isInstalled == true || installState?.android?.isInstalled == true
+                        PackageCard(
+                            packageItem = pkg,
+                            isInstalled = isInstalled,
+                            installProgress = installingPackages[pkg.id],
+                            onInstall = { onInstall(pkg.id) },
+                            onCancel = { onCancel(pkg.id) }
+                        )
                     }
                 }
             }
@@ -628,54 +657,35 @@ private fun DownloadProgressButton(
     }
 }
 
+/**
+ * 搜索态顶栏：标题让位给输入框，高度与普通顶栏一致，不额外挤压列表。
+ */
 @Composable
-private fun SearchTextField(query: String, onQueryChange: (String) -> Unit, modifier: Modifier = Modifier) {
-    OutlinedTextField(
-        value = query,
-        onValueChange = onQueryChange,
-        modifier = modifier,
-        placeholder = { Text(stringResource(Strings.market_search_hint)) },
-        leadingIcon = { Icon(Icons.Default.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
-        singleLine = true,
-        shape = RoundedCornerShape(12.dp),
-        colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = MaterialTheme.colorScheme.surface, unfocusedContainerColor = MaterialTheme.colorScheme.surface)
+private fun MarketSearchTopBar(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onCollapse: () -> Unit,
+    focusRequester: FocusRequester,
+) {
+    TinaTopBar(
+        title = {
+            TinaInlineSearchField(
+                value = query,
+                onValueChange = onQueryChange,
+                placeholder = stringResource(Strings.market_search_all_hint),
+                onClearClick = { onQueryChange("") },
+                modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
+            )
+        },
+        navigationIcon = {
+            IconButton(onClick = onCollapse) {
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = stringResource(Strings.content_desc_navigate_back),
+                )
+            }
+        },
     )
-}
-
-@Composable
-private fun MarketEmptyState(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, description: String, modifier: Modifier = Modifier) {
-    Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.wrapContentSize().padding(32.dp)) {
-            Box(Modifier.size(96.dp).clip(RoundedCornerShape(48.dp)).then(Modifier.padding(0.dp)), contentAlignment = Alignment.Center) {
-                Icon(icon, null, Modifier.size(48.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
-            }
-            Spacer(Modifier.height(24.dp))
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-            Spacer(Modifier.height(8.dp))
-            Text(description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
-
-@Composable
-private fun MarketErrorState(icon: androidx.compose.ui.graphics.vector.ImageVector, errorMessage: String, onRetry: () -> Unit, modifier: Modifier = Modifier) {
-    Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.wrapContentSize().padding(32.dp)) {
-            Box(Modifier.size(96.dp).clip(RoundedCornerShape(48.dp)), contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.Warning, null, Modifier.size(48.dp), tint = MaterialTheme.colorScheme.onErrorContainer)
-            }
-            Spacer(Modifier.height(24.dp))
-            Text(stringResource(Strings.market_error_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-            Spacer(Modifier.height(8.dp))
-            Text(errorMessage, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 16.dp))
-            Spacer(Modifier.height(24.dp))
-            OutlinedButton(onClick = onRetry, colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary)) {
-                Icon(Icons.Default.Refresh, null, Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(stringResource(Strings.market_error_retry))
-            }
-        }
-    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -991,29 +1001,27 @@ private fun PluginSummary.toPluginDetailFallback(): PluginDetail {
     )
 }
 
+/**
+ * 插件分类只作为卡片上的信息标签展示，不再提供筛选入口；未知分类不显示，避免露出英文原文。
+ */
+@Composable
+private fun pluginCategoryLabel(category: String?): String? = when (category?.trim()?.lowercase()) {
+    "theme" -> stringResource(Strings.market_category_theme)
+    "tool" -> stringResource(Strings.market_category_tool)
+    "language" -> stringResource(Strings.market_category_language)
+    else -> null
+}
+
 private fun filterPlugins(
     plugins: List<PluginSummary>,
     query: String,
-    selectedCategory: Int,
-    categories: List<String>,
-    categoryKeys: List<String?>,
 ): List<PluginSummary> {
     val normalizedQuery = query.trim()
-    val selectedCategoryLabel = categories.getOrNull(selectedCategory)
-    val selectedCategoryKey = categoryKeys.getOrNull(selectedCategory)
-    val allCategoryLabel = categories.firstOrNull()
+    if (normalizedQuery.isBlank()) return plugins
     return plugins.filter { plugin ->
-        val matchesQuery = normalizedQuery.isBlank() ||
-            plugin.name.contains(normalizedQuery, ignoreCase = true) ||
+        plugin.name.contains(normalizedQuery, ignoreCase = true) ||
             plugin.description?.contains(normalizedQuery, ignoreCase = true) == true ||
             plugin.tags.any { tag -> tag.contains(normalizedQuery, ignoreCase = true) }
-        val matchesCategory = selectedCategory == 0 ||
-            selectedCategoryKey.isNullOrBlank() ||
-            plugin.category?.equals(selectedCategoryKey, ignoreCase = true) == true ||
-            selectedCategoryLabel.isNullOrBlank() ||
-            selectedCategoryLabel == allCategoryLabel ||
-            plugin.category?.equals(selectedCategoryLabel, ignoreCase = true) == true
-        matchesQuery && matchesCategory
     }
 }
 

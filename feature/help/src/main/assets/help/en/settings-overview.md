@@ -72,7 +72,11 @@ When enabled for the current build, tap the version information five times withi
 
 ### About
 
-Version, GitHub, logs, PRoot logs, crash-report preference, cleanup, donation options, and open-source licenses.
+Version, GitHub, logs, PRoot logs, crash-report preference, cleanup, and open-source licenses.
+
+## Donate
+
+Open **Profile → Donate**, between **Settings** and **About**, for WeChat and Alipay donation codes and a link to Afdian.
 
 ## Where to start
 

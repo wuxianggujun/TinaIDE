@@ -1,0 +1,324 @@
+{
+  "totals": {
+    "tests": 42,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "suites": [
+    {
+      "suite": "com.wuxianggujun.tinaide.core.compile.artifact.VcpkgBuildInputsTest",
+      "cases": [
+        {
+          "name": "manifestTracksOnlySelectedAbiAndConfigurationAlongWithStatusAndHeaders",
+          "classname": "com.wuxianggujun.tinaide.core.compile.artifact.VcpkgBuildInputsTest",
+          "time": "0.148",
+          "skipped": false,
+          "failed": false
+        },
+        {
+          "name": "replacingLibraryAtSamePathWithSameSizeAndTimestampChangesFingerprint",
+          "classname": "com.wuxianggujun.tinaide.core.compile.artifact.VcpkgBuildInputsTest",
+          "time": "0.093",
+          "skipped": false,
+          "failed": false
+        }
+      ]
+    },
+    {
+      "suite": "com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutorConfigTest",
+      "cases": [
+        {
+          "name": "resolveCMakeCompilerCommand keeps real compiler when linker64 is disabled",
+          "classname": "com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutorConfigTest",
+          "time": "0.023",
+          "skipped": false,
+          "failed": false
+        },
+        {
+          "name": "buildCompilePackageEnvironment excludes runtime library path",
+          "classname": "com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutorConfigTest",
+          "time": "0.008",
+          "skipped": false,
+          "failed": false
+        },
+        {
+          "name": "shouldPatchNinjaFile only reacts to cmake paths",
+          "classname": "com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutorConfigTest",
+          "time": "0.002",
+          "skipped": false,
+          "failed": false
+        },
+        {
+          "name": "buildConfigureFailureSummary captures build tool scratch and helper failure",
+          "classname": "com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutorConfigTest",
+          "time": "0.069",
+          "skipped": false,
+          "failed": false
+        },
+        {
+          "name": "waitForProcessExit returns process exit code when command finishes in time",
+          "classname": "com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutorConfigTest",
+          "time": "0.021",
+          "skipped": false,
+          "failed": false
+        },
+        {
+          "name": "buildCMakePackageRootArguments mirrors package prefixes into find root path",
+          "classname": "com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutorConfigTest",
+          "time": "0.001",
+          "skipped": false,
+          "failed": false
+        },
+        {
+          "name": "waitForProcessExit destroys forcibly when process ignores graceful timeout",
+          "classname": "com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutorConfigTest",
+          "time": "0.001",
+          "skipped": false,
+          "failed": false
+        },
+        {
+          "name": "resolveBuildToolProgramSource reports shim and real cases",
+          "classname": "com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutorConfigTest",
+          "time": "0.016",
+          "skipped": false,
+          "failed": false
+        },
+        {
+          "name": "resolveBuildToolProgram prefers shell shim when linker64 is disabled",
+          "classname": "com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutorConfigTest",
+          "time": "0.026",
+          "skipped": false,
+          "failed": false
+        },
+        {
+          "name": "buildCompilerExecutionFlags enables integrated cc1 for clang in linker64 mode",
+          "classname": "com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutorConfigTest",
+          "time": "0.009",
+          "skipped": false,
+          "failed": false
+        },
+        {
+          "name": "buildAndroidAbiCMakeArgument exposes package ABI to CMake config files",
+          "classname": "com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutorConfigTest",
+          "time": "0.001",
+          "skipped": false,
+          "failed": false
+        },
+        {
+          "name": "resolveCMakeToolPath prefers shim path for archive tools in linker64 mode",
+          "classname": "com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutorConfigTest",
+          "time": "0.004",
+          "skipped": false,
+          "failed": false
+        },
+        {
+          "name": "build shim prepare summary captures generated and missing tools",
+          "classname": "com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutorConfigTest",
+          "time": "0.008",
+          "skipped": false,
+          "failed": false
+        },
+        {
+          "name": "resolveCMakeCompilerCommand prefers shim compiler when available",
+          "classname": "com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutorConfigTest",
+          "time": "0.0",
+          "skipped": false,
+          "failed": false
+        },
+        {
+          "name": "buildCMakeExtraEnvironment adds shim trace flag when enabled",
+          "classname": "com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutorConfigTest",
+          "time": "0.0",
+          "skipped": false,
+          "failed": false
+        },
+        {
+          "name": "resolveCMakeCompilerCommand falls back to linker64 when shim is unavailable",
+          "classname": "com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutorConfigTest",
+          "time": "0.0",
+          "skipped": false,
+          "failed": false
+        },
+        {
+          "name": "appendCommandOutputLine forwards native cmake progress line to callback",
+          "classname": "com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutorConfigTest",
+          "time": "0.02",
+          "skipped": false,
+          "failed": false
+        },
+        {
+          "name": "buildCMakeBuildCommand keeps cmake build for makefiles",
+          "classname": "com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutorConfigTest",
+          "time": "0.01",
+          "skipped": false,
+          "failed": false
+        },
+        {
+          "name": "shouldRetryWithoutTinaExecAfterShimFailure skips concrete compiler diagnostics",
+          "classname": "com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutorConfigTest",
+          "time": "0.0",
+          "skipped": false,
+          "failed": false
+        },
+        {
+          "name": "shouldRetryWithoutTinaExecAfterShimFailure detects silent shim compiler failure",
+          "classname": "com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutorConfigTest",
+          "time": "0.0",
+          "skipped": false,
+          "failed": false
+        },
+        {
+          "name": "shouldDisableTinaExecForCMakeBuild disables linker64 ninja shell shim path",
+          "classname": "com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutorConfigTest",
+          "time": "0.0",
+          "skipped": false,
+          "failed": false
+        },
+        {
+          "name": "resolveBuildToolProgram keeps real ninja for CMake make program in linker64 mode",
+          "classname": "com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutorConfigTest",
+          "time": "0.013",
+          "skipped": false,
+          "failed": false
+        },
+        {
+          "name": "resolveCMakeCompilerCommand still prefers shim compiler when tina exec is enabled",
+          "classname": "com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutorConfigTest",
+          "time": "0.001",
+          "skipped": false,
+          "failed": false
+        },
+        {
+          "name": "buildConfigureFailureMessage appends cmake diagnostic files",
+          "classname": "com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutorConfigTest",
+          "time": "0.017",
+          "skipped": false,
+          "failed": false
+        },
+        {
+          "name": "addBinaryCommandMapping does not let shared canonical path overwrite archive tool",
+          "classname": "com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutorConfigTest",
+          "time": "0.014",
+          "skipped": false,
+          "failed": false
+        },
+        {
+          "name": "resolveConfiguredCompilerPath falls back for blank value",
+          "classname": "com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutorConfigTest",
+          "time": "0.0",
+          "skipped": false,
+          "failed": false
+        },
+        {
+          "name": "project scalar environment replaces inherited values while search paths are preserved",
+          "classname": "com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutorConfigTest",
+          "time": "0.002",
+          "skipped": false,
+          "failed": false
+        },
+        {
+          "name": "resolveCMakeToolPath keeps real archive tool when linker64 is disabled",
+          "classname": "com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutorConfigTest",
+          "time": "0.005",
+          "skipped": false,
+          "failed": false
+        },
+        {
+          "name": "buildCMakeBuildCommand uses direct ninja for ninja generator",
+          "classname": "com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutorConfigTest",
+          "time": "0.005",
+          "skipped": false,
+          "failed": false
+        },
+        {
+          "name": "addBinaryCommandMapping keeps same-name canonical alias for exact tool",
+          "classname": "com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutorConfigTest",
+          "time": "0.0",
+          "skipped": false,
+          "failed": false
+        },
+        {
+          "name": "clearTinaExecEnvironment removes inherited tina exec variables only",
+          "classname": "com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutorConfigTest",
+          "time": "0.001",
+          "skipped": false,
+          "failed": false
+        },
+        {
+          "name": "buildAndroidCompilerCacheHints seeds abi and pointer size for arm64",
+          "classname": "com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutorConfigTest",
+          "time": "0.002",
+          "skipped": false,
+          "failed": false
+        },
+        {
+          "name": "buildNativeCommandResultSummary captures command result fields",
+          "classname": "com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutorConfigTest",
+          "time": "0.004",
+          "skipped": false,
+          "failed": false
+        }
+      ]
+    },
+    {
+      "suite": "com.wuxianggujun.tinaide.core.compile.cmake.VcpkgCMakeIntegrationTest",
+      "cases": [
+        {
+          "name": "prebuilt_shouldUseAndroidTripletAndNeverInvokeCli",
+          "classname": "com.wuxianggujun.tinaide.core.compile.cmake.VcpkgCMakeIntegrationTest",
+          "time": "0.741",
+          "skipped": false,
+          "failed": false
+        },
+        {
+          "name": "manifest_shouldRejectDesktopOrWrongAbiExecutable",
+          "classname": "com.wuxianggujun.tinaide.core.compile.cmake.VcpkgCMakeIntegrationTest",
+          "time": "0.221",
+          "skipped": false,
+          "failed": false
+        },
+        {
+          "name": "existingRuntimeShellIsNotSilentlyOverwritten",
+          "classname": "com.wuxianggujun.tinaide.core.compile.cmake.VcpkgCMakeIntegrationTest",
+          "time": "0.099",
+          "skipped": false,
+          "failed": false
+        },
+        {
+          "name": "disabled_shouldNotRequireToolsOrChangeProject",
+          "classname": "com.wuxianggujun.tinaide.core.compile.cmake.VcpkgCMakeIntegrationTest",
+          "time": "0.083",
+          "skipped": false,
+          "failed": false
+        },
+        {
+          "name": "parallelJobsAreForwardedAndClampedToOne",
+          "classname": "com.wuxianggujun.tinaide.core.compile.cmake.VcpkgCMakeIntegrationTest",
+          "time": "0.227",
+          "skipped": false,
+          "failed": false
+        },
+        {
+          "name": "enabled_shouldRejectConflictingToolchainsAndMissingManifest",
+          "classname": "com.wuxianggujun.tinaide.core.compile.cmake.VcpkgCMakeIntegrationTest",
+          "time": "0.146",
+          "skipped": false,
+          "failed": false
+        },
+        {
+          "name": "manifest_shouldUseActiveAbiAndNativeCompilerWithoutShellInterpolation",
+          "classname": "com.wuxianggujun.tinaide.core.compile.cmake.VcpkgCMakeIntegrationTest",
+          "time": "0.14",
+          "skipped": false,
+          "failed": false
+        }
+      ]
+    }
+  ],
+  "sourceSha256": {
+    "core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/cmake/VcpkgCMakeIntegration.kt": "cb8f16f6289c17fcd45da7f3d77f367a95b7425dd953987ddb38e3ac388153ee",
+    "core/compile/src/main/java/com/wuxianggujun/tinaide/core/compile/cmake/NativeCMakeBuildExecutor.kt": "c51f31324945e303862c4f2f761780bfe200d87f64a3dc74687180ec2110238d",
+    "core/compile/src/test/java/com/wuxianggujun/tinaide/core/compile/cmake/VcpkgCMakeIntegrationTest.kt": "29f93034dc4172c0486b0e450953f470e8d0c324825bdf9188347e2e4b7a38c4"
+  }
+}

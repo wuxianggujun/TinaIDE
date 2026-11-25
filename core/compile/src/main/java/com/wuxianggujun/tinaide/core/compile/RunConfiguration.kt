@@ -6,7 +6,6 @@ import com.wuxianggujun.tinaide.core.lang.CxxFileSupport
 import com.wuxianggujun.tinaide.core.serialization.JsonSerializer
 import com.wuxianggujun.tinaide.project.CppStandard
 import com.wuxianggujun.tinaide.project.ProjectApkExportSupportResolver
-import com.wuxianggujun.tinaide.project.ProjectApkExportType
 import com.wuxianggujun.tinaide.project.ProjectMetadata
 import com.wuxianggujun.tinaide.project.ProjectMetadataStore
 import com.wuxianggujun.tinaide.project.ProjectSdlVersion
@@ -140,7 +139,10 @@ data class RunConfiguration(
     val sdlOrientation: SdlOrientation = SdlOrientation.AUTO,
 
     /** 是否在图形运行宿主中显示悬浮日志窗口。悬浮返回按钮始终显示。 */
-    val enableFloatingLog: Boolean = false
+    val enableFloatingLog: Boolean = false,
+
+    /** Empty uses project/assets (or the project root when assets is absent). */
+    val runtimeAssetDirectory: String = "",
 ) {
     fun normalized(): RunConfiguration = copy(
         toolchainId = toolchainId?.trim()?.takeIf { it.isNotEmpty() },
@@ -149,6 +151,7 @@ data class RunConfiguration(
         customCppCompiler = normalizeCompilerPath(customCppCompiler),
         singleFileCppStandard = normalizeSingleFileCppStandard(singleFileCppStandard),
         sdlVersion = sdlVersion.takeIf { outputMode == OutputMode.SDL },
+        runtimeAssetDirectory = runtimeAssetDirectory.trim(),
     )
 
     /**
@@ -498,10 +501,12 @@ data class RunConfigurationManager(
             sourceSchemaVersion: Int,
             metadata: ProjectMetadata?,
         ): RunConfigurationManager {
+            // Runtime support does not require libmain.so; APK export support does.
+            // Using the export type here leaves legacy raylib targets in the SDL launcher.
             if (
                 sourceSchemaVersion >= RUN_CONFIG_SCHEMA_NATIVE_ACTIVITY ||
-                metadata?.apkExportType != ProjectApkExportType.NATIVE_ACTIVITY ||
-                metadata?.getSdlVersionOrNull() != null
+                metadata?.isNativeActivityRuntime() != true ||
+                metadata.getSdlVersionOrNull() != null
             ) {
                 return manager
             }

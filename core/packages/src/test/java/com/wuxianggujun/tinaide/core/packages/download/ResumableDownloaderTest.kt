@@ -4,6 +4,7 @@ import com.google.common.truth.Truth.assertThat
 import java.io.File
 import java.security.MessageDigest
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.CancellationException
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -20,6 +21,80 @@ import org.junit.rules.TemporaryFolder
 class ResumableDownloaderTest {
     @get:Rule
     val temporaryFolder = TemporaryFolder()
+
+    @Test fun cancellationKeepsPartialAndRetryVerifiesItBeforePublishing() = runTest {
+        val payload = "downloaded before cancellation".toByteArray()
+        val directory = temporaryFolder.newFolder("cancelled")
+        val target = temporaryFolder.newFile("existing.pkg").apply { writeText("old verified package") }
+        val downloader = ResumableDownloader(directory, clientReturning(payload))
+        var cancelled = false
+        try {
+            downloader.download("https://registry.test/archive", target, sha256(payload), payload.size.toLong()) { _, _, _ ->
+                throw CancellationException("user cancel")
+            }
+        } catch (_: CancellationException) { cancelled = true }
+        assertThat(cancelled).isTrue()
+        assertThat(target.readText()).isEqualTo("old verified package")
+        assertThat(downloader.tempFileFor(target).readBytes()).isEqualTo(payload)
+        val retry = ResumableDownloader(directory, clientFailingIfCalled())
+        assertThat(retry.download("https://registry.test/archive", target, sha256(payload), payload.size.toLong()) { _, _, _ -> })
+            .isEqualTo(DownloadResult.Success(target))
+        assertThat(target.readBytes()).isEqualTo(payload)
+    }
+
+    @Test fun serverIgnoringRangeRestartsWithoutAppendingDuplicateBytes() = runTest {
+        val payload = "full archive".toByteArray()
+        val downloader = ResumableDownloader(temporaryFolder.newFolder("ignored-range"), clientReturning(payload))
+        val target = File(temporaryFolder.root, "full.pkg")
+        downloader.tempFileFor(target).writeBytes(payload.take(3).toByteArray())
+        assertThat(downloader.download("https://registry.test/archive", target, sha256(payload)) { _, _, _ -> })
+            .isEqualTo(DownloadResult.Success(target))
+        assertThat(target.readBytes()).isEqualTo(payload)
+    }
+
+    @Test fun corruptDownloadDoesNotReplaceAnInstalledArchive() = runTest {
+        val downloader = ResumableDownloader(temporaryFolder.newFolder("corrupt"), clientReturning("corrupt".toByteArray()))
+        val target = temporaryFolder.newFile("safe.pkg").apply { writeText("old verified package") }
+        val result = downloader.download("https://registry.test/archive", target, sha256("valid".toByteArray())) { _, _, _ -> }
+        assertThat((result as DownloadResult.Failed).error).isInstanceOf(DownloadError.ChecksumMismatch::class.java)
+        assertThat(target.readText()).isEqualTo("old verified package")
+        assertThat(downloader.tempFileFor(target).exists()).isFalse()
+    }
+
+    @Test fun rangeNotSatisfiableRetriesFromZeroInsteadOfLeavingAnUnusablePartial() = runTest {
+        val payload = "complete content".toByteArray()
+        var requests = 0
+        val client = OkHttpClient.Builder().addInterceptor { chain ->
+            requests++
+            assertThat(chain.request().header("Accept-Encoding")).isEqualTo("identity")
+            if (requests == 1) assertThat(chain.request().header("Range")).isEqualTo("bytes=5-")
+            else assertThat(chain.request().header("Range")).isNull()
+            Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1)
+                .code(if (requests == 1) 416 else 200).message("fixture")
+                .body((if (requests == 1) ByteArray(0) else payload).toResponseBody()).build()
+        }.build()
+        val downloader = ResumableDownloader(temporaryFolder.newFolder("resume"), client)
+        val target = File(temporaryFolder.root, "archive.pkg")
+        downloader.tempFileFor(target).writeText("stale")
+        val result = downloader.download("https://registry.test/archive", target, sha256(payload), progress = { _, _, _ -> })
+        assertThat(result).isEqualTo(DownloadResult.Success(target))
+        assertThat(requests).isEqualTo(2)
+        assertThat(target.readBytes()).isEqualTo(payload)
+    }
+
+    @Test fun completeUnknownLengthPartialIsVerifiedAfter416WithoutDownloadingAgain() = runTest {
+        val payload = "complete content".toByteArray()
+        val client = OkHttpClient.Builder().addInterceptor { chain ->
+            Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1)
+                .code(416).message("fixture").body(ByteArray(0).toResponseBody()).build()
+        }.build()
+        val downloader = ResumableDownloader(temporaryFolder.newFolder("complete"), client)
+        val target = File(temporaryFolder.root, "archive.pkg")
+        downloader.tempFileFor(target).writeBytes(payload)
+        assertThat(downloader.download("https://registry.test/archive", target, sha256(payload), progress = { _, _, _ -> }))
+            .isEqualTo(DownloadResult.Success(target))
+        assertThat(target.readBytes()).isEqualTo(payload)
+    }
 
     @Test
     fun download_rejectsUnexpectedSizeWithoutReplacingExistingTarget() = runTest {

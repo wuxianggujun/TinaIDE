@@ -1,0 +1,72 @@
+[
+  {
+    "selector": "com.wuxianggujun.tinaide.core.editorview.EditorFindAndScaleInstrumentationTest#longPressFindClose_preservesTenCharactersAndReturnsImeOwnership",
+    "serial": "emulator-5564",
+    "passed": true,
+    "timed_out": false,
+    "seconds": 10.03
+  },
+  {
+    "selector": "com.wuxianggujun.tinaide.core.editorview.EditorFindAndScaleInstrumentationTest#pinchRoundTrips_keepGuttersVisibleAndSingleFingerScrollWorking",
+    "serial": "emulator-5564",
+    "passed": true,
+    "timed_out": false,
+    "seconds": 14.66
+  },
+  {
+    "selector": "com.wuxianggujun.tinaide.core.editorview.EditorFindAndScaleInstrumentationTest#oppositeHostAndEditorThemes_keepFindAndInjectedHoverReadable",
+    "serial": "emulator-5564",
+    "passed": true,
+    "timed_out": false,
+    "seconds": 13.24
+  },
+  {
+    "selector": "com.wuxianggujun.tinaide.core.editorview.EditorFindAndScaleInstrumentationTest#replacementKeyboardActionsAndUndo_workAfterSearchFocusTransfer",
+    "serial": "emulator-5564",
+    "passed": true,
+    "timed_out": false,
+    "seconds": 10.15
+  },
+  {
+    "selector": "com.wuxianggujun.tinaide.core.editorview.EditorFindAndScaleInstrumentationTest#invalidRegexAndNoMatches_recoverAndReplaceAllRemainsOneUndo",
+    "serial": "emulator-5564",
+    "passed": true,
+    "timed_out": false,
+    "seconds": 32.58
+  },
+  {
+    "selector": "com.wuxianggujun.tinaide.core.editorview.EditorFindAndScaleInstrumentationTest#unicodeReverseMultiSelection_survivesRepeatedPanelCycles",
+    "serial": "emulator-5564",
+    "passed": true,
+    "timed_out": false,
+    "seconds": 21.2
+  },
+  {
+    "selector": "com.wuxianggujun.tinaide.core.editorview.EditorFindAndScaleInstrumentationTest#horizontalPanAndPinch_preserveScrolledContentAndAllowSearchAfterwards",
+    "serial": "emulator-5564",
+    "passed": true,
+    "timed_out": false,
+    "seconds": 10.05
+  },
+  {
+    "selector": "com.wuxianggujun.tinaide.core.editorview.EditorFindAndScaleInstrumentationTest#searchOptionsAndZeroWidthRegex_keepMatchCountsAndUndoConsistent",
+    "serial": "emulator-5564",
+    "passed": true,
+    "timed_out": false,
+    "seconds": 7.62
+  },
+  {
+    "selector": "com.wuxianggujun.tinaide.core.editorview.EditorFindAndScaleInstrumentationTest#narrowPane_keepsQueryReplacementAndPrimaryActionsReachable",
+    "serial": "emulator-5564",
+    "passed": true,
+    "timed_out": false,
+    "seconds": 10.11
+  },
+  {
+    "selector": "com.wuxianggujun.tinaide.core.editorview.EditorFindAndScaleInstrumentationTest#foldGutterHitTargets_followFontGeometryAfterPinch",
+    "serial": "emulator-5564",
+    "passed": true,
+    "timed_out": false,
+    "seconds": 7.02
+  }
+]

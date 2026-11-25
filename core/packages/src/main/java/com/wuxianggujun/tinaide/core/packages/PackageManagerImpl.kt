@@ -11,6 +11,8 @@ import com.wuxianggujun.tinaide.core.packages.cache.PackageCacheManager
 import com.wuxianggujun.tinaide.core.packages.model.*
 import com.wuxianggujun.tinaide.core.packages.store.LocalInstallStateStore
 import com.wuxianggujun.tinaide.core.proot.PRootEnvironment
+import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -37,7 +39,7 @@ class PackageManagerImpl(
         DownloadPackageBackend(context, apiClient)
     }
 
-    private var cachedVersions: MutableMap<String, Map<Platform, Int>> = mutableMapOf()
+    private val cachedVersions = ConcurrentHashMap<String, Map<Platform, Int>>()
 
     override suspend fun getAvailablePackages(
         page: Int,
@@ -46,69 +48,42 @@ class PackageManagerImpl(
         platform: Platform?,
         search: String?
     ): Result<List<GUIPackage>> {
-        val isDefaultQuery = page == 1 && category == null && platform == null && search == null
-
-        if (isDefaultQuery) {
-            cacheManager.getPackages()?.let { cached ->
-                val validCached = filterValidPackages(cached, "cache")
-                Timber.tag(TAG).d("Returning ${validCached.size} packages from cache")
-                return Result.success(validCached)
+        return getAllAvailablePackages().map { catalog ->
+            val filtered = catalog.filter { pkg ->
+                (category.isNullOrBlank() || pkg.category == category) &&
+                    (platform == null || pkg.platformPackage(platform) != null) &&
+                    (search.isNullOrBlank() || pkg.id.contains(search, true) || pkg.name.contains(search, true) ||
+                        pkg.description?.contains(search, true) == true)
             }
+            val count = pageSize.coerceIn(1, 100)
+            val offset = ((page.coerceAtLeast(1) - 1L) * count).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+            filtered.drop(offset).take(count)
         }
+    }
 
-        val result = apiClient.getPackages(
-            page = page,
-            pageSize = pageSize,
-            category = category,
-            platform = platform?.name?.lowercase(),
-            search = search
-        )
-
-        return when (result) {
+    override suspend fun getAllAvailablePackages(): Result<List<GUIPackage>> = withContext(ioDispatcher) {
+        cacheManager.getPackages()?.let { cached ->
+            return@withContext Result.success(markBundledPackages(filterValidPackages(cached, "cache")))
+        }
+        when (val result = apiClient.getCatalog()) {
             is ApiResult.Success -> {
-                val rawPackages = result.data.packages
-
-                @Suppress("SENSELESS_COMPARISON")
-                val packages = if (rawPackages == null) {
-                    Timber.tag(TAG).e("API returned null packages; falling back to cache/empty list")
-                    filterValidPackages(cacheManager.getPackages().orEmpty(), "fallback cache")
-                } else {
-                    filterValidPackages(rawPackages, "registry")
-                }
-
-                // 标记内置包
-                val packagesWithBundledFlag = packages.map { pkg ->
-                    if (installStateStore.isBundledPackage(pkg.id)) {
-                        pkg.copy(isBundled = true)
-                    } else {
-                        pkg
-                    }
-                }
-
-                if (isDefaultQuery) {
-                    cacheManager.savePackages(packagesWithBundledFlag)
-                }
-                Result.success(packagesWithBundledFlag)
+                val packages = filterValidPackages(result.data, "registry")
+                cacheManager.savePackages(packages)
+                Result.success(markBundledPackages(packages))
             }
             is ApiResult.Error -> {
                 Timber.tag(TAG).e("Failed to get packages: ${result.message}")
-                if (isDefaultQuery) {
-                    cacheManager.getPackages()?.let {
-                        return Result.success(filterValidPackages(it, "fallback cache"))
-                    }
-                }
                 Result.failure(Exception(result.message))
             }
             is ApiResult.NetworkError -> {
                 Timber.tag(TAG).e("Network error getting packages: ${result.message}")
-                if (isDefaultQuery) {
-                    cacheManager.getPackages()?.let {
-                        return Result.success(filterValidPackages(it, "fallback cache"))
-                    }
-                }
                 Result.failure(Exception(result.message))
             }
         }
+    }
+
+    private fun markBundledPackages(packages: List<GUIPackage>): List<GUIPackage> = packages.map { pkg ->
+        pkg.copy(isBundled = installStateStore.isBundledPackage(pkg.id))
     }
 
     override suspend fun getCategories(): Result<List<PackageCategory>> {
@@ -193,7 +168,7 @@ class PackageManagerImpl(
                         packageName = descriptor.packageName,
                         version = descriptor.platformPackage.version,
                         isRoot = descriptor.packageId == packageId,
-                        isAlreadyInstalled = installStateStore.isInstalled(
+                        isAlreadyInstalled = isUsableInstallation(
                             descriptor.packageId,
                             descriptor.platform
                         )
@@ -208,7 +183,9 @@ class PackageManagerImpl(
         platform: Platform,
         progress: (InstallProgressEvent) -> Unit
     ): InstallResult = withContext(ioDispatcher) {
-        installOnIo(packageId, platform, progress)
+        PackageInstallCoordinator.withMutation {
+            installOnIo(packageId, platform, progress)
+        }
     }
 
     private suspend fun installOnIo(
@@ -240,7 +217,11 @@ class PackageManagerImpl(
                 progress(InstallProgressEvent.Preparing(message))
             }
 
-            when (val result = installResolvedPackage(descriptor, progress)) {
+            // A backend finishes one archive, not the whole dependency plan. Keep
+            // the operation cancellable in the UI until every install is recorded.
+            when (val result = installResolvedPackage(descriptor) { event ->
+                if (event !is InstallProgressEvent.Completed) progress(event)
+            }) {
                 is InstallResult.Success -> {
                     if (descriptor.packageId == packageId) {
                         rootResult = result
@@ -250,11 +231,13 @@ class PackageManagerImpl(
             }
         }
 
-        return rootResult ?: InstallResult.Success(
+        val result = rootResult ?: InstallResult.Success(
             packageId = packageId,
             version = plan.lastOrNull { it.packageId == packageId }?.platformPackage?.version.orEmpty(),
             platform = platform
         )
+        progress(InstallProgressEvent.Completed(result))
+        return result
     }
 
     private suspend fun resolveInstallPlan(
@@ -264,8 +247,15 @@ class PackageManagerImpl(
         rootPackageId = packageId,
         platform = platform,
         loadPackage = { dependencyId -> resolveInstallDescriptor(dependencyId, platform) },
-        isInstalled = installStateStore::isInstalled
+        isInstalled = ::isUsableInstallation
     )
+
+    private fun isUsableInstallation(packageId: String, platform: Platform): Boolean {
+        if (!installStateStore.isInstalled(packageId, platform)) return false
+        if (platform != Platform.ANDROID || packageId != "raylib") return true
+        val revision = InstalledPackageMetadataReader.read(context, packageId)?.packageRevision ?: 0
+        return revision >= RaylibRuntimePolicy.MINIMUM_PACKAGE_REVISION
+    }
 
     private suspend fun resolveInstallDescriptor(
         packageId: String,
@@ -343,7 +333,7 @@ class PackageManagerImpl(
 
         when (result) {
             is InstallResult.Success -> {
-                installStateStore.clearUpdateAvailable(packageId, platform)
+                // setInstalled updates the record and removes its stale update atomically.
                 installStateStore.setInstalled(
                     packageId = packageId,
                     platform = platform,
@@ -501,7 +491,9 @@ class PackageManagerImpl(
 
     override suspend fun uninstall(packageId: String, platform: Platform): UninstallResult =
         withContext(ioDispatcher) {
-            uninstallOnIo(packageId, platform)
+            PackageInstallCoordinator.withMutation {
+                uninstallOnIo(packageId, platform)
+            }
         }
 
     private suspend fun uninstallOnIo(packageId: String, platform: Platform): UninstallResult {
@@ -518,18 +510,21 @@ class PackageManagerImpl(
             return UninstallResult.Failure(packageId, UninstallError.PackageNotFound(packageId))
         }
 
-        val packageResult = getPackageDetail(packageId)
-        val pkg = packageResult.getOrNull()
+        val installed = installStateStore.getAllInstalledPackages()
+            .find { it.packageId == packageId && it.platform == platform }
+        // The registry describes the next install; only local provenance can
+        // choose how to remove this one. Downloads can be removed fully offline.
+        val pkg = if (installed == null || installed.installType == InstallType.APT) {
+            getPackageDetail(packageId).getOrNull()
+        } else {
+            null
+        }
         val platformPkg = when (platform) {
             Platform.LINUX -> pkg?.linux
             Platform.ANDROID -> pkg?.android
         }
 
-        // 确定安装类型：优先使用 API 返回的，如果 API 不可用则从本地存储回退
-        val effectiveInstallType = platformPkg?.installType
-            ?: installStateStore.getAllInstalledPackages()
-                .find { it.packageId == packageId && it.platform == platform }
-                ?.installType
+        val effectiveInstallType = installed?.installType ?: platformPkg?.installType
 
         val result = when (effectiveInstallType) {
             InstallType.APT -> {
@@ -544,12 +539,7 @@ class PackageManagerImpl(
                 packageId,
                 UninstallError.UnknownError("Remote script packages are disabled because registry scripts are not signed"),
             )
-            null -> {
-                // 安装类型未知（API 和本地都没有记录），尝试清理下载文件作为兜底
-                Timber.tag(TAG).w("Unknown install type for $packageId, attempting download file cleanup")
-                cleanupDownloadFiles(packageId)
-                UninstallResult.Success(packageId, platform, 0)
-            }
+            null -> UninstallResult.Failure(packageId, UninstallError.PackageNotFound(packageId))
         }
 
         val uninstalledVersion = when (platformState) {
@@ -575,23 +565,6 @@ class PackageManagerImpl(
         return result
     }
 
-    /**
-     * 清理下载类型包的解压文件。
-     * 作为兜底机制，确保卸载时文件被实际删除。
-     */
-    private fun cleanupDownloadFiles(packageId: String) {
-        try {
-            val installPath = downloadBackend.getInstallPath(packageId)
-            if (installPath.exists()) {
-                val freedSpace = installPath.walkTopDown().sumOf { it.length() }
-                installPath.deleteRecursively()
-                Timber.tag(TAG).d("Cleaned up download files for $packageId, freed $freedSpace bytes")
-            }
-        } catch (e: Exception) {
-            Timber.tag(TAG).w(e, "Failed to cleanup download files for $packageId")
-        }
-    }
-
     override suspend fun getInstalledPackages(): List<InstalledPackageInfo> = installStateStore.getAllInstalledPackages()
 
     override suspend fun getDependentPackages(packageId: String, platform: Platform): List<String> {
@@ -603,7 +576,7 @@ class PackageManagerImpl(
             .toSet()
         if (installedPackageIds.isEmpty()) return emptyList()
 
-        val packages = getAvailablePackages(page = 1, pageSize = 10_000, platform = platform)
+        val packages = getAllAvailablePackages()
             .getOrElse { error ->
                 Timber.tag(TAG).w(error, "Failed to resolve dependent packages for %s", packageId)
                 return emptyList()
@@ -628,20 +601,23 @@ class PackageManagerImpl(
         )
     }
 
-    override suspend fun refreshCache() {
-        cacheManager.invalidatePackages()
-        cacheManager.invalidateCategories()
+    override suspend fun refreshCache(): Unit = withContext(ioDispatcher) {
+        apiClient.invalidateCache()
+        // Package detail entries can otherwise survive a refresh for seven days.
+        cacheManager.clearCache()
         cachedVersions.clear()
     }
 
     override suspend fun clearCache(): Unit = withContext(ioDispatcher) {
+        apiClient.invalidateCache()
         cacheManager.clearCache()
         cachedVersions.clear()
         downloadBackend.clearDownloadCache()
     }
 
-    override suspend fun checkForUpdates(): Map<String, UpdateInfo> {
-        val updates = mutableMapOf<String, UpdateInfo>()
+    override suspend fun checkForUpdates(): Map<PackagePlatformKey, UpdateInfo> = withContext(ioDispatcher) {
+        apiClient.invalidateCache()
+        val updates = mutableMapOf<PackagePlatformKey, UpdateInfo>()
         val installedPackages = installStateStore.getAllInstalledPackages()
 
         for (installed in installedPackages) {
@@ -653,63 +629,67 @@ class PackageManagerImpl(
                 val detailResult = apiClient.getPackageDetail(installed.packageId)
                 if (detailResult is ApiResult.Success) {
                     val pkg = detailResult.data
+                    if (pkg.id != installed.packageId) continue
+                    // Installing an announced revision must not reuse a cached older URL/hash.
+                    cacheManager.savePackageDetail(pkg)
+                    cachedVersions.remove(installed.packageId)
 
                     if (installed.platform == Platform.LINUX) {
                         pkg.linux?.let { platformPkg ->
-                            if (isNewerVersion(platformPkg.version, installed.version)) {
-                                updates[installed.packageId] = UpdateInfo(
+                            if (isNewerPackageVersion(platformPkg.version, installed.version)) {
+                                updates[PackagePlatformKey(installed.packageId, installed.platform)] = UpdateInfo(
                                     packageId = installed.packageId,
                                     packageName = pkg.name,
                                     platform = Platform.LINUX,
                                     currentVersion = installed.version,
                                     newVersion = platformPkg.version
                                 )
+                            } else {
+                                installStateStore.clearUpdateAvailable(installed.packageId, installed.platform)
                             }
                         }
                     }
 
                     if (installed.platform == Platform.ANDROID) {
                         pkg.android?.let { platformPkg ->
-                            if (isNewerVersion(platformPkg.version, installed.version)) {
-                                updates[installed.packageId] = UpdateInfo(
+                            val metadata = InstalledPackageMetadataReader.read(context, installed.packageId)
+                            val localRevision = metadata?.takeIf { it.version == installed.version }?.packageRevision
+                            if (isNewerPackageVersion(
+                                    platformPkg.version,
+                                    installed.version,
+                                    platformPkg.packageRevision,
+                                    localRevision,
+                                )
+                            ) {
+                                updates[PackagePlatformKey(installed.packageId, installed.platform)] = UpdateInfo(
                                     packageId = installed.packageId,
                                     packageName = pkg.name,
                                     platform = Platform.ANDROID,
                                     currentVersion = installed.version,
                                     newVersion = platformPkg.version
                                 )
+                            } else {
+                                installStateStore.clearUpdateAvailable(installed.packageId, installed.platform)
                             }
                         }
                     }
                 }
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 Timber.tag(TAG).w(e, "Failed to check update for ${installed.packageId}")
             }
         }
 
-        for ((packageId, updateInfo) in updates) {
+        for (updateInfo in updates.values) {
             installStateStore.setUpdateAvailable(
-                packageId = packageId,
+                packageId = updateInfo.packageId,
                 platform = updateInfo.platform,
                 currentVersion = updateInfo.currentVersion,
                 newVersion = updateInfo.newVersion
             )
         }
 
-        return updates
-    }
-
-    private fun isNewerVersion(remote: String, local: String): Boolean {
-        val remoteParts = remote.split(".").mapNotNull { it.toIntOrNull() }
-        val localParts = local.split(".").mapNotNull { it.toIntOrNull() }
-
-        for (i in 0 until maxOf(remoteParts.size, localParts.size)) {
-            val r = remoteParts.getOrElse(i) { 0 }
-            val l = localParts.getOrElse(i) { 0 }
-            if (r > l) return true
-            if (r < l) return false
-        }
-        return false
+        updates
     }
 
     private fun filterValidPackages(packages: List<GUIPackage>, source: String): List<GUIPackage> =

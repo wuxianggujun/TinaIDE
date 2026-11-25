@@ -1,0 +1,22 @@
+{
+  "app/build/outputs/apk/x86_64/debug/TinaIDE-0.19.0-x86_64-debug.apk": {
+    "bytes": 314684838,
+    "sha256": "aa7cc577d24c6fe014b73bc3c62fec72504de0b0da230abd40f8f978c0cf24a7"
+  },
+  "app/build/outputs/apk/androidTest/x86_64/debug/app-x86_64-debug-androidTest.apk": {
+    "bytes": 2729456,
+    "sha256": "98b17192c5ff21469d95bf669d40e0e0befb54c1332c7a5028c4ffab8d1e0503"
+  },
+  "app/src/androidTest/java/com/wuxianggujun/tinaide/core/compile/VcpkgAcceptanceDeviceTest.kt": {
+    "bytes": 4862,
+    "sha256": "5cd4ff59a6cc0e3616cfd14929687e3584f211915e4ae0665e9a0edbde6ad19f"
+  },
+  "app/src/androidTest/java/com/wuxianggujun/tinaide/core/packages/RegistryInstallDeviceTest.kt": {
+    "bytes": 4811,
+    "sha256": "12dedc9a7df38f2d52660df6f570324378a19b5b5616f3ac2e1c00b021d974a3"
+  },
+  "app/src/androidTest/java/com/wuxianggujun/tinaide/ui/compose/editor/EditorLargeFileInstrumentationTest.kt": {
+    "bytes": 8616,
+    "sha256": "69dac585804691c6a95e4a99a67b91a6a9c7e5fa760e1183f9f4cd997aafb761"
+  }
+}

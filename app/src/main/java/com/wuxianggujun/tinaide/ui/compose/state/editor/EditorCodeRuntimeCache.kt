@@ -15,7 +15,6 @@ import timber.log.Timber
 internal class EditorCodeRuntimeCache(
     private val context: Context,
     private val cacheLimit: Int,
-    private val projectRootPathProvider: () -> String?,
     private val activeTabIdProvider: () -> String?,
     private val isSplitEditorEnabledProvider: () -> Boolean,
     private val splitPaneState: EditorSplitPaneState,
@@ -33,7 +32,6 @@ internal class EditorCodeRuntimeCache(
                 editorState = EditorState(
                     textBuffer = buffer,
                     file = tab.file,
-                    projectRootPath = projectRootPathProvider(),
                     config = editorConfigFromPrefs(),
                     runtimeOptions = editorRuntimeOptionsFromPrefs()
                 )

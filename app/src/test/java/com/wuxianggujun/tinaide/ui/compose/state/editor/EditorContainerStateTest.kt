@@ -685,10 +685,21 @@ class EditorContainerStateTest {
                 tabId = "tab-1",
                 expectedText = "original",
                 newText = "formatted",
+                expectedFile = firstFile,
             )
         ).isEqualTo(ConditionalEditorTextReplaceResult.REPLACED)
         assertThat(firstText).isEqualTo("formatted")
         assertThat(secondText).isEqualTo("second")
+
+        assertThat(
+            state.replaceTextInTabIfUnchanged(
+                tabId = "tab-1",
+                expectedText = "formatted",
+                newText = "result for a different file",
+                expectedFile = secondFile,
+            )
+        ).isEqualTo(ConditionalEditorTextReplaceResult.CONTENT_CHANGED)
+        assertThat(firstText).isEqualTo("formatted")
 
         firstText = "user edit"
 

@@ -151,6 +151,7 @@ class SettingsActivitySupportTest {
             SettingsRoute.PluginLog,
             SettingsRoute.Help,
             SettingsRoute.Developer,
+            SettingsRoute.Donation,
             SettingsRoute.About
         )
 

@@ -19,6 +19,8 @@ The wizard has two steps:
 
 Common options include project name, C++ standard, and the Native API level for NDK templates.
 
+CMake templates also offer **Use built-in vcpkg**, off by default. Enabling it creates an empty `vcpkg.json` and enables managed integration; an existing template manifest is preserved. Creation does not download libraries. Add dependencies through **Market → vcpkg** and declare their CMake linkage afterwards. Existing projects can also enable integration when adding a dependency in the market. Follow [Using vcpkg with CMake](vcpkg-guide.md) for a complete example.
+
 ## Source location and file access
 
 The wizard offers two source locations:
@@ -76,3 +78,4 @@ Files remain in a staging directory until all checks pass, so an existing projec
 - [Build a project](build-project.md)
 - [Code completion](code-completion.md)
 - [CMake guide](cmake-guide.md)
+- [Using vcpkg with CMake](vcpkg-guide.md)

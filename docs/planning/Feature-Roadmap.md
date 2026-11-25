@@ -103,8 +103,7 @@ TinaIDE 是一个面向 Android 设备的轻量级 C/C++ IDE。本文档作为�
 | 项目模板 | 单文件、CMake 可执行/CMake 库、Make 可执行、NDK Shared Library；插件可追加 Zip 模板 | `ProjectTemplateInstaller.kt` |
 | 文件树管理 | Compose UI + 上下文菜单 | `FileTree.kt`, `DrawerContent.kt` |
 | 底部面板 | 默认显示诊断与构建日志；大纲、书签和 Git 提交日志从底部“更多”按需打开；项目符号可从“更多”或抽屉 Symbols 入口打开 | [`BottomPanel.kt`](../../app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/BottomPanel.kt), [`BottomPanelTypes.kt`](../../app/src/main/java/com/wuxianggujun/tinaide/ui/compose/components/BottomPanelTypes.kt) |
-| 后端服务 | 私有后端与管理端已迁出公开仓库 | `server/README.md` |
-| **服务器配置同步** | 客户端配置动态下发、后台定时同步 | [`ServerConfigManager.kt`](../../core/config/src/main/java/com/wuxianggujun/tinaide/core/config/ServerConfigManager.kt), `ServerConfigSyncWorker.kt` |
+| 后端服务 | 客户端上报统一走 AegisHub；其他私有后端与管理端已迁出公开仓库 | `server/README.md`, `docs/telemetry.md` |
 | **Android 15+ 兼容** | 16KB 页面对齐支持（rsync/tree-sitter） | `docker/rsync-build/`, `external/android-rsync/` |
 
 ### 开源版身份策略
@@ -114,7 +113,7 @@ TinaIDE 是一个面向 Android 设备的轻量级 C/C++ IDE。本文档作为�
 | 账号与第三方登录 | 开源版不提供账号系统、第三方 SDK 或 OAuth 登录入口 | `ProfileScreen.kt`, `app/build.gradle.kts`, `AndroidManifest.xml` |
 | 激活码系统 | 开源版不提供激活码/许可证激活入口，测试页和兼容壳已删除 | - |
 | AI 使用方式 | 聊天、模型、渠道和 API Key 配置由内嵌 RikkaHub 维护；TinaIDE 主仓库只维护入口和宿主生命周期 | `DrawerContent.kt`, `SettingsActivity.kt`, `external/rikkahub` |
-| 服务端能力 | 反馈、日志上传等 TinaServer 客户端能力保留；版本更新改为 GitHub Release 自动检查 | `core/network`, `feature/help` |
+| 服务端能力 | 反馈、日志与崩溃统一上报自建 AegisHub；版本更新改为 GitHub Release 自动检查 | `core/network`, `feature/help` |
 | 市场分发 | 插件与依赖包索引改为公开 GitHub Registry，继续保留本地安装、下载历史和插件系统 | `core/plugin`, `core/packages`, `docs/registry` |
 
 ### 开发者工具
@@ -295,7 +294,7 @@ TinaIDE 是一个面向 Android 设备的轻量级 C/C++ IDE。本文档作为�
 | 2026-05-21 | 同步开源版账号/激活移除口径；后端、管理端、账号/激活/会员源码迁出公开仓库 |
 | 2026-04-22 | 同步当前插件、登录与构建现状；移除“微信登录 / QuickJS 未来阶段”等已过时描述 |
 | 2026-02-25 | 文档收敛：清理过时设计/排障文档，统一以本文档作为功能总览入口 |
-| 2026-01-26 | 新增已完成功能：服务器配置同步系统、Android 15+ 16KB 页面对齐支持、代码格式化增强、PRoot 日志系统 |
+| 2026-01-26 | 新增已完成功能：服务器配置同步系统（已于 2026-11 随 AegisHub 迁移移除）、Android 15+ 16KB 页面对齐支持、代码格式化增强、PRoot 日志系统 |
 | 2026-01-12 | 历史记录：曾新增用户系统（本地认证、激活码）与开发者工具；用户系统现已从开源版移除 |
 | 2026-01-11 | **重大更新**：合并 TODO.md、实施进度.md、功能扩展建议.md 到本文档；通过源码审查确认已完成功能 |
 

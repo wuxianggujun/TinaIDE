@@ -14,6 +14,7 @@ import com.wuxianggujun.tinaide.core.compile.CompilerType
 import com.wuxianggujun.tinaide.core.compile.ConfigureResult
 import com.wuxianggujun.tinaide.core.compile.MakeCommandOverrides
 import com.wuxianggujun.tinaide.core.compile.NativeRuntimeIdentity
+import com.wuxianggujun.tinaide.core.compile.NativeBuildProcessGroup
 import com.wuxianggujun.tinaide.core.compile.NativeSysrootPreparer
 import com.wuxianggujun.tinaide.core.compile.toolchain.ToolchainLinker64ShimManager
 import com.wuxianggujun.tinaide.core.i18n.Strings
@@ -22,9 +23,14 @@ import com.wuxianggujun.tinaide.core.ndk.AndroidNativeToolchainManager
 import com.wuxianggujun.tinaide.core.ndk.AndroidSysrootManager
 import com.wuxianggujun.tinaide.core.packages.InstalledPackagePathResolver
 import com.wuxianggujun.tinaide.core.packages.PackageAbiCompatibility
+import com.wuxianggujun.tinaide.core.packages.vcpkgUserMessage
+import com.wuxianggujun.tinaide.core.packages.VcpkgRuntimeManager
+import com.wuxianggujun.tinaide.core.packages.VcpkgManagedPaths
+import com.wuxianggujun.tinaide.core.packages.VcpkgBuildUse
 import com.wuxianggujun.tinaide.core.util.AndroidSystemLinker
 import com.wuxianggujun.tinaide.core.util.DiagnosticLogFormatter
 import com.wuxianggujun.tinaide.core.util.NativeExecutableRunner
+import com.wuxianggujun.tinaide.project.VcpkgProjectSettings
 import java.io.File
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
@@ -785,6 +791,24 @@ class NativeCMakeBuildExecutor(
         null
     }
 
+    internal fun resolveCompilerCommands(
+        toolchainId: String?,
+        cCompilerPath: String?,
+        cxxCompilerPath: String?,
+    ): Pair<CMakeCompilerCommand, CMakeCompilerCommand> {
+        val bin = toolchainManager.getBinDir(toolchainId)
+        val preferLinker64 = NativeExecutableRunner.shouldPreferLinker64()
+        val shims = if (preferLinker64) shimManager.prepare(bin, SHIM_TOOL_NAMES) else null
+        val linker64 = AndroidSystemLinker.resolve64BitPreferred()
+        fun resolve(configuredPath: String?, name: String) = resolveCMakeCompilerCommand(
+            realCompilerPath = resolveConfiguredCompilerPath(configuredPath, File(bin, name).absolutePath),
+            shimCompilerPath = shims?.shimPath(name),
+            preferLinker64 = preferLinker64,
+            linker64Path = linker64,
+        )
+        return resolve(cCompilerPath, "clang") to resolve(cxxCompilerPath, "clang++")
+    }
+
     /**
      * 配置 CMake 项目
      */
@@ -792,7 +816,11 @@ class NativeCMakeBuildExecutor(
         projectDir: File,
         buildDir: File = File(projectDir, DEFAULT_BUILD_DIR),
         options: Options = Options()
-    ): ConfigureResult {
+    ): ConfigureResult = VcpkgBuildUse.during(VcpkgProjectSettings.from(options.extraCMakeArgs).enabled) {
+        configureProject(projectDir, buildDir, options)
+    }
+
+    private suspend fun configureProject(projectDir: File, buildDir: File, options: Options): ConfigureResult {
         // 确保构建目录存在
         if (!buildDir.exists()) {
             buildDir.mkdirs()
@@ -1026,10 +1054,15 @@ class NativeCMakeBuildExecutor(
             cmakeCCompiler.arg1?.let { add("-DCMAKE_C_COMPILER_ARG1=$it") }
             add("-DCMAKE_CXX_COMPILER=${cmakeCxxCompiler.compiler}")
             cmakeCxxCompiler.arg1?.let { add("-DCMAKE_CXX_COMPILER_ARG1=$it") }
+            // CMake copies the C compiler path for ASM, but not its shell-wrapper argument.
+            // Ports such as 7zip enable ASM on ARM64 and must use the same clang launcher.
+            add("-DCMAKE_ASM_COMPILER=${cmakeCCompiler.compiler}")
+            cmakeCCompiler.arg1?.let { add("-DCMAKE_ASM_COMPILER_ARG1=$it") }
             cmakeAr?.let { add("-DCMAKE_AR=$it") }
             cmakeRanlib?.let { add("-DCMAKE_RANLIB=$it") }
             add("-DCMAKE_C_COMPILER_TARGET=$targetTripleWithApi")
             add("-DCMAKE_CXX_COMPILER_TARGET=$targetTripleWithApi")
+            add("-DCMAKE_ASM_COMPILER_TARGET=$targetTripleWithApi")
             add("-DCMAKE_SYSROOT=${sysrootDir.absolutePath}")
 
             // 统一复用 sysroot 管理器生成的 flags，确保 CMake 与单文件/Make 路径一致。
@@ -1050,6 +1083,7 @@ class NativeCMakeBuildExecutor(
                 )
                 add("-DCMAKE_C_FLAGS=${mergeFlagSegments(cCompileFlags, compilerExecutionFlags, projectCFlags)}")
                 add("-DCMAKE_CXX_FLAGS=${mergeFlagSegments(cxxCompileFlags, compilerExecutionFlags, projectCppFlags)}")
+                add("-DCMAKE_ASM_FLAGS=${mergeFlagSegments(cCompileFlags, compilerExecutionFlags)}")
                 add("-DCMAKE_EXE_LINKER_FLAGS=$executableLinkerFlags")
                 add("-DCMAKE_SHARED_LINKER_FLAGS=$sharedLinkerFlags")
             }
@@ -1083,7 +1117,7 @@ class NativeCMakeBuildExecutor(
                 add("-D$key=$value")
             }
 
-            addAll(combinedExtraCMakeArgs)
+            addAll(VcpkgProjectSettings.stripManagedArguments(combinedExtraCMakeArgs))
             cmakeIdentity.asCMakeCacheEntries().forEach { (key, value) ->
                 add("-D$key:STRING=$value")
             }
@@ -1091,15 +1125,78 @@ class NativeCMakeBuildExecutor(
             add("-DCMAKE_BUILD_TYPE=${options.buildType.cmakeValue}")
         }
 
+        val vcpkg = try {
+            val settings = VcpkgProjectSettings.from(combinedExtraCMakeArgs)
+            val managed = if (settings.enabled) {
+                if (settings.mode == VcpkgProjectSettings.MANIFEST && !File(projectDir, "vcpkg.json").isFile) {
+                    throw com.wuxianggujun.tinaide.core.packages.VcpkgException(Strings.vcpkg_manifest_required)
+                }
+                options.onProgress?.invoke(Strings.vcpkg_preparing_tools.str())
+                var lastPercentage = -1
+                VcpkgRuntimeManager(appContext).prepare(androidAbi) { downloaded, total ->
+                    if (total > 0) {
+                        val percentage = (downloaded.toDouble() / total * 100).toInt().coerceIn(0, 100)
+                        if (percentage != lastPercentage) {
+                            lastPercentage = percentage
+                            options.onProgress?.invoke(Strings.vcpkg_preparing_download.str(percentage))
+                        }
+                    }
+                }
+            } else null
+            if (managed != null && settings.mode == VcpkgProjectSettings.MANIFEST) {
+                VcpkgGitBootstrap.prepare(managed, projectDir) { gitCommand ->
+                    val gitResult = executeNativeCommand(gitCommand, managed.root, TimeUnit.MINUTES.toMillis(5),
+                        toolchainId = options.toolchainId, extraEnvironment = managed.environment +
+                            mapOf("TINA_PREFIX" to "/system", "GIT_TERMINAL_PROMPT" to "0"),
+                        onOutputLine = options.onProgress, maxOutputChars = 64 * 1024, terminateProcessGroup = true)
+                    if (gitResult.exitCode != 0) throw com.wuxianggujun.tinaide.core.packages.VcpkgException(
+                        Strings.vcpkg_git_failed, messageArguments = listOf(gitResult.exitCode))
+                }
+            }
+            VcpkgCMakeIntegration.prepare(
+                projectDir, buildDir, combinedExtraCMakeArgs, androidAbi, command,
+                parallelJobs = options.parallelJobs,
+                managedInstallationRoot = if (managed != null) VcpkgManagedPaths.installed(appContext, projectDir, settings, androidAbi) else null,
+                runtimeRoot = managed?.root,
+            )?.let { plan -> plan.copy(environment = plan.environment + managed?.environment.orEmpty()) }
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            Timber.tag(TAG).w(error, "Invalid project vcpkg configuration")
+            return ConfigureResult.Error(Strings.vcpkg_configuration_failed.str(error.vcpkgUserMessage(appContext)))
+        }
+        if (vcpkg != null && vcpkg.installCommand.isNotEmpty()) {
+            options.onProgress?.invoke(Strings.vcpkg_installing.str())
+            val installed = executeNativeCommand(
+                command = vcpkg.installCommand,
+                workingDir = projectDir,
+                timeout = TimeUnit.MINUTES.toMillis(30),
+                toolchainId = options.toolchainId,
+                extraEnvironment = vcpkg.environment,
+                onOutputLine = options.onProgress,
+                useToolchainShimEnvironment = true,
+                useRecommendedTinaExec = true,
+                maxOutputChars = 256 * 1024,
+                terminateProcessGroup = true,
+            )
+            if (installed.exitCode != 0) {
+                return ConfigureResult.Error(Strings.vcpkg_install_failed.str(installed.output.takeLast(MAX_CMAKE_DIAGNOSTIC_CHARS)))
+            }
+        }
+        val hadVcpkgIntegration = File(buildDir, "CMakeCache.txt").takeIf { it.isFile }
+            ?.useLines { lines -> lines.any { it.startsWith("TINA_VCPKG_INTEGRATION:") && it.endsWith("=ON") } } == true
+        // A changed/removed toolchain must not keep the previous compiler system state.
+        val configureCommand = command + vcpkg?.arguments.orEmpty() +
+            if (vcpkg != null || hadVcpkgIntegration) listOf("--fresh") else emptyList()
+
         Timber.tag(TAG).i("Configuring CMake project: ${projectDir.name}")
         Timber.tag(TAG).d("Command: ${command.joinToString(" ")}")
 
         val configureEnvironment = buildCMakeExtraEnvironment(
-            packageEnvironment = packageEnvironment,
+            packageEnvironment = packageEnvironment + vcpkg?.environment.orEmpty(),
             traceToolchainShim = options.traceToolchainShim
         )
         val result = executeNativeCommand(
-            command = command,
+            command = configureCommand,
             workingDir = buildDir,
             timeout = timeoutConfig.getCMakeConfigTimeout(),
             toolchainId = options.toolchainId,
@@ -1119,7 +1216,7 @@ class NativeCMakeBuildExecutor(
         ) {
             // 部分 Android 9 真机 ROM 可能禁止 app 私有目录里的 shell 脚本被 CMake 直接执行。
             // 只在 direct shim configure 失败时回退真实构建工具，避免影响正常成功路径。
-            val retryCommand = command.map { argument ->
+            val retryCommand = configureCommand.map { argument ->
                 if (argument.startsWith("-DCMAKE_MAKE_PROGRAM=")) {
                     "-DCMAKE_MAKE_PROGRAM=${buildToolBinary.absolutePath}"
                 } else {
@@ -1530,7 +1627,9 @@ class NativeCMakeBuildExecutor(
         extraEnvironment: Map<String, String> = emptyMap(),
         onOutputLine: ((String) -> Unit)? = null,
         useToolchainShimEnvironment: Boolean = true,
-        useRecommendedTinaExec: Boolean = true
+        useRecommendedTinaExec: Boolean = true,
+        maxOutputChars: Int = Int.MAX_VALUE,
+        terminateProcessGroup: Boolean = false,
     ): CommandResult {
         val commandTempDir = BuildResourceCleaner.createCommandTempDir(appContext.cacheDir, "native-cmake")
         return try {
@@ -1542,7 +1641,8 @@ class NativeCMakeBuildExecutor(
             args = args
         )
 
-        val processBuilder = ProcessBuilder(fullCommand).apply {
+        val processGroup = if (terminateProcessGroup) NativeBuildProcessGroup(fullCommand, commandTempDir) else null
+        val processBuilder = ProcessBuilder(processGroup?.command ?: fullCommand).apply {
             directory(workingDir)
             com.wuxianggujun.tinaide.core.util.NativeExecutableRunner.configureEnvironment(
                 this,
@@ -1565,7 +1665,7 @@ class NativeCMakeBuildExecutor(
             if (useToolchainShimEnvironment) {
                 applyToolchainShimEnvironment(environment(), toolchainId)
             }
-            applyExtraEnvironment(environment(), extraEnvironment)
+            applyNativeCMakeEnvironment(environment(), extraEnvironment)
             redirectErrorStream(true)
         }
         Timber.tag(TAG).d(
@@ -1593,6 +1693,8 @@ class NativeCMakeBuildExecutor(
             processBuilder = processBuilder,
             commandLabel = "native-cmake:${File(executable).name}",
             timeoutMs = timeout,
+            maxOutputChars = maxOutputChars,
+            onTerminate = processGroup?.let { group -> { group.terminate() } },
             onOutputLine = { line ->
                 onOutputLine?.invoke(line)
                 Timber.tag(TAG).v(line)
@@ -1649,24 +1751,19 @@ class NativeCMakeBuildExecutor(
     }
     }
 
-    private fun applyExtraEnvironment(
-        environment: MutableMap<String, String>,
-        extraEnvironment: Map<String, String>
-    ) {
-        if (extraEnvironment.isEmpty()) return
-        extraEnvironment.forEach { (key, value) ->
-            if (value.isBlank()) return@forEach
-            val existing = environment[key].orEmpty()
-            environment[key] = if (existing.isBlank()) {
-                value
-            } else {
-                "$value:$existing"
-            }
-        }
-    }
-
     private data class CommandResult(
         val exitCode: Int,
         val output: String
     )
+}
+
+internal fun applyNativeCMakeEnvironment(environment: MutableMap<String, String>, overrides: Map<String, String>) {
+    val pathLists = setOf("PATH", "LD_LIBRARY_PATH", "CPATH", "C_INCLUDE_PATH", "CPLUS_INCLUDE_PATH", "LIBRARY_PATH", "PKG_CONFIG_PATH")
+    for ((key, value) in overrides) {
+        if (value.isBlank()) continue
+        val existing = environment[key].orEmpty()
+        // Flags, scalar settings and the single tina-exec prefix must replace
+        // inherited values. A colon would turn them into invalid paths/numbers.
+        environment[key] = if (key in pathLists && existing.isNotBlank()) "$value:$existing" else value
+    }
 }

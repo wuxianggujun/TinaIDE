@@ -1,0 +1,22 @@
+[
+  {
+    "name": "com.wuxianggujun.tinaide.core.common.io.ArchiveExtractionLimitsTest",
+    "tests": "10",
+    "skipped": "0",
+    "failures": "0",
+    "errors": "0",
+    "timestamp": "2026-11-08T23:07:03.332Z",
+    "hostname": "DESKTOP-9KUJPVG",
+    "time": "0.214"
+  },
+  {
+    "name": "com.wuxianggujun.tinaide.core.common.io.TarExtractorTest",
+    "tests": "1",
+    "skipped": "0",
+    "failures": "0",
+    "errors": "0",
+    "timestamp": "2026-11-08T23:07:03.571Z",
+    "hostname": "DESKTOP-9KUJPVG",
+    "time": "0.099"
+  }
+]

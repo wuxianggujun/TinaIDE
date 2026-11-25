@@ -1,17 +1,16 @@
 package com.wuxianggujun.tinaide.ui.compose.state.editor
 
+import android.os.Handler
+import android.os.Looper
 import com.wuxianggujun.tinaide.core.config.EditorSettings
 import com.wuxianggujun.tinaide.core.editorview.EditorColorScheme
 import com.wuxianggujun.tinaide.core.editorview.EditorRenderPerformanceSnapshot
 import com.wuxianggujun.tinaide.core.editorview.EditorState
 import com.wuxianggujun.tinaide.core.textengine.RopeTextBuffer
-import com.wuxianggujun.tinaide.core.textengine.TextChangeListener
 import com.wuxianggujun.tinaide.core.treesitter.TreeSitterFoldingProvider
 import com.wuxianggujun.tinaide.core.treesitter.TreeSitterHighlighter
 import com.wuxianggujun.tinaide.editor.session.DocumentSession
 import java.io.File
-import android.os.Handler
-import android.os.Looper
 import java.util.concurrent.Executor
 import kotlinx.coroutines.sync.Mutex
 
@@ -74,6 +73,7 @@ internal interface CodeEditorStateBinding {
 
 /**
  * 单标签编辑器运行时：文本缓冲、语法高亮、折叠与 document/state 绑定引用计数。
+ * 文本变更和高亮回调订阅由 EditorState 统一处理，宿主只负责资源生命周期。
  * 从 [EditorContainerState] 抽出，降低容器状态体量。
  */
 class CodeEditorRuntime(
@@ -86,15 +86,6 @@ class CodeEditorRuntime(
 ) {
     val contentLoadMutex = Mutex()
 
-    private val stateSyncListener = TextChangeListener { change ->
-        editorState.applyTextBufferChange(change)
-        // 流式加载发出的 TextChange 不携带完整 newText。tree-sitter 会在
-        // ensureTreeSitterPrepared 里通过 openDocument 单独喂入，这里不能把
-        // 它的 StringBuilder 用空字符串覆盖掉。
-        if (change.hasCompleteNewText) {
-            syntaxHighlighter?.applyTextChange(change)
-        }
-    }
     private var documentBinding: CodeEditorDocumentBinding? = null
     private var documentBindingReferences: Int = 0
     private data class StateBindingRecord(
@@ -105,10 +96,6 @@ class CodeEditorRuntime(
     private var uiReferences = 0
     private var disposalRequested = false
     private var disposed = false
-
-    init {
-        buffer.addChangeListener(stateSyncListener)
-    }
 
     internal fun acquireUiReference() {
         check(!disposed) { "Cannot attach a disposed editor runtime" }
@@ -143,10 +130,8 @@ class CodeEditorRuntime(
 
     internal fun installSyntaxHighlighter(highlighter: TreeSitterHighlighter?) {
         if (syntaxHighlighter === highlighter) return
-        syntaxHighlighter?.setOnStateUpdated(null)
         syntaxHighlighter = highlighter
         editorState.highlighter = highlighter
-        highlighter?.setOnStateUpdated(editorState::notifyHighlightChanged)
     }
 
     internal fun getOrCreateStateBinding(
@@ -175,7 +160,6 @@ class CodeEditorRuntime(
     }
 
     internal fun clearLanguageServices() {
-        syntaxHighlighter?.setOnStateUpdated(null)
         if (editorState.highlighter === syntaxHighlighter) {
             editorState.highlighter = null
         }
@@ -211,7 +195,7 @@ class CodeEditorRuntime(
         resetStateBindings()
         clearLanguageServices()
         editorState.clearSemanticTokens()
-        editorState.clearFoldRegions()
+        editorState.folding.clearFoldRegions()
         editorState.retargetFile(newFile)
     }
 
@@ -227,8 +211,8 @@ class CodeEditorRuntime(
         disposed = true
         resetDocumentBinding()
         resetStateBindings()
+        editorState.close()
         clearLanguageServices()
-        buffer.removeChangeListener(stateSyncListener)
         buffer.close()
     }
 }

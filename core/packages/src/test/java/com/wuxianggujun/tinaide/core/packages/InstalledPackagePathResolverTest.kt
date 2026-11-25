@@ -6,19 +6,38 @@ import com.wuxianggujun.tinaide.core.packages.model.InstallType
 import com.wuxianggujun.tinaide.core.packages.model.Platform
 import com.wuxianggujun.tinaide.core.packages.store.LocalInstallStateStore
 import java.io.File
+import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class InstalledPackagePathResolverTest {
 
     private val context = RuntimeEnvironment.getApplication().applicationContext
     private val installRoot = File(context.filesDir, "installed-packages")
     private val installStateStore = LocalInstallStateStore(context)
+
+    @Test
+    fun `runtime lookup uses the nearest artifact cache instead of another build variant`() {
+        val project = kotlin.io.path.createTempDirectory("vcpkg-runtime").toFile()
+        try {
+            val debug = File(project, "build/debug").apply { mkdirs() }
+            val release = File(project, "build/release").apply { mkdirs() }
+            File(debug, "CMakeCache.txt").writeText("CMAKE_BUILD_TYPE:STRING=Debug\n")
+            File(release, "CMakeCache.txt").writeText("CMAKE_BUILD_TYPE:STRING=RelWithDebInfo\n")
+            assertThat(InstalledPackagePathResolver.isDebugCMakeArtifact(File(debug, "lib"), project)).isTrue()
+            assertThat(InstalledPackagePathResolver.isDebugCMakeArtifact(release, project)).isFalse()
+            assertThat(InstalledPackagePathResolver.isDebugCMakeArtifact(null, project)).isFalse()
+        } finally {
+            project.deleteRecursively()
+        }
+    }
 
     @Before
     fun setUp() {
@@ -34,7 +53,7 @@ class InstalledPackagePathResolverTest {
     }
 
     @Test
-    fun `resolve exposes installed header and source package include and pkgconfig paths`() {
+    fun `resolve exposes installed header and source package include and pkgconfig paths`() = runTest {
         createHeaderPackage("nlohmann-json", "nlohmann/json.hpp")
         createSourcePackage("tinyxml2", "tinyxml2.h", "tinyxml2.cpp")
         createHeaderPackage("not-installed", "ignored.hpp")
@@ -78,7 +97,7 @@ class InstalledPackagePathResolverTest {
     }
 
     @Test
-    fun `resolve discovers libraries only for installed Android packages`() {
+    fun `resolve discovers libraries only for installed Android packages`() = runTest {
         val deviceAbi = Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"
         createBinaryPackage(
             packageId = "sdl3",
@@ -121,7 +140,7 @@ class InstalledPackagePathResolverTest {
     }
 
     @Test
-    fun `resolve ignores stale package directories without installed state`() {
+    fun `resolve ignores stale package directories without installed state`() = runTest {
         val deviceAbi = Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"
         createBinaryPackage(
             packageId = "stale-sdl3",

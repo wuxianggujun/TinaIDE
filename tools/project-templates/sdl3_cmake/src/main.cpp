@@ -32,13 +32,13 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     }
 
     auto* state = new AppState();
-    if (!SDL_CreateWindowAndRenderer("{{PROJECT_NAME}}", 960, 540, 0, &state->window, &state->renderer)) {
+    // Set resize policy at creation so Android does not rotate twice during startup.
+    if (!SDL_CreateWindowAndRenderer("{{PROJECT_NAME}}", 960, 540, SDL_WINDOW_RESIZABLE, &state->window, &state->renderer)) {
         SDL_Log("SDL_CreateWindowAndRenderer failed: %s", SDL_GetError());
         delete state;
         return SDL_APP_FAILURE;
     }
 
-    SDL_SetWindowResizable(state->window, true);
     SDL_SetRenderVSync(state->renderer, 1);
     *appstate = state;
     // 这一行会出现在悬浮日志与“启动失败”对话框里，可用来确认日志链路。

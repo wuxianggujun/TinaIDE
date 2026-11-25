@@ -50,20 +50,10 @@ internal object AboutSettingsSectionSupport {
     )
 
     fun resolveDeveloperOptionsTap(
-        serverAllowsDeveloperOptions: Boolean,
         developerOptionsEnabled: Boolean,
         currentState: AboutDeveloperOptionsTapState,
         currentTimeMillis: Long,
     ): AboutDeveloperOptionsTapResult {
-        if (!serverAllowsDeveloperOptions) {
-            return AboutDeveloperOptionsTapResult(
-                nextState = currentState,
-                toast = AboutToastSpec(
-                    message = AboutMessageSpec(Strings.about_developer_options_disabled_by_server)
-                ),
-            )
-        }
-
         if (developerOptionsEnabled) {
             return AboutDeveloperOptionsTapResult(
                 nextState = currentState,

@@ -5,12 +5,15 @@ plugins {
 
 android {
     namespace = "com.wuxianggujun.tinaide.feature.packages"
+    testOptions.unitTests.isIncludeAndroidResources = true
     buildFeatures {
         compose = true
     }
 }
 
 dependencies {
+    implementation(project.dependencies.project(":core:compile"))
+    implementation(project.dependencies.project(":core:model"))
     implementation(project.dependencies.project(":core:designsystem"))
     implementation(project.dependencies.project(":core:i18n"))
     implementation(project.dependencies.project(":core:config"))
@@ -25,4 +28,5 @@ dependencies {
     implementation(libs.compose.material.icons.extended)
     implementation(libs.compose.ui)
     implementation(libs.lifecycle.viewmodel)
+    implementation(libs.lifecycle.runtime.compose)
 }

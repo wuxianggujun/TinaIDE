@@ -33,7 +33,8 @@ internal data class TerminalRunLayout(
     val envPrefix: String,
     val ldLibraryPrefix: String,
     val waitForEnterSuffix: String,
-    val kind: NativeExecutableRunner.ExecutableKind
+    val kind: NativeExecutableRunner.ExecutableKind,
+    val replaceShell: Boolean = false,
 )
 
 /**
@@ -52,7 +53,7 @@ internal fun assembleTerminalRunShellCommand(
         kind = layout.kind,
         preferLinker64 = preferLinker64
     )
-    val runCommand = layout.envPrefix + layout.ldLibraryPrefix + runSnippet
+    val runCommand = (if (layout.replaceShell) "exec /system/bin/env " else "") + layout.envPrefix + layout.ldLibraryPrefix + runSnippet
     // 已知的 AArch64 BTI / Auth RELR linker 兼容告警在终端显示层
     // (KnownLinkerWarningFilter) 过滤，不在此处重定向 stderr —— 保持子进程 fd 2 为真实
     // PTY，使 isatty(2) 为真，颜色探测（ffmpeg 等）正常。
@@ -64,7 +65,7 @@ internal fun assembleTerminalRunShellCommand(
             .append(' ')
             .append(shellQuotePosix(layout.stagedTargetPath))
         append(" && chmod 700 ").append(shellQuotePosix(layout.stagedTargetPath))
-        append(" 2>/dev/null && printf '\\033[H\\033[2J' && ")
+        append(if (layout.replaceShell) " 2>/dev/null && " else " 2>/dev/null && printf '\\033[H\\033[2J' && ")
         append(runCommand)
         append(layout.waitForEnterSuffix)
     }

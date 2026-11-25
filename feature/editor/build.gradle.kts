@@ -6,6 +6,7 @@ plugins {
 
 android {
     namespace = "com.wuxianggujun.tinaide.feature.editor"
+    testOptions.unitTests.isIncludeAndroidResources = true
 }
 
 kapt {
@@ -26,6 +27,7 @@ dependencies {
     implementation(project.dependencies.project(":core:storage"))
     implementation(project.dependencies.project(":core:cmake"))
     implementation(project.dependencies.project(":core:tree-sitter"))
+    implementation(project.dependencies.project(":core:language-support"))
     implementation(project.dependencies.project(":core:tree-sitter-grammars"))
     implementation(libs.timber)
     implementation(libs.kotlinx.coroutines)

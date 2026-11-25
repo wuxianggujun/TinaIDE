@@ -17,12 +17,20 @@ object CrashUploadState {
     private const val KEY_LAST_UPLOADED_MTIME = "logs.crash.last_uploaded.mtime"
     private const val KEY_UPLOADED_NAMES = "logs.crash.uploaded.names"
     private const val KEY_UPLOAD_SKIPPED_NAMES = "logs.crash.upload_skipped.names"
+    private const val KEY_FAILED_NAMES = "logs.crash.failed.names"
     private const val KEY_LAST_STATUS = "logs.crash.last_status"
     private const val KEY_LAST_STATUS_NAME = "logs.crash.last_status.name"
     private const val KEY_LAST_STATUS_MTIME = "logs.crash.last_status.mtime"
     private const val KEY_LAST_STATUS_AT = "logs.crash.last_status.at"
     private const val KEY_LAST_STATUS_REASON = "logs.crash.last_status.reason"
     private const val KEY_LAST_ATTEMPT_COUNT = "logs.crash.last_attempt.count"
+
+    /**
+     * Tombstones are deleted after a successful upload, so these bookkeeping sets only
+     * need to remember recent names (fallback for a failed delete). The hard cap keeps
+     * the preferences file from growing forever on devices that crash a lot.
+     */
+    private const val MAX_TRACKED_NAMES = 48
 
     enum class Status {
         NONE,
@@ -81,6 +89,19 @@ object CrashUploadState {
         return getUploadSkippedNames(context).contains(fileName)
     }
 
+    fun isUploadFailed(context: Context, fileName: String): Boolean {
+        if (fileName.isBlank()) return false
+        return getFailedNames(context).contains(fileName)
+    }
+
+    /**
+     * A tombstone that must never be retried: skipped by privacy policy, or rejected by
+     * the server with a non-retryable status. Retrying these on every launch would burn
+     * battery and, for attachment/count quota errors, keep failing forever.
+     */
+    fun isUploadTerminal(context: Context, fileName: String): Boolean =
+        isUploadSkipped(context, fileName) || isUploadFailed(context, fileName)
+
     fun markUploadQueued(context: Context, fileName: String, reason: String = "queued"): Boolean = updateLastStatus(
         context = context,
         status = Status.QUEUED,
@@ -116,6 +137,7 @@ object CrashUploadState {
 
     fun markUploadFailed(context: Context, fileName: String, mtime: Long, reason: String): Boolean {
         if (fileName.isBlank()) return false
+        val failedNames = trackName(getFailedNames(context), fileName)
         return updateLastStatus(
             context = context,
             status = Status.FAILED,
@@ -123,12 +145,16 @@ object CrashUploadState {
             mtime = mtime,
             reason = reason,
             incrementAttempt = false,
-        )
+        ) && context
+            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putStringSet(KEY_FAILED_NAMES, failedNames)
+            .commit()
     }
 
     fun markUploadSkipped(context: Context, fileName: String, reason: String = "skipped_by_policy"): Boolean {
         if (fileName.isBlank()) return false
-        val skippedNames = getUploadSkippedNames(context) + fileName
+        val skippedNames = trackName(getUploadSkippedNames(context), fileName)
         return context
             .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
@@ -148,7 +174,7 @@ object CrashUploadState {
      */
     fun markUploaded(context: Context, fileName: String, mtime: Long): Boolean {
         if (fileName.isBlank()) return false
-        val uploadedNames = getUploadedNames(context) + fileName
+        val uploadedNames = trackName(getUploadedNames(context), fileName)
         return context
             .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
@@ -221,6 +247,18 @@ object CrashUploadState {
         .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         .getStringSet(KEY_UPLOAD_SKIPPED_NAMES, emptySet())
         .orEmpty()
+
+    private fun getFailedNames(context: Context): Set<String> = context
+        .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .getStringSet(KEY_FAILED_NAMES, emptySet())
+        .orEmpty()
+
+    private fun trackName(current: Set<String>, fileName: String): Set<String> {
+        if (current.contains(fileName) && current.size <= MAX_TRACKED_NAMES) return current
+        val others = current.filterNot { it == fileName }
+        val capacity = (MAX_TRACKED_NAMES - 1).coerceAtLeast(0)
+        return (others.takeLast(capacity) + fileName).toSet()
+    }
 
     private fun normalizeFileName(fileName: String): String = fileName.trim().ifBlank { UNKNOWN_FILE_NAME }
 }

@@ -1,6 +1,7 @@
 package com.wuxianggujun.tinaide.editor.symbol
 
 import java.util.Locale
+import java.util.PriorityQueue
 
 /**
  * 模糊匹配工具类
@@ -232,16 +233,27 @@ object FuzzyMatcher {
         getText: (T) -> String,
         limit: Int = Int.MAX_VALUE,
     ): List<Pair<T, MatchResult>> {
+        if (limit <= 0) return emptyList()
         if (pattern.isEmpty()) {
             return items.take(limit).map { it to MatchResult(matched = true, score = 0) }
         }
 
-        return items
-            .asSequence()
-            .map { item -> item to match(pattern, getText(item)) }
-            .filter { it.second.matched }
-            .sortedByDescending { it.second.score }
-            .take(limit)
-            .toList()
+        // Keep only the best K matches. Earlier entries win ties, as in a stable sort.
+        val worstFirst = compareBy<IndexedValue<Pair<T, MatchResult>>> { it.value.second.score }
+            .thenByDescending { it.index }
+        val best = PriorityQueue(minOf(limit, 64), worstFirst)
+        items.forEachIndexed { index, item ->
+            val result = match(pattern, getText(item))
+            if (result.matched) {
+                val candidate = IndexedValue(index, item to result)
+                if (best.size < limit) {
+                    best.add(candidate)
+                } else if (worstFirst.compare(candidate, best.peek()) > 0) {
+                    best.poll()
+                    best.add(candidate)
+                }
+            }
+        }
+        return best.sortedWith(worstFirst.reversed()).map { it.value }
     }
 }

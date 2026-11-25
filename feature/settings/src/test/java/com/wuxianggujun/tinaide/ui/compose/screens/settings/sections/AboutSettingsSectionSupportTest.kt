@@ -8,29 +8,6 @@ import org.junit.Test
 class AboutSettingsSectionSupportTest {
 
     @Test
-    fun resolveDeveloperOptionsTap_shouldRejectWhenServerDisablesFeature() {
-        val currentState = AboutDeveloperOptionsTapState(
-            clickCount = 2,
-            lastClickTimeMillis = 1000L,
-        )
-
-        val result = AboutSettingsSectionSupport.resolveDeveloperOptionsTap(
-            serverAllowsDeveloperOptions = false,
-            developerOptionsEnabled = false,
-            currentState = currentState,
-            currentTimeMillis = 2000L,
-        )
-
-        assertThat(result.nextState).isEqualTo(currentState)
-        assertThat(result.enableDeveloperOptions).isFalse()
-        assertThat(result.toast).isEqualTo(
-            AboutToastSpec(
-                message = AboutMessageSpec(Strings.about_developer_options_disabled_by_server)
-            )
-        )
-    }
-
-    @Test
     fun resolveDeveloperOptionsTap_shouldShowAlreadyEnabledToastWithoutChangingState() {
         val currentState = AboutDeveloperOptionsTapState(
             clickCount = 3,
@@ -38,7 +15,6 @@ class AboutSettingsSectionSupportTest {
         )
 
         val result = AboutSettingsSectionSupport.resolveDeveloperOptionsTap(
-            serverAllowsDeveloperOptions = true,
             developerOptionsEnabled = true,
             currentState = currentState,
             currentTimeMillis = 2000L,
@@ -56,7 +32,6 @@ class AboutSettingsSectionSupportTest {
     @Test
     fun resolveDeveloperOptionsTap_shouldAdvanceCounterAndOnlyWarnNearThreshold() {
         val silentResult = AboutSettingsSectionSupport.resolveDeveloperOptionsTap(
-            serverAllowsDeveloperOptions = true,
             developerOptionsEnabled = false,
             currentState = AboutDeveloperOptionsTapState(
                 clickCount = 1,
@@ -73,7 +48,6 @@ class AboutSettingsSectionSupportTest {
         assertThat(silentResult.toast).isNull()
 
         val hintResult = AboutSettingsSectionSupport.resolveDeveloperOptionsTap(
-            serverAllowsDeveloperOptions = true,
             developerOptionsEnabled = false,
             currentState = silentResult.nextState,
             currentTimeMillis = 2500L,
@@ -98,7 +72,6 @@ class AboutSettingsSectionSupportTest {
     @Test
     fun resolveDeveloperOptionsTap_shouldResetExpiredCounterAndEnableAtThreshold() {
         val resetResult = AboutSettingsSectionSupport.resolveDeveloperOptionsTap(
-            serverAllowsDeveloperOptions = true,
             developerOptionsEnabled = false,
             currentState = AboutDeveloperOptionsTapState(
                 clickCount = 4,
@@ -115,7 +88,6 @@ class AboutSettingsSectionSupportTest {
         assertThat(resetResult.toast).isNull()
 
         val enabledResult = AboutSettingsSectionSupport.resolveDeveloperOptionsTap(
-            serverAllowsDeveloperOptions = true,
             developerOptionsEnabled = false,
             currentState = AboutDeveloperOptionsTapState(
                 clickCount = 4,

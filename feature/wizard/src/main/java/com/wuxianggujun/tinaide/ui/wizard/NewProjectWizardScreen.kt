@@ -14,6 +14,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Code
@@ -30,6 +31,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.wuxianggujun.tinaide.core.config.NewProjectSourceLocation
@@ -66,6 +68,7 @@ fun NewProjectWizardScreen(
     onSourceLocationSelected: (NewProjectSourceLocation) -> Unit,
     onCppStandardSelected: (CppStandard) -> Unit,
     onNdkApiLevelSelected: (AndroidApiLevel) -> Unit,
+    onUseVcpkgChanged: (Boolean) -> Unit,
     onNextStep: () -> Unit,
     onPreviousStep: () -> Unit,
     onCreateProject: () -> Unit,
@@ -185,11 +188,13 @@ fun NewProjectWizardScreen(
                         ndkApiLevel = state.ndkApiLevel,
                         sourceLocation = state.sourceLocation,
                         nameError = state.nameError,
+                        useVcpkg = state.useVcpkg,
                         onProjectNameChanged = onProjectNameChanged,
                         onAuthorNameChanged = onAuthorNameChanged,
                         onSourceLocationSelected = onSourceLocationSelected,
                         onCppStandardSelected = onCppStandardSelected,
-                        onNdkApiLevelSelected = onNdkApiLevelSelected
+                        onNdkApiLevelSelected = onNdkApiLevelSelected,
+                        onUseVcpkgChanged = onUseVcpkgChanged,
                     )
                 }
             }
@@ -615,11 +620,13 @@ private fun ConfigurationStep(
     ndkApiLevel: AndroidApiLevel,
     sourceLocation: NewProjectSourceLocation,
     nameError: String?,
+    useVcpkg: Boolean,
     onProjectNameChanged: (String) -> Unit,
     onAuthorNameChanged: (String) -> Unit,
     onSourceLocationSelected: (NewProjectSourceLocation) -> Unit,
     onCppStandardSelected: (CppStandard) -> Unit,
-    onNdkApiLevelSelected: (AndroidApiLevel) -> Unit
+    onNdkApiLevelSelected: (AndroidApiLevel) -> Unit,
+    onUseVcpkgChanged: (Boolean) -> Unit,
 ) {
     val context = LocalContext.current
     var cppStandardExpanded by remember { mutableStateOf(false) }
@@ -774,6 +781,23 @@ private fun ConfigurationStep(
                             )
                         }
                 }
+            }
+        }
+
+        if (NewProjectWizardSupport.canUseVcpkg(selectedTemplate)) {
+            Column(verticalArrangement = Arrangement.spacedBy(TinaSpacing.sm)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth()
+                        .toggleable(value = useVcpkg, role = Role.Checkbox, onValueChange = onUseVcpkgChanged)
+                        .padding(vertical = TinaSpacing.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(TinaSpacing.md),
+                ) {
+                    Checkbox(checked = useVcpkg, onCheckedChange = null)
+                    Text(stringResource(Strings.vcpkg_use_managed), style = MaterialTheme.typography.titleSmall)
+                }
+                Text(stringResource(Strings.wizard_vcpkg_hint), style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
 

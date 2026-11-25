@@ -2,6 +2,8 @@ package com.wuxianggujun.tinaide.core.format
 
 import android.content.Context
 import com.wuxianggujun.tinaide.core.config.Prefs
+import com.wuxianggujun.tinaide.core.i18n.Strings
+import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.core.lang.CxxFileSupport
 import com.wuxianggujun.tinaide.core.linux.LinuxEnvironmentProvider
 import com.wuxianggujun.tinaide.core.linux.LinuxRunModePolicy
@@ -9,6 +11,8 @@ import com.wuxianggujun.tinaide.core.linux.UnavailableLinuxEnvironmentProvider
 import com.wuxianggujun.tinaide.core.proot.PRootEnvironment
 import com.wuxianggujun.tinaide.core.proot.PRootManager
 import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * 代码格式化服务（支持原生和 PRoot 双模式）
@@ -19,7 +23,7 @@ import java.io.File
  *
  * 格式化风格优先级：
  * 1. 如果项目目录中存在 .clang-format 文件，使用该文件的配置
- * 2. 否则使用用户在设置中选择的默认风格（从内置配置文件加载）
+ * 2. 否则使用用户选择的基础风格，缩进与 Tab 策略复用编辑行为设置
  *
  * @param context Android Context，用于访问 assets
  * @param prootManager PRoot 进程管理器（仅 PRoot 模式需要）
@@ -129,6 +133,7 @@ class CodeFormatter(
         sourceFile: File,
         options: FormatOptions = FormatOptions()
     ): FormatResult {
+        validateProjectIndentation(sourceFile)?.let { return it }
         val effectiveStyle = styleResolver.resolve(sourceFile)
         val hostFilePath = sourceFile.absolutePath
 
@@ -160,6 +165,9 @@ class CodeFormatter(
         inPlace: Boolean = false
     ): FormatResult {
         val sourceFile = File(filePath)
+        if (style == null || style == FormatStyle.FILE) {
+            validateProjectIndentation(sourceFile)?.let { return it }
+        }
         val effectiveStyle = style ?: styleResolver.resolve(sourceFile)
         val hostFilePath = sourceFile.absolutePath
 
@@ -193,6 +201,9 @@ class CodeFormatter(
         style: FormatStyle? = null
     ): FormatResult {
         val sourceFile = File(fileName)
+        if (style == null || style == FormatStyle.FILE) {
+            validateProjectIndentation(sourceFile)?.let { return it }
+        }
         val effectiveStyle = style ?: styleResolver.resolve(sourceFile)
         val hostFilePath = sourceFile.absolutePath
 
@@ -230,6 +241,35 @@ class CodeFormatter(
      */
     fun hasClangFormatFile(directory: File?, maxDepth: Int = Int.MAX_VALUE): Boolean =
         styleResolver.hasClangFormatFile(directory, maxDepth)
+
+    /** Ask the same backend to resolve project inheritance and language-specific settings. */
+    suspend fun resolveIndentation(sourceFile: File): FormatterIndentationResult = withContext(Dispatchers.IO) {
+        val defaults = FormatterIndentation.fromPreferences()
+        if (!isSupported(sourceFile)) {
+            return@withContext FormatterIndentationResult.Success(defaults, usesProjectConfig = false)
+        }
+        val style = styleResolver.resolve(sourceFile, defaults)
+        if (style != FormatStyle.FILE) {
+            return@withContext FormatterIndentationResult.Success(defaults, usesProjectConfig = false)
+        }
+        val config = if (useNativeMode) {
+            nativeFormatter.dumpConfig(sourceFile.absolutePath, style)
+        } else {
+            prootFormatter.dumpConfig(resolvedProotManager.toGuestPath(sourceFile.absolutePath), style)
+        }
+        when (config) {
+            is FormatResult.Success -> FormatterIndentation.fromResolvedConfig(config.formattedContent)
+                ?.let { FormatterIndentationResult.Success(it, usesProjectConfig = true) }
+                ?: FormatterIndentationResult.Error(Strings.format_indent_config_invalid.strOr(context))
+            is FormatResult.Error -> FormatterIndentationResult.Error(config.message)
+        }
+    }
+
+    private suspend fun validateProjectIndentation(sourceFile: File): FormatResult.Error? =
+        when (val result = resolveIndentation(sourceFile)) {
+            is FormatterIndentationResult.Error -> FormatResult.Error(result.message)
+            is FormatterIndentationResult.Success -> null
+        }
 
     // ========== 配置管理委托 ==========
 

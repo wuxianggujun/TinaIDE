@@ -298,7 +298,7 @@ private fun AboutLibrariesData.mergeBundledLibraries(context: android.content.Co
             artifactVersion = null,
             description = context.getString(Strings.license_bundled_termux_desc),
             website = null,
-            licenseIds = listOf("Apache-2.0")
+            licenseIds = listOf("GPL-3.0-only", "Apache-2.0")
         )
     )
 

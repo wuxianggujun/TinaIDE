@@ -1,0 +1,5 @@
+idePid=2831
+pid=2996 major=3 ascii=1 unicode=1 root=1
+video=1 window=1
+renderer=1
+action=return

@@ -10,6 +10,15 @@ import org.junit.Test
 class RaylibTemplateRegressionTest {
 
     @Test
+    fun `raylib template requires the supported native activity host`() {
+        val manifestPath = locateRepoRoot().resolve("test-plugins/tinaide.template.raylib/manifest.json")
+        val manifest = String(Files.readAllBytes(manifestPath), StandardCharsets.UTF_8)
+
+        assertThat(manifest).contains("\"minAppVersion\": \"0.18.36\"")
+        assertThat(manifest).contains("\"requiredPackages\": [\"raylib\"]")
+    }
+
+    @Test
     fun `raylib plugin template exposes shared library entry sample`() {
         val zipPath = locateRepoRoot().resolve("test-plugins/tinaide.template.raylib/templates/raylib_cmake.zip")
         ZipFile(zipPath.toFile()).use { zip ->
@@ -32,6 +41,21 @@ class RaylibTemplateRegressionTest {
                 assertThat(main).doesNotContain(marker)
                 assertThat(cmake).doesNotContain(marker)
             }
+        }
+    }
+
+    @Test
+    fun `raylib template drains queued back keys before drawing`() {
+        val zipPath = locateRepoRoot().resolve("test-plugins/tinaide.template.raylib/templates/raylib_cmake.zip")
+        ZipFile(zipPath.toFile()).use { zip ->
+            val main = zip.readText("src/main.c")
+
+            // A short press can deliver DOWN and UP within one frame; use the key queue.
+            assertThat(main).contains("for (int key = GetKeyPressed(); key != 0; key = GetKeyPressed())")
+            assertThat(main).contains("key == KEY_BACK || key == KEY_ESCAPE")
+            assertThat(main).contains("if (exitRequested) break;")
+            assertThat(main.indexOf("if (exitRequested) break;")).isLessThan(main.indexOf("BeginDrawing();"))
+            assertThat(main).contains("CloseWindow();")
         }
     }
 

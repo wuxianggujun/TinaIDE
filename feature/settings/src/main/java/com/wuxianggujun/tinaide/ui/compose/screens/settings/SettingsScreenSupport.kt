@@ -23,6 +23,7 @@ internal enum class SettingsScrollableContent {
     Appearance,
     Keyboard,
     Developer,
+    Donation,
     About,
     Placeholder
 }
@@ -88,6 +89,7 @@ internal object SettingsScreenSupport {
         SettingsRoute.Appearance -> SettingsScrollableContent.Appearance
         SettingsRoute.Keyboard -> SettingsScrollableContent.Keyboard
         SettingsRoute.Developer -> SettingsScrollableContent.Developer
+        SettingsRoute.Donation -> SettingsScrollableContent.Donation
         SettingsRoute.About -> SettingsScrollableContent.About
         else -> SettingsScrollableContent.Placeholder
     }

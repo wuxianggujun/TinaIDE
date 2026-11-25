@@ -15,7 +15,12 @@ import timber.log.Timber
  * 但项目根下存在的只读资源重定向回项目根。
  */
 object SdlAssetRedirect {
-    private const val TAG = "SdlAssetRedirect"
+    /**
+     * logcat 标签，同时也是 [com.wuxianggujun.tinaide.ui.compose.components.GraphicalRuntimeOverlay]
+     * 悬浮日志面板捕获的标签之一。改名必须两处同步。
+     */
+    const val LOG_TAG = "SdlAssetRedirect"
+
     private const val LIBRARY_NAME = "tina_sdl_asset_redirect"
 
     @Volatile
@@ -31,10 +36,10 @@ object SdlAssetRedirect {
      * @param projectRoot 项目根绝对路径（来自 [com.wuxianggujun.tinaide.core.compile.CompileProjectUseCase.RUNTIME_ASSET_ROOT_ENV]）。
      * @return true 表示 hook 已安装（或此前已安装）；false 表示跳过或失败，SDL 仍走原生 filesDir/APK asset 逻辑。
      */
-    fun install(context: Context, projectRoot: String): Boolean {
+    fun install(context: Context, projectRoot: String, assetDirectory: String = ""): Boolean {
         val normalizedRoot = projectRoot.trim()
         if (normalizedRoot.isEmpty()) {
-            Timber.tag(TAG).d("skip install: empty project root")
+            Timber.tag(LOG_TAG).d("skip install: empty project root")
             return false
         }
         if (installed) return true
@@ -48,12 +53,25 @@ object SdlAssetRedirect {
         val projectRootPath = runCatching { File(normalizedRoot).canonicalPath }
             .getOrElse { normalizedRoot }
 
-        return runCatching { nativeInstall(filesDir, projectRootPath) }
-            .onFailure { Timber.tag(TAG).w(it, "nativeInstall threw") }
+        val root = File(projectRootPath)
+        val assets = if (assetDirectory.isBlank()) File(root, "assets").takeIf { it.isDirectory } ?: root
+            else File(assetDirectory)
+        val assetsPath = runCatching { assets.canonicalFile }.getOrElse {
+            Timber.tag(LOG_TAG).w(it, "Invalid asset directory")
+            return false
+        }
+        if (!root.isDirectory || !assetsPath.isDirectory || !assetsPath.toPath().startsWith(root.toPath())) {
+            Timber.tag(LOG_TAG).w("Asset directory is missing or outside the project")
+            return false
+        }
+
+        return runCatching { nativeInstall(filesDir.toByteArray(Charsets.UTF_8),
+            projectRootPath.toByteArray(Charsets.UTF_8), assetsPath.path.toByteArray(Charsets.UTF_8)) }
+            .onFailure { Timber.tag(LOG_TAG).w(it, "nativeInstall threw") }
             .getOrDefault(false)
             .also { result ->
                 installed = result
-                Timber.tag(TAG).i(
+                Timber.tag(LOG_TAG).i(
                     "install result=%b filesDir=%s projectRoot=%s",
                     result,
                     filesDir,
@@ -65,10 +83,12 @@ object SdlAssetRedirect {
     private fun ensureLibraryLoaded(): Boolean {
         if (libraryLoaded) return true
         return runCatching { System.loadLibrary(LIBRARY_NAME) }
-            .onFailure { Timber.tag(TAG).w(it, "failed to load %s", LIBRARY_NAME) }
+            .onFailure { Timber.tag(LOG_TAG).w(it, "failed to load %s", LIBRARY_NAME) }
             .isSuccess
             .also { libraryLoaded = it }
     }
 
-    private external fun nativeInstall(filesDir: String, projectRoot: String): Boolean
+    // JNI's GetStringUTFChars uses modified UTF-8 and corrupts supplementary characters
+    // in filesystem paths. Pass ordinary UTF-8 bytes, including emoji directory names.
+    private external fun nativeInstall(filesDir: ByteArray, projectRoot: ByteArray, assetDirectory: ByteArray): Boolean
 }

@@ -11,10 +11,8 @@ dependencies {
     implementation(project.dependencies.project(":core:common"))
     implementation(project.dependencies.project(":core:i18n"))
     implementation(project.dependencies.project(":core:model"))
-    implementation(project.dependencies.project(":core:security"))
     implementation(libs.okhttp)
     implementation(libs.kotlinx.coroutines)
     implementation(libs.kotlinx.serialization.json)
-    implementation(libs.msgpack.core)
     implementation(libs.timber)
 }

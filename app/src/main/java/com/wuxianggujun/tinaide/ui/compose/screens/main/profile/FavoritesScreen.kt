@@ -34,18 +34,6 @@ fun FavoritesScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val listState = rememberLazyListState()
-    val snackbarHostState = remember { SnackbarHostState() }
-
-    // 显示同步错误提示
-    LaunchedEffect(uiState.syncError) {
-        uiState.syncError?.let { error ->
-            snackbarHostState.showSnackbar(
-                message = error,
-                duration = SnackbarDuration.Short
-            )
-            viewModel.clearSyncError()
-        }
-    }
 
     // 拦截返回手势
     BackHandler(enabled = true) {
@@ -76,24 +64,15 @@ fun FavoritesScreen(
                     }
                 },
                 actions = {
-                    if (uiState.isSyncing) {
-                        CircularProgressIndicator(
-                            modifier = Modifier
-                                .size(24.dp)
-                                .padding(end = 12.dp),
-                            strokeWidth = 2.dp
-                        )
-                    }
                     IconButton(
                         onClick = { viewModel.refresh() },
-                        enabled = !uiState.isSyncing
+                        enabled = !uiState.isLoading
                     ) {
                         Icon(Icons.Default.Refresh, contentDescription = Strings.favorites_refresh.str())
                     }
                 }
             )
-        },
-        snackbarHost = { SnackbarHost(snackbarHostState) }
+        }
     ) { padding ->
         val safePadding = padding.sanitizeForScaffoldContent()
         Box(
@@ -176,22 +155,11 @@ private fun FavoriteCard(
             Spacer(modifier = Modifier.width(16.dp))
 
             Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = favorite.name,
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.weight(1f)
-                    )
-                    // 同步状态指示器
-                    if (!favorite.synced) {
-                        Icon(
-                            imageVector = Icons.Default.CloudOff,
-                            contentDescription = Strings.favorites_not_synced.str(),
-                            tint = MaterialTheme.colorScheme.outline,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                }
+                Text(
+                    text = favorite.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f)
+                )
                 favorite.description?.takeIf { it.isNotBlank() }?.let { desc ->
                     Text(
                         text = desc,

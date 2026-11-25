@@ -439,6 +439,42 @@ output/registry/raylib/6.0/raylib-arm64-v8a.tar.xz    # ARM64
 output/registry/raylib/6.0/raylib-x86_64.tar.xz       # x86_64
 ```
 
+### raylib 6.0 revision 3：标准帧循环与 Android 退出
+
+raylib 6.0 固定使用上游提交 `dbc56a87da87d973a9c5baa4e7438a9d20121d28`。
+构建必须保持 `CUSTOMIZE_BUILD=OFF`：该版本的 CMake 配置解析器会把未注释的
+`SUPPORT_*` 定义都转成 `ON`，包括值为 `0` 的 `SUPPORT_CUSTOM_FRAME_CONTROL`。
+错误开启它会使 `EndDrawing()` 不再交换帧、处理输入和执行默认计时，表现为黑屏或无响应。
+关闭定制构建保留上游 `config.h` 的数值默认值，不需要另外开启默认已启用的音频模块。
+
+`package-native-library.sh` 除入口、SONAME、ABI 和 16 KB LOAD 对齐外，还用 NDK
+`llvm-objdump` 检查 `EndDrawing` 必须调用 `SwapScreenBuffer`（或内联后的
+`eglSwapBuffers`）及 `PollInputEvents`；反汇编失败也禁止打包。
+此外，构建在固定源码上校验并应用 `patches/raylib-android-destroy.patch`：
+`APP_CMD_DESTROY` 后必须跳出轮询，不能再次进入暂停态的 `ALooper_pollOnce(-1)`；
+窗口尚未初始化时收到销毁事件也必须终止初始化。这修复系统手势返回或 `finish()`
+让 `NativeActivity.onDestroy()` 与 native 线程相互等待的死锁。
+打包同时检查库内生命周期补丁标记，拒绝把未修复的 r2 库标成 r3 发布。
+修复后的 `package.json` 标记为 `packageRevision: 3`，没有游戏总运行时限。
+
+```powershell
+# 在 docker/tinaide-pkg 目录，先重建镜像以使用当前脚本
+.\build-pkg.ps1 -Library raylib -Arch all -LinkType shared -Mode rebuild
+docker run --rm --entrypoint /build/package-native-library.sh `
+    -v "${PWD}\output:/output" tinaide-pkg-builder raylib
+```
+
+校验文件使用相对归档文件名，可以在归档目录直接执行 `sha256sum -c *.sha256`。
+生成本地包不等于发布：市场制品与索引仍需在 `TinaIDE-Registry` 中更新。
+当前支持基线是修复后的 raylib 6.0 revision 3；不为旧 raylib/SDL 包新增兼容分支。
+Registry 修复版使用独立的 `packages/raylib/6.0-r3/` 路径，避免覆盖已发布制品；
+归档内的上游版本仍为 `6.0`，通过 `packageRevision: 3` 区分打包修订。
+已安装的有效旧包不会仅因 APK 更新而自动替换；修复包发布后需重新安装 raylib，
+并确认安装目录的 `package.json` 包含正确的 revision。
+
+脚本回归、模板返回键处理和设备验证边界见
+[Native 图形运行回归](../../docs/testing/native-graphics-runtime.md)。
+
 ---
 
 ## 参考文档

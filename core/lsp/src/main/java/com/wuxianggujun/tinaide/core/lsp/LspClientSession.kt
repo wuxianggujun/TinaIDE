@@ -562,6 +562,12 @@ class LspClientSession(
         return server.textDocumentService.callHierarchyIncomingCalls(params)
     }
 
+    override fun callHierarchyOutgoingCalls(params: org.eclipse.lsp4j.CallHierarchyOutgoingCallsParams): CompletableFuture<List<org.eclipse.lsp4j.CallHierarchyOutgoingCall>>? {
+        val server = synchronized(lock) { languageServer } ?: return null
+        if (!isConnected) return null
+        return server.textDocumentService.callHierarchyOutgoingCalls(params)
+    }
+
     private fun registerDynamicServerCapabilities(registrations: List<Registration>) {
         val callHierarchyIds = registrations
             .filter { it.method == METHOD_PREPARE_CALL_HIERARCHY }

@@ -21,16 +21,18 @@ internal object PackageArchivePolicy {
     fun extractZip(
         archiveFile: File,
         targetDir: File,
+        ensureActive: () -> Unit = {},
         progress: (Float) -> Unit = {},
     ) {
-        ZipArchiveValidator.validate(archiveFile, limits)
+        ZipArchiveValidator.validate(archiveFile, limits, ensureActive)
         val budget = ArchiveExtractionBudget(limits)
         ZipFile(archiveFile).use { zip ->
             val entries = zip.entries().toList()
             val total = entries.size.coerceAtLeast(1)
 
             entries.forEachIndexed { index, entry ->
-                budget.beginEntry(entry.name, entry.size)
+                ensureActive()
+                budget.beginEntry(entry.name, entry.size, entry.isDirectory)
                 val entryFile = ArchivePathSafety.resolveEntryFile(targetDir, entry.name, "zip entry")
 
                 if (entry.isDirectory) {
@@ -44,7 +46,7 @@ internal object PackageArchivePolicy {
                     }
                     zip.getInputStream(entry).use { input ->
                         entryFile.outputStream().use { output ->
-                            budget.copyEntry(input, output, entry.name)
+                            budget.copyEntry(input, output, entry.name, ensureActive)
                         }
                     }
                 }

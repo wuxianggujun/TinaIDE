@@ -539,6 +539,7 @@ internal fun MainActivityApkPackageDialog(
         )
     }
     var availablePackages by remember { mutableStateOf<List<GUIPackage>>(emptyList()) }
+    var exportError by remember { mutableStateOf<String?>(null) }
     val enabledPlugins by pluginManager.enabledPluginsFlow.collectAsStateWithLifecycle()
     val exportPayload by produceState<MainActivityApkExportPayload?>(
         null,
@@ -547,7 +548,8 @@ internal fun MainActivityApkPackageDialog(
         projectRoot?.absolutePath,
         buildDir?.absolutePath
     ) {
-        value = withContext(Dispatchers.IO) {
+        exportError = null
+        value = try { withContext(Dispatchers.IO) {
             when (state.apkExportType) {
                 ProjectApkExportType.TERMINAL -> {
                     val resolution = TerminalApkExportResolver.resolve(
@@ -563,6 +565,7 @@ internal fun MainActivityApkPackageDialog(
                             context = context.applicationContext,
                             missingLibraries = resolution.missingLibraries,
                         ),
+                        assetDirectories = resolveProjectAssetDirectories(projectRoot),
                     )
                 }
 
@@ -583,9 +586,16 @@ internal fun MainActivityApkPackageDialog(
                             context = context.applicationContext,
                             missingLibraries = resolution.missingLibraries,
                         ),
+                        assetDirectories = resolveProjectAssetDirectories(projectRoot),
                     )
                 }
             }
+        } } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            timber.log.Timber.e(error, "Failed to prepare APK export resources")
+            exportError = error.message ?: context.getString(com.wuxianggujun.tinaide.core.i18n.R.string.run_config_assets_invalid)
+            null
         }
     }
     val resolvedExportPayload = exportPayload
@@ -595,7 +605,7 @@ internal fun MainActivityApkPackageDialog(
             title = { TinaDialogTitleText(stringResource(Strings.apk_builder_title)) },
             text = {
                 TinaDialogContentColumn {
-                    TinaDialogMessageCard(message = stringResource(Strings.loading))
+                    TinaDialogMessageCard(message = exportError ?: stringResource(Strings.loading))
                 }
             },
             confirmButton = {
@@ -658,7 +668,7 @@ internal fun MainActivityApkPackageDialog(
 
     LaunchedEffect(state.showApkPackageDialog) {
         if (!state.showApkPackageDialog) return@LaunchedEffect
-        packageManager.getAvailablePackages(pageSize = 200)
+        packageManager.getAllAvailablePackages()
             .onSuccess { availablePackages = it }
             .onFailure { availablePackages = emptyList() }
     }
@@ -693,6 +703,7 @@ internal fun MainActivityApkPackageDialog(
         missingLibraries = resolvedExportPayload.missingLibraries,
         availablePackages = availablePackages,
         installedLibraryPackageIndex = resolvedExportPayload.installedLibraryPackageIndex,
+        projectAssetDirectories = resolvedExportPayload.assetDirectories,
         onOpenPackageManager = { searchQuery ->
             state.closeApkPackageDialog()
             SettingsActivity.startPackages(context, searchQuery)
@@ -706,7 +717,23 @@ private data class MainActivityApkExportPayload(
     val executableFile: File?,
     val missingLibraries: List<String>,
     val installedLibraryPackageIndex: Map<String, String>,
+    val assetDirectories: List<File> = emptyList(),
 )
+
+/**
+ * 导出 APK 时要把哪些项目资源目录打进 `assets/`。
+ *
+ * 使用当前 SDL 配置的资源目录；未配置时仅导出 assets/，不会隐式打包整个项目。
+ */
+private suspend fun resolveProjectAssetDirectories(projectRoot: File?): List<File> {
+    val root = projectRoot ?: return emptyList()
+    val config = RunConfigurationManager.load(root.absolutePath).selectedConfig
+    return com.wuxianggujun.tinaide.core.compile.resolveExportAssetDirectories(
+        root,
+        config.runtimeAssetDirectory.takeIf { config.outputMode == com.wuxianggujun.tinaide.core.compile.OutputMode.SDL }.orEmpty(),
+        com.wuxianggujun.tinaide.core.compile.BuildVariables.BuildContext(root, root.name),
+    )
+}
 
 private fun resolveInstalledLibraryPackageIndex(
     context: android.content.Context,

@@ -1,0 +1,34 @@
+[
+  {
+    "name": "warm-cpp-false",
+    "selector": "com.wuxianggujun.tinaide.ui.compose.editor.EditorScrollPerformanceInstrumentationTest#warmCppScroll_recordsEnoughRendererSamples",
+    "extras": {
+      "performanceHighlight": "false",
+      "performanceTrace": "false"
+    },
+    "serial": "emulator-5556",
+    "orientation": "portrait",
+    "seconds": 36.41,
+    "passed": true,
+    "timed_out": false,
+    "returncode": 0,
+    "runId": "57c49154f0314f29a7377b76324010cb",
+    "evidenceFile": "warm-cpp-false-57c49154f0314f29a7377b76324010cb-metrics.json"
+  },
+  {
+    "name": "warm-cpp-true",
+    "selector": "com.wuxianggujun.tinaide.ui.compose.editor.EditorScrollPerformanceInstrumentationTest#warmCppScroll_recordsEnoughRendererSamples",
+    "extras": {
+      "performanceHighlight": "true",
+      "performanceTrace": "false"
+    },
+    "serial": "emulator-5556",
+    "orientation": "portrait",
+    "seconds": 43.29,
+    "passed": false,
+    "timed_out": false,
+    "returncode": 0,
+    "runId": "12ec58fb91fa404f8861454375f1df6b",
+    "evidenceFile": "warm-cpp-true-12ec58fb91fa404f8861454375f1df6b-metrics.json"
+  }
+]

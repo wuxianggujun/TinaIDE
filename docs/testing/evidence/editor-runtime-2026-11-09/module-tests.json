@@ -1,0 +1,67 @@
+{
+  "tests": 33,
+  "failures": 0,
+  "skipped": 0,
+  "suites": [
+    {
+      "name": "com.wuxianggujun.tinaide.core.network.OkHttpCancellationTest",
+      "tests": "3",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-11-08T16:13:02.071Z",
+      "hostname": "DESKTOP-9KUJPVG",
+      "time": "4.054"
+    },
+    {
+      "name": "com.wuxianggujun.tinaide.core.packages.backend.PackageDownloadIdentityTest",
+      "tests": "2",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-11-08T16:56:26.081Z",
+      "hostname": "DESKTOP-9KUJPVG",
+      "time": "0.062"
+    },
+    {
+      "name": "com.wuxianggujun.tinaide.core.packages.download.ResumableDownloaderTest",
+      "tests": "14",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-11-08T16:56:26.156Z",
+      "hostname": "DESKTOP-9KUJPVG",
+      "time": "1.133"
+    },
+    {
+      "name": "com.wuxianggujun.tinaide.core.packages.PackageInstallCoordinatorTest",
+      "tests": "2",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-11-08T16:56:25.801Z",
+      "hostname": "DESKTOP-9KUJPVG",
+      "time": "0.193"
+    },
+    {
+      "name": "com.wuxianggujun.tinaide.core.compile.RuntimeAssetDirectoryTest",
+      "tests": "4",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-11-08T16:20:50.847Z",
+      "hostname": "DESKTOP-9KUJPVG",
+      "time": "6.278"
+    },
+    {
+      "name": "com.wuxianggujun.tinaide.core.apkbuilder.ProjectAssetsTest",
+      "tests": "8",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-11-08T16:26:32.641Z",
+      "hostname": "DESKTOP-9KUJPVG",
+      "time": "0.392"
+    }
+  ]
+}

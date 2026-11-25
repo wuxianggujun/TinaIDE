@@ -1,9 +1,11 @@
 package com.wuxianggujun.tinaide.editor.symbol
 
 import android.content.Context
+import android.util.AtomicFile
 import java.io.File
 import java.security.MessageDigest
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -28,8 +30,8 @@ class SymbolIndexCache(private val context: Context) {
         private const val TAG = "SymbolIndexCache"
         private const val CACHE_DIR = "symbol_cache"
 
-        // v4: symbol index provider generalized to multi-language (C++/Java/Kotlin/Python/Rust).
-        private const val CACHE_VERSION = 4
+        // v5: scoped C++ symbols and lossless signatures/documentation.
+        private const val CACHE_VERSION = 5
         private const val MAX_CACHE_AGE_MS = 7 * 24 * 60 * 60 * 1000L // 7 天
     }
 
@@ -70,10 +72,19 @@ class SymbolIndexCache(private val context: Context) {
                 put("fileSnapshots", serializeFileSnapshots(fileSnapshots))
                 put("fileTimestamps", serializeFileTimestamps(fileTimestamps))
             }
-            cacheFile.writeText(json.toString())
+            val atomicFile = AtomicFile(cacheFile)
+            val output = atomicFile.startWrite()
+            try {
+                output.write(json.toString().toByteArray(Charsets.UTF_8))
+                atomicFile.finishWrite(output)
+            } catch (error: Throwable) {
+                atomicFile.failWrite(output)
+                throw error
+            }
             Timber.tag(TAG).i("Saved index cache: $symbolCount symbols, ${fileTimestamps.size} files")
             true
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Timber.tag(TAG).w("Failed to save index cache: ${e.message}")
             false
         }
@@ -92,7 +103,7 @@ class SymbolIndexCache(private val context: Context) {
                 return@withContext null
             }
 
-            val json = JSONObject(cacheFile.readText())
+            val json = JSONObject(AtomicFile(cacheFile).readFully().toString(Charsets.UTF_8))
             val version = json.optInt("version", 0)
             if (version != CACHE_VERSION) {
                 Timber.tag(TAG).i("Cache version mismatch: $version != $CACHE_VERSION")
@@ -118,6 +129,7 @@ class SymbolIndexCache(private val context: Context) {
             Timber.tag(TAG).i("Loaded index cache: $symbolCount symbols, ${cached.fileTimestamps.size} files")
             cached
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Timber.tag(TAG).w("Failed to load index cache: ${e.message}")
             null
         }
@@ -162,7 +174,7 @@ class SymbolIndexCache(private val context: Context) {
      */
     fun clearCache(projectRoot: String) {
         try {
-            getCacheFile(projectRoot).delete()
+            AtomicFile(getCacheFile(projectRoot)).delete()
             Timber.tag(TAG).i("Cleared cache for project: $projectRoot")
         } catch (e: Exception) {
             Timber.tag(TAG).w("Failed to clear cache: ${e.message}")
@@ -201,6 +213,9 @@ class SymbolIndexCache(private val context: Context) {
                     put("kind", symbol.kind.name)
                     put("detail", symbol.detail)
                     put("filePath", symbol.filePath)
+                    symbol.signature?.let { put("signature", it) }
+                    symbol.documentation?.let { put("documentation", it) }
+                    symbol.containerName?.let { put("containerName", it) }
                     symbol.location?.let { loc ->
                         put("line", loc.line)
                         put("column", loc.column)
@@ -248,6 +263,9 @@ class SymbolIndexCache(private val context: Context) {
                     detail = obj.getString("detail"),
                     filePath = obj.getString("filePath"),
                     location = location,
+                    signature = obj.optString("signature").takeIf { it.isNotEmpty() },
+                    documentation = obj.optString("documentation").takeIf { it.isNotEmpty() },
+                    containerName = obj.optString("containerName").takeIf { it.isNotEmpty() },
                 )
             )
         }

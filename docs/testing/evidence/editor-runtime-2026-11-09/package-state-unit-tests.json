@@ -1,0 +1,411 @@
+{
+  "tests": 50,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "scope": "Module JVM/Robolectric regression after cross-manager mutation, uninstall provenance and invalid-record fixes; not device testing",
+  "buildResult": "BUILD SUCCESSFUL in 2m 55s",
+  "suites": [
+    {
+      "name": "com.wuxianggujun.tinaide.core.packages.backend.DownloadPackageBackendTest",
+      "tests": "12",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-11-09T02:37:46.521Z",
+      "hostname": "DESKTOP-9KUJPVG",
+      "time": "7.597",
+      "cases": [
+        {
+          "name": "wrongMetadataPreservesExistingInstallation",
+          "classname": "com.wuxianggujun.tinaide.core.packages.backend.DownloadPackageBackendTest",
+          "time": "1.464"
+        },
+        {
+          "name": "installCompletesOnceAfterRootAndDependenciesAreRecorded",
+          "classname": "com.wuxianggujun.tinaide.core.packages.backend.DownloadPackageBackendTest",
+          "time": "0.73"
+        },
+        {
+          "name": "cancelledExtractionPreservesExistingInstallationAndCleansArchive",
+          "classname": "com.wuxianggujun.tinaide.core.packages.backend.DownloadPackageBackendTest",
+          "time": "0.304"
+        },
+        {
+          "name": "uninstallUsesTheInstalledBackendWhenRegistryChangesItsInstallType",
+          "classname": "com.wuxianggujun.tinaide.core.packages.backend.DownloadPackageBackendTest",
+          "time": "0.262"
+        },
+        {
+          "name": "bundledInitializationWaitsUntilTheActiveInstallRecordIsWritten",
+          "classname": "com.wuxianggujun.tinaide.core.packages.backend.DownloadPackageBackendTest",
+          "time": "1.583"
+        },
+        {
+          "name": "missingDownloadedFilesStillAllowRemovingOnlyThatPlatformsStaleRecord",
+          "classname": "com.wuxianggujun.tinaide.core.packages.backend.DownloadPackageBackendTest",
+          "time": "0.367"
+        },
+        {
+          "name": "oversizedMetadataCannotReplaceAnInstalledPackage",
+          "classname": "com.wuxianggujun.tinaide.core.packages.backend.DownloadPackageBackendTest",
+          "time": "0.536"
+        },
+        {
+          "name": "cancellingQueuedUninstallDoesNotDeleteTheActiveInstallation",
+          "classname": "com.wuxianggujun.tinaide.core.packages.backend.DownloadPackageBackendTest",
+          "time": "0.765"
+        },
+        {
+          "name": "cancelledInstallationReleasesMutationLockForTheNextUninstall",
+          "classname": "com.wuxianggujun.tinaide.core.packages.backend.DownloadPackageBackendTest",
+          "time": "0.231"
+        },
+        {
+          "name": "cancellationAfterDownloadBeforeExtractionAlsoCleansTheVerifiedArchive",
+          "classname": "com.wuxianggujun.tinaide.core.packages.backend.DownloadPackageBackendTest",
+          "time": "0.18"
+        },
+        {
+          "name": "cacheClearFromAnotherBackendWaitsUntilInstalledArchiveIsReleased",
+          "classname": "com.wuxianggujun.tinaide.core.packages.backend.DownloadPackageBackendTest",
+          "time": "0.582"
+        },
+        {
+          "name": "uninstallFromAnotherPageWaitsForThePublishedInstallToBeRecorded",
+          "classname": "com.wuxianggujun.tinaide.core.packages.backend.DownloadPackageBackendTest",
+          "time": "0.591"
+        }
+      ]
+    },
+    {
+      "name": "com.wuxianggujun.tinaide.core.packages.backend.PackageDownloadIdentityTest",
+      "tests": "2",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-11-09T02:37:54.122Z",
+      "hostname": "DESKTOP-9KUJPVG",
+      "time": "0.003",
+      "cases": [
+        {
+          "name": "retriesAndEquivalentMirrorsShareAnIdentityButDifferentContentDoesNot",
+          "classname": "com.wuxianggujun.tinaide.core.packages.backend.PackageDownloadIdentityTest",
+          "time": "0.002"
+        },
+        {
+          "name": "perAbiSourceChecksumDoesNotRequireAVersionWideChecksum",
+          "classname": "com.wuxianggujun.tinaide.core.packages.backend.PackageDownloadIdentityTest",
+          "time": "0.001"
+        }
+      ]
+    },
+    {
+      "name": "com.wuxianggujun.tinaide.core.packages.BundledPackagesReadinessTest",
+      "tests": "2",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-11-09T02:37:22.511Z",
+      "hostname": "DESKTOP-9KUJPVG",
+      "time": "0.474",
+      "cases": [
+        {
+          "name": "waiter times out instead of blocking compilation forever",
+          "classname": "com.wuxianggujun.tinaide.core.packages.BundledPackagesReadinessTest",
+          "time": "0.447"
+        },
+        {
+          "name": "waiter resumes when current install becomes ready",
+          "classname": "com.wuxianggujun.tinaide.core.packages.BundledPackagesReadinessTest",
+          "time": "0.019"
+        }
+      ]
+    },
+    {
+      "name": "com.wuxianggujun.tinaide.core.packages.download.ResumableDownloaderTest",
+      "tests": "14",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-11-09T02:37:54.132Z",
+      "hostname": "DESKTOP-9KUJPVG",
+      "time": "0.593",
+      "cases": [
+        {
+          "name": "download_publishesAlreadyCompletePartialWithoutAnotherRequest",
+          "classname": "com.wuxianggujun.tinaide.core.packages.download.ResumableDownloaderTest",
+          "time": "0.124"
+        },
+        {
+          "name": "completeUnknownLengthPartialIsVerifiedAfter416WithoutDownloadingAgain",
+          "classname": "com.wuxianggujun.tinaide.core.packages.download.ResumableDownloaderTest",
+          "time": "0.052"
+        },
+        {
+          "name": "download_resumesOnlyWhenContentRangeMatchesLocalFile",
+          "classname": "com.wuxianggujun.tinaide.core.packages.download.ResumableDownloaderTest",
+          "time": "0.04"
+        },
+        {
+          "name": "download_rejectsMismatchedContentRangeAndDeletesPartialFile",
+          "classname": "com.wuxianggujun.tinaide.core.packages.download.ResumableDownloaderTest",
+          "time": "0.023"
+        },
+        {
+          "name": "rangeNotSatisfiableRetriesFromZeroInsteadOfLeavingAnUnusablePartial",
+          "classname": "com.wuxianggujun.tinaide.core.packages.download.ResumableDownloaderTest",
+          "time": "0.034"
+        },
+        {
+          "name": "corruptDownloadDoesNotReplaceAnInstalledArchive",
+          "classname": "com.wuxianggujun.tinaide.core.packages.download.ResumableDownloaderTest",
+          "time": "0.027"
+        },
+        {
+          "name": "tempFileFor_isolatesTargetsWithSameFileName",
+          "classname": "com.wuxianggujun.tinaide.core.packages.download.ResumableDownloaderTest",
+          "time": "0.023"
+        },
+        {
+          "name": "download_rejectsTruncatedUnknownLengthContentRange",
+          "classname": "com.wuxianggujun.tinaide.core.packages.download.ResumableDownloaderTest",
+          "time": "0.037"
+        },
+        {
+          "name": "download_recoversAndCleansInterruptedPublicationBackupBeforeReplacement",
+          "classname": "com.wuxianggujun.tinaide.core.packages.download.ResumableDownloaderTest",
+          "time": "0.045"
+        },
+        {
+          "name": "download_rejectsHttpsUrlWithoutHost",
+          "classname": "com.wuxianggujun.tinaide.core.packages.download.ResumableDownloaderTest",
+          "time": "0.06"
+        },
+        {
+          "name": "serverIgnoringRangeRestartsWithoutAppendingDuplicateBytes",
+          "classname": "com.wuxianggujun.tinaide.core.packages.download.ResumableDownloaderTest",
+          "time": "0.035"
+        },
+        {
+          "name": "download_publishesTargetWhenExpectedSizeMatches",
+          "classname": "com.wuxianggujun.tinaide.core.packages.download.ResumableDownloaderTest",
+          "time": "0.027"
+        },
+        {
+          "name": "download_rejectsUnexpectedSizeWithoutReplacingExistingTarget",
+          "classname": "com.wuxianggujun.tinaide.core.packages.download.ResumableDownloaderTest",
+          "time": "0.029"
+        },
+        {
+          "name": "cancellationKeepsPartialAndRetryVerifiesItBeforePublishing",
+          "classname": "com.wuxianggujun.tinaide.core.packages.download.ResumableDownloaderTest",
+          "time": "0.03"
+        }
+      ]
+    },
+    {
+      "name": "com.wuxianggujun.tinaide.core.packages.InstalledPackageMetadataReaderTest",
+      "tests": "5",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-11-09T02:37:23.561Z",
+      "hostname": "DESKTOP-9KUJPVG",
+      "time": "18.006",
+      "cases": [
+        {
+          "name": "malformedUtf8IsNotSilentlyReplacedInsideAValidJsonString",
+          "classname": "com.wuxianggujun.tinaide.core.packages.InstalledPackageMetadataReaderTest",
+          "time": "17.494"
+        },
+        {
+          "name": "oversizedMetadataIsRejectedBeforeReadingAndNotListedAsValid",
+          "classname": "com.wuxianggujun.tinaide.core.packages.InstalledPackageMetadataReaderTest",
+          "time": "0.167"
+        },
+        {
+          "name": "fileGrowthCannotBypassTheBoundedRead",
+          "classname": "com.wuxianggujun.tinaide.core.packages.InstalledPackageMetadataReaderTest",
+          "time": "0.148"
+        },
+        {
+          "name": "malformedJsonAndMismatchedPackageIdentityAreRejected",
+          "classname": "com.wuxianggujun.tinaide.core.packages.InstalledPackageMetadataReaderTest",
+          "time": "0.125"
+        },
+        {
+          "name": "validUtf8KeepsChineseAndSupplementaryCharacters",
+          "classname": "com.wuxianggujun.tinaide.core.packages.InstalledPackageMetadataReaderTest",
+          "time": "0.071"
+        }
+      ]
+    },
+    {
+      "name": "com.wuxianggujun.tinaide.core.packages.PackageArchivePolicyTest",
+      "tests": "2",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-11-09T02:37:41.606Z",
+      "hostname": "DESKTOP-9KUJPVG",
+      "time": "0.132",
+      "cases": [
+        {
+          "name": "cancellationInterruptsOneLargeEntryBeforeItsProgressCallback",
+          "classname": "com.wuxianggujun.tinaide.core.packages.PackageArchivePolicyTest",
+          "time": "0.127"
+        },
+        {
+          "name": "alreadyCancelledExtractionDoesNotCreateOutputFiles",
+          "classname": "com.wuxianggujun.tinaide.core.packages.PackageArchivePolicyTest",
+          "time": "0.005"
+        }
+      ]
+    },
+    {
+      "name": "com.wuxianggujun.tinaide.core.packages.PackageInstallCoordinatorTest",
+      "tests": "2",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-11-09T02:37:41.764Z",
+      "hostname": "DESKTOP-9KUJPVG",
+      "time": "0.07",
+      "cases": [
+        {
+          "name": "publishStagedDirectory_shouldReplaceTargetAndRemoveBackup",
+          "classname": "com.wuxianggujun.tinaide.core.packages.PackageInstallCoordinatorTest",
+          "time": "0.06"
+        },
+        {
+          "name": "publishStagedDirectory_shouldRestoreTargetWhenPublishFails",
+          "classname": "com.wuxianggujun.tinaide.core.packages.PackageInstallCoordinatorTest",
+          "time": "0.01"
+        }
+      ]
+    },
+    {
+      "name": "com.wuxianggujun.tinaide.core.packages.PackageManagerIoDispatcherTest",
+      "tests": "1",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-11-09T02:37:41.838Z",
+      "hostname": "DESKTOP-9KUJPVG",
+      "time": "1.271",
+      "cases": [
+        {
+          "name": "uninstall_entersConfiguredIoDispatcherBeforeReadingInstallState",
+          "classname": "com.wuxianggujun.tinaide.core.packages.PackageManagerIoDispatcherTest",
+          "time": "1.27"
+        }
+      ]
+    },
+    {
+      "name": "com.wuxianggujun.tinaide.core.packages.PackageManagerRevisionTest",
+      "tests": "5",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-11-09T02:37:43.117Z",
+      "hostname": "DESKTOP-9KUJPVG",
+      "time": "2.614",
+      "cases": [
+        {
+          "name": "same upstream version with a new revision updates state and cached detail",
+          "classname": "com.wuxianggujun.tinaide.core.packages.PackageManagerRevisionTest",
+          "time": "1.679"
+        },
+        {
+          "name": "complete catalog and filtered pages include entries after the first hundred",
+          "classname": "com.wuxianggujun.tinaide.core.packages.PackageManagerRevisionTest",
+          "time": "0.54"
+        },
+        {
+          "name": "same package keeps independent updates for Android and Linux",
+          "classname": "com.wuxianggujun.tinaide.core.packages.PackageManagerRevisionTest",
+          "time": "0.065"
+        },
+        {
+          "name": "market refresh invalidates both live and disk metadata caches",
+          "classname": "com.wuxianggujun.tinaide.core.packages.PackageManagerRevisionTest",
+          "time": "0.041"
+        },
+        {
+          "name": "old installed raylib does not satisfy dependency planning",
+          "classname": "com.wuxianggujun.tinaide.core.packages.PackageManagerRevisionTest",
+          "time": "0.287"
+        }
+      ]
+    },
+    {
+      "name": "com.wuxianggujun.tinaide.core.packages.store.LocalInstallStateStoreTest",
+      "tests": "5",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-11-09T02:37:54.777Z",
+      "hostname": "DESKTOP-9KUJPVG",
+      "time": "0.398",
+      "cases": [
+        {
+          "name": "reinstallClearsStaleUpdateAndIgnoresOlderResponse",
+          "classname": "com.wuxianggujun.tinaide.core.packages.store.LocalInstallStateStoreTest",
+          "time": "0.117"
+        },
+        {
+          "name": "legacyOrphanUpdateDoesNotMakePackageInstalled",
+          "classname": "com.wuxianggujun.tinaide.core.packages.store.LocalInstallStateStoreTest",
+          "time": "0.068"
+        },
+        {
+          "name": "unknownRecordValuesDoNotCrashOrBecomeUsableInstallations",
+          "classname": "com.wuxianggujun.tinaide.core.packages.store.LocalInstallStateStoreTest",
+          "time": "0.064"
+        },
+        {
+          "name": "corruptedRecordsArePreservedInsteadOfOverwrittenAsEmpty",
+          "classname": "com.wuxianggujun.tinaide.core.packages.store.LocalInstallStateStoreTest",
+          "time": "0.053"
+        },
+        {
+          "name": "uninstallClearsOnlyThatPlatformsUpdateAndLateResponseCannotRestoreIt",
+          "classname": "com.wuxianggujun.tinaide.core.packages.store.LocalInstallStateStoreTest",
+          "time": "0.096"
+        }
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "path": "core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/PackageInstallCoordinator.kt",
+      "sha256": "029d5ca66a5e8bd937ffaf6516567ba6632cafe02c916b84809dcaf8cce9b336"
+    },
+    {
+      "path": "core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/PackageManagerImpl.kt",
+      "sha256": "d7aa18e07555bedb171d82e7beaddacfdf94f06fe07c28c0fc03965229f70fff"
+    },
+    {
+      "path": "core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/BundledPackagesInstaller.kt",
+      "sha256": "86cfc4dea121ad7e72ab78c725ace3502bf7206148a685f0b30aebb80337786e"
+    },
+    {
+      "path": "core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/store/LocalInstallStateStore.kt",
+      "sha256": "b10b57ead3417e3d17fc7001b756342c6a4aca023b8cd3a527146b6391fa52f2"
+    },
+    {
+      "path": "core/packages/src/test/java/com/wuxianggujun/tinaide/core/packages/backend/DownloadPackageBackendTest.kt",
+      "sha256": "f66e7ffd7291385c75729488613c21dc35c0d1ab0303e3502ac635a791fbb0cd"
+    },
+    {
+      "path": "core/packages/src/test/java/com/wuxianggujun/tinaide/core/packages/store/LocalInstallStateStoreTest.kt",
+      "sha256": "38dc147d29ed892ccab92e9813f9e9c001f86f2433b6b0ed1d7058033d023466"
+    },
+    {
+      "path": "core/packages/src/main/java/com/wuxianggujun/tinaide/core/packages/backend/DownloadPackageBackend.kt",
+      "sha256": "710cc52f1e03aee49add881a7c6a3ce3d1960de751a609a11c753f7c746881e3"
+    }
+  ],
+  "buildLogSha256": "3dba4646e5ddc077d19b3e24be709c886737b8da90f706135692c6d60e0a3167"
+}

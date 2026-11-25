@@ -6,6 +6,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.wuxianggujun.tinaide.core.commands.HostCommandExecutor
@@ -47,6 +50,8 @@ internal fun MainActivityTopBarHost(
     callbacks: MainActivityScreenCallbacks,
 ) {
     val context = LocalContext.current
+    var showFlow by rememberSaveable { mutableStateOf(false) }
+    var showAssessment by rememberSaveable { mutableStateOf(false) }
     val runConfigSaveScope = rememberCoroutineScope()
     val pluginManager = remember(context) {
         PluginManager.getInstance(context.applicationContext)
@@ -83,7 +88,13 @@ internal fun MainActivityTopBarHost(
         screenCallbacks = callbacks,
         onPackageApk = buildUiState::openApkPackageDialog,
         onOpenCommandPalette = onOpenCommandPalette,
+    ).copy(
+        onCallHierarchyOutgoing = { editorContainerState.requestActiveLspNavigation("callHierarchyOutgoing") },
+        onFunctionFlow = { showFlow = true },
+        onCourseAssessment = { showAssessment = true },
     )
+    if (showFlow) com.wuxianggujun.tinaide.ui.compose.components.FunctionFlowDialog(editorContainerState) { showFlow = false }
+    if (showAssessment) com.wuxianggujun.tinaide.ui.compose.screens.main.tutorial.CourseAssessmentDialog(compileDelegate.assessmentCompiler) { showAssessment = false }
     val commandPaletteCommands = rememberMainActivityCommands(
         availability = MainActivityCommandAvailability(
             hasActiveFile = activeFile != null,
@@ -192,6 +203,7 @@ private fun rememberMainActivityTopBarCallbacks(
         onOpenCommandPalette = onOpenCommandPalette,
         onBuild = { compileDelegate.onBuildProject() },
         onCompile = { compileDelegate.onCompileProject() },
+        onStopCompile = { compileDelegate.onStopCompile() },
         onRebuildAndRun = { compileDelegate.onRebuildAndRunProject() },
         onCompileInTerminal = { compileDelegate.onCompileInTerminal() },
         onDebug = { compileDelegate.onDebugProject() },

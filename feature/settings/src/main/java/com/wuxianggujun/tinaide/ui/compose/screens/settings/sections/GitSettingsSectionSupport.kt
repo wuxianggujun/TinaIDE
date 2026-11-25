@@ -163,18 +163,9 @@ internal object GitSettingsSectionSupport {
         rawPort: String,
         rawCustomMirrorUrl: String = "",
     ): GitHubRegistryProxyResolveResult {
-        val hostWithOptionalPort = normalizeGitHubRegistryProxyHost(rawHost)
-        val hasSinglePortDelimiter = hostWithOptionalPort.count { it == ':' } == 1
-        val host = if (hasSinglePortDelimiter) {
-            hostWithOptionalPort.substringBeforeLast(":")
-        } else {
-            hostWithOptionalPort
-        }
-        val hostPort = if (hasSinglePortDelimiter) {
-            hostWithOptionalPort.substringAfterLast(":").takeIf { it.all(Char::isDigit) }
-        } else {
-            null
-        }
+        val endpoint = parseGitHubRegistryProxyEndpoint(rawHost)
+        val host = endpoint?.first.orEmpty()
+        val hostPort = endpoint?.second?.takeIf { it > 0 }?.toString()
         val portText = rawPort.trim().ifBlank { hostPort.orEmpty() }
         val port = portText.toIntOrNull() ?: 0
         val customMirrorUrl = GitHubRegistryConfig.normalizeGitHubProxyPrefix(rawCustomMirrorUrl)
@@ -225,23 +216,17 @@ internal object GitSettingsSectionSupport {
         return trimmed
     }
 
-    private fun normalizeGitHubRegistryProxyHost(input: String): String {
+    private fun parseGitHubRegistryProxyEndpoint(input: String): Pair<String, Int>? {
         val trimmed = input.trim()
-        if (trimmed.isEmpty()) return ""
-
-        if (trimmed.contains("://")) {
-            val uri = runCatching { URI(trimmed) }.getOrNull() ?: return ""
-            return buildString {
-                append(uri.host?.trim().orEmpty())
-                if (uri.port > 0) append(":").append(uri.port)
-            }
+        if (trimmed.isEmpty()) return null
+        val address = when {
+            trimmed.contains("://") -> trimmed
+            trimmed.count { it == ':' } > 1 && !trimmed.startsWith('[') -> "http://[$trimmed]"
+            else -> "http://$trimmed"
         }
-
-        return trimmed
-            .removePrefix("http://")
-            .removePrefix("https://")
-            .substringBefore("/")
-            .trim()
+        val uri = runCatching { URI(address) }.getOrNull() ?: return null
+        if (uri.scheme.lowercase() !in setOf("http", "https") || uri.userInfo != null || uri.host.isNullOrBlank()) return null
+        return uri.host.removeSurrounding("[", "]") to uri.port
     }
 
     fun suggestKeyName(lastPathSegment: String?): String {

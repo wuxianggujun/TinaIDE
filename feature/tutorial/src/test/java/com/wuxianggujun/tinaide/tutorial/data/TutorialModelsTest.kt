@@ -37,8 +37,110 @@ class TutorialModelsTest {
             )
         )
 
-        assertThat(item.progressPercent).isEqualTo(50)
+        assertThat(item.progressPercent).isEqualTo(75)
         assertThat(item.isInProgress).isTrue()
+    }
+
+    @Test
+    fun tutorialWithProgress_shouldCountFirstInteractiveStepAsInProgress() {
+        val item = TutorialWithProgress(
+            tutorial = tutorialWithSteps(stepCount = 4),
+            progress = TutorialProgress(
+                tutorialId = "intro",
+                status = ProgressStatus.IN_PROGRESS,
+                currentStepIndex = 0,
+            ),
+        )
+
+        assertThat(item.progressPercent).isEqualTo(25)
+    }
+
+    @Test
+    fun completedTutorialWithoutSteps_shouldStillReportFullProgress() {
+        val item = TutorialWithProgress(
+            tutorial = tutorialWithSteps(stepCount = 0),
+            progress = TutorialProgress(
+                tutorialId = "intro",
+                status = ProgressStatus.COMPLETED,
+            ),
+        )
+
+        assertThat(item.progressPercent).isEqualTo(100)
+    }
+
+    @Test
+    fun tutorialWithProgress_shouldUseCourseStagesForGuidedCourseProgress() {
+        val tutorial = tutorialWithSteps(stepCount = 0).copy(
+            type = TutorialType.GUIDED,
+            courseSteps = (0 until 5).map { index ->
+                TutorialCourseStep(
+                    id = "course-step-$index",
+                    titleRes = Strings.tutorial_cat_getting_started,
+                    descriptionRes = Strings.tutorial_cat_getting_started_desc,
+                )
+            },
+        )
+        val item = TutorialWithProgress(
+            tutorial = tutorial,
+            progress = TutorialProgress(
+                tutorialId = tutorial.id,
+                status = ProgressStatus.IN_PROGRESS,
+                currentStepIndex = 2,
+                completedStepIds = setOf("course-step-0", "course-step-1"),
+            ),
+        )
+
+        assertThat(item.progressPercent).isEqualTo(40)
+    }
+
+    @Test
+    fun tutorialWithProgress_shouldIgnoreCompletionIdsFromRemovedCourseSteps() {
+        val tutorial = tutorialWithSteps(stepCount = 0).copy(
+            type = TutorialType.GUIDED,
+            courseSteps = (0 until 4).map { index ->
+                TutorialCourseStep(
+                    id = "course-step-$index",
+                    titleRes = Strings.tutorial_cat_getting_started,
+                    descriptionRes = Strings.tutorial_cat_getting_started_desc,
+                )
+            },
+        )
+
+        val item = TutorialWithProgress(
+            tutorial = tutorial,
+            progress = TutorialProgress(
+                tutorialId = tutorial.id,
+                status = ProgressStatus.IN_PROGRESS,
+                completedStepIds = setOf("course-step-0", "removed-step-1", "removed-step-2"),
+            ),
+        )
+
+        assertThat(item.progressPercent).isEqualTo(25)
+    }
+
+    @Test
+    fun tutorialWithProgress_shouldNotCountUnconfirmedCurrentCourseStepAsComplete() {
+        val tutorial = tutorialWithSteps(stepCount = 0).copy(
+            type = TutorialType.GUIDED,
+            courseSteps = (0 until 5).map { index ->
+                TutorialCourseStep(
+                    id = "course-step-$index",
+                    titleRes = Strings.tutorial_cat_getting_started,
+                    descriptionRes = Strings.tutorial_cat_getting_started_desc,
+                )
+            },
+        )
+
+        assertThat(
+            TutorialWithProgress(
+                tutorial = tutorial,
+                progress = TutorialProgress(
+                    tutorialId = tutorial.id,
+                    status = ProgressStatus.IN_PROGRESS,
+                    currentStepIndex = 4,
+                ),
+            ).progressPercent,
+        ).isEqualTo(0)
     }
 
     @Test

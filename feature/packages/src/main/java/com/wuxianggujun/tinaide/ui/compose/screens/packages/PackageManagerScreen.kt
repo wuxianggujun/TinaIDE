@@ -39,14 +39,19 @@ import com.wuxianggujun.tinaide.ui.compose.components.TinaTextButton
 import com.wuxianggujun.tinaide.ui.compose.components.TinaTopBar
 import com.wuxianggujun.tinaide.ui.compose.components.tinaBackAction
 import org.koin.androidx.compose.koinViewModel
+import org.koin.core.parameter.parametersOf
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun PackageManagerScreen(
     onNavigateBack: () -> Unit,
-    initialSearchQuery: String? = null
+    initialSearchQuery: String? = null,
+    installedOnly: Boolean = false,
 ) {
-    val viewModel: PackageManagerViewModel = koinViewModel()
+    val viewModel: PackageManagerViewModel = koinViewModel(
+        key = "packages:$installedOnly",
+        parameters = { parametersOf(installedOnly) },
+    )
     val uiState by viewModel.uiState.collectAsState()
     val filterState by viewModel.filterState.collectAsState()
     val dialogState by viewModel.dialogState.collectAsState()
@@ -98,7 +103,7 @@ fun PackageManagerScreen(
                     )
                 } else {
                     TinaTopBar(
-                        title = stringResource(Strings.pkg_manager_title),
+                        title = stringResource(if (installedOnly) Strings.profile_my_packages else Strings.pkg_manager_title),
                         onNavigateBack = onNavigateBack,
                         actions = {
                             if (uiState.availableUpdates.isNotEmpty()) {
@@ -216,7 +221,7 @@ fun PackageManagerScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = stringResource(Strings.pkg_manager_no_available_packages),
+                            text = stringResource(if (installedOnly) Strings.pkg_manager_no_installed_packages else Strings.pkg_manager_no_available_packages),
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -327,17 +332,22 @@ fun PackageManagerScreen(
                     totalCount = state.totalCount,
                     currentPackageName = state.currentPackageName,
                     platform = state.platform,
-                    event = state.event
+                    event = state.event,
+                    onCancel = viewModel::cancelInstall,
                 )
             }
-            is PackageDialogState.BatchInstallComplete -> {
+            is PackageDialogState.BatchComplete -> {
                 TinaInfoDialog(
-                    title = stringResource(Strings.pkg_manager_batch_complete_title),
-                    message = stringResource(
-                        Strings.pkg_manager_batch_complete_msg,
-                        state.totalCount,
-                        platformDisplayName(state.platform)
-                    ),
+                    title = stringResource(if (state.result.cancelled) Strings.pkg_manager_batch_cancelled_title else Strings.pkg_manager_batch_result_title),
+                    message = buildString {
+                        append(stringResource(Strings.pkg_manager_batch_result_summary,
+                            state.result.succeeded, state.result.failures.size, state.result.unfinished))
+                        state.result.failures.forEach { failure ->
+                            append("\n")
+                            append(stringResource(Strings.pkg_manager_batch_failure_item,
+                                failure.key.packageId, platformDisplayName(failure.key.platform), failure.message))
+                        }
+                    },
                     confirmText = stringResource(Strings.btn_confirm),
                     onDismiss = viewModel::dismissDialog
                 )
@@ -348,7 +358,8 @@ fun PackageManagerScreen(
                     currentIndex = state.currentIndex,
                     totalCount = state.totalCount,
                     currentPackageName = state.currentPackageName,
-                    event = state.event
+                    event = state.event,
+                    onCancel = viewModel::cancelInstall,
                 )
             }
             is PackageDialogState.BatchUpdateConfirm -> {
@@ -364,12 +375,13 @@ fun PackageManagerScreen(
                     onDismiss = viewModel::dismissDialog
                 )
             }
-            is PackageDialogState.BatchUpdateComplete -> {
-                TinaInfoDialog(
-                    title = stringResource(Strings.pkg_manager_update_complete_title),
-                    message = stringResource(Strings.pkg_manager_update_complete_msg, state.totalCount),
-                    confirmText = stringResource(Strings.btn_confirm),
-                    onDismiss = viewModel::dismissDialog
+            is PackageDialogState.BatchUninstalling -> {
+                TinaAlertDialog(
+                    onDismissRequest = {},
+                    title = { Text(stringResource(Strings.pkg_manager_batch_uninstalling)) },
+                    text = { Text(stringResource(Strings.pkg_manager_batch_uninstall_progress,
+                        state.currentIndex + 1, state.totalCount, state.currentPackageName)) },
+                    confirmButton = { TinaTextButton(text = stringResource(Strings.btn_cancel), onClick = viewModel::cancelInstall) },
                 )
             }
         }

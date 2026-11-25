@@ -1,0 +1,33 @@
+Verifies
+
+Verified using v1 scheme (JAR signing): false
+
+Verified using v2 scheme (APK Signature Scheme v2): true
+
+Verified using v3 scheme (APK Signature Scheme v3): false
+
+Verified using v3.1 scheme (APK Signature Scheme v3.1): false
+
+Verified using v4 scheme (APK Signature Scheme v4): false
+
+Verified for SourceStamp: false
+
+Number of signers: 1
+
+Signer #1 certificate DN: CN=TinaIDE, OU=Tina, O=WuXiangGujun, L=Nanchang, ST=Jiangxi, C=CN
+
+Signer #1 certificate SHA-256 digest: e1ef5c24ca8349376e6f3ebf0d9b93a7c44c20d7bb9ae2144f053abb649fd45c
+
+Signer #1 certificate SHA-1 digest: f2c06b91b239673fb168e6a3454115709db9b20b
+
+Signer #1 certificate MD5 digest: 1fedc707e392ad6aa158f45df944c6e4
+
+Signer #1 key algorithm: RSA
+
+Signer #1 key size (bits): 2048
+
+Signer #1 public key SHA-256 digest: 535339f2a63e41f90be41efae798083a805eef7683fa850ba900814c83294e12
+
+Signer #1 public key SHA-1 digest: b6de1da3921fa62749f71948e5ccaf056a6df3c5
+
+Signer #1 public key MD5 digest: a6f901bb14b021da36304a7a6ba20552

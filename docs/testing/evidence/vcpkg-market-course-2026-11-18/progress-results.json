@@ -1,0 +1,281 @@
+{
+  "stage": "development-debug-before-isolated-candidate",
+  "serial": "emulator-5580",
+  "debugApkSha256": "68bc176f8a7349c817e9128795c18e7cd7ce1de82bfaab5620cd8beacb09b7ed",
+  "sharedBefore": {
+    "tests": 6,
+    "failures": 2,
+    "failedTests": [
+      {
+        "test": "cancelledExportPreservesThePreviouslyPublishedTriplet",
+        "message": "com.google.common.truth.ComparisonFailureWithFacts: expected: published-library\nbut was : new-library"
+      },
+      {
+        "test": "cancelledFirstExportDoesNotExposeAnIncompleteTriplet",
+        "message": "com.google.common.truth.AssertionErrorWithFacts: expected to be false"
+      }
+    ]
+  },
+  "packagesAfter": {
+    "module": "core:packages",
+    "suiteCount": 28,
+    "tests": 157,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "suites": [
+      {
+        "name": "com.wuxianggujun.tinaide.core.packages.api.PackageRegistryProtocolTest",
+        "tests": 8,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.wuxianggujun.tinaide.core.packages.backend.DownloadPackageBackendTest",
+        "tests": 12,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.wuxianggujun.tinaide.core.packages.backend.PackageDownloadIdentityTest",
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.wuxianggujun.tinaide.core.packages.BundledPackagesReadinessTest",
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.wuxianggujun.tinaide.core.packages.download.ResumableDownloaderTest",
+        "tests": 14,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.wuxianggujun.tinaide.core.packages.InstalledPackageMetadataReaderTest",
+        "tests": 5,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.wuxianggujun.tinaide.core.packages.InstalledPackagePathResolverTest",
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.wuxianggujun.tinaide.core.packages.model.InstallStateTest",
+        "tests": 3,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.wuxianggujun.tinaide.core.packages.model.PackageModelsSerializationTest",
+        "tests": 3,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.wuxianggujun.tinaide.core.packages.PackageAbiCompatibilityTest",
+        "tests": 5,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.wuxianggujun.tinaide.core.packages.PackageArchivePolicyTest",
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.wuxianggujun.tinaide.core.packages.PackageDependencyResolverTest",
+        "tests": 3,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.wuxianggujun.tinaide.core.packages.PackageDownloadSourceSelectorTest",
+        "tests": 3,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.wuxianggujun.tinaide.core.packages.PackageInstallCoordinatorTest",
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.wuxianggujun.tinaide.core.packages.PackageManagerIoDispatcherTest",
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.wuxianggujun.tinaide.core.packages.PackageManagerRevisionTest",
+        "tests": 5,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.wuxianggujun.tinaide.core.packages.PackageMetadataFilesTest",
+        "tests": 5,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.wuxianggujun.tinaide.core.packages.PackageVersionComparisonTest",
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.wuxianggujun.tinaide.core.packages.RaylibRuntimePolicyTest",
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.wuxianggujun.tinaide.core.packages.store.LocalInstallStateStoreTest",
+        "tests": 6,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.wuxianggujun.tinaide.core.packages.VcpkgAndroidCatalogTest",
+        "tests": 6,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.wuxianggujun.tinaide.core.packages.VcpkgAndroidSupportTest",
+        "tests": 9,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.wuxianggujun.tinaide.core.packages.VcpkgCatalogSourceTest",
+        "tests": 9,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.wuxianggujun.tinaide.core.packages.VcpkgCatalogStoreTest",
+        "tests": 8,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.wuxianggujun.tinaide.core.packages.VcpkgRepositoryTest",
+        "tests": 20,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.wuxianggujun.tinaide.core.packages.VcpkgSettingsContractTest",
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.wuxianggujun.tinaide.core.packages.VcpkgSharedLibraryTest",
+        "tests": 8,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.wuxianggujun.tinaide.core.packages.VcpkgToolScriptsTest",
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    ]
+  },
+  "graphics": [
+    {
+      "name": "zh-raylib",
+      "runId": "c9663a879989436db089b258fecc32c8",
+      "passed": true,
+      "seconds": 12.77,
+      "language": "zh",
+      "library": "raylib",
+      "orangeSamples": 204,
+      "blueSamples": 14031
+    },
+    {
+      "name": "zh-sdl3",
+      "runId": "a549d37e8cb0478db0df0f24a31700d2",
+      "passed": true,
+      "seconds": 8.12,
+      "language": "zh",
+      "library": "sdl3",
+      "orangeSamples": 135,
+      "blueSamples": 13185
+    },
+    {
+      "name": "en-sdl3",
+      "runId": "565ec2eaece2437787d6a9325694c512",
+      "passed": true,
+      "seconds": 7.68,
+      "language": "en",
+      "library": "sdl3",
+      "orangeSamples": 135,
+      "blueSamples": 13074
+    },
+    {
+      "name": "en-raylib",
+      "runId": "b093a4cea1a4467999e51d9de4cbbc96",
+      "passed": true,
+      "seconds": 6.17,
+      "language": "en",
+      "library": "raylib",
+      "orangeSamples": 204,
+      "blueSamples": 14061
+    }
+  ],
+  "runtimeSnapshots": [
+    {
+      "abi": "arm64-v8a",
+      "packages": 32,
+      "elfFiles": 163,
+      "validated": true
+    },
+    {
+      "abi": "x86_64",
+      "packages": 32,
+      "elfFiles": 163,
+      "validated": true
+    }
+  ]
+}

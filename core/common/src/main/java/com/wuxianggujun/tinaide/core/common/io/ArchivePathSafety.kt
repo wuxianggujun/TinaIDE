@@ -63,6 +63,16 @@ object ArchivePathSafety {
         return linkTarget
     }
 
+    /** Debian data archives refer to their original filesystem root; never retain that external path. */
+    fun relocateArchiveSymlink(targetDir: File, linkFile: File, linkTarget: String): String {
+        requireNoSymlinkComponents(targetDir, linkFile, includeLeaf = false)
+        val relocated = if (linkTarget.startsWith("/")) {
+            val target = resolveEntryFile(targetDir, linkTarget.removePrefix("/"), "relocated symlink")
+            linkFile.parentFile!!.canonicalFile.toPath().relativize(target.toPath()).toString()
+        } else linkTarget
+        return requireSymlinkTargetInsideTargetDir(targetDir, linkFile, relocated)
+    }
+
     fun requireNoSymlinkComponents(
         targetDir: File,
         candidate: File,

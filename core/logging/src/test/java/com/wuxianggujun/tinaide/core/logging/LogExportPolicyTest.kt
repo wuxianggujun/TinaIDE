@@ -28,6 +28,17 @@ class LogExportPolicyTest {
     }
 
     @Test
+    fun `server and crash upload include the crashed process and crash buffer`() {
+        for (profile in listOf(LogExportProfile.SERVER_UPLOAD, LogExportProfile.CRASH_UPLOAD)) {
+            val policy = LogExportPolicy.from(profile)
+            assertThat(policy.includeRecentHostLogcat).isTrue()
+            assertThat(policy.includeCrashBuffer).isTrue()
+        }
+        val local = LogExportPolicy.from(LogExportProfile.LOCAL_EXPORT)
+        assertThat(local.includeCrashBuffer).isFalse()
+    }
+
+    @Test
     fun `local export keeps complete user controlled diagnostics`() {
         val policy = LogExportPolicy.from(LogExportProfile.LOCAL_EXPORT)
 
@@ -51,5 +62,41 @@ class LogExportPolicyTest {
         assertThat(manifest).contains("excluded_privacy_classes=NONE")
         assertThat(manifest).contains("- name=BUILD_LOGS")
         assertThat(manifest).contains("  included=true")
+    }
+
+    @Test
+    fun `crash upload keeps full ide diagnostics without consent sources`() {
+        val policy = LogExportPolicy.from(LogExportProfile.CRASH_UPLOAD)
+
+        // 崩溃自动上报必须覆盖 IDE 自身的全部诊断日志。
+        assertThat(policy.includes(LogBundleSource.EXPORT_MANIFEST)).isTrue()
+        assertThat(policy.includes(LogBundleSource.LOGCAT)).isTrue()
+        assertThat(policy.includes(LogBundleSource.APP_INFO)).isTrue()
+        assertThat(policy.includes(LogBundleSource.DEVICE_INFO)).isTrue()
+        assertThat(policy.includes(LogBundleSource.CRASH_LOGS)).isTrue()
+        assertThat(policy.includes(LogBundleSource.INSTALL_LOGS)).isTrue()
+        assertThat(policy.includes(LogBundleSource.INSTALL_LOG_SNAPSHOT)).isTrue()
+        assertThat(policy.includes(LogBundleSource.TOMBSTONES)).isTrue()
+        assertThat(policy.includes(LogBundleSource.TIMBER_LOGS)).isTrue()
+
+        // 但不得包含需要用户显式授权的项目/运行时数据。
+        assertThat(policy.includes(LogBundleSource.BUILD_LOGS)).isFalse()
+        assertThat(policy.includes(LogBundleSource.ROOTFS_PACKAGE_MANAGER_LOGS)).isFalse()
+        assertThat(policy.includes(LogBundleSource.PROOT_LOGS)).isFalse()
+
+        assertThat(policy.logcatEntryName).isEqualTo("app_process_logcat.txt")
+        assertThat(policy.allowGlobalLogcatFallback).isFalse()
+        assertThat(policy.includeUserRuntimeTombstones).isFalse()
+    }
+
+    @Test
+    fun `crash upload manifest states it is automatic`() {
+        val policy = LogExportPolicy.from(LogExportProfile.CRASH_UPLOAD)
+        val manifest = LogExportManifestBuilder.build(policy, generatedAt = "2026-04-29 10:00:00")
+
+        assertThat(manifest).contains("profile=CRASH_UPLOAD")
+        assertThat(manifest).contains("requires_explicit_user_consent=false")
+        assertThat(manifest).contains("automatic_crash_upload=true")
+        assertThat(manifest).contains("excluded_sources=BUILD_LOGS, ROOTFS_PACKAGE_MANAGER_LOGS, PROOT_LOGS")
     }
 }

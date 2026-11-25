@@ -1,0 +1,14 @@
+import java.time.Duration
+
+// Limit test execution, independently of the time required to compile Android modules.
+allprojects {
+    tasks.withType(Test).configureEach {
+        timeout = Duration.ofSeconds(60)
+        maxHeapSize = '1g'
+        maxParallelForks = 1
+        testLogging {
+            events 'failed', 'skipped'
+            exceptionFormat 'full'
+        }
+    }
+}

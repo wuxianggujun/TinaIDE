@@ -1,0 +1,1 @@
+OK: arm64-v8a native runtimes and ELF architectures verified.

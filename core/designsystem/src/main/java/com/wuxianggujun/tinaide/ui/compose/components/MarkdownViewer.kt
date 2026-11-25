@@ -19,6 +19,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -26,6 +27,7 @@ import androidx.compose.runtime.referentialEqualityPolicy
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Size
@@ -66,6 +68,16 @@ import timber.log.Timber
 private val flavour by lazy { GFMFlavourDescriptor(useSafeLinks = true) }
 private val parser by lazy { MarkdownParser(flavour) }
 
+/** Hosts can supply their code renderer without coupling the design system to an editor runtime. */
+typealias MarkdownCodeBlockContent = @Composable (
+    code: String,
+    language: String?,
+    modifier: Modifier,
+    onCopy: ((String) -> Unit)?,
+) -> Unit
+
+private val LocalCodeBlockContent = staticCompositionLocalOf<MarkdownCodeBlockContent> { ::SimpleCodeBlock }
+
 /**
  * Markdown 渲染组件（通用）
  *
@@ -82,6 +94,7 @@ fun MarkdownViewer(
     contentPadding: PaddingValues = PaddingValues(horizontal = 16.dp),
     onLinkClick: ((String) -> Unit)? = null,
     onCodeCopy: ((String) -> Unit)? = null,
+    codeBlockContent: MarkdownCodeBlockContent = ::SimpleCodeBlock,
 ) {
     var (data, setData) = remember {
         val ast = parser.buildMarkdownTreeFromString(markdown)
@@ -102,6 +115,7 @@ fun MarkdownViewer(
     }
 
     val (parsedContent, astTree) = data
+    CompositionLocalProvider(LocalCodeBlockContent provides codeBlockContent) {
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -115,6 +129,7 @@ fun MarkdownViewer(
                 onCodeCopy = onCodeCopy
             )
         }
+    }
     }
 }
 
@@ -178,22 +193,22 @@ private fun ViewerNode(
                 ""
             }
             if (codeText.isNotEmpty()) {
-                SimpleCodeBlock(
-                    code = codeText,
-                    language = language,
-                    modifier = modifier.fillMaxWidth().padding(vertical = 4.dp),
-                    onCopy = onCodeCopy
+                LocalCodeBlockContent.current(
+                    codeText,
+                    language,
+                    modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    onCodeCopy,
                 )
             }
         }
 
         MarkdownElementTypes.CODE_BLOCK -> {
             val codeText = node.getTextInNode(content).toString().trimIndent()
-            SimpleCodeBlock(
-                code = codeText,
-                language = null,
-                modifier = modifier.fillMaxWidth().padding(vertical = 4.dp),
-                onCopy = onCodeCopy
+            LocalCodeBlockContent.current(
+                codeText,
+                null,
+                modifier.fillMaxWidth().padding(vertical = 4.dp),
+                onCodeCopy,
             )
         }
 
@@ -281,7 +296,7 @@ private fun ViewerParagraph(
     val codeBg = colorScheme.secondaryContainer.copy(alpha = 0.25f)
     val linkColor = colorScheme.primary
 
-    val annotated = remember(content, node.startOffset, node.endOffset, onLinkClick) {
+    val annotated = remember(content, node.startOffset, node.endOffset, codeBg, linkColor, onLinkClick) {
         buildAnnotatedString {
             node.children.fastForEach { appendInline(it, content, codeBg, linkColor, trim, onLinkClick) }
         }

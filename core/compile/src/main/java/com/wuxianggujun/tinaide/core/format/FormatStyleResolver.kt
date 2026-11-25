@@ -6,15 +6,16 @@ import timber.log.Timber
 
 /** Resolves the effective clang-format style from project files and user preferences. */
 internal class FormatStyleResolver(
+    private val indentationProvider: () -> FormatterIndentation = { FormatterIndentation.fromPreferences() },
     private val userStyleNameProvider: () -> String = { Prefs.codeFormatStyle },
 ) {
-    fun resolve(sourceFile: File): FormatStyle {
+    fun resolve(sourceFile: File, indentation: FormatterIndentation? = null): FormatStyle {
         val directory = if (sourceFile.isDirectory) sourceFile else sourceFile.parentFile
         return if (hasClangFormatFile(directory)) {
             Timber.tag(TAG).d("Using project .clang-format for: ${sourceFile.absolutePath}")
             FormatStyle.FILE
         } else {
-            getUserDefaultStyle().also { style ->
+            (indentation ?: indentationProvider()).applyTo(getUserDefaultStyle()).also { style ->
                 Timber.tag(TAG).d("Using user default style ($style) for: ${sourceFile.absolutePath}")
             }
         }

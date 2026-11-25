@@ -5,6 +5,10 @@ import android.content.Intent
 import com.wuxianggujun.tinaide.core.terminal.TerminalBackend
 import com.wuxianggujun.tinaide.ui.runtime.GraphicalRuntimeLaunchRequest
 import java.io.File
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.selects.select
 
 class CompileUiEventObserver(
     private val toastPresenter: ToastPresenter,
@@ -35,16 +39,35 @@ class CompileUiEventObserver(
             }
 
             is CompileActionsHelper.UiEvent.OpenGraphicalRuntime -> {
-                graphicalRuntimeLauncher.open(event.request)
+                launchOnce(event.ticket) {
+                    graphicalRuntimeLauncher.open(event.request)
+                }
             }
 
             is CompileActionsHelper.UiEvent.OpenTerminal -> {
-                terminalLauncher.open(event.command, event.workDir, event.backend)
+                launchOnce(event.ticket) {
+                    terminalLauncher.open(event.command, event.workDir, event.backend)
+                }
             }
 
             is CompileActionsHelper.UiEvent.RevealInProjectTree -> {
                 projectTreeRevealer.reveal(event.file, event.selectTarget)
             }
+        }
+    }
+
+    private suspend fun launchOnce(ticket: CompileActionGate.Ticket, launch: suspend () -> Unit) {
+        if (!ticket.claimLaunch()) return
+        try {
+            coroutineScope {
+                val running = async(start = CoroutineStart.UNDISPATCHED) { launch() }
+                select<Unit> {
+                    running.onAwait { }
+                    ticket.cancelled.onAwait { running.cancel() }
+                }
+            }
+        } finally {
+            ticket.finish()
         }
     }
 }

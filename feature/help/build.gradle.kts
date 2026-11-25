@@ -17,6 +17,7 @@ android {
 dependencies {
     implementation(project.dependencies.project(":core:common"))
     implementation(project.dependencies.project(":core:designsystem"))
+    implementation(project.dependencies.project(":core:editor-view"))
     implementation(project.dependencies.project(":core:i18n"))
     implementation(project.dependencies.project(":core:model"))
     implementation(project.dependencies.project(":core:network"))

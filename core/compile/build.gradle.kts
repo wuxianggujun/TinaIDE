@@ -15,6 +15,8 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(project.dependencies.project(":core:common"))
     implementation(project.dependencies.project(":core:config"))
+    // 策略/格式化/检测器直接使用 CxxFileSupport
+    implementation(project.dependencies.project(":core:language-support"))
     implementation(project.dependencies.project(":core:i18n"))
     implementation(project.dependencies.project(":core:ndk"))
     implementation(project.dependencies.project(":core:packages"))

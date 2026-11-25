@@ -10,7 +10,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.wuxianggujun.tinaide.core.config.Prefs
-import com.wuxianggujun.tinaide.core.config.ServerConfigManager
 import com.wuxianggujun.tinaide.core.i18n.Drawables
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.ui.compose.icons.TinaTabIcons
@@ -156,13 +155,8 @@ internal fun SettingsRootSection(onNavigateTo: (SettingsRoute) -> Unit) {
             onClick = { onNavigateTo(SettingsRoute.Help) },
             showDivider = true
         )
-        // 只有启用开发者选项且服务端允许后才显示
-        if (
-            SettingsRootSectionSupport.shouldShowDeveloperEntry(
-                developerOptionsEnabled = developerOptionsEnabled,
-                serverDeveloperOptionsEnabled = ServerConfigManager.isDeveloperOptionsEnabled()
-            )
-        ) {
+        // 只有在本机启用开发者选项后才显示
+        if (developerOptionsEnabled) {
             SettingsMenuItemWithIcon(
                 iconRes = Drawables.ic_settings_developer,
                 iconBackgroundColor = DeveloperIconColor,

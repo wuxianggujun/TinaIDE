@@ -98,6 +98,7 @@ class NewProjectWizardActivity : ComponentActivity() {
                     onSourceLocationSelected = viewModel::setSourceLocation,
                     onCppStandardSelected = viewModel::setCppStandard,
                     onNdkApiLevelSelected = viewModel::setNdkApiLevel,
+                    onUseVcpkgChanged = viewModel::setUseVcpkg,
                     onNextStep = viewModel::nextStep,
                     onPreviousStep = viewModel::previousStep,
                     onCreateProject = {

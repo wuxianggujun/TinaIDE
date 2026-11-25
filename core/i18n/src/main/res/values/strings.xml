@@ -54,10 +54,10 @@
   <string name="settings_cat_github_registry">GitHub 访问</string>
   <string name="github_registry_proxy_enabled_title">启用 HTTP 代理</string>
   <string name="github_registry_proxy_enabled_desc">通过本地或自建 HTTP 代理访问 GitHub</string>
-  <string name="github_registry_proxy_scope_desc">用于应用更新、插件市场和依赖包 Registry。HTTP 代理负责网络连接；GitHub 镜像 URL 会把 GitHub 链接改写为镜像链接。二者都不会影响 Git HTTPS 认证、SSH 密钥或 Tina 服务端请求。</string>
+  <string name="github_registry_proxy_scope_desc">用于应用更新、插件、依赖包和 vcpkg 的 GitHub 下载。vcpkg 的 Git 拉取也使用所选网址，需要该代理支持 Git。HTTP 代理是可选的网络连接设置，与上方网址独立。</string>
   <string name="github_registry_mirror_url_label">GitHub 镜像 URL</string>
   <string name="github_registry_mirror_url_placeholder">https://ghproxy.net/</string>
-  <string name="github_registry_mirror_url_error_invalid">GitHub 镜像 URL 格式无效</string>
+  <string name="github_registry_mirror_url_error_invalid">请输入 HTTPS 代理前缀，不含账号、查询参数或 GitHub 下载链接</string>
   <string name="github_registry_proxy_host_label">HTTP 代理主机</string>
   <string name="github_registry_proxy_host_placeholder">127.0.0.1 或 proxy.example.com</string>
   <string name="github_registry_proxy_port_label">HTTP 代理端口</string>
@@ -86,9 +86,6 @@
   <string name="settings_desc_developer">测试工具、调试功能</string>
 
   <!-- Developer Options -->
-  <string name="dev_options_backend">后端服务</string>
-  <string name="dev_options_tina_server_url">TinaServer 地址</string>
-  <string name="dev_options_tina_server_url_desc">切换后端服务地址并测试连通性</string>
   <string name="dev_options_diagnostics">诊断日志</string>
   <string name="dev_options_diagnostics_enabled">启用诊断日志</string>
   <string name="dev_options_diagnostics_enabled_desc">总开关：关闭后不会输出额外诊断日志（用于减少性能开销/日志量）</string>
@@ -118,13 +115,6 @@
   <string name="dev_options_builtin_cmake_lsp_enabled">内置 CMake LSP</string>
   <string name="dev_options_builtin_cmake_lsp_enabled_desc">关闭后不附加内置 CMake 语义补全/语义高亮，便于单测 CMake 的 Tree-sitter 表现</string>
 
-  <string name="dialog_title_tina_server_url">TinaServer 地址</string>
-  <string name="label_tina_server_url">服务器基础 URL</string>
-  <string name="btn_save_and_test">保存并测试</string>
-  <string name="toast_tina_server_test_ok">连接成功</string>
-  <string name="toast_tina_server_test_failed">连接失败</string>
-  <string name="toast_tina_server_url_invalid">地址无效；远程服务器必须使用 HTTPS，本机调试可使用 localhost 或 127.0.0.1 的 HTTP 地址</string>
-  <string name="toast_tina_server_restored_default">已恢复默认地址</string>
 
   <!-- Plugin Database Test Screen -->
 
@@ -531,6 +521,24 @@
   <string name="settings_editor_color_diagnostic_warning">警告</string>
   <string name="settings_editor_color_diagnostic_info">信息</string>
   <string name="settings_editor_color_diagnostic_hint">提示</string>
+  <string name="settings_editor_color_find_match">查找匹配高亮</string>
+  <string name="settings_editor_color_find_match_active">当前查找匹配高亮</string>
+  <string name="settings_editor_color_folding_icon_collapsed">折叠图标（已折叠）</string>
+  <string name="settings_editor_color_folding_icon_expanded">折叠图标（已展开）</string>
+  <string name="settings_editor_color_folding_icon_warning">折叠警告图标</string>
+  <string name="settings_editor_color_folding_placeholder_background">折叠占位背景</string>
+  <string name="settings_editor_color_folding_placeholder_foreground">折叠占位前景</string>
+  <string name="settings_editor_color_gutter_bookmark">书签标记</string>
+  <string name="settings_editor_color_gutter_breakpoint">断点标记</string>
+  <string name="settings_editor_color_gutter_diagnostic">诊断标记</string>
+  <string name="settings_editor_color_gutter_git_added">Git 新增标记</string>
+  <string name="settings_editor_color_gutter_git_deleted">Git 删除标记</string>
+  <string name="settings_editor_color_gutter_git_modified">Git 修改标记</string>
+  <string name="settings_editor_color_line_number_background">行号背景</string>
+  <string name="settings_editor_color_scrollbar_thumb">滚动条滑块</string>
+  <string name="settings_editor_color_scrollbar_thumb_hover">滚动条滑块悬停</string>
+  <string name="settings_editor_color_scrollbar_track">滚动条轨道</string>
+  <string name="settings_editor_color_selection_handle">选区手柄</string>
   <string name="settings_editor_hardware_acceleration">硬件加速</string>
   <string name="settings_editor_hardware_acceleration_summary">使用 GPU 渲染提升滚动性能。如遇到滚动卡顿或黑屏问题可尝试关闭（需重新打开文件）</string>
   <string name="settings_cat_compiler_options">编译选项</string>
@@ -613,6 +621,7 @@
   <string name="toast_clone_success">仓库克隆成功</string>
 
   <!-- Project List Card -->
+  <string name="label_recent_project_badge">最近</string>
   <string name="label_recently_updated">● 最近更新</string>
   <string name="content_desc_more_actions">更多操作</string>
   <string name="action_open_project">打开项目</string>
@@ -1243,13 +1252,13 @@
   <string name="clang_format_style_webkit_desc">WebKit 项目编码规范，4 空格缩进</string>
   <string name="clang_format_style_microsoft_desc">Microsoft C++ 编码规范，4 空格缩进，Allman 大括号风格</string>
   <string name="clang_format_style_gnu_desc">GNU 编码规范，2 空格缩进，GNU 大括号风格</string>
-  <string name="settings_format_style_hint">当项目中存在 .clang-format 文件时，将优先使用项目配置</string>
+  <string name="settings_format_style_hint">项目 .clang-format 优先；否则使用所选排版风格，并沿用编辑行为中的缩进与 Tab 设置。</string>
   <string name="settings_auto_indent">自动缩进</string>
   <string name="settings_auto_indent_desc">换行时自动添加缩进</string>
   <string name="settings_insert_spaces_for_tabs">Tab 转空格</string>
-  <string name="settings_insert_spaces_for_tabs_desc">按 Tab 键时插入空格而非制表符</string>
+  <string name="settings_insert_spaces_for_tabs_desc">输入和格式化均使用空格；项目 .clang-format 配置优先</string>
   <string name="settings_tab_width">Tab 宽度</string>
-  <string name="toast_tab_width_set">Tab 宽度已设置为 %1$d 空格</string>
+  <string name="toast_tab_width_set">Tab 显示宽度已设置为 %1$d 列</string>
   <string name="toast_font_restored">已恢复默认字体</string>
   <string name="dialog_title_font_size">字体大小</string>
   <string name="dialog_title_custom_font">自定义字体</string>
@@ -1426,12 +1435,53 @@
   <string name="settings_github_desc">查看源代码、提交 Issue</string>
   <string name="settings_qq_group">QQ 群</string>
   <string name="settings_qq_group_desc">加入 TinaIDE 交流群</string>
-  <string name="about_donation_title">赞赏支持</string>
-  <string name="about_donation_desc">如果 TinaIDE 对你有帮助，可以扫码支持项目维护。</string>
-  <string name="about_donation_wechat">微信赞赏</string>
-  <string name="about_donation_alipay">支付宝赞赏</string>
-  <string name="about_donation_afdian">爱发电</string>
-  <string name="about_donation_afdian_desc">打开爱发电网页支持项目维护</string>
+  <string name="donation_title">捐赠支持</string>
+  <string name="vcpkg_title">vcpkg 依赖</string>
+  <string name="market_tab_vcpkg">vcpkg</string>
+  <string name="vcpkg_market_description">无需手动安装 vcpkg。添加库到 CMake 项目后，点击安装依赖，应用会自动准备工具并编译。列表按上游 Android 支持声明筛选，实际编译结果取决于库及其依赖。</string>
+  <string name="vcpkg_update_catalog">下载 / 更新包列表</string>
+  <string name="vcpkg_catalog_count">%1$d 个 Android 库 · %2$s</string>
+  <string name="vcpkg_managed_paths">工具和依赖由应用自动管理，依赖按项目存放在私有工作区。工具从应用内校验解压，包目录更新与库源码下载需要联网。</string>
+  <string name="vcpkg_preparing_tools">正在准备 vcpkg 原生工具和包仓库…</string>
+  <string name="vcpkg_download_invalid">vcpkg 下载内容不完整或校验失败，原有包列表和工具仍会保留。</string>
+  <string name="vcpkg_update_failed">vcpkg 下载或更新失败，已有列表仍可浏览。可在市场右上角切换 GitHub 代理后重试。</string>
+  <string name="vcpkg_select_project">选择 CMake 项目</string>
+  <string name="vcpkg_refresh">刷新目录</string>
+  <string name="vcpkg_install_project">安装到项目</string>
+  <string name="vcpkg_add_dependency">添加到项目</string>
+  <string name="vcpkg_remove_dependency">移出依赖清单</string>
+  <string name="vcpkg_installed_version">已安装：%1$s</string>
+  <string name="vcpkg_install_complete">依赖安装与项目配置完成</string>
+  <string name="vcpkg_install_cancelled">已取消依赖安装</string>
+  <string name="pkg_manager_no_installed_packages">没有符合条件的已安装包</string>
+  <string name="vcpkg_native_only">项目 vcpkg 集成用于 Android 原生构建。请将 CMake 运行模式切换为原生，避免混用 Linux 与 Android 库。</string>
+  <string name="vcpkg_description">内置工具自动管理目录；在市场添加 Android 库即可启用</string>
+  <string name="vcpkg_disabled">关闭</string>
+  <string name="vcpkg_manifest">内置 vcpkg（自动管理）</string>
+  <string name="vcpkg_root_required">应用管理的 vcpkg 运行环境未准备好，请重试安装。</string>
+  <string name="vcpkg_configuration_failed">vcpkg 准备或配置失败：%1$s</string>
+  <string name="vcpkg_installing">正在通过 vcpkg 安装项目依赖…</string>
+  <string name="vcpkg_install_failed">vcpkg 依赖安装失败：%1$s</string>
+  <string name="vcpkg_invalid_mode">vcpkg 模式无效，请在项目设置中重新选择。</string>
+  <string name="vcpkg_toolchain_missing">vcpkg 工具文件不完整，请重试安装。</string>
+  <string name="vcpkg_conflicting_arguments">CMake 参数与 vcpkg 设置冲突，请移除手动指定的 toolchain 和 VCPKG 参数。</string>
+  <string name="vcpkg_write_failed">无法写入 vcpkg 配置，请检查项目目录权限和剩余空间。</string>
+  <string name="vcpkg_manifest_required">项目根目录缺少 vcpkg.json，请先在市场添加项目依赖或创建清单。</string>
+  <string name="vcpkg_invalid_cli">内置 vcpkg 工具缺失或不匹配当前 Android 架构，请更新应用后重试。</string>
+  <string name="vcpkg_prebuilt_missing">共享库中没有匹配当前 Android ABI 的依赖，请先从市场装到共享库。</string>
+  <string name="vcpkg_invalid_path">vcpkg 路径无效；项目清单必须位于项目内，路径不能包含换行、分号或空字符。</string>
+  <string name="vcpkg_invalid_manifest">vcpkg 清单或安装记录格式错误或过大，请检查文件后重试。</string>
+  <string name="vcpkg_manifest_changed">vcpkg.json 已被其他操作修改，请刷新后重试。</string>
+  <string name="vcpkg_operation_failed">vcpkg 操作失败，请检查工具目录、文件权限和应用日志后重试。</string>
+  <string name="vcpkg_cmake_required">请选择包含 CMakeLists.txt 的项目。</string>
+  <string name="vcpkg_manifest_mode_required">此项目正在使用共享依赖库，请先切换为项目清单模式后修改依赖。</string>
+  <string name="vcpkg_skipped_ports">有 %1$d 个库的清单无法读取，已跳过；其余库仍可浏览。</string>
+  <string name="donation_entry_desc">支持 TinaIDE 的开发与维护</string>
+  <string name="donation_desc">如果 TinaIDE 对你有帮助，欢迎通过以下方式支持项目的持续开发与维护。</string>
+  <string name="donation_wechat">微信赞赏</string>
+  <string name="donation_alipay">支付宝赞赏</string>
+  <string name="donation_afdian">爱发电</string>
+  <string name="donation_afdian_desc">打开爱发电网页支持项目维护</string>
   <string name="settings_cat_legal">法律信息</string>
   <string name="settings_open_source_licenses">开源组件与许可证</string>
   <string name="settings_licenses_desc">查看当前应用使用的开源组件与许可证</string>
@@ -2356,8 +2406,15 @@
   <string name="floating_overlay_log_title">运行日志</string>
   <string name="floating_overlay_log_empty">暂无日志输出</string>
   <string name="floating_overlay_log_clear">清空</string>
-  <string name="floating_overlay_ball_desc">悬浮返回按钮</string>
-  <string name="floating_overlay_double_back_hint">再按一次返回键退出，或点击悬浮球退出</string>
+  <string name="floating_overlay_ball_desc">图形程序悬浮控制</string>
+  <string name="floating_overlay_double_back_hint">再按一次返回键退出，或从悬浮菜单返回编辑器</string>
+  <string name="floating_overlay_window_drag">拖动日志窗口，双击标题最大化或还原</string>
+  <string name="floating_overlay_window_resize">拖动右下角调整日志窗口大小</string>
+  <string name="floating_overlay_window_maximize">最大化日志窗口</string>
+  <string name="floating_overlay_window_restore">还原日志窗口</string>
+  <string name="floating_overlay_window_minimize">收起日志窗口</string>
+  <string name="floating_overlay_window_grow">放大日志窗口</string>
+  <string name="floating_overlay_window_shrink">缩小日志窗口</string>
   <string name="floating_overlay_log_capture_failed">无法读取当前图形程序的运行日志</string>
 
   <string name="sdl_host_title">SDL 运行界面</string>
@@ -2396,6 +2453,10 @@
   <string name="native_activity_runtime_sdl_conflict">当前目标依赖 SDL，不能通过 NativeActivity 运行。SDL 项目请选择 SDL 图形运行；raylib 项目不要把 main 重命名为 SDL_main。</string>
   <string name="native_activity_runtime_stage_failed">准备 NativeActivity 运行库失败：%1$s</string>
   <string name="native_activity_runtime_launch_failed">启动 NativeActivity 运行界面失败：%1$s</string>
+  <string name="graphical_runtime_previous_process_not_stopped">上一次图形运行尚未退出，请稍后重试。为避免覆盖仍在使用的运行库，本次未启动。</string>
+  <string name="graphical_runtime_launch_in_progress">图形运行正在启动，请等待当前启动完成。</string>
+  <string name="graphical_runtime_start_not_acknowledged">图形运行界面尚未响应启动请求。请返回编辑器后重试。</string>
+  <string name="raylib_runtime_update_required">旧 raylib 运行库已不受支持。请在资源包管理中刷新并更新 raylib 到 6.0 r3，然后清理构建并重新编译；若项目内手动复制了旧 libraylib.so，也必须删除或替换。项目源码无需删除。</string>
   <string name="native_activity_runtime_host_not_configured">NativeActivity 运行宿主尚未完成配置</string>
   <string name="native_activity_runtime_dependency_load_failed">加载 NativeActivity 依赖失败：%1$s</string>
   <string name="native_activity_runtime_main_load_failed">加载 NativeActivity 主共享库失败：%1$s</string>
@@ -2688,10 +2749,10 @@
   <string name="crash_no_info">无崩溃信息</string>
   <string name="crash_copied">已复制到剪贴板</string>
   <string name="crash_copy_failed">复制失败: %1$s</string>
-  <string name="crash_title">应用崩溃了</string>
-  <string name="crash_title_user_native">用户程序崩溃了</string>
-  <string name="crash_hint">以下是崩溃信息，点击复制按钮可复制完整日志</string>
-  <string name="crash_hint_user_native">用户运行的 SDL/Native/NDK 程序已在独立进程中崩溃，TinaIDE 主界面不应受影响。以下是崩溃信息，点击复制按钮可复制完整日志。</string>
+  <string name="crash_title">TinaIDE 异常退出</string>
+  <string name="crash_title_user_native">程序异常退出</string>
+  <string name="crash_hint">可以重新打开 IDE。</string>
+  <string name="crash_hint_user_native">返回编辑器继续工作。</string>
   <string name="crash_user_native_privacy_note">这是用户项目/运行程序的崩溃日志，不会上传到 TinaIDE 服务器。你可以复制或分享给项目作者自行排查。</string>
   <string name="crash_upload_status_title">崩溃日志上传状态</string>
   <string name="crash_upload_status_none">尚未检测到上传状态。重启应用后会再次检查崩溃日志。</string>
@@ -2705,9 +2766,9 @@
   <string name="crash_share_subject">TinaIDE 崩溃日志</string>
   <string name="crash_share_chooser_title">分享崩溃日志</string>
   <string name="crash_share_failed">分享失败: %1$s</string>
-  <string name="crash_btn_exit">退出</string>
+  <string name="crash_btn_exit">退出 IDE</string>
   <string name="crash_btn_copy">复制</string>
-  <string name="crash_btn_restart">重启应用</string>
+  <string name="crash_btn_restart">重启 IDE</string>
   <string name="crash_log_title">崩溃日志</string>
 
   <!-- TerminalToolbar -->
@@ -3785,7 +3846,6 @@ kept=%3$d bytes
   <!-- About Settings Section -->
   <string name="about_developer_options_enabled">开发者选项已启用</string>
   <string name="about_developer_options_enabled_long">开发者选项已启用！</string>
-  <string name="about_developer_options_disabled_by_server">开发者选项已被服务器禁用</string>
   <string name="about_enable_developer_hint">再点击 %1$d 次即可启用开发者选项</string>
   <string name="about_error_unknown">未知错误</string>
   <string name="about_export_logs_failed">导出日志失败</string>
@@ -3862,7 +3922,7 @@ kept=%3$d bytes
   <string name="toolchain_pkg_gdb">GDB 调试器</string>
 
   <!-- Crash Activity -->
-  <string name="crash_log_truncated">\n\n... [日志过长，已截断显示，点击复制可获取完整内容] ...</string>
+  <string name="crash_log_truncated">\n\n... [仅显示日志预览；点击分享可导出原始日志文件] ...</string>
 
   <!-- Ubuntu Toolchain Installer -->
   <string name="toolchain_error_proot_not_installed">PRoot 环境未安装，请先调用 initialize()</string>
@@ -4033,6 +4093,10 @@ kept=%3$d bytes
   <!-- Editor / Document Session -->
   <string name="editor_error_not_initialized">编辑器尚未初始化</string>
   <string name="editor_error_save_failed">保存失败</string>
+  <string name="sdl_runtime_unsupported_version">当前 SDL %1$s 与图形宿主不兼容。请使用 SDL 3.4 或 3.5 重新构建项目；SDL 3.2 的 JNI 接口不受支持。</string>
+  <string name="editor_error_encoding_loss">当前 %1$s 编码无法保存部分字符，保存已中止。原文件和未保存内容已保留。</string>
+  <string name="editor_error_decoding_failed">文件无法按检测到的编码完整读取，已停止载入以保护原始内容。请检查文件编码或使用十六进制查看。</string>
+  <string name="workspace_edit_rollback_failed">跨文件编辑未完成，其中 %1$d 个文件无法自动恢复，可能已被其他操作修改。请检查这些文件的差异后继续。</string>
   <string name="editor_error_cannot_resolve_dir">无法解析文件目录</string>
   <string name="editor_error_cannot_create_dir">无法创建目录: %1$s</string>
   <string name="editor_error_session_not_found">未找到会话</string>
@@ -4351,7 +4415,6 @@ kept=%3$d bytes
   <string name="pkg_manager_selected">已选择 %1$d 项</string>
   <string name="pkg_manager_bundled">内置</string>
   <string name="pkg_manager_search_hint">搜索包…</string>
-  <string name="pkg_manager_no_installed_packages">暂无已安装的包</string>
   <string name="pkg_manager_no_available_packages">暂无可用包</string>
   <string name="pkg_manager_load_failed">加载包列表失败</string>
   <string name="pkg_manager_package_not_found">未找到包：%1$s</string>
@@ -4379,6 +4442,12 @@ kept=%3$d bytes
   <string name="pkg_manager_batch_update_confirm_title">更新全部包？</string>
   <string name="pkg_manager_batch_update_confirm_message">这将更新 %1$d 个包。</string>
   <string name="pkg_manager_batch_complete_title">批量安装完成</string>
+  <string name="pkg_manager_batch_result_title">批量操作结果</string>
+  <string name="pkg_manager_batch_cancelled_title">批量操作已取消</string>
+  <string name="pkg_manager_batch_result_summary">成功 %1$d 项，失败 %2$d 项，未完成 %3$d 项。</string>
+  <string name="pkg_manager_batch_failure_item">%1$s（%2$s）：%3$s</string>
+  <string name="pkg_manager_batch_uninstalling">正在批量卸载</string>
+  <string name="pkg_manager_batch_uninstall_progress">%1$d / %2$d：%3$s</string>
   <string name="pkg_manager_batch_complete_msg">已为 %2$s 成功安装 %1$d 个包</string>
   <string name="pkg_manager_update_complete_title">更新完成</string>
   <string name="pkg_manager_update_complete_msg">已成功更新 %1$d 个包</string>
@@ -4499,7 +4568,6 @@ kept=%3$d bytes
   <string name="market_title">市场</string>
   <string name="market_tab_plugins">插件</string>
   <string name="market_tab_packages">包管理</string>
-  <string name="market_search_hint">搜索...</string>
   <string name="market_empty_plugins_title">插件市场正在建设中</string>
   <string name="market_empty_plugins_desc">精彩插件即将上线，敬请期待</string>
   <string name="market_empty_packages_title">暂无可用包</string>
@@ -4527,36 +4595,10 @@ kept=%3$d bytes
   <string name="tutorial_title">教程</string>
   <string name="tutorial_empty">暂无教程</string>
   <string name="tutorial_progress">进度: %1$d%%</string>
-  <string name="tutorial_reading">阅读中</string>
   <string name="tutorial_duration">%1$s 分钟</string>
   <string name="tutorial_start">开始学习</string>
   <string name="tutorial_continue">继续学习</string>
   <string name="tutorial_completed">已完成</string>
-  <string name="tutorial_continue_learning_title">继续学习</string>
-  <string name="tutorial_continue_learning_desc">教程内容会在当前学习流程中打开，帮助内容会跳转到帮助中心。</string>
-  <string name="tutorial_related_destination_tutorial">教程内打开</string>
-  <string name="tutorial_related_destination_help">帮助中心</string>
-  <string name="tutorial_related_destination_external">外部链接</string>
-  <string name="tutorial_related_destination_tutorial_route">留在教程体系中继续学习</string>
-  <string name="tutorial_related_destination_help_route">跳转到帮助中心查看文档</string>
-  <string name="tutorial_related_destination_external_route">使用系统方式打开外部资源</string>
-  <string name="tutorial_related_destination_tutorial_action">继续教程</string>
-  <string name="tutorial_related_destination_help_action">查看帮助</string>
-  <string name="tutorial_related_destination_external_action">打开链接</string>
-  <string-array name="tutorial_related_section_titles">
-    <item>相关文档</item>
-    <item>建议下一步</item>
-    <item>相关阅读</item>
-    <item>相关教程</item>
-    <item>继续学习</item>
-    <item>下一步</item>
-    <item>related docs</item>
-    <item>related documents</item>
-    <item>related tutorials</item>
-    <item>next steps</item>
-    <item>suggested next steps</item>
-    <item>continue learning</item>
-  </string-array>
   <string name="tutorial_skip">跳过</string>
   <string name="tutorial_next">下一步</string>
   <string name="tutorial_previous">上一步</string>
@@ -4578,14 +4620,46 @@ kept=%3$d bytes
   <!-- Tutorial Titles -->
   <string name="tutorial_onboarding_title">欢迎使用 TinaIDE</string>
   <string name="tutorial_onboarding_desc">快速了解 TinaIDE 的主要功能</string>
-  <string name="tutorial_getting_started_title">TinaIDE 入门指南</string>
-  <string name="tutorial_getting_started_desc">了解 TinaIDE 的界面布局和基本操作</string>
-  <string name="tutorial_editor_basics_title">编辑器基础</string>
-  <string name="tutorial_editor_basics_desc">掌握代码编辑、撤销重做和快捷键</string>
-  <string name="tutorial_build_project_title">项目构建配置</string>
-  <string name="tutorial_build_project_desc">了解 CMakeLists.txt 配置和构建选项</string>
-  <string name="tutorial_git_basics_title">Git 基础操作</string>
-  <string name="tutorial_git_basics_desc">提交、查看历史和管理分支</string>
+  <string name="tutorial_complete_cpp_course_title">C++ 完整实操路线：从项目到运行</string>
+  <string name="tutorial_complete_cpp_course_desc">按章节学习 IDE、C++、CMake、依赖与图形；一键准备独立练习工程，保留修改并自动保存学习进度。</string>
+  <string name="tutorial_course_vcpkg_desc">一键准备已声明并使用 fmt 的完整工程，运行后验证依赖安装、链接与复用；创建不会联网下载依赖。</string>
+  <string name="tutorial_course_step_check_title">最终检查 · 验收完整流程</string>
+  <string name="tutorial_course_step_check_desc">回答最后一个问题，确认你已经掌握从创建到运行的基本闭环。</string>
+  <string name="tutorial_course_action_open_projects">查看项目列表</string>
+  <string name="tutorial_course_project_create_or_resume">创建／继续本章项目</string>
+  <string name="tutorial_course_project_preparing">正在准备并打开项目…</string>
+  <string name="tutorial_course_project_storage_note">自动准备完整文件，保存在应用私有项目目录，可从项目列表继续打开或导出。重复打开保留修改，各章互不覆盖。</string>
+  <string name="tutorial_course_project_vcpkg_note">新工程已声明 fmt 并使用它输出；首次运行会安装依赖，创建本身不联网。已有空清单请在市场添加 fmt。</string>
+  <string name="tutorial_course_project_sdl3_note">SDL3 工程与运行配置自动准备；缺少 Android SDL3 包时，请先到市场安装后再构建。</string>
+  <string name="tutorial_course_project_failed">项目准备失败，已有文件保持不变。请检查可用存储空间，再点击创建／继续重试。</string>
+  <string name="tutorial_course_action_open_market">去市场添加依赖</string>
+  <string name="tutorial_course_action_open_market_packages">去市场安装 SDL3 包</string>
+  <string name="tutorial_course_open_help">打开相关帮助</string>
+  <string name="tutorial_course_step_progress">阶段 %1$d / %2$d</string>
+  <string name="tutorial_course_outline">课程目录</string>
+  <string name="tutorial_course_chapter_current">当前</string>
+  <string name="tutorial_course_chapter_completed">已完成</string>
+  <string name="tutorial_course_chapter_available">可开始</string>
+  <string name="tutorial_course_chapter_locked">未解锁</string>
+  <string name="tutorial_course_confirm_step">我已完成，继续下一步</string>
+  <string name="tutorial_course_next_step">进入下一阶段</string>
+  <string name="tutorial_course_finish">完成整套练习</string>
+  <string name="tutorial_course_quiz_question">构建报错后，最稳妥的下一步是什么？</string>
+  <string name="tutorial_course_quiz_answer_correct">读构建日志定位首个错误，修复最小问题后重新构建</string>
+  <string name="tutorial_course_quiz_answer_wrong_compiler">反复改 CMake 参数直到碰巧成功</string>
+  <string name="tutorial_course_quiz_answer_wrong_dependencies">忽略构建错误，直接运行</string>
+  <string name="tutorial_course_quiz_wrong">还不正确。回到构建日志，先找到最早出现的有效错误。</string>
+  <string name="tutorial_course_quiz_correct">答对了。实际构建、运行并核对结果后，即可完成课程。</string>
+  <string name="tutorial_course_hints_title">卡住了？逐步查看提示</string>
+  <string name="tutorial_course_hints_description">先看修改位置，再看思路和参考代码。复制代码后回到项目手动粘贴，核对运行结果后再标记完成。</string>
+  <string name="tutorial_course_hint_number">提示 %1$d</string>
+  <string name="tutorial_course_hint_reveal">查看提示 %1$d / %2$d</string>
+  <string name="tutorial_course_hints_hide">收起提示</string>
+  <string name="tutorial_course_copy_failed">复制失败，请重试或根据示例手动输入。</string>
+  <string name="tutorial_course_quiz_hint_1">先判断是哪一步失败：配置找不到包、编译语法错误，还是链接找不到实现。查看构建日志中最早的有效错误。</string>
+  <string name="tutorial_course_quiz_hint_2">如果 totalPrice 未定义，检查 pricing.cpp 是否参与目标或 pricing 库是否已链接。修改后保存、构建，再运行。</string>
+  <string name="tutorial_course_quiz_hint_3">应选择“读构建日志定位首个错误，修复最小问题后重新构建”。忽略报错可能运行旧产物；乱改参数会增加问题。选择答案后再点击完成课程。</string>
+  <string name="course_vcpkg_title">实践 7：fmt 依赖与构建</string>
 
   <!-- Onboarding Steps -->
   <string name="tutorial_step_project_tab_title">项目</string>
@@ -4615,8 +4689,6 @@ kept=%3$d bytes
   <string name="onboarding_complete_dismiss">知道了</string>
 
   <!-- Profile Screen -->
-  <string name="profile_open_source_title">TinaIDE 开源版</string>
-  <string name="profile_open_source_desc">私有身份与商业功能已迁出；日志、插件、包下载、收藏和下载历史保留。</string>
   <string name="profile_version_format">版本 %1$s</string>
   <string name="profile_settings">设置</string>
   <string name="profile_about">关于</string>
@@ -4642,21 +4714,6 @@ kept=%3$d bytes
   <string name="text_action_group_navigation">导航</string>
 
   <!-- Developer Options: Server Config Dialog -->
-  <string name="dev_options_view_server_config">查看服务器配置</string>
-  <string name="dev_options_view_server_config_desc">查看当前从服务器同步的配置信息</string>
-  <string name="dev_options_server_config_title">服务器配置</string>
-  <string name="dev_options_config_version">配置版本: %1$s</string>
-  <string name="dev_options_config_updated_at">更新时间: %1$s</string>
-  <string name="dev_options_config_refresh_interval">刷新间隔: %1$d秒</string>
-  <string name="dev_options_config_unknown">未知</string>
-  <string name="dev_options_config_features">功能开关:</string>
-  <string name="dev_options_config_plugin_market">• 插件市场: %1$s</string>
-  <string name="dev_options_config_package_manager">• 包管理器: %1$s</string>
-  <string name="dev_options_config_developer_options">• 开发者选项: %1$s</string>
-  <string name="dev_options_config_client">客户端配置:</string>
-  <string name="dev_options_config_min_version">• 最低版本: %1$s</string>
-  <string name="dev_options_config_recommended_version">• 推荐版本: %1$s</string>
-  <string name="dev_options_config_force_update">• 强制更新: %1$s</string>
   <string name="common_yes">是</string>
   <string name="common_no">否</string>
 
@@ -4669,6 +4726,7 @@ kept=%3$d bytes
   <string name="spotlight_finish">完成</string>
   <string name="spotlight_next">下一步</string>
   <string name="tutorial_interactive">交互式</string>
+  <string name="tutorial_guided">完整实操</string>
   <string name="tutorial_relearn">重新学习</string>
 
 <!-- Diff -->
@@ -4685,7 +4743,6 @@ kept=%3$d bytes
   <string name="search_replace_failed">替换失败</string>
 
   <!-- Market -->
-  <string name="market_category_all">全部</string>
   <string name="market_category_theme">主题</string>
   <string name="market_category_tool">工具</string>
   <string name="market_category_language">语言支持</string>
@@ -4707,8 +4764,6 @@ kept=%3$d bytes
   <string name="favorites_remove">移除收藏</string>
   <string name="favorites_remove_confirm">确定要取消收藏「%1$s」吗？</string>
   <string name="favorites_remove_confirm_title">取消收藏</string>
-  <string name="favorites_sync_failed">同步失败，请检查网络</string>
-  <string name="favorites_not_synced">未同步</string>
 <string name="favorites_empty_hint">还没有收藏任何插件</string>
   <string name="favorites_go_to_market">去市场逛逛</string>
   <string name="download_history_empty">暂无下载记录</string>
@@ -4723,6 +4778,9 @@ kept=%3$d bytes
   <string name="filter_packages">包</string>
   <string name="filter_snippets">代码片段</string>
   <string name="action_retry">重试</string>
+  <string name="tutorial_progress_storage_failed">学习进度读写失败，待保存操作已保留，请重试。</string>
+  <string name="tutorial_catalog_load_failed">无法读取课程进度，请重试。</string>
+  <string name="symbols_query_failed">符号查询失败，请检查语言服务后重试。</string>
 <string name="action_close">关闭</string>
   <string name="action_ok">确定</string>
 
@@ -5152,4 +5210,161 @@ kept=%3$d bytes
     <string name="editor_recovery_checkpoint_failed">草稿备份失败（存储空间或大小限制），请及时手动保存。</string>
     <string name="editor_recovery_discard_failed">无法删除草稿，请重试后再关闭。</string>
     <string name="debug_error_native_lldb_unavailable">当前 native 工具链缺少 lldb 或 lldb-server。请安装含调试组件的工具链后重试。</string>
+  <string name="run_config_assets_label">资源目录</string>
+  <string name="run_config_assets_placeholder">默认：项目中的 assets 文件夹</string>
+  <string name="run_config_assets_hint">留空时优先读取 assets，兼容项目根目录。可指定项目内的相对路径，例如 resources；写入的存档仍保存在应用私有目录。</string>
+  <string name="run_config_assets_invalid">资源目录必须是项目内已存在的文件夹</string>
+  <string name="pkg_manager_error_invalid_metadata">无法读取有效的包信息：package.json 必须使用 UTF-8，且大小不超过 1 MiB。</string>
+  <string name="settings_feedback">意见反馈</string>
+  <string name="settings_feedback_desc">把问题或建议直接发送给开发者</string>
+  <string name="feedback_dialog_title">意见反馈</string>
+  <string name="feedback_message_label">问题或建议</string>
+  <string name="feedback_message_placeholder">请描述你遇到的问题、复现步骤或希望新增的功能</string>
+  <string name="feedback_contact_label">联系方式（可选）</string>
+  <string name="feedback_contact_placeholder">邮箱 / QQ，便于进一步沟通</string>
+  <string name="feedback_attach_logs">附带日志与设备信息</string>
+  <string name="feedback_attach_logs_desc">默认关闭。开启后发送设备信息和脱敏日志，可能包含项目路径、构建命令及 PRoot 输出。</string>
+  <string name="feedback_attach_archive">附带自己的日志压缩包</string>
+  <string name="feedback_attach_archive_desc">支持 zip / tar / gz / tgz，不超过 10MB</string>
+  <string name="feedback_archive_reselect">所选附件已不可用。请移除后重新选择文件。</string>
+  <string name="feedback_attach_archive_pick">选择文件</string>
+  <string name="feedback_attach_archive_remove">移除</string>
+  <string name="feedback_attach_archive_selected">已选择：%1$s</string>
+  <string name="feedback_submit">提交反馈</string>
+  <string name="feedback_submitting">正在提交反馈...</string>
+  <string name="feedback_submitted">反馈已提交，感谢！</string>
+  <string name="feedback_submitted_with_log_warning">反馈已提交，但日志附件上传失败：%1$s</string>
+  <string name="feedback_failed">反馈提交失败：%1$s</string>
+  <string name="feedback_empty_message">请先填写反馈内容</string>
+  <string name="aegis_not_configured">此版本未配置诊断上报服务，暂时无法上传</string>
+  <string name="aegis_report_encode_failed">无法编码上报内容</string>
+  <string name="aegis_report_failed">上报失败，请稍后重试</string>
+  <string name="aegis_attachment_empty">附件不存在或为空</string>
+  <string name="aegis_attachment_too_large">附件超过 10MB 上限，无法上传</string>
+  <string name="aegis_invalid_report_id">报告编号无效，请重新提交</string>
+  <string name="crash_title_component">运行组件异常退出</string>
+  <string name="crash_hint_component">关闭此页返回 IDE。</string>
+  <string name="crash_btn_return_editor">返回编辑器</string>
+  <string name="crash_btn_close">关闭</string>
+  <string name="crash_btn_show_details">查看日志</string>
+  <string name="crash_btn_hide_details">收起日志</string>
+  <string name="settings_upload_log_archive">上传日志压缩包</string>
+  <string name="settings_upload_log_archive_desc">选择设备上的 zip / tar / gz / tgz 日志包上传（不超过 10MB）</string>
+  <string name="toast_uploading_log_archive">正在上传日志压缩包...</string>
+  <string name="toast_log_archive_uploaded">日志压缩包上传成功（ID=%1$s）</string>
+  <string name="toast_upload_log_archive_failed">上传日志压缩包失败: %1$s</string>
+  <string name="toast_log_archive_too_large">日志压缩包大小约 %1$dMB，超过 10MB 上限，无法上传</string>
+  <string name="toast_log_archive_unsupported">仅支持 zip、tar、gz、tgz 格式的日志压缩包</string>
+  <string name="toast_log_archive_empty">日志压缩包为空或无法读取</string>
+  <string name="toast_log_archive_import_failed">无法读取所选压缩包，请检查文件权限后重新选择。</string>
+  <string name="log_upload_report_message">用户手动上传的 TinaIDE 运行日志：%1$s</string>
+  <string name="log_archive_report_message">用户手动上传的 TinaIDE 日志压缩包：%1$s（格式 %2$s，%3$d 字节）</string>
+  <string name="log_upload_attachment_failed">报告已提交（%1$s），但日志附件上传失败：%2$s</string>
+  <string name="course_ide_title">实践 1：从项目到运行</string>
+  <string name="course_ide_desc">创建、保存、运行、定位错误与验收修改</string>
+  <string name="course_cpp_basics_title">实践 2：C++ 变量与控制流</string>
+  <string name="course_cpp_basics_desc">用计价器练习类型、输入、判断、循环和边界</string>
+  <string name="course_cpp_functions_title">实践 3：函数与多文件</string>
+  <string name="course_cpp_functions_desc">声明、实现、头文件、引用与编译链接错误</string>
+  <string name="course_cpp_collections_title">实践 4：字符串与容器</string>
+  <string name="course_cpp_collections_desc">用多行计价器练习 vector、string、算法与输入校验</string>
+  <string name="course_cpp_raii_title">实践 5：对象与资源生命周期</string>
+  <string name="course_cpp_raii_desc">类、const、引用、智能指针与文件 RAII</string>
+  <string name="course_cmake_title">实践 6：CMake 目标与库</string>
+  <string name="course_cmake_desc">把多文件程序拆为库，理解配置、构建和依赖</string>
+  <string name="course_graphics_title">实践 8：SDL3 图形与事件</string>
+  <string name="course_graphics_desc">使用原生图形模板绘制、处理触摸并检查生命周期</string>
+  <string name="course_ai_title">实践 9：用模拟对话学习 AI 协作</string>
+  <string name="course_ai_desc">离线练习提问、检查修改；真实调用由自己的渠道和 Key 决定</string>
+  <string name="market_github_proxy">GitHub 代理</string>
+  <string name="github_registry_mirror_auto">自动选择</string>
+  <string name="github_registry_mirror_selection_hint">选择预设或输入 HTTPS 代理网址，所选地址会优先使用。留空恢复自动选择。保存后用于后续请求。正在进行的安装继续使用原配置；如需立即切换，请取消后重试。</string>
+  <string name="vcpkg_port_unsupported">不符合当前 Android 架构或静态链接条件，仅保留项目管理入口。</string>
+  <string name="vcpkg_port_unknown">当前目录无法确认兼容性，仅保留项目管理入口。</string>
+  <string name="vcpkg_package_not_supported">该库不在当前 Android 可用列表中，请刷新后重新选择。</string>
+  <string name="vcpkg_use_managed">使用内置 vcpkg</string>
+  <string name="vcpkg_open_guide">使用教程</string>
+  <string name="wizard_vcpkg_hint">可选，为 CMake 项目启用内置 vcpkg 并创建依赖清单，不需要配置目录。创建后到市场添加库，按教程修改 CMake 链接；首次安装会联网下载并编译。</string>
+  <string name="wizard_vcpkg_setup_failed">无法准备 vcpkg 项目。请确认模板根目录包含 CMakeLists.txt，且 vcpkg.json 不是目录。</string>
+  <string name="help_doc_vcpkg_guide_title">vcpkg 依赖管理速查</string>
+  <string name="help_doc_vcpkg_guide_summary">查看清单、安装、共享库与包兼容状态；完整动手流程请到教程中心</string>
+  <string-array name="help_keywords_vcpkg_guide">
+    <item>vcpkg</item>
+    <item>CMake</item>
+    <item>fmt</item>
+    <item>依赖</item>
+    <item>库</item>
+    <item>链接</item>
+    <item>Android</item>
+  </string-array>
+  <string name="vcpkg_catalog_http_failed">vcpkg 目录或源码请求失败（HTTP %1$d），可切换 GitHub 代理后重试。</string>
+  <string name="vcpkg_git_failed">准备 vcpkg Git 版本信息失败（退出码 %1$d），请查看安装日志，检查 GitHub 代理是否支持 Git 后重试。</string>
+  <string name="vcpkg_preparing_download">正在准备 vcpkg：下载 %1$d%%</string>
+  <string name="vcpkg_install_shared">装到共享库</string>
+  <string name="vcpkg_shared_confirm_title">导出到共享依赖库？</string>
+  <string name="vcpkg_shared_confirm_message">依赖会先装到项目私有工作区，再导出到设备共享库目录（应用私有存储），其他项目可直接复用这批库。导出后当前项目切换为共享库模式，需要继续添加依赖时再切回内置 vcpkg。</string>
+  <string name="vcpkg_shared_confirm_action">安装并导出</string>
+  <string name="vcpkg_shared_exporting">正在导出到共享库：%1$d%%</string>
+  <string name="vcpkg_shared_export_done">已导出到共享依赖库目录</string>
+  <string name="vcpkg_shared_source_missing">项目还没有安装当前架构的依赖，请先安装到项目后再导出到共享库。</string>
+  <string name="vcpkg_shared_active">当前项目使用共享依赖库：%1$s</string>
+  <string name="vcpkg_shared_leave_message">切回内置 vcpkg 后，依赖会重新装到项目私有工作区；共享库目录及其中的库文件会保留。</string>
+  <string name="vcpkg_shared_mode">使用设备共享依赖库</string>
+  <string name="vcpkg_filter_hidden_hint">已按 %1$s 过滤掉 %2$d 个不兼容的上游库</string>
+  <string name="vcpkg_other_incompatible">另有 %1$d 个上游库不支持当前架构</string>
+  <string name="vcpkg_empty_incompatible_title">没有兼容当前架构的库</string>
+  <string name="vcpkg_empty_incompatible_desc">%1$s 存在于上游目录，但声明不支持 %2$s 或静态链接。已声明的条目可直接在列表中移除。</string>
+  <string name="vcpkg_upgradable">可升级：%1$s → %2$s</string>
+  <string name="vcpkg_declared_badge">已在清单</string>
+  <string name="vcpkg_verified_badge">已验证</string>
+  <string name="vcpkg_copy_name">复制库名</string>
+  <string name="vcpkg_port_name_copied">库名已复制</string>
+  <string name="vcpkg_detail_open">查看详情</string>
+  <string name="vcpkg_detail_status">项目状态</string>
+  <string name="vcpkg_detail_compatibility">兼容性</string>
+  <string name="vcpkg_detail_supports">上游 supports</string>
+  <string name="vcpkg_detail_abi">目标架构</string>
+  <string name="vcpkg_detail_status_not_declared">未加入项目</string>
+  <string name="vcpkg_detail_status_declared">已写入 vcpkg.json</string>
+  <string name="vcpkg_detail_status_installed">已安装 %1$s</string>
+  <string name="vcpkg_detail_supports_empty">上游未声明限制</string>
+  <string name="vcpkg_detail_supported">支持当前架构与静态链接</string>
+  <string name="vcpkg_install_log_title">vcpkg 安装输出</string>
+  <string name="vcpkg_install_log_open">查看安装输出</string>
+  <string name="vcpkg_install_log_running">安装进行中，输出会实时更新。</string>
+  <string name="vcpkg_remove_confirm_title">移出依赖清单？</string>
+  <string name="vcpkg_remove_confirm_message">将从项目 vcpkg.json 移除 %1$s。库文件仍保留在私有工作区，需要时可重新添加。</string>
+  <string name="vcpkg_remove_confirm_action">移出清单</string>
+  <string name="vcpkg_busy_switch_project">当前操作进行中，请等待完成后再切换项目或修改依赖。</string>
+  <string name="vcpkg_project_missing">所选项目已不存在或缺少 CMakeLists.txt，请重新选择。</string>
+  <string name="vcpkg_no_project_selected">尚未选择项目；可先浏览库，选择后即可安装依赖。</string>
+  <string name="vcpkg_add_dependency_first">先在 Android 库中添加依赖，再安装</string>
+  <string name="market_search_action">搜索</string>
+  <string name="market_search_all_hint">搜索插件、包和库</string>
+  <string name="lsp_call_hierarchy_outgoing">此方法调用了谁</string>
+  <string name="lsp_call_hierarchy_no_outgoing_calls">没有找到出向调用</string>
+  <string name="lsp_location_dialog_title_call_hierarchy_outgoing">被调用的方法（%1$d）</string>
+  <string name="function_flow_title">当前函数流程图</string>
+  <string name="function_flow_scope">基于当前编辑内容的语法流程；点击节点回到源码。支持条件、循环、switch 和跳转语句，不展开宏或异常路径。可滚动、缩放并复制 Mermaid。</string>
+  <string name="function_flow_unavailable">无法生成：请把光标放在 C/C++ 函数内，检查语法。暂不支持 goto、异常、范围循环、lambda、协程、条件编译或过大的函数。</string>
+  <string name="function_flow_stale">源码已经变化，请重新生成后再跳转或导出。</string>
+  <string name="function_flow_copy">复制 Mermaid</string>
+  <string name="course_assessment_title">验收当前课程章节</string>
+  <string name="course_assessment_description">将保存当前项目，重新构建选中的原生 CMake 终端目标，并用下方输入运行。每次运行最多 5 秒；验证输出与退出码，成功后记录本章完成。请使用对应章节的参考版本。</string>
+  <string name="course_assessment_entry">实际操作后，在项目编辑器的命令面板或更多菜单选择“验收当前课程章节”，可自动构建并核对输出；提示中的参考代码与验收输入一致。</string>
+  <string name="course_assessment_manual">本章需要观察图形交互或回答问题，请回到教程按步骤验收。</string>
+  <string name="course_assessment_failed">验收未完成。请检查构建日志、保存状态、原生终端运行配置和项目文件，修复后重试；已通过但未保存的进度也需要重试。</string>
+  <string name="course_assessment_stale">验收期间项目或源码发生变化，本次结果未计入完成，请重新验收。</string>
+  <string name="course_assessment_passed">输出与退出码检查通过。其他练习和边界条件仍按章节要求核对。</string>
+  <string name="course_assessment_mismatch">实际结果与预期不符，请按提示调整后重试。</string>
+  <string name="course_assessment_case">用例 %1$d · 输入：%2$s\n预期退出码：%3$d · 输出：%4$s\n实际退出码：%5$d\n%6$s</string>
+  <string name="course_assessment_timeout">运行超时，已停止本次验收进程。</string>
+  <string name="course_assessment_recorded">本章完成已保存，返回教程即可继续。</string>
+  <string name="course_assessment_run">保存、构建并验收</string>
+  <string name="course_assessment_expected">用例 %1$d · 输入：%2$s · 退出码：%3$d · 输出：%4$s</string>
+    <string name="settings_indent_width_desc">换行、增减缩进与格式化共用；项目 .clang-format 配置优先</string>
+    <string name="format_indent_config_invalid">无法读取项目格式化配置的缩进规则</string>
+    <string name="settings_tab_width_desc">制表符的显示与对齐宽度，不改变每级缩进</string>
+    <string name="settings_indent_width">缩进宽度</string>
+    <string name="editor_width_columns">%1$d 列</string>
 </resources>

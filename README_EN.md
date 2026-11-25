@@ -8,7 +8,7 @@
 > `native tina-toolchain + Android sysroot`; Linux distro / PRoot is optional.
 >
 > Since `0.18.29` this project is distributed under **GPL-3.0-or-later**.
-> See [License](#license) — it includes an unresolved distribution blocker.
+> See [License](#license) for GPL / AGPL combination and corresponding-source requirements.
 
 [中文文档](README.md)
 
@@ -77,6 +77,16 @@ Basic C/C++ build, run, and clangd completion no longer require PRoot.
 | Build Modes | Single-file, Make, and CMake project flows |
 | Optional PRoot Path | Available only when the Linux distro / PRoot environment is installed |
 
+### Built-in vcpkg
+
+Enable **Use built-in vcpkg** when creating a CMake project, or add dependencies to an existing project through **Market → vcpkg**. The app manages directories and filters libraries for the Android architecture. Declare CMake linkage and build the libraries on your device.
+
+Follow the complete [fmt tutorial](feature/help/src/main/assets/help/en/vcpkg-guide.md), also available from Tutorials and the vcpkg market.
+
+### Practical learning path
+
+The offline [learning path](feature/help/src/main/assets/help/en/getting-started.md) covers IDE operation, C++ basics and ownership, CMake, vcpkg, SDL3 graphics, and mock AI collaboration. Learn provides ordered exercises; Help provides reference material. Examples use the native Android toolchain. AI lessons use static mock data; real requests use the provider, API, and key configured by the user in RikkaHub.
+
 ### LSP Language Services
 
 | Feature | Description |
@@ -111,8 +121,9 @@ Basic C/C++ build, run, and clangd completion no longer require PRoot.
 | Tab | Function |
 |-----|----------|
 | Build Log | Display compilation output and error messages |
-| Log | General application logs |
 | Diagnostics | LSP diagnostic list, click to jump to location |
+
+Outline, Symbols, Bookmarks and Git are available from the panel overflow menu. Program output appears in the terminal or graphics runtime; application logs are available through the logging tools.
 
 ### Debugging (LLDB)
 
@@ -254,16 +265,20 @@ superseded; its text is archived at
 [`docs/third-party-notices/TinaIDE-Custom-License-v1.0-superseded.txt`](docs/third-party-notices/TinaIDE-Custom-License-v1.0-superseded.txt).
 The relicensing was required to integrate the termux-x11 native X server (GPL-3.0).
 
-### Read before distributing: RikkaHub license conflict
+### Read before distributing: RikkaHub AGPL and corresponding source
 
-`external/rikkahub` uses "Segmented Dual Licensing", adding non-commercial and
-≤10-user restrictions on top of AGPL-3.0. GPL-3.0 section 7 forbids imposing
-further restrictions downstream, so **builds that include RikkaHub must not be
-distributed until this conflict is resolved.** See [`NOTICE.md`](NOTICE.md) for
-details and the available resolution paths.
+On 2026-11-01 the fork backported the author's plain **AGPL-3.0** license change,
+removing the former non-commercial and user-count restrictions. The GPL-covered
+TinaIDE parts and AGPL-covered RikkaHub parts retain their respective licenses
+when combined under section 13. See the [recorded review](docs/licensing/rikkahub-agpl-review.md)
+for the upstream commit, exact license hash, and scope.
 
-Building for your own use is unaffected; verify this component's status before
-publishing an APK.
+Distribution must preserve license, copyright, and modification notices and provide
+complete corresponding source and build scripts matching the APK. Meet AGPL's
+remote-network source obligations where applicable. Release pages include the
+exact commit and recursive checkout instructions; ordinary source ZIPs omit submodules.
+Run `python tools/checks/check_distribution.py` before distribution. Passing this
+license check does not replace Release device acceptance testing.
 
 ## Tech Stack
 

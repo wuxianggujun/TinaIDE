@@ -1,0 +1,10 @@
+Package: com.wuxianggujun.tinaide
+Source: filtered adb dumpsys package output; unrelated device application inventory omitted.
+primaryCpuAbi=arm64-v8a
+secondaryCpuAbi=null
+versionCode=19022 minSdk=28 targetSdk=36
+versionName=0.19.1
+timeStamp=2026-11-10 02:55:12
+lastUpdateTime=2026-11-10 02:55:13
+firstInstallTime=2026-11-01 13:10:17
+firstInstallTime=1970-01-01 08:00:00

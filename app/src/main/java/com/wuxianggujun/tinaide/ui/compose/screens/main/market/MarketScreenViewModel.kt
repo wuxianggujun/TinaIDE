@@ -7,6 +7,7 @@ import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.str
 import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.core.network.ApiResult
+import com.wuxianggujun.tinaide.core.network.registry.GitHubRegistryProxyConfig
 import com.wuxianggujun.tinaide.core.packages.PackageInstallPlan
 import com.wuxianggujun.tinaide.core.packages.PackageManager
 import com.wuxianggujun.tinaide.core.packages.PackageManagerImpl
@@ -47,14 +48,15 @@ class MarketScreenViewModel(
 ) : AndroidViewModel(application) {
 
     private val appContext = application.applicationContext
-    private val pluginRepository = PluginMarketplaceRepository(application.applicationContext)
-    private val packageManager: PackageManager
+    private var networkSettings = GitHubRegistryProxyConfig.load(appContext)
+    private var pluginRepository = PluginMarketplaceRepository(appContext)
+    private var packageManager: PackageManager = createPackageManager()
 
-    init {
-        val apiClient = PackageApiClient.getInstance(application)
-        val installStateStore = LocalInstallStateStore(application)
-        val prootEnv = PRootEnvironment(application, configManager)
-        packageManager = PackageManagerImpl(application, apiClient, installStateStore, prootEnv = prootEnv)
+    private fun createPackageManager(): PackageManager {
+        val apiClient = PackageApiClient.getInstance(appContext)
+        val installStateStore = LocalInstallStateStore(appContext)
+        val prootEnv = PRootEnvironment(appContext, configManager)
+        return PackageManagerImpl(appContext, apiClient, installStateStore, prootEnv = prootEnv)
     }
 
     private val _pluginState = MutableStateFlow(PluginState())
@@ -67,12 +69,26 @@ class MarketScreenViewModel(
     private val pluginDownloadJobs = mutableMapOf<String, Job>()
     private val packageInstallJobs = mutableMapOf<String, Job>()
     private var pendingDownloadHistoryPlugin: PluginSummary? = null
+    private var pluginLoadJob: Job? = null
+    private var packageLoadJob: Job? = null
 
     init {
         observeInstalledPlugins()
         loadPlugins()
         loadPackages()
         loadFavoritedPlugins()
+        viewModelScope.launch {
+            GitHubRegistryProxyConfig.observe(appContext).collect { settings ->
+                if (settings != networkSettings) {
+                    networkSettings = settings
+                    // Running installs retain their client; subsequent operations use the new settings.
+                    pluginRepository = PluginMarketplaceRepository(appContext)
+                    packageManager = createPackageManager()
+                    loadPlugins()
+                    loadPackages(refreshCache = true)
+                }
+            }
+        }
     }
 
     private fun observeInstalledPlugins() {
@@ -93,13 +109,15 @@ class MarketScreenViewModel(
     }
 
     private fun loadPlugins() {
-        viewModelScope.launch {
+        pluginLoadJob?.cancel()
+        val repository = pluginRepository
+        pluginLoadJob = viewModelScope.launch {
             _pluginState.update { it.copy(isLoading = true, error = null) }
 
-            when (val result = pluginRepository.listPlugins(page = 1)) {
+            when (val result = repository.listPlugins(page = 1)) {
                 is ApiResult.Success -> {
                     val plugins = result.data.plugins
-                    val installState = pluginRepository.resolveInstallState(plugins)
+                    val installState = repository.resolveInstallState(plugins)
 
                     _pluginState.update { state ->
                         MarketScreenPluginStateSupport.applyInstallState(
@@ -123,13 +141,18 @@ class MarketScreenViewModel(
         }
     }
 
-    private fun loadPackages() {
-        viewModelScope.launch {
+    private fun loadPackages(refreshCache: Boolean = false) {
+        packageLoadJob?.cancel()
+        val manager = packageManager
+        packageLoadJob = viewModelScope.launch {
             _packageState.update { it.copy(isLoading = true, error = null) }
 
-            packageManager.getAvailablePackages().onSuccess { packages ->
+            runCatching {
+                if (refreshCache) manager.refreshCache()
+                manager.getAllAvailablePackages().getOrThrow()
+            }.onSuccess { packages ->
                 val installStates = packages.associate { pkg ->
-                    pkg.id to packageManager.getInstallState(pkg.id)
+                    pkg.id to manager.getInstallState(pkg.id)
                 }
 
                 _packageState.update {
@@ -142,6 +165,7 @@ class MarketScreenViewModel(
                     )
                 }
             }.onFailure { e ->
+                if (e is CancellationException) throw e
                 _packageState.update {
                     it.copy(
                         isLoading = false,
@@ -359,8 +383,7 @@ class MarketScreenViewModel(
                     itemId = plugin.pluginId,
                     version = plugin.latestVersion,
                     downloadedAt = System.currentTimeMillis().toString(),
-                    fileSize = null,
-                    synced = false
+                    fileSize = null
                 )
             )
         }
@@ -388,8 +411,7 @@ class MarketScreenViewModel(
                 category = plugin?.category,
                 tags = plugin?.tags,
                 latestVersion = plugin?.latestVersion,
-                addedAt = System.currentTimeMillis().toString(),
-                synced = false
+                addedAt = System.currentTimeMillis().toString()
             )
             userContentRepository.addFavorite(favorite).onFailure { error ->
                 _pluginState.update {
@@ -590,8 +612,7 @@ class MarketScreenViewModel(
                     itemId = pkg.id,
                     version = version,
                     downloadedAt = System.currentTimeMillis().toString(),
-                    fileSize = null,
-                    synced = false
+                    fileSize = null
                 )
             )
         }

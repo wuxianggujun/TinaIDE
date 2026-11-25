@@ -146,6 +146,17 @@ object ProjectPaths {
     fun getProjectWorkspaceDir(context: Context, projectId: String): File =
         File(getWorkspaceRoot(context), ProjectIdentity.requireValid(projectId))
 
+    fun getProjectVcpkgInstalledDir(context: Context, projectId: String): File =
+        File(getProjectWorkspaceDir(context, projectId), "vcpkg_installed")
+
+    /**
+     * 设备级共享 vcpkg 依赖库目录（典型路径：<filesDir>/vcpkg/shared-installed）。
+     *
+     * 项目可导出到这里供其他项目复用；每个 Android ABI 仍按 triplet 分子目录。
+     */
+    fun getSharedVcpkgInstalledDir(context: Context): File =
+        File(getVcpkgRoot(context), "shared-installed")
+
     // ============ 4. 项目构建目录 ============
 
     /**
@@ -185,6 +196,9 @@ object ProjectPaths {
      * 用途：C/C++ 运行时库包（用于 NativeActivity/SDL 运行时依赖解析）。
      */
     fun getInstalledPackagesRoot(context: Context): File = File(context.filesDir, "installed-packages")
+
+    /** Application-owned vcpkg catalogs, sources and native helper tools. */
+    fun getVcpkgRoot(context: Context): File = File(context.filesDir, "vcpkg")
 
     /**
      * 同步元数据目录（私有）

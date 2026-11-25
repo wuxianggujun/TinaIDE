@@ -48,11 +48,12 @@ import com.wuxianggujun.tinaide.ui.compose.components.TinaDropdownMenuSectionTit
 import com.wuxianggujun.tinaide.ui.compose.icons.rememberTinaPainter
 import com.wuxianggujun.tinaide.ui.compose.state.editor.SplitEditorLayout
 
-internal class TopBarCallbacks(
+internal data class TopBarCallbacks(
     val onOpenDrawer: () -> Unit,
     val onOpenCommandPalette: () -> Unit,
     val onBuild: () -> Unit,
     val onCompile: () -> Unit,
+    val onStopCompile: () -> Unit = {},
     val onRebuildAndRun: () -> Unit,
     val onCompileInTerminal: () -> Unit,
     val onDebug: () -> Unit,
@@ -70,6 +71,9 @@ internal class TopBarCallbacks(
     val onGotoTypeDefinition: () -> Unit = {},
     val onGotoImplementation: () -> Unit = {},
     val onCallHierarchyIncoming: () -> Unit = {},
+    val onCallHierarchyOutgoing: () -> Unit = {},
+    val onFunctionFlow: () -> Unit = {},
+    val onCourseAssessment: () -> Unit = {},
     val onCodeActions: () -> Unit = {},
     val onRenameSymbol: () -> Unit = {},
     val onSwitchHeaderSource: () -> Unit = {},
@@ -169,6 +173,8 @@ internal fun MainActivityTopBar(
                         isConfigEnabled = !isRunConfigLoading,
                         isBuildEnabled = !isCompiling && !isRunConfigLoading,
                         isRunEnabled = !isCompiling && !isRunConfigLoading,
+                        isRunning = isCompiling,
+                        onStop = callbacks.onStopCompile,
                         isDebugEnabled = !isCompiling && !isRunConfigLoading,
                         buildIconRes = Drawables.ic_build,
                         debugIconRes = Drawables.ic_debug,

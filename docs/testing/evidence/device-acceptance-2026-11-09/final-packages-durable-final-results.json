@@ -1,0 +1,50 @@
+[
+  {
+    "name": "cancel",
+    "selector": "com.wuxianggujun.tinaide.core.packages.RegistryInstallDeviceTest#downloadCancelRetryAndUninstall_keepFilesAndRecordsConsistent",
+    "extras": {
+      "packagePhase": "cancel"
+    },
+    "serial": "emulator-5556",
+    "orientation": "portrait",
+    "seconds": 13.86,
+    "passed": true,
+    "timed_out": false
+  },
+  {
+    "name": "install",
+    "selector": "com.wuxianggujun.tinaide.core.packages.RegistryInstallDeviceTest#downloadCancelRetryAndUninstall_keepFilesAndRecordsConsistent",
+    "extras": {
+      "packagePhase": "install"
+    },
+    "serial": "emulator-5556",
+    "orientation": "portrait",
+    "seconds": 9.26,
+    "passed": true,
+    "timed_out": false
+  },
+  {
+    "name": "uninstall",
+    "selector": "com.wuxianggujun.tinaide.core.packages.RegistryInstallDeviceTest#downloadCancelRetryAndUninstall_keepFilesAndRecordsConsistent",
+    "extras": {
+      "packagePhase": "uninstall"
+    },
+    "serial": "emulator-5556",
+    "orientation": "portrait",
+    "seconds": 5.44,
+    "passed": true,
+    "timed_out": false
+  },
+  {
+    "name": "verify-uninstalled",
+    "selector": "com.wuxianggujun.tinaide.core.packages.RegistryInstallDeviceTest#downloadCancelRetryAndUninstall_keepFilesAndRecordsConsistent",
+    "extras": {
+      "packagePhase": "verify-uninstalled"
+    },
+    "serial": "emulator-5556",
+    "orientation": "portrait",
+    "seconds": 6.17,
+    "passed": true,
+    "timed_out": false
+  }
+]

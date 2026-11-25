@@ -1,11 +1,13 @@
 package com.wuxianggujun.tinaide.core.crash
 
 import android.content.Context
-import com.wuxianggujun.tinaide.core.device.DeviceFingerprint
-import com.wuxianggujun.tinaide.core.i18n.Strings
-import com.wuxianggujun.tinaide.core.i18n.strOr
+import com.wuxianggujun.tinaide.core.logging.LogExportProfile
+import com.wuxianggujun.tinaide.core.logging.LogExportUtils
+import com.wuxianggujun.tinaide.core.logging.LogTextSanitizer
 import com.wuxianggujun.tinaide.core.network.ApiResult
-import com.wuxianggujun.tinaide.core.network.server.TinaServerConfig
+import com.wuxianggujun.tinaide.core.network.aegis.AegisHubClient
+import com.wuxianggujun.tinaide.core.network.aegis.AegisHubEnvironment
+import com.wuxianggujun.tinaide.core.network.aegis.AegisIdentity
 import com.wuxianggujun.tinaide.core.util.CrashLogPrivacyClassifier
 import java.io.File
 import java.io.FileInputStream
@@ -71,26 +73,75 @@ object CrashLogUploader {
             return false
         }
 
+        if (AegisHubEnvironment.config == null) {
+            Timber.tag(TAG).e("AegisHub is not configured; cannot upload %d tombstone(s)", pending.size)
+            return false
+        }
+
         Timber.tag(TAG).i("Found %d pending tombstone file(s)", pending.size)
 
+        // 同一批崩溃共用一份日志包，避免为每个墓碑重复打包同一批日志。
+        val logBundle = prepareLogBundle(context)
+
         var shouldRetry = false
-        pending.forEach { tombstone ->
-            val needsRetry = uploadSingle(context, tombstone)
-            shouldRetry = shouldRetry || needsRetry
+        try {
+            pending.forEach { tombstone ->
+                val needsRetry = uploadSingle(context, tombstone, logBundle)
+                shouldRetry = shouldRetry || needsRetry
+            }
+        } finally {
+            logBundle?.let { runCatching { it.delete() } }
         }
 
         return shouldRetry
+    }
+
+    /**
+     * 打包 IDE 自身诊断日志（Timber、logcat、安装日志、墓碑等）。
+     *
+     * 只包含无需用户逐次授权的数据；构建日志、PRoot/rootfs 属于用户项目/运行时内容，
+     * 需要用户手动反馈时才会上传。
+     */
+    private suspend fun prepareLogBundle(context: Context): File? {
+        val bundle = runCatching {
+            LogExportUtils.exportLogs(
+                context = context,
+                profile = LogExportProfile.CRASH_UPLOAD,
+                maxInputBytes = LogExportUtils.UPLOAD_MAX_INPUT_BYTES,
+            )
+        }.onFailure { t ->
+            Timber.tag(TAG).w(t, "Failed to export crash log bundle")
+        }.getOrNull() ?: return null
+
+        if (!bundle.isFile || bundle.length() <= 0L) {
+            runCatching { bundle.delete() }
+            return null
+        }
+        // Defensive: the input budget guarantees a compressed bundle below the limit,
+        // but a future source that bypasses the budget must not break the attachment.
+        if (bundle.length() > LogExportUtils.MAX_UPLOAD_ATTACHMENT_BYTES) {
+            Timber.tag(TAG).w(
+                "Crash log bundle still exceeds the attachment limit (%d bytes): %s",
+                bundle.length(),
+                bundle.name,
+            )
+            runCatching { bundle.delete() }
+            return null
+        }
+        Timber.tag(TAG).i("Prepared crash log bundle: %s (%d bytes)", bundle.name, bundle.length())
+        return bundle
     }
 
     private fun findPendingUploadableTombstones(context: Context): List<File> = NativeCrashHandler.getAllTombstones(context)
         .asSequence()
         .filter { it.exists() && it.isFile && it.canRead() && it.length() > 0L }
         .filterNot { CrashUploadState.isUploaded(context, it.name) }
+        .filterNot { CrashUploadState.isUploadTerminal(context, it.name) }
         .filterNot { shouldSkipUpload(context, it) }
         .sortedWith(compareBy<File> { it.lastModified() }.thenBy { it.name })
         .toList()
 
-    private suspend fun uploadSingle(context: Context, latest: File): Boolean {
+    private suspend fun uploadSingle(context: Context, latest: File, logBundle: File?): Boolean {
         if (!latest.exists() || !latest.canRead()) {
             Timber.tag(TAG).w("Tombstone file not accessible: %s", latest.absolutePath)
             CrashUploadState.markUploadFailed(context, latest.name, latest.lastModified(), "file_not_accessible")
@@ -121,11 +172,6 @@ object CrashLogUploader {
 
         CrashUploadState.markUploadAttemptStarted(context, latest.name, latest.lastModified())
 
-        val serverConfig = TinaServerConfig.getInstance(context)
-        val api = serverConfig.getApi()
-        val deviceInfo = serverConfig.getDeviceInfo()
-        val fingerprint = DeviceFingerprint.get(context)
-
         val rawCrashText = runCatching { readUtf8MaxBytes(latest, MAX_CRASH_TEXT_BYTES).trim() }
             .getOrElse { t ->
                 val reason = uploadReason("read_failed", t)
@@ -143,7 +189,10 @@ object CrashLogUploader {
             return false
         }
 
-        val crashText = CrashLogUploadSanitizer.sanitize(rawCrashText, context.packageName)
+        val crashText = LogTextSanitizer.sanitize(rawCrashText, context.packageName)
+            // The server validates `text/plain` as strict UTF-8 without NUL bytes; a
+            // truncated binary tail must not turn the whole attachment into a 400.
+            .replace("\u0000", "")
 
         Timber.tag(TAG).i(
             "Uploading crash log: file=%s, size=%d bytes",
@@ -151,73 +200,192 @@ object CrashLogUploader {
             crashText.toByteArray(Charsets.UTF_8).size,
         )
 
-        val res = runCatching {
-            api.uploadLog(
-                logType = "crash",
-                deviceFingerprint = fingerprint,
-                deviceInfo = deviceInfo,
-                title = Strings.crash_log_title.strOr(context),
-                content = crashText,
-                file = null,
-                extraFields = emptyMap()
+        return uploadToAegisHub(context, latest, crashText, logBundle)
+    }
+
+    /**
+     * 使用 AegisHub 上报崩溃。
+     *
+     * 报告提交成功后会补传两个附件：
+     * 1. 脱敏后的墓碑文本（`text/plain`）；
+     * 2. IDE 自身诊断日志包（`application/octet-stream`，含 Timber/logcat/安装日志等）。
+     *
+     * 报告与附件在服务端都按内容幂等：重试同一个 event_id / 同一份附件不会重复入库，
+     * 因此这里可以安全地在附件失败时把整条崩溃标记为“待重试”。
+     */
+    private suspend fun uploadToAegisHub(
+        context: Context,
+        tombstone: File,
+        crashText: String,
+        logBundle: File?,
+    ): Boolean {
+        val config = AegisHubEnvironment.config ?: run {
+            Timber.tag(TAG).e("AegisHub configuration disappeared during upload")
+            CrashUploadState.markUploadDeferred(
+                context = context,
+                fileName = tombstone.name,
+                mtime = tombstone.lastModified(),
+                reason = "aegis_not_configured",
             )
-        }.getOrElse { t ->
-            val reason = uploadReason("exception", t)
-            Timber.tag(TAG).e("Crash log upload threw exception: %s", t::class.java.simpleName)
-            CrashUploadState.markUploadDeferred(context, latest.name, latest.lastModified(), reason)
             return true
         }
+        val report = AegisCrashReportMapper.build(
+            fileName = tombstone.name,
+            crashLog = crashText,
+            fileModifiedAtMillis = tombstone.lastModified(),
+            packageName = context.packageName,
+            environment = config.environment,
+            userReference = AegisIdentity.installId(context),
+        )
 
-        return when (res) {
-            is ApiResult.Success -> {
-                CrashUploadState.markUploaded(context, latest.name, latest.lastModified())
-                Timber.tag(TAG).i("Crash log uploaded successfully: id=%s, file=%s", res.data.id, latest.name)
-                false
+        val attachment = runCatching {
+            File.createTempFile("tinaide-crash-", ".txt", context.cacheDir).apply {
+                writeText(crashText, Charsets.UTF_8)
             }
-            is ApiResult.NetworkError -> {
-                Timber.tag(TAG).e("Crash log upload network error; retry scheduled")
-                CrashUploadState.markUploadDeferred(
-                    context = context,
-                    fileName = latest.name,
-                    mtime = latest.lastModified(),
-                    reason = "network_error"
-                )
-                true
-            }
-            is ApiResult.Error -> {
-                when {
-                    res.code == 429 -> {
-                        Timber.tag(TAG).w("Crash log upload rate limited (429), will retry with backoff")
+        }.getOrElse { t ->
+            Timber.tag(TAG).w(t, "Failed to stage sanitized crash attachment")
+            null
+        }
+
+        try {
+            val submitted = runCatching { AegisHubClient.submitReport(report) }
+                .getOrElse { t ->
+                    val reason = uploadReason("aegis_exception", t)
+                    Timber.tag(TAG).e(t, "AegisHub crash report threw exception")
+                    CrashUploadState.markUploadDeferred(
+                        context = context,
+                        fileName = tombstone.name,
+                        mtime = tombstone.lastModified(),
+                        reason = reason,
+                    )
+                    return true
+                }
+
+            return when (submitted) {
+                is ApiResult.Success -> {
+                    val stagedAttachments = buildList {
+                        attachment?.let { add(it to "text/plain") }
+                        logBundle
+                            ?.takeIf { it.isFile && it.length() > 0L }
+                            ?.let { add(it to "application/octet-stream") }
+                    }
+
+                    var retryableAttachment = false
+                    var rejectedAttachment: Pair<String, Int>? = null
+                    for ((file, contentType) in stagedAttachments) {
+                        val result = runCatching {
+                            AegisHubClient.uploadAttachment(
+                                reportId = submitted.data.id,
+                                file = file,
+                                contentType = contentType,
+                            )
+                        }.getOrElse { t ->
+                            Timber.tag(TAG).w(t, "AegisHub crash attachment threw exception: %s", file.name)
+                            ApiResult.NetworkError(t.message ?: "attachment failed")
+                        }
+
+                        when (result) {
+                            is ApiResult.Success -> Unit
+                            is ApiResult.NetworkError -> retryableAttachment = true
+                            is ApiResult.Error -> {
+                                if (result.code == 429 || result.code >= 500) {
+                                    retryableAttachment = true
+                                } else {
+                                    rejectedAttachment = file.name to result.code
+                                }
+                            }
+                        }
+                    }
+
+                    if (retryableAttachment) {
+                        Timber.tag(TAG).w(
+                            "AegisHub accepted crash report id=%s but attachments failed; retry scheduled",
+                            submitted.data.id,
+                        )
                         CrashUploadState.markUploadDeferred(
                             context = context,
-                            fileName = latest.name,
-                            mtime = latest.lastModified(),
-                            reason = "rate_limited_429"
+                            fileName = tombstone.name,
+                            mtime = tombstone.lastModified(),
+                            reason = "aegis_attachment_retry",
                         )
-                        true
+                        return true
                     }
-                    res.code >= 500 -> {
-                        Timber.tag(TAG).e("Crash log upload server error (code=%d); retry scheduled", res.code)
-                        CrashUploadState.markUploadDeferred(
-                            context = context,
-                            fileName = latest.name,
-                            mtime = latest.lastModified(),
-                            reason = "server_error_${res.code}"
+                    rejectedAttachment?.let { (name, code) ->
+                        Timber.tag(TAG).w(
+                            "AegisHub rejected crash attachment %s (id=%s, code=%d); keeping report",
+                            name,
+                            submitted.data.id,
+                            code,
                         )
-                        true
                     }
-                    else -> {
-                        Timber.tag(TAG).e("Crash log upload failed permanently (code=%d)", res.code)
-                        CrashUploadState.markUploadFailed(
-                            context = context,
-                            fileName = latest.name,
-                            mtime = latest.lastModified(),
-                            reason = "client_error_${res.code}"
-                        )
-                        false
+
+                    CrashUploadState.markUploaded(context, tombstone.name, tombstone.lastModified())
+                    // The report is durable on the server and the tombstone is already in
+                    // memory, so keeping the file only risks re-uploading this crash later.
+                    val deleted = runCatching { tombstone.delete() }.getOrDefault(false)
+                    Timber.tag(TAG).i(
+                        "Crash report uploaded to AegisHub: id=%s, file=%s, attachments=%d, tombstoneDeleted=%s",
+                        submitted.data.id,
+                        tombstone.name,
+                        stagedAttachments.size,
+                        deleted,
+                    )
+                    false
+                }
+                is ApiResult.NetworkError -> {
+                    Timber.tag(TAG).e("AegisHub crash report network error; retry scheduled")
+                    CrashUploadState.markUploadDeferred(
+                        context = context,
+                        fileName = tombstone.name,
+                        mtime = tombstone.lastModified(),
+                        reason = "aegis_network_error",
+                    )
+                    true
+                }
+                is ApiResult.Error -> {
+                    when {
+                        submitted.code == 429 -> {
+                            Timber.tag(TAG).w("AegisHub rate limited crash report (429); retry scheduled")
+                            CrashUploadState.markUploadDeferred(
+                                context = context,
+                                fileName = tombstone.name,
+                                mtime = tombstone.lastModified(),
+                                reason = "aegis_rate_limited_429",
+                            )
+                            true
+                        }
+                        submitted.code >= 500 -> {
+                            Timber.tag(TAG).e(
+                                "AegisHub server error (code=%d); retry scheduled",
+                                submitted.code,
+                            )
+                            CrashUploadState.markUploadDeferred(
+                                context = context,
+                                fileName = tombstone.name,
+                                mtime = tombstone.lastModified(),
+                                reason = "aegis_server_error_${submitted.code}",
+                            )
+                            true
+                        }
+                        else -> {
+                            Timber.tag(TAG).e(
+                                "AegisHub rejected crash report permanently (code=%d): %s",
+                                submitted.code,
+                                submitted.message,
+                            )
+                            CrashUploadState.markUploadFailed(
+                                context = context,
+                                fileName = tombstone.name,
+                                mtime = tombstone.lastModified(),
+                                reason = "aegis_client_error_${submitted.code}",
+                            )
+                            false
+                        }
                     }
                 }
             }
+        } finally {
+            attachment?.delete()
         }
     }
 

@@ -1,143 +1,41 @@
-# CMake Configuration Guide
+# CMake configuration reference
 
-CMake generates build systems for C and C++ projects. TinaIDE uses it for structured builds and dependency information.
+Use [the CMake lab](../../tutorial-course/en/cmake-practice.md) for practice. A minimal native executable is:
 
-## Minimal project
+```cmake
+cmake_minimum_required(VERSION 3.22)
+project(native_lab LANGUAGES CXX)
+add_executable(native_lab main.cpp)
+target_compile_features(native_lab PRIVATE cxx_std_17)
+```
 
-    cmake_minimum_required(VERSION 3.10)
-    project(MyProject)
+List implementation files explicitly and keep names consistent with disk. Prefer target-specific settings:
 
-    set(CMAKE_CXX_STANDARD 17)
-    set(CMAKE_CXX_STANDARD_REQUIRED ON)
-    set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+```cmake
+add_library(pricing STATIC pricing.cpp)
+target_include_directories(pricing PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(native_lab PRIVATE pricing)
+```
 
-    add_executable(myapp main.cpp)
+PRIVATE affects the target, PUBLIC also affects consumers, and INTERFACE affects only consumers. The example include path requires an actual `include/` directory.
 
-TinaIDE supports common C++ standards including C++11, C++14, C++17, and C++20.
+## Dependencies
 
-## Source files
+Add `fmt` to the selected project in Market and install it, then use:
 
-List source files explicitly:
+```cmake
+find_package(fmt CONFIG REQUIRED)
+target_link_libraries(native_lab PRIVATE fmt::fmt)
+```
 
-    add_executable(myapp
-        src/main.cpp
-        src/config.cpp
-        src/logger.cpp
-    )
+See [the vcpkg lab](vcpkg-guide.md). TinaIDE supplies tool and installation paths. Do not enter `CMAKE_TOOLCHAIN_FILE`, obsolete `TINA_VCPKG_ROOT`, or a desktop sysroot. For threads use `find_package(Threads REQUIRED)` and `Threads::Threads`, not a copied desktop `-lpthread` flag.
 
-Explicit lists are easier to review and do not require CMake to discover newly added files through a glob.
+## Diagnose
 
-## Include directories
+Read the first configure error for missing packages or targets. Check include paths for header failures, implementation files and target linkage for unresolved symbols, and ABI compatibility for libraries. Select Debug/Release in the run configuration instead of hardcoding private build paths. Start SDL/raylib projects from their matching templates and retain the required entry points.
 
-    target_include_directories(myapp PRIVATE
-        include
-        src
-    )
+## Continue learning
 
-Use PRIVATE for one target, PUBLIC when a library and its consumers need the path, and INTERFACE when only consumers need it.
-
-## Libraries
-
-Create and link a static library:
-
-    add_library(utils STATIC
-        src/utils.cpp
-        src/logger.cpp
-    )
-    target_include_directories(utils PUBLIC include)
-
-    add_executable(myapp src/main.cpp)
-    target_link_libraries(myapp PRIVATE utils)
-
-Use find_package and imported targets when a package provides them:
-
-    find_package(Threads REQUIRED)
-    target_link_libraries(myapp PRIVATE Threads::Threads)
-
-## Compile options and definitions
-
-Prefer target-specific settings:
-
-    target_compile_options(myapp PRIVATE
-        -Wall
-        -Wextra
-        -Wpedantic
-    )
-
-    target_compile_definitions(myapp PRIVATE
-        APP_VERSION="1.0.0"
-    )
-
-## Build types
-
-Common choices are Debug, Release, RelWithDebInfo, and MinSizeRel. Use Debug while diagnosing code and Release for optimized output.
-
-## Multiple directories
-
-A larger project can keep a CMakeLists.txt in each module:
-
-    add_subdirectory(lib)
-    add_subdirectory(src)
-
-Keep target ownership and dependencies explicit in the corresponding subdirectory.
-
-## Compilation database
-
-Enable:
-
-    set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-TinaIDE keeps compile_commands.json in the project build directory and connects it to clangd. Executables may be copied to a private runtime directory when Android execution requires it.
-
-## Conditional configuration
-
-    if(ANDROID)
-        target_compile_definitions(myapp PRIVATE PLATFORM_ANDROID)
-    elseif(UNIX)
-        target_compile_definitions(myapp PRIVATE PLATFORM_UNIX)
-    endif()
-
-Generator expressions can apply options to individual configurations without changing global flags.
-
-## Install rules
-
-    install(TARGETS myapp
-        RUNTIME DESTINATION bin
-    )
-
-    install(DIRECTORY include/
-        DESTINATION include
-    )
-
-## Tests
-
-    enable_testing()
-    add_executable(test_utils test/test_utils.cpp)
-    target_link_libraries(test_utils PRIVATE utils)
-    add_test(NAME test_utils COMMAND test_utils)
-
-Run:
-
-    cmake --build build
-    ctest --test-dir build
-
-## Troubleshooting
-
-- Configuration failure: check CMake syntax, required packages, and the CMake version.
-- Missing header: inspect target_include_directories.
-- Link failure: inspect target_link_libraries and library order.
-- Inaccurate completion: rebuild and confirm compile_commands.json is current.
-
-## Recommended practices
-
-1. Prefer target_* commands to global flags.
-2. Express dependencies through targets.
-3. List source files explicitly.
-4. Split large projects into subdirectories.
-5. Export the compilation database.
-
-## Next steps
-
-- [Build a project](build-project.md)
-- [Create a project](create-project.md)
-- [Official CMake documentation](https://cmake.org/documentation/)
+- [Multiple files](../../tutorial-course/en/cpp-functions.md)
+- [CMake lab](../../tutorial-course/en/cmake-practice.md)
+- [Build reference](build-project.md)

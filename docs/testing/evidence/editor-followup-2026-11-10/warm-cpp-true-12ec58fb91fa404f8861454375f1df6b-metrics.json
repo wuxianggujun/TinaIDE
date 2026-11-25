@@ -1,0 +1,13 @@
+{
+  "runId": "12ec58fb91fa404f8861454375f1df6b",
+  "highlight": true,
+  "methodTracing": false,
+  "lines": 10000,
+  "passed": false,
+  "sdk": 34,
+  "abi": "x86_64",
+  "densityDpi": 280,
+  "fontScale": 1,
+  "phase": "sampling-scroll",
+  "failure": "IllegalStateException"
+}

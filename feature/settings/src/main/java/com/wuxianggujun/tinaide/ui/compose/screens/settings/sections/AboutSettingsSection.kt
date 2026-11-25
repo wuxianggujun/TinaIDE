@@ -1,59 +1,42 @@
 package com.wuxianggujun.tinaide.ui.compose.screens.settings.sections
 
-import android.content.Intent
-import android.net.Uri
 import android.widget.Toast
-import androidx.annotation.DrawableRes
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.wuxianggujun.tinaide.core.common.AppVersionInfoReader
 import com.wuxianggujun.tinaide.core.config.Prefs
-import com.wuxianggujun.tinaide.core.config.ServerConfigManager
 import com.wuxianggujun.tinaide.core.crash.CrashLogUploadScheduler
 import com.wuxianggujun.tinaide.core.crash.CrashUploadState
-import com.wuxianggujun.tinaide.core.device.DeviceFingerprint
-import com.wuxianggujun.tinaide.core.i18n.SettingsDrawables
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.core.logging.LogExportProfile
 import com.wuxianggujun.tinaide.core.logging.LogExportUtils
 import com.wuxianggujun.tinaide.core.network.ApiResult
-import com.wuxianggujun.tinaide.core.network.server.TinaServerConfig
 import com.wuxianggujun.tinaide.ui.compose.components.TinaConfirmDialog
 import com.wuxianggujun.tinaide.ui.compose.screens.settings.components.SettingsCard
 import com.wuxianggujun.tinaide.ui.compose.screens.settings.components.SettingsCategoryTitle
 import com.wuxianggujun.tinaide.ui.compose.screens.settings.components.SettingsClickableItem
 import com.wuxianggujun.tinaide.ui.compose.screens.settings.components.SettingsDisplayItem
 import com.wuxianggujun.tinaide.ui.compose.screens.settings.components.SettingsSwitchItem
+import java.io.File
 import java.util.Locale
 import kotlinx.coroutines.launch
+import timber.log.Timber
 
 private const val GITHUB_URL = "https://github.com/wuxianggujun/TinaIDE"
-private const val AFDIAN_URL = "https://ifdian.net/a/wuxianggujun"
 private const val QQ_GROUP_NUMBER = "557484133"
 private const val QQ_GROUP_JOIN_URL = ""
 
@@ -72,6 +55,7 @@ internal fun AboutSettingsSection(
     var isClearingLogs by remember { mutableStateOf(false) }
     var isUploadingLogs by remember { mutableStateOf(false) }
     var crashAutoUploadEnabled by remember { mutableStateOf(Prefs.crashAutoUploadEnabled) }
+    var showFeedbackDialog by rememberSaveable { mutableStateOf(false) }
     var crashUploadSnapshot by remember {
         mutableStateOf(CrashUploadState.getLastUploadSnapshot(context.applicationContext))
     }
@@ -108,11 +92,133 @@ internal fun AboutSettingsSection(
     val toastUploadingLogs = stringResource(Strings.toast_uploading_logs)
     val toastUploadLogsFailedTemplate = stringResource(Strings.toast_upload_logs_failed)
     val toastLogsUploadedTemplate = stringResource(Strings.toast_logs_uploaded)
+    val toastUploadingLogArchive = stringResource(Strings.toast_uploading_log_archive)
+    val toastUploadLogArchiveFailedTemplate = stringResource(Strings.toast_upload_log_archive_failed)
+    val toastLogArchiveUploadedTemplate = stringResource(Strings.toast_log_archive_uploaded)
+    val toastLogArchiveTooLargeTemplate = stringResource(Strings.toast_log_archive_too_large)
+    val toastLogArchiveUnsupported = stringResource(Strings.toast_log_archive_unsupported)
+    val toastLogArchiveEmpty = stringResource(Strings.toast_log_archive_empty)
     val crashUploadStatusSpec = remember(crashAutoUploadEnabled, crashUploadSnapshot) {
         AboutSettingsSectionSupport.resolveCrashUploadStatus(
             autoUploadEnabled = crashAutoUploadEnabled,
             snapshot = crashUploadSnapshot,
         )
+    }
+
+    val logArchivePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        if (!AboutSettingsSectionSupport.shouldStartLogsUpload(isUploadingLogs)) {
+            return@rememberLauncherForActivityResult
+        }
+        isUploadingLogs = true
+        Toast.makeText(context, toastUploadingLogArchive, Toast.LENGTH_SHORT).show()
+        scope.launch {
+            var archive: ImportedLogArchive? = null
+            try {
+                when (val imported = importLogArchive(context, uri)) {
+                    is LogArchiveImport.Success -> archive = imported.archive
+                    LogArchiveImport.UnsupportedFormat -> {
+                        Toast.makeText(context, toastLogArchiveUnsupported, Toast.LENGTH_LONG).show()
+                        return@launch
+                    }
+                    LogArchiveImport.Empty -> {
+                        Toast.makeText(context, toastLogArchiveEmpty, Toast.LENGTH_SHORT).show()
+                        return@launch
+                    }
+                    is LogArchiveImport.TooLarge -> {
+                        val limitMegabytes = (imported.sizeBytes + 1024 * 1024 - 1) / (1024 * 1024)
+                        Toast.makeText(
+                            context,
+                            String.format(
+                                Locale.getDefault(),
+                                toastLogArchiveTooLargeTemplate,
+                                limitMegabytes
+                            ),
+                            Toast.LENGTH_LONG
+                        ).show()
+                        return@launch
+                    }
+                    is LogArchiveImport.Failed -> {
+                        Toast.makeText(
+                            context,
+                            String.format(
+                                Locale.getDefault(),
+                                toastUploadLogArchiveFailedTemplate,
+                                imported.message
+                            ),
+                            Toast.LENGTH_LONG
+                        ).show()
+                        return@launch
+                    }
+                }
+
+                val selected = archive ?: return@launch
+                val upload = submitLogBundleToAegisHub(
+                    context = context,
+                    file = selected.file,
+                    displayName = selected.displayName,
+                    message = context.getString(
+                        Strings.log_archive_report_message,
+                        selected.displayName,
+                        selected.format.label,
+                        selected.sizeBytes
+                    ),
+                )
+                when (upload) {
+                    is ApiResult.Success -> {
+                        Toast.makeText(
+                            context,
+                            String.format(
+                                Locale.getDefault(),
+                                toastLogArchiveUploadedTemplate,
+                                upload.data
+                            ),
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                    is ApiResult.NetworkError -> {
+                        Toast.makeText(
+                            context,
+                            String.format(
+                                Locale.getDefault(),
+                                toastUploadLogArchiveFailedTemplate,
+                                upload.message
+                            ),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                    is ApiResult.Error -> {
+                        Toast.makeText(
+                            context,
+                            String.format(
+                                Locale.getDefault(),
+                                toastUploadLogArchiveFailedTemplate,
+                                upload.message
+                            ),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (e: Exception) {
+                Timber.tag("AboutSettings").w(e, "Failed to upload selected log archive")
+                Toast.makeText(
+                    context,
+                    String.format(
+                        Locale.getDefault(),
+                        toastUploadLogArchiveFailedTemplate,
+                        Strings.toast_log_archive_import_failed.strOr(context)
+                    ),
+                    Toast.LENGTH_SHORT
+                ).show()
+            } finally {
+                archive?.file?.let(::deleteTemporaryArchive)
+                isUploadingLogs = false
+            }
+        }
     }
 
     Spacer(modifier = Modifier.height(8.dp))
@@ -126,7 +232,6 @@ internal fun AboutSettingsSection(
             value = versionInfo,
             onClick = {
                 val result = AboutSettingsSectionSupport.resolveDeveloperOptionsTap(
-                    serverAllowsDeveloperOptions = ServerConfigManager.isDeveloperOptionsEnabled(),
                     developerOptionsEnabled = developerOptionsEnabled,
                     currentState = AboutDeveloperOptionsTapState(
                         clickCount = clickCount,
@@ -184,50 +289,14 @@ internal fun AboutSettingsSection(
                     }
                 }
             },
-            showDivider = false
+            showDivider = true
         )
-    }
-
-    SettingsCategoryTitle(stringResource(Strings.about_donation_title))
-
-    SettingsCard {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(
-                text = stringResource(Strings.about_donation_desc),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                DonationCodeItem(
-                    label = stringResource(Strings.about_donation_wechat),
-                    drawableRes = SettingsDrawables.donation_weixin,
-                    modifier = Modifier.weight(1f),
-                )
-                DonationCodeItem(
-                    label = stringResource(Strings.about_donation_alipay),
-                    drawableRes = SettingsDrawables.donation_zhifubao,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        }
 
         SettingsClickableItem(
-            title = stringResource(Strings.about_donation_afdian),
-            subtitle = stringResource(Strings.about_donation_afdian_desc),
-            onClick = {
-                if (!context.openFirstAvailableExternalUrl(listOf(AFDIAN_URL))) {
-                    Toast.makeText(context, cannotOpenLinkError, Toast.LENGTH_SHORT).show()
-                }
-            },
-            showDivider = false,
+            title = stringResource(Strings.settings_feedback),
+            subtitle = stringResource(Strings.settings_feedback_desc),
+            onClick = { showFeedbackDialog = true },
+            showDivider = false
         )
     }
 
@@ -264,7 +333,11 @@ internal fun AboutSettingsSection(
                                     Toast.LENGTH_SHORT
                                 ).show()
                             }
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                            isExportingLogs = false
+                            throw cancelled
                         } catch (e: Exception) {
+                            Timber.tag("AboutSettings").w(e, "Failed to export logs")
                             isExportingLogs = false
                             Toast.makeText(
                                 context,
@@ -284,6 +357,28 @@ internal fun AboutSettingsSection(
             onClick = {
                 if (AboutSettingsSectionSupport.shouldShowUploadLogsDialog(isUploadingLogs)) {
                     showUploadLogsDialog = true
+                }
+            },
+            showDivider = true
+        )
+
+        SettingsClickableItem(
+            title = stringResource(Strings.settings_upload_log_archive),
+            subtitle = stringResource(Strings.settings_upload_log_archive_desc),
+            onClick = {
+                if (AboutSettingsSectionSupport.shouldStartLogsUpload(isUploadingLogs)) {
+                    runCatching { logArchivePicker.launch(LOG_ARCHIVE_MIME_TYPES) }
+                        .onFailure { error ->
+                            Toast.makeText(
+                                context,
+                                String.format(
+                                    Locale.getDefault(),
+                                    toastUploadLogArchiveFailedTemplate,
+                                    error.message ?: Strings.about_error_unknown.strOr(context)
+                                ),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
                 }
             },
             showDivider = true
@@ -334,6 +429,16 @@ internal fun AboutSettingsSection(
         )
     }
 
+    if (showFeedbackDialog) {
+        FeedbackDialog(
+            onDismiss = { showFeedbackDialog = false },
+            onFinished = { message ->
+                showFeedbackDialog = false
+                Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+            }
+        )
+    }
+
     if (showUploadLogsDialog) {
         TinaConfirmDialog(
             title = stringResource(Strings.dialog_title_upload_logs),
@@ -344,12 +449,15 @@ internal fun AboutSettingsSection(
                     isUploadingLogs = true
                     Toast.makeText(context, toastUploadingLogs, Toast.LENGTH_SHORT).show()
                     scope.launch {
+                        var zip: File? = null
                         try {
-                            val zip = LogExportUtils.exportLogs(
+                            val bundle = LogExportUtils.exportLogs(
                                 context = context,
-                                profile = LogExportProfile.SERVER_UPLOAD
+                                profile = LogExportProfile.SERVER_UPLOAD,
+                                maxInputBytes = LogExportUtils.UPLOAD_MAX_INPUT_BYTES
                             )
-                            if (zip == null) {
+                            zip = bundle
+                            if (bundle == null) {
                                 Toast.makeText(
                                     context,
                                     String.format(
@@ -362,19 +470,13 @@ internal fun AboutSettingsSection(
                                 return@launch
                             }
 
-                            val serverConfig = TinaServerConfig.getInstance(context)
-                            val api = serverConfig.getApi()
-                            val deviceInfo = serverConfig.getDeviceInfo()
-                            val fingerprint = DeviceFingerprint.get(context)
-
-                            val upload = api.uploadLog(
-                                logType = "runtime",
-                                deviceFingerprint = fingerprint,
-                                deviceInfo = deviceInfo,
-                                title = Strings.about_user_report_log.strOr(context),
-                                content = null,
-                                file = zip,
-                                extraFields = emptyMap()
+                            val upload = submitLogBundleToAegisHub(
+                                context = context,
+                                file = bundle,
+                                message = context.getString(
+                                    Strings.log_upload_report_message,
+                                    bundle.name
+                                ),
                             )
 
                             when (upload) {
@@ -384,7 +486,7 @@ internal fun AboutSettingsSection(
                                         String.format(
                                             Locale.getDefault(),
                                             toastLogsUploadedTemplate,
-                                            upload.data.id
+                                            upload.data
                                         ),
                                         Toast.LENGTH_LONG
                                     ).show()
@@ -412,17 +514,23 @@ internal fun AboutSettingsSection(
                                     ).show()
                                 }
                             }
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                            throw cancelled
                         } catch (e: Exception) {
+                            Timber.tag("AboutSettings").w(e, "Failed to upload generated logs")
                             Toast.makeText(
                                 context,
                                 String.format(
                                     Locale.getDefault(),
                                     toastUploadLogsFailedTemplate,
-                                    e.message ?: Strings.about_error_unknown.strOr(context)
+                                    Strings.aegis_report_failed.strOr(context)
                                 ),
                                 Toast.LENGTH_SHORT
                             ).show()
                         } finally {
+                            // The bundle was only needed for this upload; keeping it would
+                            // leave a multi-MB zip in the export folder after every attempt.
+                            zip?.let(::deleteTemporaryArchive)
                             isUploadingLogs = false
                         }
                     }
@@ -499,41 +607,3 @@ private fun android.content.Context.resolveAboutMessage(spec: AboutMessageSpec):
     } else {
         getString(spec.messageRes, *spec.formatArgs.toTypedArray())
     }
-
-private fun android.content.Context.openFirstAvailableExternalUrl(urls: List<String>): Boolean {
-    urls.forEach { url ->
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-        if (runCatching { startActivity(intent) }.isSuccess) {
-            return true
-        }
-    }
-    return false
-}
-
-@Composable
-private fun DonationCodeItem(
-    label: String,
-    @DrawableRes drawableRes: Int,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Image(
-            painter = painterResource(drawableRes),
-            contentDescription = label,
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(1f)
-                .clip(RoundedCornerShape(8.dp)),
-            contentScale = ContentScale.Fit,
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}

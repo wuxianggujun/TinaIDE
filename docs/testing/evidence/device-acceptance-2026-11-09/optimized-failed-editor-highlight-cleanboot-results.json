@@ -1,0 +1,15 @@
+[
+  {
+    "name": "warm-cpp-true",
+    "selector": "com.wuxianggujun.tinaide.ui.compose.editor.EditorLargeFileInstrumentationTest#warmCppScroll_recordsEnoughRendererSamples",
+    "extras": {
+      "performanceHighlight": "true",
+      "performanceTrace": "false"
+    },
+    "serial": "emulator-5556",
+    "orientation": "portrait",
+    "seconds": 60.07,
+    "passed": false,
+    "timed_out": true
+  }
+]

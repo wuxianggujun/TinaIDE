@@ -29,6 +29,19 @@ class Sdl3TemplateRegressionTest {
     }
 
     @Test
+    fun `sdl3 template starts resizable without an Android orientation round trip`() {
+        val zipPath = locateRepoRoot().resolve("test-plugins/tinaide.template.sdl3/templates/sdl3_cmake.zip")
+        ZipFile(zipPath.toFile()).use { zip ->
+            val main = zip.readText("src/main.cpp")
+
+            // Creating a fixed landscape window and making it resizable afterward triggers
+            // two Android rotations while the first render surface is still being created.
+            assertThat(main).contains("960, 540, SDL_WINDOW_RESIZABLE,")
+            assertThat(main).doesNotContain("SDL_SetWindowResizable(")
+        }
+    }
+
+    @Test
     fun `sdl3 plugin zip stays in sync with tools project template source`() {
         // 源头是 tools/project-templates/sdl3_cmake；改了源码必须重新打包插件 zip，
         // 否则插件安装出的项目与内置模板分叉。行尾按 LF 归一后逐字节比对。

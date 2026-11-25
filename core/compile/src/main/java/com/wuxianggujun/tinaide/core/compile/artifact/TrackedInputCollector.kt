@@ -19,6 +19,8 @@ internal object TrackedInputCollector {
         ".cxx",
         "build",
         "out",
+        "vcpkg_installed",
+        ".vcpkg",
     )
 
     private val CMAKE_SOURCE_EXTENSIONS: Set<String> =
@@ -79,7 +81,9 @@ internal object TrackedInputCollector {
         val cmakeScripts = walkProjectFiles(projectRoot) { file ->
             file.name == "CMakeLists.txt" || file.extension.lowercase() == "cmake"
         }
-        return mergeUniqueFiles(projectSources + cmakeScripts)
+        val vcpkgManifests = listOf("vcpkg.json", "vcpkg-configuration.json")
+            .map { File(projectRoot, it) }.filter { it.isFile }
+        return mergeUniqueFiles(projectSources + cmakeScripts + vcpkgManifests)
     }
 
     fun collectCMakeInputs(

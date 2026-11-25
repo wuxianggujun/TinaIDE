@@ -6,9 +6,13 @@ import com.wuxianggujun.tinaide.core.i18n.Arrays
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
 import java.io.IOException
+import java.nio.ByteBuffer
+import java.nio.charset.CodingErrorAction
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import timber.log.Timber
 
 /**
  * 帮助文档仓库
@@ -17,21 +21,13 @@ import kotlinx.coroutines.withContext
 class HelpRepository(private val context: Context) {
 
     // 文档内容缓存
-    private val contentCache = mutableMapOf<String, String>()
+    private val contentCache = ConcurrentHashMap<String, String>()
 
     private fun keywords(@ArrayRes resId: Int): List<String> = context.resources.getStringArray(resId).toList()
 
-    /**
-     * 清理帮助文档中偶发的“`n+”伪换行标记，避免 Markdown 渲染异常。
-     *
-     * 这些标记通常来自生成/拷贝过程中的转义问题，优先在渲染/搜索前做一次兜底修复。
-     */
-    private fun sanitizeHelpMarkdown(raw: String): String = raw
-        .replace("`n+- ", "`\n- ")
-        .replace("`n+-", "`\n- ")
-        .replace("`n+", "`\n")
+    private val tutorialCourseDocuments: List<HelpDocument> = createTutorialCourseDocuments()
 
-    // 预定义的帮助文档列表
+    // 帮助目录与搜索只列参考文档；实操章节使用独立资源目录，保留既有站内链接解析。
     private val documents: List<HelpDocument> = listOf(
         // 快速开始
         HelpDocument(
@@ -154,6 +150,16 @@ class HelpRepository(private val context: Context) {
             fileName = "package-manager.md",
             summary = Strings.help_doc_package_manager_summary.strOr(context),
             order = 3
+        ),
+
+        HelpDocument(
+            id = "vcpkg-guide",
+            title = Strings.help_doc_vcpkg_guide_title.strOr(context),
+            category = HelpCategory.COMPILER,
+            keywords = keywords(Arrays.help_keywords_vcpkg_guide),
+            fileName = "vcpkg-guide.md",
+            summary = Strings.help_doc_vcpkg_guide_summary.strOr(context),
+            order = 4,
         ),
 
         // 语言服务器
@@ -358,6 +364,26 @@ class HelpRepository(private val context: Context) {
         )
     )
 
+    private fun createTutorialCourseDocuments(): List<HelpDocument> {
+        fun lab(fileName: String, title: Int, summary: Int, order: Int) = HelpDocument(
+            id = fileName.removeSuffix(".md"), title = title.strOr(context), summary = summary.strOr(context),
+            category = HelpCategory.GETTING_STARTED, fileName = fileName, order = order,
+            keywords = listOf(fileName.substringBefore('-'), "TinaIDE"),
+            assetDirectory = "tutorial-course",
+        )
+        return listOf(
+            lab(fileName = "ide-workflow.md", Strings.course_ide_title, Strings.course_ide_desc, 0),
+            lab(fileName = "cpp-basics.md", Strings.course_cpp_basics_title, Strings.course_cpp_basics_desc, 1),
+            lab(fileName = "cpp-functions.md", Strings.course_cpp_functions_title, Strings.course_cpp_functions_desc, 2),
+            lab(fileName = "cpp-collections.md", Strings.course_cpp_collections_title, Strings.course_cpp_collections_desc, 3),
+            lab(fileName = "cpp-raii.md", Strings.course_cpp_raii_title, Strings.course_cpp_raii_desc, 4),
+            lab(fileName = "cmake-practice.md", Strings.course_cmake_title, Strings.course_cmake_desc, 5),
+            lab(fileName = "vcpkg-practice.md", Strings.course_vcpkg_title, Strings.tutorial_course_vcpkg_desc, 6),
+            lab(fileName = "graphics-sdl3.md", Strings.course_graphics_title, Strings.course_graphics_desc, 7),
+            lab(fileName = "ai-practice.md", Strings.course_ai_title, Strings.course_ai_desc, 8),
+        )
+    }
+
     /**
      * 获取所有文档
      */
@@ -375,10 +401,9 @@ class HelpRepository(private val context: Context) {
      */
     fun getAllCategories(): List<HelpCategory> = HelpCategory.entries
 
-    /**
-     * 根据 ID 获取文档
-     */
-    fun getDocumentById(id: String): HelpDocument? = documents.find { it.id == id }
+    /** 根据 ID 获取公开帮助文档；教程章节仅允许通过显式深链打开。 */
+    fun getDocumentById(id: String): HelpDocument? =
+        documents.find { it.id == id } ?: tutorialCourseDocuments.find { it.id == id }
 
     /**
      * 根据 Markdown 链接目标解析帮助文档。
@@ -391,7 +416,7 @@ class HelpRepository(private val context: Context) {
      */
     fun resolveDocumentByLinkTarget(linkTarget: String): HelpDocument? {
         val normalizedFileName = normalizeHelpLinkTarget(linkTarget) ?: return null
-        return documents.find { document ->
+        return (documents + tutorialCourseDocuments).find { document ->
             document.fileName.equals(normalizedFileName, ignoreCase = true)
         }
     }
@@ -408,6 +433,15 @@ class HelpRepository(private val context: Context) {
         return loadDocumentContent(document)
     }
 
+    /** 教程独占实操章节不进入目录与搜索，但帮助文档可以通过深链复用其正文。 */
+    suspend fun loadTutorialCourseContentByLinkTarget(linkTarget: String): Result<String> {
+        val fileName = normalizeHelpLinkTarget(linkTarget)
+            ?: return Result.failure(IOException("Unknown tutorial course asset: $linkTarget"))
+        val document = tutorialCourseDocuments.firstOrNull { it.fileName.equals(fileName, ignoreCase = true) }
+            ?: return Result.failure(IOException("Unknown tutorial course asset: $linkTarget"))
+        return loadDocumentContent(document)
+    }
+
     /**
      * 加载文档内容
      */
@@ -419,13 +453,12 @@ class HelpRepository(private val context: Context) {
         }
 
         try {
-            val sanitized = readLocalizedMarkdown(document)
-            contentCache[cacheKey] = sanitized
-            Result.success(sanitized)
+            val content = readLocalizedMarkdown(document)
+            contentCache[cacheKey] = content
+            Result.success(content)
         } catch (e: IOException) {
-            // 如果 assets 中没有，尝试返回占位内容
-            val placeholder = sanitizeHelpMarkdown(generatePlaceholderContent(document))
-            Result.success(placeholder)
+            Timber.tag("HelpRepository").w("Could not load help asset %s: %s", document.id, e.javaClass.simpleName)
+            Result.failure(e)
         }
     }
 
@@ -511,8 +544,8 @@ class HelpRepository(private val context: Context) {
             if (!contentCache.containsKey(cacheKey)) {
                 try {
                     contentCache[cacheKey] = readLocalizedMarkdown(doc)
-                } catch (_: IOException) {
-                    // 忽略加载失败的文档
+                } catch (error: IOException) {
+                    Timber.tag("HelpRepository").w("Could not preload help asset %s: %s", doc.id, error.javaClass.simpleName)
                 }
             }
         }
@@ -526,7 +559,7 @@ class HelpRepository(private val context: Context) {
     }
 
     private fun contentCacheKey(document: HelpDocument): String =
-        "${currentLanguageCode()}:${document.id}"
+        "${currentLanguageCode()}:${document.assetDirectory}:${document.fileName}"
 
     private fun currentLanguageCode(): String {
         val locales = context.resources.configuration.locales
@@ -536,12 +569,19 @@ class HelpRepository(private val context: Context) {
     @Throws(IOException::class)
     private fun readLocalizedMarkdown(document: HelpDocument): String {
         var lastError: IOException? = null
-        HelpAssetPathResolver.candidatePaths(document.fileName, currentLanguageCode()).forEach { assetPath ->
+        HelpAssetPathResolver.candidatePaths(
+            document.fileName,
+            currentLanguageCode(),
+            directory = document.assetDirectory,
+        ).forEach { assetPath ->
             try {
-                val content = context.assets.open(assetPath)
-                    .bufferedReader(Charsets.UTF_8)
-                    .use { reader -> reader.readText() }
-                return sanitizeHelpMarkdown(content)
+                val bytes = context.assets.open(assetPath).use { it.readBytes() }
+                val content = Charsets.UTF_8.newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT)
+                    .decode(ByteBuffer.wrap(bytes)).toString()
+                if (content.isBlank()) throw IOException("Empty help asset: $assetPath")
+                return content
             } catch (error: IOException) {
                 lastError = error
             }
@@ -571,31 +611,4 @@ class HelpRepository(private val context: Context) {
         return path.takeIf { it.endsWith(".md", ignoreCase = true) }
     }
 
-    /**
-     * 生成占位内容（当文档文件不存在时）
-     */
-    private fun generatePlaceholderContent(document: HelpDocument): String {
-        val tipLabel = Strings.help_placeholder_tip_label.strOr(context)
-        val tipBody = Strings.help_placeholder_tip_body.strOr(context)
-        val tipContact = Strings.help_placeholder_tip_contact.strOr(context)
-        val relatedTitle = Strings.help_placeholder_related_topics_title.strOr(context)
-
-        return """
-# ${document.title}
-
-${document.summary}
-
----
-
-> **$tipLabel**：$tipBody
->
-> $tipContact
-
-## $relatedTitle
-
-${documents.filter { it.category == document.category && it.id != document.id }
-            .take(3)
-            .joinToString("\n") { "- ${it.title}" }}
-        """.trimIndent()
-    }
 }

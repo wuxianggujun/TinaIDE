@@ -59,7 +59,7 @@ object TerminalApkExportResolver {
             )
 
         val appContext = context.applicationContext
-        val packagePaths = InstalledPackagePathResolver.resolve(appContext, projectRoot)
+        val packagePaths = InstalledPackagePathResolver.resolve(appContext, projectRoot, buildDir)
         val runtimeCandidates = linkedSetOf<File>().apply {
             addAll(buildArtifacts.libraries)
             addAll(ApkExportRuntimeLibrariesResolver.scanRuntimeLibraries(packagePaths.runtimeLibDirs))

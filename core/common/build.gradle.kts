@@ -12,6 +12,8 @@ dependencies {
     api(project(":core:editor-api"))
     implementation(project.dependencies.project(":core:i18n"))
     implementation(project.dependencies.project(":core:model"))
+    // FileTypeUtils/FileUtils 直接使用 CxxFileSupport/MakeFileSupport
+    implementation(project.dependencies.project(":core:language-support"))
     implementation(project.dependencies.project(":tina-exec:integration"))
     // PtyProcess 依赖 Termux JNI
     implementation(project.dependencies.project(":termux-terminal:terminal-emulator"))

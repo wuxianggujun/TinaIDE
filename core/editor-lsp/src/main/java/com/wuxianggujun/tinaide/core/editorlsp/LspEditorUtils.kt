@@ -1,6 +1,7 @@
 package com.wuxianggujun.tinaide.core.editorlsp
 
 import java.io.File
+import com.wuxianggujun.tinaide.core.editorapi.SemanticToken
 
 /**
  * Small pure helpers shared by LspEditorManager.

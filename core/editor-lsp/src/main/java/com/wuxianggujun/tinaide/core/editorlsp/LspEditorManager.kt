@@ -9,6 +9,8 @@ import com.wuxianggujun.tinaide.core.lang.CxxFileSupport
 import com.wuxianggujun.tinaide.core.linux.LinuxEnvironmentProvider
 import com.wuxianggujun.tinaide.core.linux.LinuxRunModePolicy
 import com.wuxianggujun.tinaide.core.linux.UnavailableLinuxEnvironmentProvider
+import com.wuxianggujun.tinaide.core.editorapi.SemanticToken
+import com.wuxianggujun.tinaide.core.editorapi.SignatureHelpResult
 import com.wuxianggujun.tinaide.core.lsp.CompileDatabaseProvider
 import com.wuxianggujun.tinaide.core.lsp.CxxCompileContextInspector
 import com.wuxianggujun.tinaide.core.lsp.CxxCompileContextIssue
@@ -1000,7 +1002,8 @@ class LspEditorManager(
                     ticket = requestTicket,
                     future = session.prepareCallHierarchy(params),
                     timeoutSeconds = timeoutSeconds,
-                    operation = "prepareCallHierarchy(${fileNameForLog(tabSession.file)})"
+                    operation = "prepareCallHierarchy(${fileNameForLog(tabSession.file)})",
+                    propagateFailure = true,
                 )
             },
             incomingCallsRequest = { params, timeoutSeconds ->
@@ -1008,12 +1011,34 @@ class LspEditorManager(
                     ticket = requestTicket,
                     future = session.callHierarchyIncomingCalls(params),
                     timeoutSeconds = timeoutSeconds,
-                    operation = "callHierarchy/incomingCalls(${fileNameForLog(tabSession.file)})"
+                    operation = "callHierarchy/incomingCalls(${fileNameForLog(tabSession.file)})",
+                    propagateFailure = true,
                 )
             }
         )
-        if (isTabRequestStillValid(requestTicket)) result else emptyList()
-    } ?: emptyList()
+        if (!isTabRequestStillValid(requestTicket)) throw kotlinx.coroutines.CancellationException("Stale call hierarchy request")
+        result
+    } ?: error("Call hierarchy session unavailable")
+
+    suspend fun callHierarchyOutgoingCalls(tabId: String, line: Int, column: Int): List<LocationItem> = withLspTabSession(tabId) { tabSession, session ->
+        val ticket = createTabRequestTicket(tabId, tabSession.documentUri)
+        val result = navigationService.callHierarchyOutgoingCalls(
+            documentUri = tabSession.documentUri,
+            line = line,
+            column = column,
+            prepareRequest = { params, timeout ->
+                awaitTrackedTabFuture(ticket, session.prepareCallHierarchy(params), timeout,
+                    operation = "prepareCallHierarchy", propagateFailure = true)
+            },
+            outgoingCallsRequest = { params, timeout ->
+                awaitTrackedTabFuture(ticket, session.callHierarchyOutgoingCalls(params), timeout,
+                    operation = "callHierarchy/outgoingCalls", propagateFailure = true)
+            },
+        )
+        if (!isTabRequestStillValid(ticket)) throw kotlinx.coroutines.CancellationException("Stale call hierarchy request")
+        result
+    } ?: error("Call hierarchy session unavailable")
+
     suspend fun switchSourceHeader(tabId: String): String? {
         val resultUri = withLspTabSession(tabId) { tabSession, session ->
             val requestTicket = createTabRequestTicket(tabId, tabSession.documentUri)
@@ -1048,11 +1073,13 @@ class LspEditorManager(
                 ticket = requestTicket,
                 future = session.symbol(params),
                 timeoutSeconds = timeoutSeconds,
-                operation = "workspaceSymbol(${fileNameForLog(tabSession.file)})"
+                operation = "workspaceSymbol(${fileNameForLog(tabSession.file)})",
+                propagateFailure = true,
             )
         }
-        if (isTabRequestStillValid(requestTicket)) result else emptyList()
-    } ?: emptyList()
+        if (!isTabRequestStillValid(requestTicket)) throw CancellationException("Symbol request was invalidated")
+        result
+    } ?: error("Workspace symbols are unavailable")
 
     suspend fun resolveWorkspaceSymbol(tabId: String, item: WorkspaceSymbolItem): WorkspaceSymbolItem? = withLspTabSession(tabId) { tabSession, session ->
         val requestTicket = createTabRequestTicket(tabId, tabSession.documentUri)
@@ -1068,8 +1095,8 @@ class LspEditorManager(
     }
 
     suspend fun documentSymbols(tabId: String): List<DocumentSymbolItem> {
-        val tabSession = synchronized(stateLock) { tabSessions[tabId] } ?: return emptyList()
-        if (!tabSession.isConnected) return emptyList()
+        val tabSession = synchronized(stateLock) { tabSessions[tabId] } ?: error("Document session is unavailable")
+        check(tabSession.isConnected) { "Document symbols are unavailable" }
         tabSession.builtinSession?.let { session ->
             return withContext(Dispatchers.Default) { session.documentSymbols() }
         }
@@ -1080,11 +1107,13 @@ class LspEditorManager(
                     ticket = requestTicket,
                     future = session.documentSymbol(params),
                     timeoutSeconds = timeoutSeconds,
-                    operation = "documentSymbols(${fileNameForLog(currentTabSession.file)})"
+                    operation = "documentSymbols(${fileNameForLog(currentTabSession.file)})",
+                    propagateFailure = true,
                 )
             }
-            if (isTabRequestStillValid(requestTicket)) result else emptyList()
-        } ?: emptyList()
+            if (!isTabRequestStillValid(requestTicket)) throw CancellationException("Symbol request was invalidated")
+            result
+        } ?: error("Document symbols are unavailable")
     }
 
     suspend fun requestHoverMarkdown(tabId: String, line: Int, column: Int): String? {

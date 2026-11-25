@@ -75,6 +75,7 @@ import com.wuxianggujun.tinaide.core.editorlsp.InlayHintsRequestResult
 import com.wuxianggujun.tinaide.core.editorlsp.SemanticTokensRequestResult
 import com.wuxianggujun.tinaide.ui.compose.components.MarkdownViewer
 import com.wuxianggujun.tinaide.ui.compose.editor.editorConfigFromPrefs
+import com.wuxianggujun.tinaide.ui.compose.editor.rememberEditorProjectIndentation
 import com.wuxianggujun.tinaide.ui.compose.state.editor.CodeEditorCallback
 import com.wuxianggujun.tinaide.ui.compose.state.editor.CodeEditorDocumentBinding
 import com.wuxianggujun.tinaide.ui.compose.state.editor.CodeEditorRuntime
@@ -157,6 +158,7 @@ fun TinaCodeEditorPage(
         )
     }
     val editorState = runtime.editorState
+    val projectIndentation = rememberEditorProjectIndentation(state, tab.file, editorState)
     val syntaxHighlighter = remember(tab.id, runtime, tab.file) { state.getOrCreateSyntaxHighlighter(tab) }
     val foldingProvider = remember(tab.id, runtime, tab.file) { state.getOrCreateFoldingProvider(tab) }
     val breakpointStore: BreakpointStore = koinInject()
@@ -237,7 +239,7 @@ fun TinaCodeEditorPage(
             }
             .collectLatest { requestOrNull ->
                 val request = requestOrNull ?: run {
-                    editorState.clearFoldRegions()
+                    editorState.folding.clearFoldRegions()
                     return@collectLatest
                 }
                 val documentVersion = request.documentVersion
@@ -261,13 +263,13 @@ fun TinaCodeEditorPage(
                         requestId == latestFoldingRequestId &&
                         buffer.version == documentVersion
                     ) {
-                        editorState.setFoldRegions(lspRegions, documentVersion = documentVersion)
+                        editorState.folding.setFoldRegions(lspRegions, documentVersion = documentVersion)
                         return@collectLatest
                     }
                 }
 
                 if (provider == null) {
-                    editorState.clearFoldRegions()
+                    editorState.folding.clearFoldRegions()
                     return@collectLatest
                 }
 
@@ -284,11 +286,11 @@ fun TinaCodeEditorPage(
                 ) {
                     return@collectLatest
                 }
-                editorState.setFoldRegions(computation.regions, documentVersion = documentVersion)
+                editorState.folding.setFoldRegions(computation.regions, documentVersion = documentVersion)
             }
     }
 
-    DisposableEffect(tab.id, state, editorState, buffer, callbackRegistrationId) {
+    DisposableEffect(tab.id, state, editorState, buffer, callbackRegistrationId, projectIndentation) {
         val editorCallback = CodeEditorCallback(
             goToPosition = goToPosition@ { line, column ->
                 if (loading || loadError != null) {
@@ -379,7 +381,7 @@ fun TinaCodeEditorPage(
             },
             applyEditorSettings = { settings ->
                 // 统一从 Prefs 读取 EditorConfig，确保“设置页变更 → 已打开编辑器即时生效”。
-                editorState.config = editorConfigFromPrefs()
+                editorState.config = editorConfigFromPrefs(projectIndentation.value)
                 editorState.fontSizeSp = settings.fontSize
 
                 val appContext = context.applicationContext
@@ -570,7 +572,7 @@ fun TinaCodeEditorPage(
                 onAttach = {
                     editorState.onLineNumberTap = toggleBreakpoint
                     editorState.onLineNumberLongPress = toggleBreakpoint
-                    editorState.onGutterFoldToggle = { line -> editorState.toggleFoldAtLine(line) }
+                    editorState.onGutterFoldToggle = { line -> editorState.folding.toggleFoldAtLine(line) }
                 },
                 onDetach = {
                     editorState.onLineNumberTap = null
@@ -667,9 +669,9 @@ fun TinaCodeEditorPage(
                 return@withLock
             }
 
-            val detectedCharset = FileEncodingDetector.detectCharset(tab.file)
-            binding.withSuppressed { buffer.loadFromFile(tab.file, detectedCharset) }
-                .onSuccess {
+            FileEncodingDetector.load(tab.file) { charset ->
+                binding.withSuppressed { buffer.loadFromFile(tab.file, charset) }
+            }.onSuccess { detectedCharset ->
                     ensureTreeSitterPrepared(
                         runtime = runtime,
                         editorState = editorState,
@@ -688,7 +690,9 @@ fun TinaCodeEditorPage(
                     loading = false
                 }
                 .onFailure { error ->
-                    loadError = error.message ?: Strings.editor_load_failed.strOr(context)
+                    loadError = if (error is java.nio.charset.CharacterCodingException) {
+                        Strings.editor_error_decoding_failed.strOr(context)
+                    } else error.message ?: Strings.editor_load_failed.strOr(context)
                     loading = false
                 }
         }
@@ -865,7 +869,7 @@ fun TinaCodeEditorPage(
         }
             .distinctUntilChanged()
             .collectLatest { key ->
-                val projectRootPath = editorState.projectRootPath
+                val projectRootPath = state.resolveProjectRootPath()
                 val relativePath = projectRootPath?.let { resolveRepoRelativePath(it, tab.file) }
                 if (!key.gitGutterEnabled || projectRootPath == null || relativePath == null) {
                     applyGitLineChanges(editorState, emptyMap())
@@ -1052,9 +1056,9 @@ fun TinaCodeEditorPage(
                                         loading = false
                                         return@withLock
                                     }
-                                    val detectedCharset = FileEncodingDetector.detectCharset(tab.file)
-                                    binding.withSuppressed { buffer.loadFromFile(tab.file, detectedCharset) }
-                                        .onSuccess {
+                                    FileEncodingDetector.load(tab.file) { charset ->
+                                        binding.withSuppressed { buffer.loadFromFile(tab.file, charset) }
+                                    }.onSuccess { detectedCharset ->
                                             runtime.isTreeSitterSnapshotReady = false
                                             ensureTreeSitterPrepared(
                                                 runtime = runtime,
@@ -1073,8 +1077,10 @@ fun TinaCodeEditorPage(
                                             state.markCodeEditorRuntimeLoaded(tab.id)
                                             loading = false
                                         }
-                                        .onFailure {
-                                            loadError = it.message ?: Strings.editor_load_failed.strOr(context)
+                                        .onFailure { error ->
+                                            loadError = if (error is java.nio.charset.CharacterCodingException) {
+                                                Strings.editor_error_decoding_failed.strOr(context)
+                                            } else error.message ?: Strings.editor_load_failed.strOr(context)
                                             loading = false
                                         }
                                 }

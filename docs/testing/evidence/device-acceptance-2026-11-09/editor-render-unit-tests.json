@@ -1,0 +1,228 @@
+{
+  "totals": {
+    "tests": 33,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "suites": [
+    {
+      "name": "com.wuxianggujun.tinaide.core.editorview.EditorRenderViewportTest",
+      "tests": "8",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-11-09T15:23:09.850Z",
+      "hostname": "DESKTOP-9KUJPVG",
+      "time": "7.326",
+      "cases": [
+        {
+          "name": "zoomAtDocumentEnd_shouldClampToPreviewBottomPaddingWithoutChangingState",
+          "classname": "com.wuxianggujun.tinaide.core.editorview.EditorRenderViewportTest",
+          "time": "6.89"
+        },
+        {
+          "name": "zoomInOnShortOrEmptyDocument_shouldKeepFirstLineVisible",
+          "classname": "com.wuxianggujun.tinaide.core.editorview.EditorRenderViewportTest",
+          "time": "0.051"
+        },
+        {
+          "name": "inverseViewport_coversPhysicalCanvasAtEveryScaleAndPivot",
+          "classname": "com.wuxianggujun.tinaide.core.editorview.EditorRenderViewportTest",
+          "time": "0.075"
+        },
+        {
+          "name": "scrolledPreview_preservesFocusDocumentPositionWithoutMutatingState",
+          "classname": "com.wuxianggujun.tinaide.core.editorview.EditorRenderViewportTest",
+          "time": "0.115"
+        },
+        {
+          "name": "zoomPreview_respectsBothHorizontalEdgesAndDoesNotPanAWrappedDocument",
+          "classname": "com.wuxianggujun.tinaide.core.editorview.EditorRenderViewportTest",
+          "time": "0.051"
+        },
+        {
+          "name": "shortDocument_doesNotRequestRowsPastEnd",
+          "classname": "com.wuxianggujun.tinaide.core.editorview.EditorRenderViewportTest",
+          "time": "0.031"
+        },
+        {
+          "name": "frameContext_returnsToNormalViewportAfterPreview",
+          "classname": "com.wuxianggujun.tinaide.core.editorview.EditorRenderViewportTest",
+          "time": "0.066"
+        },
+        {
+          "name": "zoomOutAtOrigin_doesNotCreateTopOrLeftBlankMargins",
+          "classname": "com.wuxianggujun.tinaide.core.editorview.EditorRenderViewportTest",
+          "time": "0.034"
+        }
+      ]
+    },
+    {
+      "name": "com.wuxianggujun.tinaide.core.editorview.EditorScaleTransformCoordinatorTest",
+      "tests": "13",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-11-09T15:23:17.311Z",
+      "hostname": "DESKTOP-9KUJPVG",
+      "time": "10.794",
+      "cases": [
+        {
+          "name": "release_withoutWrap_preservesTheLastPreviewFocusAndDoesNotMoveAgainOnDraw",
+          "classname": "com.wuxianggujun.tinaide.core.editorview.EditorScaleTransformCoordinatorTest",
+          "time": "7.524"
+        },
+        {
+          "name": "smallGestureDeltas_accumulateRatherThanBeingDiscardedPerEvent",
+          "classname": "com.wuxianggujun.tinaide.core.editorview.EditorScaleTransformCoordinatorTest",
+          "time": "0.498"
+        },
+        {
+          "name": "zoomOutReachingLeftEdge_doesNotReintroduceAnOffsetFromFixedGutterPadding",
+          "classname": "com.wuxianggujun.tinaide.core.editorview.EditorScaleTransformCoordinatorTest",
+          "time": "0.068"
+        },
+        {
+          "name": "release_atDocumentEndWithKeyboardOverlap_usesTheEffectiveViewportForBothPhases",
+          "classname": "com.wuxianggujun.tinaide.core.editorview.EditorScaleTransformCoordinatorTest",
+          "time": "0.118"
+        },
+        {
+          "name": "leftAlignedPinches_keepLineNumbersAndFoldColumnOnScreenAcrossDifferentPivots",
+          "classname": "com.wuxianggujun.tinaide.core.editorview.EditorScaleTransformCoordinatorTest",
+          "time": "1.029"
+        },
+        {
+          "name": "release_commitsSmallFractionalChangeInsteadOfSnappingBack",
+          "classname": "com.wuxianggujun.tinaide.core.editorview.EditorScaleTransformCoordinatorTest",
+          "time": "0.282"
+        },
+        {
+          "name": "duplicateFinish_doesNotPublishOrCommitAgain",
+          "classname": "com.wuxianggujun.tinaide.core.editorview.EditorScaleTransformCoordinatorTest",
+          "time": "0.443"
+        },
+        {
+          "name": "returningToInitialSize_andClosingDuringPinch_clearPreviewWithoutPublishing",
+          "classname": "com.wuxianggujun.tinaide.core.editorview.EditorScaleTransformCoordinatorTest",
+          "time": "0.268"
+        },
+        {
+          "name": "scrolledRoundTrip_preservesHorizontalPositionInsteadOfForcingTheOrigin",
+          "classname": "com.wuxianggujun.tinaide.core.editorview.EditorScaleTransformCoordinatorTest",
+          "time": "0.141"
+        },
+        {
+          "name": "release_withWrap_reanchorsTheCharacterFromTheOldPreviewBeforePublishing",
+          "classname": "com.wuxianggujun.tinaide.core.editorview.EditorScaleTransformCoordinatorTest",
+          "time": "0.081"
+        },
+        {
+          "name": "throwingHostCallback_keepsCommittedGeometryAndDoesNotLeaveTheGestureFrozen",
+          "classname": "com.wuxianggujun.tinaide.core.editorview.EditorScaleTransformCoordinatorTest",
+          "time": "0.073"
+        },
+        {
+          "name": "release_publishesOnlyAfterFontMetricsScrollAndPreviewHaveCommitted",
+          "classname": "com.wuxianggujun.tinaide.core.editorview.EditorScaleTransformCoordinatorTest",
+          "time": "0.105"
+        },
+        {
+          "name": "repeatedGestures_supportSettingsBoundariesAndRejectInvalidZoom",
+          "classname": "com.wuxianggujun.tinaide.core.editorview.EditorScaleTransformCoordinatorTest",
+          "time": "0.161"
+        }
+      ]
+    },
+    {
+      "name": "com.wuxianggujun.tinaide.core.editorview.EditorStateWordWrapTest",
+      "tests": "7",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-11-09T15:23:28.757Z",
+      "hostname": "DESKTOP-9KUJPVG",
+      "time": "0.9",
+      "cases": [
+        {
+          "name": "unchangedFoldResults_afterEditingKeepIncrementalVisualMapping",
+          "classname": "com.wuxianggujun.tinaide.core.editorview.EditorStateWordWrapTest",
+          "time": "0.844"
+        },
+        {
+          "name": "visualLineMap_shouldMatchWrapLayoutAcrossRepresentativeInputs",
+          "classname": "com.wuxianggujun.tinaide.core.editorview.EditorStateWordWrapTest",
+          "time": "0.027"
+        },
+        {
+          "name": "visualLineCount_shouldAccumulateSegmentCountsAcrossLines",
+          "classname": "com.wuxianggujun.tinaide.core.editorview.EditorStateWordWrapTest",
+          "time": "0.006"
+        },
+        {
+          "name": "wrapLayoutCache_withSameLengthReplacement_shouldUseNewText",
+          "classname": "com.wuxianggujun.tinaide.core.editorview.EditorStateWordWrapTest",
+          "time": "0.0"
+        },
+        {
+          "name": "maxVerticalScrollOffset_shouldRefreshWhenFoldStateChangesWithoutTextEdit",
+          "classname": "com.wuxianggujun.tinaide.core.editorview.EditorStateWordWrapTest",
+          "time": "0.012"
+        },
+        {
+          "name": "wrapLayoutCache_withCollidingLegacyParameterHash_shouldRebuildLayout",
+          "classname": "com.wuxianggujun.tinaide.core.editorview.EditorStateWordWrapTest",
+          "time": "0.005"
+        },
+        {
+          "name": "maxVerticalScrollOffset_shouldRefreshWhenWordWrapChangesWithoutTextEdit",
+          "classname": "com.wuxianggujun.tinaide.core.editorview.EditorStateWordWrapTest",
+          "time": "0.001"
+        }
+      ]
+    },
+    {
+      "name": "com.wuxianggujun.tinaide.core.editorview.WordOccurrenceHighlightRendererTest",
+      "tests": "5",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-11-09T15:23:30.374Z",
+      "hostname": "DESKTOP-9KUJPVG",
+      "time": "10.629",
+      "cases": [
+        {
+          "name": "wrappedWords_splitAcrossRowsAndClipToScrolledViewport",
+          "classname": "com.wuxianggujun.tinaide.core.editorview.WordOccurrenceHighlightRendererTest",
+          "time": "10.316"
+        },
+        {
+          "name": "resolveHighlightRects_shouldAvoidOffsetToPositionWhenReadingCursorWord",
+          "classname": "com.wuxianggujun.tinaide.core.editorview.WordOccurrenceHighlightRendererTest",
+          "time": "0.057"
+        },
+        {
+          "name": "resolveHighlightRects_shouldReuseCursorLineTextForVisibleScan",
+          "classname": "com.wuxianggujun.tinaide.core.editorview.WordOccurrenceHighlightRendererTest",
+          "time": "0.046"
+        },
+        {
+          "name": "resolveHighlightRects_shouldMatchColumnToXBaselineForVisibleMatches",
+          "classname": "com.wuxianggujun.tinaide.core.editorview.WordOccurrenceHighlightRendererTest",
+          "time": "0.095"
+        },
+        {
+          "name": "foldedGap_limitsTraversalToVisibleRows",
+          "classname": "com.wuxianggujun.tinaide.core.editorview.WordOccurrenceHighlightRendererTest",
+          "time": "0.115"
+        }
+      ]
+    }
+  ],
+  "sourceSha256": {
+    "editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/EditorState.kt": "959daec1e64ebc87fd9fd943ea98d7ee3c8662e009410cc37c15f0668a54376d",
+    "editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/WordOccurrenceHighlightRenderer.kt": "f213b30d042153878205e387ba1f604df994c4128ad3906367a37aa850cfe3f4",
+    "editor-kit/editor-view/src/main/java/com/wuxianggujun/tinaide/core/editorview/TextRenderer.kt": "4e1fdf44b7d043bcde315807323e4f787e8449dc40a918751ac558f89d7007a2"
+  }
+}

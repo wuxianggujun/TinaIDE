@@ -620,6 +620,7 @@ class FileManager(
     }
 
     private fun notifyFileCreated(file: File) {
+        projectSymbolIndexServiceProvider()?.onFileChanged(file)
         listenersFor(file).forEach { l ->
             try {
                 l.onFileCreated(file)
@@ -630,6 +631,7 @@ class FileManager(
     }
 
     private fun notifyFileModified(file: File) {
+        projectSymbolIndexServiceProvider()?.onFileChanged(file)
         listenersFor(file).forEach { l ->
             try {
                 l.onFileModified(file)
@@ -640,6 +642,7 @@ class FileManager(
     }
 
     private fun notifyFileDeleted(file: File) {
+        projectSymbolIndexServiceProvider()?.onFileDeleted(file)
         listenersFor(file).forEach { l ->
             try {
                 l.onFileDeleted(file)
@@ -650,6 +653,7 @@ class FileManager(
     }
 
     private fun notifyFileRenamed(oldFile: File, newFile: File) {
+        projectSymbolIndexServiceProvider()?.onFileRenamed(oldFile, newFile)
         (listenersFor(oldFile) + listenersFor(newFile)).distinct().forEach { listener ->
             try {
                 listener.onFileRenamed(oldFile, newFile)

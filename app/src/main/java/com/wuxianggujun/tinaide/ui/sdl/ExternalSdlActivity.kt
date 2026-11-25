@@ -6,8 +6,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.os.Process
 import android.os.SystemClock
 import android.view.ViewGroup
@@ -54,9 +52,11 @@ class ExternalSdlActivity : SDLActivity() {
     companion object {
         private const val TAG = "ExternalSdlActivity"
         private const val DOUBLE_BACK_EXIT_INTERVAL_MS = 2000L
-        private const val NATIVE_QUIT_GRACE_PERIOD_MS = 800L
         private const val SDL_RENDER_DRIVER_ENV = "SDL_RENDER_DRIVER"
         private const val DEFAULT_ANDROID_SDL_RENDER_DRIVER = "opengles2"
+
+        /** 资源目录诊断时最多列出多少个 entry，避免大目录拖慢启动。 */
+        private const val ASSET_DIAGNOSTIC_SAMPLE_LIMIT = 8
 
         const val EXTRA_SDL_LIBRARY_PATH = "extra_sdl_library_path"
         const val EXTRA_MAIN_LIBRARY_PATH = "extra_main_library_path"
@@ -116,15 +116,6 @@ class ExternalSdlActivity : SDLActivity() {
     private var enableFloatingLog: Boolean = false
     private var lastBackPressTime: Long = 0L
     private val runtimeHost = GraphicalRuntimeActivityHost(this, TAG)
-    private val finishHandler = Handler(Looper.getMainLooper())
-    private val forceFinishAfterQuitTimeout = Runnable {
-        if (isFinishing || isDestroyed) return@Runnable
-        Timber.tag(TAG).w(
-            "SDL thread did not exit within %d ms after quit request, forcing finish",
-            NATIVE_QUIT_GRACE_PERIOD_MS
-        )
-        finish()
-    }
 
     @Volatile private var nativeShutdownRequested = false
 
@@ -136,6 +127,11 @@ class ExternalSdlActivity : SDLActivity() {
     // region Lifecycle
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        if (!runtimeHost.onPreCreate(savedInstanceState, intent)) {
+            super.onCreate(savedInstanceState)
+            return
+        }
+        runtimeHost.requestReturnToParentOnFinish()
         sdlLibraryPath = intent.getStringExtra(EXTRA_SDL_LIBRARY_PATH).orEmpty()
         mainLibraryPath = intent.getStringExtra(EXTRA_MAIN_LIBRARY_PATH).orEmpty()
         requiredSdlMajor = intent.getIntExtra(EXTRA_REQUIRED_SDL_MAJOR, 0)
@@ -160,13 +156,11 @@ class ExternalSdlActivity : SDLActivity() {
         if (validationError != null) {
             Toast.makeText(this, validationError, Toast.LENGTH_LONG).show()
             finish()
+            super.onCreate(savedInstanceState)
             return
         }
 
         applySdlOrientation()
-        runtimeHost.onPreCreate(savedInstanceState, intent)
-        runtimeHost.requestReturnToParentOnFinish()
-
         super.onCreate(savedInstanceState)
 
         attachRuntimeOverlay()
@@ -193,17 +187,11 @@ class ExternalSdlActivity : SDLActivity() {
     }
 
     override fun onDestroy() {
-        val shouldTerminateRuntimeProcess = isFinishing && !isChangingConfigurations
-        finishHandler.removeCallbacks(forceFinishAfterQuitTimeout)
+        runtimeHost.onBeforeDestroy()
         try {
             super.onDestroy()
         } finally {
-            try {
-                runtimeHost.onDestroy()
-            } finally {
-                // System.load keeps user libraries resident; each run needs a fresh process.
-                if (shouldTerminateRuntimeProcess) Process.killProcess(Process.myPid())
-            }
+            runtimeHost.onDestroy()
         }
     }
 
@@ -220,7 +208,6 @@ class ExternalSdlActivity : SDLActivity() {
     }
 
     private fun finishNow() {
-        finishHandler.removeCallbacks(forceFinishAfterQuitTimeout)
         runtimeHost.onFinish()
         super.finish()
     }
@@ -263,6 +250,10 @@ class ExternalSdlActivity : SDLActivity() {
      *   悬浮球的退出按钮始终可用作备选退出方式。
      */
     override fun handleBackPressed() {
+        if (mBrokenLibraries || isFinishing) {
+            finish()
+            return
+        }
         val trapBack = nativeGetHintBoolean("SDL_ANDROID_TRAP_BACK_BUTTON", false)
         if (!trapBack) {
             exitToParent()
@@ -288,6 +279,15 @@ class ExternalSdlActivity : SDLActivity() {
         @SuppressLint("UnsafeDynamicallyLoadedCode")
         fun loadAbsolutePath(path: String) {
             if (path.isBlank() || !loadedPaths.add(path)) return
+            if (path == sdlLibraryPath) {
+                val version = org.libsdl.app.SdlNativeLibraryProbe.readVersion(path)
+                if (!org.libsdl.app.SdlNativeLibraryProbe.isSupported(version)) {
+                    throw UnsatisfiedLinkError(Strings.sdl_runtime_unsupported_version.strOr(
+                        this,
+                        org.libsdl.app.SdlNativeLibraryProbe.formatVersion(version),
+                    ))
+                }
+            }
             Timber.tag(TAG).d("System.load: %s", path)
             System.load(path)
         }
@@ -305,14 +305,44 @@ class ExternalSdlActivity : SDLActivity() {
     /**
      * 在 libSDL 已加载、SDL_main 之前安装资源重定向 hook。
      * projectRoot 来自编译链注入的 [CompileProjectUseCase.RUNTIME_ASSET_ROOT_ENV]；
-     * 缺省（如 APK 导出场景）时静默跳过，SDL 走原生 filesDir/APK asset 逻辑。
+     * 缺省（如 APK 导出场景）时跳过，SDL 走原生 filesDir/APK asset 逻辑。
+     *
+     * 注意：这里不再"静默"跳过/失败。`SdlAssetRedirect` 标签被
+     * [com.wuxianggujun.tinaide.ui.compose.components.GraphicalRuntimeOverlay] 的悬浮日志面板
+     * 捕获，所以用户能直接看到资源通道有没有生效——这正是此前最难排查的一环。
      */
     private fun installSdlAssetRedirect() {
         val projectRoot = NativeLaunchEnvironment.readFromIntent(intent)[
             CompileProjectUseCase.RUNTIME_ASSET_ROOT_ENV
         ].orEmpty()
-        if (projectRoot.isBlank()) return
-        SdlAssetRedirect.install(this, projectRoot)
+        if (projectRoot.isBlank()) {
+            Timber.tag(SdlAssetRedirect.LOG_TAG).i(
+                "asset redirect disabled: %s missing from intent (exported-APK runs use APK assets)",
+                CompileProjectUseCase.RUNTIME_ASSET_ROOT_ENV,
+            )
+            return
+        }
+
+        val configuredAssets = NativeLaunchEnvironment.readFromIntent(intent)[CompileProjectUseCase.RUNTIME_ASSET_DIR_ENV].orEmpty()
+        val installed = SdlAssetRedirect.install(this, projectRoot, configuredAssets)
+        val projectAssetsDir = configuredAssets.takeIf { it.isNotBlank() }?.let(::File) ?: File(projectRoot, "assets")
+        val assetSample = runCatching {
+            projectAssetsDir.listFiles()?.take(ASSET_DIAGNOSTIC_SAMPLE_LIMIT)?.joinToString(",") { it.name }
+        }.getOrNull()
+        Timber.tag(SdlAssetRedirect.LOG_TAG).i(
+            "asset redirect installed=%b projectRoot=%s assetsDir=%s(exists=%b sample=%s)",
+            installed,
+            projectRoot,
+            projectAssetsDir.absolutePath,
+            projectAssetsDir.isDirectory,
+            assetSample.orEmpty(),
+        )
+        if (!installed) {
+            Timber.tag(SdlAssetRedirect.LOG_TAG).w(
+                "asset redirect install failed: relative paths fall back to SDL defaults " +
+                    "(filesDir / APK assets)."
+            )
+        }
     }
 
     override fun getBrokenLibrariesErrorTitle(): String = Strings.sdl_host_title.strOr(this)
@@ -350,8 +380,7 @@ class ExternalSdlActivity : SDLActivity() {
     }
 
     override fun isNativeVersionCompatible(version: String): Boolean {
-        val nativeMajor = version.substringBefore('.').toIntOrNull() ?: return false
-        return nativeMajor == requiredSdlMajor
+        return requiredSdlMajor == 3 && super.isNativeVersionCompatible(version)
     }
 
     // endregion
@@ -365,9 +394,11 @@ class ExternalSdlActivity : SDLActivity() {
      * 这样可以避免 `surfaceDestroyed -> SDL_DestroyRenderer` 的 Android Surface 生命周期竞态。
      */
     private fun exitToParent() {
-        requestNativeShutdown(
-            reason = "returning to parent",
-        )
+        if (nativeShutdownRequested) return
+        nativeShutdownRequested = true
+        runtimeHost.requestExit {
+            if (mSDLThread?.isAlive == true) nativeSendQuit() else finish()
+        }
     }
 
     /**
@@ -393,38 +424,6 @@ class ExternalSdlActivity : SDLActivity() {
         }
     }
 
-    private fun requestNativeShutdown(
-        reason: String,
-    ) {
-        if (isFinishing) return
-
-        val sdlThread = mSDLThread
-        if (sdlThread == null || !sdlThread.isAlive) {
-            finish()
-            return
-        }
-
-        if (nativeShutdownRequested) return
-        nativeShutdownRequested = true
-        val quitRequested = runCatching {
-            Timber.tag(TAG).i("Requesting SDL quit before %s", reason)
-            nativeSendQuit()
-        }.onFailure { throwable ->
-            Timber.tag(TAG).w(throwable, "Failed to send SDL quit event before %s", reason)
-        }.isSuccess
-
-        if (!quitRequested) {
-            finish()
-            return
-        }
-
-        finishHandler.removeCallbacks(forceFinishAfterQuitTimeout)
-        finishHandler.postDelayed(
-            forceFinishAfterQuitTimeout,
-            NATIVE_QUIT_GRACE_PERIOD_MS
-        )
-    }
-
     private fun applySdlOrientation() {
         requestedOrientation = when (userOrientation) {
             SdlOrientation.AUTO -> ActivityInfo.SCREEN_ORIENTATION_SENSOR
@@ -448,6 +447,7 @@ class ExternalSdlActivity : SDLActivity() {
             container = container,
             enableFloatingLog = enableFloatingLog,
             onExit = ::exitToParent,
+            onBack = ::handleBackPressed,
         )
     }
 

@@ -1,0 +1,6 @@
+{
+  "phase": "run",
+  "exitCode": 0,
+  "output": "TinaIDE + vcpkg: 42",
+  "passed": true
+}

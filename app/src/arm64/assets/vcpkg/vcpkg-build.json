@@ -1,0 +1,16 @@
+{
+  "source": "https://github.com/microsoft/vcpkg-tool",
+  "revision": "139f2e53438b1529e178f6295bc563f4e0de734f",
+  "tag": "2026-10-29",
+  "abi": "arm64-v8a",
+  "androidApi": 28,
+  "stl": "c++_static",
+  "sha256": "8b76bedffc4c50364e242af866e32145d572fa815d2d6b07638f442e4190340c",
+  "androidProcessSourceSha256": "a4641acce8ec3f64924e5ce919cf62618ff6626b6530ef632bfbdfd35c75304f",
+  "androidAdaptations": [
+    "actual API for spawn availability",
+    "system shell path",
+    "dladdr executable path",
+    "shell environment removal"
+  ]
+}

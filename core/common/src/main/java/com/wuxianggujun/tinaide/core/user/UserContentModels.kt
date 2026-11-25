@@ -12,8 +12,7 @@ data class FavoritePlugin(
     val category: String?,
     val tags: List<String>?,
     val latestVersion: String?,
-    val addedAt: String,
-    val synced: Boolean = true
+    val addedAt: String
 )
 
 /**
@@ -25,8 +24,7 @@ data class DownloadHistoryItem(
     val itemId: String, // 项目 ID
     val version: String?,
     val downloadedAt: String,
-    val fileSize: Long?,
-    val synced: Boolean = true
+    val fileSize: Long?
 )
 
 /**

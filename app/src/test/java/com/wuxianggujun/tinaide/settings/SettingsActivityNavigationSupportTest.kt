@@ -1,10 +1,25 @@
 package com.wuxianggujun.tinaide.settings
 
 import com.google.common.truth.Truth.assertThat
+import androidx.compose.runtime.saveable.SaverScope
 import com.wuxianggujun.tinaide.ui.compose.screens.settings.SettingsRoute
 import org.junit.Test
 
 class SettingsActivityNavigationSupportTest {
+    @Test
+    fun navigationState_shouldRestoreCurrentPageAndBackStack() {
+        val state = SettingsNavigationState(SettingsRoute.Plugins, listOf(SettingsRoute.Root, SettingsRoute.Help))
+        val saved = with(SettingsActivityNavigationSupport.stateSaver) {
+            object : SaverScope {
+                override fun canBeSaved(value: Any): Boolean = true
+            }.save(state)
+        }
+        val restored = SettingsActivityNavigationSupport.stateSaver.restore(checkNotNull(saved))
+        assertThat(restored).isEqualTo(state)
+        assertThat(SettingsActivityNavigationSupport.navigateBack(checkNotNull(restored).routeStack).currentRoute)
+            .isEqualTo(SettingsRoute.Help)
+    }
+
 
     @Test
     fun navigateTo_shouldPushCurrentRouteBeforeSwitching() {

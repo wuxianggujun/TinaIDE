@@ -1,18 +1,40 @@
 package com.wuxianggujun.tinaide.ui.compose.state.editor
 
-import com.wuxianggujun.tinaide.ui.compose.state.editor.CodeEditorRuntime
-import com.wuxianggujun.tinaide.ui.compose.state.editor.CodeEditorDocumentBinding
-import com.wuxianggujun.tinaide.ui.compose.state.editor.CodeEditorStateBinding
-
 import com.google.common.truth.Truth.assertThat
 import com.wuxianggujun.tinaide.core.editorview.EditorState
 import com.wuxianggujun.tinaide.core.textengine.RopeTextBuffer
+import com.wuxianggujun.tinaide.core.treesitter.SyntaxHighlighter
 import com.wuxianggujun.tinaide.editor.session.DocumentSession
 import com.wuxianggujun.tinaide.editor.session.EditorViewState
 import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class CodeEditorRuntimeTest {
+
+    @Test
+    fun dispose_shouldCloseEditorStateOnlyAfterLastPaneIsRemoved() {
+        val buffer = RopeTextBuffer("unsaved text")
+        val state = EditorState(buffer)
+        val runtime = CodeEditorRuntime(buffer, state)
+        state.onRequestHover = { null }
+        runtime.acquireUiReference()
+        runtime.acquireUiReference()
+
+        runtime.dispose()
+        runtime.releaseUiReference()
+        assertThat(state.onRequestHover).isNotNull()
+        assertThat(buffer.isClosed).isFalse()
+
+        runtime.releaseUiReference()
+
+        assertThat(state.onRequestHover).isNull()
+        assertThat(buffer.isClosed).isTrue()
+        assertThrows(IllegalStateException::class.java) {
+            state.highlighter = object : SyntaxHighlighter {
+                override fun openDocumentBlocking(text: String) = Unit
+            }
+        }
+    }
 
     @Test
     fun dispose_shouldKeepBufferAndBindingsUntilLastPaneIsRemoved() {

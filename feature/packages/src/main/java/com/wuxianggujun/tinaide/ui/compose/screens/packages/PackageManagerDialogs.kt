@@ -530,7 +530,8 @@ internal fun BatchInstallProgressDialog(
     totalCount: Int,
     currentPackageName: String,
     platform: Platform,
-    event: InstallProgressEvent
+    event: InstallProgressEvent,
+    onCancel: () -> Unit,
 ) {
     TinaAlertDialog(
         onDismissRequest = {},
@@ -557,7 +558,7 @@ internal fun BatchInstallProgressDialog(
                 }
             }
         },
-        confirmButton = {}
+        confirmButton = { TinaTextButton(text = stringResource(Strings.btn_cancel), onClick = onCancel) }
     )
 }
 
@@ -566,7 +567,8 @@ internal fun BatchUpdateProgressDialog(
     currentIndex: Int,
     totalCount: Int,
     currentPackageName: String,
-    event: InstallProgressEvent
+    event: InstallProgressEvent,
+    onCancel: () -> Unit,
 ) {
     TinaAlertDialog(
         onDismissRequest = {},
@@ -589,7 +591,7 @@ internal fun BatchUpdateProgressDialog(
                 }
             }
         },
-        confirmButton = {}
+        confirmButton = { TinaTextButton(text = stringResource(Strings.btn_cancel), onClick = onCancel) }
     )
 }
 

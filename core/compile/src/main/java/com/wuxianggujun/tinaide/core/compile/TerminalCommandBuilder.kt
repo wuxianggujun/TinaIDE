@@ -39,6 +39,7 @@ class TerminalCommandBuilder(context: Context) {
         projectRoot: File,
         extraEnvironment: Map<String, String> = emptyMap(),
         nativeRuntimeIdentity: NativeRuntimeIdentity? = null,
+        interactive: Boolean = true,
     ): String = withContext(Dispatchers.IO) {
         buildOnIo(
             workingDir = workingDir,
@@ -47,6 +48,7 @@ class TerminalCommandBuilder(context: Context) {
             projectRoot = projectRoot,
             extraEnvironment = extraEnvironment,
             nativeRuntimeIdentity = nativeRuntimeIdentity,
+            interactive = interactive,
         )
     }
 
@@ -57,6 +59,7 @@ class TerminalCommandBuilder(context: Context) {
         projectRoot: File,
         extraEnvironment: Map<String, String>,
         nativeRuntimeIdentity: NativeRuntimeIdentity?,
+        interactive: Boolean,
     ): String {
         val outputFile = File(outputPath)
         val stageDir = File(appContext.filesDir, "run-bin")
@@ -72,7 +75,7 @@ class TerminalCommandBuilder(context: Context) {
         // 仅在 sysroot 中存在 libc++_shared.so 时设置 LD_LIBRARY_PATH(供 C++ 程序使用)。
         // 不能把整个 sysroot lib 目录加入 LD_LIBRARY_PATH,因为其中包含 NDK stub 库
         // (libc.so 等),这些 stub 没有实际代码,运行时加载会导致 SIGSEGV。
-        val packagePaths = InstalledPackagePathResolver.resolve(appContext, projectRoot)
+        val packagePaths = InstalledPackagePathResolver.resolve(appContext, projectRoot, outputFile.parentFile)
         val runtimeLibPaths = buildList {
             outputFile.parentFile?.absolutePath?.takeIf { it.isNotBlank() }?.let(::add)
             addAll(
@@ -96,7 +99,7 @@ class TerminalCommandBuilder(context: Context) {
         }
         val envPrefix = LaunchEnvironment.buildShellPrefix(launchEnvironment - "LD_LIBRARY_PATH")
 
-        val waitForEnterSuffix = buildWaitForEnterSuffix()
+        val waitForEnterSuffix = if (interactive) buildWaitForEnterSuffix() else ""
 
         return assembleTerminalRunShellCommand(
             layout = TerminalRunLayout(
@@ -109,6 +112,7 @@ class TerminalCommandBuilder(context: Context) {
                 ldLibraryPrefix = ldLibraryPrefix,
                 waitForEnterSuffix = waitForEnterSuffix,
                 kind = sourceKind,
+                replaceShell = !interactive,
             )
         )
     }

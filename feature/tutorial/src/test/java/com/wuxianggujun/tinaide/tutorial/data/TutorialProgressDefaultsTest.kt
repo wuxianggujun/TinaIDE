@@ -1,7 +1,9 @@
 package com.wuxianggujun.tinaide.tutorial.data
 
 import com.google.common.truth.Truth.assertThat
+import com.wuxianggujun.tinaide.core.serialization.JsonSerializer
 import com.wuxianggujun.tinaide.core.i18n.Strings
+import kotlinx.serialization.decodeFromString
 import org.junit.Test
 
 class TutorialProgressDefaultsTest {
@@ -17,8 +19,19 @@ class TutorialProgressDefaultsTest {
 
         assertThat(progress.currentStepIndex).isEqualTo(0)
         assertThat(progress.completedAt).isNull()
+        assertThat(progress.completedStepIds).isEmpty()
         assertThat(progress.lastAccessedAt).isAtLeast(before)
         assertThat(progress.lastAccessedAt).isAtMost(after)
+    }
+
+    @Test
+    fun progress_shouldReadOlderSavedDataWithoutChapterCompletionField() {
+        val progress = JsonSerializer.default.decodeFromString<TutorialProgress>(
+            """{"tutorialId":"cpp_practice_course","status":"IN_PROGRESS","currentStepIndex":4,"completedAt":null,"lastAccessedAt":1}""",
+        )
+
+        assertThat(progress.currentStepIndex).isEqualTo(4)
+        assertThat(progress.completedStepIds).isEmpty()
     }
 
     @Test
@@ -43,9 +56,7 @@ class TutorialProgressDefaultsTest {
         assertThat(step.action).isEqualTo(StepAction.NONE)
         assertThat(step.highlightShape).isEqualTo(HighlightShape.ROUNDED_RECT)
         assertThat(step.highlightPadding).isEqualTo(8)
-        assertThat(tutorial.source).isEqualTo(TutorialSource.LOCAL)
         assertThat(tutorial.steps).isEmpty()
-        assertThat(tutorial.version).isEqualTo(1)
-        assertThat(tutorial.requiredAppVersion).isNull()
+        assertThat(tutorial.courseSteps).isEmpty()
     }
 }

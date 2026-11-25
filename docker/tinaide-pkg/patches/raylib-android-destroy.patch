@@ -1,0 +1,37 @@
+diff --git a/src/platforms/rcore_android.c b/src/platforms/rcore_android.c
+--- a/src/platforms/rcore_android.c
++++ b/src/platforms/rcore_android.c
+@@ -794,6 +794,8 @@ void PollInputEvents(void)
+         if (platform.app->destroyRequested != 0)
+         {
+             CORE.Window.shouldClose = true;
++            // Do not poll(-1) again: NativeActivity.onDestroy is waiting for android_main to return.
++            break;
+         }
+     }
+ }
+@@ -858,7 +860,7 @@ int InitPlatform(void)
+     CORE.Storage.basePath = platform.app->activity->internalDataPath;   // Define base path for storage
+     //----------------------------------------------------------------------------
+ 
+-    TRACELOG(LOG_INFO, "PLATFORM: ANDROID: Initialized successfully");
++    TRACELOG(LOG_INFO, "PLATFORM: ANDROID: Initialized successfully (TinaIDE lifecycle r3)");
+ 
+     // Android ALooper_pollOnce() variables
+     int pollResult = 0;
+@@ -873,8 +875,13 @@ int InitPlatform(void)
+             // Process this event
+             if (platform.source != NULL) platform.source->process(platform.app, platform.source);
+ 
+-            // NOTE: It's highly likely destroyRequested will never be non-zero at the start of the activity lifecycle
+-            //if (platform.app->destroyRequested != 0) CORE.Window.shouldClose = true;
++            // Back/task removal can destroy the activity before a usable window arrives.
++            if (platform.app->destroyRequested != 0)
++            {
++                CORE.Window.shouldClose = true;
++                CORE.Window.ready = false;
++                return -1;
++            }
+         }
+     }
+ 

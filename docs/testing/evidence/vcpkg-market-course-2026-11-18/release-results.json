@@ -1,0 +1,237 @@
+{
+  "appSourceCommit": "f52612ed82fdd823d608d16a59da224b1c68eed9",
+  "versionName": "0.19.5",
+  "apkChecks": [
+    {
+      "sha256": "3c7ce7a85d0228940b26701e07b25f211e7d79eeef54d4b9dcaa352c302f6eb8",
+      "sourceCommit": "f52612ed82fdd823d608d16a59da224b1c68eed9",
+      "abi": "arm64-v8a",
+      "buildType": "release",
+      "versionCode": 19062,
+      "versionName": "0.19.5",
+      "certificateSha256": "e1ef5c24ca8349376e6f3ebf0d9b93a7c44c20d7bb9ae2144f053abb649fd45c",
+      "nativeLibraries": 46,
+      "alignment16KiB": true,
+      "verified": true
+    },
+    {
+      "sha256": "20fb04e16f94c8cee66f965bf7e3bb9e153aa30ff940dea39e1b9bc778ce3511",
+      "sourceCommit": "f52612ed82fdd823d608d16a59da224b1c68eed9",
+      "abi": "x86_64",
+      "buildType": "release",
+      "versionCode": 19061,
+      "versionName": "0.19.5",
+      "certificateSha256": "e1ef5c24ca8349376e6f3ebf0d9b93a7c44c20d7bb9ae2144f053abb649fd45c",
+      "nativeLibraries": 44,
+      "alignment16KiB": true,
+      "verified": true
+    }
+  ],
+  "helpAssets": {
+    "x86_64": {
+      "count": 86,
+      "matched": true
+    },
+    "arm64": {
+      "count": 86,
+      "matched": true
+    }
+  },
+  "pythonTests": {
+    "regressionGate": 20,
+    "releaseBlackbox": 10
+  },
+  "releaseGuiCases": [
+    {
+      "case": "main-navigation",
+      "runId": "0a32715c27124b7996b4a43d3719b608",
+      "serial": "emulator-5582",
+      "passed": true,
+      "rootRequired": false,
+      "targetApkSha256": "20fb04e16f94c8cee66f965bf7e3bb9e153aa30ff940dea39e1b9bc778ce3511",
+      "installedApkSha256": "20fb04e16f94c8cee66f965bf7e3bb9e153aa30ff940dea39e1b9bc778ce3511",
+      "navigationDestinations": 4,
+      "selectedDestinationRetainedAfterRecreation": true,
+      "lifecycle": {
+        "runId": "0a32715c27124b7996b4a43d3719b608",
+        "activity": "com.wuxianggujun.tinaide.ui.MainPortalActivity",
+        "recreationRequests": 1,
+        "savedStateCreations": 1,
+        "passed": true
+      },
+      "width": 720,
+      "height": 1280,
+      "density": 2.0
+    },
+    {
+      "case": "market-portrait",
+      "runId": "e6d5bcb1aeda45babcd1e50695393f3a",
+      "serial": "emulator-5582",
+      "passed": true,
+      "rootRequired": false,
+      "targetApkSha256": "20fb04e16f94c8cee66f965bf7e3bb9e153aa30ff940dea39e1b9bc778ce3511",
+      "installedApkSha256": "20fb04e16f94c8cee66f965bf7e3bb9e153aa30ff940dea39e1b9bc778ce3511",
+      "navigationDestinations": 1,
+      "labelBounds": [
+        {
+          "text": "Plugins",
+          "bounds": [
+            72,
+            260,
+            169,
+            293
+          ]
+        },
+        {
+          "text": "Packages",
+          "bounds": [
+            297,
+            260,
+            423,
+            293
+          ]
+        },
+        {
+          "text": "vcpkg",
+          "bounds": [
+            561,
+            260,
+            639,
+            293
+          ]
+        }
+      ],
+      "tabLabelGeometryFitsOneLine": true,
+      "searchRetainedAcrossThreeTabs": true,
+      "searchRetainedAfterActivityRecreation": true,
+      "resultsViewportBounds": [
+        0,
+        456,
+        720,
+        1024
+      ],
+      "searchCanBeClosed": true,
+      "lifecycle": {
+        "runId": "e6d5bcb1aeda45babcd1e50695393f3a",
+        "activity": "com.wuxianggujun.tinaide.ui.MainPortalActivity",
+        "recreationRequests": 1,
+        "savedStateCreations": 1,
+        "passed": true
+      },
+      "width": 720,
+      "height": 1280,
+      "density": 2.0
+    },
+    {
+      "case": "market-landscape",
+      "runId": "68ed32cc515844978e880dda1e2f2e17",
+      "serial": "emulator-5582",
+      "passed": true,
+      "rootRequired": false,
+      "targetApkSha256": "20fb04e16f94c8cee66f965bf7e3bb9e153aa30ff940dea39e1b9bc778ce3511",
+      "installedApkSha256": "20fb04e16f94c8cee66f965bf7e3bb9e153aa30ff940dea39e1b9bc778ce3511",
+      "navigationDestinations": 1,
+      "labelBounds": [
+        {
+          "text": "Plugins",
+          "bounds": [
+            330,
+            208,
+            427,
+            241
+          ]
+        },
+        {
+          "text": "Packages",
+          "bounds": [
+            689,
+            208,
+            815,
+            241
+          ]
+        },
+        {
+          "text": "vcpkg",
+          "bounds": [
+            1086,
+            208,
+            1164,
+            241
+          ]
+        }
+      ],
+      "tabLabelGeometryFitsOneLine": true,
+      "searchRetainedAcrossThreeTabs": true,
+      "searchRetainedAfterActivityRecreation": true,
+      "resultsViewportBounds": [
+        160,
+        392,
+        1280,
+        672
+      ],
+      "searchCanBeClosed": true,
+      "lifecycle": {
+        "runId": "68ed32cc515844978e880dda1e2f2e17",
+        "activity": "com.wuxianggujun.tinaide.ui.MainPortalActivity",
+        "recreationRequests": 1,
+        "savedStateCreations": 1,
+        "passed": true
+      },
+      "width": 1280,
+      "height": 720,
+      "density": 2.0
+    },
+    {
+      "case": "tutorial-course",
+      "runId": "03dd980f9df94a45979596cd018cb8eb",
+      "serial": "emulator-5582",
+      "passed": true,
+      "rootRequired": false,
+      "targetApkSha256": "20fb04e16f94c8cee66f965bf7e3bb9e153aa30ff940dea39e1b9bc778ce3511",
+      "installedApkSha256": "20fb04e16f94c8cee66f965bf7e3bb9e153aa30ff940dea39e1b9bc778ce3511",
+      "localCourseOpenedWithoutNetworking": true,
+      "nextLessonStaysInTutorials": true,
+      "courseRetainedAfterActivityRecreation": true,
+      "lifecycle": {
+        "runId": "03dd980f9df94a45979596cd018cb8eb",
+        "activity": "com.wuxianggujun.tinaide.ui.MainPortalActivity",
+        "recreationRequests": 1,
+        "savedStateCreations": 1,
+        "passed": true
+      },
+      "width": 720,
+      "height": 1280,
+      "density": 2.0
+    },
+    {
+      "case": "feedback-draft",
+      "runId": "4b9106e7ca774a06bde9212f59e9394e",
+      "serial": "emulator-5582",
+      "passed": true,
+      "rootRequired": false,
+      "targetApkSha256": "20fb04e16f94c8cee66f965bf7e3bb9e153aa30ff940dea39e1b9bc778ce3511",
+      "installedApkSha256": "20fb04e16f94c8cee66f965bf7e3bb9e153aa30ff940dea39e1b9bc778ce3511",
+      "feedbackDialogRetained": true,
+      "messageAndContactRetained": true,
+      "feedbackSubmitted": false,
+      "lifecycle": {
+        "runId": "4b9106e7ca774a06bde9212f59e9394e",
+        "activity": "com.wuxianggujun.tinaide.settings.SettingsActivity",
+        "recreationRequests": 1,
+        "savedStateCreations": 1,
+        "passed": true
+      },
+      "width": 720,
+      "height": 1280,
+      "density": 2.0
+    }
+  ],
+  "runtimeCoverage": "Full native/vcpkg/course/package behavioral cases were executed on Debug; not re-labelled as Release.",
+  "pms110": {
+    "installed": false,
+    "state": "wireless_adb_disconnected",
+    "previousVersion": "0.19.4",
+    "candidateVersion": "0.19.5",
+    "dataCleared": false
+  }
+}

@@ -167,8 +167,8 @@ object NativeCrashHandler {
             val logFile = File(logPath)
             if (logFile.exists() && logFile.canRead()) {
                 return buildString {
-                    appendLine("===== Full Log =====")
-                    append(logFile.readText())
+                    appendLine("===== Log Preview =====")
+                    append(CrashReportFiles.readPreview(logFile))
                 }
             }
             return buildString {
@@ -241,7 +241,7 @@ object NativeCrashHandler {
                             file.canRead() &&
                             file.length() > 0L &&
                             !CrashUploadState.isUploaded(context, file.name) &&
-                            !CrashUploadState.isUploadSkipped(context, file.name)
+                            !CrashUploadState.isUploadTerminal(context, file.name)
                     }
                     .map { it.absolutePath }
                     .toSet()

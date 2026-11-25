@@ -5,6 +5,7 @@ import androidx.lifecycle.LifecycleCoroutineScope
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.wuxianggujun.tinaide.core.compile.ProcessManager
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
 /**
@@ -21,6 +22,7 @@ class MainActivityCompileDelegate(
     private val compileRuntimeObserver: CompileRuntimeObserver,
     private val compileUiEventObserver: CompileUiEventObserver,
 ) {
+    internal val assessmentCompiler: CompilerViewModel get() = compilerViewModel
     fun registerObservers() {
         observeCompilerState()
         observeCompileActionsEvents()
@@ -30,6 +32,10 @@ class MainActivityCompileDelegate(
         lifecycleScope.launch {
             compileActionsHelper.runProject()
         }
+    }
+
+    fun onStopCompile() {
+        compilerViewModel.stopRunningProgram()
     }
 
     fun onRebuildAndRunProject() {
@@ -84,9 +90,9 @@ class MainActivityCompileDelegate(
         lifecycleScope.launch {
             lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 launch {
-                    processManager.processState.collect { processInfo ->
-                        compileRuntimeObserver.handleProcessStateChanged(processInfo.state)
-                    }
+                    combine(processManager.processState, compilerViewModel.actionGate.isBusy) { processInfo, _ ->
+                        processInfo.state
+                    }.collect(compileRuntimeObserver::handleProcessStateChanged)
                 }
 
                 launch {

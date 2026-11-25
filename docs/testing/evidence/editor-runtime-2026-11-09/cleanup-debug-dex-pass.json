@@ -1,0 +1,38 @@
+[
+  {
+    "Path": "app/build/intermediates/dex/x86_64Debug",
+    "DeletedFiles": 41,
+    "DeletedLogicalBytes": 193800824,
+    "RemainingFiles": 0
+  },
+  {
+    "Path": "app/build/intermediates/project_dex_archive/x86_64Debug",
+    "DeletedFiles": 1867,
+    "DeletedLogicalBytes": 14552528,
+    "RemainingFiles": 0
+  },
+  {
+    "Path": "app/build/intermediates/mixed_scope_dex_archive/x86_64Debug",
+    "DeletedFiles": 0,
+    "DeletedLogicalBytes": 0,
+    "RemainingFiles": 0
+  },
+  {
+    "Path": "app/build/intermediates/dex_number_of_buckets_file/x86_64Debug",
+    "DeletedFiles": 1,
+    "DeletedLogicalBytes": 1,
+    "RemainingFiles": 0
+  },
+  {
+    "Path": "app/build/intermediates/incremental/x86_64Debug",
+    "DeletedFiles": 9,
+    "DeletedLogicalBytes": 8032980,
+    "RemainingFiles": 0
+  },
+  {
+    "Path": "app/build/intermediates/incremental/mergeX86_64DebugAssets",
+    "DeletedFiles": 1,
+    "DeletedLogicalBytes": 91602,
+    "RemainingFiles": 0
+  }
+]

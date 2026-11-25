@@ -451,8 +451,17 @@ internal fun ProjectSettingsSection(viewModel: SettingsViewModel) {
                 subtitle = stringResource(NativeBuildFlagType.CMAKE_ARGS.subtitleRes),
                 value = cmakeArgsValue,
                 onClick = { editingBuildFlagType = NativeBuildFlagType.CMAKE_ARGS },
-                showDivider = false
+                showDivider = true
             )
+            ProjectVcpkgSettingsItem(state.projectNativeCMakeArgs) { arguments ->
+                viewModel.updateProjectNativeBuildFlags(
+                    cFlags = state.projectNativeCFlags,
+                    cppFlags = state.projectNativeCppFlags,
+                    ldFlags = state.projectNativeLdFlags,
+                    ldLibs = state.projectNativeLdLibs,
+                    cmakeArgs = arguments,
+                )
+            }
         }
     }
 

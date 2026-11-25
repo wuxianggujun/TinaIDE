@@ -1,0 +1,27 @@
+{
+  "tests": 5,
+  "failures": 0,
+  "skipped": 0,
+  "suites": [
+    {
+      "name": "com.wuxianggujun.tinaide.core.editorview.EditorLargeDocumentRegressionTest",
+      "tests": "2",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-11-08T17:05:41.171Z",
+      "hostname": "DESKTOP-9KUJPVG",
+      "time": "0.394"
+    },
+    {
+      "name": "com.wuxianggujun.tinaide.core.editorview.EditorRendererPerformanceSnapshotTest",
+      "tests": "3",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-11-08T17:05:41.840Z",
+      "hostname": "DESKTOP-9KUJPVG",
+      "time": "5.93"
+    }
+  ]
+}

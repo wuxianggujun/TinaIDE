@@ -9,12 +9,14 @@ import kotlinx.serialization.Serializable
 data class TutorialProgress(
     val tutorialId: String,
     val status: ProgressStatus,
-    /** 当前步骤索引（仅交互式教程） */
+    /** 当前交互步骤或课程章节索引 */
     val currentStepIndex: Int = 0,
     /** 完成时间戳 */
     val completedAt: Long? = null,
     /** 最后访问时间戳 */
     val lastAccessedAt: Long = System.currentTimeMillis(),
+    /** 已确认完成的课程章节 ID；旧进度缺少该字段时默认为空。 */
+    val completedStepIds: Set<String> = emptySet(),
 )
 
 /**
@@ -44,12 +46,22 @@ data class TutorialWithProgress(
 
     val progressPercent: Int
         get() {
-            if (tutorial.steps.isEmpty()) return 0
-            val currentStep = progress?.currentStepIndex ?: 0
-            return if (status == ProgressStatus.COMPLETED) {
-                100
+            if (status == ProgressStatus.COMPLETED) return 100
+            val stepCount = tutorial.steps.size.takeIf { it > 0 } ?: tutorial.courseSteps.size
+            if (stepCount == 0) return 0
+            val completedStepCount = if (tutorial.type == TutorialType.GUIDED) {
+                val completedIds = progress?.completedStepIds.orEmpty()
+                tutorial.courseSteps
+                    .asSequence()
+                    .takeWhile { it.id in completedIds }
+                    .count()
             } else {
-                (currentStep * 100) / tutorial.steps.size
+                (progress?.currentStepIndex ?: 0).coerceIn(0, stepCount - 1) + 1
+            }
+            return when (status) {
+                ProgressStatus.NOT_STARTED -> 0
+                ProgressStatus.IN_PROGRESS -> (completedStepCount * 100) / stepCount
+                ProgressStatus.COMPLETED -> 100
             }
         }
 

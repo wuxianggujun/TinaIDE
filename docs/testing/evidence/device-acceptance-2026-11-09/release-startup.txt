@@ -1,0 +1,13 @@
+Starting: Intent { cmp=com.wuxianggujun.tinaide/.ui.MainPortalActivity }
+
+Status: ok
+
+LaunchState: COLD
+
+Activity: com.wuxianggujun.tinaide/.ui.MainPortalActivity
+
+TotalTime: 346
+
+WaitTime: 349
+
+Complete

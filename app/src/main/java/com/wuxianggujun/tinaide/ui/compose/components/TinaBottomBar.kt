@@ -1,10 +1,14 @@
 package com.wuxianggujun.tinaide.ui.compose.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
@@ -24,6 +28,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -32,12 +39,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.tutorial.spotlight.SpotlightTargets
 import com.wuxianggujun.tinaide.tutorial.spotlight.spotlightTarget
+
+private val NavigationRailItemHeight = 64.dp
 
 /**
  * TinaIDE 底部导航栏组件库
@@ -61,7 +71,9 @@ data class BottomNavItem(
     val contentDescriptionResId: Int,
     /** Spotlight 引导目标 ID */
     val spotlightTargetId: String? = null
-)
+) {
+    val testTag: String get() = "main-nav-$route"
+}
 
 /**
  * 底部导航栏
@@ -100,7 +112,7 @@ fun TinaBottomBar(
                 NavigationBarItem(
                     selected = selected,
                     onClick = { onItemSelected(index) },
-                    modifier = itemModifier,
+                    modifier = itemModifier.testTag(item.testTag),
                     icon = {
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
@@ -148,6 +160,46 @@ fun TinaBottomBar(
                         // 隐藏 MD3 默认 pill indicator，改用上面的“正方形圆角”选中背景
                         indicatorColor = Color.Transparent
                     )
+                )
+            }
+        }
+    }
+}
+
+/** Short landscape windows reuse the same routes and Spotlight targets without a tall bottom bar. */
+@Composable
+fun TinaNavigationRail(
+    items: List<BottomNavItem>,
+    selectedIndex: Int,
+    onItemSelected: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    NavigationRail(
+        modifier = modifier.fillMaxHeight().navigationBarsPadding(),
+        containerColor = MaterialTheme.colorScheme.surface,
+        windowInsets = WindowInsets(0, 0, 0, 0),
+    ) {
+        Column(modifier = Modifier.fillMaxHeight().verticalScroll(rememberScrollState())) {
+            items.forEachIndexed { index, item ->
+                val selected = selectedIndex == index
+                val target = item.spotlightTargetId?.let { Modifier.spotlightTarget(it) } ?: Modifier
+                NavigationRailItem(
+                    selected = selected,
+                    onClick = { onItemSelected(index) },
+                    modifier = target.height(NavigationRailItemHeight).testTag(item.testTag),
+                    icon = {
+                        Icon(
+                            imageVector = if (selected) item.selectedIcon else item.unselectedIcon,
+                            contentDescription = stringResource(item.contentDescriptionResId),
+                            modifier = Modifier.size(24.dp),
+                        )
+                    },
+                    label = { Text(stringResource(item.titleResId), style = MaterialTheme.typography.labelSmall) },
+                    colors = NavigationRailItemDefaults.colors(
+                        selectedIconColor = MaterialTheme.colorScheme.primary,
+                        selectedTextColor = MaterialTheme.colorScheme.primary,
+                        indicatorColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
+                    ),
                 )
             }
         }

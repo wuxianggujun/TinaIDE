@@ -17,7 +17,6 @@ internal class ContextCompileNativeActivityLauncher(
     private val onError: (String) -> Unit,
     private val activityStarter: (Intent) -> Unit = { intent -> context.startActivity(intent) },
 ) {
-
     suspend fun open(request: GraphicalRuntimeLaunchRequest.NativeActivity) {
         val runtime = withContext(Dispatchers.IO) {
             NativeActivityRuntimeResolver.resolve(

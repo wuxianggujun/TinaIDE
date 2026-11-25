@@ -55,6 +55,7 @@ import com.wuxianggujun.tinaide.core.treesitter.HighlightSpan
 import com.wuxianggujun.tinaide.core.treesitter.TreeSitterHighlighter
 import com.wuxianggujun.tinaide.core.treesitter.TreeSitterLanguageRegistry
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 
 /**
@@ -252,7 +253,8 @@ private fun HighlightedCodeContent(
 
     // 语法高亮器（按需创建，Composition 销毁时释放）
     val tsLanguage = remember(language) { TreeSitterLanguageRegistry.resolveLanguageName(language) }
-    val highlighter = remember(tsLanguage) {
+    // Each immutable code snapshot owns its parser, so a cancelled parse cannot recolor newer code.
+    val highlighter = remember(code, tsLanguage) {
         if (tsLanguage != null) TreeSitterHighlighter.create(context, tsLanguage) else null
     }
     DisposableEffect(highlighter) {
@@ -268,10 +270,13 @@ private fun HighlightedCodeContent(
             highlightedText = null
             return@LaunchedEffect
         }
-        highlightedText = withContext(Dispatchers.Default) {
-            val spans = highlighter.highlight(code, 0..code.length)
-            buildHighlightedText(code, spans, syntaxColors)
-        }
+        codeBlockHighlightUpdates(code, highlighter)
+            .flowOn(Dispatchers.Default)
+            .collect { spans ->
+                highlightedText = withContext(Dispatchers.Default) {
+                    buildHighlightedText(code, spans, syntaxColors)
+                }
+            }
     }
 
     val shouldCollapse = lineCount > 20

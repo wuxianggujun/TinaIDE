@@ -1,0 +1,22 @@
+[
+  {
+    "path": "app/build/outputs/apk/x86_64/debug/TinaIDE-0.19.0-x86_64-debug.apk",
+    "bytes": 311635897,
+    "sha256": "860ec05eeba1ee57b94280d34bb9d2971d8e7cf841d16e0626a317f9e548d0ba"
+  },
+  {
+    "path": "app/src/main/assets/apk_templates/template-sdl3.apk",
+    "bytes": 6214214,
+    "sha256": "f5d6f3b0495a9bdd480a6f7d245ac078f4cdf2eb59bea4ac50594385da6e3e03"
+  },
+  {
+    "path": "app/src/main/assets/apk_templates/template-native-activity.apk",
+    "bytes": 5116810,
+    "sha256": "2ea4c4432073e63d75536b392366275ad80e980321c35a7d29497ef385ed24c1"
+  },
+  {
+    "path": "app/build/outputs/apk/androidTest/x86_64/debug/app-x86_64-debug-androidTest.apk",
+    "bytes": 2670937,
+    "sha256": "798a1a4e0807e93a22e2d8e84d388aa390001d15281bba5eaeba8445903d00be"
+  }
+]

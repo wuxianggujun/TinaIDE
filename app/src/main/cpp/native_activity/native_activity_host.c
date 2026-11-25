@@ -158,6 +158,22 @@ static int is_raylib_entry(native_activity_entry_fn entry) {
     return strstr(entry_info.dli_fname, "libraylib.so") != NULL;
 }
 
+static int activity_is_finishing(ANativeActivity *activity) {
+    JNIEnv *env = activity->env;
+    jclass activity_class = (*env)->GetObjectClass(env, activity->clazz);
+    if (activity_class == NULL) return 1;
+    jmethodID is_finishing = (*env)->GetMethodID(env, activity_class, "isFinishing", "()Z");
+    jboolean finishing = JNI_TRUE;
+    if (is_finishing != NULL) finishing = (*env)->CallBooleanMethod(env, activity->clazz, is_finishing);
+    if ((*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionDescribe(env);
+        (*env)->ExceptionClear(env);
+        finishing = JNI_TRUE;
+    }
+    (*env)->DeleteLocalRef(env, activity_class);
+    return finishing == JNI_TRUE;
+}
+
 static int paths_refer_to_same_file(const char *left, const char *right) {
     if (left == NULL || right == NULL) return 0;
     if (strcmp(left, right) == 0) return 1;
@@ -233,6 +249,9 @@ __attribute__((visibility("default"))) void ANativeActivity_onCreate(
     void *saved_state,
     size_t saved_state_size
 ) {
+    // A revoked launch must complete Android's super.onCreate, but must not load
+    // user code or overwrite another Activity's process-global engine state.
+    if (activity_is_finishing(activity)) return;
     pthread_mutex_lock(&g_config_lock);
     if (g_main_library_path == NULL || g_main_library_path[0] == '\0') {
         pthread_mutex_unlock(&g_config_lock);

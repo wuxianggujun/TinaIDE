@@ -26,6 +26,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -46,6 +47,7 @@ import com.wuxianggujun.tinaide.ui.MainActivityNavigationHelper
 import com.wuxianggujun.tinaide.ui.compose.state.editor.EditorContainerState
 import java.io.File
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.collectLatest
 import com.wuxianggujun.tinaide.ui.compose.state.editor.ActiveDocumentSymbolsTargetResult
 
@@ -61,6 +63,7 @@ fun OutlineContent(
 
     var query by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
+    var queryFailed by remember { mutableStateOf(false) }
     var symbols by remember { mutableStateOf<List<DocumentSymbolItem>>(emptyList()) }
     var refreshToken by remember { mutableIntStateOf(0) }
     val collapsed = remember { mutableStateMapOf<String, Boolean>() }
@@ -119,6 +122,7 @@ fun OutlineContent(
                     item.name.contains(needle, ignoreCase = true) ||
                         item.kind.contains(needle, ignoreCase = true) ||
                         (item.containerName?.contains(needle, ignoreCase = true) == true)
+                        || (item.detail?.contains(needle, ignoreCase = true) == true)
                 }
             }
         }
@@ -142,13 +146,20 @@ fun OutlineContent(
             return@LaunchedEffect
         }
         loading = true
+        queryFailed = false
         symbols = emptyList()
         delay(200)
         val tabId = documentSymbolsTabId ?: return@LaunchedEffect
-        symbols = runCatching { editorContainerState.documentSymbols(tabId) }
-            .getOrElse { emptyList() }
-            .filter { it.name.isNotBlank() }
-        loading = false
+        try {
+            symbols = editorContainerState.documentSymbols(tabId).filter { it.name.isNotBlank() }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            timber.log.Timber.w(error, "Document symbol query failed")
+            queryFailed = true
+        } finally {
+            loading = false
+        }
     }
 
     Column(
@@ -233,6 +244,13 @@ fun OutlineContent(
         }
 
         Spacer(modifier = Modifier.height(4.dp))
+
+        if (queryFailed) {
+            Text(stringResource(Strings.symbols_query_failed), color = MaterialTheme.colorScheme.error)
+            TextButton(onClick = { refreshToken++ }) {
+                Text(stringResource(Strings.action_retry))
+            }
+        }
 
         if (query.isNotEmpty()) {
             Row(
@@ -409,6 +427,16 @@ private fun DocumentSymbolRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+        }
+        item.detail?.takeIf { it.isNotBlank() }?.let { signature ->
+            androidx.compose.foundation.text.selection.SelectionContainer {
+                Text(
+                    text = signature,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(start = indent + 30.dp, top = 4.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }

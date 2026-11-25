@@ -25,8 +25,10 @@ import com.wuxianggujun.tinaide.core.compile.artifact.BuildFingerprint
 import com.wuxianggujun.tinaide.core.compile.artifact.FingerprintCalculator
 import com.wuxianggujun.tinaide.core.compile.artifact.SourceRef
 import com.wuxianggujun.tinaide.core.compile.artifact.TrackedInputCollector
+import com.wuxianggujun.tinaide.core.compile.artifact.VcpkgBuildInputs
 import com.wuxianggujun.tinaide.core.compile.cmake.CMakeBuildExecutor
 import com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutor
+import com.wuxianggujun.tinaide.core.compile.cmake.NativeCMakeBuildExecutor.Companion.CMakeCompilerCommand
 import com.wuxianggujun.tinaide.core.compile.event.BuildEvent
 import com.wuxianggujun.tinaide.core.compile.event.BuildEventEmitter
 import com.wuxianggujun.tinaide.core.i18n.Strings
@@ -34,7 +36,6 @@ import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.core.linux.LinuxEnvironmentProvider
 import com.wuxianggujun.tinaide.core.linux.LinuxRunModePolicy
 import com.wuxianggujun.tinaide.core.linux.UnavailableLinuxEnvironmentProvider
-import com.wuxianggujun.tinaide.core.ndk.AndroidNativeToolchainManager
 import com.wuxianggujun.tinaide.core.packages.PackageAbiCompatibility
 import com.wuxianggujun.tinaide.core.proot.PRootEnvironment
 import com.wuxianggujun.tinaide.core.proot.ToolchainPathResolver
@@ -77,6 +78,17 @@ class CMakeStrategy(
         internal fun shouldForceReconfigureForReason(reason: String?): Boolean =
             "reconfigureInputsHash" in reason.normalizedBuildReason()
 
+        internal fun compilerCacheMatches(
+            cacheContent: String,
+            language: String,
+            expected: CMakeCompilerCommand,
+        ): Boolean = readCMakeCacheValue(cacheContent, "CMAKE_${language}_COMPILER") == expected.compiler &&
+            readCMakeCacheValue(cacheContent, "CMAKE_${language}_COMPILER_ARG1").orEmpty() == expected.arg1.orEmpty()
+
+        private fun readCMakeCacheValue(cacheContent: String, key: String): String? =
+            Regex("""(?m)^${Regex.escape(key)}:[A-Z_]+=(.*)$""")
+                .find(cacheContent)?.groupValues?.getOrNull(1)?.trim()
+
         private fun String?.normalizedBuildReason(): String = orEmpty().trim()
     }
 
@@ -90,9 +102,6 @@ class CMakeStrategy(
     }
     private val nativeExecutor by lazy {
         NativeCMakeBuildExecutor(context, sharedTimeoutConfig)
-    }
-    private val nativeToolchainManager by lazy {
-        AndroidNativeToolchainManager(context.applicationContext)
     }
     private val pathResolver by lazy { ToolchainPathResolver(context) }
 
@@ -138,7 +147,7 @@ class CMakeStrategy(
             targetNames = targetClosure,
             targetSources = sourceFiles,
         )
-        val reconfigureInputs = TrackedInputCollector.collectCMakeReconfigureInputs(ctx.projectRoot)
+        val reconfigureInputs = collectReconfigureInputs(ctx)
 
         val spec = ArtifactSpec(
             id = ArtifactId(
@@ -295,6 +304,9 @@ class CMakeStrategy(
         buildDir: File,
         options: BuildOptions,
     ): ConfigureResult {
+        if (com.wuxianggujun.tinaide.project.VcpkgProjectSettings.from(options.nativeCMakeArgs).enabled) {
+            return ConfigureResult.Error(Strings.vcpkg_native_only.strOr(context))
+        }
         val (cCompiler, cxxCompiler) = try {
             resolveCompilerPaths(options)
         } catch (e: IllegalArgumentException) {
@@ -398,9 +410,12 @@ class CMakeStrategy(
 
     // ---------- needsReconfigure ----------
 
-    private fun needsReconfigure(projectRoot: File, buildDir: File, options: BuildOptions): Boolean {
+    private suspend fun needsReconfigure(projectRoot: File, buildDir: File, options: BuildOptions): Boolean {
         val cacheFile = File(buildDir, "CMakeCache.txt")
         if (!cacheFile.exists()) return true
+        if (listOf("vcpkg.json", "vcpkg-configuration.json").any {
+            File(projectRoot, it).let { file -> file.isFile && file.lastModified() > cacheFile.lastModified() }
+        }) return true
 
         val cmakeListsFile = File(projectRoot, "CMakeLists.txt")
         if (cmakeListsFile.exists() && cmakeListsFile.lastModified() > cacheFile.lastModified()) return true
@@ -410,15 +425,20 @@ class CMakeStrategy(
 
         try {
             val cacheContent = cacheFile.readText()
+            val vcpkg = com.wuxianggujun.tinaide.project.VcpkgProjectSettings.from(options.nativeCMakeArgs)
+            if (vcpkg.enabled && isNativeMode(options.resolvedRunMode)) {
+                val toolchain = readCMakeCacheValue(cacheContent, "CMAKE_TOOLCHAIN_FILE") ?: return true
+                if (!File(toolchain).isFile) return true
+                if (vcpkg.mode == com.wuxianggujun.tinaide.project.VcpkgProjectSettings.SHARED) {
+                    val abi = PackageAbiCompatibility.currentAppAbi(context.applicationInfo.nativeLibraryDir, Build.SUPPORTED_ABIS)
+                    val installed = com.wuxianggujun.tinaide.core.packages.VcpkgManagedPaths.installed(context, projectRoot, vcpkg, abi)
+                    if (readCMakeCacheValue(cacheContent, "VCPKG_INSTALLED_DIR") != installed.canonicalPath) return true
+                }
+            }
             val (expectedCCompiler, expectedCxxCompiler) = resolveExpectedCompilerConfig(options)
 
-            val cCompilerRegex = Regex("""(?m)^CMAKE_C_COMPILER:FILEPATH=(.+)$""")
-            val cMatch = cCompilerRegex.find(cacheContent)
-            if (cMatch == null || cMatch.groupValues[1].trim() != expectedCCompiler) return true
-
-            val cxxCompilerRegex = Regex("""(?m)^CMAKE_CXX_COMPILER:FILEPATH=(.+)$""")
-            val cxxMatch = cxxCompilerRegex.find(cacheContent)
-            if (cxxMatch == null || cxxMatch.groupValues[1].trim() != expectedCxxCompiler) return true
+            if (!compilerCacheMatches(cacheContent, "C", expectedCCompiler) ||
+                !compilerCacheMatches(cacheContent, "CXX", expectedCxxCompiler)) return true
 
             val generatorRegex = Regex("""(?m)^CMAKE_GENERATOR:INTERNAL=(.+)$""")
             val cachedGenerator = generatorRegex.find(cacheContent)?.groupValues?.get(1)?.trim()
@@ -452,6 +472,8 @@ class CMakeStrategy(
                         return true
                     }
                 }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             Timber.tag(TAG).w("Failed to read CMakeCache.txt: %s", e.message)
             return true
@@ -459,28 +481,16 @@ class CMakeStrategy(
         return false
     }
 
-    private fun readCMakeCacheValue(cacheContent: String, key: String): String? =
-        Regex("""(?m)^${Regex.escape(key)}:[A-Z_]+=(.*)$""")
-            .find(cacheContent)
-            ?.groupValues
-            ?.getOrNull(1)
-            ?.trim()
-
-    private fun resolveExpectedCompilerConfig(options: BuildOptions): Pair<String, String> {
+    private fun resolveExpectedCompilerConfig(options: BuildOptions): Pair<CMakeCompilerCommand, CMakeCompilerCommand> {
         if (!isNativeMode(options.resolvedRunMode)) {
             val (cCompiler, cxxCompiler) = resolveCompilerPaths(options)
-            return cCompiler to cxxCompiler
+            return CMakeCompilerCommand(cCompiler) to CMakeCompilerCommand(cxxCompiler)
         }
-        val binDir = nativeToolchainManager.getBinDir(options.toolchainId)
-        val realCCompiler = NativeCMakeBuildExecutor.resolveConfiguredCompilerPath(
-            configuredPath = options.customCCompiler,
-            fallbackPath = File(binDir, "clang").absolutePath,
+        return nativeExecutor.resolveCompilerCommands(
+            toolchainId = options.toolchainId,
+            cCompilerPath = options.customCCompiler,
+            cxxCompilerPath = options.customCppCompiler,
         )
-        val realCxxCompiler = NativeCMakeBuildExecutor.resolveConfiguredCompilerPath(
-            configuredPath = options.customCppCompiler,
-            fallbackPath = File(binDir, "clang++").absolutePath,
-        )
-        return realCCompiler to realCxxCompiler
     }
 
     private fun resolveCompilerPaths(options: BuildOptions): Pair<String, String> {
@@ -585,11 +595,8 @@ class CMakeStrategy(
             return ExecutionOutcome.Failure(reason)
         }
         val refreshedSpec = refreshTrackedInputSpec(ctx, spec)
-        val refreshedFingerprint = if (refreshedSpec == spec) {
-            fingerprint
-        } else {
-            FingerprintCalculator().compute(ctx, refreshedSpec)
-        }
+        // Configure may install new library contents under unchanged paths.
+        val refreshedFingerprint = FingerprintCalculator().compute(ctx, refreshedSpec)
         val artifact = Artifact(
             id = refreshedSpec.id,
             absolutePath = artifactFile.absolutePath,
@@ -624,6 +631,22 @@ class CMakeStrategy(
         )
     }
 
+    private suspend fun collectReconfigureInputs(ctx: BuildContext): List<File> {
+        val projectInputs = TrackedInputCollector.collectCMakeReconfigureInputs(ctx.projectRoot)
+        if (!isNativeMode(ctx.options.resolvedRunMode)) return projectInputs
+        val vcpkgSettings = com.wuxianggujun.tinaide.project.VcpkgProjectSettings.from(ctx.options.nativeCMakeArgs)
+        if (!vcpkgSettings.enabled) return projectInputs
+        val abi = PackageAbiCompatibility.currentAppAbi(context.applicationInfo.nativeLibraryDir, Build.SUPPORTED_ABIS)
+        return projectInputs + VcpkgBuildInputs.collect(
+            project = ctx.projectRoot,
+            arguments = ctx.options.nativeCMakeArgs,
+            androidAbi = abi,
+            debug = ctx.options.cmakeBuildType == CMakeBuildTypeOption.DEBUG,
+            managedInstallationRoot = com.wuxianggujun.tinaide.core.packages.VcpkgManagedPaths.installed(
+                context, ctx.projectRoot, vcpkgSettings, abi),
+        )
+    }
+
     private suspend fun refreshTrackedInputSpec(ctx: BuildContext, spec: ArtifactSpec): ArtifactSpec {
         val all = loadTargets(ctx.projectRoot, ctx.buildDir)
         val selected = all.firstOrNull { it.name == spec.id.targetName } ?: run {
@@ -642,7 +665,7 @@ class CMakeStrategy(
             targetNames = targetClosure,
             targetSources = sourceFiles,
         )
-        val reconfigureInputs = TrackedInputCollector.collectCMakeReconfigureInputs(ctx.projectRoot)
+        val reconfigureInputs = collectReconfigureInputs(ctx)
         BuildDiagnosticsLog.i {
             "cmake refresh tracked inputs target=${selected.name} targetClosure=${targetClosure.sorted().joinToString("|")} " +
                 "oldCompileInputs=${spec.sources.size} newCompileInputs=${compileInputs.size} " +

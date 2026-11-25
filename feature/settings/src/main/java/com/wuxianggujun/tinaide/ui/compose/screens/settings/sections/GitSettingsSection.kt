@@ -43,7 +43,6 @@ import com.wuxianggujun.tinaide.core.git.ssh.GitSshKeyMeta
 import com.wuxianggujun.tinaide.core.git.ssh.GitSshManager
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
-import com.wuxianggujun.tinaide.core.network.registry.GitHubRegistryProxyConfig
 import com.wuxianggujun.tinaide.ui.compose.components.TinaAlertDialog
 import com.wuxianggujun.tinaide.ui.compose.components.TinaDangerButton
 import com.wuxianggujun.tinaide.ui.compose.components.TinaDialogContentColumn
@@ -979,121 +978,23 @@ private fun GitSshContent() {
 @Composable
 private fun GitHubRegistryContent() {
     val context = LocalContext.current
-    val appContext = context.applicationContext
     val saveOk = stringResource(Strings.github_registry_proxy_save_ok)
-
-    var enabled by remember { mutableStateOf(false) }
-    var host by remember { mutableStateOf("") }
-    var port by remember { mutableStateOf("") }
-    var customMirrorUrl by remember { mutableStateOf("") }
-    var errorRes by remember { mutableStateOf<Int?>(null) }
-
-    fun loadSettings() {
-        val editorState = GitSettingsSectionSupport.createGitHubRegistryProxyEditorState(
-            GitHubRegistryProxyConfig.load(appContext)
-        )
-        enabled = editorState.enabled
-        host = editorState.host
-        port = editorState.port
-        customMirrorUrl = editorState.customMirrorUrl
-        errorRes = null
-    }
-
-    LaunchedEffect(Unit) {
-        loadSettings()
-    }
-
+    var showProxyDialog by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     Spacer(modifier = Modifier.height(8.dp))
     SettingsCategoryTitle(stringResource(Strings.settings_cat_github_registry))
-
     SettingsCard {
-        SettingsSwitchItem(
-            title = stringResource(Strings.github_registry_proxy_enabled_title),
-            subtitle = stringResource(Strings.github_registry_proxy_enabled_desc),
-            checked = enabled,
-            onCheckedChange = {
-                enabled = it
-                errorRes = null
-            },
+        SettingsClickableItem(
+            title = stringResource(Strings.market_github_proxy),
+            subtitle = stringResource(Strings.github_registry_proxy_scope_desc),
+            onClick = { showProxyDialog = true },
             showDivider = false,
         )
     }
-
-    SettingsCard {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text(
-                text = stringResource(Strings.github_registry_proxy_scope_desc),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            TinaTextField(
-                value = customMirrorUrl,
-                onValueChange = {
-                    customMirrorUrl = it
-                    errorRes = null
-                },
-                label = stringResource(Strings.github_registry_mirror_url_label),
-                placeholder = stringResource(Strings.github_registry_mirror_url_placeholder),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-            )
-            TinaTextField(
-                value = host,
-                onValueChange = {
-                    host = it
-                    errorRes = null
-                },
-                label = stringResource(Strings.github_registry_proxy_host_label),
-                placeholder = stringResource(Strings.github_registry_proxy_host_placeholder),
-                enabled = enabled,
-            )
-            TinaTextField(
-                value = port,
-                onValueChange = {
-                    port = it.filter(Char::isDigit)
-                    errorRes = null
-                },
-                label = stringResource(Strings.github_registry_proxy_port_label),
-                placeholder = stringResource(Strings.github_registry_proxy_port_placeholder),
-                enabled = enabled,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            )
-            errorRes?.let { resId ->
-                TinaDialogMessageCard(
-                    message = stringResource(resId),
-                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.72f),
-                    textColor = MaterialTheme.colorScheme.onErrorContainer,
-                )
-            }
-            TinaPrimaryButton(
-                text = stringResource(Strings.btn_save),
-                onClick = {
-                    val result = GitSettingsSectionSupport.resolveGitHubRegistryProxySettings(
-                        enabled = enabled,
-                        rawHost = host,
-                        rawPort = port,
-                        rawCustomMirrorUrl = customMirrorUrl,
-                    )
-                    val settings = result.settings
-                    if (settings == null) {
-                        errorRes = result.errorRes
-                        return@TinaPrimaryButton
-                    }
-
-                    GitHubRegistryProxyConfig.save(appContext, settings)
-                    val editorState = GitSettingsSectionSupport.createGitHubRegistryProxyEditorState(settings)
-                    enabled = editorState.enabled
-                    host = editorState.host
-                    port = editorState.port
-                    customMirrorUrl = editorState.customMirrorUrl
-                    errorRes = null
-                    Toast.makeText(context, saveOk, Toast.LENGTH_SHORT).show()
-                },
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
+    if (showProxyDialog) {
+        GitHubRegistryProxyDialog(
+            onDismiss = { showProxyDialog = false },
+            onSaved = { Toast.makeText(context, saveOk, Toast.LENGTH_SHORT).show() },
+        )
     }
 }
 

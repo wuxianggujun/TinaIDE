@@ -4,7 +4,6 @@ import android.app.NativeActivity
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
-import android.os.Process
 import android.view.ViewGroup
 import android.widget.Toast
 import androidx.annotation.Keep
@@ -44,7 +43,11 @@ class ExternalNativeActivity : NativeActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableFloatingLog = GraphicalRuntimeIntentOptions.readFloatingLogEnabled(intent)
-        runtimeHost.onPreCreate(savedInstanceState, intent)
+        if (!runtimeHost.onPreCreate(savedInstanceState, intent)) {
+            // The bridge sees isFinishing and does not touch a newer runtime's globals.
+            super.onCreate(savedInstanceState)
+            return
+        }
         runtimeHost.requestReturnToParentOnFinish()
 
         val configured = NativeActivityHostBridge.configure(
@@ -102,16 +105,11 @@ class ExternalNativeActivity : NativeActivity() {
     }
 
     override fun onDestroy() {
-        val shouldTerminateRuntimeProcess = isFinishing && !isChangingConfigurations
+        runtimeHost.onBeforeDestroy()
         try {
             super.onDestroy()
         } finally {
-            try {
-                runtimeHost.onDestroy()
-            } finally {
-                // Android keeps dlopen handles by SONAME, so the next run needs a fresh process.
-                if (shouldTerminateRuntimeProcess) Process.killProcess(Process.myPid())
-            }
+            runtimeHost.onDestroy()
         }
     }
 
@@ -143,6 +141,6 @@ class ExternalNativeActivity : NativeActivity() {
 
     private fun exitToParent() {
         runtimeHost.requestReturnToParentOnFinish()
-        finish()
+        runtimeHost.requestExit()
     }
 }

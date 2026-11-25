@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.VolunteerActivism
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -48,6 +49,7 @@ import com.wuxianggujun.tinaide.ui.compose.components.TinaTopBar
 fun ProfileScreen(
     modifier: Modifier = Modifier,
     onNavigateToSettings: () -> Unit = {},
+    onNavigateToDonation: () -> Unit = {},
     onNavigateToAbout: () -> Unit = {},
     onNavigateToPlugins: () -> Unit = {},
     onNavigateToPackages: () -> Unit = {},
@@ -69,10 +71,6 @@ fun ProfileScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
-                OpenSourceProfileCard()
-            }
-
-            item {
                 SectionHeader(title = stringResource(Strings.profile_section_my_content))
             }
 
@@ -93,6 +91,7 @@ fun ProfileScreen(
             item {
                 SettingsSection(
                     onSettingsClick = onNavigateToSettings,
+                    onDonationClick = onNavigateToDonation,
                     onAboutClick = onNavigateToAbout
                 )
             }
@@ -100,38 +99,6 @@ fun ProfileScreen(
             item {
                 Spacer(modifier = Modifier.height(16.dp))
                 VersionInfo()
-            }
-        }
-    }
-}
-
-@Composable
-private fun OpenSourceProfileCard() {
-    TinaCard(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Default.Info,
-                contentDescription = null,
-                modifier = Modifier.size(42.dp),
-                tint = MaterialTheme.colorScheme.primary
-            )
-            Spacer(modifier = Modifier.width(14.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    text = stringResource(Strings.profile_open_source_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = stringResource(Strings.profile_open_source_desc),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         }
     }
@@ -180,6 +147,7 @@ private fun MyContentSection(
 @Composable
 private fun SettingsSection(
     onSettingsClick: () -> Unit,
+    onDonationClick: () -> Unit,
     onAboutClick: () -> Unit
 ) {
     TinaCard(modifier = Modifier.fillMaxWidth()) {
@@ -189,6 +157,13 @@ private fun SettingsSection(
                 title = stringResource(Strings.profile_settings),
                 subtitle = stringResource(Strings.profile_settings_desc),
                 onClick = onSettingsClick
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            ProfileMenuItem(
+                icon = Icons.Default.VolunteerActivism,
+                title = stringResource(Strings.donation_title),
+                subtitle = stringResource(Strings.donation_entry_desc),
+                onClick = onDonationClick
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             ProfileMenuItem(

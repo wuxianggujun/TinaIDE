@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -206,7 +207,14 @@ fun VariableTextField(
     maxLines: Int = 1
 ) {
     var showSuggestions by remember { mutableStateOf(false) }
-    var cursorPosition by remember { mutableIntStateOf(0) }
+    var input by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(value)) }
+    val displayedInput = if (input.text == value) input else input.copy(
+        text = value,
+        selection = androidx.compose.ui.text.TextRange(input.selection.end.coerceAtMost(value.length)),
+        composition = null,
+    )
+    androidx.compose.runtime.SideEffect { input = displayedInput }
+    val cursorPosition = displayedInput.selection.end
 
     // 检查是否应该显示变量建议
     // 当光标前面有 $ 且后面没有完整的变量时显示
@@ -215,6 +223,7 @@ fun VariableTextField(
 
         // 查找光标前最近的 $
         val beforeCursor = value.take(cursorPosition.coerceAtMost(value.length))
+        if (beforeCursor.count { it == '$' } % 2 == 0) return@remember false
         val lastDollar = beforeCursor.lastIndexOf('$')
 
         if (lastDollar == -1) return@remember false
@@ -251,16 +260,16 @@ fun VariableTextField(
     }
 
     Box(modifier = modifier) {
-        OutlinedTextField(
-            value = value,
+        TinaTextField(
+            value = displayedInput,
             onValueChange = { newValue ->
-                onValueChange(newValue)
-                // 简单估算光标位置（实际上 Compose 的 TextField 不直接暴露光标位置）
-                cursorPosition = newValue.length
-                showSuggestions = newValue.contains("$") && !newValue.endsWith("$")
+                input = newValue
+                if (newValue.text != value) onValueChange(newValue.text)
+                showSuggestions = newValue.selection.collapsed &&
+                    newValue.text.take(newValue.selection.end).contains("$")
             },
-            label = { Text(label) },
-            placeholder = { Text(placeholder) },
+            label = label,
+            placeholder = placeholder,
             supportingText = {
                 Text(stringResource(Strings.run_config_variable_hint))
             },
@@ -315,13 +324,21 @@ fun VariableTextField(
                         val lastDollar = beforeCursor.lastIndexOf('$')
 
                         val newValue = if (lastDollar != -1) {
-                            // 替换从 $ 开始的部分
-                            value.substring(0, lastDollar) + variable.name + value.substring(cursorPosition.coerceAtMost(value.length))
+                            // When editing inside an existing token, replace its suffix too.
+                            val cursor = cursorPosition.coerceAtMost(value.length)
+                            val closing = value.indexOf('$', cursor).takeIf { end ->
+                                end >= cursor && value.substring(cursor, end).all { it.isLetterOrDigit() || it == '_' }
+                            }
+                            value.substring(0, lastDollar) + variable.name + value.substring(closing?.plus(1) ?: cursor)
                         } else {
                             // 直接插入
                             value + variable.name
                         }
 
+                        input = androidx.compose.ui.text.input.TextFieldValue(
+                            newValue,
+                            androidx.compose.ui.text.TextRange((if (lastDollar != -1) lastDollar else value.length) + variable.name.length),
+                        )
                         onValueChange(newValue)
                         showSuggestions = false
                     }
@@ -416,6 +433,8 @@ fun RunConfigSelector(
     configSegmentMaxWidth: Dp = 84.dp,
     showBuildButton: Boolean = false,
     showDebugButton: Boolean = false,
+    isRunning: Boolean = false,
+    onStop: () -> Unit = {},
 ) {
     var expanded by remember { mutableStateOf(false) }
     val currentConfig = configManager.selectedConfig
@@ -512,6 +531,8 @@ fun RunConfigSelector(
                     onDebug = onDebug,
                     isBuildEnabled = isBuildEnabled,
                     isDebugEnabled = isDebugEnabled,
+                    isRunning = isRunning,
+                    onStop = onStop,
                 )
 
                 if (showInlineBuild) {
@@ -697,13 +718,16 @@ internal fun RunActionButton(
     onDebug: (() -> Unit)? = null,
     isBuildEnabled: Boolean = true,
     isDebugEnabled: Boolean = true,
+    isRunning: Boolean = false,
+    onStop: () -> Unit = {},
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     val interactionSource = remember { MutableInteractionSource() }
-    val runLabel = stringResource(Strings.action_run)
+    val actionLabel = stringResource(if (isRunning) Strings.content_desc_stop else Strings.action_run)
+    val actionEnabled = enabled || isRunning
 
-    LaunchedEffect(enabled) {
-        if (!enabled) {
+    LaunchedEffect(enabled, isRunning) {
+        if (!enabled || isRunning) {
             menuExpanded = false
         }
     }
@@ -713,14 +737,18 @@ internal fun RunActionButton(
     ) {
         TinaPanelSegmentButton(
             onClick = {},
-            enabled = enabled,
+            enabled = actionEnabled,
             modifier = Modifier.matchParentSize(),
             contentPadding = PaddingValues(0.dp)
         ) {
             Icon(
-                imageVector = Icons.Default.PlayArrow,
-                contentDescription = stringResource(Strings.action_run),
-                tint = if (enabled) runTint else disabledTint,
+                imageVector = if (isRunning) Icons.Default.Stop else Icons.Default.PlayArrow,
+                contentDescription = actionLabel,
+                tint = when {
+                    isRunning -> MaterialTheme.colorScheme.error
+                    enabled -> runTint
+                    else -> disabledTint
+                },
                 modifier = Modifier.size(22.dp)
             )
         }
@@ -729,14 +757,14 @@ internal fun RunActionButton(
                 .matchParentSize()
                 // 覆盖层接管了点击，必须自带语义标签；否则无障碍与 UI 自动化
                 // 只能看到一个无名可点区域（NAF），下层 Icon 的描述被完全遮挡。
-                .semantics { contentDescription = runLabel }
+                .semantics { contentDescription = actionLabel }
                 .combinedClickable(
-                    enabled = enabled,
+                    enabled = actionEnabled,
                     role = Role.Button,
                     interactionSource = interactionSource,
                     indication = null,
-                    onClick = onRun,
-                    onLongClick = { menuExpanded = true },
+                    onClick = { if (isRunning) onStop() else onRun() },
+                    onLongClick = if (isRunning) null else ({ menuExpanded = true }),
                 )
         )
         RunMenu(

@@ -1,0 +1,83 @@
+{
+  "apkSha256": "52f6b98f6833cf21e793223d7189377307315260601a11c81403ff33c14f2a24",
+  "sourceCommit": "83051dea10893ff566c7991e4d7cb9ce73f630de",
+  "serial": "emulator-5582",
+  "avd": "TinaIDE_Vcpkg_QA_API34",
+  "memoryMiB": 1536,
+  "cores": 4,
+  "hostGpu": "Intel Iris Xe / driver 27.20.100.9415",
+  "hostGpuResult": "SDL process ran, but captured frames were black; launcher screenshot remained valid",
+  "softwareGpu": "Google SwiftShader 4.0.0.1",
+  "softwareGpuResults": [
+    {
+      "name": "zh-sdl3",
+      "selector": "com.wuxianggujun.tinaide.core.compile.GraphicsCourseDeviceTest#lessonBuildsAndDrawsThroughProductionHost",
+      "extras": {
+        "courseLanguage": "zh",
+        "graphicsLibrary": "sdl3"
+      },
+      "serial": "emulator-5582",
+      "orientation": "portrait",
+      "buildType": "debug",
+      "seconds": 17.37,
+      "passed": true,
+      "timed_out": false,
+      "returncode": 0,
+      "runId": "4ef29f0012c648eb8456084b5f23b11f",
+      "evidenceFile": "zh-sdl3-4ef29f0012c648eb8456084b5f23b11f-metrics.json"
+    },
+    {
+      "name": "zh-raylib",
+      "selector": "com.wuxianggujun.tinaide.core.compile.GraphicsCourseDeviceTest#lessonBuildsAndDrawsThroughProductionHost",
+      "extras": {
+        "courseLanguage": "zh",
+        "graphicsLibrary": "raylib"
+      },
+      "serial": "emulator-5582",
+      "orientation": "portrait",
+      "buildType": "debug",
+      "seconds": 9.59,
+      "passed": true,
+      "timed_out": false,
+      "returncode": 0,
+      "runId": "aa63badd205644699d7faa7189e80da6",
+      "evidenceFile": "zh-raylib-aa63badd205644699d7faa7189e80da6-metrics.json"
+    },
+    {
+      "name": "en-sdl3",
+      "selector": "com.wuxianggujun.tinaide.core.compile.GraphicsCourseDeviceTest#lessonBuildsAndDrawsThroughProductionHost",
+      "extras": {
+        "courseLanguage": "en",
+        "graphicsLibrary": "sdl3"
+      },
+      "serial": "emulator-5582",
+      "orientation": "portrait",
+      "buildType": "debug",
+      "seconds": 9.74,
+      "passed": true,
+      "timed_out": false,
+      "returncode": 0,
+      "runId": "438cea18f65749dc945a0d333b1eadd0",
+      "evidenceFile": "en-sdl3-438cea18f65749dc945a0d333b1eadd0-metrics.json"
+    },
+    {
+      "name": "en-raylib",
+      "selector": "com.wuxianggujun.tinaide.core.compile.GraphicsCourseDeviceTest#lessonBuildsAndDrawsThroughProductionHost",
+      "extras": {
+        "courseLanguage": "en",
+        "graphicsLibrary": "raylib"
+      },
+      "serial": "emulator-5582",
+      "orientation": "portrait",
+      "buildType": "debug",
+      "seconds": 9.41,
+      "passed": true,
+      "timed_out": false,
+      "returncode": 0,
+      "runId": "25e719afb5894ee0805d67ca965a9837",
+      "evidenceFile": "en-raylib-25e719afb5894ee0805d67ca965a9837-metrics.json"
+    }
+  ],
+  "changedApplication": false,
+  "changedCourseCode": false
+}

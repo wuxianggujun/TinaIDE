@@ -23,8 +23,10 @@ import io.mockk.mockk
 import io.mockk.verify
 import java.io.File
 import java.nio.file.Files
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestDispatcher
@@ -68,6 +70,7 @@ class CompileActionsHelperTest {
     private lateinit var projectContext: IProjectContext
     private lateinit var editorManager: IEditorManager
     private lateinit var processController: CompileActionsHelper.ProcessController
+    private lateinit var actionGate: CompileActionGate
 
     @Before
     fun setUp() {
@@ -77,6 +80,7 @@ class CompileActionsHelperTest {
         projectContext = mockk()
         editorManager = mockk()
         processController = mockk(relaxed = true)
+        actionGate = CompileActionGate()
 
         projectDir = Files.createTempDirectory("compile-actions-helper").toFile()
         project = Project(
@@ -99,7 +103,8 @@ class CompileActionsHelperTest {
             uiBridge = uiBridge,
             projectContext = projectContext,
             editorManager = editorManager,
-            processController = processController
+            processController = processController,
+            actionGate = actionGate,
         )
     }
 
@@ -163,8 +168,9 @@ class CompileActionsHelperTest {
         )
         coVerify(exactly = 1) { editorManager.saveAll(SaveReason.MANUAL) }
         verify(exactly = 0) { processController.reset() }
-        verify(exactly = 0) { commandRunner.compile(any()) }
-        verify(exactly = 0) { uiBridge.setCompiling(true) }
+        verify(exactly = 0) { commandRunner.compile(any(), any()) }
+        verify(exactly = 1) { uiBridge.setCompiling(true) }
+        assertThat(actionGate.isBusy.value).isFalse()
     }
 
     @Test
@@ -179,7 +185,8 @@ class CompileActionsHelperTest {
             uiBridge = uiBridge,
             projectContext = projectContext,
             editorManager = editorManager,
-            processController = processController
+            processController = processController,
+            actionGate = actionGate,
         )
 
         val events = captureUiEvents {
@@ -220,7 +227,8 @@ class CompileActionsHelperTest {
             uiBridge = uiBridge,
             projectContext = projectContext,
             editorManager = editorManager,
-            processController = processController
+            processController = processController,
+            actionGate = actionGate,
         )
 
         val events = captureUiEvents {
@@ -287,8 +295,9 @@ class CompileActionsHelperTest {
             )
         )
 
+        val ticket = compiledTicket()
         val events = captureUiEvents {
-            helper.handleCompileSuccess(CompileEvent.Success(report))
+            helper.handleCompileSuccess(CompileEvent.Success(report, ticket))
         }
 
         assertThat(events).containsExactly(
@@ -316,8 +325,9 @@ class CompileActionsHelperTest {
             )
         )
 
+        val ticket = compiledTicket()
         val events = captureUiEvents {
-            helper.handleCompileSuccess(CompileEvent.Success(report))
+            helper.handleCompileSuccess(CompileEvent.Success(report, ticket))
         }
 
         assertThat(events).containsExactly(
@@ -327,7 +337,8 @@ class CompileActionsHelperTest {
             ),
             CompileActionsHelper.UiEvent.OpenTerminal(
                 command = "./imgui-demo",
-                workDir = "/tmp/build"
+                workDir = "/tmp/build",
+                ticket = ticket,
             )
         ).inOrder()
         verify(exactly = 0) { uiBridge.showBuildLog() }
@@ -347,8 +358,9 @@ class CompileActionsHelperTest {
             ),
         )
 
+        val ticket = compiledTicket()
         val events = captureUiEvents {
-            helper.handleCompileSuccess(CompileEvent.Success(report))
+            helper.handleCompileSuccess(CompileEvent.Success(report, ticket))
         }
 
         assertThat(events).containsExactly(
@@ -363,7 +375,8 @@ class CompileActionsHelperTest {
                     preferredSdlMajor = 3,
                     orientation = SdlOrientation.LANDSCAPE,
                     enableFloatingLog = true,
-                )
+                ),
+                ticket = ticket,
             ),
         ).inOrder()
     }
@@ -380,8 +393,9 @@ class CompileActionsHelperTest {
             ),
         )
 
+        val ticket = compiledTicket()
         val events = captureUiEvents {
-            helper.handleCompileSuccess(CompileEvent.Success(report))
+            helper.handleCompileSuccess(CompileEvent.Success(report, ticket))
         }
 
         assertThat(events).containsExactly(
@@ -394,7 +408,8 @@ class CompileActionsHelperTest {
                     libraryPath = "/tmp/libmain.so",
                     environment = mapOf("LD_LIBRARY_PATH" to "/tmp/raylib"),
                     enableFloatingLog = true,
-                )
+                ),
+                ticket = ticket,
             ),
         ).inOrder()
         verify(exactly = 0) { uiBridge.showBuildLog() }
@@ -413,8 +428,9 @@ class CompileActionsHelperTest {
             launch = CompileProjectUseCase.LaunchSpec.None
         )
 
+        val ticket = compiledTicket()
         val events = captureUiEvents {
-            helper.handleCompileSuccess(CompileEvent.Success(report))
+            helper.handleCompileSuccess(CompileEvent.Success(report, ticket))
         }
 
         assertThat(events).containsExactly(
@@ -447,8 +463,9 @@ class CompileActionsHelperTest {
             ),
         )
 
+        val ticket = compiledTicket()
         val events = captureUiEvents {
-            helper.handleCompileSuccess(CompileEvent.Success(report))
+            helper.handleCompileSuccess(CompileEvent.Success(report, ticket))
         }
 
         assertThat(events).containsExactly(
@@ -471,8 +488,9 @@ class CompileActionsHelperTest {
             )
         )
 
+        val ticket = compiledTicket()
         val events = captureUiEvents {
-            helper.handleCompileSuccess(CompileEvent.Success(report))
+            helper.handleCompileSuccess(CompileEvent.Success(report, ticket))
         }
 
         assertThat(events).containsExactly(
@@ -496,8 +514,9 @@ class CompileActionsHelperTest {
             summary = ""
         )
 
+        val ticket = compiledTicket()
         val events = captureUiEvents {
-            helper.handleCompileSuccess(CompileEvent.Success(report))
+            helper.handleCompileSuccess(CompileEvent.Success(report, ticket))
         }
 
         assertThat(events).containsExactly(
@@ -518,7 +537,8 @@ class CompileActionsHelperTest {
                 CompileEvent.Error(
                     action = action,
                     message = "",
-                    throwable = null
+                    throwable = null,
+                    ticket = compiledTicket(),
                 )
             )
         }
@@ -541,7 +561,8 @@ class CompileActionsHelperTest {
                 CompileEvent.Error(
                     action = CompileProjectUseCase.Action.BUILD,
                     message = "compile failed",
-                    throwable = null
+                    throwable = null,
+                    ticket = compiledTicket(),
                 )
             )
         }
@@ -554,6 +575,91 @@ class CompileActionsHelperTest {
         )
         verify(exactly = 1) { uiBridge.showBuildLog() }
         coVerify(exactly = 1) { uiBridge.expandBottomPanel() }
+    }
+
+    @Test
+    fun `rapid run clicks during save are coalesced before resetting processes`() = runTest {
+        val saveFinished = CompletableDeferred<Unit>()
+        coEvery { editorManager.saveAll(any()) } coAnswers {
+            saveFinished.await()
+            emptyList()
+        }
+        val first = launch { helper.runProject() }
+        runCurrent()
+        repeat(20) { helper.runProject() }
+        coVerify(exactly = 1) { editorManager.saveAll(any()) }
+        verify(exactly = 0) { processController.reset() }
+
+        saveFinished.complete(Unit)
+        first.join()
+        repeat(20) { helper.runProject() }
+        verify(exactly = 1) { commandRunner.compile(any(), any()) }
+        verify(exactly = 1) { processController.reset() }
+    }
+
+    @Test
+    fun `idle compiler process does not unlock a queued graphical launch`() = runTest {
+        val ticket = compiledTicket()
+        val report = CompileProjectUseCase.Report(
+            action = CompileProjectUseCase.Action.RUN,
+            summary = "ready",
+            launch = CompileProjectUseCase.LaunchSpec.NativeActivity("/tmp/libmain.so"),
+        )
+        val events = captureUiEvents {
+            helper.handleCompileSuccess(CompileEvent.Success(report, ticket))
+            helper.handleProcessStateChanged(CompileActionsHelper.ExecutionProcessState.IDLE)
+            repeat(20) { helper.runProject() }
+            helper.handleCompileSuccess(CompileEvent.Success(report, ticket))
+        }
+        assertThat(events.filterIsInstance<CompileActionsHelper.UiEvent.OpenGraphicalRuntime>()).hasSize(1)
+        verify(exactly = 0) { commandRunner.compile(any(), any()) }
+        assertThat(actionGate.isBusy.value).isTrue()
+        verify(exactly = 0) { uiBridge.setCompiling(false) }
+    }
+
+    @Test
+    fun `cancelled save cannot dispatch or release a newer request`() = runTest {
+        val saveFinished = CompletableDeferred<Unit>()
+        coEvery { editorManager.saveAll(any()) } coAnswers {
+            saveFinished.await()
+            emptyList()
+        }
+        val first = launch { helper.runProject() }
+        runCurrent()
+        actionGate.cancel()
+        val successor = checkNotNull(actionGate.tryBegin())
+        saveFinished.complete(Unit)
+        first.join()
+        verify(exactly = 0) { commandRunner.compile(any(), any()) }
+        verify(exactly = 0) { processController.reset() }
+        assertThat(successor.isCurrent).isTrue()
+    }
+
+    @Test
+    fun `closed launch queue does not leave the editor permanently busy`() = runTest {
+        val events = Channel<CompileActionsHelper.UiEvent>(Channel.BUFFERED).apply { close() }
+        helper = CompileActionsHelper(
+            context = context,
+            commandRunner = commandRunner,
+            uiBridge = uiBridge,
+            projectContext = projectContext,
+            editorManager = editorManager,
+            processController = processController,
+            actionGate = actionGate,
+            uiEventsChannel = events,
+        )
+        val report = CompileProjectUseCase.Report(
+            action = CompileProjectUseCase.Action.RUN,
+            summary = "ready",
+            launch = CompileProjectUseCase.LaunchSpec.NativeActivity("/tmp/libmain.so"),
+        )
+        helper.handleCompileSuccess(CompileEvent.Success(report, compiledTicket()))
+        assertThat(actionGate.isBusy.value).isFalse()
+        verify { uiBridge.showBuildLog() }
+    }
+
+    private fun compiledTicket(): CompileActionGate.Ticket = checkNotNull(actionGate.tryBegin()).also {
+        check(it.startCompilation())
     }
 
     private suspend fun TestScope.captureUiEvents(
@@ -576,17 +682,18 @@ class CompileActionsHelperTest {
 private class RecordingCommandRunner : CompileActionsHelper.CommandRunner {
     val compileCalls = mutableListOf<CompileProjectUseCase.Operation>()
 
-    override fun compile(operation: CompileProjectUseCase.Operation) {
+    override fun compile(operation: CompileProjectUseCase.Operation, ticket: CompileActionGate.Ticket) {
+        check(ticket.startCompilation())
         compileCalls += operation
     }
 
-    override fun reconfigureCMake() = Unit
+    override fun reconfigureCMake(ticket: CompileActionGate.Ticket) = Unit
 
-    override fun clearCMakeBuildDirectory() = Unit
+    override fun clearCMakeBuildDirectory(ticket: CompileActionGate.Ticket) = Unit
 
-    override fun clearAndReconfigureCMake() = Unit
+    override fun clearAndReconfigureCMake(ticket: CompileActionGate.Ticket) = Unit
 
-    override fun configureOnlyCMake() = Unit
+    override fun configureOnlyCMake(ticket: CompileActionGate.Ticket) = Unit
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)

@@ -1,0 +1,29 @@
+[
+  {
+    "test": "cacheClearFromAnotherBackendWaitsUntilInstalledArchiveIsReleased",
+    "observedBeforeFix": "A second backend completed cache deletion while the first backend still held the downloaded archive",
+    "excerpt": [
+      "DownloadPackageBackendTest > cacheClearFromAnotherBackendWaitsUntilInstalledArchiveIsReleased FAILED",
+      "    expected: null",
+      "    but was : true",
+      "        at com.wuxianggujun.tinaide.core.packages.backend.DownloadPackageBackendTest$cacheClearFromAnotherBackendWaitsUntilInstalledArchiveIsReleased$1.invokeSuspend(DownloadPackageBackendTest.kt:83)"
+    ],
+    "originalLogSha256": "7f8c99caacdd5e894de5f15d27ad4a19ab162b622318b94f1751a31157b28285",
+    "finalResult": "PASS",
+    "finalEvidence": "package-install-unit-tests.json"
+  },
+  {
+    "test": "installCompletesOnceAfterRootAndDependenciesAreRecorded",
+    "observedBeforeFix": "The backend emitted Completed before all root/dependency records existed",
+    "excerpt": [
+      "DownloadPackageBackendTest > installCompletesOnceAfterRootAndDependenciesAreRecorded FAILED",
+      "    expected to be true",
+      "        at com.wuxianggujun.tinaide.core.packages.backend.DownloadPackageBackendTest$installCompletesOnceAfterRootAndDependenciesAreRecorded$1.invokeSuspend$lambda$7(DownloadPackageBackendTest.kt:150)",
+      "        at com.wuxianggujun.tinaide.core.packages.backend.DownloadPackageBackend.installWithCacheLock(DownloadPackageBackend.kt:180)",
+      "        at com.wuxianggujun.tinaide.core.packages.backend.DownloadPackageBackend.install(DownloadPackageBackend.kt:81)"
+    ],
+    "originalLogSha256": "66d6c2ff1ad997784c139a627dc8f03ebe433424d198333d1f1bb181596c105f",
+    "finalResult": "PASS",
+    "finalEvidence": "package-install-unit-tests.json"
+  }
+]

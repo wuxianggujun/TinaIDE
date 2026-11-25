@@ -10,6 +10,8 @@ import com.wuxianggujun.tinaide.core.compile.event.BuildEventEmitter
 import com.wuxianggujun.tinaide.core.compile.event.BuildReport
 import com.wuxianggujun.tinaide.core.compile.strategy.BuildContext
 import com.wuxianggujun.tinaide.core.compile.strategy.ExecutionOutcome
+import com.wuxianggujun.tinaide.core.packages.VcpkgBuildUse
+import com.wuxianggujun.tinaide.project.VcpkgProjectSettings
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import timber.log.Timber
@@ -41,9 +43,15 @@ class BuildOrchestrator(
     private val mutex = Mutex()
 
     suspend fun run(request: CompileRequest, context: BuildContext): BuildReport = mutex.withLock {
+        VcpkgBuildUse.during(VcpkgProjectSettings.from(context.options.nativeCMakeArgs).enabled) {
+            runWithFallback(request, context)
+        }
+    }
+
+    private suspend fun runWithFallback(request: CompileRequest, context: BuildContext): BuildReport {
         val initial = runOnce(request, context)
 
-        if (!shouldFallbackToRebuild(request, initial)) return@withLock initial
+        if (!shouldFallbackToRebuild(request, initial)) return initial
 
         val failure = initial as BuildReport.LaunchFailed
         Timber.tag(TAG).w(
@@ -67,7 +75,7 @@ class BuildOrchestrator(
             "AutoFallback completed: outcome=%s",
             fallbackReport::class.simpleName,
         )
-        fallbackReport
+        return fallbackReport
     }
 
     private fun shouldFallbackToRebuild(request: CompileRequest, report: BuildReport): Boolean = request.fallbackOnLaunchFailure &&

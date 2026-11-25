@@ -1,0 +1,52 @@
+[
+  {
+    "Name": "observe_sdl_window.py",
+    "Bytes": 1468,
+    "Sha256": "b6f7c0f0e861588e2794ec99ed5459e3ad2eb7b67a9d4bdf3795cf612bd6cb7f"
+  },
+  {
+    "Name": "reuse-host-build-id.init.gradle",
+    "Bytes": 578,
+    "Sha256": "016f4ce7359592c87502fbadcc5f962064aa69cc1a70d6b3d0820aa1c25a993d"
+  },
+  {
+    "Name": "run_device_case.py",
+    "Bytes": 1808,
+    "Sha256": "bcfebeea3f4e9684c4485028bc4a3cc3d8e0ae6c67f381ed2f5164d741c04fda"
+  },
+  {
+    "Name": "run_matrix.py",
+    "Bytes": 2860,
+    "Sha256": "1d883b92fc1f15b517a3520bea50a0e312fec2c4a703e353dc4c40d69ee66f23"
+  },
+  {
+    "Name": "sdl_asset_policy_test",
+    "Bytes": 1107768,
+    "Sha256": "b950204547e069a837852d90af738772a1510e9332ff079b37dec69b0ded3233"
+  },
+  {
+    "Name": "SDL3_filesystem_reference.c",
+    "Bytes": 1941,
+    "Sha256": "3b23ff3060dc6450e76313be0e3089362dcd37600077fc4c98f6baa2b1a32026"
+  },
+  {
+    "Name": "SDL3_iostream_reference.c",
+    "Bytes": 48555,
+    "Sha256": "c1402995ffd917c23d829c0c9b41e8e26ce1154e9dd63c4155a9cd122c53eb6c"
+  },
+  {
+    "Name": "sdl3-package-android.c",
+    "Bytes": 105157,
+    "Sha256": "b3bf302344879b86a37dc6e34e15b1e4d5c18892f46d826c7be5e8b224149999"
+  },
+  {
+    "Name": "sdl3-package-hid.cpp",
+    "Bytes": 41726,
+    "Sha256": "4eaf4b86e52dce5012ac3f5ee2dc4d5f04ea2d9a1d9cc1196b39577fdd6f024b"
+  },
+  {
+    "Name": "tests.init.gradle",
+    "Bytes": 292,
+    "Sha256": "8d37b216d5e376fe811169d5941f2b7388c1bd6ace80e82779d7ac01827a33e0"
+  }
+]

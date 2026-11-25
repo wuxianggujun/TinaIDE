@@ -1,0 +1,7 @@
+{
+  "before-durable-write-registry-cancel.json": "02d7c12b245b43ac3e2502072455a6df2048186ba73868e28456114ffbd7a49b",
+  "before-durable-write-registry-install.json": "c1161c1a8b64f70f8df265e9151a54a51ded72f1f1af02286a0e06aba12db853",
+  "before-durable-write-registry-install.log": "2583044acf451151e779fc7a51bb69e8540cc47bc063a29ae790fd4310867b50",
+  "before-durable-write-packages-proxy-results.json": "e4775b6ed88a5f14e5f62f5085078ec326541b2cc1057532e087990e43b86086",
+  "before-durable-write-packages-proxy-uninstall.log": "8aa8ebe8d9f69207f8b996068ecb2de22faebd4cc110b75cbdf25c2a5a362c52"
+}

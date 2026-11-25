@@ -1,0 +1,3 @@
+idePid=4365
+pid=4435 video=1 window=1
+action=abort

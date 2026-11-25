@@ -25,11 +25,13 @@ import com.wuxianggujun.tinaide.core.editorlsp.CompletionItemKind
 import com.wuxianggujun.tinaide.core.editorlsp.CompletionSource
 import com.wuxianggujun.tinaide.core.editorlsp.InlayHint
 import com.wuxianggujun.tinaide.core.editorlsp.InlayHintsRequestResult
-import com.wuxianggujun.tinaide.core.editorlsp.SemanticToken
-import com.wuxianggujun.tinaide.core.editorlsp.SignatureHelpResult
+import com.wuxianggujun.tinaide.core.editorapi.SemanticToken
+import com.wuxianggujun.tinaide.core.editorapi.SignatureHelpResult
 import com.wuxianggujun.tinaide.core.editorview.EditorColorScheme
 import com.wuxianggujun.tinaide.core.editorview.EditorRenderPerformanceSnapshot
 import com.wuxianggujun.tinaide.core.editorview.EditorState
+import com.wuxianggujun.tinaide.core.format.CodeFormatter
+import com.wuxianggujun.tinaide.core.format.FormatterIndentationResult
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.core.i18n.strOr
 import com.wuxianggujun.tinaide.core.lang.CxxFileSupport
@@ -55,6 +57,8 @@ import com.wuxianggujun.tinaide.editor.session.SaveResult
 import com.wuxianggujun.tinaide.editor.symbol.ProjectSymbolIndexService
 import com.wuxianggujun.tinaide.editor.theme.PluginEditorThemeRegistry
 import com.wuxianggujun.tinaide.file.IFileWatchService
+import com.wuxianggujun.tinaide.file.FileChangeListener
+import com.wuxianggujun.tinaide.file.FileWatchRegistration
 import com.wuxianggujun.tinaide.plugin.PluginSnippetManager
 import com.wuxianggujun.tinaide.plugin.lsp.LspPluginManager
 import com.wuxianggujun.tinaide.plugin.script.api.EditorSelectionPayload
@@ -161,7 +165,6 @@ class EditorContainerState(
     private val codeRuntimeCache = EditorCodeRuntimeCache(
         context = context,
         cacheLimit = CODE_EDITOR_RUNTIME_CACHE_LIMIT,
-        projectRootPathProvider = ::getEditorProjectRootPathOrNull,
         activeTabIdProvider = ::getActiveTabId,
         isSplitEditorEnabledProvider = { isSplitEditorEnabled },
         splitPaneState = splitPaneState,
@@ -288,7 +291,7 @@ class EditorContainerState(
     internal val peekDefinitionPanelState: PeekDefinitionPanelState?
         get() = peekDefinitionState.panelState
 
-    private fun resolveProjectRootPath(): String? = projectRootPathProvider()
+    internal fun resolveProjectRootPath(): String? = projectRootPathProvider()
         ?.takeIf { it.isNotBlank() }
 
     private fun resolveSplitEditorSessionProjectPath(): String? = resolveProjectRootPath()?.let(::normalizeOpenTabLookupPath)
@@ -830,9 +833,13 @@ class EditorContainerState(
         tabId: String,
         expectedText: String,
         newText: String,
+        expectedFile: java.io.File? = null,
     ): ConditionalEditorTextReplaceResult {
         val tab = tabManager.findTab(tabId)
             ?: return ConditionalEditorTextReplaceResult.TARGET_UNAVAILABLE
+        if (expectedFile != null && tab.file.absoluteFile.normalize() != expectedFile.absoluteFile.normalize()) {
+            return ConditionalEditorTextReplaceResult.CONTENT_CHANGED
+        }
         if (!isCodeEditableType(tab.contentType)) {
             return ConditionalEditorTextReplaceResult.TARGET_UNAVAILABLE
         }
@@ -1598,6 +1605,7 @@ class EditorContainerState(
     suspend fun gotoImplementation(tabId: String, line: Int, column: Int) = lspEditorManager.gotoImplementation(tabId, line, column)
 
     suspend fun callHierarchyIncomingCalls(tabId: String, line: Int, column: Int) = lspEditorManager.callHierarchyIncomingCalls(tabId, line, column)
+    suspend fun callHierarchyOutgoingCalls(tabId: String, line: Int, column: Int) = lspEditorManager.callHierarchyOutgoingCalls(tabId, line, column)
 
     suspend fun switchSourceHeader(tabId: String) = lspEditorManager.switchSourceHeader(tabId)
 
@@ -1629,6 +1637,19 @@ class EditorContainerState(
                     Timber.tag("EditorContainerState").w(t, "Failed to apply editor settings for tab=%s", tabId)
                 }
         }
+    }
+
+    internal suspend fun resolveFormattingIndentation(
+        context: android.content.Context,
+        sourceFile: java.io.File,
+    ): FormatterIndentationResult = CodeFormatter(
+        context = context,
+        linuxEnvironmentProvider = linuxEnvironmentProvider,
+    ).resolveIndentation(sourceFile)
+
+    internal fun watchFormattingConfiguration(listener: FileChangeListener): FileWatchRegistration? {
+        val rootPath = getBookmarksProjectRootPathOrNull() ?: return null
+        return fileWatchService?.addFileWatcher(rootPath, listener)
     }
 
     private fun resolveEditorColorScheme(context: android.content.Context): EditorColorScheme {

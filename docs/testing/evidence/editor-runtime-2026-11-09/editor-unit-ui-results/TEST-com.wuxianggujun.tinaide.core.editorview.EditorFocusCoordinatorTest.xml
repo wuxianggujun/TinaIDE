@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.wuxianggujun.tinaide.core.editorview.EditorFocusCoordinatorTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-11-08T14:52:24.761Z" hostname="DESKTOP-9KUJPVG" time="0.989">
+  <properties/>
+  <testcase name="onComposeFocusChanged_shouldRestoreCursorBlinkWhenEditorRegainsFocus" classname="com.wuxianggujun.tinaide.core.editorview.EditorFocusCoordinatorTest" time="0.866"/>
+  <testcase name="focusCallbackAfterDocumentClose_doesNotReadReleasedBuffer" classname="com.wuxianggujun.tinaide.core.editorview.EditorFocusCoordinatorTest" time="0.015"/>
+  <testcase name="onComposeFocusChanged_shouldDismissCompletionAndHideContextMenuWhenAllFocusLost" classname="com.wuxianggujun.tinaide.core.editorview.EditorFocusCoordinatorTest" time="0.024"/>
+  <testcase name="onComposeFocusChanged_shouldKeepCompletionWhenHostFocusStillActive" classname="com.wuxianggujun.tinaide.core.editorview.EditorFocusCoordinatorTest" time="0.026"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

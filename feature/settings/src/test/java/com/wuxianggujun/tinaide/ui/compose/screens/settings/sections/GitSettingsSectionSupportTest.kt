@@ -234,6 +234,14 @@ class GitSettingsSectionSupportTest {
     }
 
     @Test
+    fun githubProxyAcceptsIpv6AndRejectsMalformedHosts() {
+        assertThat(GitSettingsSectionSupport.resolveGitHubRegistryProxySettings(true, "[::1]:7890", "").settings)
+            .isEqualTo(GitHubRegistryProxySettings(enabled = true, host = "::1", port = 7890))
+        assertThat(GitSettingsSectionSupport.resolveGitHubRegistryProxySettings(true, "http://user:secret@host", "7890").settings).isNull()
+        assertThat(GitSettingsSectionSupport.resolveGitHubRegistryProxySettings(true, "bad host", "7890").settings).isNull()
+    }
+
+    @Test
     fun sshBindingHelpers_shouldCreateEditStateAndResolveDrafts() {
         val keys = listOf(
             GitSshKeyMeta(name = "id_ed25519", type = "ssh-ed25519", comment = null),

@@ -72,7 +72,8 @@ data class PlatformPackage(
     val abi: List<String>? = null,
     @SerialName("is_latest") val isLatest: Boolean = false,
     val dependencies: List<String>? = null,
-    @SerialName("release_notes") val releaseNotes: String? = null
+    @SerialName("release_notes") val releaseNotes: String? = null,
+    @SerialName("package_revision") val packageRevision: Int? = null,
 )
 
 @Serializable
@@ -94,7 +95,8 @@ data class PackageVersion(
     @SerialName("uninstall_script") val uninstallScript: String? = null,
     val dependencies: List<String>? = null,
     @SerialName("release_notes") val releaseNotes: String? = null,
-    @SerialName("is_latest") val isLatest: Boolean = false
+    @SerialName("is_latest") val isLatest: Boolean = false,
+    @SerialName("package_revision") val packageRevision: Int? = null,
 )
 
 @Serializable

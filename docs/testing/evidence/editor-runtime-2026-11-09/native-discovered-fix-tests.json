@@ -1,0 +1,22 @@
+[
+  {
+    "name": "com.wuxianggujun.tinaide.ui.runtime.GraphicalRuntimeActivityHostTest",
+    "tests": "5",
+    "skipped": "0",
+    "failures": "0",
+    "errors": "0",
+    "timestamp": "2026-11-08T17:46:56.453Z",
+    "hostname": "DESKTOP-9KUJPVG",
+    "time": "24.441"
+  },
+  {
+    "name": "com.wuxianggujun.tinaide.ui.sdl.SdlAndroidBridgeContractTest",
+    "tests": "4",
+    "skipped": "0",
+    "failures": "0",
+    "errors": "0",
+    "timestamp": "2026-11-08T17:47:21.415Z",
+    "hostname": "DESKTOP-9KUJPVG",
+    "time": "0.172"
+  }
+]

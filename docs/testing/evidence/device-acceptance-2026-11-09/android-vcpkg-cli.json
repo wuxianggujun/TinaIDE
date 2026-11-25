@@ -1,0 +1,18 @@
+{
+  "source": "https://github.com/microsoft/vcpkg-tool",
+  "revision": "139f2e53438b1529e178f6295bc563f4e0de734f",
+  "tag": "2026-10-29",
+  "abi": "x86_64",
+  "androidApi": 28,
+  "stl": "c++_static",
+  "sha256": "e2116cfd9f36cdf8554bef6ab98331ba85dc05786754309b30821c9c1981323a",
+  "compileResult": "Native NDK cross-build succeeded after restoring the API level for upstream feature detection",
+  "deviceSerial": "emulator-5564",
+  "deviceAbi": "x86_64",
+  "deviceVersionExitCode": 0,
+  "deviceSha256": "e2116cfd9f36cdf8554bef6ab98331ba85dc05786754309b30821c9c1981323a",
+  "versionOutput": "vcpkg package management program version 2026-10-29-139f2e53438b1529e178f6295bc563f4e0de734f",
+  "scope": "CLI version startup only; install/build/run pending",
+  "bytes": 6213304,
+  "buildScriptSha256": "5015d02080db8424717dc57e6134f18748a84a5cd1366dead78849e4554d0547"
+}

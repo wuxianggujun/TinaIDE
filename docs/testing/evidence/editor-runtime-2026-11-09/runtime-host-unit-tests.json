@@ -1,0 +1,87 @@
+{
+  "tests": 28,
+  "failures": 0,
+  "skipped": 0,
+  "suites": [
+    {
+      "name": "com.wuxianggujun.tinaide.ui.compose.components.GraphicalRuntimeLogcatCommandTest",
+      "tests": "1",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-11-08T16:44:23.581Z",
+      "hostname": "DESKTOP-9KUJPVG",
+      "time": "0.05"
+    },
+    {
+      "name": "com.wuxianggujun.tinaide.ui.compose.components.GraphicalRuntimeOverlayTest",
+      "tests": "2",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-11-08T16:44:23.925Z",
+      "hostname": "DESKTOP-9KUJPVG",
+      "time": "10.142"
+    },
+    {
+      "name": "com.wuxianggujun.tinaide.ui.runtime.CancelledSdlActivityTest",
+      "tests": "2",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-11-08T16:44:37.715Z",
+      "hostname": "DESKTOP-9KUJPVG",
+      "time": "0.24"
+    },
+    {
+      "name": "com.wuxianggujun.tinaide.ui.runtime.GraphicalRuntimeActivityHostTest",
+      "tests": "5",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-11-08T16:44:38Z",
+      "hostname": "DESKTOP-9KUJPVG",
+      "time": "8.288"
+    },
+    {
+      "name": "com.wuxianggujun.tinaide.ui.runtime.GraphicalRuntimeExitGuardTest",
+      "tests": "4",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-11-08T16:44:46.298Z",
+      "hostname": "DESKTOP-9KUJPVG",
+      "time": "0.083"
+    },
+    {
+      "name": "com.wuxianggujun.tinaide.ui.runtime.GraphicalRuntimeLaunchSignalTest",
+      "tests": "5",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-11-08T16:44:46.698Z",
+      "hostname": "DESKTOP-9KUJPVG",
+      "time": "0.348"
+    },
+    {
+      "name": "com.wuxianggujun.tinaide.ui.runtime.GraphicalRuntimeProcessControllerTest",
+      "tests": "7",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-11-08T16:44:47.053Z",
+      "hostname": "DESKTOP-9KUJPVG",
+      "time": "0.37"
+    },
+    {
+      "name": "com.wuxianggujun.tinaide.ui.sdl.SdlAssetRedirectTest",
+      "tests": "2",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-11-08T16:44:47.468Z",
+      "hostname": "DESKTOP-9KUJPVG",
+      "time": "1.166"
+    }
+  ]
+}

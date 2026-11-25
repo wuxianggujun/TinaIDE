@@ -137,14 +137,6 @@
 # 10. Termux Terminal（→ feature/terminal/consumer-rules.pro）
 # ============================================================================
 
-# ============================================================================
-# 11. 第三方库精简规则
-# ============================================================================
-
-# MessagePack：核心 buffer 规则已下沉到 core:network/consumer-rules.pro
-# （MessageBuffer.<clinit> 通过 Class.forName 加载 MessageBufferU，需 -keep class）
--dontwarn org.msgpack.**
-
 # （SnakeYAML Engine / Joni / Jcodings — 已无模块引入，R8 完全 tree-shake，无需规则）
 
 # ============================================================================

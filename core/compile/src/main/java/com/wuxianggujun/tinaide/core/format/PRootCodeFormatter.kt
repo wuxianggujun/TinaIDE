@@ -19,7 +19,7 @@ import timber.log.Timber
  *
  * 格式化风格优先级：
  * 1. 如果项目目录中存在 .clang-format 文件，使用该文件的配置
- * 2. 否则使用用户在设置中选择的默认风格（从内置配置文件加载）
+ * 2. 否则使用用户选择的基础风格，缩进与 Tab 策略复用编辑行为设置
  *
  * @param context Android Context，用于访问 assets
  * @param prootManager PRoot 进程管理器
@@ -33,6 +33,7 @@ class PRootCodeFormatter(
         private const val TAG = "PRootCodeFormatter"
         private const val FORMAT_TIMEOUT = 30_000L
         private const val VERSION_CHECK_TIMEOUT = 10_000L
+        private const val CONFIG_READ_TIMEOUT = 10_000L
     }
 
     private val configManager by lazy { ClangFormatConfigManager(context) }
@@ -232,6 +233,24 @@ class PRootCodeFormatter(
             FormatResult.Error(
                 message = result.stderr.ifBlank { Strings.format_failed_simple.strOr(context) },
                 exitCode = result.exitCode
+            )
+        }
+    }
+
+    suspend fun dumpConfig(fileName: String, style: FormatStyle): FormatResult {
+        validateGuestPathOrError(fileName)?.let { return it }
+        val result = prootManager.execute(
+            command = buildFormatCommand(fileName, style, FormatOptions(extraArgs = listOf("--dump-config"))),
+            workDir = extractGuestParentDir(fileName),
+            timeout = CONFIG_READ_TIMEOUT,
+            stdin = "",
+        )
+        return if (result.isSuccess) {
+            FormatResult.Success(result.stdout)
+        } else {
+            FormatResult.Error(
+                message = result.stderr.ifBlank { Strings.format_failed_simple.strOr(context) },
+                exitCode = result.exitCode,
             )
         }
     }

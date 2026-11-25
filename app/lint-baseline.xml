@@ -179,17 +179,6 @@
 
     <issue
         id="NewerVersionAvailable"
-        message="A newer version of org.msgpack:msgpack-core than 0.9.8 is available: 0.9.12"
-        errorLine1="msgpack = &quot;0.9.8&quot;"
-        errorLine2="          ~~~~~~~">
-        <location
-            file="$HOME/CodeSpace/AndroidStudioProjects/TinaIDE/gradle/libs.versions.toml"
-            line="22"
-            column="11"/>
-    </issue>
-
-    <issue
-        id="NewerVersionAvailable"
         message="A newer version of com.google.truth:truth than 1.4.4 is available: 1.4.5"
         errorLine1="truth = &quot;1.4.4&quot;"
         errorLine2="        ~~~~~~~">

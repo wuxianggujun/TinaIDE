@@ -1,0 +1,228 @@
+package com.wuxianggujun.tinaide.core.packages
+
+import android.content.Context
+
+import com.wuxianggujun.tinaide.project.ProjectMetadataStore
+import com.wuxianggujun.tinaide.project.VcpkgProjectSettings
+import com.wuxianggujun.tinaide.core.i18n.Strings
+import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.nio.file.AtomicMoveNotSupportedException
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
+import timber.log.Timber
+
+data class VcpkgPort(val name: String, val version: String, val description: String, val supports: String)
+data class VcpkgProjectCatalog(
+    val settings: VcpkgProjectSettings,
+    val ports: List<VcpkgPort>,
+    val declared: Set<String>,
+    val installed: Map<String, String>,
+)
+
+class VcpkgRepository(private val context: Context? = null) {
+    suspend fun read(project: File, androidAbi: String, availablePorts: List<VcpkgPort>? = null): VcpkgProjectCatalog = withContext(Dispatchers.IO) {
+        val settings = VcpkgProjectSettings.from(ProjectMetadataStore.read(project)?.normalizedNativeCMakeArgs().orEmpty())
+        val ports = availablePorts ?: context?.let { VcpkgCatalogStore(it).readLocal().ports }.orEmpty()
+        val manifest = File(project, "vcpkg.json")
+        val declared = if (manifest.exists()) dependencyNames(readJson(manifest)) else emptySet()
+        val installed = if (context != null && settings.enabled) VcpkgBuildUse.during(true) {
+            val installedRoot = VcpkgManagedPaths.installed(context, project, settings, androidAbi)
+            try {
+                VcpkgInstalledStatus.read(File(installedRoot, "vcpkg/status"), settings.targetTriplet(androidAbi),
+                    currentCoroutineContext()::ensureActive)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                throw VcpkgException(Strings.vcpkg_invalid_manifest, error)
+            }
+        } else emptyMap()
+        val catalog = ports.associateByTo(linkedMapOf()) { it.name }
+        (declared + installed.keys).filter { PORT_NAME.matches(it) }.forEach { name ->
+            catalog.putIfAbsent(name, VcpkgPort(name, installed[name].orEmpty(), "", ""))
+        }
+        VcpkgProjectCatalog(settings, catalog.values.sortedBy { it.name }, declared, installed)
+    }
+
+    suspend fun setDependency(project: File, portName: String, enabled: Boolean) = withContext(Dispatchers.IO) {
+        // The repository is created per screen. A process-wide lock prevents
+        // concurrent read/modify/write operations from losing another screen's
+        // dependency when both instances point at the same project.
+        manifestMutex.withLock { editDependency(project, portName, enabled) }
+    }
+
+    suspend fun setMarketDependency(project: File, portName: String, enabled: Boolean, catalog: VcpkgAndroidCatalog) = withContext(Dispatchers.IO) {
+        manifestMutex.withLock {
+            if (!enabled) {
+                // Removing a stale dependency must not re-enable a disabled project.
+                editDependency(project, portName, false)
+                return@withLock
+            }
+            if (catalog.support(portName) != VcpkgPlatformSupport.SUPPORTED) {
+                throw VcpkgException(Strings.vcpkg_package_not_supported)
+            }
+            if (!File(project, "CMakeLists.txt").isFile) throw VcpkgException(Strings.vcpkg_cmake_required)
+            val manifest = File(project, "vcpkg.json")
+            requireManifestLocation(project, manifest)
+            if (manifest.exists()) dependencyNames(readJson(manifest))
+            val previous = ProjectMetadataStore.ensure(project)
+            val arguments = previous.normalizedNativeCMakeArgs()
+            if (VcpkgProjectSettings.from(arguments).mode == VcpkgProjectSettings.SHARED) {
+                throw VcpkgException(Strings.vcpkg_manifest_mode_required)
+            }
+            val managed = previous.copy(nativeCMakeArgs = VcpkgProjectSettings(VcpkgProjectSettings.MANIFEST).applyTo(arguments))
+            try {
+                if (managed != previous && !ProjectMetadataStore.write(project, managed)) {
+                    throw VcpkgException(Strings.vcpkg_write_failed)
+                }
+                editDependency(project, portName, true)
+            } catch (error: Exception) {
+                withContext(NonCancellable) {
+                    // Only undo our own metadata write; preserve concurrent edits made by another screen.
+                    if (managed != previous && ProjectMetadataStore.read(project) == managed &&
+                        !ProjectMetadataStore.write(project, previous)) {
+                        Timber.tag("VcpkgRepository").e("Failed to restore project settings after manifest edit failed")
+                        error.addSuppressed(VcpkgException(Strings.vcpkg_write_failed))
+                    }
+                }
+                throw error
+            }
+        }
+    }
+
+    suspend fun enableManagedManifest(project: File) = withContext(Dispatchers.IO) {
+        manifestMutex.withLock {
+            if (!File(project, "CMakeLists.txt").isFile) throw VcpkgException(Strings.vcpkg_cmake_required)
+            val metadata = ProjectMetadataStore.ensure(project)
+            val arguments = metadata.normalizedNativeCMakeArgs()
+            if (!ProjectMetadataStore.write(project, metadata.copy(nativeCMakeArgs =
+                    VcpkgProjectSettings(VcpkgProjectSettings.MANIFEST).applyTo(arguments)))) {
+                throw VcpkgException(Strings.vcpkg_write_failed)
+            }
+        }
+    }
+
+    /**
+     * 项目仅保存共享模式；共享库和工具位置统一由应用管理。
+     */
+    suspend fun enableSharedLibrary(project: File) = withContext(Dispatchers.IO) {
+        manifestMutex.withLock {
+            val metadata = ProjectMetadataStore.ensure(project)
+            val arguments = metadata.normalizedNativeCMakeArgs()
+            val shared = VcpkgProjectSettings(VcpkgProjectSettings.SHARED)
+            if (!ProjectMetadataStore.write(project, metadata.copy(nativeCMakeArgs = shared.applyTo(arguments)))) {
+                throw VcpkgException(Strings.vcpkg_write_failed)
+            }
+        }
+    }
+
+    private suspend fun editDependency(project: File, portName: String, enabled: Boolean) {
+        val operationContext = currentCoroutineContext()
+        operationContext.ensureActive()
+        if (!PORT_NAME.matches(portName)) throw VcpkgException(Strings.vcpkg_invalid_manifest)
+        val manifest = File(project, "vcpkg.json")
+        requireManifestLocation(project, manifest)
+        val original = if (manifest.exists()) readBytesLimited(manifest, MAX_MANIFEST_BYTES) else null
+        if (original == null && !enabled) return
+        val json = original?.let { parseJsonUtf8(it) } ?: JSONObject()
+        dependencyNames(json) // Refuse to silently overwrite a malformed dependency declaration.
+        val dependencies = json.optJSONArray("dependencies") ?: JSONArray()
+        val existing = (0 until dependencies.length()).map { dependencies.get(it) }
+        val name: (Any) -> String = { if (it is JSONObject) it.optString("name") else it.toString() }
+        val alreadyDeclared = existing.any { name(it) == portName }
+        if (alreadyDeclared == enabled) return
+        val next = existing.filterNot { !enabled && name(it) == portName }.toMutableList()
+        if (enabled) next += portName
+        json.put("dependencies", JSONArray(next))
+        val serialized = (json.toString(2) + "\n").toByteArray(Charsets.UTF_8)
+        if (serialized.size > MAX_MANIFEST_BYTES) throw VcpkgException(Strings.vcpkg_invalid_manifest)
+        operationContext.ensureActive()
+        val temporary = File.createTempFile(".vcpkg-manifest-", ".json", project)
+        try {
+            temporary.writeBytes(serialized)
+            operationContext.ensureActive()
+            requireManifestLocation(project, manifest)
+            val current = if (manifest.exists()) readBytesLimited(manifest, MAX_MANIFEST_BYTES) else null
+            if (!(if (original == null) current == null else current != null && original.contentEquals(current))) {
+                throw VcpkgException(Strings.vcpkg_manifest_changed)
+            }
+            operationContext.ensureActive()
+            try {
+                Files.move(temporary.toPath(), manifest.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+            } catch (_: AtomicMoveNotSupportedException) {
+                Files.move(temporary.toPath(), manifest.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            }
+        } finally {
+            if (temporary.exists() && !temporary.delete()) {
+                Timber.tag("VcpkgRepository").w("Failed to remove temporary vcpkg manifest")
+            }
+        }
+    }
+
+    private fun dependencyNames(json: JSONObject): Set<String> {
+        if (json.has("dependencies") && json.opt("dependencies") !is JSONArray) throw VcpkgException(Strings.vcpkg_invalid_manifest)
+        val dependencies = json.optJSONArray("dependencies") ?: return emptySet()
+        return (0 until dependencies.length()).map { index ->
+            val dependency = dependencies.get(index)
+            val name = when (dependency) {
+                is JSONObject -> dependency.optString("name")
+                is String -> dependency
+                else -> throw VcpkgException(Strings.vcpkg_invalid_manifest)
+            }
+            if (!PORT_NAME.matches(name)) throw VcpkgException(Strings.vcpkg_invalid_manifest)
+            name
+        }.toSet()
+    }
+
+    private suspend fun readJson(file: File): JSONObject = parseJsonUtf8(readBytesLimited(file, MAX_MANIFEST_BYTES))
+
+    private fun parseJsonUtf8(bytes: ByteArray): JSONObject = try {
+        JSONObject(PackageMetadataFiles.decodeUtf8(bytes))
+    } catch (error: Exception) {
+        // Keep parser input fragments out of caller logs.
+        Timber.tag("VcpkgRepository").w("Invalid vcpkg JSON: %s", error.javaClass.simpleName)
+        throw VcpkgException(Strings.vcpkg_invalid_manifest)
+    }
+
+    private suspend fun readBytesLimited(file: File, maxBytes: Int): ByteArray {
+        val operationContext = currentCoroutineContext()
+        return try {
+            PackageMetadataFiles.readBytes(file, maxBytes, operationContext::ensureActive)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            throw VcpkgException(Strings.vcpkg_invalid_manifest, error)
+        }
+    }
+
+    private fun requireManifestLocation(project: File, manifest: File) {
+        if (manifest.canonicalFile.parentFile != project.canonicalFile) {
+            throw VcpkgException(Strings.vcpkg_invalid_path)
+        }
+    }
+
+
+    internal companion object {
+        fun portFromJson(name: String, json: JSONObject): VcpkgPort {
+            val description = json.opt("description").let { value ->
+                if (value is JSONArray) (0 until value.length()).joinToString(" ") { value.optString(it) }
+                else if (value == null || value == JSONObject.NULL) "" else value.toString()
+            }
+            return VcpkgPort(name, listOf("version", "version-semver", "version-date", "version-string")
+                .firstNotNullOfOrNull { json.optString(it).takeIf(String::isNotBlank) }.orEmpty(), description, json.optString("supports"))
+        }
+        private val manifestMutex = Mutex()
+        val PORT_NAME = Regex("[a-z0-9]+(?:-[a-z0-9]+)*")
+        const val MAX_MANIFEST_BYTES = 1024 * 1024
+        const val MAX_STATUS_BYTES = 16 * 1024 * 1024
+    }
+}

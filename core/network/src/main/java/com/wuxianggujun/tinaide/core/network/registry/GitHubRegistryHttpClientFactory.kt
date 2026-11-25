@@ -29,7 +29,7 @@ object GitHubRegistryHttpClientFactory {
                     proxy(
                         Proxy(
                             Proxy.Type.HTTP,
-                            InetSocketAddress(settings.host, settings.port),
+                            InetSocketAddress.createUnresolved(settings.host, settings.port),
                         )
                     )
                 }

@@ -1,0 +1,494 @@
+{
+  "version": 3,
+  "clock": "wall",
+  "mainThread": 7686,
+  "records": 18624,
+  "unmatchedExits": 0,
+  "selfTime": [
+    {
+      "method": "android.os.MessageQueue.nativePollOnce(JI)V",
+      "ms": 4024.756
+    },
+    {
+      "method": "jdk.internal.misc.Unsafe.unpark(Ljava/lang/Object;)V",
+      "ms": 455.637
+    },
+    {
+      "method": "android.graphics.HardwareRenderer.nSyncAndDrawFrame(J[JI)I",
+      "ms": 429.563
+    },
+    {
+      "method": "java.lang.Thread.currentThread()Ljava/lang/Thread;",
+      "ms": 297.189
+    },
+    {
+      "method": "android.util.Log.isLoggable(Ljava/lang/String;I)Z",
+      "ms": 190.603
+    },
+    {
+      "method": "java.lang.Object.<init>()V",
+      "ms": 187.512
+    },
+    {
+      "method": "java.lang.Object.identityHashCode(Ljava/lang/Object;)I",
+      "ms": 127.568
+    },
+    {
+      "method": "java.lang.ThreadLocal.getMap(Ljava/lang/Thread;)Ljava/lang/ThreadLocal$ThreadLocalMap;",
+      "ms": 111.693
+    },
+    {
+      "method": "android.os.MessageQueue.next()Landroid/os/Message;",
+      "ms": 105.963
+    },
+    {
+      "method": "java.lang.Thread.getId()J",
+      "ms": 93.324
+    },
+    {
+      "method": "java.util.AbstractCollection.<init>()V",
+      "ms": 92.041
+    },
+    {
+      "method": "jdk.internal.misc.Unsafe.compareAndSetInt(Ljava/lang/Object;JII)Z",
+      "ms": 78.51
+    },
+    {
+      "method": "android.os.Trace.isTagEnabled(J)Z",
+      "ms": 68.144
+    },
+    {
+      "method": "java.util.LinkedHashMap.keySet()Ljava/util/Set;",
+      "ms": 67.972
+    },
+    {
+      "method": "java.lang.ref.ReferenceQueue.poll()Ljava/lang/ref/Reference;",
+      "ms": 66.073
+    },
+    {
+      "method": "android.os.Message.recycleUnchecked()V",
+      "ms": 64.899
+    },
+    {
+      "method": "android.graphics.Paint.getFlags()I",
+      "ms": 63.307
+    },
+    {
+      "method": "androidx.compose.runtime.snapshots.MutableSnapshot.hasPendingChanges()Z",
+      "ms": 60.314
+    },
+    {
+      "method": "androidx.compose.runtime.snapshots.TransparentObserverMutableSnapshot.getReadObserver()Lkotlin/jvm/functions/Function1;",
+      "ms": 58.108
+    },
+    {
+      "method": "android.os.MessageQueue.enqueueMessage(Landroid/os/Message;J)Z",
+      "ms": 56.522
+    },
+    {
+      "method": "com.wuxianggujun.tinaide.core.textengine.NativeTextScanKernel.nativeMeasureVisualColumns(Ljava/lang/String;I)I",
+      "ms": 56.146
+    },
+    {
+      "method": "java.lang.ref.Reference.getReferent()Ljava/lang/Object;",
+      "ms": 55.281
+    },
+    {
+      "method": "androidx.test.espresso.Espresso$1.run()V",
+      "ms": 53.457
+    },
+    {
+      "method": "java.util.concurrent.ThreadPoolExecutor.getQueue()Ljava/util/concurrent/BlockingQueue;",
+      "ms": 53.332
+    },
+    {
+      "method": "androidx.test.espresso.base.AsyncTaskPoolMonitor.isIdleNow()Z",
+      "ms": 50.67
+    },
+    {
+      "method": "java.lang.String.charAt(I)C",
+      "ms": 50.157
+    },
+    {
+      "method": "jdk.internal.misc.Unsafe.getReferenceVolatile(Ljava/lang/Object;J)Ljava/lang/Object;",
+      "ms": 49.821
+    },
+    {
+      "method": "android.view.DisplayEventReceiver.nativeScheduleVsync(J)V",
+      "ms": 48.958
+    },
+    {
+      "method": "java.util.concurrent.locks.AbstractOwnableSynchronizer.setExclusiveOwnerThread(Ljava/lang/Thread;)V",
+      "ms": 48.419
+    },
+    {
+      "method": "androidx.compose.runtime.Recomposer.access$getStateLock$p(Landroidx/compose/runtime/Recomposer;)Ljava/lang/Object;",
+      "ms": 48.247
+    },
+    {
+      "method": "androidx.test.espresso.Espresso$2.call()Ljava/lang/Void;",
+      "ms": 47.014
+    },
+    {
+      "method": "kotlin.jvm.internal.Intrinsics.checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V",
+      "ms": 46.329
+    },
+    {
+      "method": "java.util.LinkedHashMap$LinkedHashIterator.<init>(Ljava/util/LinkedHashMap;)V",
+      "ms": 46.264
+    },
+    {
+      "method": "java.util.ArrayList$Itr.hasNext()Z",
+      "ms": 46.081
+    },
+    {
+      "method": "java.util.HashMap.keySet()Ljava/util/Set;",
+      "ms": 44.961
+    },
+    {
+      "method": "java.util.HashMap.clear()V",
+      "ms": 44.752
+    },
+    {
+      "method": "java.util.ArrayList.-$$Nest$fgetsize(Ljava/util/ArrayList;)I",
+      "ms": 43.561
+    },
+    {
+      "method": "android.view.DisplayEventReceiver$VsyncEventData.copyFrom(Landroid/view/DisplayEventReceiver$VsyncEventData;)V",
+      "ms": 43.353
+    },
+    {
+      "method": "androidx.collection.ScatterMap.isNotEmpty()Z",
+      "ms": 43.251
+    },
+    {
+      "method": "java.util.concurrent.atomic.AtomicInteger.get()I",
+      "ms": 42.798
+    }
+  ],
+  "inclusiveTime": [
+    {
+      "method": "com.android.internal.os.ZygoteInit.main([Ljava/lang/String;)V",
+      "ms": 10670.863
+    },
+    {
+      "method": "com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run()V",
+      "ms": 10670.863
+    },
+    {
+      "method": "java.lang.reflect.Method.invoke(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;",
+      "ms": 10670.863
+    },
+    {
+      "method": "android.app.ActivityThread.main([Ljava/lang/String;)V",
+      "ms": 10670.863
+    },
+    {
+      "method": "android.os.Looper.loop()V",
+      "ms": 10670.863
+    },
+    {
+      "method": "android.os.Looper.loopOnce(Landroid/os/Looper;JI)Z",
+      "ms": 10670.863
+    },
+    {
+      "method": "android.os.Handler.dispatchMessage(Landroid/os/Message;)V",
+      "ms": 7242.205
+    },
+    {
+      "method": "android.os.Handler.handleCallback(Landroid/os/Message;)V",
+      "ms": 7179.032
+    },
+    {
+      "method": "java.util.concurrent.FutureTask.run()V",
+      "ms": 5112.547
+    },
+    {
+      "method": "android.os.MessageQueue.next()Landroid/os/Message;",
+      "ms": 4442.787
+    },
+    {
+      "method": "java.util.concurrent.Executors$RunnableAdapter.call()Ljava/lang/Object;",
+      "ms": 4383.431
+    },
+    {
+      "method": "android.os.MessageQueue.nativePollOnce(JI)V",
+      "ms": 4282.088
+    },
+    {
+      "method": "androidx.test.espresso.Espresso$1.run()V",
+      "ms": 4263.741
+    },
+    {
+      "method": "androidx.test.espresso.base.UiControllerImpl.loopMainThreadUntilIdle()V",
+      "ms": 4199.143
+    },
+    {
+      "method": "android.view.Choreographer$FrameDisplayEventReceiver.run()V",
+      "ms": 2080.422
+    },
+    {
+      "method": "android.view.Choreographer.doFrame(JILandroid/view/DisplayEventReceiver$VsyncEventData;)V",
+      "ms": 2080.422
+    },
+    {
+      "method": "android.view.Choreographer.doCallbacks(IJ)V",
+      "ms": 2014.166
+    },
+    {
+      "method": "android.view.Choreographer$CallbackRecord.run(Landroid/view/Choreographer$FrameData;)V",
+      "ms": 2014.166
+    },
+    {
+      "method": "android.view.Choreographer$CallbackRecord.run(J)V",
+      "ms": 2014.166
+    },
+    {
+      "method": "android.view.ViewRootImpl$TraversalRunnable.run()V",
+      "ms": 2001.729
+    },
+    {
+      "method": "android.view.ViewRootImpl.doTraversal()V",
+      "ms": 2001.729
+    },
+    {
+      "method": "android.view.ViewRootImpl.performTraversals()V",
+      "ms": 1979.358
+    },
+    {
+      "method": "android.view.ViewRootImpl.performDraw()Z",
+      "ms": 1960.703
+    },
+    {
+      "method": "android.view.ViewRootImpl.draw(ZZ)Z",
+      "ms": 1960.703
+    },
+    {
+      "method": "android.view.ThreadedRenderer.draw(Landroid/view/View;Landroid/view/View$AttachInfo;Landroid/view/ThreadedRenderer$DrawCallbacks;)V",
+      "ms": 1960.703
+    },
+    {
+      "method": "androidx.test.espresso.base.IdlingResourceRegistry$6.isIdleNow()Z",
+      "ms": 1710.712
+    },
+    {
+      "method": "androidx.test.espresso.base.IdlingResourceRegistry.allResourcesAreIdle()Z",
+      "ms": 1694.125
+    },
+    {
+      "method": "android.view.ThreadedRenderer.updateRootDisplayList(Landroid/view/View;Landroid/view/ThreadedRenderer$DrawCallbacks;)V",
+      "ms": 1531.14
+    },
+    {
+      "method": "android.view.ThreadedRenderer.updateViewTreeDisplayList(Landroid/view/View;)V",
+      "ms": 1515.888
+    },
+    {
+      "method": "android.view.View.updateDisplayListIfDirty()Landroid/graphics/RenderNode;",
+      "ms": 1515.888
+    },
+    {
+      "method": "android.view.ViewGroup.dispatchGetDisplayList()V",
+      "ms": 1515.888
+    },
+    {
+      "method": "android.view.ViewGroup.recreateChildDisplayList(Landroid/view/View;)V",
+      "ms": 1515.888
+    },
+    {
+      "method": "android.view.View.draw(Landroid/graphics/Canvas;)V",
+      "ms": 1506.387
+    },
+    {
+      "method": "androidx.compose.ui.platform.AndroidComposeView.dispatchDraw(Landroid/graphics/Canvas;)V",
+      "ms": 1506.387
+    },
+    {
+      "method": "androidx.compose.ui.platform.GraphicsLayerOwnerLayer.updateDisplayList()V",
+      "ms": 1484.223
+    },
+    {
+      "method": "androidx.compose.ui.graphics.layer.GraphicsLayer.record-mL-hObY(Landroidx/compose/ui/unit/Density;Landroidx/compose/ui/unit/LayoutDirection;JLkotlin/jvm/functions/Function1;)V",
+      "ms": 1484.223
+    },
+    {
+      "method": "androidx.compose.ui.graphics.layer.GraphicsLayer.recordInternal()V",
+      "ms": 1484.223
+    },
+    {
+      "method": "androidx.compose.ui.graphics.layer.GraphicsLayerV29.record(Landroidx/compose/ui/unit/Density;Landroidx/compose/ui/unit/LayoutDirection;Landroidx/compose/ui/graphics/layer/GraphicsLayer;Lkotlin/jvm/functions/Function1;)V",
+      "ms": 1484.223
+    },
+    {
+      "method": "androidx.compose.ui.graphics.layer.GraphicsLayer$clipDrawBlock$1.invoke(Ljava/lang/Object;)Ljava/lang/Object;",
+      "ms": 1484.223
+    },
+    {
+      "method": "androidx.compose.ui.graphics.layer.GraphicsLayer$clipDrawBlock$1.invoke(Landroidx/compose/ui/graphics/drawscope/DrawScope;)V",
+      "ms": 1484.223
+    }
+  ],
+  "editorInclusive": [
+    {
+      "method": "com.wuxianggujun.tinaide.core.editorview.EditorCanvasLayerKt$$ExternalSyntheticLambda2.invoke(Ljava/lang/Object;)Ljava/lang/Object;",
+      "ms": 1451.244
+    },
+    {
+      "method": "com.wuxianggujun.tinaide.core.editorview.EditorCanvasLayerKt.EditorCanvasLayer$lambda$21$lambda$17$lambda$16(Lcom/wuxianggujun/tinaide/core/editorview/EditorState;Lcom/wuxianggujun/tinaide/core/editorview/TinaEditorUiState;Lcom/wuxianggujun/tinaide/core/editorview/PaintApplyMemo;Landroid/graphics/Paint;Landroid/graphics/Paint;Landroidx/compose/ui/unit/Density;Lcom/wuxianggujun/tinaide/core/editorview/EditorRenderEngine;Landroid/view/View;ILcom/wuxianggujun/tinaide/core/editorview/EditorScrollbarRenderer;Lcom/wuxianggujun/tinaide/core/editorview/ScrollbarVisibilityCoordinator;Lcom/wuxianggujun/tinaide/core/editorview/EditorMinimapRenderer;Landroidx/compose/ui/graphics/drawscope/DrawScope;)Lkotlin/Unit;",
+      "ms": 1451.244
+    },
+    {
+      "method": "com.wuxianggujun.tinaide.core.editorview.EditorRenderEngine.render$default(Lcom/wuxianggujun/tinaide/core/editorview/EditorRenderEngine;Landroidx/compose/ui/graphics/drawscope/DrawScope;Lcom/wuxianggujun/tinaide/core/editorview/EditorState;Landroid/graphics/Paint;Landroid/graphics/Paint;Lcom/wuxianggujun/tinaide/core/editorview/EditorRenderViewport;ILjava/lang/Object;)V",
+      "ms": 1246.104
+    },
+    {
+      "method": "com.wuxianggujun.tinaide.core.editorview.EditorRenderer.render(Landroidx/compose/ui/graphics/drawscope/DrawScope;Lcom/wuxianggujun/tinaide/core/editorview/EditorState;Landroid/graphics/Paint;Landroid/graphics/Paint;Lcom/wuxianggujun/tinaide/core/editorview/EditorRenderViewport;)V",
+      "ms": 1246.104
+    },
+    {
+      "method": "com.wuxianggujun.tinaide.core.editorview.EditorRenderer.drawTextLayers(Landroidx/compose/ui/graphics/drawscope/DrawScope;Lcom/wuxianggujun/tinaide/core/editorview/EditorRenderFrameContext;Landroid/graphics/Paint;F)Lcom/wuxianggujun/tinaide/core/editorview/TextRenderer$FrameCacheStats;",
+      "ms": 1073.055
+    },
+    {
+      "method": "com.wuxianggujun.tinaide.core.editorview.WordOccurrenceHighlightRenderer.drawHighlights(Landroidx/compose/ui/graphics/drawscope/DrawScope;Lcom/wuxianggujun/tinaide/core/editorview/EditorRenderFrameContext;FLandroid/graphics/Paint;Lcom/wuxianggujun/tinaide/core/editorview/EditorLineLayoutCache;)V",
+      "ms": 523.896
+    },
+    {
+      "method": "com.wuxianggujun.tinaide.core.editorview.TextRenderer.drawText(Landroidx/compose/ui/graphics/drawscope/DrawScope;Lcom/wuxianggujun/tinaide/core/editorview/EditorRenderFrameContext;Landroid/graphics/Paint;FLcom/wuxianggujun/tinaide/core/editorview/EditorLineLayoutCache;)Lcom/wuxianggujun/tinaide/core/editorview/TextRenderer$FrameCacheStats;",
+      "ms": 451.099
+    },
+    {
+      "method": "com.wuxianggujun.tinaide.core.editorview.EditorVisualLineMapper.visualLineMap()Lcom/wuxianggujun/tinaide/core/editorview/EditorVisualLineMapper$VisualLineMap;",
+      "ms": 376.274
+    },
+    {
+      "method": "com.wuxianggujun.tinaide.core.editorview.EditorMaxLineWidthTracker.maxScrollXPx(F)F",
+      "ms": 357.555
+    },
+    {
+      "method": "com.wuxianggujun.tinaide.core.editorview.EditorMaxLineWidthTracker.ensureMaxLineWidthPx()F",
+      "ms": 348.517
+    },
+    {
+      "method": "com.wuxianggujun.tinaide.core.editorview.EditorState.maxHorizontalScrollOffsetPx$default(Lcom/wuxianggujun/tinaide/core/editorview/EditorState;FILjava/lang/Object;)F",
+      "ms": 326.572
+    },
+    {
+      "method": "com.wuxianggujun.tinaide.core.editorview.EditorState.maxHorizontalScrollOffsetPx(F)F",
+      "ms": 326.572
+    },
+    {
+      "method": "com.wuxianggujun.tinaide.core.editorview.EditorState.visualLineEndColumn$editor_view(I)I",
+      "ms": 283.584
+    },
+    {
+      "method": "com.wuxianggujun.tinaide.core.editorview.EditorState.docLineForVisualLine$editor_view(I)I",
+      "ms": 209.118
+    },
+    {
+      "method": "com.wuxianggujun.tinaide.core.editorview.EditorMaxLineWidthTracker.visibleAndCursorMaxLineChars()I",
+      "ms": 197.46
+    },
+    {
+      "method": "com.wuxianggujun.tinaide.core.editorview.EditorState.getConfig()Lcom/wuxianggujun/tinaide/core/editorview/EditorConfig;",
+      "ms": 169.792
+    },
+    {
+      "method": "com.wuxianggujun.tinaide.core.editorview.EditorCanvasLayerKt$$ExternalSyntheticLambda4.invoke(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+      "ms": 163.956
+    },
+    {
+      "method": "com.wuxianggujun.tinaide.core.editorview.EditorCanvasLayerKt.EditorCanvasLayer$lambda$22(Lcom/wuxianggujun/tinaide/core/editorview/TinaEditorSession;ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+      "ms": 163.956
+    },
+    {
+      "method": "com.wuxianggujun.tinaide.core.editorview.EditorCanvasLayerKt.EditorCanvasLayer(Lcom/wuxianggujun/tinaide/core/editorview/TinaEditorSession;Landroidx/compose/runtime/Composer;I)V",
+      "ms": 163.956
+    },
+    {
+      "method": "com.wuxianggujun.tinaide.core.editorview.EditorScrollGestureCoordinator.shouldEnableHorizontalScrollable()Z",
+      "ms": 163.956
+    },
+    {
+      "method": "com.wuxianggujun.tinaide.core.editorview.EditorScrollbarRenderer.calculateLayout(Lcom/wuxianggujun/tinaide/core/editorview/EditorState;FFLandroidx/compose/ui/unit/Density;)Lcom/wuxianggujun/tinaide/core/editorview/EditorScrollbarLayout;",
+      "ms": 154.739
+    },
+    {
+      "method": "com.wuxianggujun.tinaide.core.editorview.EditorState.get_config()Lcom/wuxianggujun/tinaide/core/editorview/EditorConfig;",
+      "ms": 137.539
+    },
+    {
+      "method": "com.wuxianggujun.tinaide.core.editorview.EditorState.visualLineStartColumn$editor_view(I)I",
+      "ms": 107.425
+    },
+    {
+      "method": "com.wuxianggujun.tinaide.ui.compose.editor.EditorLargeFileInstrumentationTest.warmCppScroll_recordsEnoughRendererSamples$lambda$13$lambda$11(Lcom/wuxianggujun/tinaide/core/editorview/EditorState;II)Lkotlin/Unit;",
+      "ms": 102.153
+    },
+    {
+      "method": "com.wuxianggujun.tinaide.core.editorview.EditorState.scrollBy(F)V",
+      "ms": 102.153
+    },
+    {
+      "method": "com.wuxianggujun.tinaide.core.editorview.EditorState.emitScrollChangedIfNeeded(FF)V",
+      "ms": 102.153
+    },
+    {
+      "method": "com.wuxianggujun.tinaide.core.editorview.EditorState.emitEvent$editor_view(Lcom/wuxianggujun/tinaide/core/editorview/EditorEvent;)V",
+      "ms": 102.153
+    },
+    {
+      "method": "com.wuxianggujun.tinaide.core.editorview.EditorState$maxLineWidthTracker$1.lineVisualColumns(Ljava/lang/String;)I",
+      "ms": 97.469
+    },
+    {
+      "method": "com.wuxianggujun.tinaide.core.editorview.EditorState.access$lineVisualColumnsForWidth(Lcom/wuxianggujun/tinaide/core/editorview/EditorState;Ljava/lang/String;)I",
+      "ms": 97.469
+    },
+    {
+      "method": "com.wuxianggujun.tinaide.core.editorview.EditorState.lineVisualColumnsForWidth(Ljava/lang/String;)I",
+      "ms": 97.469
+    },
+    {
+      "method": "com.wuxianggujun.tinaide.core.editorview.TextRenderer.drawClampedTextRange(Landroid/graphics/Canvas;Ljava/lang/String;IIFFLandroid/graphics/Paint;Lcom/wuxianggujun/tinaide/core/editorview/EditorLineLayoutCache$PrefixLayout;F[I)V",
+      "ms": 92.004
+    },
+    {
+      "method": "com.wuxianggujun.tinaide.core.editorview.EditorLineLayoutCache.getPrefixLayout$default(Lcom/wuxianggujun/tinaide/core/editorview/EditorLineLayoutCache;Lcom/wuxianggujun/tinaide/core/editorview/EditorState;ILjava/lang/String;JLandroid/graphics/Paint;FILjava/lang/Object;)Lcom/wuxianggujun/tinaide/core/editorview/EditorLineLayoutCache$PrefixLayout;",
+      "ms": 78.247
+    },
+    {
+      "method": "com.wuxianggujun.tinaide.core.editorview.EditorState$visualLineMapper$1.getCodeFoldingEnabled()Z",
+      "ms": 74.604
+    },
+    {
+      "method": "com.wuxianggujun.tinaide.core.editorview.EditorState.getLineHeightPx()F",
+      "ms": 74.567
+    },
+    {
+      "method": "com.wuxianggujun.tinaide.core.editorview.EditorViewportState.getLineHeightPx()F",
+      "ms": 74.567
+    },
+    {
+      "method": "com.wuxianggujun.tinaide.core.editorview.EditorRenderer.drawGutter(Landroidx/compose/ui/graphics/drawscope/DrawScope;Lcom/wuxianggujun/tinaide/core/editorview/EditorColorScheme;Lcom/wuxianggujun/tinaide/core/editorview/EditorRenderFrameContext;Landroid/graphics/Paint;FF)V",
+      "ms": 72.271
+    },
+    {
+      "method": "com.wuxianggujun.tinaide.core.editorview.EditorFoldingManager.getFoldRegionsDocumentVersion$editor_view()J",
+      "ms": 70.9
+    },
+    {
+      "method": "com.wuxianggujun.tinaide.core.editorview.EditorRenderer.recordRenderMetrics$editor_view(JILcom/wuxianggujun/tinaide/core/editorview/TextRenderer$FrameCacheStats;)V",
+      "ms": 65.378
+    },
+    {
+      "method": "com.wuxianggujun.tinaide.core.editorview.EditorLineLayoutCache.getPrefixLayout(Lcom/wuxianggujun/tinaide/core/editorview/EditorState;ILjava/lang/String;JLandroid/graphics/Paint;F)Lcom/wuxianggujun/tinaide/core/editorview/EditorLineLayoutCache$PrefixLayout;",
+      "ms": 62.935
+    },
+    {
+      "method": "com.wuxianggujun.tinaide.core.editorview.EditorState$visualLineMapper$1.getFoldRegionsDocumentVersion()J",
+      "ms": 60.314
+    }
+  ],
+  "scope": "Sampled main-thread stack intervals; inclusive times overlap; instrumentation perturbs timings"
+}

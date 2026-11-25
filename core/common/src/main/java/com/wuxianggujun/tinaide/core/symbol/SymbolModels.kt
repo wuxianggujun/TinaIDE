@@ -26,10 +26,12 @@ data class SymbolInfo(
     val location: SymbolLocation? = null,
     val signature: String? = null,
     val documentation: String? = null,
+    val containerName: String? = null,
 ) {
     val displayDetail: String
         get() {
             val parts = mutableListOf<String>()
+            containerName?.let(parts::add)
             if (signature != null) {
                 parts.add(signature)
             }

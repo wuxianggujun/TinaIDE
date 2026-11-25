@@ -34,3 +34,7 @@ android {
 dependencies {
     implementation(project.dependencies.project(":tools:template-common"))
 }
+
+tasks.withType<JavaCompile>().configureEach {
+    options.encoding = "UTF-8"
+}

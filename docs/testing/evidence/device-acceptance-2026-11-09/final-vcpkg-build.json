@@ -1,0 +1,5 @@
+{
+  "phase": "build",
+  "result": "Success(message=ninja: Entering directory `\/data\/user\/0\/com.wuxianggujun.tinaide\/files\/device-acceptance\/project\/build\/acceptance'\n[1\/2] Building CXX object CMakeFiles\/tina_vcpkg_example.dir\/main.cpp.o\n[2\/2] Linking CXX executable tina_vcpkg_example\n, buildTimeMs=0, outputPath=null)",
+  "passed": true
+}

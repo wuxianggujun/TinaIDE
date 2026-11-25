@@ -1,0 +1,60 @@
+{
+  "failures": [
+    {
+      "test": "VcpkgRepositoryTest > malformedUtf8MustNotBeRewrittenAsReplacementCharacters",
+      "excerpt": [
+        "VcpkgRepositoryTest > malformedUtf8MustNotBeRewrittenAsReplacementCharacters FAILED",
+        "    expected: 2131693945",
+        "    but was : null"
+      ],
+      "originalLog": "before.log",
+      "originalLogSha256": "0a6f3c97a32c832695a6e4d2ce13e5132fa1d21e4c40225466ed8d4ef31c31e3",
+      "finalResult": "PASS"
+    },
+    {
+      "test": "VcpkgRepositoryTest > noOpDependencyChangesPreserveExactBytesAndModificationTime",
+      "excerpt": [
+        "VcpkgRepositoryTest > noOpDependencyChangesPreserveExactBytesAndModificationTime FAILED",
+        "    expected: 7B20226465736372697074696F6E223A2022E4B8ADE69687F09F9880222C2022646570656E64656E63696573223A205B207B20226E616D65223A2022666D74222C20226665617475726573223A205B226865616465722D6F6E6C79225D207D205D207D",
+        "    but was : 7B0A2020226465736372697074696F6E223A2022E4B8ADE69687F09F9880222C0A202022646570656E64656E63696573223A205B0A202020207B0A202020202020226E616D65223A2022666D74222C0A202020202020226665617475726573223A205B0A2020202020202020226865616465722D6F6E6C79220A2020202020205D0A202020207D0A20205D0A7D0A"
+      ],
+      "originalLog": "before.log",
+      "originalLogSha256": "0a6f3c97a32c832695a6e4d2ce13e5132fa1d21e4c40225466ed8d4ef31c31e3",
+      "finalResult": "PASS"
+    },
+    {
+      "test": "VcpkgRepositoryTest > removingAnAbsentDependencyDoesNotCreateAManifest",
+      "excerpt": [
+        "VcpkgRepositoryTest > removingAnAbsentDependencyDoesNotCreateAManifest FAILED",
+        "    expected to be false",
+        "        at com.wuxianggujun.tinaide.core.packages.VcpkgRepositoryTest$removingAnAbsentDependencyDoesNotCreateAManifest$1.invokeSuspend(VcpkgRepositoryTest.kt:108)"
+      ],
+      "originalLog": "before.log",
+      "originalLogSha256": "0a6f3c97a32c832695a6e4d2ce13e5132fa1d21e4c40225466ed8d4ef31c31e3",
+      "finalResult": "PASS"
+    },
+    {
+      "test": "VcpkgRepositoryTest > editingMustNotCreateAManifestLargerThanTheAcceptedReadLimit",
+      "excerpt": [
+        "VcpkgRepositoryTest > editingMustNotCreateAManifestLargerThanTheAcceptedReadLimit FAILED",
+        "    expected: 2131693945",
+        "    but was : null"
+      ],
+      "originalLog": "before.log",
+      "originalLogSha256": "0a6f3c97a32c832695a6e4d2ce13e5132fa1d21e4c40225466ed8d4ef31c31e3",
+      "finalResult": "PASS"
+    },
+    {
+      "test": "VcpkgRepositoryTest > editsFromDifferentRepositoryInstancesDoNotLoseDependencies",
+      "excerpt": [
+        "VcpkgRepositoryTest > editsFromDifferentRepositoryInstancesDoNotLoseDependencies FAILED",
+        "    expected to be empty",
+        "    but was: [com.wuxianggujun.tinaide.core.packages.VcpkgException: vcpkg validation failed (resource=2131693949), com.wuxianggujun.tinaide.core.packages.VcpkgException: vcpkg validation failed (resource=2131693949), com.wuxianggujun.tinaide.core.packages.VcpkgException: vcpkg validation failed (resource=2131693949), java.nio.file.AccessDeniedException: C:\\Users\\WUXIAN~1\\GRADLE~3\\junit17305124157754707262\\junit17418052699832930689\\.vcpkg-manifest-15819879725290085987.json -> C:\\Users\\WUXIAN~1\\GRADLE~3\\junit17305124157754707262\\junit17418052699832930689\\vcpkg.json, java.nio.file.AccessDeniedException: C:\\Users\\WUXIAN~1\\GRADLE~3\\junit17305124157754707262\\junit17418052699832930689\\.vcpkg-manifest-3275658963768668440.json -> C:\\Users\\WUXIAN~1\\GRADLE~3\\junit17305124157754707262\\junit17418052699832930689\\vcpkg.json, com.wuxianggujun.tinaide.core.packages.VcpkgException: vcpkg validation failed (resource=2131693949), java.nio.file.AccessDeniedException: C:\\Users\\WUXIAN~1\\GRADLE~3\\junit17305124157754707262\\junit17418052699832930689\\.vcpkg-manifest-14287048122356419652.json -> C:\\Users\\WUXIAN~1\\GRADLE~3\\junit17305124157754707262\\junit17418052699832930689\\vcpkg.json, com.wuxianggujun.tinaid"
+      ],
+      "originalLog": "concurrency-before.log",
+      "originalLogSha256": "10ccb3ffc5554b520bae1b1dda7867a30f06722371d14d115a3a9685f5df455e",
+      "finalResult": "PASS"
+    }
+  ],
+  "finalEvidence": "vcpkg-metadata-unit-tests.json"
+}

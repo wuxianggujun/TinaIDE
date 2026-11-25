@@ -45,8 +45,9 @@ class SdlRuntimeLibraryStagerTest {
             assertThat(stagedHelper.readText()).isEqualTo("helper")
             assertThat(File(stagedMain.parentFile, unrelatedLibrary.name).exists()).isFalse()
 
-            assertThat(success.runtime.preSdlLibraryPaths).containsExactly(privateRuntime.absolutePath)
-            assertThat(success.runtime.preloadLibraryPaths).doesNotContain(privateRuntime.absolutePath)
+            // The stager canonicalizes both Android data aliases and Windows short temp paths.
+            assertThat(success.runtime.preSdlLibraryPaths).containsExactly(privateRuntime.canonicalPath)
+            assertThat(success.runtime.preloadLibraryPaths).doesNotContain(privateRuntime.canonicalPath)
             assertThat(success.runtime.preloadLibraryPaths).contains(stagedHelper.absolutePath)
         } finally {
             tempRoot.deleteRecursively()

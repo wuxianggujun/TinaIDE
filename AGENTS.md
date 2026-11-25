@@ -65,7 +65,7 @@
 
 ---
 
-## 3.5 Git 子模块规则（TinaIDE 必须遵守）
+## 3.5 Git 子模块与正式发布规则（TinaIDE 必须遵守）
 
 本项目包含多个 Git submodule。**任何涉及子模块指针（gitlink）变更的提交/发版，必须先提交并推送子模块仓库，再提交并推送主仓库**，否则 CI 可能在 `git submodule update --recursive` 阶段因 `not our ref <sha>` 失败。
 
@@ -74,6 +74,16 @@
 - 先在子模块仓库内完成提交并 `git push`（确保目标提交在远端分支/Tag 上可达）。
 - 再回到主仓库提交子模块指针变更并 `git push`。
 - 打 tag 前做一次校验：`git submodule status --recursive`（必要时配合 `git -C <submodule> ls-remote origin <sha>` 确认远端可达）。
+
+### 正式发布必须先合并到 main
+
+- **`main` 是正式发布分支，只在发布新版本时更新；日常开发、普通修复、文档维护和本地测试包都在 `dev` 或短期分支推进。**
+- 用户要求“发布新版本”时，**将已验证的待发布变更合并并推送到远端 `main` 是发布任务的必要步骤**；只推送 `dev`、打 Tag 或上传 APK 均不算完成发布流程。
+- 固定顺序：**子模块提交推送 → 主仓库版本号／CHANGELOG／源码提交推送 → 验证候选提交 → 通过 PR 合并到 `main` 并确认远端已更新 → 在已验证的 `origin/main` 发布提交上创建并推送版本 Tag → 等待发布 CI 成功并核验 Release 产物 → 将发布变更同步回 `dev`**。
+- 创建正式版本 Tag 前，必须重新获取远端 `main`，核对其提交、`version.properties`、CHANGELOG 和子模块；Tag 去掉 `v` 后必须等于该提交的 `versionName`。禁止从尚未进入远端 `main` 的 `dev`、`release/*` 或其他分支直接发布。
+- 本地 Release 构建、签名 APK 安装与正式发布是不同阶段；仅要求构建／安装时，不因此更新 `main` 或创建正式版本 Tag。
+- 已公开的 Tag 和发布资产不得为补漏而移动、覆盖或重建。历史发布若遗漏合并，保留原 Tag，通过保留提交历史的合并补齐 `main`，并记录偏差与核验结果。
+- 完整操作与验收清单见 [分支管理指南](docs/guides/Branch-Management-Guide.md#8-正式发布流程必须先合并-main)。
 
 ---
 
@@ -157,7 +167,7 @@ cd editor-kit && ./gradlew -p examples/consumer :consumer:compileDebugKotlin --n
 
 - 不要把 PRoot 当默认 C/C++ 编译链路。
 - 新增第三方依赖必须先确认许可证与 GPL-3.0 兼容，并同步更新 `NOTICE.md`。带非商业条款、用户数上限或其他附加限制的许可证不可引入（GPL-3.0 第 7 条禁止 further restrictions）。
-- `external/rikkahub` 当前是**未解决的分发阻塞项**：其附加限制违反 GPL-3.0 第 7 条，冲突解决前包含它的构建产物不得对外分发。不要在文档或发布说明里把“可对外分发的完整 APK”当成当前事实。
+- `external/rikkahub` 已同步官方纯 AGPL-3.0（2026-11-01），原非商业/用户数附加限制已解除；依据见 `docs/licensing/rikkahub-agpl-review.md`。宿主 GPL 与 RikkaHub AGPL 部分依据第 13 条组合，分发须附完整对应源码与许可文本；不得绕过 `tools/checks/check_distribution.py` 的许可哈希/随包全文校验，也不得把门禁通过当成真机验收通过。
 - 不要把 X11 桌面写成已验证功能：代码路径完整，但尚未在真机跑通 XFCE。
 - 不要把 X server 或 lorie 组件搬进主进程：lorie 把 libc 的 `exit()`/`abort()` 覆盖成 `_exit()`，一次 `FatalError` 会直接杀死所在进程。
 - 不要在文档或代码里恢复 Alpine 支持口径：`0.18.29` 已删除 `AlpineMirrorManager`、Alpine 镜像设置项和 `ConfigKeys.AlpineMirrorUrl`。

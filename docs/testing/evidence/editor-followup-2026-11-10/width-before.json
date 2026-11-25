@@ -1,0 +1,23 @@
+{
+  "suite": {
+    "name": "com.wuxianggujun.tinaide.core.editorview.EditorMaxLineWidthTrackerTest",
+    "tests": "10",
+    "skipped": "0",
+    "failures": "2",
+    "errors": "0",
+    "timestamp": "2026-11-10T01:52:40.264Z",
+    "hostname": "DESKTOP-9KUJPVG",
+    "time": "1.054"
+  },
+  "failures": [
+    {
+      "name": "largeDocument_editingWidestRowRecomputesRemainingTabWidth",
+      "message": "com.google.common.truth.ComparisonFailureWithFacts: expected: 310.0\nbut was : 390.0"
+    },
+    {
+      "name": "largeDocument_unsampledTabsRemainReachableAfterScanAndUnrelatedEdit",
+      "message": "com.google.common.truth.ComparisonFailureWithFacts: expected: 310.0\nbut was : 70.0"
+    }
+  ],
+  "beforeSourceSha256": "ec96c1958c40487b105f79113dbac52c36bf1b9998a8caf35234158cee70c3b4"
+}

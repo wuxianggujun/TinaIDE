@@ -62,7 +62,7 @@ object ApkExportRuntimeLibrariesResolver {
         }
 
         val appContext = context.applicationContext
-        val packagePaths = InstalledPackagePathResolver.resolve(appContext, projectRoot)
+        val packagePaths = InstalledPackagePathResolver.resolve(appContext, projectRoot, buildDir)
         val rootLibraries = resolveRootLibraries(buildLibraries)
         val primaryLibrary = rootLibraries.first()
         val selectedSdlRuntimeLibraries = mutableListOf<File>()

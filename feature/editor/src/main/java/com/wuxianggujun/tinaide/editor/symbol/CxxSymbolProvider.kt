@@ -6,354 +6,232 @@ import com.itsaky.androidide.treesitter.cpp.TSLanguageCpp
 import com.wuxianggujun.tinaide.core.lang.CxxFileSupport
 import java.util.ArrayDeque
 
-/**
- * C/C++ 符号提取 Provider。
- *
- * 从 Tree-sitter C++ AST 中提取全局符号（namespace / enum / class / struct / function / variable），
- * 服务于 Outline / Symbols 面板。
- */
+/** Syntax-level project symbols. Function bodies and initializers are not global scopes. */
 internal class CxxSymbolProvider : LanguageSymbolProvider {
-
     override val supportedExtensions: Set<String> = CxxFileSupport.editorRelatedExtensions
-
     override fun createLanguage(): TSLanguage = TSLanguageCpp.getInstance()
 
-    private data class VariableDecl(val startIndex: Int, val typeName: String)
+    private data class Scope(val name: String? = null, val inType: Boolean = false, val namespace: String? = null)
+    private data class Visit(val node: TSNode, val scope: Scope)
+    private data class DeclaredName(val name: String, val node: TSNode, val qualifier: String? = null)
 
     override fun extractSymbols(root: TSNode, source: String): List<GlobalSymbol> {
-        if (!root.canAccess()) {
-            return emptyList()
-        }
-        val variableDecls = LinkedHashMap<String, VariableDecl>()
-
-        val globals = LinkedHashSet<GlobalSymbol>()
-        val sourceLines = source.lines()
-
-        val stack = ArrayDeque<Pair<TSNode, Boolean>>()
-        stack.addLast(root to false)
-
-        while (stack.isNotEmpty()) {
-            val (node, inTypeBody) = stack.removeLast()
-
-            if (!node.canAccess()) {
-                break
-            }
-
-            val type = node.type
-
-            when (type) {
-                "namespace_definition" -> {
-                    extractNamespaceNode(node)?.let { nameNode ->
-                        val ns = nodeText(nameNode, source)?.trim().orEmpty()
-                        if (ns.isNotEmpty()) {
-                            globals.add(
-                                GlobalSymbol(
-                                    name = ns,
-                                    kind = SymbolKind.Namespace,
-                                    detail = "namespace",
-                                    location = locationOf(nameNode),
-                                    signature = null,
-                                    documentation = extractDocComment(node, sourceLines),
-                                )
-                            )
+        if (!root.isAccessible()) return emptyList()
+        val symbols = mutableListOf<GlobalSymbol>()
+        val typeScopes = mutableSetOf<String>()
+        val lines = source.lines()
+        val pending = ArrayDeque<Visit>()
+        pending.addLast(Visit(root, Scope()))
+        while (pending.isNotEmpty()) {
+            val (node, scope) = pending.removeLast()
+            if (!node.isAccessible()) continue
+            when (node.type) {
+                "namespace_definition", "class_specifier", "struct_specifier", "enum_specifier" -> {
+                    val kind = when (node.type) {
+                        "namespace_definition" -> SymbolKind.Namespace
+                        "class_specifier" -> SymbolKind.Class
+                        "struct_specifier" -> SymbolKind.Struct
+                        else -> SymbolKind.Enum
+                    }
+                    val name = node.getChildByFieldName("name")?.let { declaredName(it, source) }
+                    val container = name?.let { containerName(scope, it) } ?: scope.name
+                    val qualifiedName = name?.let { qualify(container, it.name) } ?: scope.name
+                    if (name != null) {
+                        symbols += GlobalSymbol(
+                            name = name.name,
+                            kind = kind,
+                            detail = kind.name.lowercase(),
+                            location = locationOf(name.node),
+                            documentation = extractDocComment(node, lines),
+                            containerName = container,
+                        )
+                        if (kind == SymbolKind.Class || kind == SymbolKind.Struct) {
+                            typeScopes += requireNotNull(qualifiedName)
+                        }
+                    }
+                    node.getChildByFieldName("body")?.let { body ->
+                        pending.addLast(Visit(body, Scope(
+                            name = qualifiedName,
+                            inType = scope.inType || kind != SymbolKind.Namespace,
+                            namespace = if (kind == SymbolKind.Namespace) qualifiedName else scope.namespace,
+                        )))
+                    }
+                }
+                "function_definition" -> {
+                    node.getChildByFieldName("declarator")?.let { declarator ->
+                        extractDeclaration(node, declarator, scope, source, lines, isFunction = true)?.let(symbols::add)
+                    }
+                    // Do not descend into parameters, the body, local types or lambdas.
+                }
+                "declaration", "field_declaration" -> {
+                    for (index in 0 until node.namedChildCount) {
+                        val child = node.getNamedChild(index)
+                        if (!child.isAccessible()) continue
+                        when (child.type) {
+                            "class_specifier", "struct_specifier", "enum_specifier" -> pending.addLast(Visit(child, scope))
+                            else -> if (isDeclarator(child.type)) {
+                                val declarator = if (child.type == "init_declarator") {
+                                    child.getChildByFieldName("declarator") ?: continue
+                                } else child
+                                extractDeclaration(node, declarator, scope, source, lines, isFunctionDeclarator(declarator))
+                                    ?.let(symbols::add)
+                            }
                         }
                     }
                 }
-
-                "enum_specifier" -> {
-                    val nameNode = node.getChildByFieldName("name")
-                    val enumName = extractTypeName(nameNode, source)
-                    if (enumName == null) {
-                        pushChildren(node, inTypeBody, stack)
-                    } else {
-                        globals.add(
-                            GlobalSymbol(
-                                name = enumName,
-                                kind = SymbolKind.Enum,
-                                detail = "enum",
-                                location = nameNode?.let(::locationOf),
-                                signature = null,
-                                documentation = extractDocComment(node, sourceLines),
-                            )
-                        )
+                "parameter_list", "parameter_declaration", "template_parameter_list",
+                "compound_statement", "lambda_expression", "initializer_list", "argument_list" -> Unit
+                "friend_declaration" -> {
+                    for (index in node.namedChildCount - 1 downTo 0) {
+                        pending.addLast(Visit(node.getNamedChild(index), Scope(scope.namespace, namespace = scope.namespace)))
                     }
                 }
-
-                "class_specifier", "struct_specifier" -> {
-                    val kind = if (type == "class_specifier") SymbolKind.Class else SymbolKind.Struct
-                    val nameNode = node.getChildByFieldName("name")
-                    val typeName = extractTypeName(nameNode, source)
-                    if (typeName == null) {
-                        pushChildren(node, inTypeBody, stack)
-                    } else {
-                        globals.add(
-                            GlobalSymbol(
-                                name = typeName,
-                                kind = kind,
-                                detail = kind.name.lowercase(),
-                                location = nameNode?.let(::locationOf),
-                                signature = null,
-                                documentation = extractDocComment(node, sourceLines),
-                            )
-                        )
-                    }
-                }
-
-                "function_definition" -> {
-                    extractFunction(node, source, sourceLines)?.let { fn ->
-                        globals.add(
-                            GlobalSymbol(
-                                name = fn.name,
-                                kind = SymbolKind.Function,
-                                detail = "function",
-                                location = fn.location,
-                                signature = fn.signature,
-                                documentation = fn.documentation,
-                            )
-                        )
-                    }
-                }
-
-                "declaration", "parameter_declaration" -> {
-                    if (!inTypeBody) {
-                        extractVariableDecls(node, source, variableDecls)
+                else -> {
+                    for (index in node.namedChildCount - 1 downTo 0) {
+                        pending.addLast(Visit(node.getNamedChild(index), scope))
                     }
                 }
             }
-
-            val nextInTypeBody = inTypeBody || type == "class_specifier" || type == "struct_specifier"
-            pushChildren(node, nextInTypeBody, stack)
         }
-
-        for ((name, decl) in variableDecls) {
-            val typeName = decl.typeName
-            globals.add(
-                GlobalSymbol(
-                    name = name,
-                    kind = SymbolKind.Variable,
-                    detail = if (typeName.isEmpty()) "variable" else "variable: $typeName",
-                    signature = if (typeName.isNotEmpty()) "$typeName $name" else null,
-                    documentation = null,
-                )
-            )
-        }
-
-        return globals
-            .asSequence()
-            .distinctBy { it.kind to it.name }
-            .sortedWith(compareBy<GlobalSymbol>({ it.name }, { it.kind.ordinal }))
+        return symbols.asSequence()
+            .map { symbol ->
+                if (symbol.kind == SymbolKind.Function && symbol.containerName != null && symbol.containerName in typeScopes) {
+                    symbol.copy(kind = SymbolKind.Method, detail = "method")
+                } else symbol
+            }
+            .distinctBy { listOf(it.kind, it.containerName, it.name, it.signature, it.location) }
+            .sortedWith(compareBy({ it.name }, { it.containerName.orEmpty() }, { it.location?.line ?: 0 }))
             .toList()
     }
 
-    private fun pushChildren(node: TSNode, inTypeBody: Boolean, stack: ArrayDeque<Pair<TSNode, Boolean>>) {
-        if (!node.canAccess()) return
-        val count = node.namedChildCount
-        for (i in count - 1 downTo 0) {
-            val child = node.getNamedChild(i)
-            if (child.canAccess()) {
-                stack.addLast(child to inTypeBody)
-            }
+    private fun extractDeclaration(
+        declaration: TSNode,
+        declarator: TSNode,
+        scope: Scope,
+        source: String,
+        lines: List<String>,
+        isFunction: Boolean,
+    ): GlobalSymbol? {
+        val name = declaredName(declarator, source) ?: return null
+        val kind = when {
+            isFunction && scope.inType -> SymbolKind.Method
+            isFunction -> SymbolKind.Function
+            scope.inType -> SymbolKind.Field
+            else -> SymbolKind.Variable
         }
-    }
-
-    private fun extractNamespaceNode(node: TSNode): TSNode? {
-        if (!node.canAccess()) return null
-        val nameNode = node.getChildByFieldName("name") ?: return null
-        if (!nameNode.canAccess() || nameNode.isNull) return null
-        return nameNode
-    }
-
-    private data class FunctionSymbol(
-        val name: String,
-        val location: SymbolLocation,
-        val signature: String? = null,
-        val documentation: String? = null,
-    )
-
-    private fun extractFunction(node: TSNode, source: String, sourceLines: List<String>): FunctionSymbol? {
-        if (!node.canAccess()) return null
-        val declarator = node.getChildByFieldName("declarator") ?: return null
-        if (!declarator.canAccess()) return null
-        val nameNode = findIdentifierNodeInDeclarator(declarator, preferFieldIdentifier = false) ?: return null
-        val name = nodeText(nameNode, source)?.trim()?.takeIf { it.isNotEmpty() } ?: return null
-        val signature = extractFunctionSignature(node, source)
-        val documentation = extractDocComment(node, sourceLines)
-        return FunctionSymbol(
-            name = name,
-            location = locationOf(nameNode),
+        val type = declaration.getChildByFieldName("type")?.let { nodeText(it, source) }
+        val signature = listOfNotNull(type, nodeText(declarator, source)).joinToString(" ").ifBlank { null }
+        return GlobalSymbol(
+            name = name.name,
+            kind = kind,
+            detail = kind.name.lowercase(),
+            location = locationOf(name.node),
             signature = signature,
-            documentation = documentation,
+            documentation = extractDocComment(declaration, lines),
+            containerName = containerName(scope, name),
         )
     }
 
-    private fun extractVariableDecls(
-        node: TSNode,
-        source: String,
-        out: MutableMap<String, VariableDecl>,
-    ) {
-        if (!node.canAccess()) return
-        val typeName = extractDeclaredTypeName(node, source) ?: return
+    private fun isDeclarator(type: String): Boolean = type.endsWith("declarator") || type in setOf(
+        "identifier", "field_identifier", "qualified_identifier", "operator_name", "operator_cast",
+        "destructor_name", "template_function", "template_method",
+    )
 
-        val declarators = findTopLevelDeclarators(node)
-        for (decl in declarators) {
-            if (!decl.canAccess()) continue
-            val identNode = findIdentifierNodeInDeclarator(decl, preferFieldIdentifier = false) ?: continue
-            val name = nodeText(identNode, source)?.trim().orEmpty()
-            if (name.isBlank()) continue
-            val startIndex = identNode.startByte / 2
-            val existing = out[name]
-            if (existing == null || startIndex >= existing.startIndex) {
-                out[name] = VariableDecl(startIndex = startIndex, typeName = typeName)
+    /** The binding nearest the name distinguishes a function from a function-pointer variable. */
+    private fun isFunctionDeclarator(declarator: TSNode): Boolean {
+        var node: TSNode? = declarator
+        var functionBinding = false
+        while (node != null && node.isAccessible()) {
+            when (node.type) {
+                "operator_cast" -> return true
+                "function_declarator", "function_field_declarator", "abstract_function_declarator" -> functionBinding = true
+                "pointer_declarator", "reference_declarator", "array_declarator" -> functionBinding = false
             }
+            node = nextDeclarator(node)
         }
+        return functionBinding
     }
 
-    private fun findTopLevelDeclarators(node: TSNode): List<TSNode> {
-        if (!node.canAccess()) return emptyList()
-        val result = mutableListOf<TSNode>()
-        val count = node.namedChildCount
-        for (i in 0 until count) {
-            val child = node.getNamedChild(i)
-            if (!child.canAccess()) continue
-            when (child.type) {
-                "init_declarator" -> {
-                    val decl = child.getChildByFieldName("declarator")
-                    if (decl != null && decl.canAccess() && !decl.isNull) result.add(decl)
-                }
-
-                "identifier", "pointer_declarator", "reference_declarator", "array_declarator", "function_declarator" -> {
-                    result.add(child)
-                }
+    private fun declaredName(node: TSNode, source: String): DeclaredName? {
+        if (!node.isAccessible()) return null
+        return when (node.type) {
+            "identifier", "field_identifier", "type_identifier", "namespace_identifier",
+            "nested_namespace_specifier", "operator_name", "destructor_name" -> {
+                nodeText(node, source)?.let { DeclaredName(it, node) }
             }
-        }
-        return result
-    }
-
-    private fun extractDeclaredTypeName(node: TSNode, source: String): String? {
-        if (!node.canAccess()) return null
-        val typeNode = node.getChildByFieldName("type") ?: return null
-        val name = extractTypeName(typeNode, source) ?: return null
-        return name.ifBlank { null }
-    }
-
-    private fun extractTypeName(nameNode: TSNode?, source: String): String? {
-        if (nameNode == null || !nameNode.canAccess() || nameNode.isNull) return null
-        return when (nameNode.type) {
-            "type_identifier", "identifier" -> nodeText(nameNode, source)
             "qualified_identifier" -> {
-                val last = nameNode.getChildByFieldName("name")
-                extractTypeName(last, source) ?: nodeText(nameNode, source)
+                val member = node.getChildByFieldName("name")?.takeIf { it.isAccessible() } ?: return null
+                val name = declaredName(member, source) ?: return null
+                val prefixText = source.substring(
+                    (node.startByte / 2).coerceIn(0, source.length),
+                    (member.startByte / 2).coerceIn(0, source.length),
+                ).trim()
+                val prefix = prefixText.removeSuffix("::").trim().ifBlank {
+                    if (prefixText.startsWith("::")) "::" else ""
+                }
+                val qualifier = if (prefix == "::") "::" + name.qualifier.orEmpty()
+                    else qualify(prefix, name.qualifier.orEmpty())
+                name.copy(qualifier = qualifier)
             }
-
-            else -> nodeText(nameNode, source)
-        }?.trim()?.takeIf { it.isNotEmpty() }
+            "operator_cast" -> {
+                val nested = node.getChildByFieldName("declarator") ?: return null
+                val text = source.substring(node.startByte / 2, nested.startByte / 2).trim()
+                text.takeIf { it.isNotEmpty() }?.let { DeclaredName(it, node) }
+            }
+            "template_function", "template_method", "template_type" -> {
+                node.getChildByFieldName("name")?.let { declaredName(it, source) }
+            }
+            else -> nextDeclarator(node)?.let { declaredName(it, source) }
+        }
     }
 
-    private fun findIdentifierNodeInDeclarator(
-        declarator: TSNode,
-        preferFieldIdentifier: Boolean,
-    ): TSNode? {
-        if (!declarator.canAccess()) return null
-        val stack = ArrayDeque<TSNode>()
-        stack.addLast(declarator)
-
-        while (stack.isNotEmpty()) {
-            val node = stack.removeLast()
-            if (!node.canAccess()) continue
-            val type = node.type
-
-            if (preferFieldIdentifier && type == "field_identifier") {
-                return node
-            }
-            if (!preferFieldIdentifier && type == "identifier") {
-                return node
-            }
-            if (type == "field_identifier" || type == "identifier") {
-                return node
-            }
-
-            val next = node.getChildByFieldName("declarator")
-            if (next != null && next.canAccess() && !next.isNull) {
-                stack.addLast(next)
-                continue
-            }
-
-            val count = node.namedChildCount
-            for (i in count - 1 downTo 0) {
-                val child = node.getNamedChild(i)
-                if (child.canAccess()) {
-                    stack.addLast(child)
-                }
-            }
+    private fun nextDeclarator(node: TSNode): TSNode? {
+        node.getChildByFieldName("declarator")?.takeIf { it.isAccessible() }?.let { return it }
+        if (node.type == "parenthesized_declarator" || node.type == "attributed_declarator") {
+            return (0 until node.namedChildCount).asSequence()
+                .map { node.getNamedChild(it) }
+                .firstOrNull { it.isAccessible() && isDeclarator(it.type) }
         }
         return null
     }
 
-    private fun locationOf(node: TSNode): SymbolLocation {
-        if (!node.canAccess()) return SymbolLocation(line = 0, column = 0)
-        val start = node.startPoint
-        return SymbolLocation(
-            line = start.row,
-            column = start.column / 2,
-        )
+    private fun containerName(scope: Scope, name: DeclaredName): String? {
+        val qualifier = name.qualifier ?: return scope.name
+        return if (qualifier.startsWith("::")) qualifier.removePrefix("::").ifBlank { null }
+        else qualify(scope.name, qualifier).ifBlank { null }
     }
 
-    private fun nodeText(node: TSNode?, source: String): String? {
-        if (node == null || !node.canAccess() || node.isNull) return null
+    private fun qualify(container: String?, name: String): String =
+        listOfNotNull(container?.takeIf { it.isNotBlank() }, name.takeIf { it.isNotBlank() }).joinToString("::")
+
+    private fun TSNode.isAccessible(): Boolean = canAccess() && !isNull
+
+    private fun locationOf(node: TSNode): SymbolLocation = SymbolLocation(
+        line = node.startPoint.row,
+        column = node.startPoint.column / 2,
+    )
+
+    private fun nodeText(node: TSNode, source: String): String? {
+        if (!node.isAccessible()) return null
         val start = (node.startByte / 2).coerceIn(0, source.length)
-        val end = (node.endByte / 2).coerceIn(0, source.length)
-        if (end <= start) return null
-        return source.substring(start, end)
-    }
-
-    private fun extractFunctionSignature(functionNode: TSNode, source: String): String? {
-        if (!functionNode.canAccess()) return null
-        val declarator = functionNode.getChildByFieldName("declarator") ?: return null
-        val returnType = functionNode.getChildByFieldName("type")
-
-        val returnTypeText = returnType?.let { nodeText(it, source)?.trim() } ?: "void"
-        val declaratorText = nodeText(declarator, source)?.trim() ?: return null
-
-        return "$returnTypeText $declaratorText"
+        val end = (node.endByte / 2).coerceIn(start, source.length)
+        return source.substring(start, end).trim().takeIf { it.isNotEmpty() }
     }
 
     private fun extractDocComment(node: TSNode, lines: List<String>): String? {
-        if (!node.canAccess() || node.isNull) return null
-
-        val startLine = node.startPoint.row
-        if (startLine == 0) return null
-
         val comments = mutableListOf<String>()
-
-        for (i in (startLine - 1) downTo maxOf(0, startLine - 5)) {
-            val line = lines.getOrNull(i)?.trim() ?: continue
-
+        for (index in node.startPoint.row - 1 downTo maxOf(0, node.startPoint.row - 5)) {
+            val line = lines.getOrNull(index)?.trim() ?: continue
             when {
-                line.startsWith("///") -> {
-                    comments.add(0, line.removePrefix("///").trim())
-                }
-                line.startsWith("//") -> {
-                    comments.add(0, line.removePrefix("//").trim())
-                }
-                line.contains("*/") && !line.startsWith("*/") -> {
-                    val commentContent = line
-                        .substringAfter("/*")
-                        .substringBefore("*/")
-                        .trim()
-                    if (commentContent.isNotEmpty()) {
-                        comments.add(0, commentContent)
-                    }
+                line.startsWith("//") -> comments.add(0, line.removePrefix("///").removePrefix("//").trim())
+                line.startsWith("/*") && line.endsWith("*/") -> {
+                    comments.add(0, line.removePrefix("/*").removeSuffix("*/").trim())
                     break
                 }
                 line.isEmpty() -> continue
                 else -> break
             }
         }
-
-        return if (comments.isNotEmpty()) {
-            comments.joinToString(" ").take(200)
-        } else {
-            null
-        }
+        return comments.takeIf { it.isNotEmpty() }?.joinToString(" ")?.take(200)
     }
 }

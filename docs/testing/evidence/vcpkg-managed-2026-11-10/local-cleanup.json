@@ -1,0 +1,6 @@
+{
+  "verifiedArchives": 63,
+  "bytes": 42487050.0,
+  "allRemoved": true,
+  "retained": "Small build logs and acceptance diagnostics; ABI object files were cleaned using CMake"
+}

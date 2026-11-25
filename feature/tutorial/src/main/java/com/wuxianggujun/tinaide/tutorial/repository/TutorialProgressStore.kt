@@ -1,7 +1,9 @@
 package com.wuxianggujun.tinaide.tutorial.repository
 
 import android.content.Context
+import android.util.Log
 import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
@@ -13,7 +15,9 @@ import com.wuxianggujun.tinaide.tutorial.data.TutorialProgress
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.encodeToString
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Context 扩展属性，创建教程 DataStore 实例
@@ -27,17 +31,23 @@ private val Context.tutorialDataStore: DataStore<Preferences> by preferencesData
  *
  * 使用 DataStore 存储用户的教程学习进度
  */
-class TutorialProgressStore(private val context: Context) {
+class TutorialProgressStore private constructor(
+    private val dataStore: DataStore<Preferences>,
+    private val json: kotlinx.serialization.json.Json,
+) {
 
-    private val dataStore = context.tutorialDataStore
-    private val json = JsonSerializer.default
+    constructor(context: Context) : this(context.tutorialDataStore, JsonSerializer.default)
+
+    internal constructor(dataStore: DataStore<Preferences>) : this(dataStore, JsonSerializer.default)
+
+    private val hasLoggedInvalidProgress = AtomicBoolean(false)
 
     /**
      * 观察所有教程进度
      */
     val allProgressFlow: Flow<Map<String, TutorialProgress>> = dataStore.data.map { preferences ->
         val json = preferences[KEY_ALL_PROGRESS] ?: return@map emptyMap()
-        parseProgressMap(json)
+        parseProgressMap(json).orEmpty()
     }
 
     /**
@@ -54,66 +64,142 @@ class TutorialProgressStore(private val context: Context) {
      * 保存教程进度
      */
     suspend fun saveProgress(progress: TutorialProgress) {
-        dataStore.edit { preferences ->
-            val currentMap = parseProgressMap(preferences[KEY_ALL_PROGRESS]).toMutableMap()
-            currentMap[progress.tutorialId] = progress.copy(
-                lastAccessedAt = System.currentTimeMillis()
-            )
-            preferences[KEY_ALL_PROGRESS] = json.encodeToString(currentMap)
-        }
+        updateProgress(progress.tutorialId) { progress }
     }
 
     /**
      * 开始教程
      */
     suspend fun startTutorial(tutorialId: String) {
-        val existing = getProgress(tutorialId)
-        val progress = existing?.copy(
-            status = ProgressStatus.IN_PROGRESS,
-            lastAccessedAt = System.currentTimeMillis()
-        ) ?: TutorialProgress(
-            tutorialId = tutorialId,
-            status = ProgressStatus.IN_PROGRESS,
-            currentStepIndex = 0,
-            lastAccessedAt = System.currentTimeMillis()
-        )
-        saveProgress(progress)
+        updateProgress(tutorialId) { existing ->
+            existing?.copy(
+                status = ProgressStatus.IN_PROGRESS,
+                currentStepIndex = if (existing.status == ProgressStatus.COMPLETED) 0 else existing.currentStepIndex,
+                completedStepIds = if (existing.status == ProgressStatus.COMPLETED) emptySet() else existing.completedStepIds,
+                completedAt = null,
+            ) ?: TutorialProgress(
+                tutorialId = tutorialId,
+                status = ProgressStatus.IN_PROGRESS,
+                currentStepIndex = 0,
+            )
+        }
     }
 
     /**
      * 更新教程步骤进度
      */
     suspend fun updateStepProgress(tutorialId: String, stepIndex: Int) {
-        val existing = getProgress(tutorialId) ?: TutorialProgress(
-            tutorialId = tutorialId,
-            status = ProgressStatus.IN_PROGRESS,
-            currentStepIndex = 0
-        )
-        saveProgress(
-            existing.copy(
+        updateProgress(tutorialId) { existing ->
+            (existing ?: TutorialProgress(
+                tutorialId = tutorialId,
+                status = ProgressStatus.IN_PROGRESS,
+            )).copy(
                 currentStepIndex = stepIndex,
                 status = ProgressStatus.IN_PROGRESS,
-                lastAccessedAt = System.currentTimeMillis()
+                completedAt = null,
             )
-        )
+        }
+    }
+
+    /** 原子更新单个课程章节的确认状态，避免与章节索引写入互相覆盖。 */
+    suspend fun setStepCompleted(tutorialId: String, stepId: String, completed: Boolean) {
+        updateProgress(tutorialId) { current ->
+            val existing = current ?: TutorialProgress(
+                tutorialId = tutorialId,
+                status = ProgressStatus.IN_PROGRESS,
+            )
+            val completedStepIds = existing.completedStepIds.toMutableSet().apply {
+                if (completed) add(stepId) else remove(stepId)
+            }
+            existing.copy(
+                status = ProgressStatus.IN_PROGRESS,
+                completedStepIds = completedStepIds,
+                completedAt = null,
+            )
+        }
+    }
+
+    /** A delayed verification must not complete a chapter in a restarted or advanced course. */
+    suspend fun recordVerifiedStep(
+        tutorialId: String,
+        stepId: String,
+        stepIndex: Int,
+        previousStepIds: Set<String>,
+        expectedProgress: TutorialProgress?,
+    ): Boolean {
+        var recorded = false
+        dataStore.edit { preferences ->
+            val progressMap = readProgressMapForUpdate(preferences)
+            val current = progressMap[tutorialId]
+            if (current != expectedProgress || (current?.currentStepIndex ?: 0) != stepIndex ||
+                !current?.completedStepIds.orEmpty().containsAll(previousStepIds)) return@edit
+            progressMap[tutorialId] = (current ?: TutorialProgress(tutorialId = tutorialId, status = ProgressStatus.IN_PROGRESS)).copy(
+                status = ProgressStatus.IN_PROGRESS,
+                currentStepIndex = stepIndex,
+                completedStepIds = current?.completedStepIds.orEmpty() + stepId,
+                completedAt = null,
+                lastAccessedAt = System.currentTimeMillis(),
+            )
+            preferences[KEY_ALL_PROGRESS] = json.encodeToString(progressMap)
+            recorded = true
+        }
+        return recorded
+    }
+
+    /** 原子替换课程章节完成集合和当前位置，避免撤销章节时进度出现半更新。 */
+    suspend fun updateCourseProgress(
+        tutorialId: String,
+        completedStepIds: Set<String>,
+        currentStepIndex: Int,
+    ) {
+        updateProgress(tutorialId) { current ->
+            val existing = current ?: TutorialProgress(
+                tutorialId = tutorialId,
+                status = ProgressStatus.IN_PROGRESS,
+            )
+            existing.copy(
+                status = ProgressStatus.IN_PROGRESS,
+                completedStepIds = completedStepIds,
+                currentStepIndex = currentStepIndex,
+                completedAt = null,
+            )
+        }
     }
 
     /**
      * 完成教程
      */
     suspend fun completeTutorial(tutorialId: String) {
-        val existing = getProgress(tutorialId) ?: TutorialProgress(
-            tutorialId = tutorialId,
-            status = ProgressStatus.NOT_STARTED,
-            currentStepIndex = 0
-        )
-        saveProgress(
-            existing.copy(
+        updateProgress(tutorialId) { existing ->
+            (existing ?: TutorialProgress(
+                tutorialId = tutorialId,
+                status = ProgressStatus.NOT_STARTED,
+                currentStepIndex = 0,
+            )).copy(
                 status = ProgressStatus.COMPLETED,
                 completedAt = System.currentTimeMillis(),
-                lastAccessedAt = System.currentTimeMillis()
             )
-        )
+        }
+    }
+
+    /** Persist onboarding completion and its tutorial status in one DataStore transaction. */
+    suspend fun completeOnboardingTutorial(tutorialId: String) {
+        dataStore.edit { preferences ->
+            val progressMap = readProgressMapForUpdate(preferences)
+            val existing = progressMap[tutorialId] ?: TutorialProgress(
+                tutorialId = tutorialId,
+                status = ProgressStatus.NOT_STARTED,
+            )
+            val completedAt = System.currentTimeMillis()
+            progressMap[tutorialId] = existing.copy(
+                status = ProgressStatus.COMPLETED,
+                completedAt = completedAt,
+                lastAccessedAt = completedAt,
+            )
+            preferences[KEY_ALL_PROGRESS] = json.encodeToString(progressMap)
+            preferences[KEY_ONBOARDING_COMPLETED] = true
+            preferences[KEY_ONBOARDING_SKIPPED] = false
+        }
     }
 
     /**
@@ -121,7 +207,7 @@ class TutorialProgressStore(private val context: Context) {
      */
     suspend fun resetProgress(tutorialId: String) {
         dataStore.edit { preferences ->
-            val currentMap = parseProgressMap(preferences[KEY_ALL_PROGRESS]).toMutableMap()
+            val currentMap = readProgressMapForUpdate(preferences)
             currentMap.remove(tutorialId)
             preferences[KEY_ALL_PROGRESS] = json.encodeToString(currentMap)
         }
@@ -133,6 +219,9 @@ class TutorialProgressStore(private val context: Context) {
     suspend fun clearAllProgress() {
         dataStore.edit { preferences ->
             preferences.remove(KEY_ALL_PROGRESS)
+            preferences.remove(KEY_CORRUPTED_PROGRESS_BACKUP)
+            preferences.remove(KEY_ONBOARDING_COMPLETED)
+            preferences.remove(KEY_ONBOARDING_SKIPPED)
         }
     }
 
@@ -197,17 +286,47 @@ class TutorialProgressStore(private val context: Context) {
     /**
      * 解析进度 Map JSON
      */
-    private fun parseProgressMap(jsonString: String?): Map<String, TutorialProgress> {
+    private fun parseProgressMap(jsonString: String?): Map<String, TutorialProgress>? {
         if (jsonString.isNullOrEmpty()) return emptyMap()
         return try {
             json.decodeFromString<Map<String, TutorialProgress>>(jsonString)
-        } catch (e: Exception) {
-            emptyMap()
+        } catch (error: SerializationException) {
+            if (hasLoggedInvalidProgress.compareAndSet(false, true)) {
+                Log.w(TAG, "Stored tutorial progress is invalid; it will be backed up before repair", error)
+            }
+            null
+        }
+    }
+
+    /** Keep unreadable user progress before a write replaces the active serialized map. */
+    private fun readProgressMapForUpdate(preferences: MutablePreferences): MutableMap<String, TutorialProgress> {
+        val rawProgress = preferences[KEY_ALL_PROGRESS] ?: return mutableMapOf()
+        return parseProgressMap(rawProgress)?.toMutableMap() ?: run {
+            if (preferences[KEY_CORRUPTED_PROGRESS_BACKUP] == null) {
+                preferences[KEY_CORRUPTED_PROGRESS_BACKUP] = rawProgress
+            }
+            mutableMapOf()
+        }
+    }
+
+    /** 在同一 DataStore 事务中读取并更新进度，避免快速操作时覆盖另一个章节变更。 */
+    private suspend fun updateProgress(
+        tutorialId: String,
+        transform: (TutorialProgress?) -> TutorialProgress,
+    ) {
+        dataStore.edit { preferences ->
+            val progressMap = readProgressMapForUpdate(preferences)
+            progressMap[tutorialId] = transform(progressMap[tutorialId]).copy(
+                lastAccessedAt = System.currentTimeMillis(),
+            )
+            preferences[KEY_ALL_PROGRESS] = json.encodeToString(progressMap)
         }
     }
 
     companion object {
+        private const val TAG = "TutorialProgressStore"
         private val KEY_ALL_PROGRESS = stringPreferencesKey("all_tutorial_progress")
+        private val KEY_CORRUPTED_PROGRESS_BACKUP = stringPreferencesKey("all_tutorial_progress_corrupt_backup")
         private val KEY_ONBOARDING_COMPLETED = booleanPreferencesKey("onboarding_completed")
         private val KEY_ONBOARDING_SKIPPED = booleanPreferencesKey("onboarding_skipped")
     }

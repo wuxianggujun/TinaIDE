@@ -60,6 +60,7 @@ object NativeActivityRuntimeResolver {
         val packagePaths = InstalledPackagePathResolver.resolve(
             context = context.applicationContext,
             projectRoot = projectRoot,
+            runtimeArtifactDir = mainLibrary.parentFile,
         )
         val runtimeDirs = buildList {
             mainLibrary.parentFile?.let(::add)

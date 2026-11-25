@@ -40,7 +40,10 @@ jobs:
         run: python3 tools/checks/check_all.py
 
       - name: Test distribution policy and device result checks
-        run: python3 -m unittest discover -s tools/checks -p 'test_*.py'
+        run: |
+          python3 -m unittest discover -s tools/checks -p 'test_*.py'
+          python3 -m unittest discover -s tools/testing -p 'test_editor_runtime_regression.py'
+          python3 tools/checks/check_distribution.py
 
       - name: Run i18n checks
         run: python3 tools/i18n/check_all.py
@@ -85,25 +88,30 @@ jobs:
           ./gradlew -Ptina.devAbi=arm64 -Ptina.buildProotFromSource=false \
             :core:text-engine:testDebugUnitTest :core:editor-view:testDebugUnitTest \
             :feature:editor:testDebugUnitTest :core:compile:testDebugUnitTest \
-            :core:editor-lsp:testDebugUnitTest :core:debug:testDebugUnitTest \
-            :core:security:testDebugUnitTest :core:storage:testDebugUnitTest \
+            :core:lsp:testDebugUnitTest :core:editor-lsp:testDebugUnitTest :core:debug:testDebugUnitTest \
+            :core:apk-builder:testDebugUnitTest \
+            :core:security:testDebugUnitTest :core:storage:testDebugUnitTest :core:git:testDebugUnitTest \
             :core:plugin:testDebugUnitTest :feature:help:testDebugUnitTest :feature:tutorial:testDebugUnitTest \
             --no-daemon --configure-on-demand \
             -Dorg.gradle.internal.http.connectionTimeout=120000 \
             -Dorg.gradle.internal.http.socketTimeout=120000 \
             -Dorg.gradle.internal.repository.max.retries=4
 
-      - name: Run host lifecycle, split editor, and storage regression tests
+      - name: Run host lifecycle, split editor, storage, and graphics overlay regression tests
         run: |
           ./gradlew -Ptina.devAbi=arm64 -Ptina.buildProotFromSource=false \
             :app:testArm64DebugUnitTest \
             --tests "com.wuxianggujun.tinaide.storage.Android10StorageManifestContractTest" \
             --tests "*CodeEditorRuntimeTest" --tests "*CodeEditorRuntimeLifecycleTest" \
+            --tests "*CodeBlockHighlightingTest" --tests "*TinaCodeEditorSemanticTokenMappingTest" \
             --tests "*CompileActionsHelperTest" \
             --tests "*EditorFontSizeHostIntegrationTest" --tests "*EditorContainerStateTest" \
             --tests "*EditorSplitPaneStateTest" --tests "*SplitEditorSessionStorageTest" \
-            --tests "com.wuxianggujun.tinaide.ui.compose.screens.main.tutorial.TutorialArticleLoadStateTest" \
-            --tests "com.wuxianggujun.tinaide.ui.compose.screens.main.tutorial.TutorialRelatedLearningSupportTest" \
+            --tests "*GraphicalOverlayWindowStateTest" --tests "*GraphicalRuntimeOverlayTest" \
+            --tests "*GraphicalRuntimeActivityHostTest" --tests "*GraphicalRuntimeExitGuardTest" \
+            --tests "*NativeActivityHostContractTest" --tests "*GraphicalRuntimeLogcatCommandTest" \
+            --tests "*GraphicalRuntimeMenuPositionProviderTest" --tests "*GraphicalRuntimePopupAnchorTest" \
+            --tests "*GraphicalRuntimeLogDocumentTest" --tests "*GraphicalRuntimeLogcatTest" \
             --no-daemon --configure-on-demand \
             -Dorg.gradle.internal.http.connectionTimeout=120000 \
             -Dorg.gradle.internal.http.socketTimeout=120000 \
