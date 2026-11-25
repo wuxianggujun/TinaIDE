@@ -10,16 +10,21 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.swipe
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.text.TextRange
 import com.google.common.truth.Truth.assertThat
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.ui.runtime.GraphicalOverlayWindowState
@@ -155,10 +160,11 @@ class GraphicalRuntimeOverlayTest {
 
     @Test
     fun narrowWindowWithLargeFontsKeepsAllToolbarActionsInsideWithoutOverlap() {
-        render(enableLog = true, fontScale = 2f)
+        val state = render(enableLog = true, fontScale = 2f)
         openLog()
+        compose.runOnIdle { state.resizeBy(Offset(-1000f, 0f)) }
         val panel = compose.onNodeWithTag("graphical-log-window").fetchSemanticsNode().boundsInRoot
-        val buttons = listOf("graphical-log-maximize", "graphical-log-collapse", "graphical-log-more").map { tag ->
+        val buttons = listOf("graphical-log-search", "graphical-log-maximize", "graphical-log-collapse", "graphical-log-more").map { tag ->
             compose.onNodeWithTag(tag).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
         }
         buttons.forEach {
@@ -166,6 +172,55 @@ class GraphicalRuntimeOverlayTest {
             assertThat(it.right).isAtMost(panel.right)
         }
         assertThat(buttons.zipWithNext().all { (left, right) -> left.right <= right.left }).isTrue()
+    }
+
+    @Test
+    fun searchSelectsResultsCyclesAndKeepsTheLogReadOnlyAfterImeSubmission() {
+        val message = "first ERROR\nsecond error\nlast line"
+        render(enableLog = true, initialLogs = listOf(GraphicalRuntimeLogEntry('E', message)))
+        openLog()
+        compose.onNodeWithTag("graphical-log-search").performClick()
+        compose.onNodeWithTag("graphical-log-search-input").performTextInput("error")
+        compose.onNodeWithTag("graphical-log-search-count").assertTextEquals("1/2")
+        val viewer = compose.onNodeWithTag("tina-code-viewer")
+        assertThat(viewer.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange]).isEqualTo(TextRange(6, 11))
+        compose.onNodeWithTag("graphical-log-search-input").performImeAction()
+        compose.onNodeWithTag("graphical-log-search-input").assertDoesNotExist()
+        compose.onNodeWithTag("graphical-log-search-query").assertTextEquals("error")
+        compose.onNodeWithTag("graphical-log-search-next").performClick()
+        compose.onNodeWithTag("graphical-log-search-count").assertTextEquals("2/2")
+        assertThat(viewer.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange]).isEqualTo(TextRange(19, 24))
+        compose.onNodeWithTag("graphical-log-search-next").performClick()
+        compose.onNodeWithTag("graphical-log-search-count").assertTextEquals("1/2")
+        compose.onNodeWithTag("graphical-log-search-previous").performClick()
+        compose.onNodeWithTag("graphical-log-search-count").assertTextEquals("2/2")
+        val semantics = viewer.fetchSemanticsNode().config
+        assertThat(semantics.contains(SemanticsActions.SetText)).isFalse()
+        assertThat(semantics.contains(SemanticsActions.CopyText)).isTrue()
+        compose.onNodeWithTag("graphical-log-search-close").performClick()
+        compose.onNodeWithTag("graphical-log-search-bar").assertDoesNotExist()
+        assertThat(viewer.fetchSemanticsNode().config[SemanticsProperties.Text].single().text).isEqualTo(message)
+    }
+
+    @Test
+    fun searchSurvivesMinimizingAndClearWithoutOpeningTheKeyboardAgain() {
+        render(enableLog = true, initialLogs = listOf(GraphicalRuntimeLogEntry('I', "needle 中文😀")))
+        openLog()
+        compose.onNodeWithTag("graphical-log-search").performClick()
+        compose.onNodeWithTag("graphical-log-search-input").performTextInput("中文😀")
+        compose.onNodeWithTag("graphical-log-search-input").performImeAction()
+        compose.onNodeWithTag("graphical-log-collapse").performClick()
+        openLog()
+        compose.onNodeWithTag("graphical-log-search-input").assertDoesNotExist()
+        compose.onNodeWithTag("graphical-log-search-query").assertTextEquals("中文😀")
+        compose.onNodeWithTag("graphical-log-search-count").assertTextEquals("1/1")
+        compose.onNodeWithTag("graphical-log-more").performClick()
+        compose.onNodeWithTag("graphical-overlay-clear-log").performClick()
+        compose.onNodeWithTag("graphical-log-search-count").assertTextEquals("0/0")
+        compose.onNodeWithTag("graphical-log-search-previous").assertIsNotEnabled()
+        compose.onNodeWithTag("graphical-log-search-next").assertIsNotEnabled()
+        compose.onNodeWithTag("graphical-log-search").performClick()
+        compose.onNodeWithTag("graphical-log-search-input").assertIsDisplayed()
     }
 
     @Test

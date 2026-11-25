@@ -76,8 +76,8 @@ internal fun readAppVersionInfo(file: File): TinaAppVersionInfo {
 }
 
 /**
- * 项目历史版本码规则：minor * 100 + patch + 1。
- * 例如 0.15.6 对应 1507，保持与既有安装升级链路兼容。
+ * 项目历史版本码下限：minor * 100 + patch + 1。
+ * 同名修正版可独立提高版本码；后续自动递增必须保留这段升级历史。
  */
 internal fun expectedVersionCodeFor(versionName: String): Int? {
     val numericPart = versionName.substringBefore("-")
@@ -92,11 +92,11 @@ internal fun expectedVersionCodeFor(versionName: String): Int? {
 
 private fun validateAppVersionInfo(versionInfo: TinaAppVersionInfo, file: File) {
     val expectedVersionCode = expectedVersionCodeFor(versionInfo.versionName) ?: return
-    if (versionInfo.versionCode == expectedVersionCode) return
+    if (versionInfo.versionCode >= expectedVersionCode) return
 
     throw GradleException(
         "version.properties mismatch: versionName=${versionInfo.versionName} " +
-            "expects versionCode=$expectedVersionCode, " +
+            "requires versionCode >= $expectedVersionCode, " +
             "but found versionCode=${versionInfo.versionCode} in ${file.path}",
     )
 }
@@ -142,7 +142,7 @@ internal fun autoIncrementAppVersion(file: File, logger: Logger): TinaAppVersion
     val currentVersion = readAppVersionInfo(file)
     val nextVersionName = bumpPatchVersionString(currentVersion.versionName)
     val nextVersion = TinaAppVersionInfo(
-        versionCode = expectedVersionCodeFor(nextVersionName) ?: (currentVersion.versionCode + 1),
+        versionCode = maxOf(currentVersion.versionCode + 1, expectedVersionCodeFor(nextVersionName) ?: 1),
         versionName = nextVersionName,
     )
 

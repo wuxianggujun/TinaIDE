@@ -1,0 +1,32 @@
+// Exercise the production version reader/bump against isolated UTF-8 fixtures.
+gradle.projectsEvaluated {
+    def app = rootProject.findProject(':app')
+    if (app == null || app.extensions.findByName('tinaAppVersioning') == null) return
+    rootProject.tasks.register('verifyReleaseVersioning') {
+        doLast {
+            def versioning = app.extensions.getByName('tinaAppVersioning')
+            def implementation = versioning.class.classLoader.loadClass('com.wuxianggujun.tinaide.buildlogic.TinaAppVersioningKt')
+            def read = implementation.getMethod('readAppVersionInfo', File)
+            def bump = implementation.getMethod('autoIncrementAppVersion', File, org.gradle.api.logging.Logger)
+            def directory = rootProject.layout.buildDirectory.dir('verification/versioning').get().asFile
+            directory.mkdirs()
+            def fixture = new File(directory, 'version.properties')
+            fixture.setText('versionCode=1913\nversionName=0.19.12\n', 'UTF-8')
+            assert read.invoke(null, fixture).versionCode == 1913
+            fixture.setText('versionCode=1914\nversionName=0.19.12\n', 'UTF-8')
+            assert read.invoke(null, fixture).versionCode == 1914
+            def next = bump.invoke(null, fixture, logger)
+            assert next.versionName == '0.19.13'
+            assert next.versionCode == 1915
+            assert read.invoke(null, fixture).versionCode == 1915
+            fixture.setText('versionCode=1912\nversionName=0.19.12\n', 'UTF-8')
+            def rejected = false
+            try { read.invoke(null, fixture) } catch (java.lang.reflect.InvocationTargetException failure) {
+                assert failure.cause instanceof org.gradle.api.GradleException
+                rejected = true
+            }
+            assert rejected : 'A version below the historical upgrade floor was accepted'
+            logger.lifecycle('Release versioning passed: legacy code, revised build, next-version monotonicity and downgrade rejection.')
+        }
+    }
+}

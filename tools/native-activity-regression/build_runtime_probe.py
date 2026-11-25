@@ -38,7 +38,7 @@ def main():
         subprocess.run([str(compiler), f"--target={target}", f"--sysroot={ndk / 'sysroot'}",
                         "-shared", "-fPIC", "-std=c++17", "-static-libstdc++", f"-DSDL_PROBE_MAJOR={major}",
                         "-I", str(directory / "include"), str(Path(__file__).with_name("sdl_runtime_probe.cpp")),
-                        "-L", str(directory), f"-lSDL{major}", "-Wl,-rpath,$ORIGIN", "-Wl,-soname,libmain.so",
+                        "-L", str(directory), f"-lSDL{major}", "-llog", "-Wl,-rpath,$ORIGIN", "-Wl,-soname,libmain.so",
                         "-o", str(directory / "libmain.so")], check=True, timeout=60)
         manifests.append({"major": major, "version": version, "abi": args.abi,
                           "archive_sha256": hashlib.sha256(archive.read_bytes()).hexdigest()})
@@ -51,7 +51,7 @@ def main():
     subprocess.run([str(compiler), f"--target={target}", f"--sysroot={ndk / 'sysroot'}",
                     "-x", "c", "-shared", "-fPIC", "-I", str(directory),
                     str(Path(__file__).with_name("raylib_runtime_probe.c")), "-L", str(directory),
-                    "-lraylib", "-Wl,-rpath,$ORIGIN", "-Wl,-soname,libmain.so", "-o", str(directory / "libmain.so")],
+                    "-lraylib", "-llog", "-Wl,-rpath,$ORIGIN", "-Wl,-soname,libmain.so", "-o", str(directory / "libmain.so")],
                    check=True, timeout=60)
     manifests.append({"library": "raylib", "version": "6.0", "abi": args.abi,
                       "archive_sha256": hashlib.sha256(archive.read_bytes()).hexdigest()})

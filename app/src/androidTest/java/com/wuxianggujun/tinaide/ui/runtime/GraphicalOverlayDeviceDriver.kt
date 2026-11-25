@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.UiAutomation
 import android.graphics.Rect
 import android.os.Build
+import android.os.Bundle
 import android.os.SystemClock
 import android.view.InputDevice
 import android.view.MotionEvent
@@ -27,6 +28,84 @@ internal class GraphicalOverlayDeviceDriver(private val automation: UiAutomation
     }
 
     fun clickTag(tag: String) = click("tag '$tag'") { it.viewIdResourceName == tag }
+
+    fun verifyLogFilteringAndSearch() {
+        val body = waitNode("program log fixture") {
+            it.viewIdResourceName == "tina-code-viewer" && it.text?.contains("user onEventHandled kept") == true
+        }
+        try {
+            assertTrue("Touch diagnostics leaked into program logs", !body.text.contains("InputEventInfo"))
+            assertTrue("Log body must remain read-only", !body.isEditable)
+        } finally { body.recycle() }
+        clickTag("graphical-log-search")
+        setText("graphical-log-search-input", "not-present-in-log")
+        waitText("graphical-log-search-count", "0/0")
+        setText("graphical-log-search-input", "needle")
+        waitText("graphical-log-search-count", "1/")
+        finishSearchInput()
+        assertSelectedText("needle")
+        clickTag("graphical-log-search-next")
+        waitText("graphical-log-search-count", "2/")
+        assertSelectedText("needle")
+        clickTag("graphical-log-search-previous")
+        waitText("graphical-log-search-count", "1/")
+        clickTag("graphical-log-search")
+        setText("graphical-log-search-input", "中文😀")
+        finishSearchInput()
+        assertSelectedText("中文😀")
+        clickTag("graphical-log-collapse")
+        openLog()
+        waitText("graphical-log-search-query", "中文😀")
+        assertTrue("Reopening logs unexpectedly reopened the input popup", !hasTag("graphical-log-search-input"))
+        clickTag("graphical-log-search-close")
+        assertTrue("Search did not close", !hasTag("graphical-log-search-bar"))
+        drag("graphical-log-drag-handle", 0f, 1000f)
+        clickTag("graphical-log-search")
+        setText("graphical-log-search-input", "needle")
+        waitText("graphical-log-search-count", "1/")
+        val keyboardDeadline = SystemClock.uptimeMillis() + UI_WAIT_MS
+        var keyboard = automation.windows.firstOrNull { it.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_INPUT_METHOD }
+        while (keyboard == null && SystemClock.uptimeMillis() < keyboardDeadline) {
+            SystemClock.sleep(50)
+            keyboard = automation.windows.firstOrNull { it.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_INPUT_METHOD }
+        }
+        val keyboardBounds = Rect()
+        checkNotNull(keyboard) { "Search did not show the keyboard" }.getBoundsInScreen(keyboardBounds)
+        awaitBounds("graphical-log-search-input") { it.bottom <= keyboardBounds.top }
+        finishSearchInput()
+    }
+
+    private fun finishSearchInput() {
+        // A focusable popup intentionally hides the underlying body from accessibility.
+        // Finish query editing before inspecting the log selection, as a user would.
+        val node = waitNode("search input") { it.viewIdResourceName == "graphical-log-search-input" }
+        try {
+            assertTrue("Search field did not expose its IME Search action",
+                node.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id))
+        } finally { node.recycle() }
+        waitTag("graphical-log-search-query")
+    }
+
+    private fun setText(tag: String, text: String) {
+        val node = waitNode(tag) { it.viewIdResourceName == tag }
+        try {
+            val args = Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text) }
+            assertTrue("Search input rejected text", node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args))
+        } finally { node.recycle() }
+    }
+
+    private fun waitText(tag: String, prefix: String) {
+        waitNode("$tag text '$prefix'") { it.viewIdResourceName == tag && it.text?.startsWith(prefix) == true }.recycle()
+    }
+
+    private fun assertSelectedText(expected: String) {
+        waitNode("selected search result '$expected'") {
+            val text = it.text?.toString().orEmpty()
+            it.viewIdResourceName == "tina-code-viewer" && it.textSelectionStart >= 0 &&
+                it.textSelectionEnd <= text.length && it.textSelectionEnd >= it.textSelectionStart &&
+                text.substring(it.textSelectionStart, it.textSelectionEnd) == expected
+        }.recycle()
+    }
 
     fun clickText(text: String) = click("text '$text'") { it.text?.toString() == text }
 
