@@ -16,8 +16,8 @@ import timber.log.Timber
  */
 object SdlAssetRedirect {
     /**
-     * logcat 标签，同时也是 [com.wuxianggujun.tinaide.ui.compose.components.GraphicalRuntimeOverlay]
-     * 悬浮日志面板捕获的标签之一。改名必须两处同步。
+     * 宿主诊断标签；默认悬浮日志保留警告／错误，完整进程日志模式显示初始化细节。
+     * 改名需同步 GraphicalRuntimeLogPolicy 的宿主标签规则。
      */
     const val LOG_TAG = "SdlAssetRedirect"
 

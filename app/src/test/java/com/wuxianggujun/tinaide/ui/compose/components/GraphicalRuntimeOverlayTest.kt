@@ -24,6 +24,7 @@ import com.google.common.truth.Truth.assertThat
 import com.wuxianggujun.tinaide.core.i18n.Strings
 import com.wuxianggujun.tinaide.ui.runtime.GraphicalOverlayWindowState
 import com.wuxianggujun.tinaide.ui.runtime.GraphicalRuntimeLogEntry
+import kotlinx.coroutines.awaitCancellation
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -213,6 +214,57 @@ class GraphicalRuntimeOverlayTest {
     }
 
     @Test
+    fun processLogsAreOptInAndChangingSourceReplacesOutputAndCancelsTheOldCapture() {
+        val requestedModes = mutableListOf<Boolean>()
+        val stoppedModes = mutableListOf<Boolean>()
+        render(enableLog = true, captureLogs = { allLogs, _, append ->
+            requestedModes.add(allLogs)
+            try {
+                val messages = if (allLogs) listOf(
+                    GraphicalRuntimeLogEntry('I', "[TINA_USER_OUTPUT] program"),
+                    GraphicalRuntimeLogEntry('V', "[TINA_SDL_HOST] onPause()"),
+                ) else listOf(GraphicalRuntimeLogEntry('I', "program"))
+                append(messages)
+                awaitCancellation()
+            } finally {
+                stoppedModes.add(allLogs)
+            }
+        })
+        openLog()
+        val viewer = compose.onNodeWithTag("tina-code-viewer")
+        assertThat(viewer.fetchSemanticsNode().config[SemanticsProperties.Text].single().text).isEqualTo("program")
+        compose.onNodeWithTag("graphical-log-more").performClick()
+        compose.onNodeWithTag("graphical-log-all-process").assertIsOff().performClick().assertIsOn()
+        assertThat(viewer.fetchSemanticsNode().config[SemanticsProperties.Text].single().text)
+            .isEqualTo("[TINA_USER_OUTPUT] program\n[TINA_SDL_HOST] onPause()")
+        compose.onNodeWithTag("graphical-log-all-process").performClick().assertIsOff()
+        assertThat(viewer.fetchSemanticsNode().config[SemanticsProperties.Text].single().text).isEqualTo("program")
+        compose.runOnIdle {
+            assertThat(requestedModes).containsExactly(false, true, false).inOrder()
+            assertThat(stoppedModes).containsExactly(false, true).inOrder()
+        }
+    }
+
+    @Test
+    fun minimizingKeepsTheSourceChoiceWithoutRestartingCapture() {
+        val requestedModes = mutableListOf<Boolean>()
+        render(enableLog = true, captureLogs = { allLogs, _, append ->
+            requestedModes.add(allLogs)
+            append(listOf(GraphicalRuntimeLogEntry('I', if (allLogs) "[MyTag] detail" else "program")))
+        })
+        openLog()
+        compose.onNodeWithTag("graphical-log-more").performClick()
+        compose.onNodeWithTag("graphical-log-all-process").performClick().assertIsOn()
+        compose.onNodeWithTag("graphical-log-collapse").performClick()
+        openLog()
+        assertThat(compose.onNodeWithTag("tina-code-viewer").fetchSemanticsNode().config[SemanticsProperties.Text].single().text)
+            .isEqualTo("[MyTag] detail")
+        compose.onNodeWithTag("graphical-log-more").performClick()
+        compose.onNodeWithTag("graphical-log-all-process").assertIsOn()
+        compose.runOnIdle { assertThat(requestedModes).containsExactly(false, true).inOrder() }
+    }
+
+    @Test
     fun theEditorBodyHasOnlyTwoDpOfPaddingInsteadOfTwoNestedEightDpInsets() {
         render(enableLog = true)
         openLog()
@@ -241,13 +293,14 @@ class GraphicalRuntimeOverlayTest {
         fontScale: Float = 1f,
         onExit: () -> Unit = {},
         initialLogs: List<GraphicalRuntimeLogEntry> = emptyList(),
+        captureLogs: suspend (Boolean, String, (List<GraphicalRuntimeLogEntry>) -> Unit) -> Unit = { _, _, append -> append(initialLogs) },
     ): GraphicalOverlayWindowState {
         val density = RuntimeEnvironment.getApplication().resources.displayMetrics.density
         val state = GraphicalOverlayWindowState(IntRect(0, 0, (320 * density).toInt(), (600 * density).toInt()), density)
         compose.setContent {
             CompositionLocalProvider(LocalDensity provides Density(density, fontScale)) {
                 MaterialTheme {
-                    GraphicalRuntimeOverlay(enableLog, onExit, state, captureLogs = { _, append -> append(initialLogs) })
+                    GraphicalRuntimeOverlay(enableLog, onExit, state, captureLogs = captureLogs)
                 }
             }
         }

@@ -83,14 +83,14 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
     // Called when we have a valid drawing surface
     @Override
     public void surfaceCreated(SurfaceHolder holder) {
-        Log.v("SDL", "surfaceCreated()");
+        Log.v("TINA_SDL_HOST", "surfaceCreated()");
         SDLActivity.onNativeSurfaceCreated();
     }
 
     // Called when we lose the surface
     @Override
     public void surfaceDestroyed(SurfaceHolder holder) {
-        Log.v("SDL", "surfaceDestroyed()");
+        Log.v("TINA_SDL_HOST", "surfaceDestroyed()");
 
         // Transition to pause, if needed
         SDLActivity.mNextNativeState = SDLActivity.NativeState.PAUSED;
@@ -104,7 +104,7 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
     @Override
     public void surfaceChanged(SurfaceHolder holder,
                                int format, int width, int height) {
-        Log.v("SDL", "surfaceChanged()");
+        Log.v("TINA_SDL_HOST", "surfaceChanged()");
 
         if (SDLActivity.mSingleton == null) {
             return;
@@ -130,8 +130,8 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
             SDLActivity.getContext().notifyAll();
         }
 
-        Log.v("SDL", "Window size: " + width + "x" + height);
-        Log.v("SDL", "Device size: " + nDeviceWidth + "x" + nDeviceHeight);
+        Log.v("TINA_SDL_HOST", "Window size: " + width + "x" + height);
+        Log.v("TINA_SDL_HOST", "Device size: " + nDeviceWidth + "x" + nDeviceHeight);
         SDLActivity.nativeSetScreenResolution(width, height, nDeviceWidth, nDeviceHeight, mDisplay.getRefreshRate());
         SDLActivity.onNativeResize();
 
@@ -156,7 +156,7 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
            double max = Math.max(mWidth, mHeight);
 
            if (max / min < 1.20) {
-              Log.v("SDL", "Don't skip on such aspect-ratio. Could be a square resolution.");
+              Log.v("TINA_SDL_HOST", "Don't skip on such aspect-ratio. Could be a square resolution.");
               skip = false;
            }
         }
@@ -165,14 +165,14 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         if (skip) {
             if (Build.VERSION.SDK_INT >= 24 /* Android 7.0 (N) */) {
                 if (SDLActivity.mSingleton.isInMultiWindowMode()) {
-                    Log.v("SDL", "Don't skip in Multi-Window");
+                    Log.v("TINA_SDL_HOST", "Don't skip in Multi-Window");
                     skip = false;
                 }
             }
         }
 
         if (skip) {
-           Log.v("SDL", "Skip .. Surface is not ready.");
+           Log.v("TINA_SDL_HOST", "Skip .. Surface is not ready.");
            mIsSurfaceReady = false;
            return;
         }

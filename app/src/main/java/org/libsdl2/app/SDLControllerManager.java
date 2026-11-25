@@ -475,7 +475,7 @@ class SDLHapticHandler_API26 extends SDLHapticHandler {
     public void run(int device_id, float intensity, int length) {
         SDLHaptic haptic = getHaptic(device_id);
         if (haptic != null) {
-            Log.d("SDL", "Rtest: Vibe with intensity " + intensity + " for " + length);
+            Log.d("TINA_SDL_HOST", "Rtest: Vibe with intensity " + intensity + " for " + length);
             if (intensity == 0.0f) {
                 stop(device_id);
                 return;

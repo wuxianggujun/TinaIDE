@@ -76,7 +76,8 @@ class LogcatDumpPlannerTest {
             "--pid=20",
             "-s",
             "TINA_USER_OUTPUT:*",
-            "SDL:*"
+            "SDL:*",
+            "TINA_SDL_HOST:*"
         )
     }
 }
