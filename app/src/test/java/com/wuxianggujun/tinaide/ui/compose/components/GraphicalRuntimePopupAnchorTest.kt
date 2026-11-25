@@ -113,7 +113,7 @@ class GraphicalRuntimePopupAnchorTest {
             )
             val content = ComposeView(activity).apply {
                 setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
-                setContent { MaterialTheme { GraphicalRuntimeOverlay(true, {}, state, captureLogs = { _, append ->
+                setContent { MaterialTheme { GraphicalRuntimeOverlay(true, {}, state, captureLogs = { _, _, append ->
                     append(listOf(GraphicalRuntimeLogEntry('W', "warning sample 你好😀"), GraphicalRuntimeLogEntry('E', "error detail")))
                 }) } }
             }

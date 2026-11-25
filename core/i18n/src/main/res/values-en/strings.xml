@@ -3850,6 +3850,7 @@ kept=%3$d bytes
   <string name="floating_overlay_log_title">Runtime Log</string>
   <string name="floating_overlay_log_empty">No log output yet</string>
   <string name="floating_overlay_log_clear">Clear</string>
+  <string name="floating_overlay_log_all_process">Show all process logs</string>
   <string name="floating_overlay_ball_desc">Floating graphical program controls</string>
   <string name="floating_overlay_double_back_hint">Press back again to exit, or return to the editor from the floating menu</string>
   <string name="floating_overlay_window_drag">Drag the log window; double-tap the title to maximize or restore</string>

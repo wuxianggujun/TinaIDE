@@ -809,6 +809,7 @@ internal object LogcatDumpPlanner {
     private val runtimeTagFilters = listOf(
         "TINA_USER_OUTPUT:*",
         "SDL:*",
+        "TINA_SDL_HOST:*",
         "System.out:*",
         "System.err:*",
         "AndroidRuntime:*",

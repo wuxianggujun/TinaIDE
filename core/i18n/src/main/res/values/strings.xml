@@ -2406,6 +2406,7 @@
   <string name="floating_overlay_log_title">运行日志</string>
   <string name="floating_overlay_log_empty">暂无日志输出</string>
   <string name="floating_overlay_log_clear">清空</string>
+  <string name="floating_overlay_log_all_process">显示全部进程日志</string>
   <string name="floating_overlay_ball_desc">图形程序悬浮控制</string>
   <string name="floating_overlay_double_back_hint">再按一次返回键退出，或从悬浮菜单返回编辑器</string>
   <string name="floating_overlay_window_drag">拖动日志窗口，双击标题最大化或还原</string>

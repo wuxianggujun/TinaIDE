@@ -64,7 +64,8 @@ import java.util.Locale;
     SDL Activity
 */
 public class SDLActivity extends Activity implements View.OnSystemUiVisibilityChangeListener {
-    private static final String TAG = "SDL";
+    // Keep Java lifecycle chatter separate from the user program's native SDL_Log tag.
+    private static final String TAG = "TINA_SDL_HOST";
     private static final int SDL_MAJOR_VERSION = 3;
     private static final int SDL_MINOR_VERSION = 5;
     private static final int SDL_MICRO_VERSION = 0;
@@ -287,9 +288,9 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         String function = SDLActivity.mSingleton.getMainFunction();
         String[] arguments = SDLActivity.mSingleton.getArguments();
 
-        Log.v("SDL", "Running main function " + function + " from library " + library);
+        Log.v("TINA_SDL_HOST", "Running main function " + function + " from library " + library);
         SDLActivity.nativeRunMain(library, function, arguments);
-        Log.v("SDL", "Finished main function");
+        Log.v("TINA_SDL_HOST", "Finished main function");
     }
 
     /**
@@ -1812,9 +1813,9 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         }
 
 //        if (event.getAction() == KeyEvent.ACTION_DOWN) {
-//            Log.v("SDL", "key down: " + keyCode + ", deviceId = " + deviceId + ", source = " + source);
+//            Log.v("TINA_SDL_HOST", "key down: " + keyCode + ", deviceId = " + deviceId + ", source = " + source);
 //        } else if (event.getAction() == KeyEvent.ACTION_UP) {
-//            Log.v("SDL", "key up: " + keyCode + ", deviceId = " + deviceId + ", source = " + source);
+//            Log.v("TINA_SDL_HOST", "key up: " + keyCode + ", deviceId = " + deviceId + ", source = " + source);
 //        }
 
         // Dispatch the different events depending on where they come from
@@ -2621,7 +2622,7 @@ class SDLMain implements Runnable {
         try {
             android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_DISPLAY);
         } catch (Exception e) {
-            Log.v("SDL", "modify thread properties failed " + e.toString());
+            Log.v("TINA_SDL_HOST", "modify thread properties failed " + e.toString());
         }
 
         SDLActivity.nativeInitMainThread();

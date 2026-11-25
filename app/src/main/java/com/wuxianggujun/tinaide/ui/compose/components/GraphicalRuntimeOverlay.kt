@@ -96,7 +96,7 @@ import kotlin.math.roundToInt
  * 提供：
  * - 收起时只显示一个可拖拽控制球，返回与日志入口放在菜单内
  * - 日志标题栏可拖拽，右下角可缩放，支持最大化和还原
- * - 日志面板捕获当前图形进程的全部日志标签
+ * - 默认显示程序输出和关键运行错误，可切换当前图形进程的全部日志
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -105,8 +105,8 @@ internal fun GraphicalRuntimeOverlay(
     onExit: () -> Unit,
     windowState: GraphicalOverlayWindowState,
     modifier: Modifier = Modifier,
-    captureLogs: suspend (String, (List<GraphicalRuntimeLogEntry>) -> Unit) -> Unit = { message, append ->
-        captureGraphicalRuntimeLogcat(message, append)
+    captureLogs: suspend (Boolean, String, (List<GraphicalRuntimeLogEntry>) -> Unit) -> Unit = { allLogs, message, append ->
+        captureGraphicalRuntimeLogcat(message, append, showAllProcessLogs = allLogs)
     },
 ) {
     var showControlMenu by remember { mutableStateOf(false) }
@@ -114,12 +114,17 @@ internal fun GraphicalRuntimeOverlay(
 
     val logDocument = remember { GraphicalRuntimeLogDocument() }
     var wordWrap by rememberSaveable { mutableStateOf(false) }
+    var showAllProcessLogs by rememberSaveable { mutableStateOf(false) }
     val logCaptureFailureMessage = stringResource(Strings.floating_overlay_log_capture_failed)
     DisposableEffect(logDocument) { onDispose { logDocument.close() } }
     SideEffect { logDocument.setWordWrap(wordWrap) }
 
     if (enableFloatingLog) {
-        LaunchedEffect(logDocument) { captureLogs(logCaptureFailureMessage, logDocument::append) }
+        LaunchedEffect(logDocument, showAllProcessLogs) {
+            // A new source replays its recent logcat tail; do not mix or duplicate the old view.
+            logDocument.clear()
+            captureLogs(showAllProcessLogs, logCaptureFailureMessage, logDocument::append)
+        }
     }
 
     LaunchedEffect(enableFloatingLog) {
@@ -137,6 +142,8 @@ internal fun GraphicalRuntimeOverlay(
                 logDocument = logDocument,
                 wordWrap = wordWrap,
                 onWordWrapChanged = { wordWrap = it },
+                showAllProcessLogs = showAllProcessLogs,
+                onAllProcessLogsChanged = { showAllProcessLogs = it },
                 onExit = { showExitDialog = true },
                 windowState = windowState,
                 modifier = Modifier.fillMaxSize(),
@@ -220,6 +227,8 @@ private fun FloatingLogPanel(
     logDocument: GraphicalRuntimeLogDocument,
     wordWrap: Boolean,
     onWordWrapChanged: (Boolean) -> Unit,
+    showAllProcessLogs: Boolean,
+    onAllProcessLogsChanged: (Boolean) -> Unit,
     onExit: () -> Unit,
     windowState: GraphicalOverlayWindowState,
     modifier: Modifier = Modifier,
@@ -294,6 +303,8 @@ private fun FloatingLogPanel(
                             canClearLog = logDocument.lineCount > 0,
                             wordWrap = wordWrap,
                             onWordWrapChanged = onWordWrapChanged,
+                            showAllProcessLogs = showAllProcessLogs,
+                            onAllProcessLogsChanged = onAllProcessLogsChanged,
                             onExit = onExit,
                         )
                     }
@@ -370,6 +381,8 @@ private fun GraphicalRuntimeActionsMenu(
     canClearLog: Boolean = false,
     wordWrap: Boolean = false,
     onWordWrapChanged: ((Boolean) -> Unit)? = null,
+    showAllProcessLogs: Boolean = false,
+    onAllProcessLogsChanged: ((Boolean) -> Unit)? = null,
 ) {
     if (!expanded) return
     val density = LocalDensity.current
@@ -427,6 +440,18 @@ private fun GraphicalRuntimeActionsMenu(
                         modifier = Modifier.testTag("graphical-log-word-wrap").semantics {
                             role = Role.Checkbox
                             toggleableState = if (wordWrap) ToggleableState.On else ToggleableState.Off
+                        },
+                    )
+                }
+                if (onAllProcessLogsChanged != null) {
+                    TinaDropdownMenuItem(
+                        text = { Text(stringResource(Strings.floating_overlay_log_all_process)) },
+                        leadingIcon = { Icon(Icons.Default.Terminal, null) },
+                        trailingIcon = { Checkbox(checked = showAllProcessLogs, onCheckedChange = null) },
+                        onClick = { onAllProcessLogsChanged(!showAllProcessLogs) },
+                        modifier = Modifier.testTag("graphical-log-all-process").semantics {
+                            role = Role.Checkbox
+                            toggleableState = if (showAllProcessLogs) ToggleableState.On else ToggleableState.Off
                         },
                     )
                 }

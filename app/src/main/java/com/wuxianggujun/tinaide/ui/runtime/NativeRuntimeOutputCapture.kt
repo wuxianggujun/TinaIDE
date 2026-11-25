@@ -18,6 +18,7 @@ internal object NativeRuntimeOutputCapture {
     private val defaultTags = listOf(
         "TINA_USER_OUTPUT",
         "SDL",
+        "TINA_SDL_HOST",
         "System.out",
         "System.err",
     )
